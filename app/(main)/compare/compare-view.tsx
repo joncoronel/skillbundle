@@ -98,6 +98,9 @@ function CompareColumn({ source, skillId }: SkillRef) {
           </div>
         ) : content ? (
           <div className="prose prose-sm dark:prose-invert max-w-none">
+            {skill.description && (
+              <p className="lead text-muted-foreground">{skill.description}</p>
+            )}
             <Markdown>{content}</Markdown>
           </div>
         ) : skill.description ? (

@@ -2093,6 +2093,101 @@ export const backfillSkillSummariesBatch = internalMutation({
 });
 
 // ---------------------------------------------------------------------------
+// Diagnostic: pairwise cosine similarity between two skills
+// ---------------------------------------------------------------------------
+//
+// Used to evaluate whether embedding-similarity dedup would catch a specific
+// pair of suspected duplicate skills. Loads both skills' embeddings and
+// reports their cosine similarity as a single number.
+//
+// Run via:
+//   npx convex run skills:cosineSimilarityBetween '{
+//     "a": { "source": "vercel-labs/agent-skills", "skillId": "vercel-react-best-practices" },
+//     "b": { "source": "supercent-io/skills-template", "skillId": "vercel-react-best-practices" }
+//   }'
+//
+// Interpretation:
+//   1.0    — identical vectors (impossible in practice unless same embedding)
+//   0.97+  — near-verbatim duplicates (the dedup target)
+//   0.90   — clearly the same topic with real content differences
+//   0.70   — same general category, materially different content
+//   <0.5   — unrelated
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error(
+      `Cosine similarity requires same-length vectors (got ${a.length} vs ${b.length})`,
+    );
+  }
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+export const cosineSimilarityBetween = internalQuery({
+  args: {
+    a: v.object({ source: v.string(), skillId: v.string() }),
+    b: v.object({ source: v.string(), skillId: v.string() }),
+  },
+  handler: async (ctx, { a, b }) => {
+    const skillA = await ctx.db
+      .query("skills")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", a.source).eq("skillId", a.skillId),
+      )
+      .unique();
+    const skillB = await ctx.db
+      .query("skills")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", b.source).eq("skillId", b.skillId),
+      )
+      .unique();
+
+    if (!skillA) {
+      return { error: `Skill A not found: ${a.source}/${a.skillId}` };
+    }
+    if (!skillB) {
+      return { error: `Skill B not found: ${b.source}/${b.skillId}` };
+    }
+    if (!skillA.embedding) {
+      return { error: `Skill A has no embedding: ${a.source}/${a.skillId}` };
+    }
+    if (!skillB.embedding) {
+      return { error: `Skill B has no embedding: ${b.source}/${b.skillId}` };
+    }
+
+    const similarity = cosineSimilarity(skillA.embedding, skillB.embedding);
+
+    return {
+      similarity,
+      a: {
+        source: skillA.source,
+        skillId: skillA.skillId,
+        name: skillA.name,
+        installs: skillA.installs,
+        descriptionPreview: (skillA.description ?? "").slice(0, 120),
+        contentLength: skillA.content?.length ?? 0,
+      },
+      b: {
+        source: skillB.source,
+        skillId: skillB.skillId,
+        name: skillB.name,
+        installs: skillB.installs,
+        descriptionPreview: (skillB.description ?? "").slice(0, 120),
+        contentLength: skillB.content?.length ?? 0,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Backfill: set needsDiscovery / needsContentFetch / syncHash on existing rows
 // ---------------------------------------------------------------------------
 

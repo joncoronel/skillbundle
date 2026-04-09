@@ -3,14 +3,25 @@
 import { useEffect, useState } from "react";
 import { useAction } from "convex/react";
 import Link from "next/link";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { SkillCard, type SkillData } from "@/components/skill-card";
 import { SkillDetailSheet } from "@/components/skill-detail-sheet";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
 import { Badge } from "@/components/ui/cubby-ui/badge";
-import { cn } from "@/lib/utils";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/cubby-ui/collapsible";
+import { cn, formatInstalls } from "@/lib/utils";
 
-type AnalyzeRepoResult = Awaited<ReturnType<ReturnType<typeof useAction<typeof api.recommendations.analyzeRepo>>>>;
+type AnalyzeRepoResult = Awaited<
+  ReturnType<ReturnType<typeof useAction<typeof api.recommendations.analyzeRepo>>>
+>;
+type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
+type Variant = GroupedRecommendation["variants"][number];
 
 interface RepoAnalysisResultsProps {
   /** Trimmed repo URL — empty string disables the analysis. */
@@ -107,16 +118,18 @@ export function RepoAnalysisResults({
     );
   }
 
-  const skills: SkillData[] = recs.map((r) => ({
-    source: r.source,
-    skillId: r.skillId,
-    name: r.name,
-    description: r.description,
-    installs: r.installs,
-    technologies: [],
-  }));
-
   const chipPackages = fingerprint?.packages.slice(0, 12) ?? [];
+
+  function openSkillDetail(variant: Variant, name: string) {
+    setActiveSkill({
+      source: variant.source,
+      skillId: variant.skillId,
+      name,
+      description: variant.description,
+      installs: variant.installs,
+      technologies: [],
+    });
+  }
 
   return (
     <div className="mt-4">
@@ -152,25 +165,47 @@ export function RepoAnalysisResults({
         {recs.length} recommended skill{recs.length !== 1 && "s"}
       </p>
       <div className="grid">
-        {skills.map((skill, i) => {
+        {recs.map((group, i) => {
           const isFirst = i === 0;
-          const isLast = i === skills.length - 1;
-          const isSolo = skills.length === 1;
+          const isLast = i === recs.length - 1;
+          const isSolo = recs.length === 1;
+          const positionClassName = isSolo
+            ? undefined
+            : isFirst
+              ? "rounded-b-none"
+              : isLast
+                ? "rounded-t-none border-t-0"
+                : cn("rounded-none border-t-0");
+
+          if (group.variantCount === 1) {
+            const variant = group.variants[0];
+            const skill: SkillData = {
+              source: variant.source,
+              skillId: variant.skillId,
+              name: group.name,
+              description: variant.description,
+              installs: variant.installs,
+              technologies: [],
+            };
+            return (
+              <SkillCard
+                key={`singleton:${variant.source}/${variant.skillId}`}
+                skill={skill}
+                selectable
+                variant="row"
+                onViewDetail={() => setActiveSkill(skill)}
+                className={positionClassName}
+              />
+            );
+          }
+
           return (
-            <SkillCard
-              key={`${skill.source}/${skill.skillId}`}
-              skill={skill}
-              selectable
-              variant="row"
-              onViewDetail={() => setActiveSkill(skill)}
-              className={
-                isSolo
-                  ? undefined
-                  : isFirst
-                    ? "rounded-b-none"
-                    : isLast
-                      ? "rounded-t-none border-t-0"
-                      : cn("rounded-none border-t-0")
+            <SkillGroupRow
+              key={`group:${group.name}`}
+              group={group}
+              className={positionClassName}
+              onSelectVariant={(variant) =>
+                openSkillDetail(variant, group.name)
               }
             />
           );
@@ -187,3 +222,80 @@ export function RepoAnalysisResults({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Group row — collapsible row for skills with multiple variants
+// ---------------------------------------------------------------------------
+
+interface SkillGroupRowProps {
+  group: GroupedRecommendation;
+  className?: string;
+  onSelectVariant: (variant: Variant) => void;
+}
+
+function SkillGroupRow({
+  group,
+  className,
+  onSelectVariant,
+}: SkillGroupRowProps) {
+  const visibleCount = group.variants.length;
+  const cappedRemainder = group.variantCount - visibleCount;
+
+  return (
+    <Collapsible
+      className={cn(
+        "text-card-foreground flex flex-col bg-card rounded-2xl border dark:border-border/50",
+        "transition-colors hover:border-border/20",
+        className,
+      )}
+    >
+      <CollapsibleTrigger
+        className={cn(
+          "border-none bg-transparent shadow-none ring-0 hover:bg-transparent hover:opacity-80",
+          "py-3 px-4 w-full",
+        )}
+      >
+        <div className="flex items-center gap-3 w-full">
+          <span className="text-sm font-semibold text-left">{group.name}</span>
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+            {group.variantCount} versions
+          </span>
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            strokeWidth={2}
+            className="size-4 text-muted-foreground transition-transform duration-200 group-data-panel-open/collapsible:rotate-180"
+          />
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="max-sm:duration-0">
+        <div className="border-t dark:border-border/50">
+          {group.variants.map((variant) => (
+            <button
+              key={`${variant.source}/${variant.skillId}`}
+              type="button"
+              onClick={() => onSelectVariant(variant)}
+              className={cn(
+                "flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm",
+                "border-b last:border-b-0 dark:border-border/50",
+                "hover:bg-muted/50 transition-colors",
+              )}
+            >
+              <span className="text-muted-foreground truncate">
+                {variant.source}
+              </span>
+              <span className="ml-auto text-xs font-mono tabular-nums text-muted-foreground shrink-0">
+                {formatInstalls(variant.installs)}
+              </span>
+            </button>
+          ))}
+          {cappedRemainder > 0 && (
+            <div className="px-4 py-2 text-xs text-muted-foreground">
+              showing {visibleCount} of {group.variantCount} versions
+            </div>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+

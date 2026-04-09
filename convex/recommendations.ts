@@ -77,24 +77,54 @@ export const setCachedFingerprint = internalMutation({
 // Public action: analyze a GitHub repo and return ranked skill recommendations
 // ---------------------------------------------------------------------------
 
-export interface SkillRecommendation {
-  source: string;
-  skillId: string;
+/**
+ * A grouped recommendation row in the result list. Each group represents one
+ * unique skill `name` and contains 1+ variants from different sources.
+ *
+ * Singleton groups (variantCount === 1) are rendered as the existing skill
+ * row in the UI. Multi-variant groups are rendered as a collapsible row that
+ * expands to show all variants.
+ */
+export interface GroupedRecommendation {
   name: string;
-  description?: string;
-  installs: number;
-  score: number;
+  /** True total count of variants in the candidate pool, even if `variants` is capped. */
+  variantCount: number;
+  /**
+   * Variants of this skill from different sources. Sorted by install count
+   * descending. Capped at MAX_VARIANTS_PER_GROUP entries — if `variantCount`
+   * exceeds the cap, the trailing entries are dropped.
+   */
+  variants: Array<{
+    source: string;
+    skillId: string;
+    description?: string;
+    installs: number;
+  }>;
 }
 
 export interface AnalyzeRepoResult {
   error: string | null;
   repoName: string;
   fingerprint: RepoFingerprint | null;
-  recommendations: SkillRecommendation[];
+  recommendations: GroupedRecommendation[];
 }
 
-const SEARCH_LIMIT = 200;
+// Vector search candidate pool. Wider than RESULT_LIMIT because the grouping
+// pass collapses same-name variants into single rows, and we want enough
+// headroom so popular skills are likely to be in the pool.
+//
+// Capped at 250 because Convex's vectorSearch has a hard limit of 256
+// results per query. This is the maximum candidate pool we can request.
+const SEARCH_LIMIT = 250;
+
+// Final number of GROUPS returned to the frontend (not entries — a single
+// group can contain multiple variants behind a collapsible).
 const RESULT_LIMIT = 60;
+
+// Cap on how many variants ship per group. Beyond this, the long tail of
+// forks isn't useful and just inflates the response payload. The frontend
+// shows "showing N of M versions" when this cap kicks in.
+const MAX_VARIANTS_PER_GROUP = 10;
 
 export const analyzeRepo = action({
   args: { repoUrl: v.string() },
@@ -202,17 +232,41 @@ export const analyzeRepo = action({
       entries.map((e) => [e.skillDocId, e.summary]),
     );
 
-    // Build a lowercase package set for substring matching
+    // ---------------------------------------------------------------------
+    // Grouping pass — collapse same-name variants into one row each
+    // ---------------------------------------------------------------------
+    // Popular skills are forked verbatim into many repos' agent-skills
+    // folders, producing 10-20+ rows in the database with the same name from
+    // different sources. Without grouping, those variants each take a slot in
+    // the top RESULT_LIMIT, crowding out genuinely different skills.
+    //
+    // Strategy: group every candidate by exact name. Each group becomes one
+    // row in the final list, with all variants accessible behind a
+    // collapsible UI. Singletons (groups of 1) render as normal rows.
+    //
+    // Score handling: a group inherits the MAX composite score across all
+    // its variants. We compute the composite score (vector similarity +
+    // package bonus + popularity bonus) for every variant and use the
+    // highest. This means a group is ranked by whichever variant scored
+    // best by any metric — so a group benefits from BOTH its best
+    // vector-similarity match AND its most popular member.
+    //
+    // Variant ordering inside a group: install count descending. Once the
+    // user has decided "I want this concept," install count is the most
+    // useful trust signal for picking which version to install.
+    //
+    // Variant cap: MAX_VARIANTS_PER_GROUP. Beyond this, the long tail isn't
+    // useful. The frontend can show "showing N of M" using `variantCount`.
     const packageSet = fingerprint.packages.map((p) => p.toLowerCase());
 
-    // Re-rank: base = vector similarity, +0.2 per package substring hit,
-    // +0.1 * log10(installs + 1) as a popularity prior
-    const ranked: SkillRecommendation[] = [];
-    for (const result of results) {
-      const summary = summaryByDocId.get(result._id as Id<"skills">);
-      if (!summary) continue;
-
-      const haystack = `${summary.name} ${summary.description ?? ""}`.toLowerCase();
+    // Helper: compute the composite score (vector + package bonus + popularity)
+    // for a single variant, given its raw vector score.
+    function computeScore(
+      summary: (typeof entries)[number]["summary"],
+      vectorScore: number,
+    ): number {
+      const haystack =
+        `${summary.name} ${summary.description ?? ""}`.toLowerCase();
       let packageBonus = 0;
       for (const pkg of packageSet) {
         if (pkg.length >= 3 && haystack.includes(pkg)) {
@@ -220,26 +274,76 @@ export const analyzeRepo = action({
           if (packageBonus >= 0.6) break; // Cap the bonus
         }
       }
-
       const popBonus = 0.1 * Math.log10(summary.installs + 1);
-
-      ranked.push({
-        source: summary.source,
-        skillId: summary.skillId,
-        name: summary.name,
-        description: summary.description,
-        installs: summary.installs,
-        score: result._score + packageBonus + popBonus,
-      });
+      return vectorScore + packageBonus + popBonus;
     }
 
-    ranked.sort((a, b) => b.score - a.score);
+    interface PendingGroup {
+      name: string;
+      // The MAX composite score across all variants in this group.
+      // Determines the group's position in the final result list.
+      score: number;
+      variants: Array<{
+        source: string;
+        skillId: string;
+        description?: string;
+        installs: number;
+      }>;
+    }
+
+    const groupsByName = new Map<string, PendingGroup>();
+
+    for (const result of results) {
+      const summary = summaryByDocId.get(result._id as Id<"skills">);
+      if (!summary) continue;
+
+      const variant = {
+        source: summary.source,
+        skillId: summary.skillId,
+        description: summary.description,
+        installs: summary.installs,
+      };
+      const variantScore = computeScore(summary, result._score);
+
+      const existing = groupsByName.get(summary.name);
+      if (existing === undefined) {
+        groupsByName.set(summary.name, {
+          name: summary.name,
+          score: variantScore,
+          variants: [variant],
+        });
+      } else {
+        existing.variants.push(variant);
+        // Group inherits the best score across all its variants.
+        if (variantScore > existing.score) {
+          existing.score = variantScore;
+        }
+      }
+    }
+
+    // Sort groups by score descending and take the top RESULT_LIMIT.
+    const sortedGroups = Array.from(groupsByName.values()).sort(
+      (a, b) => b.score - a.score,
+    );
+    const topGroups = sortedGroups.slice(0, RESULT_LIMIT);
+
+    // Within each group, sort variants by install count descending and cap.
+    const recommendations: GroupedRecommendation[] = topGroups.map((group) => {
+      const sortedVariants = group.variants
+        .slice()
+        .sort((a, b) => b.installs - a.installs);
+      return {
+        name: group.name,
+        variantCount: sortedVariants.length,
+        variants: sortedVariants.slice(0, MAX_VARIANTS_PER_GROUP),
+      };
+    });
 
     return {
       error: null,
       repoName,
       fingerprint,
-      recommendations: ranked.slice(0, RESULT_LIMIT),
+      recommendations,
     };
   },
 });
