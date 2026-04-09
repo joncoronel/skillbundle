@@ -1,14 +1,13 @@
-import { parseAsArrayOf, parseAsString, parseAsStringLiteral } from "nuqs";
+import { parseAsString, parseAsStringLiteral } from "nuqs";
 
 // -- Home page (/) parsers --
 
-export const techParser = parseAsArrayOf(parseAsString).withDefault([]);
-
-const tabValues = ["browse", "search"] as const;
-export type TabValue = (typeof tabValues)[number];
-export const tabParser = parseAsStringLiteral(tabValues).withDefault("browse");
+const modeValues = ["text", "repo"] as const;
+export type ModeValue = (typeof modeValues)[number];
+export const modeParser = parseAsStringLiteral(modeValues).withDefault("text");
 
 export const searchQueryParser = parseAsString.withDefault("");
+export const repoUrlParser = parseAsString.withDefault("");
 
 // -- Explore page (/explore) parsers --
 

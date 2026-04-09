@@ -67,7 +67,6 @@ function SearchResults({ query }: { query: string }) {
                 skillCount={bundle.skillCount}
                 createdAt={bundle.createdAt}
                 creatorName={bundle.creatorName}
-                technologies={bundle.technologies}
                 viewCount={bundle.viewCount}
               />
             </div>

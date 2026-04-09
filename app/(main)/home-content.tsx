@@ -2,7 +2,11 @@
 
 import { useQueryState } from "nuqs";
 import { cn } from "@/lib/utils";
-import { searchQueryParser, tabParser } from "@/lib/search-params";
+import {
+  modeParser,
+  searchQueryParser,
+  repoUrlParser,
+} from "@/lib/search-params";
 import { SkillExplorer } from "@/components/skill-explorer";
 // import useMeasure from "react-use-measure";
 import { useCollapsibleHeight } from "@/hooks/cubby-ui/use-collapsible-height";
@@ -10,9 +14,13 @@ import { useUserPlan } from "@/hooks/use-user-plan";
 
 export function HomeContent() {
   const { limits } = useUserPlan();
+  const [mode] = useQueryState("mode", modeParser);
   const [query] = useQueryState("q", searchQueryParser);
-  const [tab] = useQueryState("tab", tabParser);
-  const searchActive = tab === "search" && query.trim().length > 0;
+  const [repoUrl] = useQueryState("repo", repoUrlParser);
+  const searchActive =
+    mode === "text"
+      ? query.trim().length > 0
+      : repoUrl.trim().length > 0;
   const { ref, height } = useCollapsibleHeight();
 
   return (

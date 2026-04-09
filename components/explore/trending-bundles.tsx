@@ -34,7 +34,6 @@ export function TrendingBundles({
               skillCount={bundle.skillCount}
               createdAt={bundle.createdAt}
               creatorName={bundle.creatorName}
-              technologies={bundle.technologies}
               viewCount={bundle.viewCount}
               isTrending
             />

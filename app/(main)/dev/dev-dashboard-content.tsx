@@ -120,6 +120,7 @@ export function DevDashboardContent() {
         onFilterChange={setActiveFilter}
         stats={stats}
       />
+      <EmbeddingPanel />
       <AdminActions />
     </div>
   );
@@ -557,6 +558,139 @@ function SkillActions({
 }
 
 // ---------------------------------------------------------------------------
+// Embedding Pipeline Panel
+// ---------------------------------------------------------------------------
+
+type EmbedSkill = {
+  source: string;
+  skillId: string;
+  name: string;
+  installs: number;
+};
+
+function EmbeddingSkillRow({
+  skill,
+  badge,
+}: {
+  skill: EmbedSkill;
+  badge: { label: string; variant: "warning" | "info" };
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 text-sm">
+      <span className="font-medium truncate">{skill.name}</span>
+      <span className="text-muted-foreground truncate">{skill.source}</span>
+      <span className="ml-auto text-xs font-mono tabular-nums text-muted-foreground shrink-0">
+        {formatInstalls(skill.installs)}
+      </span>
+      <Badge variant={badge.variant} className="text-[10px] shrink-0">
+        {badge.label}
+      </Badge>
+    </div>
+  );
+}
+
+function EmbeddingSkillList({
+  title,
+  tooltip,
+  skills,
+  badgeVariant,
+  badgeLabel,
+}: {
+  title: string;
+  tooltip: string;
+  skills: Array<EmbedSkill & { reason?: string }> | undefined;
+  badgeVariant: "warning" | "info";
+  badgeLabel?: string;
+}) {
+  if (skills === undefined) {
+    return (
+      <div>
+        <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {title}
+        </p>
+        <Skeleton className="h-12 w-full rounded-lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Tooltip>
+        <TooltipTrigger
+          render={<p />}
+          className="mb-2 inline-block text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-help decoration-dashed decoration-muted-foreground/40 underline underline-offset-2"
+        >
+          {title} ({skills.length})
+        </TooltipTrigger>
+        <TooltipContent className="max-w-72">{tooltip}</TooltipContent>
+      </Tooltip>
+
+      {skills.length === 0 ? (
+        <p className="text-xs text-muted-foreground">All clear.</p>
+      ) : (
+        <div className="rounded-lg border divide-y">
+          {skills.slice(0, 20).map((s) => (
+            <EmbeddingSkillRow
+              key={`${s.source}/${s.skillId}`}
+              skill={s}
+              badge={{
+                label: badgeLabel ?? s.reason ?? "skipped",
+                variant: badgeVariant,
+              }}
+            />
+          ))}
+          {skills.length > 20 && (
+            <div className="px-4 py-2 text-xs text-muted-foreground">
+              +{skills.length - 20} more
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmbeddingPanel() {
+  const { data: skipped } = useQuery(
+    convexQuery(api.devStats.listUnembeddableSkills, {}),
+  );
+  const { data: minimal } = useQuery(
+    convexQuery(api.devStats.listMinimalModeSkills, {}),
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Embedding Pipeline</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          <EmbeddingSkillList
+            title="Unembeddable skills"
+            tooltip="Skills the worker permanently gave up on — usually because content was too dense to fit OpenAI's per-input token limit even after truncation. Investigate individually if you want to recover them."
+            skills={skipped}
+            badgeVariant="warning"
+          />
+          <EmbeddingSkillList
+            title="Minimal-mode skills"
+            tooltip="Skills embedded with name + description only because their content was too dense to embed in full. These have degraded embeddings — if the count grows large, consider improving the truncation strategy (tiktoken, chunking)."
+            skills={minimal}
+            badgeVariant="info"
+            badgeLabel="minimal"
+          />
+        </div>
+        <p className="mt-6 text-xs text-muted-foreground">
+          For full coverage stats, run:{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+            npx convex run skills:embeddingCoverageStats
+          </code>
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Admin Actions
 // ---------------------------------------------------------------------------
 
@@ -605,10 +739,10 @@ function AdminActions() {
       fn: () => triggerRecalculate({}),
     },
     {
-      label: "Re-tag All Skills",
+      label: "Backfill Embeddings",
       description:
-        "Re-run technology tagging on all skills using the latest keyword rules.",
-      fn: () => triggerBackfill({ type: "retag" as const }),
+        "Generate semantic embeddings for any skills that are missing one.",
+      fn: () => triggerBackfill({ type: "embeddings" as const }),
     },
   ];
 

@@ -232,7 +232,6 @@ export const getByUrlId = query({
           name: skill?.name ?? s.skillId,
           description: skill?.description,
           installs: skill?.installs ?? 0,
-          technologies: skill?.technologies ?? [],
           updatedSinceAdded,
           contentUpdatedAt: skill?.contentUpdatedAt,
           createdAt: skill?._creationTime,
@@ -332,21 +331,6 @@ export async function enrichBundle(
       .unique(),
   ]);
 
-  const skills = await Promise.all(
-    bundle.skills.map((s) =>
-      ctx.db
-        .query("skills")
-        .withIndex("by_source_skillId", (q) =>
-          q.eq("source", s.source).eq("skillId", s.skillId),
-        )
-        .unique(),
-    ),
-  );
-  const techSet = new Set<string>();
-  for (const skill of skills) {
-    if (skill) skill.technologies.forEach((t) => techSet.add(t));
-  }
-
   return {
     _id: bundle._id,
     name: bundle.name,
@@ -355,7 +339,6 @@ export async function enrichBundle(
     createdAt: bundle.createdAt,
     creatorName: creator?.name ?? "Anonymous",
     creatorImage: creator?.image,
-    technologies: Array.from(techSet),
     forkedFrom: bundle.forkedFrom,
     viewCount: stats?.viewCount ?? 0,
     copyCount: stats?.copyCount ?? 0,

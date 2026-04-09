@@ -61,6 +61,61 @@ export const getSyncStats = query({
   },
 });
 
+/**
+ * Reactive list of skills the embedding worker gave up on. Uses an indexed
+ * query so the cost scales with the number of matching rows, not the total
+ * size of the table. Currently expected to be empty in the happy path
+ * (~0 KB read), and never expensive even with hundreds of skipped skills.
+ */
+export const listUnembeddableSkills = query({
+  args: {},
+  handler: async (ctx) => {
+    await assertAdmin(ctx);
+    // The by_embeddingSkipReason index is sorted with `undefined` first,
+    // then the actual reason strings. `gt(field, "")` walks past the
+    // undefined entries and returns only rows with a real reason set.
+    const summaries = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_embeddingSkipReason", (q) =>
+        q.gt("embeddingSkipReason", ""),
+      )
+      .collect();
+    return summaries.map((s) => ({
+      id: s.skillDocId,
+      source: s.source,
+      skillId: s.skillId,
+      name: s.name,
+      reason: s.embeddingSkipReason,
+      installs: s.installs,
+    }));
+  },
+});
+
+/**
+ * Reactive list of skills embedded with the "minimal" fallback (name +
+ * description only, no content). These skills have degraded embeddings
+ * because their content was too dense to fit OpenAI's per-input token limit.
+ * If this list grows large, consider improving truncation strategy
+ * (tiktoken-based truncation, chunking, etc).
+ */
+export const listMinimalModeSkills = query({
+  args: {},
+  handler: async (ctx) => {
+    await assertAdmin(ctx);
+    const summaries = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_embeddingMode", (q) => q.eq("embeddingMode", "minimal"))
+      .collect();
+    return summaries.map((s) => ({
+      id: s.skillDocId,
+      source: s.source,
+      skillId: s.skillId,
+      name: s.name,
+      installs: s.installs,
+    }));
+  },
+});
+
 /** Recalculate all stats by scanning summaries. Called at end of sync pipeline. */
 export const recalculateStatsBatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
@@ -476,7 +531,7 @@ export const triggerBackfill = action({
     type: v.union(
       v.literal("summaries"),
       v.literal("syncFlags"),
-      v.literal("retag"),
+      v.literal("embeddings"),
     ),
   },
   handler: async (ctx, { type }) => {
@@ -496,8 +551,12 @@ export const triggerBackfill = action({
           {},
         );
         break;
-      case "retag":
-        await ctx.scheduler.runAfter(0, internal.skills.retagAllSkills, {});
+      case "embeddings":
+        await ctx.scheduler.runAfter(
+          0,
+          internal.skills.backfillEmbeddings,
+          {},
+        );
         break;
     }
     return { scheduled: true, type };

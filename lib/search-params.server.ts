@@ -1,18 +1,17 @@
 import {
   createLoader,
-  parseAsArrayOf,
   parseAsString,
   parseAsStringLiteral,
 } from "nuqs/server";
 
 // -- Home page (/) --
 
-const tabValues = ["browse", "search"] as const;
+const modeValues = ["text", "repo"] as const;
 
 export const loadHomeSearchParams = createLoader({
   q: parseAsString.withDefault(""),
-  tab: parseAsStringLiteral(tabValues).withDefault("browse"),
-  tech: parseAsArrayOf(parseAsString).withDefault([]),
+  repo: parseAsString.withDefault(""),
+  mode: parseAsStringLiteral(modeValues).withDefault("text"),
 });
 
 // -- Explore page (/explore) --

@@ -86,17 +86,14 @@ export const recordEvent = mutation({
 
 export const getTrendingBundles = query({
   args: {
-    technologies: v.optional(v.array(v.string())),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { technologies, limit = 6 }) => {
-    const fetchCount =
-      technologies && technologies.length > 0 ? limit * 4 : limit;
+  handler: async (ctx, { limit = 6 }) => {
     const stats = await ctx.db
       .query("bundleStats")
       .withIndex("by_recentCopies")
       .order("desc")
-      .take(fetchCount);
+      .take(limit);
 
     // Fetch all bundle docs in parallel
     const bundles = await Promise.all(
@@ -119,15 +116,7 @@ export const getTrendingBundles = query({
       }),
     );
 
-    // Apply technology filter and slice to limit
-    const filtered =
-      technologies && technologies.length > 0
-        ? enriched.filter((b) =>
-            technologies.some((t) => b.technologies.includes(t)),
-          )
-        : enriched;
-
-    return filtered.slice(0, limit);
+    return enriched;
   },
 });
 

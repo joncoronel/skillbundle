@@ -19,20 +19,47 @@ export async function resolveDefaultBranch(
   owner: string,
   repo: string,
 ): Promise<string> {
+  const meta = await fetchRepoMetadata(owner, repo);
+  return meta?.defaultBranch ?? "main";
+}
+
+export interface RepoMetadata {
+  defaultBranch: string;
+  description: string | null;
+  topics: string[];
+}
+
+/**
+ * Fetch the GitHub repo metadata (default branch, description, topics) in a
+ * single REST call. Returns null if the repo doesn't exist or the API errors.
+ */
+export async function fetchRepoMetadata(
+  owner: string,
+  repo: string,
+): Promise<RepoMetadata | null> {
   const headers = githubHeaders();
+  // Topics require the mercy preview header on older APIs, but the v3 endpoint
+  // returns them by default now. Belt-and-suspenders.
+  headers.Accept = "application/vnd.github.mercy-preview+json";
   try {
     const res = await fetch(
       `https://api.github.com/repos/${owner}/${repo}`,
       { headers },
     );
-    if (res.ok) {
-      const data = (await res.json()) as { default_branch: string };
-      return data.default_branch;
-    }
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      default_branch: string;
+      description: string | null;
+      topics?: string[];
+    };
+    return {
+      defaultBranch: data.default_branch,
+      description: data.description,
+      topics: data.topics ?? [],
+    };
   } catch {
-    // Fall through to default
+    return null;
   }
-  return "main";
 }
 
 export interface TreeEntry {

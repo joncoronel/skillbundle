@@ -11,7 +11,6 @@ import {
   CardAction,
 } from "@/components/ui/cubby-ui/card";
 import { Badge } from "@/components/ui/cubby-ui/badge";
-import { techNameMap } from "@/lib/technologies";
 import { cn, timeAgo } from "@/lib/utils";
 
 interface BundleCardProps {
@@ -21,7 +20,6 @@ interface BundleCardProps {
   createdAt: number;
   creatorName: string;
   creatorImage?: string;
-  technologies: string[];
   isPublic?: boolean;
   actions?: React.ReactNode;
   viewCount?: number;
@@ -34,7 +32,6 @@ export function BundleCard({
   skillCount,
   createdAt,
   creatorName,
-  technologies,
   isPublic = true,
   actions,
   viewCount,
@@ -62,26 +59,6 @@ export function BundleCard({
           by {creatorName} &middot; {timeAgo(createdAt)}
         </CardDescription>
       </CardHeader>
-      {technologies.length > 0 && (
-        <CardContent className="pt-0">
-          <div className="flex flex-wrap gap-1">
-            {technologies.slice(0, 5).map((techId) => (
-              <Badge
-                key={techId}
-                variant="secondary"
-                className="text-[10px] px-1.5 py-0.5"
-              >
-                {techNameMap.get(techId) ?? techId}
-              </Badge>
-            ))}
-            {technologies.length > 5 && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
-                +{technologies.length - 5}
-              </Badge>
-            )}
-          </div>
-        </CardContent>
-      )}
       {viewCount !== undefined && (
         <CardContent className="pt-0">
           <span className="text-xs font-mono tabular-nums text-muted-foreground">

@@ -1,124 +1,200 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryState } from "nuqs";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import {
+  Search01Icon,
+  Cancel01Icon,
+  GithubIcon,
+  FlashIcon,
+} from "@hugeicons/core-free-icons";
+import {
+  modeParser,
+  searchQueryParser,
+  repoUrlParser,
+  type ModeValue,
+} from "@/lib/search-params";
 import { BundleSelectionProvider } from "@/lib/bundle-selection-context";
-import { techParser, tabParser, type TabValue } from "@/lib/search-params";
-import { TechnologySelector } from "@/components/technology-selector";
-import { RepoUrlInput } from "@/components/repo-url-input";
-import { SkillResults } from "@/components/skill-results";
-import { SkillSearch } from "@/components/skill-search";
+import { Input } from "@/components/ui/cubby-ui/input";
+import { Button } from "@/components/ui/cubby-ui/button";
+import { SkillSearchResults } from "@/components/skill-search";
+import { RepoAnalysisResults } from "@/components/repo-url-input";
 import { BundleBar } from "@/components/bundle-bar";
-import { StickyTechBar } from "@/components/sticky-tech-bar";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsPanels,
-  TabsContent,
-} from "@/components/ui/cubby-ui/tabs";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/cubby-ui/collapsible";
+import { cn } from "@/lib/utils";
 
 interface SkillExplorerProps {
   canAutoDetect: boolean;
 }
 
+const TEXT_DEBOUNCE_MS = 300;
+
 export function SkillExplorer({ canAutoDetect }: SkillExplorerProps) {
-  const [selected, setSelected] = useQueryState("tech", techParser);
-  const [tab, setTab] = useQueryState("tab", tabParser);
-  const [pickerOpen, setPickerOpen] = useState(true);
-  const selectorRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useQueryState("mode", modeParser);
+  const [textQuery, setTextQuery] = useQueryState("q", searchQueryParser);
+  const [repoUrl, setRepoUrl] = useQueryState("repo", repoUrlParser);
 
-  function handleToggle(id: string) {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id],
-    );
+  const [debouncedText, setDebouncedText] = useState(textQuery.trim());
+  const [repoTriggerKey, setRepoTriggerKey] = useState(repoUrl ? 1 : 0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce text query (300ms)
+  useEffect(() => {
+    const trimmed = textQuery.trim();
+    const id = setTimeout(() => setDebouncedText(trimmed), TEXT_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [textQuery]);
+
+  // Keyboard shortcut: focus on /
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "/" &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  function handleModeChange(next: ModeValue) {
+    setMode(next);
+    // Re-focus the input so the user can keep typing immediately
+    setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  function handleRepoDetected(technologies: string[]) {
-    setSelected(technologies);
+  function handleRepoSubmit() {
+    const trimmed = repoUrl.trim();
+    if (!trimmed) return;
+    setRepoTriggerKey((k) => k + 1);
   }
 
-  function handleEditStack() {
-    setPickerOpen(true);
-    setTimeout(() => {
-      selectorRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 100);
-  }
+  const isText = mode === "text";
+  const inputValue = isText ? textQuery : repoUrl;
+  const placeholder = isText
+    ? "Search skills by name…"
+    : "https://github.com/owner/repo";
+  const Icon = isText ? Search01Icon : GithubIcon;
 
   return (
     <BundleSelectionProvider>
-      <Tabs value={tab} onValueChange={(value) => setTab(value as TabValue)}>
-        <TabsList variant="underline">
-          <TabsTrigger value="search">Search</TabsTrigger>
-          <TabsTrigger value="browse">Build Your Stack</TabsTrigger>
-        </TabsList>
-
-        <TabsPanels className="mt-6">
-          <TabsContent value="search" keepMounted>
-            <SkillSearch />
-          </TabsContent>
-
-          <TabsContent value="browse" keepMounted>
-            <div ref={selectorRef}>
-              <RepoUrlInput
-                onTechnologiesDetected={handleRepoDetected}
-                canAutoDetect={canAutoDetect}
+      <div>
+        {/* Mode toggle */}
+        <div className="mb-3 flex items-center gap-1 rounded-full border bg-muted/30 p-0.5 w-fit">
+          <button
+            type="button"
+            onClick={() => handleModeChange("text")}
+            className={cn(
+              "px-3 py-1 text-xs font-medium rounded-full transition-colors",
+              isText
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <HugeiconsIcon
+                icon={Search01Icon}
+                strokeWidth={2}
+                className="size-3.5"
               />
-              <Collapsible>
-                <div className="relative mt-5">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <CollapsibleTrigger className="w-auto border-none bg-transparent shadow-none ring-0 py-0 hover:bg-transparent hover:opacity-80 gap-1.5">
-                      <span className="bg-background px-2 text-muted-foreground">
-                        or select manually
-                        {!pickerOpen && selected.length > 0 && (
-                          <span className="ml-1 text-primary">
-                            ({selected.length})
-                          </span>
-                        )}
-                      </span>
-                      <span className="bg-background pr-1">
-                        <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={2} className="size-3.5 text-muted-foreground transition-transform duration-200 group-data-[panel-open]/collapsible:rotate-180" />
-                      </span>
-                    </CollapsibleTrigger>
-                  </div>
-                </div>
-                <CollapsibleContent className="max-sm:duration-0">
-                  <div className="mt-5 pb-1">
-                    <TechnologySelector
-                      selected={selected}
-                      onToggle={handleToggle}
-                    />
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
+              Text
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange("repo")}
+            className={cn(
+              "px-3 py-1 text-xs font-medium rounded-full transition-colors",
+              !isText
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <HugeiconsIcon
+                icon={GithubIcon}
+                strokeWidth={2}
+                className="size-3.5"
+              />
+              Repo
+            </span>
+          </button>
+        </div>
 
-            <StickyTechBar
-              selected={selected}
-              onRemove={handleToggle}
-              onEditClick={handleEditStack}
-              selectorRef={selectorRef}
+        {/* Unified input */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <HugeiconsIcon
+              icon={Icon}
+              strokeWidth={2}
+              className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
             />
+            <Input
+              ref={inputRef}
+              placeholder={placeholder}
+              value={inputValue}
+              onChange={(e) => {
+                if (isText) setTextQuery(e.target.value);
+                else setRepoUrl(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (!isText && e.key === "Enter") handleRepoSubmit();
+              }}
+              className="pl-9 pr-9"
+            />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isText) setTextQuery("");
+                  else setRepoUrl("");
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <HugeiconsIcon
+                  icon={Cancel01Icon}
+                  strokeWidth={2}
+                  className="size-4"
+                />
+              </button>
+            )}
+          </div>
+          {!isText && (
+            <Button
+              variant="outline"
+              onClick={handleRepoSubmit}
+              disabled={!repoUrl.trim() || !canAutoDetect}
+              leftSection={
+                <HugeiconsIcon
+                  icon={FlashIcon}
+                  strokeWidth={2}
+                  className="size-3.5"
+                />
+              }
+            >
+              Analyze
+            </Button>
+          )}
+        </div>
 
-            <section className="mt-10">
-              <SkillResults selectedTechnologies={selected} />
-            </section>
-          </TabsContent>
-        </TabsPanels>
-      </Tabs>
+        {/* Results region — swaps based on mode, each mode keeps its own state */}
+        <div hidden={!isText}>
+          <SkillSearchResults query={debouncedText} />
+        </div>
+        <div hidden={isText}>
+          <RepoAnalysisResults
+            repoUrl={repoUrl}
+            triggerKey={repoTriggerKey}
+            canAutoDetect={canAutoDetect}
+          />
+        </div>
+      </div>
 
       <BundleBar />
     </BundleSelectionProvider>

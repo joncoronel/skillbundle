@@ -1,8 +1,6 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
-import { Badge } from "@/components/ui/cubby-ui/badge";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
-import { techNameMap } from "@/lib/technologies";
 import { formatInstalls, timeAgo } from "@/lib/utils";
 
 interface Skill {
@@ -11,7 +9,6 @@ interface Skill {
   name: string;
   description?: string;
   installs: number;
-  technologies: string[];
   contentUpdatedAt?: number;
   createdAt: number;
   isDelisted: boolean;
@@ -69,21 +66,6 @@ export function SkillPageContent({ skill, content }: SkillPageContentProps) {
           <span>Added {timeAgo(skill.createdAt)}</span>
         )}
       </div>
-
-      {/* Technologies */}
-      {skill.technologies.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          {skill.technologies.map((techId) => (
-            <Badge
-              key={techId}
-              variant="secondary"
-              className="text-xs px-2 py-0.5"
-            >
-              {techNameMap.get(techId) ?? techId}
-            </Badge>
-          ))}
-        </div>
-      )}
 
       {/* Install warning */}
       {skill.hasContentFetchError && !skill.isDelisted && (

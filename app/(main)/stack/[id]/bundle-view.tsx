@@ -205,7 +205,6 @@ export function BundleView({
             <SkillCard
               key={`${skill.source}/${skill.skillId}`}
               skill={skill}
-              showTechnologies={false}
               onViewDetail={() => setActiveSkill(skill)}
             />
           ))}

@@ -6,7 +6,6 @@ import { convexQuery } from "@convex-dev/react-query";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import { api } from "@/convex/_generated/api";
-import { Badge } from "@/components/ui/cubby-ui/badge";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -18,7 +17,6 @@ import {
   TabsPanels,
   TabsContent,
 } from "@/components/ui/cubby-ui/tabs";
-import { techNameMap } from "@/lib/technologies";
 import { useBundleSelection } from "@/lib/bundle-selection-context";
 import { formatInstalls } from "@/lib/utils";
 
@@ -89,19 +87,6 @@ function CompareColumn({ source, skillId }: SkillRef) {
             {skill.source}
           </a>
         </p>
-        {skill.technologies.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {skill.technologies.map((techId) => (
-              <Badge
-                key={techId}
-                variant="secondary"
-                className="text-[10px] px-1.5 py-0.5"
-              >
-                {techNameMap.get(techId) ?? techId}
-              </Badge>
-            ))}
-          </div>
-        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border p-4">
@@ -133,7 +118,6 @@ function CompareColumn({ source, skillId }: SkillRef) {
               source: skill.source,
               skillId: skill.skillId,
               name: skill.name,
-              technologies: skill.technologies,
             })
           }
         >

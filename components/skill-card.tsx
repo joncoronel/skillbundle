@@ -7,14 +7,12 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  CardContent,
   CardFooter,
   CardAction,
 } from "@/components/ui/cubby-ui/card";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Label } from "@/components/ui/cubby-ui/label";
-import { techNameMap } from "@/lib/technologies";
 import { useBundleSelection } from "@/lib/bundle-selection-context";
 import { cn, formatInstalls, timeAgo } from "@/lib/utils";
 
@@ -56,7 +54,8 @@ export interface SkillData {
   skillId: string;
   description?: string;
   installs: number;
-  technologies: string[];
+  /** @deprecated Kept for backward-compat with bundle data; not rendered. */
+  technologies?: string[];
   updatedSinceAdded?: boolean;
   contentUpdatedAt?: number;
   createdAt?: number;
@@ -68,7 +67,6 @@ interface SkillCardProps {
   skill: SkillData;
   selectable?: boolean;
   onViewDetail?: () => void;
-  showTechnologies?: boolean;
   className?: string;
   variant?: "card" | "row";
 }
@@ -77,7 +75,6 @@ export function SkillCard({
   skill,
   selectable = false,
   onViewDetail,
-  showTechnologies = true,
   className,
   variant = "card",
 }: SkillCardProps) {
@@ -87,7 +84,6 @@ export function SkillCard({
     skillId,
     description,
     installs,
-    technologies,
     updatedSinceAdded,
     contentUpdatedAt,
     createdAt,
@@ -114,7 +110,7 @@ export function SkillCard({
             checked={selected}
             onCheckedChange={() => {
               if (selection)
-                selection.toggleSkill({ source, skillId, name, technologies });
+                selection.toggleSkill({ source, skillId, name });
             }}
             className="shrink-0"
           />
@@ -193,7 +189,6 @@ export function SkillCard({
                     source,
                     skillId,
                     name,
-                    technologies,
                   });
               }}
               className="shrink-0"
@@ -237,26 +232,6 @@ export function SkillCard({
           {description ?? source}
         </CardDescription>
       </CardHeader>
-      {showTechnologies && technologies.length > 0 && (
-        <CardContent className="pt-0">
-          <div className="flex flex-wrap gap-1">
-            {technologies.slice(0, 4).map((techId) => (
-              <Badge
-                key={techId}
-                variant="secondary"
-                className="text-[10px] px-1.5 py-0.5"
-              >
-                {techNameMap.get(techId) ?? techId}
-              </Badge>
-            ))}
-            {technologies.length > 4 && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
-                +{technologies.length - 4}
-              </Badge>
-            )}
-          </div>
-        </CardContent>
-      )}
       {cardTimestamp !== undefined && (
         <CardFooter className="mt-auto pt-0 justify-end">
           <span className="text-[11px] text-muted-foreground/60">

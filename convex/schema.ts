@@ -16,7 +16,6 @@ export default defineSchema({
     description: v.optional(v.string()),
     content: v.optional(v.string()),
     installs: v.number(),
-    technologies: v.array(v.string()),
     leaderboard: v.string(),
     skillMdUrl: v.optional(v.string()),
     contentFetchedAt: v.optional(v.number()),
@@ -30,6 +29,25 @@ export default defineSchema({
     lastSeenInApi: v.optional(v.number()),
     isDelisted: v.optional(v.boolean()),
     discoveryFailCount: v.optional(v.number()),
+    // Embedding fields for semantic search
+    embedding: v.optional(v.array(v.float64())),
+    embeddedAt: v.optional(v.number()),
+    embeddingVersion: v.optional(v.number()),
+    needsEmbedding: v.optional(v.boolean()),
+    // How the embedding input was constructed:
+    //   "full"    — name + description + content (the happy path)
+    //   "minimal" — name + description only (fallback because content tokenized
+    //               too densely to fit OpenAI's per-input limit even after
+    //               truncation)
+    // Lets us measure what fraction of skills are using degraded embeddings.
+    // If "minimal" grows past a few %, that's a signal to improve truncation
+    // strategy (chunking, tiktoken, smarter content extraction, etc).
+    embeddingMode: v.optional(v.string()),
+    // Set when the worker gives up on a skill (e.g. content too dense to fit
+    // OpenAI's per-input token limit even after truncation). Non-destructive:
+    // a future migration can re-flag these by reason and try a smarter
+    // truncation/chunking strategy.
+    embeddingSkipReason: v.optional(v.string()),
   })
     .index("by_leaderboard", ["leaderboard"])
     .index("by_source_skillId", ["source", "skillId"])
@@ -38,7 +56,16 @@ export default defineSchema({
     .index("by_isDelisted", ["isDelisted"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
     .index("by_leaderboard_active", ["leaderboard", "isDelisted"])
-    .searchIndex("search_name", { searchField: "name" }),
+    .index("by_needsEmbedding", ["needsEmbedding"])
+    .searchIndex("search_name", {
+      searchField: "name",
+      filterFields: ["isDelisted"],
+    })
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["isDelisted"],
+    }),
 
   skillSummaries: defineTable({
     source: v.string(),
@@ -46,7 +73,6 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     installs: v.number(),
-    technologies: v.array(v.string()),
     syncHash: v.optional(v.string()),
     lastSeenInApi: v.optional(v.number()),
     isDelisted: v.optional(v.boolean()),
@@ -59,22 +85,26 @@ export default defineSchema({
     hasContentFetchError: v.optional(v.boolean()),
     hasSkillMdUrl: v.optional(v.boolean()),
     discoveryFailCount: v.optional(v.number()),
+    // Embedding state mirrored from the skills table so coverage stats and
+    // unembeddable-skill listings can be computed from this small summary
+    // table (~200 bytes/row) instead of scanning full skill docs (~25 KB/row).
+    // The actual embedding vector itself stays only on the skills table.
+    hasEmbedding: v.optional(v.boolean()),
+    embeddingMode: v.optional(v.string()),
+    embeddingSkipReason: v.optional(v.string()),
+    needsEmbedding: v.optional(v.boolean()),
   })
     .index("by_source_skillId", ["source", "skillId"])
     .index("by_isDelisted", ["isDelisted"])
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
-    .index("by_hasSkillMdUrl", ["hasSkillMdUrl"]),
-
-  skillTechnologies: defineTable({
-    skillId: v.id("skills"),
-    technology: v.string(),
-    installs: v.number(),
-    weight: v.optional(v.number()),
-  })
-    .index("by_technology", ["technology", "installs"])
-    .index("by_skillId", ["skillId"]),
+    .index("by_hasSkillMdUrl", ["hasSkillMdUrl"])
+    // Selective indexes for the dev dashboard's embedding monitoring panel.
+    // Both columns are mostly undefined in steady state, so equality queries
+    // through these indexes touch only the few rows that match.
+    .index("by_embeddingSkipReason", ["embeddingSkipReason"])
+    .index("by_embeddingMode", ["embeddingMode"]),
 
   githubTreeCache: defineTable({
     repo: v.string(),
@@ -83,6 +113,23 @@ export default defineSchema({
     dependencyFilePaths: v.array(v.string()),
     cachedAt: v.number(),
   }).index("by_repo", ["repo"]),
+
+  // Cache of GitHub repo fingerprints + their embeddings, keyed by owner/repo
+  // (with optional commit SHA suffix). Lets repeat analyses skip re-fetching
+  // repo metadata and re-embedding the fingerprint.
+  repoFingerprintCache: defineTable({
+    cacheKey: v.string(),
+    fingerprint: v.object({
+      packages: v.array(v.string()),
+      configFiles: v.array(v.string()),
+      languages: v.array(v.string()),
+      description: v.optional(v.string()),
+      topics: v.array(v.string()),
+      readmeExcerpt: v.optional(v.string()),
+    }),
+    embedding: v.array(v.float64()),
+    cachedAt: v.number(),
+  }).index("by_cacheKey", ["cacheKey"]),
 
   bundles: defineTable({
     userId: v.id("users"),

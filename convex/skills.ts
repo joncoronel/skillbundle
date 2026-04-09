@@ -15,122 +15,12 @@ import {
   NOT_MODIFIED,
 } from "./lib/github";
 import {
-  buildTechKeywords,
-  buildContentKeywords,
-} from "./lib/technologyRegistry";
+  embedTexts,
+  EMBEDDING_VERSION,
+  truncateForEmbedding,
+  EmbeddingInputTooLongError,
+} from "./lib/embeddings";
 import { MAX_DISCOVERY_FAILURES } from "./devStats";
-
-// ---------------------------------------------------------------------------
-// Technology tagging
-// ---------------------------------------------------------------------------
-
-// Source org → technology, ONLY for orgs that exclusively produce skills for one tech
-const SOURCE_TECH_MAP: Record<string, string> = {
-  supabase: "supabase",
-  "convex-dev": "convex",
-  prisma: "prisma",
-  firebase: "firebase",
-};
-
-// Keywords that must ALWAYS use word-boundary regex regardless of length,
-// because they commonly appear as substrings in unrelated words.
-const STRICT_BOUNDARY_KEYWORDS = new Set([
-  "test",
-  "ai",
-  "go",
-  "ci",
-  "cd",
-  "git",
-  "css",
-  "rest",
-  "node",
-  "java",
-  "ruby",
-  "php",
-  "dart",
-  "swift",
-  "rust",
-  "less",
-]);
-
-// Tier 1: Matches against name/skillId (derived from registry)
-// NOTE: `source` is checked separately via SOURCE_TECH_MAP — not here
-const TECH_KEYWORDS: Record<string, string[]> = buildTechKeywords();
-
-// Tier 2: Matches against content/description (derived from registry)
-const CONTENT_KEYWORDS: Record<string, string[]> = buildContentKeywords();
-
-/** Word-boundary-aware match for short or ambiguous keywords to avoid false positives. */
-function matchesKeyword(text: string, keyword: string): boolean {
-  if (keyword.length <= 3 || STRICT_BOUNDARY_KEYWORDS.has(keyword)) {
-    return new RegExp(`\\b${keyword}\\b`, "i").test(text);
-  }
-  return text.includes(keyword);
-}
-
-// ---------------------------------------------------------------------------
-// Weighted tagging
-// ---------------------------------------------------------------------------
-
-interface TagResult {
-  tech: string;
-  weight: number;
-}
-
-function tagSkill(
-  source: string,
-  skillId: string,
-  name: string,
-  description?: string,
-  content?: string,
-): TagResult[] {
-  const tagWeights = new Map<string, number>();
-
-  function setMax(tech: string, weight: number) {
-    tagWeights.set(tech, Math.max(tagWeights.get(tech) ?? 0, weight));
-  }
-
-  // Match against skillId + name only (NOT source — avoids false positives
-  // like every vercel-labs skill being tagged as nextjs)
-  const identityText = `${skillId} ${name}`.toLowerCase();
-  const contentText = `${description ?? ""} ${content ?? ""}`.toLowerCase();
-
-  // Source org check — only for orgs that exclusively produce one-tech skills
-  const orgName = source.split("/")[0];
-  const sourceTech = SOURCE_TECH_MAP[orgName];
-  if (sourceTech) {
-    setMax(sourceTech, 0.8);
-  }
-
-  for (const [tech, keywords] of Object.entries(TECH_KEYWORDS)) {
-    // Tier 1: skillId/name — single keyword match → weight 0.9
-    if (keywords.some((kw) => matchesKeyword(identityText, kw))) {
-      setMax(tech, 0.9);
-      continue;
-    }
-    // Tier 2: content/description — require specific phrases → weight 0.3-0.7
-    const contentKws = CONTENT_KEYWORDS[tech];
-    if (contentKws && contentText) {
-      const matchCount = contentKws.filter((kw) =>
-        contentText.includes(kw),
-      ).length;
-      if (matchCount >= 2) {
-        const weight = Math.min(0.3 + (matchCount - 1) * 0.1, 0.7);
-        setMax(tech, weight);
-      }
-    }
-  }
-
-  return Array.from(tagWeights.entries()).map(([tech, weight]) => ({
-    tech,
-    weight,
-  }));
-}
-
-/** Extract flat technology ID array from weighted tag results. */
-function tagResultsToIds(results: TagResult[]): string[] {
-  return results.map((r) => r.tech);
-}
 
 // ---------------------------------------------------------------------------
 // Sync actions
@@ -207,63 +97,6 @@ export const syncSkills = internalAction({
   },
 });
 
-/** Sync the skillTechnologies junction table for a skill.
- *  Skips the delete+insert cycle when tags and installs are unchanged
- *  to avoid unnecessary database bandwidth consumption.
- */
-async function syncSkillTechnologies(
-  ctx: MutationCtx,
-  skillDocId: Id<"skills">,
-  tagResults: TagResult[],
-  installs: number,
-  forceRewrite = false,
-) {
-  const existingEntries = await ctx.db
-    .query("skillTechnologies")
-    .withIndex("by_skillId", (q) => q.eq("skillId", skillDocId))
-    .collect();
-
-  if (!forceRewrite) {
-    const existingTechs = existingEntries.map((e) => e.technology).sort();
-    const newTechs = tagResults.map((r) => r.tech).sort();
-    const techsMatch =
-      existingTechs.length === newTechs.length &&
-      existingTechs.every((t, i) => t === newTechs[i]);
-    const weightsMatch =
-      existingEntries.length > 0 &&
-      existingEntries.every((e) => {
-        const tr = tagResults.find((r) => r.tech === e.technology);
-        return tr !== undefined && e.weight === tr.weight;
-      });
-
-    if (techsMatch && weightsMatch) {
-      // Techs and weights unchanged — patch installs in-place if needed
-      const installsMatch =
-        existingEntries.length === 0 ||
-        existingEntries[0].installs === installs;
-      if (installsMatch) return; // Nothing changed at all
-
-      for (const entry of existingEntries) {
-        await ctx.db.patch(entry._id, { installs });
-      }
-      return;
-    }
-  }
-
-  // Full rewrite: techs or weights changed
-  for (const entry of existingEntries) {
-    await ctx.db.delete(entry._id);
-  }
-  for (const { tech, weight } of tagResults) {
-    await ctx.db.insert("skillTechnologies", {
-      skillId: skillDocId,
-      technology: tech,
-      installs,
-      weight,
-    });
-  }
-}
-
 async function upsertSkillSummary(
   ctx: MutationCtx,
   fields: {
@@ -272,7 +105,6 @@ async function upsertSkillSummary(
     name: string;
     description?: string;
     installs: number;
-    technologies: string[];
     syncHash?: string;
     lastSeenInApi?: number;
     isDelisted?: boolean;
@@ -284,6 +116,10 @@ async function upsertSkillSummary(
     hasContentFetchError?: boolean;
     hasSkillMdUrl?: boolean;
     discoveryFailCount?: number;
+    hasEmbedding?: boolean;
+    embeddingMode?: string;
+    embeddingSkipReason?: string;
+    needsEmbedding?: boolean;
   },
 ) {
   const existing = await ctx.db
@@ -298,7 +134,6 @@ async function upsertSkillSummary(
       name: fields.name,
       description: fields.description,
       installs: fields.installs,
-      technologies: fields.technologies,
       ...(fields.syncHash !== undefined && { syncHash: fields.syncHash }),
       ...(fields.lastSeenInApi !== undefined && {
         lastSeenInApi: fields.lastSeenInApi,
@@ -326,6 +161,18 @@ async function upsertSkillSummary(
       ...(fields.hasSkillMdUrl !== undefined && {
         hasSkillMdUrl: fields.hasSkillMdUrl,
       }),
+      ...(fields.hasEmbedding !== undefined && {
+        hasEmbedding: fields.hasEmbedding,
+      }),
+      ...(fields.embeddingMode !== undefined && {
+        embeddingMode: fields.embeddingMode,
+      }),
+      ...(fields.embeddingSkipReason !== undefined && {
+        embeddingSkipReason: fields.embeddingSkipReason,
+      }),
+      ...(fields.needsEmbedding !== undefined && {
+        needsEmbedding: fields.needsEmbedding,
+      }),
     });
   } else {
     await ctx.db.insert("skillSummaries", {
@@ -334,9 +181,11 @@ async function upsertSkillSummary(
       name: fields.name,
       description: fields.description,
       installs: fields.installs,
-      technologies: fields.technologies,
       syncHash: fields.syncHash,
       lastSeenInApi: fields.lastSeenInApi,
+      // Default to false on insert so the by_isDelisted index is selective
+      // and indexed equality filters (`q.eq("isDelisted", false)`) match.
+      isDelisted: fields.isDelisted ?? false,
       skillDocId: fields.skillDocId,
       contentFetchedAt: fields.contentFetchedAt,
       skillMdUrl: fields.skillMdUrl,
@@ -345,6 +194,10 @@ async function upsertSkillSummary(
       hasContentFetchError: fields.hasContentFetchError,
       hasSkillMdUrl: fields.hasSkillMdUrl,
       discoveryFailCount: fields.discoveryFailCount,
+      hasEmbedding: fields.hasEmbedding,
+      embeddingMode: fields.embeddingMode,
+      embeddingSkipReason: fields.embeddingSkipReason,
+      needsEmbedding: fields.needsEmbedding,
     });
   }
 }
@@ -395,25 +248,9 @@ export const upsertSkillsBatch = internalMutation({
             .unique();
           if (existing) {
             await ctx.db.patch(existing._id, { isDelisted: false });
-            const relistTagResults = tagSkill(
-              skill.source,
-              skill.skillId,
-              skill.name,
-              existing.description,
-              existing.content,
-            );
-            const relistTechs = tagResultsToIds(relistTagResults);
-            await syncSkillTechnologies(
-              ctx,
-              existing._id,
-              relistTagResults,
-              skill.installs,
-              true,
-            );
             await ctx.db.patch(summary._id, {
               lastSeenInApi: now,
               isDelisted: false,
-              technologies: relistTechs,
               installs: skill.installs,
             });
           }
@@ -427,18 +264,6 @@ export const upsertSkillsBatch = internalMutation({
               // Reset discovery counter — active installs mean repo is worth re-checking
               discoveryFailCount: 0,
             });
-            // Patch junction table installs in-place (no delete+reinsert)
-            const junctionEntries = await ctx.db
-              .query("skillTechnologies")
-              .withIndex("by_skillId", (q) =>
-                q.eq("skillId", summary.skillDocId!),
-              )
-              .collect();
-            for (const entry of junctionEntries) {
-              if (entry.installs !== skill.installs) {
-                await ctx.db.patch(entry._id, { installs: skill.installs });
-              }
-            }
           }
           await ctx.db.patch(summary._id, {
             lastSeenInApi: now,
@@ -459,20 +284,7 @@ export const upsertSkillsBatch = internalMutation({
         )
         .unique();
 
-      const tagResults = tagSkill(
-        skill.source,
-        skill.skillId,
-        skill.name,
-        existing?.description,
-        existing?.content,
-      );
-      const technologies = tagResultsToIds(tagResults);
-
       let skillDocId;
-      const tagsChanged = existing
-        ? JSON.stringify(existing.technologies.slice().sort()) !==
-          JSON.stringify(technologies.slice().sort())
-        : false;
 
       if (existing) {
         skillDocId = existing._id;
@@ -480,48 +292,31 @@ export const upsertSkillsBatch = internalMutation({
         await ctx.db.patch(existing._id, {
           installs: skill.installs,
           leaderboard,
-          ...(tagsChanged && { technologies }),
           lastSynced: now,
           syncHash: newHash,
           lastSeenInApi: now,
           ...(existing.isDelisted && { isDelisted: false }),
         });
-
-        // Sync junction table — let skip-if-unchanged logic work
-        // (only force rewrite for relist scenarios above)
-        if (
-          tagsChanged ||
-          existing.installs !== skill.installs ||
-          existing.isDelisted
-        ) {
-          await syncSkillTechnologies(
-            ctx,
-            skillDocId,
-            tagResults,
-            skill.installs,
-          );
-        }
       } else {
         skillDocId = await ctx.db.insert("skills", {
           source: skill.source,
           skillId: skill.skillId,
           name: skill.name,
           installs: skill.installs,
-          technologies,
           leaderboard,
           lastSynced: now,
           syncHash: newHash,
           needsDiscovery: true,
           needsContentFetch: false,
           lastSeenInApi: now,
+          // Set explicitly so indexed filters like `q.eq("isDelisted", false)`
+          // match new rows. Convex's indexed equality treats `undefined` and
+          // `false` as distinct values, so leaving this unset would cause
+          // the row to be invisible to vector/search index filters.
+          isDelisted: false,
+          // New skills need an embedding once their content lands
+          needsEmbedding: true,
         });
-
-        await syncSkillTechnologies(
-          ctx,
-          skillDocId,
-          tagResults,
-          skill.installs,
-        );
       }
 
       // Update summary with new hash and data (include skillDocId + denormalized fields)
@@ -531,7 +326,6 @@ export const upsertSkillsBatch = internalMutation({
         name: skill.name,
         description: existing?.description,
         installs: skill.installs,
-        technologies,
         syncHash: newHash,
         lastSeenInApi: now,
         skillDocId,
@@ -544,6 +338,9 @@ export const upsertSkillsBatch = internalMutation({
         ...(!existing && {
           needsDiscovery: true,
           needsContentFetch: false,
+          // Mirror needsEmbedding from the new skill row so coverage stats
+          // computed from summaries stay accurate.
+          needsEmbedding: true,
         }),
         ...(existing?.isDelisted && { isDelisted: false }),
       });
@@ -1154,6 +951,13 @@ export const backfillFetchContent = internalAction({
         internal.devStats.recalculateStats,
         {},
       );
+      // Embed any skills whose content just changed (or new skills with fresh
+      // content). Cheap when nothing changed — drains the queue lazily.
+      await ctx.scheduler.runAfter(
+        statsDelay + 5_000,
+        internal.skills.embedSkillsBatch,
+        {},
+      );
     }
   },
 });
@@ -1178,28 +982,14 @@ export const updateDescription = internalMutation({
       description ?? (isBrokenDesc ? "" : undefined);
 
     const newDescription = effectiveDescription ?? skill.description;
-    const newContent = content ?? skill.content;
 
-    // Detect if content actually changed
+    // Detect if content actually changed — used to flag the skill for
+    // re-embedding only when there's something new to embed.
     const descriptionChanged =
       effectiveDescription !== undefined &&
       effectiveDescription !== skill.description;
     const contentChanged = content !== undefined && content !== skill.content;
     const hasActualChange = descriptionChanged || contentChanged;
-
-    // Re-tag with all available text (name + description + content)
-    const tagResults = tagSkill(
-      skill.source,
-      skill.skillId,
-      skill.name,
-      newDescription,
-      newContent,
-    );
-    const technologies = tagResultsToIds(tagResults);
-
-    const tagsChanged =
-      JSON.stringify(skill.technologies.slice().sort()) !==
-      JSON.stringify(technologies.slice().sort());
 
     await ctx.db.patch(skillId, {
       ...(effectiveDescription !== undefined && {
@@ -1207,17 +997,13 @@ export const updateDescription = internalMutation({
       }),
       ...(content !== undefined && { content }),
       skillMdUrl,
-      ...(tagsChanged && { technologies }),
       contentFetchedAt: now,
       ...(hasActualChange && { contentUpdatedAt: now }),
+      ...(hasActualChange && { needsEmbedding: true }),
       needsContentFetch: false,
       contentFetchFailCount: 0,
       hasContentFetchError: false,
     });
-
-    if (tagsChanged) {
-      await syncSkillTechnologies(ctx, skillId, tagResults, skill.installs);
-    }
 
     // Always sync summary with contentFetchedAt and needsContentFetch
     await upsertSkillSummary(ctx, {
@@ -1226,7 +1012,6 @@ export const updateDescription = internalMutation({
       name: skill.name,
       description: newDescription,
       installs: skill.installs,
-      technologies,
       skillDocId: skillId,
       contentFetchedAt: now,
       needsContentFetch: false,
@@ -1369,7 +1154,7 @@ export const delistSkillsBatch = internalMutation({
         await ctx.db.delete(summaryId);
       }
 
-      // Mark skill as delisted + clean up junction entries
+      // Mark skill as delisted
       const skill = await ctx.db
         .query("skills")
         .withIndex("by_source_skillId", (q) =>
@@ -1378,14 +1163,6 @@ export const delistSkillsBatch = internalMutation({
         .unique();
       if (skill && !skill.isDelisted) {
         await ctx.db.patch(skill._id, { isDelisted: true });
-
-        const techEntries = await ctx.db
-          .query("skillTechnologies")
-          .withIndex("by_skillId", (q) => q.eq("skillId", skill._id))
-          .collect();
-        for (const entry of techEntries) {
-          await ctx.db.delete(entry._id);
-        }
       }
     }
   },
@@ -1423,91 +1200,753 @@ export const markDelistedSkills = internalAction({
 });
 
 // ---------------------------------------------------------------------------
-// One-time re-tag backfill
+// Embeddings — semantic search index for skills
 // ---------------------------------------------------------------------------
 
-export const retagBatch = internalMutation({
-  args: {
-    skillIds: v.array(v.id("skills")),
-  },
-  handler: async (ctx, { skillIds }) => {
-    let updated = 0;
-    for (const id of skillIds) {
-      const skill = await ctx.db.get(id);
-      if (!skill) continue;
+/** Build the embedding input string from a skill's name + description + content. */
+function buildEmbeddingInput(
+  name: string,
+  description: string | undefined,
+  content: string | undefined,
+): string {
+  const parts = [name];
+  if (description) parts.push(description);
+  if (content) parts.push(content);
+  return truncateForEmbedding(parts.join("\n\n"));
+}
 
-      const tagResults = tagSkill(
-        skill.source,
-        skill.skillId,
-        skill.name,
-        skill.description,
-        skill.content,
-      );
-      const newTags = tagResultsToIds(tagResults);
-
-      const oldTags = skill.technologies.slice().sort();
-      const sortedNew = newTags.slice().sort();
-      if (JSON.stringify(oldTags) !== JSON.stringify(sortedNew)) {
-        await ctx.db.patch(id, { technologies: newTags });
-        await syncSkillTechnologies(ctx, id, tagResults, skill.installs);
-        updated++;
-      }
-    }
-    return updated;
-  },
-});
-
-export const retagAllSkills = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    const BATCH_SIZE = 100;
-    let cursor: string | undefined;
-    let totalUpdated = 0;
-
-    for (;;) {
-      const result: {
-        ids: string[];
-        nextCursor: string | undefined;
-        isDone: boolean;
-      } = await ctx.runQuery(internal.skills.listSkillIdsForRetag, {
-        cursor,
-        limit: BATCH_SIZE,
-      });
-
-      if (result.ids.length > 0) {
-        const updated = await ctx.runMutation(internal.skills.retagBatch, {
-          skillIds: result.ids as Id<"skills">[],
-        });
-        totalUpdated += updated as number;
-        console.log(
-          `Retagged batch: ${updated} of ${result.ids.length} skills updated`,
-        );
-      }
-
-      if (result.isDone) break;
-      cursor = result.nextCursor;
-    }
-
-    console.log(`Retag complete: ${totalUpdated} skills updated`);
-  },
-});
-
-export const listSkillIdsForRetag = internalQuery({
-  args: {
-    cursor: v.optional(v.string()),
-    limit: v.number(),
-  },
+export const listSkillsNeedingEmbedding = internalQuery({
+  args: { cursor: v.optional(v.string()), limit: v.number() },
   handler: async (ctx, { cursor, limit }) => {
-    const query = ctx.db.query("skills");
-    const results = await query
-      .order("asc")
+    const result = await ctx.db
+      .query("skills")
+      .withIndex("by_needsEmbedding", (q) => q.eq("needsEmbedding", true))
       .paginate({ numItems: limit, cursor: cursor ?? null });
 
     return {
-      ids: results.page.map((s) => s._id),
-      nextCursor: results.continueCursor,
-      isDone: results.isDone,
+      skills: result.page.map((s) => ({
+        id: s._id,
+        name: s.name,
+        description: s.description,
+        content: s.content,
+      })),
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
     };
+  },
+});
+
+export const writeEmbeddingsBatch = internalMutation({
+  args: {
+    entries: v.array(
+      v.object({
+        skillId: v.id("skills"),
+        embedding: v.array(v.float64()),
+        mode: v.union(v.literal("full"), v.literal("minimal")),
+      }),
+    ),
+  },
+  handler: async (ctx, { entries }) => {
+    const now = Date.now();
+    for (const { skillId, embedding, mode } of entries) {
+      const skill = await ctx.db.get(skillId);
+      if (!skill) continue;
+      await ctx.db.patch(skillId, {
+        embedding,
+        embeddedAt: now,
+        embeddingVersion: EMBEDDING_VERSION,
+        embeddingMode: mode,
+        needsEmbedding: false,
+        // Clear any stale skip reason if a previously-skipped skill is being
+        // successfully re-embedded (e.g. after a content update).
+        embeddingSkipReason: undefined,
+      });
+
+      // Mirror embedding state to the summary row so coverage stats and
+      // listings can be computed cheaply without scanning full skill docs.
+      const summary = await ctx.db
+        .query("skillSummaries")
+        .withIndex("by_source_skillId", (q) =>
+          q.eq("source", skill.source).eq("skillId", skill.skillId),
+        )
+        .unique();
+      if (summary) {
+        await ctx.db.patch(summary._id, {
+          hasEmbedding: true,
+          embeddingMode: mode,
+          needsEmbedding: false,
+          embeddingSkipReason: undefined,
+        });
+      }
+    }
+  },
+});
+
+/**
+ * Mark a single skill as unembeddable. Clears `needsEmbedding` so the worker
+ * won't keep retrying it, and records *why* in `embeddingSkipReason` so a
+ * future migration (smarter truncation, tiktoken, chunking) can find these
+ * skills and try again instead of leaving them silently empty.
+ *
+ * This is non-destructive — call `clearEmbeddingSkipReason` (or just patch
+ * `needsEmbedding: true`) to put a skill back in the queue.
+ */
+export const markSkillUnembeddable = internalMutation({
+  args: { skillId: v.id("skills"), reason: v.string() },
+  handler: async (ctx, { skillId, reason }) => {
+    const skill = await ctx.db.get(skillId);
+    if (!skill) return;
+    await ctx.db.patch(skillId, {
+      needsEmbedding: false,
+      embeddingSkipReason: reason,
+    });
+
+    // Mirror to the summary row so listUnembeddable / coverage stats can
+    // find this skill cheaply.
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", skill.source).eq("skillId", skill.skillId),
+      )
+      .unique();
+    if (summary) {
+      await ctx.db.patch(summary._id, {
+        needsEmbedding: false,
+        embeddingSkipReason: reason,
+      });
+    }
+  },
+});
+
+/**
+ * One-shot backfill: set `isDelisted = false` on every skill (and summary)
+ * where it's currently `undefined`. Convex's indexed equality filters treat
+ * `undefined` and `false` as distinct values, so without this backfill,
+ * indexed queries like `q.eq("isDelisted", false)` (used in vector search
+ * and the search index) would silently exclude every active skill that was
+ * inserted before this fix.
+ *
+ * Run via:
+ *   npx convex run skills:backfillIsDelistedFalse
+ *
+ * Idempotent — safe to re-run. Only patches rows where the field is missing.
+ */
+export const backfillIsDelistedFalseBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skills")
+      .paginate({ numItems: 100, cursor: cursor ?? null });
+    let patched = 0;
+    for (const s of result.page) {
+      if (s.isDelisted === undefined) {
+        await ctx.db.patch(s._id, { isDelisted: false });
+        patched++;
+      }
+    }
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      patched,
+    };
+  },
+});
+
+export const backfillIsDelistedFalseSummariesBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    // Summaries are small (~200 bytes each) so we can safely use a larger
+    // page size — but keep it under the 16 MB read budget with headroom.
+    const result = await ctx.db
+      .query("skillSummaries")
+      .paginate({ numItems: 500, cursor: cursor ?? null });
+    let patched = 0;
+    for (const s of result.page) {
+      if (s.isDelisted === undefined) {
+        await ctx.db.patch(s._id, { isDelisted: false });
+        patched++;
+      }
+    }
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      patched,
+    };
+  },
+});
+
+export const backfillIsDelistedFalse = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(
+          internal.skills.backfillIsDelistedFalseBatch,
+          { cursor },
+        );
+      total += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Set isDelisted=false on ${total} skill rows`);
+
+    // Same for summaries
+    cursor = undefined;
+    isDone = false;
+    let summaryTotal = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(
+          internal.skills.backfillIsDelistedFalseSummariesBatch,
+          { cursor },
+        );
+      summaryTotal += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Set isDelisted=false on ${summaryTotal} skillSummary rows`);
+  },
+});
+
+/**
+ * One-shot backfill: copy embedding state (hasEmbedding, embeddingMode,
+ * embeddingSkipReason, needsEmbedding) from the skills table to the
+ * corresponding skillSummaries rows. Run this once after adding the embedding
+ * fields to the skillSummaries schema, so existing rows are populated and
+ * coverage queries can be served from summaries instead of full skill docs.
+ *
+ * Run via:
+ *   npx convex run skills:backfillSummaryEmbeddingState
+ *
+ * Idempotent — safe to re-run.
+ */
+export const backfillSummaryEmbeddingStateBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    // 100 docs × ~25 KB ≈ 2.5 MB per page — under the 16 MB read budget.
+    const result = await ctx.db
+      .query("skills")
+      .paginate({ numItems: 100, cursor: cursor ?? null });
+
+    let patched = 0;
+    for (const skill of result.page) {
+      const summary = await ctx.db
+        .query("skillSummaries")
+        .withIndex("by_source_skillId", (q) =>
+          q.eq("source", skill.source).eq("skillId", skill.skillId),
+        )
+        .unique();
+      if (!summary) continue;
+
+      const update: {
+        hasEmbedding?: boolean;
+        embeddingMode?: string;
+        embeddingSkipReason?: string;
+        needsEmbedding?: boolean;
+      } = {};
+
+      const expectedHasEmbedding = !!skill.embedding;
+      if (summary.hasEmbedding !== expectedHasEmbedding) {
+        update.hasEmbedding = expectedHasEmbedding;
+      }
+      if (summary.embeddingMode !== skill.embeddingMode && skill.embeddingMode) {
+        update.embeddingMode = skill.embeddingMode;
+      }
+      if (
+        summary.embeddingSkipReason !== skill.embeddingSkipReason &&
+        skill.embeddingSkipReason
+      ) {
+        update.embeddingSkipReason = skill.embeddingSkipReason;
+      }
+      if (summary.needsEmbedding !== skill.needsEmbedding) {
+        update.needsEmbedding = skill.needsEmbedding;
+      }
+
+      if (Object.keys(update).length > 0) {
+        await ctx.db.patch(summary._id, update);
+        patched++;
+      }
+    }
+
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      patched,
+    };
+  },
+});
+
+export const backfillSummaryEmbeddingState = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(
+          internal.skills.backfillSummaryEmbeddingStateBatch,
+          { cursor },
+        );
+      total += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Mirrored embedding state to ${total} skillSummary rows`);
+  },
+});
+
+/**
+ * One-shot backfill: set `embeddingMode = "full"` on every skill that has an
+ * embedding but no mode set yet. Use this after deploying the embeddingMode
+ * field to label legacy embeddings, IF you can verify the historical embedding
+ * runs only ever used the happy path (i.e. the EmbeddingInputTooLongError
+ * fallback never fired and no skills were marked unembeddable).
+ *
+ * Verify safety first by checking the historical run logs for any:
+ *   - "Marking skill ... as unembeddable"
+ *   - "falling back to per-skill embedding"
+ * If either appears, DO NOT run this — some skills are actually "minimal"
+ * mode and would be mislabeled. Instead, re-embed them via seedEmbeddingQueue.
+ *
+ * Run via:
+ *   npx convex run skills:backfillEmbeddingModeFull
+ */
+export const backfillEmbeddingModeFullBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    // Skill docs are ~25 KB each (content + 12 KB embedding vector). 100 docs
+    // ≈ 2.5 MB per page — well under the 16 MB per-function read limit, with
+    // headroom for the patch writes.
+    const result = await ctx.db
+      .query("skills")
+      .paginate({ numItems: 100, cursor: cursor ?? null });
+    let patched = 0;
+    for (const s of result.page) {
+      if (s.embedding && !s.embeddingMode) {
+        await ctx.db.patch(s._id, { embeddingMode: "full" });
+        patched++;
+      }
+    }
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      patched,
+    };
+  },
+});
+
+export const backfillEmbeddingModeFull = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(
+          internal.skills.backfillEmbeddingModeFullBatch,
+          { cursor },
+        );
+      total += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Labeled ${total} legacy embeddings as embeddingMode: "full"`);
+  },
+});
+
+/**
+ * List skills the embedding worker gave up on, with enough metadata to
+ * decide whether to investigate or retry. Run via:
+ *   npx convex run skills:listUnembeddable
+ * Returns an empty array if nothing was skipped (the happy path).
+ *
+ * Reads from skillSummaries (~200 bytes/row) instead of skills (~25 KB/row)
+ * for cheap pipeline visibility.
+ */
+export const listUnembeddable = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const summaries = await ctx.db
+      .query("skillSummaries")
+      .filter((q) => q.neq(q.field("embeddingSkipReason"), undefined))
+      .collect();
+    return {
+      count: summaries.length,
+      skills: summaries.map((s) => ({
+        id: s.skillDocId,
+        source: s.source,
+        skillId: s.skillId,
+        name: s.name,
+        reason: s.embeddingSkipReason,
+      })),
+    };
+  },
+});
+
+/**
+ * Coverage report for the embedding pipeline. Tells you what fraction of
+ * skills are embedded, how they were embedded (full vs minimal fallback),
+ * and how many were skipped. Use this to decide whether truncation needs
+ * improvement: if `minimal` is more than a few % of total, the per-skill
+ * fallback is firing too often and a smarter strategy (chunking, tiktoken)
+ * would pay off.
+ *
+ * Run via: npx convex run skills:embeddingCoverageStats
+ *
+ * Reads from skillSummaries (~200 bytes/row, ~3 MB total for 16k skills)
+ * instead of skills (~25 KB/row, ~400 MB total). Embedding state is
+ * mirrored to summaries by writeEmbeddingsBatch and markSkillUnembeddable
+ * — if you ever bypass those, run backfillSummaryEmbeddingState to resync.
+ */
+interface CoverageStats {
+  total: number;
+  delisted: number;
+  eligible: number;
+  withEmbedding: number;
+  modeFull: number;
+  modeMinimal: number;
+  modeUnknown: number;
+  skipped: number;
+  pending: number;
+  minimalPercentage: string;
+}
+
+interface CoverageBatchResult {
+  counts: {
+    total: number;
+    delisted: number;
+    withEmbedding: number;
+    modeFull: number;
+    modeMinimal: number;
+    modeUnknown: number;
+    skipped: number;
+    pending: number;
+  };
+  nextCursor: string;
+  isDone: boolean;
+}
+
+export const embeddingCoverageStatsBatch = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    // Summary docs are ~200 bytes each, so 1000 per page ≈ 200 KB — well
+    // under the 16 MB read budget.
+    const result = await ctx.db
+      .query("skillSummaries")
+      .paginate({ numItems: 1000, cursor: cursor ?? null });
+
+    const counts = {
+      total: 0,
+      delisted: 0,
+      withEmbedding: 0,
+      modeFull: 0,
+      modeMinimal: 0,
+      modeUnknown: 0,
+      skipped: 0,
+      pending: 0,
+    };
+
+    for (const summary of result.page) {
+      counts.total++;
+      if (summary.isDelisted) {
+        counts.delisted++;
+        continue;
+      }
+      if (summary.hasEmbedding) {
+        counts.withEmbedding++;
+        if (summary.embeddingMode === "full") counts.modeFull++;
+        else if (summary.embeddingMode === "minimal") counts.modeMinimal++;
+        else counts.modeUnknown++;
+      } else if (summary.embeddingSkipReason) {
+        counts.skipped++;
+      } else if (summary.needsEmbedding) {
+        counts.pending++;
+      }
+    }
+
+    return {
+      counts,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const embeddingCoverageStats = internalAction({
+  args: {},
+  handler: async (ctx): Promise<CoverageStats> => {
+    let cursor: string | undefined;
+    let isDone = false;
+    const totals = {
+      total: 0,
+      delisted: 0,
+      withEmbedding: 0,
+      modeFull: 0,
+      modeMinimal: 0,
+      modeUnknown: 0,
+      skipped: 0,
+      pending: 0,
+    };
+
+    while (!isDone) {
+      const result: CoverageBatchResult = await ctx.runQuery(
+        internal.skills.embeddingCoverageStatsBatch,
+        { cursor },
+      );
+      totals.total += result.counts.total;
+      totals.delisted += result.counts.delisted;
+      totals.withEmbedding += result.counts.withEmbedding;
+      totals.modeFull += result.counts.modeFull;
+      totals.modeMinimal += result.counts.modeMinimal;
+      totals.modeUnknown += result.counts.modeUnknown;
+      totals.skipped += result.counts.skipped;
+      totals.pending += result.counts.pending;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+
+    const eligible = totals.total - totals.delisted;
+    const minimalPct =
+      totals.withEmbedding > 0
+        ? ((totals.modeMinimal / totals.withEmbedding) * 100).toFixed(2)
+        : "0.00";
+
+    return {
+      ...totals,
+      eligible,
+      minimalPercentage: `${minimalPct}%`,
+    };
+  },
+});
+
+// Hardcoded constants — NOT taken from args. The chain self-schedules with
+// `ctx.scheduler.runAfter`, which captures arg values at schedule time. If
+// these were args, in-flight scheduled chains from earlier deploys would keep
+// using their old (potentially huge) batch sizes forever. Reading from a
+// constant means new chains and old chains both pick up the current value
+// the moment the new code is deployed.
+//
+// Sized conservatively to stay under OpenAI's 1M tokens-per-minute limit for
+// text-embedding-3-small. SKILL.md files can tokenize as densely as ~1.5
+// chars/token, so batch=10 × ~5k tokens = ~50k tokens/request. With a 5s
+// chain delay, peak is ~600k TPM — comfortably under the 1M cap with
+// headroom for batches that happen to cluster dense skills together.
+//
+// Throughput is ~100 skills/min. Slow for one-time backfills but fine for
+// the daily cron (which only embeds skills whose content changed — usually
+// dozens to a few hundred per day, finishing in seconds to minutes).
+const EMBED_BATCH_SIZE = 10;
+const EMBED_CHAIN_DELAY_MS = 5_000;
+
+export const embedSkillsBatch = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    // batchSize accepted but IGNORED — kept for back-compat with stale
+    // scheduled calls that still have it in their stored args.
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor }): Promise<void> => {
+    const result: {
+      skills: Array<{
+        id: Id<"skills">;
+        name: string;
+        description?: string;
+        content?: string;
+      }>;
+      nextCursor: string;
+      isDone: boolean;
+    } = await ctx.runQuery(internal.skills.listSkillsNeedingEmbedding, {
+      cursor: cursor ?? undefined,
+      limit: EMBED_BATCH_SIZE,
+    });
+
+    if (result.skills.length > 0) {
+      const inputs = result.skills.map((s) =>
+        buildEmbeddingInput(s.name, s.description, s.content),
+      );
+
+      try {
+        const vectors = await embedTexts(inputs);
+        const entries = result.skills.map((s, i) => ({
+          skillId: s.id,
+          embedding: vectors[i],
+          mode: "full" as const,
+        }));
+        await ctx.runMutation(internal.skills.writeEmbeddingsBatch, {
+          entries,
+        });
+        console.log(`Embedded ${entries.length} skills`);
+      } catch (e) {
+        if (e instanceof EmbeddingInputTooLongError) {
+          // At least one skill in the batch is too dense to fit even after
+          // head-truncation. Fall back to per-skill embedding so we don't lose
+          // the other skills in the batch (the cursor would otherwise advance
+          // past them and they'd get skipped this pass).
+          //
+          // For each skill, we try the full input first; on length errors we
+          // retry with just name + description (no content), which is almost
+          // always small enough. If even that fails, we mark the skill as
+          // unembeddable so the worker stops retrying it.
+          console.warn(
+            `Batch hit input-too-long at index ${e.badIndex}, falling back to per-skill embedding`,
+          );
+
+          const entries: Array<{
+            skillId: Id<"skills">;
+            embedding: number[];
+            mode: "full" | "minimal";
+          }> = [];
+          let recovered = 0;
+          let unembeddable = 0;
+
+          for (const skill of result.skills) {
+            // First try: full name + description + content
+            const fullInput = buildEmbeddingInput(
+              skill.name,
+              skill.description,
+              skill.content,
+            );
+            try {
+              const [vector] = await embedTexts([fullInput]);
+              entries.push({
+                skillId: skill.id,
+                embedding: vector,
+                mode: "full",
+              });
+              continue;
+            } catch (innerE) {
+              if (!(innerE instanceof EmbeddingInputTooLongError)) {
+                console.error(
+                  "Per-skill embedding failed (non-length error):",
+                  innerE,
+                );
+                return; // Bail out — chain will retry next run
+              }
+            }
+
+            // Second try: name + description only (skip dense content)
+            const minimalInput = buildEmbeddingInput(
+              skill.name,
+              skill.description,
+              undefined,
+            );
+            try {
+              const [vector] = await embedTexts([minimalInput]);
+              entries.push({
+                skillId: skill.id,
+                embedding: vector,
+                mode: "minimal",
+              });
+              recovered++;
+              continue;
+            } catch (innerE) {
+              if (!(innerE instanceof EmbeddingInputTooLongError)) {
+                console.error(
+                  "Minimal embedding failed (non-length error):",
+                  innerE,
+                );
+                return;
+              }
+            }
+
+            // Both attempts failed — mark unembeddable
+            console.warn(
+              `Marking skill ${skill.id} as unembeddable (even name+description exceeds the limit)`,
+            );
+            await ctx.runMutation(internal.skills.markSkillUnembeddable, {
+              skillId: skill.id,
+              reason: "input_too_long",
+            });
+            unembeddable++;
+          }
+
+          if (entries.length > 0) {
+            await ctx.runMutation(internal.skills.writeEmbeddingsBatch, {
+              entries,
+            });
+          }
+          console.log(
+            `Embedded ${entries.length}/${result.skills.length} skills via fallback (${recovered} name+desc only, ${unembeddable} unembeddable)`,
+          );
+        } else {
+          console.error("Embedding batch failed:", e);
+          // Stop chaining — try again next cron run
+          return;
+        }
+      }
+    }
+
+    if (!result.isDone) {
+      await ctx.scheduler.runAfter(
+        EMBED_CHAIN_DELAY_MS,
+        internal.skills.embedSkillsBatch,
+        { cursor: result.nextCursor },
+      );
+    } else {
+      console.log("Embedding backfill complete");
+    }
+  },
+});
+
+/**
+ * Manually trigger an embedding backfill for all skills that need one.
+ * Run via: npx convex run skills:backfillEmbeddings
+ */
+export const backfillEmbeddings = internalAction({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, { batchSize = 100 }) => {
+    await ctx.runAction(internal.skills.embedSkillsBatch, { batchSize });
+  },
+});
+
+/**
+ * Mark every skill (with content) as needing an embedding. Use this once after
+ * deploying the embedding flow to seed the queue. Idempotent — already-embedded
+ * skills with `needsEmbedding: true` will just be re-embedded.
+ */
+export const markAllSkillsForEmbedding = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skills")
+      .paginate({ numItems: 200, cursor: cursor ?? null });
+    let marked = 0;
+    for (const s of result.page) {
+      if (s.isDelisted) continue;
+      if (!s.content && !s.description) continue;
+      if (s.embedding && !s.needsEmbedding) continue;
+      await ctx.db.patch(s._id, { needsEmbedding: true });
+      marked++;
+    }
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      marked,
+    };
+  },
+});
+
+export const seedEmbeddingQueue = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; marked: number } =
+        await ctx.runMutation(internal.skills.markAllSkillsForEmbedding, {
+          cursor,
+        });
+      total += result.marked;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Marked ${total} skills as needsEmbedding`);
   },
 });
 
@@ -1534,91 +1973,44 @@ export const getBySourceAndSkillId = query({
   },
 });
 
-export const listByTechnologies = query({
+/**
+ * Full-text search over skill names, paginated. Returns BM25-ordered results
+ * (Convex search indexes do not support custom ordering).
+ */
+export const searchSkills = query({
   args: {
-    technologies: v.array(v.string()),
-    techLimits: v.optional(v.record(v.string(), v.number())),
+    query: v.string(),
+    paginationOpts: paginationOptsValidator,
   },
-  handler: async (ctx, { technologies, techLimits = {} }) => {
-    const DEFAULT_LIMIT = 20;
-    if (technologies.length === 0) return { groups: [] };
-
-    type SkillDoc = NonNullable<
-      Awaited<ReturnType<typeof ctx.db.get<"skills">>>
-    >;
-    type SkillSummary = Pick<
-      SkillDoc,
-      | "_id"
-      | "_creationTime"
-      | "source"
-      | "skillId"
-      | "name"
-      | "description"
-      | "installs"
-      | "technologies"
-    >;
-    const cache = new Map<string, SkillSummary>();
-    const groups: Array<{
-      technology: string;
-      skills: SkillSummary[];
-      hasMore: boolean;
-    }> = [];
-
-    for (const tech of technologies) {
-      const limit = techLimits[tech] ?? DEFAULT_LIMIT;
-      const entries = await ctx.db
-        .query("skillTechnologies")
-        .withIndex("by_technology", (q) => q.eq("technology", tech))
-        .order("desc")
-        .take(limit + 1);
-
-      const skills: SkillSummary[] = [];
-
-      for (const entry of entries) {
-        if (skills.length >= limit) break;
-        const id = entry.skillId.toString();
-
-        let skill = cache.get(id);
-        if (!skill) {
-          const doc = await ctx.db.get(entry.skillId);
-          if (!doc || doc.isDelisted) continue;
-          skill = {
-            _id: doc._id,
-            _creationTime: doc._creationTime,
-            source: doc.source,
-            skillId: doc.skillId,
-            name: doc.name,
-            description: doc.description,
-            installs: doc.installs,
-            technologies: doc.technologies,
-          };
-          cache.set(id, skill);
-        }
-        skills.push(skill);
-      }
-
-      const hasMore = entries.length > limit;
-      groups.push({
-        technology: tech,
-        skills,
-        hasMore,
-      });
+  handler: async (ctx, { query: searchQuery, paginationOpts }) => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      return { page: [], isDone: true, continueCursor: "" };
     }
+    return ctx.db
+      .query("skills")
+      .withSearchIndex("search_name", (q) =>
+        q.search("name", trimmed).eq("isDelisted", false),
+      )
+      .paginate(paginationOpts);
+  },
+});
 
-    return { groups };
+/**
+ * Internal query used by recommendations.ts to load skill details after a
+ * vector search returns ranked IDs.
+ */
+export const getSkillsByIds = internalQuery({
+  args: { ids: v.array(v.id("skills")) },
+  handler: async (ctx, { ids }) => {
+    const docs = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null);
   },
 });
 
 // ---------------------------------------------------------------------------
-// Skill summaries (for client-side search)
+// Skill summaries (for backfill operations only)
 // ---------------------------------------------------------------------------
-
-export const listAllSkillSummaries = query({
-  args: { paginationOpts: paginationOptsValidator },
-  handler: async (ctx, { paginationOpts }) => {
-    return ctx.db.query("skillSummaries").paginate(paginationOpts);
-  },
-});
 
 export const backfillSkillSummaries = internalAction({
   args: {},
@@ -1656,7 +2048,6 @@ export const backfillSkillSummariesBatch = internalMutation({
         name: s.name,
         description: s.description,
         installs: s.installs,
-        technologies: s.technologies,
         syncHash: s.syncHash,
         lastSeenInApi: s.lastSeenInApi,
         isDelisted: s.isDelisted,
@@ -1816,3 +2207,4 @@ export const getContent = query({
     return skill?.content ?? null;
   },
 });
+

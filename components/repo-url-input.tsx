@@ -1,90 +1,189 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Input } from "@/components/ui/cubby-ui/input";
 import Link from "next/link";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { FlashIcon } from "@hugeicons/core-free-icons";
-import { Button } from "@/components/ui/cubby-ui/button";
+import { api } from "@/convex/_generated/api";
+import { SkillCard, type SkillData } from "@/components/skill-card";
+import { SkillDetailSheet } from "@/components/skill-detail-sheet";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
 import { Badge } from "@/components/ui/cubby-ui/badge";
+import { cn } from "@/lib/utils";
 
-interface RepoUrlInputProps {
-  onTechnologiesDetected: (technologies: string[]) => void;
-  canAutoDetect?: boolean;
+type AnalyzeRepoResult = Awaited<ReturnType<ReturnType<typeof useAction<typeof api.recommendations.analyzeRepo>>>>;
+
+interface RepoAnalysisResultsProps {
+  /** Trimmed repo URL — empty string disables the analysis. */
+  repoUrl: string;
+  /** When the URL changes, the parent should bump this signal to re-trigger. */
+  triggerKey: number;
+  canAutoDetect: boolean;
 }
 
-export function RepoUrlInput({ onTechnologiesDetected, canAutoDetect = true }: RepoUrlInputProps) {
-  const detectTechnologies = useAction(api.github.detectTechnologies);
-  const [url, setUrl] = useState("");
+/**
+ * Calls the Convex `analyzeRepo` action when `triggerKey` changes (the parent
+ * controls submission timing). Displays the fingerprint chips and ranked
+ * recommendations.
+ */
+export function RepoAnalysisResults({
+  repoUrl,
+  triggerKey,
+  canAutoDetect,
+}: RepoAnalysisResultsProps) {
+  const analyzeRepo = useAction(api.recommendations.analyzeRepo);
+  const [result, setResult] = useState<AnalyzeRepoResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeSkill, setActiveSkill] = useState<SkillData | null>(null);
 
-  async function handleDetect() {
-    const trimmed = url.trim();
+  useEffect(() => {
+    if (triggerKey === 0) return; // Initial mount — don't auto-run
+    const trimmed = repoUrl.trim();
     if (!trimmed) return;
 
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    try {
-      const result = await detectTechnologies({ repoUrl: trimmed });
+    analyzeRepo({ repoUrl: trimmed })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.error) {
+          setError(res.error);
+          setResult(null);
+        } else {
+          setResult(res);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError("Failed to analyze repository. Please check the URL.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerKey]);
 
-      if (result.technologies.length === 0) {
-        setError("No matching technologies found in this repository");
-        return;
-      }
-
-      onTechnologiesDetected(result.technologies);
-      setUrl("");
-    } catch {
-      setError("Failed to fetch repository. Please check the URL.");
-    } finally {
-      setLoading(false);
-    }
+  if (!canAutoDetect) {
+    return (
+      <p className="mt-4 text-xs text-muted-foreground">
+        <Link href="/pricing" className="underline hover:text-foreground">
+          Upgrade to Pro
+        </Link>{" "}
+        to auto-detect skills from a GitHub repo.
+      </p>
+    );
   }
 
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <Input
-          placeholder="https://github.com/owner/repo"
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            if (error) setError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleDetect();
-          }}
-          className="flex-1"
-        />
-        <Button
-          variant="outline"
-          onClick={handleDetect}
-          disabled={!url.trim() || loading || !canAutoDetect}
-          loading={loading}
-          leftSection={<HugeiconsIcon icon={FlashIcon} strokeWidth={2} className="size-3.5" />}
-          rightSection={!canAutoDetect ? <Badge variant="outline" className="text-[10px]">Pro</Badge> : undefined}
-        >
-          Detect
-        </Button>
+  if (loading) {
+    return (
+      <div className="mt-4 grid gap-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 rounded-2xl" />
+        ))}
       </div>
-      {!canAutoDetect && (
-        <p className="text-xs text-muted-foreground">
-          <Link href="/pricing" className="underline hover:text-foreground">Upgrade to Pro</Link>{" "}
-          to auto-detect your stack from a GitHub repo.
-        </p>
+    );
+  }
+
+  if (error) {
+    return <p className="mt-4 text-sm text-destructive">{error}</p>;
+  }
+
+  if (!result) return null;
+
+  const recs = result.recommendations;
+  const fingerprint = result.fingerprint;
+
+  if (recs.length === 0) {
+    return (
+      <p className="mt-4 text-sm text-muted-foreground">
+        No matching skills found for {result.repoName}.
+      </p>
+    );
+  }
+
+  const skills: SkillData[] = recs.map((r) => ({
+    source: r.source,
+    skillId: r.skillId,
+    name: r.name,
+    description: r.description,
+    installs: r.installs,
+    technologies: [],
+  }));
+
+  const chipPackages = fingerprint?.packages.slice(0, 12) ?? [];
+
+  return (
+    <div className="mt-4">
+      {fingerprint && (
+        <div className="mb-4">
+          <p className="text-xs text-muted-foreground mb-2">
+            Detected in {result.repoName}
+            {fingerprint.languages.length > 0 &&
+              ` · ${fingerprint.languages.join(", ")}`}
+          </p>
+          {chipPackages.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {chipPackages.map((pkg) => (
+                <Badge
+                  key={pkg}
+                  variant="secondary"
+                  className="text-[10px] px-1.5 py-0.5"
+                >
+                  {pkg}
+                </Badge>
+              ))}
+              {fingerprint.packages.length > chipPackages.length && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
+                  +{fingerprint.packages.length - chipPackages.length}
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
       )}
-      {error && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
+
+      <p className="text-xs text-muted-foreground mb-3">
+        {recs.length} recommended skill{recs.length !== 1 && "s"}
+      </p>
+      <div className="grid">
+        {skills.map((skill, i) => {
+          const isFirst = i === 0;
+          const isLast = i === skills.length - 1;
+          const isSolo = skills.length === 1;
+          return (
+            <SkillCard
+              key={`${skill.source}/${skill.skillId}`}
+              skill={skill}
+              selectable
+              variant="row"
+              onViewDetail={() => setActiveSkill(skill)}
+              className={
+                isSolo
+                  ? undefined
+                  : isFirst
+                    ? "rounded-b-none"
+                    : isLast
+                      ? "rounded-t-none border-t-0"
+                      : cn("rounded-none border-t-0")
+              }
+            />
+          );
+        })}
+      </div>
+
+      <SkillDetailSheet
+        open={activeSkill !== null}
+        onOpenChange={(open) => {
+          if (!open) setActiveSkill(null);
+        }}
+        skill={activeSkill}
+      />
     </div>
   );
 }

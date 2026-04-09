@@ -17,10 +17,8 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon, PlusSignIcon, MinusSignIcon } from "@hugeicons/core-free-icons";
-import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
-import { techNameMap } from "@/lib/technologies";
 import { useBundleSelection } from "@/lib/bundle-selection-context";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
@@ -79,19 +77,6 @@ export function SkillDetailSheet({
                   {shownSkill.source}
                 </a>
               </SheetDescription>
-              {shownSkill.technologies.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {shownSkill.technologies.map((techId) => (
-                    <Badge
-                      key={techId}
-                      variant="secondary"
-                      className="text-[10px] px-1.5 py-0.5"
-                    >
-                      {techNameMap.get(techId) ?? techId}
-                    </Badge>
-                  ))}
-                </div>
-              )}
             </SheetHeader>
             <SheetBody>
               {contentLoading ? (
@@ -138,7 +123,6 @@ export function SkillDetailSheet({
                       source: shownSkill.source,
                       skillId: shownSkill.skillId,
                       name: shownSkill.name,
-                      technologies: shownSkill.technologies,
                     })
                   }
                 >

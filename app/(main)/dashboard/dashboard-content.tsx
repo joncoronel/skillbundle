@@ -94,7 +94,6 @@ export function DashboardContent({ preloadedBundles }: DashboardContentProps) {
               skillCount={bundle.skills.length}
               createdAt={bundle.createdAt}
               creatorName="You"
-              technologies={[]}
               isPublic={bundle.isPublic}
               viewCount={bundle.viewCount}
               actions={

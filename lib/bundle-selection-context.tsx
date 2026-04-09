@@ -13,7 +13,6 @@ export interface SelectedSkill {
   source: string;
   skillId: string;
   name: string;
-  technologies?: string[];
 }
 
 type Action =
