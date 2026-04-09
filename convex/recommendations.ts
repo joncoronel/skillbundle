@@ -188,12 +188,19 @@ export const analyzeRepo = action({
       };
     }
 
-    // Load skill details
+    // Load summary metadata for each ranked skill. We use summaries
+    // (~200 bytes/row) instead of full skill docs (~25 KB/row) because the
+    // re-rank loop below only reads small fields, all of which are mirrored.
     const ids = results.map((r) => r._id as Id<"skills">);
-    const skills = await ctx.runQuery(internal.skills.getSkillsByIds, { ids });
+    const entries = await ctx.runQuery(internal.skills.getSummariesByIds, {
+      ids,
+    });
 
-    // Index skills by ID so we can preserve the search ranking
-    const byId = new Map(skills.map((s) => [s._id, s]));
+    // Index summaries by their owning skill _id so we can preserve the
+    // vector-search ranking when looping over results below.
+    const summaryByDocId = new Map(
+      entries.map((e) => [e.skillDocId, e.summary]),
+    );
 
     // Build a lowercase package set for substring matching
     const packageSet = fingerprint.packages.map((p) => p.toLowerCase());
@@ -202,10 +209,10 @@ export const analyzeRepo = action({
     // +0.1 * log10(installs + 1) as a popularity prior
     const ranked: SkillRecommendation[] = [];
     for (const result of results) {
-      const skill = byId.get(result._id as Id<"skills">);
-      if (!skill) continue;
+      const summary = summaryByDocId.get(result._id as Id<"skills">);
+      if (!summary) continue;
 
-      const haystack = `${skill.name} ${skill.description ?? ""}`.toLowerCase();
+      const haystack = `${summary.name} ${summary.description ?? ""}`.toLowerCase();
       let packageBonus = 0;
       for (const pkg of packageSet) {
         if (pkg.length >= 3 && haystack.includes(pkg)) {
@@ -214,14 +221,14 @@ export const analyzeRepo = action({
         }
       }
 
-      const popBonus = 0.1 * Math.log10(skill.installs + 1);
+      const popBonus = 0.1 * Math.log10(summary.installs + 1);
 
       ranked.push({
-        source: skill.source,
-        skillId: skill.skillId,
-        name: skill.name,
-        description: skill.description,
-        installs: skill.installs,
+        source: summary.source,
+        skillId: summary.skillId,
+        name: summary.name,
+        description: summary.description,
+        installs: summary.installs,
         score: result._score + packageBonus + popBonus,
       });
     }

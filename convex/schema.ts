@@ -72,8 +72,9 @@ export default defineSchema({
     syncHash: v.optional(v.string()),
     lastSeenInApi: v.optional(v.number()),
     isDelisted: v.optional(v.boolean()),
-    // Denormalized from skills table to avoid reading full 30KB+ skill docs
-    skillDocId: v.optional(v.id("skills")),
+    // Denormalized from skills table to avoid reading full 30KB+ skill docs.
+    // Required: every summary is created alongside its skill row.
+    skillDocId: v.id("skills"),
     contentFetchedAt: v.optional(v.number()),
     skillMdUrl: v.optional(v.string()),
     needsContentFetch: v.optional(v.boolean()),
@@ -96,6 +97,10 @@ export default defineSchema({
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
     .index("by_hasSkillMdUrl", ["hasSkillMdUrl"])
+    // Lets us look up summaries by their owning skill row's _id. Used by
+    // analyzeRepo to convert vector-search results (which return skill IDs)
+    // into cheap summary lookups instead of reading full skill docs.
+    .index("by_skillDocId", ["skillDocId"])
     // Selective indexes for the dev dashboard's embedding monitoring panel.
     // Both columns are mostly undefined in steady state, so equality queries
     // through these indexes touch only the few rows that match.

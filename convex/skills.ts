@@ -108,7 +108,7 @@ async function upsertSkillSummary(
     syncHash?: string;
     lastSeenInApi?: number;
     isDelisted?: boolean;
-    skillDocId?: Id<"skills">;
+    skillDocId: Id<"skills">;
     contentFetchedAt?: number;
     skillMdUrl?: string;
     needsContentFetch?: boolean;
@@ -139,7 +139,7 @@ async function upsertSkillSummary(
         lastSeenInApi: fields.lastSeenInApi,
       }),
       ...(fields.isDelisted !== undefined && { isDelisted: fields.isDelisted }),
-      ...(fields.skillDocId !== undefined && { skillDocId: fields.skillDocId }),
+      skillDocId: fields.skillDocId,
       ...(fields.contentFetchedAt !== undefined && {
         contentFetchedAt: fields.contentFetchedAt,
       }),
@@ -416,7 +416,6 @@ export const listSourcesNeedingDiscovery = internalQuery({
       Array<{ docId: string; skillId: string }>
     >();
     for (const s of result.page) {
-      if (!s.skillDocId) continue;
       const list = bySource.get(s.source) ?? [];
       list.push({ docId: s.skillDocId, skillId: s.skillId });
       bySource.set(s.source, list);
@@ -755,7 +754,6 @@ export const markStaleContentBatch = internalMutation({
 
     for (const s of result.page) {
       if (s.isDelisted) continue;
-      if (!s.skillDocId) continue;
 
       // Content re-fetch: non-empty URL, >7 days since last fetch
       const contentStale =
@@ -832,11 +830,11 @@ export const listSkillsNeedingContentFetch = internalQuery({
       )
       .paginate(paginationOpts);
 
-    // Filter to only skills that have a valid URL and a stored doc ID
+    // Filter to only skills that have a valid URL
     const skills = result.page
-      .filter((s) => s.skillMdUrl && s.skillMdUrl !== "" && s.skillDocId)
+      .filter((s) => s.skillMdUrl && s.skillMdUrl !== "")
       .map((s) => ({
-        id: s.skillDocId!,
+        id: s.skillDocId,
         skillMdUrl: s.skillMdUrl!,
         skillName: s.skillId,
       }));
@@ -2001,14 +1999,34 @@ export const searchSkills = query({
 });
 
 /**
- * Internal query used by recommendations.ts to load skill details after a
- * vector search returns ranked IDs.
+ * Internal query used by recommendations.ts to load skill metadata after a
+ * vector search returns ranked skill IDs. Looks up the corresponding
+ * skillSummaries rows (~200 bytes each) instead of the full skills rows
+ * (~25 KB each), making analyzeRepo ~100x cheaper on bandwidth.
+ *
+ * Vector search lives on the skills table (where the embedding vectors are
+ * stored) but the recommendation re-rank logic only needs name, source,
+ * skillId, description, installs, and isDelisted — all of which are
+ * mirrored on the summary.
  */
-export const getSkillsByIds = internalQuery({
+export const getSummariesByIds = internalQuery({
   args: { ids: v.array(v.id("skills")) },
   handler: async (ctx, { ids }) => {
-    const docs = await Promise.all(ids.map((id) => ctx.db.get(id)));
-    return docs.filter((d): d is NonNullable<typeof d> => d !== null);
+    // Each lookup is a single indexed query via by_skillDocId.
+    // Returns the summary plus the original skill _id so callers can map
+    // back to vector search results that key by skill _id.
+    const summaries = await Promise.all(
+      ids.map(async (id) => {
+        const summary = await ctx.db
+          .query("skillSummaries")
+          .withIndex("by_skillDocId", (q) => q.eq("skillDocId", id))
+          .unique();
+        return summary ? { skillDocId: id, summary } : null;
+      }),
+    );
+    return summaries.filter(
+      (s): s is NonNullable<typeof s> => s !== null,
+    );
   },
 });
 
