@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { SkillCard } from "@/components/skill-card";
+import { SkillCardView } from "@/components/skill-card";
 import {
   SkillDetailSheet,
   createSkillDetailHandle,
@@ -218,7 +218,7 @@ export function BundleView({
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {bundle.skills.map((skill) => (
-            <SkillCard
+            <SkillCardView
               key={`${skill.source}/${skill.skillId}`}
               skill={skill}
               sheetHandle={skillDetailHandle}

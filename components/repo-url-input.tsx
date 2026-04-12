@@ -7,7 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
-import { SkillCard, type SkillData } from "@/components/skill-card";
+import { SkillRowView, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
 import { Badge } from "@/components/ui/cubby-ui/badge";
@@ -159,11 +159,10 @@ export function RepoAnalysisResults({
               technologies: [],
             };
             return (
-              <SkillCard
+              <SkillRowView
                 key={`singleton:${variant.source}/${variant.skillId}`}
                 skill={skill}
                 selectable
-                variant="row"
                 sheetHandle={sheetHandle}
                 className={positionClassName}
               />
@@ -267,11 +266,10 @@ function SkillGroupRow({
             };
             const isLast = i === group.variants.length - 1;
             return (
-              <SkillCard
+              <SkillRowView
                 key={`${variant.source}/${variant.skillId}`}
                 skill={skill}
                 selectable
-                variant="row"
                 sheetHandle={sheetHandle}
                 className={cn(
                   // Square the corners and remove the standalone card border

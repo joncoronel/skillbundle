@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@/convex/_generated/api";
-import { SkillCard, type SkillData } from "@/components/skill-card";
+import { SkillRowView, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -77,11 +77,10 @@ export function SkillSearchResults({
               const isLast = i === skills.length - 1;
               const isSolo = skills.length === 1;
               return (
-                <SkillCard
+                <SkillRowView
                   key={`${skill.source}/${skill.skillId}`}
                   skill={skill}
                   selectable
-                  variant="row"
                   sheetHandle={sheetHandle}
                   className={
                     isSolo
