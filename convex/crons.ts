@@ -15,6 +15,12 @@ crons.daily(
   internal.githubCache.cleanupExpiredCache,
 );
 
+crons.daily(
+  "cleanup expired fingerprint cache",
+  { hourUTC: 5, minuteUTC: 5 },
+  internal.recommendations.cleanupExpiredFingerprintCache,
+);
+
 crons.weekly(
   "recalculate recent copy counts",
   { hourUTC: 4, minuteUTC: 0, dayOfWeek: "sunday" },

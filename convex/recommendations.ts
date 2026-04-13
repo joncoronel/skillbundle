@@ -126,6 +126,21 @@ export const setCachedFingerprint = internalMutation({
   },
 });
 
+export const cleanupExpiredFingerprintCache = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - FINGERPRINT_CACHE_TTL_MS;
+    const expired = await ctx.db
+      .query("repoFingerprintCache")
+      .filter((q) => q.lt(q.field("cachedAt"), cutoff))
+      .take(100);
+
+    for (const entry of expired) {
+      await ctx.db.delete(entry._id);
+    }
+  },
+});
+
 export const setCachedRecommendations = internalMutation({
   args: {
     cacheKey: v.string(),
