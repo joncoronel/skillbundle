@@ -11,11 +11,7 @@ import {
   type TreeScanResult,
 } from "./github";
 import { embedText } from "./lib/embeddings";
-import {
-  fetchRepoMetadata,
-  fetchRepoTree,
-  NOT_MODIFIED,
-} from "./lib/github";
+import { fetchRepoMetadata, fetchRepoTree, NOT_MODIFIED } from "./lib/github";
 
 // ---------------------------------------------------------------------------
 // Tree scan ↔ cache encoding
@@ -279,25 +275,23 @@ export const analyzeRepo = action({
     // of latency. If the tree changed, we invalidate the fingerprint cache
     // and rebuild — so users who just restructured their repo get fresh
     // results immediately.
-    const treeCache = await ctx.runQuery(
-      internal.githubCache.getTreeCache,
-      { repo: repoKey },
-    );
+    const treeCache = await ctx.runQuery(internal.githubCache.getTreeCache, {
+      repo: repoKey,
+    });
 
     let treeChanged = false;
     let scan: TreeScanResult | null = null;
     let branch: string | undefined;
 
     if (treeCache) {
-      const treeResult = await fetchRepoTree(
-        owner,
-        repo,
-        [treeCache.branch],
-        { etag: treeCache.etag },
-      );
+      const treeResult = await fetchRepoTree(owner, repo, [treeCache.branch], {
+        etag: treeCache.etag,
+      });
       if (treeResult === NOT_MODIFIED) {
         // Repo unchanged — fingerprint cache (if any) is still valid
-        debugLog(`[analyzeRepo] ✓ Tree cache HIT (304 Not Modified) — repo unchanged`);
+        debugLog(
+          `[analyzeRepo] ✓ Tree cache HIT (304 Not Modified) — repo unchanged`,
+        );
         await ctx.runMutation(internal.githubCache.touchTreeCache, {
           repo: repoKey,
         });
@@ -325,7 +319,9 @@ export const analyzeRepo = action({
       }
     } else {
       // No tree cache at all — need full rebuild
-      debugLog(`[analyzeRepo] ✗ Tree cache MISS — first-time analysis or previously cleared`);
+      debugLog(
+        `[analyzeRepo] ✗ Tree cache MISS — first-time analysis or previously cleared`,
+      );
       treeChanged = true;
     }
 
@@ -334,10 +330,9 @@ export const analyzeRepo = action({
     // ------------------------------------------------------------------
     const cached = treeChanged
       ? null
-      : await ctx.runQuery(
-          internal.recommendations.getCachedFingerprint,
-          { cacheKey },
-        );
+      : await ctx.runQuery(internal.recommendations.getCachedFingerprint, {
+          cacheKey,
+        });
 
     if (cached) {
       fingerprint = cached.fingerprint;
@@ -483,7 +478,9 @@ export const analyzeRepo = action({
       limit: SEARCH_LIMIT,
       filter: (q) => q.eq("isDelisted", false),
     });
-    debugLog(`[analyzeRepo] Vector search returned ${results.length} candidates`);
+    debugLog(
+      `[analyzeRepo] Vector search returned ${results.length} candidates`,
+    );
 
     if (results.length === 0) {
       return {
@@ -498,9 +495,7 @@ export const analyzeRepo = action({
     // has a `skillEmbeddingId` back-reference so we can look up summaries
     // directly from the embedding IDs returned by vector search, without
     // ever reading the embedding rows themselves (each is ~12 KB).
-    const embeddingIds = results.map(
-      (r) => r._id as Id<"skillEmbeddings">,
-    );
+    const embeddingIds = results.map((r) => r._id as Id<"skillEmbeddings">);
     const entries = await ctx.runQuery(
       internal.skills.getSummariesByEmbeddingIds,
       { ids: embeddingIds },
@@ -539,23 +534,40 @@ export const analyzeRepo = action({
     // useful. The frontend can show "showing N of M" using `variantCount`.
     const packageSet = fingerprint.packages.map((p) => p.toLowerCase());
 
-    // Helper: compute the composite score (vector + package bonus + popularity)
-    // for a single variant, given its raw vector score.
+    // Helper: compute the composite score for a single variant.
+    //
+    // Uses multiplicative bonuses so everything scales with the underlying
+    // vector relevance. An off-topic skill can't vault over relevant skills
+    // no matter how many packages it mentions or how popular it is — its
+    // low vector score keeps it low even after multipliers.
+    //
+    // Package multiplier — rewards skills whose name/description mentions
+    // exact packages from the repo. Log-scaled so matches have diminishing
+    // returns (1 match is a lot, 10th match is barely extra):
+    //   1 match   → 1.03x
+    //   3 matches → 1.06x
+    //   7 matches → 1.09x
+    //   15 matches→ 1.12x
+    //   30 matches→ 1.15x
+    //
+    // Popularity multiplier — rewards skills with higher install counts:
+    //   100 installs    → 1.10x
+    //   1,000 installs  → 1.15x
+    //   10,000 installs → 1.20x
+    //   100,000 installs→ 1.25x
     function computeScore(
       summary: (typeof entries)[number]["summary"],
       vectorScore: number,
     ): number {
       const haystack =
         `${summary.name} ${summary.description ?? ""}`.toLowerCase();
-      let packageBonus = 0;
+      let matchCount = 0;
       for (const pkg of packageSet) {
-        if (pkg.length >= 3 && haystack.includes(pkg)) {
-          packageBonus += 0.2;
-          if (packageBonus >= 0.6) break; // Cap the bonus
-        }
+        if (pkg.length >= 4 && haystack.includes(pkg)) matchCount++;
       }
-      const popBonus = 0.1 * Math.log10(summary.installs + 1);
-      return vectorScore + packageBonus + popBonus;
+      const packageMultiplier = 1 + 0.03 * Math.log2(matchCount + 1);
+      const popMultiplier = 1 + 0.05 * Math.log10(summary.installs + 1);
+      return vectorScore * packageMultiplier * popMultiplier;
     }
 
     interface PendingGroup {
