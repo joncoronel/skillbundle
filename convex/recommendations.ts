@@ -67,6 +67,14 @@ function decodeCachedScan(encoded: string[]): TreeScanResult {
 
 const FINGERPRINT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Toggle verbose cache-hit/miss logging for analyzeRepo. Flip to false to
+// silence the pipeline logs in production.
+const ANALYZE_REPO_DEBUG = true;
+
+function debugLog(msg: string): void {
+  if (ANALYZE_REPO_DEBUG) console.log(msg);
+}
+
 function makeCacheKey(owner: string, repo: string): string {
   return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
@@ -257,6 +265,8 @@ export const analyzeRepo = action({
     const cacheKey = makeCacheKey(owner, repo);
     const repoKey = `${owner}/${repo}`;
 
+    debugLog(`[analyzeRepo] Starting for ${repoName}`);
+
     let fingerprint: RepoFingerprint;
     let queryEmbedding: number[];
 
@@ -287,6 +297,7 @@ export const analyzeRepo = action({
       );
       if (treeResult === NOT_MODIFIED) {
         // Repo unchanged — fingerprint cache (if any) is still valid
+        debugLog(`[analyzeRepo] ✓ Tree cache HIT (304 Not Modified) — repo unchanged`);
         await ctx.runMutation(internal.githubCache.touchTreeCache, {
           repo: repoKey,
         });
@@ -294,6 +305,7 @@ export const analyzeRepo = action({
         scan = decodeCachedScan(treeCache.dependencyFilePaths);
       } else if (treeResult) {
         // Repo changed — rebuild fingerprint even if cached
+        debugLog(`[analyzeRepo] ⟳ Tree cache STALE — repo changed, rebuilding`);
         treeChanged = true;
         branch = treeResult.branch;
         scan = scanTree(treeResult.entries);
@@ -307,11 +319,13 @@ export const analyzeRepo = action({
         }
       } else {
         // Tree API failed — trust the fingerprint cache if available
+        debugLog(`[analyzeRepo] ⚠ Tree API failed — falling back to cache`);
         branch = treeCache.branch;
         scan = decodeCachedScan(treeCache.dependencyFilePaths);
       }
     } else {
       // No tree cache at all — need full rebuild
+      debugLog(`[analyzeRepo] ✗ Tree cache MISS — first-time analysis or previously cleared`);
       treeChanged = true;
     }
 
@@ -331,6 +345,9 @@ export const analyzeRepo = action({
 
       // Full cache hit — skip vector search, summary lookups, and grouping.
       if (cached.recommendations) {
+        debugLog(
+          `[analyzeRepo] ✓ FULL CACHE HIT — returning ${cached.recommendations.length} cached recommendations (no vector search)`,
+        );
         return {
           error: null,
           repoName,
@@ -338,7 +355,15 @@ export const analyzeRepo = action({
           recommendations: cached.recommendations,
         };
       }
+      debugLog(
+        `[analyzeRepo] ◐ PARTIAL CACHE HIT — reusing fingerprint+embedding, running vector search`,
+      );
     } else {
+      debugLog(
+        treeChanged
+          ? `[analyzeRepo] ✗ Fingerprint cache SKIPPED (tree changed) — full rebuild from GitHub`
+          : `[analyzeRepo] ✗ Fingerprint cache MISS — rebuilding fingerprint+embedding (tree data reused from cache)`,
+      );
       // ------------------------------------------------------------------
       // Step 3: Fetch metadata + tree (if not already done)
       // ------------------------------------------------------------------
@@ -452,11 +477,13 @@ export const analyzeRepo = action({
     // IDs paired with cosine-similarity scores. We translate those IDs back
     // to summary metadata via the by_skillEmbeddingId index — never reading
     // the heavy embedding rows themselves.
+    debugLog(`[analyzeRepo] Running vector search against skillEmbeddings...`);
     const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
       vector: queryEmbedding,
       limit: SEARCH_LIMIT,
       filter: (q) => q.eq("isDelisted", false),
     });
+    debugLog(`[analyzeRepo] Vector search returned ${results.length} candidates`);
 
     if (results.length === 0) {
       return {
@@ -595,6 +622,9 @@ export const analyzeRepo = action({
     });
 
     // Cache recommendations so repeat analyses skip the vector search.
+    debugLog(
+      `[analyzeRepo] Saving ${recommendations.length} recommendations to cache`,
+    );
     await ctx.runMutation(internal.recommendations.setCachedRecommendations, {
       cacheKey,
       recommendations,
