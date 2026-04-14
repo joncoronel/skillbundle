@@ -1,46 +1,34 @@
 /**
- * OpenAI embeddings wrapper.
+ * Voyage AI embeddings wrapper.
  *
- * Uses text-embedding-3-small (1536 dimensions) — cheap and good enough for
- * skill/repo similarity. Read the docs at https://platform.openai.com/docs/guides/embeddings.
+ * Uses voyage-4-lite at 512 dimensions — cheap, accurate, and optimized for
+ * retrieval with input_type support. Read the docs at
+ * https://docs.voyageai.com/docs/embeddings.
  *
- * Reads OPENAI_API_KEY from the Convex environment. Set via:
- *   npx convex env set OPENAI_API_KEY sk-...
+ * Reads VOYAGE_API_KEY from the Convex environment. Set via:
+ *   npx convex env set VOYAGE_API_KEY pa-...
  */
 
-const OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
-const OPENAI_EMBEDDING_DIMENSIONS = 1536;
-const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings";
+const VOYAGE_EMBEDDING_MODEL = "voyage-4-lite";
+const VOYAGE_EMBEDDING_DIMENSIONS = 512;
+const VOYAGE_EMBEDDINGS_URL = "https://api.voyageai.com/v1/embeddings";
 
 /**
- * Per-input character cap. Most SKILL.md files tokenize at 2-4 chars/token,
- * but pathological content (base64, dense unicode, walls of identifiers) can
- * exceed 1 token/char. 6000 chars covers the long tail safely; the rare skill
- * that still exceeds the per-input limit gets caught by `embedSkillsBatch`
- * and falls back to name+description-only ("minimal" mode).
- *
- * Future improvement: replace this character heuristic with real token
- * counting via `tiktoken` (or `js-tiktoken` for the WASM-free version).
- * Tradeoffs:
- *   - Adds a ~1-2 MB dependency to the Convex bundle
- *   - May need bundling tweaks if WASM doesn't load cleanly in the Convex
- *     runtime — `js-tiktoken` is the safer fallback
- *   - Recovers ~100% of skills instead of the long tail this heuristic loses
- *
- * Worth doing if/when the dev dashboard's "Minimal-mode skills" list grows
- * past a few % of total. Until then this heuristic is fine and adds no
- * dependencies.
+ * Per-input character cap. Voyage 4 Lite has a 32K token context, so this is
+ * far more generous than the old 6,000 cap (which was constrained by OpenAI's
+ * 8K limit). At 2-4 chars/token, 16,000 chars ≈ 4-8K tokens — well within the
+ * 32K limit even for pathological content.
  */
-const MAX_INPUT_CHARS = 6_000;
+const MAX_INPUT_CHARS = 16_000;
 
-export const EMBEDDING_VERSION = 1;
-export const EMBEDDING_DIMENSIONS = OPENAI_EMBEDDING_DIMENSIONS;
+export const EMBEDDING_VERSION = 2;
+export const EMBEDDING_DIMENSIONS = VOYAGE_EMBEDDING_DIMENSIONS;
 
 function getApiKey(): string {
-  const key = process.env.OPENAI_API_KEY;
+  const key = process.env.VOYAGE_API_KEY;
   if (!key) {
     throw new Error(
-      "OPENAI_API_KEY is not set. Run: npx convex env set OPENAI_API_KEY sk-...",
+      "VOYAGE_API_KEY is not set. Run: npx convex env set VOYAGE_API_KEY pa-...",
     );
   }
   return key;
@@ -54,12 +42,21 @@ export function truncateForEmbedding(text: string): string {
 
 interface EmbeddingResponse {
   data: Array<{ embedding: number[]; index: number }>;
-  usage: { prompt_tokens: number; total_tokens: number };
+  usage: { total_tokens: number };
 }
 
-/** Embed a single text string. Returns a 1536-dimension vector. */
-export async function embedText(text: string): Promise<number[]> {
-  const [vector] = await embedTexts([text]);
+/**
+ * Embed a single text string. Returns a 512-dimension vector.
+ *
+ * @param inputType - "document" for content being indexed (skills),
+ *                    "query" for search queries (repo fingerprints).
+ *                    Voyage prepends retrieval-optimized prompts per type.
+ */
+export async function embedText(
+  text: string,
+  inputType?: "document" | "query",
+): Promise<number[]> {
+  const [vector] = await embedTexts([text], inputType);
   return vector;
 }
 
@@ -74,7 +71,7 @@ function parseRetryAfterMs(body: string): number | null {
 }
 
 /**
- * Thrown when OpenAI rejects a single input as too long. Carries the index of
+ * Thrown when the API rejects a single input as too long. Carries the index of
  * the offending item so the caller can mark it unembeddable and retry the rest.
  */
 export class EmbeddingInputTooLongError extends Error {
@@ -88,37 +85,44 @@ const MAX_RETRIES = 3;
 
 /**
  * Embed a batch of text strings in a single API call.
- * OpenAI accepts up to 2048 inputs per request. Caller should batch above that.
+ * Voyage accepts up to 1000 inputs per request. Caller should batch above that.
  *
- * Retries on 429 by parsing OpenAI's suggested wait time, up to MAX_RETRIES times.
+ * @param inputType - "document" for content being indexed,
+ *                    "query" for search queries.
+ *
+ * Retries on 429 by parsing the suggested wait time, up to MAX_RETRIES times.
  */
-export async function embedTexts(texts: string[]): Promise<number[][]> {
+export async function embedTexts(
+  texts: string[],
+  inputType?: "document" | "query",
+): Promise<number[][]> {
   if (texts.length === 0) return [];
-  if (texts.length > 2048) {
+  if (texts.length > 1000) {
     throw new Error(
-      `embedTexts received ${texts.length} inputs, max is 2048 per call`,
+      `embedTexts received ${texts.length} inputs, max is 1000 per call`,
     );
   }
 
   const truncated = texts.map(truncateForEmbedding);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(OPENAI_EMBEDDINGS_URL, {
+    const res = await fetch(VOYAGE_EMBEDDINGS_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${getApiKey()}`,
       },
       body: JSON.stringify({
-        model: OPENAI_EMBEDDING_MODEL,
+        model: VOYAGE_EMBEDDING_MODEL,
         input: truncated,
+        output_dimension: VOYAGE_EMBEDDING_DIMENSIONS,
+        ...(inputType && { input_type: inputType }),
       }),
     });
 
     if (res.ok) {
       const data = (await res.json()) as EmbeddingResponse;
-      // OpenAI returns embeddings in input order, but the docs say to sort by
-      // index to be safe.
+      // Sort by index to be safe, same as before.
       const sorted = data.data.slice().sort((a, b) => a.index - b.index);
       return sorted.map((d) => d.embedding);
     }
@@ -132,7 +136,7 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
       const bodyMs = parseRetryAfterMs(body);
       const waitMs = headerMs ?? bodyMs ?? 5000 * (attempt + 1);
       console.warn(
-        `OpenAI 429 (attempt ${attempt + 1}/${MAX_RETRIES + 1}), waiting ${waitMs}ms`,
+        `Voyage 429 (attempt ${attempt + 1}/${MAX_RETRIES + 1}), waiting ${waitMs}ms`,
       );
       await new Promise((r) => setTimeout(r, waitMs));
       continue;
@@ -141,17 +145,20 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
     // Per-input length errors: parse the offending index so the caller can
     // mark just that one skill unembeddable and continue with the rest.
     if (res.status === 400) {
-      const badIndexMatch = body.match(/Invalid 'input\[(\d+)\]'/);
+      // Try OpenAI-style format first, then generic index pattern
+      const badIndexMatch =
+        body.match(/Invalid 'input\[(\d+)\]'/) ??
+        body.match(/input\[(\d+)\]/);
       if (badIndexMatch) {
         throw new EmbeddingInputTooLongError(parseInt(badIndexMatch[1], 10));
       }
     }
 
     throw new Error(
-      `OpenAI embeddings API error ${res.status}: ${body.slice(0, 500)}`,
+      `Voyage embeddings API error ${res.status}: ${body.slice(0, 500)}`,
     );
   }
 
   // Unreachable — the loop either returns or throws
-  throw new Error("OpenAI embeddings: exhausted retries");
+  throw new Error("Voyage embeddings: exhausted retries");
 }

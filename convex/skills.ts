@@ -246,21 +246,18 @@ export const upsertSkillsBatch = internalMutation({
             )
             .unique();
           if (existing) {
-            await ctx.db.patch(existing._id, { isDelisted: false });
+            await ctx.db.patch(existing._id, {
+              isDelisted: false,
+              needsEmbedding: true,
+            });
             await ctx.db.patch(summary._id, {
               lastSeenInApi: now,
               isDelisted: false,
               installs: skill.installs,
+              needsEmbedding: true,
+              hasEmbedding: false,
+              skillEmbeddingId: undefined,
             });
-            // Mirror the relist into skillEmbeddings so the vector index
-            // filter starts including this row again.
-            const skillEmbedding = await ctx.db
-              .query("skillEmbeddings")
-              .withIndex("by_skillId", (q) => q.eq("skillId", existing._id))
-              .unique();
-            if (skillEmbedding) {
-              await ctx.db.patch(skillEmbedding._id, { isDelisted: false });
-            }
           }
         } else if (summary.installs !== skill.installs) {
           // Installs changed but nothing structural — lightweight patch
@@ -1170,14 +1167,14 @@ export const delistSkillsBatch = internalMutation({
       if (skill && !skill.isDelisted) {
         await ctx.db.patch(skill._id, { isDelisted: true });
 
-        // Mirror the delisted state into skillEmbeddings so the vector
-        // index filter (`q.eq("isDelisted", false)`) excludes this row.
+        // Delete the embedding row entirely — delisted skills are excluded
+        // from vector search anyway, so keeping the row just wastes storage.
         const skillEmbedding = await ctx.db
           .query("skillEmbeddings")
           .withIndex("by_skillId", (q) => q.eq("skillId", skill._id))
           .unique();
         if (skillEmbedding) {
-          await ctx.db.patch(skillEmbedding._id, { isDelisted: true });
+          await ctx.db.delete(skillEmbedding._id);
         }
       }
     }
@@ -1690,7 +1687,7 @@ export const embedSkillsBatch = internalAction({
       );
 
       try {
-        const vectors = await embedTexts(inputs);
+        const vectors = await embedTexts(inputs, "document");
         const entries = result.skills.map((s, i) => ({
           skillId: s.id,
           embedding: vectors[i],
@@ -1731,7 +1728,7 @@ export const embedSkillsBatch = internalAction({
               skill.content,
             );
             try {
-              const [vector] = await embedTexts([fullInput]);
+              const [vector] = await embedTexts([fullInput], "document");
               entries.push({
                 skillId: skill.id,
                 embedding: vector,
@@ -1755,7 +1752,7 @@ export const embedSkillsBatch = internalAction({
               undefined,
             );
             try {
-              const [vector] = await embedTexts([minimalInput]);
+              const [vector] = await embedTexts([minimalInput], "document");
               entries.push({
                 skillId: skill.id,
                 embedding: vector,
@@ -1820,6 +1817,111 @@ export const backfillEmbeddings = internalAction({
   args: {},
   handler: async (ctx) => {
     await ctx.runAction(internal.skills.embedSkillsBatch, {});
+  },
+});
+
+// ---------------------------------------------------------------------------
+// One-off migration helpers (safe to remove after Voyage 4 Lite migration)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark all skills as needing re-embedding. Run via:
+ *   npx convex run skills:markAllSkillsForEmbedding
+ */
+export const markAllSkillsForEmbedding = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let total = 0;
+    let cursor: string | undefined;
+    while (true) {
+      const result: { count: number; nextCursor: string; isDone: boolean } =
+        await ctx.runMutation(internal.skills.markSkillsForEmbeddingBatch, {
+          cursor,
+        });
+      total += result.count;
+      if (result.isDone) break;
+      cursor = result.nextCursor;
+    }
+    console.log(`Marked ${total} skills for re-embedding`);
+  },
+});
+
+export const markSkillsForEmbeddingBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skills")
+      .paginate({ numItems: 100, cursor: cursor ?? null });
+    let count = 0;
+    for (const row of result.page) {
+      if (row.needsEmbedding !== true) {
+        await ctx.db.patch(row._id, { needsEmbedding: true });
+        count++;
+      }
+    }
+    return { count, nextCursor: result.continueCursor, isDone: result.isDone };
+  },
+});
+
+/**
+ * Delete all rows from the skillEmbeddings table. Run via:
+ *   npx convex run skills:clearAllEmbeddings
+ */
+export const clearAllEmbeddings = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let total = 0;
+    while (true) {
+      const deleted: number = await ctx.runMutation(
+        internal.skills.clearEmbeddingsBatch,
+        {},
+      );
+      total += deleted;
+      if (deleted === 0) break;
+    }
+    console.log(`Deleted ${total} embedding rows`);
+  },
+});
+
+export const clearEmbeddingsBatch = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("skillEmbeddings").take(100);
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+    return rows.length;
+  },
+});
+
+/**
+ * Delete all rows from the repoFingerprintCache table. Run via:
+ *   npx convex run skills:clearFingerprintCache
+ */
+export const clearFingerprintCache = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let total = 0;
+    while (true) {
+      const deleted: number = await ctx.runMutation(
+        internal.skills.clearFingerprintCacheBatch,
+        {},
+      );
+      total += deleted;
+      if (deleted === 0) break;
+    }
+    console.log(`Deleted ${total} fingerprint cache rows`);
+  },
+});
+
+export const clearFingerprintCacheBatch = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("repoFingerprintCache").take(100);
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+    return rows.length;
   },
 });
 

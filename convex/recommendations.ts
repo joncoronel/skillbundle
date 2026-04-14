@@ -430,7 +430,7 @@ export const analyzeRepo = action({
       // ------------------------------------------------------------------
       const embeddingInput = fingerprintToEmbeddingInput(fingerprint);
       try {
-        queryEmbedding = await embedText(embeddingInput);
+        queryEmbedding = await embedText(embeddingInput, "query");
       } catch (e) {
         console.error("Failed to embed repo fingerprint:", e);
         return {

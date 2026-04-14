@@ -68,7 +68,7 @@ export default defineSchema({
     .index("by_skillId", ["skillId"])
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
-      dimensions: 1536,
+      dimensions: 512,
       filterFields: ["isDelisted"],
     }),
 
