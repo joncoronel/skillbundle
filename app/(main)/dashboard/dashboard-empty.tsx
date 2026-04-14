@@ -10,7 +10,7 @@ export function DashboardEmpty() {
           Empty stack
         </p>
         <h2 className="mt-3 font-display text-4xl font-semibold tracking-tight md:text-5xl">
-          Start with a stack<span className="text-primary">.</span>
+          Start with a stack.
         </h2>
         <p className="mt-4 max-w-md text-sm text-muted-foreground">
           Pick your tech, save the skills that fit, and your bundles will live

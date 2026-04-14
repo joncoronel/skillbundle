@@ -34,15 +34,24 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
     : `${bundles.length}`;
 
   return (
-    <div className="grid grid-cols-2 divide-x divide-y border-y md:grid-cols-4 md:divide-y-0">
+    <div className="grid grid-cols-2 border-y md:grid-cols-4">
       <StatCell
         label="Bundles"
         value={bundlesValue}
         sub={hasCap ? (plan === "free" ? "Free plan" : undefined) : "Unlimited"}
         emphasize={atCap}
+        className="border-r border-b md:border-b-0"
       />
-      <StatCell label="Views" value={formatNumber(totals.views)} />
-      <StatCell label="Copies" value={formatNumber(totals.copies)} />
+      <StatCell
+        label="Views"
+        value={formatNumber(totals.views)}
+        className="border-b md:border-r md:border-b-0"
+      />
+      <StatCell
+        label="Copies"
+        value={formatNumber(totals.copies)}
+        className="border-r"
+      />
       <StatCell label="Forks" value={formatNumber(totals.forks)} />
     </div>
   );
@@ -53,17 +62,20 @@ function StatCell({
   value,
   sub,
   emphasize,
+  className,
 }: {
   label: string;
   value: string;
   sub?: string;
   emphasize?: boolean;
+  className?: string;
 }) {
   return (
     <div
       className={cn(
         "relative px-5 py-5",
         emphasize && "bg-accent/40",
+        className,
       )}
     >
       <div className="flex items-center justify-between">

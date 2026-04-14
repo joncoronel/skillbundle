@@ -11,7 +11,6 @@ import {
   InputGroupButton,
 } from "@/components/ui/cubby-ui/input-group";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
-import { cn } from "@/lib/utils";
 
 interface ExploreFiltersProps {
   className?: string;
@@ -23,7 +22,7 @@ export function ExploreFilters({ className, ref }: ExploreFiltersProps) {
   const hasQuery = query.length > 0;
 
   return (
-    <section className={cn("mb-10", className)}>
+    <section className={className}>
       <InputGroup className="max-w-md">
         <InputGroupAddon align="inline-start">
           <HugeiconsIcon

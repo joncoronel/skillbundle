@@ -42,6 +42,8 @@ import {
   Edit01Icon,
   Cancel01Icon,
 } from "@hugeicons/core-free-icons";
+import { generateInstallCommands } from "@/lib/install-commands";
+import { timeAgo } from "@/lib/utils";
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
@@ -96,136 +98,132 @@ export function BundleView({
   });
 
   if (bundle === null) {
-    return (
-      <div className="mx-auto max-w-5xl px-4 pt-24 text-center">
-        <h1 className="text-2xl font-bold">Bundle not found</h1>
-        <p className="mt-2 text-muted-foreground">
-          This bundle may have been deleted or the link is incorrect.
-        </p>
-        <Button
-          variant="primary"
-          className="mt-6"
-          nativeButton={false}
-          render={<Link href="/" />}
-        >
-          Back to home
-        </Button>
-      </div>
-    );
+    return <BundleNotFound />;
   }
 
   const updatedCount = bundle.skills.filter((s) => s.updatedSinceAdded).length;
+  const skillCount = bundle.skills.length;
+  const commandCount = generateInstallCommands(bundle.skills).length;
 
   return (
     <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold tracking-tight">
-          {bundle.name}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          by {bundle.creatorName} &middot; {bundle.skills.length} skill
-          {bundle.skills.length !== 1 ? "s" : ""}
-        </p>
-        {(bundle.viewCount > 0 ||
-          bundle.copyCount > 0 ||
-          bundle.forkCount > 0) && (
-          <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-            {bundle.viewCount > 0 && (
-              <span className="font-mono tabular-nums">
-                {bundle.viewCount} {bundle.viewCount === 1 ? "view" : "views"}
-              </span>
-            )}
-            {bundle.copyCount > 0 && (
-              <span className="font-mono tabular-nums">
-                {bundle.copyCount} {bundle.copyCount === 1 ? "copy" : "copies"}
-              </span>
-            )}
-            {bundle.forkCount > 0 && (
-              <span className="font-mono tabular-nums">
-                {bundle.forkCount} {bundle.forkCount === 1 ? "fork" : "forks"}
-              </span>
-            )}
-          </div>
-        )}
-        {bundle.forkedFrom && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Forked from{" "}
-            <Link
-              href={`/stack/${bundle.forkedFrom.urlId}`}
-              className="underline hover:text-foreground"
-            >
-              {bundle.forkedFrom.name}
-            </Link>{" "}
-            by {bundle.forkedFrom.creatorName}
-          </p>
-        )}
-        {!bundle.isOwner && (
-          <div className="mt-3">
-            <ForkBundleButton bundleId={bundle._id} />
-          </div>
-        )}
+      <div className="space-y-12">
+        <header className="border-b pb-8">
+          <div className="flex items-start justify-between gap-6">
+            <div className="min-w-0">
+              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                Bundle <span aria-hidden>&middot;</span> by {bundle.creatorName}
+              </p>
+              <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight leading-[1.05] wrap-break-word md:text-5xl">
+                {bundle.name}
+              </h1>
 
-        {bundle.isOwner && (
-          <div className="mt-4 flex items-center gap-4 border-t pt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRenameDialogOpen(true)}
-              leftSection={
-                <HugeiconsIcon
-                  icon={Edit01Icon}
-                  strokeWidth={2}
-                  className="size-3.5"
+              <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground tabular-nums">
+                <MetadataItems
+                  skillCount={skillCount}
+                  createdAt={bundle.createdAt}
+                  viewCount={bundle.viewCount}
+                  copyCount={bundle.copyCount}
+                  forkCount={bundle.forkCount}
                 />
-              }
-            >
-              Rename
-            </Button>
-            <VisibilityToggle
-              bundleId={bundle._id}
-              isPublic={bundle.isPublic}
-              canMakePrivate={planData.limits?.canMakePrivate ?? false}
-              updateVisibility={updateVisibility}
-            />
-            {!bundle.isPublic && (
-              <SharePopover
-                bundleId={bundle._id}
-                urlId={bundle.urlId}
-                shareToken={bundle.shareToken}
-                onGenerate={generateShare}
-                onRevoke={revokeShare}
-              />
+              </p>
+
+              {bundle.forkedFrom && (
+                <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Forked from{" "}
+                  <Link
+                    href={`/stack/${bundle.forkedFrom.urlId}`}
+                    className="text-foreground underline-offset-2 hover:underline"
+                  >
+                    {bundle.forkedFrom.name}
+                  </Link>{" "}
+                  <span aria-hidden>&middot;</span> by{" "}
+                  {bundle.forkedFrom.creatorName}
+                </p>
+              )}
+
+              {bundle.isOwner && (
+                <div className="mt-6 flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRenameDialogOpen(true)}
+                    leftSection={
+                      <HugeiconsIcon
+                        icon={Edit01Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
+                      />
+                    }
+                  >
+                    Rename
+                  </Button>
+                  <VisibilityToggle
+                    bundleId={bundle._id}
+                    isPublic={bundle.isPublic}
+                    canMakePrivate={planData.limits?.canMakePrivate ?? false}
+                    updateVisibility={updateVisibility}
+                  />
+                  {!bundle.isPublic && (
+                    <SharePopover
+                      bundleId={bundle._id}
+                      urlId={bundle.urlId}
+                      shareToken={bundle.shareToken}
+                      onGenerate={generateShare}
+                      onRevoke={revokeShare}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!bundle.isOwner && (
+              <div className="shrink-0">
+                <ForkBundleButton bundleId={bundle._id} />
+              </div>
             )}
           </div>
+        </header>
+
+        {updatedCount > 0 && (
+          <div className="border-y py-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              Updates available
+            </p>
+            <p className="mt-1.5 text-sm">
+              {updatedCount} skill{updatedCount !== 1 ? "s" : ""} updated since
+              this bundle was saved — re-run the install commands to get the
+              latest versions.
+            </p>
+          </div>
         )}
+
+        <section>
+          <SectionHeader
+            label="Install"
+            count={commandCount}
+            title="Copy-paste & go."
+          />
+          <InstallCommands skills={bundle.skills} bundleId={bundle._id} />
+        </section>
+
+        <section>
+          <SectionHeader
+            label="Skills"
+            count={skillCount}
+            title="What's inside."
+          />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {bundle.skills.map((skill) => (
+              <SkillCardView
+                key={`${skill.source}/${skill.skillId}`}
+                skill={skill}
+                sheetHandle={skillDetailHandle}
+              />
+            ))}
+          </div>
+        </section>
       </div>
-
-      {updatedCount > 0 && (
-        <div className="mb-6 rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
-          {updatedCount} skill{updatedCount !== 1 ? "s have" : " has"} been
-          updated since you saved this bundle. Re-run the install commands to
-          get the latest versions.
-        </div>
-      )}
-
-      <section className="mb-10">
-        <InstallCommands skills={bundle.skills} bundleId={bundle._id} />
-      </section>
-
-      <section>
-        <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-          Skills in this bundle
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {bundle.skills.map((skill) => (
-            <SkillCardView
-              key={`${skill.source}/${skill.skillId}`}
-              skill={skill}
-              sheetHandle={skillDetailHandle}
-            />
-          ))}
-        </div>
-      </section>
 
       <SkillDetailSheet handle={skillDetailHandle} />
 
@@ -238,6 +236,113 @@ export function BundleView({
           queryArgs={queryArgs}
         />
       )}
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metadata row + section header + toolbar slot
+// ---------------------------------------------------------------------------
+
+function MetadataItems({
+  skillCount,
+  createdAt,
+  viewCount,
+  copyCount,
+  forkCount,
+}: {
+  skillCount: number;
+  createdAt: number;
+  viewCount: number;
+  copyCount: number;
+  forkCount: number;
+}) {
+  const items: string[] = [
+    `${skillCount} skill${skillCount !== 1 ? "s" : ""}`,
+    `Created ${timeAgo(createdAt)}`,
+  ];
+  if (viewCount > 0) {
+    items.push(`${viewCount} view${viewCount !== 1 ? "s" : ""}`);
+  }
+  if (copyCount > 0) {
+    items.push(`${copyCount} ${copyCount !== 1 ? "copies" : "copy"}`);
+  }
+  if (forkCount > 0) {
+    items.push(`${forkCount} fork${forkCount !== 1 ? "s" : ""}`);
+  }
+
+  return (
+    <>
+      {items.map((item, i) => (
+        <span key={i}>
+          {i > 0 && (
+            <span aria-hidden className="px-1.5">
+              &middot;
+            </span>
+          )}
+          {item}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function SectionHeader({
+  label,
+  count,
+  title,
+}: {
+  label: string;
+  count: number;
+  title: string;
+}) {
+  return (
+    <div className="mb-5 border-b pb-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        {label} <span aria-hidden>&middot;</span>{" "}
+        <span className="text-foreground tabular-nums">{count}</span>
+      </p>
+      <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight leading-tight">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Not-found state
+// ---------------------------------------------------------------------------
+
+function BundleNotFound() {
+  return (
+    <main className="mx-auto max-w-5xl px-4 pt-20 pb-20">
+      <div className="border px-8 py-20 md:px-12">
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+          Not found
+        </p>
+        <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight md:text-5xl">
+          This bundle isn&rsquo;t here.
+        </h1>
+        <p className="mt-3 max-w-md text-sm text-muted-foreground">
+          It may have been deleted, set to private, or the link is incorrect.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Button
+            variant="primary"
+            nativeButton={false}
+            render={<Link href="/explore" />}
+          >
+            Explore bundles
+          </Button>
+          <Button
+            variant="ghost"
+            nativeButton={false}
+            render={<Link href="/" />}
+          >
+            Back home
+          </Button>
+        </div>
+      </div>
     </main>
   );
 }
@@ -276,7 +381,21 @@ function SharePopover({
 
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            leftSection={
+              <HugeiconsIcon
+                icon={Share01Icon}
+                strokeWidth={2}
+                className="size-3.5"
+              />
+            }
+          />
+        }
+      >
         Share
       </PopoverTrigger>
       <PopoverContent

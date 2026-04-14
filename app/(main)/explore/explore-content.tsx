@@ -10,7 +10,6 @@ import { Search01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { exploreQueryParser } from "@/lib/search-params";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
-import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { ExploreFilters } from "@/components/explore/explore-filters";
 import { TrendingBundles } from "@/components/explore/trending-bundles";
@@ -49,11 +48,9 @@ export function ExploreContent() {
       <ExploreFilters ref={inputRef} />
       <Crossfade active={isSearching}>
         {/* Browse state */}
-        <div>
+        <div className="space-y-14">
           <TrendingBundles />
-          <div className="mt-16">
-            <RecentBundles />
-          </div>
+          <RecentBundles />
         </div>
         {/* Search state */}
         <SearchResults query={effectiveQuery} onClear={() => setQuery(null)} />
@@ -74,14 +71,23 @@ function SearchResults({
     gcTime: 5 * 60_000,
   });
 
+  const count = results?.length ?? 0;
+
   return (
     <section>
-      <div className="mb-5 flex items-center gap-2.5">
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          <span className="text-muted-foreground">Results for</span> &ldquo;
-          {query}&rdquo;
+      <div className="mb-5 border-b pb-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          Search results{" "}
+          {results && (
+            <>
+              <span aria-hidden>&middot;</span>{" "}
+              <span className="text-foreground tabular-nums">{count}</span>
+            </>
+          )}
+        </p>
+        <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight leading-tight">
+          &ldquo;{query}&rdquo;
         </h2>
-        {results && <Badge variant="neutral">{results.length}</Badge>}
       </div>
       {isFetching && !results ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -94,10 +100,10 @@ function SearchResults({
           <HugeiconsIcon
             icon={Search01Icon}
             strokeWidth={1.5}
-            className="size-10 text-muted-foreground/40"
+            className="size-8 text-muted-foreground/40"
           />
           <p className="text-sm text-muted-foreground">
-            No bundles match &ldquo;{query}&rdquo;
+            No bundles match that search.
           </p>
           <Button variant="outline" size="sm" onClick={onClear}>
             Clear search
@@ -105,27 +111,19 @@ function SearchResults({
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {results?.map((bundle, i) => (
-            <div
+          {results?.map((bundle) => (
+            <BundleCard
               key={bundle._id}
-              // className="animate-in fade-in slide-in-from-bottom-2 fill-mode-[both] motion-reduce:animate-none"
-              // style={{
-              //   animationDelay: `${i * 40}ms`,
-              //   animationDuration: "200ms",
-              // }}
-            >
-              <BundleCard
-                name={bundle.name}
-                urlId={bundle.urlId}
-                skillCount={bundle.skillCount}
-                createdAt={bundle.createdAt}
-                creatorName={bundle.creatorName}
-                creatorImage={bundle.creatorImage}
-                viewCount={bundle.viewCount}
-                copyCount={bundle.copyCount}
-                forkCount={bundle.forkCount}
-              />
-            </div>
+              name={bundle.name}
+              urlId={bundle.urlId}
+              skillCount={bundle.skillCount}
+              createdAt={bundle.createdAt}
+              creatorName={bundle.creatorName}
+              creatorImage={bundle.creatorImage}
+              viewCount={bundle.viewCount}
+              copyCount={bundle.copyCount}
+              forkCount={bundle.forkCount}
+            />
           ))}
         </div>
       )}

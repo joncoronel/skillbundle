@@ -12,7 +12,7 @@ export function DashboardMasthead() {
             Dashboard <span aria-hidden>&middot;</span> Bundles
           </p>
           <h1 className="mt-3 font-display text-5xl font-semibold tracking-tight text-[clamp(2.5rem,5vw,4rem)] leading-[0.95]">
-            Your bundles<span className="text-primary">.</span>
+            Your bundles.
           </h1>
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">
             Saved skill stacks, ready to share or install.
