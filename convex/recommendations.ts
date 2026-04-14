@@ -65,7 +65,7 @@ const FINGERPRINT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Toggle verbose cache-hit/miss logging for analyzeRepo. Flip to false to
 // silence the pipeline logs in production.
-const ANALYZE_REPO_DEBUG = true;
+const ANALYZE_REPO_DEBUG = false;
 
 function debugLog(msg: string): void {
   if (ANALYZE_REPO_DEBUG) console.log(msg);
@@ -261,6 +261,14 @@ export const analyzeRepo = action({
     const cacheKey = makeCacheKey(owner, repo);
     const repoKey = `${owner}/${repo}`;
 
+    const t0 = Date.now();
+    let tPrev = t0;
+    const mark = (label: string): void => {
+      const now = Date.now();
+      debugLog(`[analyzeRepo]   ⏱ ${label}: ${now - tPrev}ms`);
+      tPrev = now;
+    };
+
     debugLog(`[analyzeRepo] Starting for ${repoName}`);
 
     let fingerprint: RepoFingerprint;
@@ -324,6 +332,7 @@ export const analyzeRepo = action({
       );
       treeChanged = true;
     }
+    mark("Tree check");
 
     // ------------------------------------------------------------------
     // Step 2: Check fingerprint cache (skip if tree changed)
@@ -337,12 +346,14 @@ export const analyzeRepo = action({
     if (cached) {
       fingerprint = cached.fingerprint;
       queryEmbedding = cached.embedding;
+      mark("Fingerprint cache check");
 
       // Full cache hit — skip vector search, summary lookups, and grouping.
       if (cached.recommendations) {
         debugLog(
           `[analyzeRepo] ✓ FULL CACHE HIT — returning ${cached.recommendations.length} cached recommendations (no vector search)`,
         );
+        debugLog(`[analyzeRepo] Total: ${Date.now() - t0}ms`);
         return {
           error: null,
           repoName,
@@ -354,6 +365,7 @@ export const analyzeRepo = action({
         `[analyzeRepo] ◐ PARTIAL CACHE HIT — reusing fingerprint+embedding, running vector search`,
       );
     } else {
+      mark("Fingerprint cache check");
       debugLog(
         treeChanged
           ? `[analyzeRepo] ✗ Fingerprint cache SKIPPED (tree changed) — full rebuild from GitHub`
@@ -364,6 +376,7 @@ export const analyzeRepo = action({
       // ------------------------------------------------------------------
       const meta = await fetchRepoMetadata(owner, repo);
       if (!branch) branch = meta?.defaultBranch ?? "main";
+      mark("GitHub metadata fetch");
 
       // If we don't have a tree scan yet (no cache existed), fetch fresh
       if (!scan) {
@@ -420,6 +433,9 @@ export const analyzeRepo = action({
       // ------------------------------------------------------------------
       // Step 5: Build fingerprint from resolved inputs
       // ------------------------------------------------------------------
+      debugLog(
+        `[analyzeRepo] Fetching ${filesToFetch.length} files from GitHub...`,
+      );
       fingerprint = await buildRepoFingerprint({
         owner,
         repo,
@@ -429,6 +445,7 @@ export const analyzeRepo = action({
         configFiles: scan?.configFiles ?? [],
         filesToFetch,
       });
+      mark(`GitHub file fetches (${filesToFetch.length} files)`);
 
       if (
         fingerprint.packages.length === 0 &&
@@ -460,12 +477,14 @@ export const analyzeRepo = action({
           recommendations: [],
         };
       }
+      mark("Voyage embedding");
 
       await ctx.runMutation(internal.recommendations.setCachedFingerprint, {
         cacheKey,
         fingerprint,
         embedding: queryEmbedding,
       });
+      mark("Save fingerprint cache");
     }
 
     // Vector search over the skillEmbeddings table. Returns embedding-row
@@ -481,6 +500,7 @@ export const analyzeRepo = action({
     debugLog(
       `[analyzeRepo] Vector search returned ${results.length} candidates`,
     );
+    mark("Vector search");
 
     if (results.length === 0) {
       return {
@@ -500,6 +520,7 @@ export const analyzeRepo = action({
       internal.skills.getSummariesByEmbeddingIds,
       { ids: embeddingIds },
     );
+    mark("Summary lookups");
 
     // Index summaries by their corresponding skillEmbedding _id so we can
     // preserve the vector-search ranking when looping over results below.
@@ -633,6 +654,8 @@ export const analyzeRepo = action({
       };
     });
 
+    mark("Grouping + scoring");
+
     // Cache recommendations so repeat analyses skip the vector search.
     debugLog(
       `[analyzeRepo] Saving ${recommendations.length} recommendations to cache`,
@@ -641,6 +664,8 @@ export const analyzeRepo = action({
       cacheKey,
       recommendations,
     });
+    mark("Save recommendations cache");
+    debugLog(`[analyzeRepo] Total: ${Date.now() - t0}ms`);
 
     return {
       error: null,
