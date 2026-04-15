@@ -22,6 +22,16 @@ export function SignInForm() {
   const [password, setPassword] = React.useState("");
   const router = useRouter();
 
+  // Cache Components keeps this route mounted via React Activity on
+  // navigation, which otherwise preserves input values between visits.
+  // Clear form state when the route becomes hidden.
+  React.useLayoutEffect(() => {
+    return () => {
+      setEmail("");
+      setPassword("");
+    };
+  }, []);
+
   const identifierError = errors?.fields?.identifier;
   const passwordError = errors?.fields?.password;
   const globalErrorMessages =

@@ -50,12 +50,25 @@ export function SignUpForm() {
 
   const otpRef = React.useRef<HTMLInputElement>(null);
   const cooldownRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  React.useEffect(
-    () => () => {
-      if (cooldownRef.current) clearTimeout(cooldownRef.current);
-    },
-    [],
-  );
+
+  // Cache Components keeps this route mounted via React Activity on
+  // navigation, which otherwise preserves form input values and transient
+  // auth state between visits. Reset everything when the route becomes hidden
+  // so returning to it is a fresh experience.
+  React.useLayoutEffect(() => {
+    return () => {
+      setEmail("");
+      setPassword("");
+      setCode("");
+      setAdvancedToVerify(false);
+      setResendState("idle");
+      setResendError(null);
+      if (cooldownRef.current) {
+        clearTimeout(cooldownRef.current);
+        cooldownRef.current = null;
+      }
+    };
+  }, []);
 
   const isCodeExpired =
     codeError?.code === "verification_expired" ||
