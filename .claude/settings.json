@@ -5,7 +5,13 @@
       "mcp__paper__get_font_family_info",
       "mcp__paper__create_artboard",
       "mcp__paper__write_html",
-      "mcp__paper__get_screenshot"
+      "mcp__paper__get_screenshot",
+      "Read(//c/Users/jonny/AppData/Local/Temp/skillstack-shots/**)",
+      "Bash(agent-browser eval:*)",
+      "Bash(agent-browser close:*)",
+      "Bash(echo \"---EXIT: $?\")",
+      "Bash(grep -r \"SignInErrors\" node_modules/@clerk/*/dist/types --include=\"*.d.ts\" -l)",
+      "Bash(kill %1)"
     ]
   }
 }

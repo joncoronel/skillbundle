@@ -3,48 +3,91 @@
 import * as React from "react";
 import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
-import { Label } from "@/components/ui/cubby-ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/cubby-ui/card";
-import { Separator } from "@/components/ui/cubby-ui/separator";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/cubby-ui/input-otp";
+import { AuthFrame } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
+import {
+  AuthCrossButton,
+  AuthCrossLink,
+  AuthDivider,
+  AuthFieldError,
+  AuthFieldLabel,
+  AuthFormError,
+  AuthSubmitButton,
+  resolveClerkErrorMessage,
+  type ClerkErrorLike,
+} from "./shared";
+
+const RESEND_COOLDOWN_MS = 30_000;
 
 export function SignUpForm() {
-  const { signUp, errors, fetchStatus } = useSignUp();
+  const { signUp, errors } = useSignUp();
   const { isSignedIn } = useAuth();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [code, setCode] = React.useState("");
+  const [resendState, setResendState] = React.useState<
+    "idle" | "sending" | "sent"
+  >("idle");
+  const [resendError, setResendError] = React.useState<string | null>(null);
+  const [advancedToVerify, setAdvancedToVerify] = React.useState(false);
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const emailError = errors?.fields?.emailAddress;
+  const passwordError = errors?.fields?.password;
+  const codeError = errors?.fields?.code;
+  const captchaError = errors?.fields?.captcha;
+  const globalErrorMessages = [
+    ...(errors?.global?.map((e) => resolveClerkErrorMessage(e)) ?? []),
+    ...(captchaError ? [resolveClerkErrorMessage(captchaError)] : []),
+    ...(resendError ? [resendError] : []),
+  ];
 
+  const otpRef = React.useRef<HTMLInputElement>(null);
+  const cooldownRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(
+    () => () => {
+      if (cooldownRef.current) clearTimeout(cooldownRef.current);
+    },
+    [],
+  );
+
+  const isCodeExpired =
+    codeError?.code === "verification_expired" ||
+    errors?.global?.some((e) => e.code === "verification_expired");
+
+  React.useEffect(() => {
+    if (isCodeExpired) setCode("");
+  }, [isCodeExpired]);
+
+  const submitSignUp = async () => {
     const { error } = await signUp.password({
       emailAddress: email,
       password,
     });
     if (error) return;
 
-    await signUp.verifications.sendEmailCode();
+    try {
+      await signUp.verifications.sendEmailCode();
+      setAdvancedToVerify(true);
+    } catch (err) {
+      // Account was created but the code wasn't sent. Don't advance —
+      // surface the failure so the user knows to retry.
+      const first = (err as { errors?: ClerkErrorLike[] })?.errors?.[0];
+      setResendError(
+        first
+          ? resolveClerkErrorMessage(first)
+          : "Couldn't send the verification code. Try again.",
+      );
+    }
   };
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const submitVerify = async () => {
     await signUp.verifications.verifyEmailCode({ code });
 
     if (signUp.status === "complete") {
@@ -62,28 +105,81 @@ export function SignUpForm() {
     }
   };
 
-  if (signUp.status === "complete" || isSignedIn) {
-    return null;
-  }
+  const handleResend = async () => {
+    if (resendState !== "idle") return;
+    setResendState("sending");
+    setResendError(null);
+    try {
+      await signUp.verifications.sendEmailCode();
+      setResendState("sent");
+      setCode("");
+      otpRef.current?.focus();
+      if (cooldownRef.current) clearTimeout(cooldownRef.current);
+      cooldownRef.current = setTimeout(
+        () => setResendState("idle"),
+        RESEND_COOLDOWN_MS,
+      );
+    } catch (err) {
+      const clerkErrors = (err as { errors?: ClerkErrorLike[] })?.errors;
+      const first = clerkErrors?.[0];
+      setResendError(
+        first
+          ? resolveClerkErrorMessage(first)
+          : "Couldn't resend the code. Try again in a moment.",
+      );
+      setResendState("idle");
+    }
+  };
 
-  // Show verification form when email needs verification
+  const isVerifyComplete =
+    advancedToVerify && (signUp.status === "complete" || isSignedIn);
+
   const needsVerification =
+    advancedToVerify &&
     signUp.status === "missing_requirements" &&
     signUp.unverifiedFields?.includes("email_address") &&
     signUp.missingFields?.length === 0;
 
-  if (needsVerification) {
+  if (needsVerification || isVerifyComplete) {
+    const resendStatus =
+      resendState === "sending"
+        ? "sending…"
+        : resendState === "sent"
+          ? "code sent ✓"
+          : null;
+
     return (
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-xl">Verify your email</CardTitle>
-          <CardDescription>
-            We sent a verification code to {email}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-6">
-          <form onSubmit={handleVerify} className="flex flex-col items-center gap-4">
-            <InputOTP maxLength={6} value={code} onChange={setCode}>
+      <AuthFrame
+        title="Check your email."
+        description={`We sent a 6-digit code to ${email}.`}
+        footer={
+          isVerifyComplete ? null : (
+            <div className="flex items-center gap-3">
+              {resendStatus ? <span role="status">{resendStatus}</span> : null}
+              <AuthCrossButton
+                onClick={handleResend}
+                disabled={resendState !== "idle"}
+              >
+                resend code
+              </AuthCrossButton>
+            </div>
+          )
+        }
+      >
+        <form action={submitVerify} className="flex flex-col gap-6">
+          <div className="flex flex-col gap-3">
+            <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
+            <InputOTP
+              id="code"
+              ref={otpRef}
+              maxLength={6}
+              value={code}
+              onChange={setCode}
+              autoFocus={!isVerifyComplete}
+              disabled={isVerifyComplete}
+              aria-invalid={codeError ? true : undefined}
+              aria-describedby={codeError ? "code-error" : undefined}
+            >
               <InputOTPGroup>
                 <InputOTPSlot index={0} />
               </InputOTPGroup>
@@ -103,44 +199,61 @@ export function SignUpForm() {
                 <InputOTPSlot index={5} />
               </InputOTPGroup>
             </InputOTP>
-
-            {errors?.fields?.code && (
-              <p className="text-destructive text-sm">
-                {errors.fields.code.message}
-              </p>
+            {codeError && !isVerifyComplete && (
+              <AuthFieldError
+                id="code-error"
+                message={resolveClerkErrorMessage(codeError)}
+              />
             )}
+          </div>
 
-            <Button
-              type="submit"
-              disabled={fetchStatus === "fetching"}
-              className="w-full"
+          {!isVerifyComplete && (
+            <AuthFormError messages={globalErrorMessages} />
+          )}
+
+          {isVerifyComplete ? (
+            <p
+              role="status"
+              className="text-center text-sm text-muted-foreground"
             >
-              {fetchStatus === "fetching" ? "Verifying..." : "Verify"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              Verified. Signing you in…
+            </p>
+          ) : (
+            <AuthSubmitButton idleLabel="Verify" pendingLabel="Verifying" />
+          )}
+        </form>
+      </AuthFrame>
+    );
+  }
+
+  if (signUp.status === "complete" || isSignedIn) {
+    // Reached "complete" without having gone through our verify flow
+    // (e.g. some edge case). Keep a minimal fallback so the layout stays stable.
+    return (
+      <AuthFrame title="Signing you in…" description="One moment.">
+        <div />
+      </AuthFrame>
     );
   }
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader className="text-center">
-        <CardTitle className="text-xl">Create an account</CardTitle>
-        <CardDescription>Get started</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
+    <AuthFrame
+      title="New account."
+      description="Start building your stack. Takes a minute."
+      footer={
+        <AuthCrossLink href="/sign-in">
+          already registered? sign in →
+        </AuthCrossLink>
+      }
+    >
+      <div className="flex flex-col gap-8">
         <OAuthButtons mode="sign-up" />
 
-        <div className="flex items-center gap-3">
-          <Separator className="flex-1" />
-          <span className="text-muted-foreground text-xs uppercase">or</span>
-          <Separator className="flex-1" />
-        </div>
+        <AuthDivider label="or email" />
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form action={submitSignUp} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
+            <AuthFieldLabel htmlFor="email">Email</AuthFieldLabel>
             <Input
               id="email"
               type="email"
@@ -149,16 +262,19 @@ export function SignUpForm() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
+              aria-invalid={emailError ? true : undefined}
+              aria-describedby={emailError ? "email-error" : undefined}
             />
-            {errors?.fields?.emailAddress && (
-              <p className="text-destructive text-sm">
-                {errors.fields.emailAddress.message}
-              </p>
+            {emailError && (
+              <AuthFieldError
+                id="email-error"
+                message={resolveClerkErrorMessage(emailError, "email address")}
+              />
             )}
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
+            <AuthFieldLabel htmlFor="password">Password</AuthFieldLabel>
             <Input
               id="password"
               type="password"
@@ -166,32 +282,28 @@ export function SignUpForm() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="new-password"
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={passwordError ? "password-error" : undefined}
             />
-            {errors?.fields?.password && (
-              <p className="text-destructive text-sm">
-                {errors.fields.password.message}
-              </p>
+            {passwordError && (
+              <AuthFieldError
+                id="password-error"
+                message={resolveClerkErrorMessage(passwordError)}
+              />
             )}
           </div>
 
           <div id="clerk-captcha" />
 
-          <Button
-            type="submit"
-            disabled={fetchStatus === "fetching"}
-            className="w-full"
-          >
-            {fetchStatus === "fetching" ? "Creating account..." : "Create account"}
-          </Button>
-        </form>
+          <AuthFormError messages={globalErrorMessages} />
 
-        <p className="text-muted-foreground text-center text-sm">
-          Already have an account?{" "}
-          <Link href="/sign-in" className="text-primary underline-offset-4 hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </CardContent>
-    </Card>
+          <AuthSubmitButton
+            idleLabel="Create account"
+            pendingLabel="Creating account"
+            className="mt-2"
+          />
+        </form>
+      </div>
+    </AuthFrame>
   );
 }

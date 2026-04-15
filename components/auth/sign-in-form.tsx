@@ -3,29 +3,31 @@
 import * as React from "react";
 import { useSignIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
-import { Label } from "@/components/ui/cubby-ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/cubby-ui/card";
-import { Separator } from "@/components/ui/cubby-ui/separator";
+import { AuthFrame } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
+import {
+  AuthCrossLink,
+  AuthDivider,
+  AuthFieldError,
+  AuthFieldLabel,
+  AuthFormError,
+  AuthSubmitButton,
+  resolveClerkErrorMessage,
+} from "./shared";
 
 export function SignInForm() {
-  const { signIn, errors, fetchStatus } = useSignIn();
+  const { signIn, errors } = useSignIn();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const identifierError = errors?.fields?.identifier;
+  const passwordError = errors?.fields?.password;
+  const globalErrorMessages =
+    errors?.global?.map((e) => resolveClerkErrorMessage(e)) ?? [];
 
+  const submit = async () => {
     const { error } = await signIn.password({
       identifier: email,
       password,
@@ -48,23 +50,23 @@ export function SignInForm() {
   };
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader className="text-center">
-        <CardTitle className="text-xl">Sign in</CardTitle>
-        <CardDescription>Welcome back</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
+    <AuthFrame
+      title="Sign in."
+      description="Welcome back."
+      footer={
+        <AuthCrossLink href="/sign-up">
+          new here? create account →
+        </AuthCrossLink>
+      }
+    >
+      <div className="flex flex-col gap-8">
         <OAuthButtons mode="sign-in" />
 
-        <div className="flex items-center gap-3">
-          <Separator className="flex-1" />
-          <span className="text-muted-foreground text-xs uppercase">or</span>
-          <Separator className="flex-1" />
-        </div>
+        <AuthDivider label="or email" />
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form action={submit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
+            <AuthFieldLabel htmlFor="email">Email</AuthFieldLabel>
             <Input
               id="email"
               type="email"
@@ -73,16 +75,22 @@ export function SignInForm() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
+              aria-invalid={identifierError ? true : undefined}
+              aria-describedby={identifierError ? "email-error" : undefined}
             />
-            {errors?.fields?.identifier && (
-              <p className="text-destructive text-sm">
-                {errors.fields.identifier.message}
-              </p>
+            {identifierError && (
+              <AuthFieldError
+                id="email-error"
+                message={resolveClerkErrorMessage(
+                  identifierError,
+                  "email address",
+                )}
+              />
             )}
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
+            <AuthFieldLabel htmlFor="password">Password</AuthFieldLabel>
             <Input
               id="password"
               type="password"
@@ -90,30 +98,26 @@ export function SignInForm() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={passwordError ? "password-error" : undefined}
             />
-            {errors?.fields?.password && (
-              <p className="text-destructive text-sm">
-                {errors.fields.password.message}
-              </p>
+            {passwordError && (
+              <AuthFieldError
+                id="password-error"
+                message={resolveClerkErrorMessage(passwordError)}
+              />
             )}
           </div>
 
-          <Button
-            type="submit"
-            disabled={fetchStatus === "fetching"}
-            className="w-full"
-          >
-            {fetchStatus === "fetching" ? "Signing in..." : "Sign in"}
-          </Button>
-        </form>
+          <AuthFormError messages={globalErrorMessages} />
 
-        <p className="text-muted-foreground text-center text-sm">
-          Don&apos;t have an account?{" "}
-          <Link href="/sign-up" className="text-primary underline-offset-4 hover:underline">
-            Sign up
-          </Link>
-        </p>
-      </CardContent>
-    </Card>
+          <AuthSubmitButton
+            idleLabel="Sign in"
+            pendingLabel="Signing in"
+            className="mt-2"
+          />
+        </form>
+      </div>
+    </AuthFrame>
   );
 }

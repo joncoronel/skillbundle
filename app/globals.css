@@ -170,6 +170,7 @@ html {
   --animate-fade-in-up: fade-in-up 0.8s ease-out forwards;
   --animate-float: float 4s ease-in-out infinite;
   --animate-skeleton: skeleton 2s -1s linear infinite;
+  --animate-scroll-stack: scroll-stack 30s linear infinite;
 
   /* Inset shadows for bordered elements (applied to before pseudo-element inset by 1px) */
   --shadow-inset: 0 1px 2px 0 oklch(0 0 0 / 0.08);
@@ -189,6 +190,17 @@ html {
   @keyframes skeleton {
     to {
       background-position-x: -200%;
+    }
+  }
+
+  @keyframes scroll-stack {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      /* One copy of the list (rendered 3x in the DOM) — keeps loop seamless
+         when the container is taller than a single copy. */
+      transform: translateY(-33.333%);
     }
   }
 }

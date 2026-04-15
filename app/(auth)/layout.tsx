@@ -1,11 +1,14 @@
+import { SkillStackPanel } from "@/components/auth/skill-stack-panel";
+
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 bg-[radial-gradient(ellipse_at_center,oklch(from_var(--primary)_l_c_h/5%),transparent_70%)]">
+    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(420px,45%)]">
       {children}
+      <SkillStackPanel />
     </div>
   );
 }
