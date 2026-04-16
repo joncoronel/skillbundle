@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "next",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 3000
+    },
+    {
+      "name": "convex",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["convex", "dev"],
+      "port": 3210
+    }
+  ]
+}
