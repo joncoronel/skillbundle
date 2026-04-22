@@ -17,18 +17,14 @@ export function TrendingBundles() {
 
   return (
     <section>
-      <div className="mb-5 border-b pb-3">
-        <p className="font-mono text-label uppercase tracking-eyebrow text-muted-foreground">
-          Trending{" "}
-          {!isPending && (
-            <>
-              <span aria-hidden>&middot;</span>{" "}
-              <span className="text-foreground tabular-nums">{count}</span>
-            </>
-          )}
-        </p>
-        <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
+      <div className="mb-5">
+        <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
           What&rsquo;s hot right now.
+          {!isPending && (
+            <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+              · {count}
+            </span>
+          )}
         </h2>
       </div>
 

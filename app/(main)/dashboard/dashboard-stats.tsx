@@ -34,24 +34,15 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
     : `${bundles.length}`;
 
   return (
-    <div className="grid grid-cols-2 border-y md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
       <StatCell
         label="Bundles"
         value={bundlesValue}
         sub={hasCap ? (plan === "free" ? "Free plan" : undefined) : "Unlimited"}
         emphasize={atCap}
-        className="border-r border-b md:border-b-0"
       />
-      <StatCell
-        label="Views"
-        value={formatNumber(totals.views)}
-        className="border-b md:border-r md:border-b-0"
-      />
-      <StatCell
-        label="Copies"
-        value={formatNumber(totals.copies)}
-        className="border-r"
-      />
+      <StatCell label="Views" value={formatNumber(totals.views)} />
+      <StatCell label="Copies" value={formatNumber(totals.copies)} />
       <StatCell label="Forks" value={formatNumber(totals.forks)} />
     </div>
   );
@@ -73,15 +64,13 @@ function StatCell({
   return (
     <div
       className={cn(
-        "relative px-5 py-5",
-        emphasize && "bg-accent/40",
+        "relative rounded-lg px-5 py-5",
+        emphasize ? "bg-accent/40" : "bg-muted/40",
         className,
       )}
     >
       <div className="flex items-center justify-between">
-        <p className="font-mono text-label uppercase tracking-eyebrow text-muted-foreground">
-          {label}
-        </p>
+        <p className="text-xs text-muted-foreground">{label}</p>
         {emphasize && (
           <span
             aria-hidden
@@ -93,9 +82,7 @@ function StatCell({
         {value}
       </p>
       {sub && (
-        <p className="mt-1.5 font-mono text-label uppercase tracking-eyebrow text-muted-foreground/80">
-          {sub}
-        </p>
+        <p className="mt-1.5 text-xs text-muted-foreground/80">{sub}</p>
       )}
     </div>
   );

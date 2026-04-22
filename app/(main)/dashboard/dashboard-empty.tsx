@@ -3,13 +3,10 @@ import { Button } from "@/components/ui/cubby-ui/button";
 
 export function DashboardEmpty() {
   return (
-    <div className="relative overflow-hidden border">
+    <div className="relative overflow-hidden rounded-xl bg-muted/40">
       <DotMatrix />
       <div className="relative px-6 py-16 md:px-12 md:py-24">
-        <p className="font-mono text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
-          Empty stack
-        </p>
-        <h2 className="mt-3 font-display text-4xl font-semibold tracking-tight leading-hero text-balance md:text-5xl">
+        <h2 className="font-display text-4xl font-semibold tracking-tight leading-hero text-balance md:text-5xl">
           Start with a stack.
         </h2>
         <p className="mt-4 max-w-md text-sm text-muted-foreground">

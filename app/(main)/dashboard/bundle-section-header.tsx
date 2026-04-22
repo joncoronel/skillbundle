@@ -28,18 +28,18 @@ export function BundleSectionHeader({
   sortBy,
   onSortChange,
 }: BundleSectionHeaderProps) {
-  const countStr = count.toString().padStart(2, "0");
-
   return (
-    <div className="flex items-center justify-between border-b pb-3">
-      <p className="font-mono text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
-        Bundles <span aria-hidden>&middot;</span>{" "}
-        <span className="text-foreground tabular-nums">{countStr}</span>
-      </p>
+    <div className="flex items-center justify-between">
+      <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
+        Bundles
+        <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+          · {count}
+        </span>
+      </h2>
       <div className="flex items-center gap-2">
         <label
           htmlFor="bundle-sort"
-          className="font-mono text-label uppercase tracking-eyebrow text-muted-foreground"
+          className="text-sm text-muted-foreground"
         >
           Sort
         </label>

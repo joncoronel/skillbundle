@@ -5,13 +5,10 @@ import { Button } from "@/components/ui/cubby-ui/button";
 
 export function DashboardMasthead() {
   return (
-    <header className="border-b pb-8">
+    <header>
       <div className="flex items-start justify-between gap-6">
         <div>
-          <p className="font-mono text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
-            Dashboard <span aria-hidden>&middot;</span> Bundles
-          </p>
-          <h1 className="mt-3 font-display text-[clamp(2.5rem,5vw,4rem)] font-semibold tracking-tight leading-hero text-balance">
+          <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-semibold tracking-tight leading-hero text-balance">
             Your bundles.
           </h1>
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">

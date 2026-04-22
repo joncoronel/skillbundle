@@ -38,18 +38,14 @@ export function RecentBundles() {
 
   return (
     <section>
-      <div className="mb-5 border-b pb-3">
-        <p className="font-mono text-label uppercase tracking-eyebrow text-muted-foreground">
-          Recent{" "}
-          {!isFirstLoad && (
-            <>
-              <span aria-hidden>&middot;</span>{" "}
-              <span className="text-foreground tabular-nums">{count}</span>
-            </>
-          )}
-        </p>
-        <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
+      <div className="mb-5">
+        <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
           Latest additions.
+          {!isFirstLoad && (
+            <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+              · {count}
+            </span>
+          )}
         </h2>
       </div>
 
@@ -61,10 +57,7 @@ export function RecentBundles() {
         </div>
       ) : results.length === 0 ? (
         <div className="py-20">
-          <p className="font-mono text-label uppercase tracking-eyebrow text-muted-foreground">
-            Nothing yet
-          </p>
-          <p className="mt-3 font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
+          <p className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
             Be the first to share a bundle.
           </p>
         </div>
@@ -86,15 +79,13 @@ export function RecentBundles() {
 
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       {status === "LoadingMore" && (
-        <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <HugeiconsIcon
             icon={Loading03Icon}
             strokeWidth={2}
             className="size-3.5 animate-spin"
           />
-          <span className="font-mono uppercase tracking-eyebrow text-label">
-            Loading more
-          </span>
+          <span>Loading more</span>
         </div>
       )}
     </section>
