@@ -8,8 +8,6 @@ import {
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva } from "class-variance-authority";
-import { XIcon } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
@@ -33,6 +31,9 @@ import {
 import { useScrollSnap } from "./hooks/use-scroll-snap";
 import { useVirtualKeyboard } from "./hooks/use-virtual-keyboard";
 import { useVisualViewportHeight } from "./hooks/use-visual-viewport-height";
+
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 
 export type { SnapPoint, DrawerDirection };
 
@@ -1169,7 +1170,7 @@ function DrawerContentInner({
                   className="absolute end-2 top-2"
                   render={<Button size="icon_sm" variant="ghost" />}
                 >
-                  <XIcon />
+                  <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
                 </DrawerClose>
               )}
             </BaseDialog.Popup>

@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { getAuthToken } from "@/lib/auth";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { BundleView } from "./bundle-view";
 
 export default function BundlePage({

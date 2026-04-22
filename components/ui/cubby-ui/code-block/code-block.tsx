@@ -4,7 +4,6 @@ import {
   useLayoutEffect,
   useState,
   useMemo,
-  ComponentType,
   createContext,
   useContext,
 } from "react";
@@ -14,8 +13,6 @@ import { useRender } from "@base-ui/react/use-render";
 import { highlight } from "@/components/ui/cubby-ui/code-block/lib/shiki-shared";
 import { stripDiffMarker } from "@/components/ui/cubby-ui/code-block/lib/transformers/utils";
 import { cn } from "@/lib/utils";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ComputerTerminal01Icon } from "@hugeicons/core-free-icons";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import {
   SiTypescript,
@@ -28,6 +25,9 @@ import {
   ScrollArea,
   type FadeEdges,
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
+
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ComputerTerminal01Icon } from "@hugeicons/core-free-icons";
 
 // Context for sharing code block state
 interface CodeBlockContextValue {
@@ -52,25 +52,44 @@ function useCodeBlock() {
   return context;
 }
 
-// Wrapper for HugeIcons terminal icon to match the component signature
-const TerminalIconWrapper = ({ size, className }: { size: number; className: string }) => (
-  <HugeiconsIcon icon={ComputerTerminal01Icon} strokeWidth={2} className={className} style={{ width: size, height: size }} />
-);
-
 // Language icon mapping
-const LANGUAGE_ICONS: Record<
-  string,
-  ComponentType<{ size: number; className: string }>
-> = {
+type LanguageIconRenderer = React.ComponentType<{
+  size: number;
+  className: string;
+}>;
+
+function renderHugeicon(
+  icon: typeof ComputerTerminal01Icon,
+): LanguageIconRenderer {
+  function HugeLanguageIcon({
+    size,
+    className,
+  }: {
+    size: number;
+    className: string;
+  }) {
+    return (
+      <HugeiconsIcon
+        icon={icon}
+        size={size}
+        className={className}
+        strokeWidth={2}
+      />
+    );
+  }
+  return HugeLanguageIcon;
+}
+
+const LANGUAGE_ICONS: Record<string, LanguageIconRenderer> = {
   typescript: SiTypescript,
   ts: SiTypescript,
   tsx: SiTypescript,
   javascript: SiJavascript,
   js: SiJavascript,
   jsx: SiJavascript,
-  bash: TerminalIconWrapper,
-  sh: TerminalIconWrapper,
-  shell: TerminalIconWrapper,
+  bash: renderHugeicon(ComputerTerminal01Icon),
+  sh: renderHugeicon(ComputerTerminal01Icon),
+  shell: renderHugeicon(ComputerTerminal01Icon),
   python: SiPython,
   py: SiPython,
 };

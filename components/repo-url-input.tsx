@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
 import { SkillRowView, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import {
   Collapsible,

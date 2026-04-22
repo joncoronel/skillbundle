@@ -7,7 +7,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Badge } from "@/components/ui/cubby-ui/badge";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
 export interface BackendSession {
   id: string;

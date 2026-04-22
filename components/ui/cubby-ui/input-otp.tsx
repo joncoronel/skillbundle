@@ -4,7 +4,6 @@ import * as React from "react"
 import { OTPInput, OTPInputContext } from "input-otp"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { MinusSignIcon } from "@hugeicons/core-free-icons"
-
 import { cn } from "@/lib/utils"
 
 function InputOTP({

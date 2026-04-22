@@ -11,7 +11,7 @@ import { PLANS } from "@/lib/plans";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SettingsSection } from "./settings-section";
 
 function formatDate(iso: string | null | undefined) {

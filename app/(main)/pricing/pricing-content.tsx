@@ -9,7 +9,7 @@ import { PLANS, type Plan, yearlySavingsPercent } from "@/lib/plans";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
 

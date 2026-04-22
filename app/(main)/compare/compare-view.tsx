@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
   Tabs,
   TabsList,

@@ -2,9 +2,6 @@
 
 import * as React from "react";
 import dayjs from "dayjs";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Calendar03Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
-
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Calendar } from "@/components/ui/cubby-ui/calendar";
 import {
@@ -13,6 +10,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/cubby-ui/popover";
 import { cn } from "@/lib/utils";
+
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Calendar01Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
 
 export interface DatePickerProps {
   value?: Date;
@@ -44,14 +44,14 @@ export function DatePicker({
             disabled={disabled}
           >
             <span className="flex w-full items-center">
-              <HugeiconsIcon icon={Calendar03Icon} strokeWidth={2} className="mr-2 size-4" />
+              <HugeiconsIcon icon={Calendar01Icon} className="mr-2 size-4" strokeWidth={2} />
               {value ? (
                 <span>{dayjs(value).format(format)}</span>
               ) : (
                 <span className="text-muted-foreground">{placeholder}</span>
               )}
             </span>
-            <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={2} className="ml-2 size-4 shrink-0 opacity-50" />
+            <HugeiconsIcon icon={UnfoldMoreIcon} className="ml-2 size-4 shrink-0 opacity-50" strokeWidth={2} />
           </Button>
         )}
       />

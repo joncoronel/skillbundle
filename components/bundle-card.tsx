@@ -16,7 +16,7 @@ import {
   AvatarImage,
   AvatarFallback,
 } from "@/components/ui/cubby-ui/avatar";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { timeAgo, getInitials } from "@/lib/utils";
 
 interface BundleCardProps {

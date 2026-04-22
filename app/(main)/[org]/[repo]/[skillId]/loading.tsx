@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
 export default function SkillLoading() {
   return (

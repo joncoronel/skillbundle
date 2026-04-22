@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/cubby-ui/select";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Badge } from "@/components/ui/cubby-ui/badge";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { formatInstalls, timeAgo } from "@/lib/utils";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import {

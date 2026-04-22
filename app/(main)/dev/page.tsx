@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { verifySession } from "@/lib/auth";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { DevDashboardContent } from "./dev-dashboard-content";
 
 export default function DevDashboardPage() {

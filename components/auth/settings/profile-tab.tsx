@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { Separator } from "@/components/ui/cubby-ui/separator";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { SettingsSection } from "./settings-section";
 import { EmailSection } from "./email-section";

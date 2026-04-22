@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { UserProfile } from "@clerk/nextjs";
 import { verifySession } from "@/lib/auth";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
 export const metadata: Metadata = {
   title: "Settings",

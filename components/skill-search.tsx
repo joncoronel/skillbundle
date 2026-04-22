@@ -5,7 +5,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@/convex/_generated/api";
 import { SkillRowView, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { cn } from "@/lib/utils";
 
 interface SkillSearchResultsProps {

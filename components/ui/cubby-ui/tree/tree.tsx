@@ -854,13 +854,13 @@ function TreeItemInternal<
                   </span>
                   <HugeiconsIcon
                     icon={ArrowRight01Icon}
-                    strokeWidth={2}
                     aria-hidden="true"
                     className={cn(
-                      "text-muted-foreground ease-out-cubic size-4 shrink-0 transition-transform duration-[325ms]",
+                      "text-muted-foreground ease-out-expo size-4 shrink-0 transition-transform duration-[325ms]",
                       isExpanded && "rotate-90",
                       isDisabled && "opacity-50",
                     )}
+                    strokeWidth={2}
                   />
                   {context.renderItem(node)}
                 </div>
@@ -893,13 +893,13 @@ function TreeItemInternal<
                 >
                   <HugeiconsIcon
                     icon={ArrowRight01Icon}
-                    strokeWidth={2}
                     aria-hidden="true"
                     className={cn(
-                      "text-muted-foreground ease-out-cubic size-4 shrink-0 transition-transform duration-[325ms]",
+                      "text-muted-foreground ease-out-expo size-4 shrink-0 transition-transform duration-[325ms]",
                       isExpanded && "rotate-90",
                       isDisabled && "opacity-50",
                     )}
+                    strokeWidth={2}
                   />
                   {context.renderItem(node)}
                 </BaseCollapsible.Trigger>
@@ -909,7 +909,7 @@ function TreeItemInternal<
 
           <BaseCollapsible.Panel
             className={cn(
-              "ease-out-cubic h-[var(--collapsible-panel-height)] overflow-y-clip transition-all duration-[325ms]",
+              "ease-out-expo h-[var(--collapsible-panel-height)] overflow-y-clip transition-all duration-[325ms]",
               "data-[ending-style]:h-0 data-[ending-style]:opacity-0",
               "data-[starting-style]:h-0 data-[starting-style]:opacity-0",
             )}
@@ -1002,7 +1002,13 @@ function TreeItemIcon({
   // Show loading spinner if node is loading
   let displayIcon: React.ReactNode;
   if (isLoading) {
-    displayIcon = <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="animate-spin" />;
+    displayIcon = (
+      <HugeiconsIcon
+        icon={Loading03Icon}
+        className="animate-spin"
+        strokeWidth={2}
+      />
+    );
   } else {
     displayIcon =
       isExpanded && "iconOpen" in item && item.iconOpen

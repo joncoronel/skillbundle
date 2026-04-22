@@ -16,7 +16,7 @@ import {
   AlertDialogDescription,
   AlertDialogClose,
 } from "@/components/ui/cubby-ui/alert-dialog";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
 function DangerZoneSkeleton() {
   return <Skeleton className="h-9 w-32" />;

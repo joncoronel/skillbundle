@@ -22,7 +22,7 @@ import {
   MinusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { useBundleSelection } from "@/lib/bundle-selection-context";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";

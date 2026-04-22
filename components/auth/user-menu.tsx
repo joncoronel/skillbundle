@@ -26,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/cubby-ui/dropdown-menu";
-import { Skeleton } from "../ui/cubby-ui/skeleton";
+import { Skeleton } from "../ui/cubby-ui/skeleton/skeleton";
 
 export function UserMenu() {
   const { user, isLoaded } = useUser();

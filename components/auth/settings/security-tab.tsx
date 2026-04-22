@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useUser } from "@clerk/nextjs";
 import { Separator } from "@/components/ui/cubby-ui/separator";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SettingsSection } from "./settings-section";
 import { PasswordSection } from "./password-section";
 import { SessionsTab, SessionsSkeleton, type BackendSession } from "./sessions-tab";

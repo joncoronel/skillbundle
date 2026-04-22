@@ -5,7 +5,7 @@ import { DesktopNav } from "@/components/header-nav";
 import { MobileNav } from "@/components/mobile-nav";
 import { HeaderAuth } from "@/components/header-auth";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
 export function AppHeader() {
   return (

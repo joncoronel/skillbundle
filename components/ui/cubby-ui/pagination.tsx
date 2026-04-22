@@ -1,9 +1,9 @@
 import * as React from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
-
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
+
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowLeft01Icon, ArrowRight01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
@@ -78,7 +78,7 @@ function PaginationPrevious({
       className={cn("gap-1.5 px-3 sm:pe-4", className)}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} className="size-4" />
+      <HugeiconsIcon icon={ArrowLeft01Icon} className="size-4" strokeWidth={2} />
       <span>Previous</span>
     </PaginationLink>
   );
@@ -96,7 +96,7 @@ function PaginationNext({
       {...props}
     >
       <span>Next</span>
-      <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} className="size-4" />
+      <HugeiconsIcon icon={ArrowRight01Icon} className="size-4" strokeWidth={2} />
     </PaginationLink>
   );
 }
@@ -112,7 +112,7 @@ function PaginationEllipsis({
       className={cn("flex size-10 items-center justify-center", className)}
       {...props}
     >
-      <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} className="size-4" />
+      <HugeiconsIcon icon={MoreHorizontalIcon} className="size-4" strokeWidth={2} />
       <span className="sr-only">More pages</span>
     </span>
   );
