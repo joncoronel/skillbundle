@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { BrandMark } from "@/components/brand-mark";
 import { DesktopNav } from "@/components/header-nav";
 import { MobileNav } from "@/components/mobile-nav";
 import { HeaderAuth } from "@/components/header-auth";
@@ -15,12 +16,8 @@ export function AppHeader() {
             <MobileNav />
           </Suspense>
 
-          <Link
-            href="/"
-            className="font-display text-lg font-bold tracking-tight"
-          >
-            SkillStack
-            <span className="ml-0.5 inline-block size-1.5 rounded-full bg-primary align-super" />
+          <Link href="/" className="flex items-center">
+            <BrandMark />
           </Link>
 
           <Suspense fallback={<NavSkeleton />}>
