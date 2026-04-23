@@ -17,7 +17,6 @@ import {
   repoUrlParser,
   type ModeValue,
 } from "@/lib/search-params";
-import { BundleSelectionProvider } from "@/lib/bundle-selection-context";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -96,7 +95,7 @@ export function SkillExplorer({
   const Icon = isText ? Search01Icon : GithubIcon;
 
   return (
-    <BundleSelectionProvider>
+    <>
       <Tabs value={mode} onValueChange={(value) => setMode(value as ModeValue)}>
         <TabsList variant="underline" className="mb-3">
           <TabsTrigger value="text">
@@ -229,6 +228,6 @@ export function SkillExplorer({
 
       <BundleBar />
       <SkillDetailSheet handle={skillDetailHandle} />
-    </BundleSelectionProvider>
+    </>
   );
 }

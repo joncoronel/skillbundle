@@ -31,6 +31,7 @@
     "geist": "^1.7.0",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "input-otp": "^1.4.2",
+    "jotai": "^2.19.1",
     "lucide-react": "^0.563.0",
     "motion": "^12.33.0",
     "next": "16.1.6",

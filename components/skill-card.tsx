@@ -14,7 +14,10 @@ import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { SheetTrigger } from "@/components/ui/cubby-ui/sheet";
-import { useBundleSelection } from "@/lib/bundle-selection-context";
+import {
+  useBundleActions,
+  useIsSkillSelected,
+} from "@/lib/bundle-selection";
 import { cn, formatInstalls, timeAgo } from "@/lib/utils";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 
@@ -153,53 +156,60 @@ function SelectableWrapper({
   );
 }
 
+// The Checkbox wired up to the global bundle selection. Lives inside a
+// `SelectableWrapper` (a <Label>) so the whole row/card acts as the click
+// target via `htmlFor={checkboxId}`.
+function SkillSelectionCheckbox({
+  skill,
+  checkboxId,
+}: {
+  skill: SkillData;
+  checkboxId: string;
+}) {
+  const isSelected = useIsSkillSelected(skill.source, skill.skillId);
+  const { toggleSkill } = useBundleActions();
+  return (
+    <Checkbox
+      id={checkboxId}
+      checked={isSelected}
+      onCheckedChange={() =>
+        toggleSkill({
+          source: skill.source,
+          skillId: skill.skillId,
+          name: skill.name,
+        })
+      }
+      className="shrink-0"
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Shared props
 // ---------------------------------------------------------------------------
 
 interface SkillViewProps {
   skill: SkillData;
-  selectable?: boolean;
   sheetHandle?: SkillDetailHandle;
   className?: string;
 }
 
 // ---------------------------------------------------------------------------
-// SkillRowView
+// Row variants
 // ---------------------------------------------------------------------------
 
 function SkillRowContent({
   skill,
-  selectable,
-  checkboxId,
-  selected,
-  selection,
   sheetHandle,
+  leading,
 }: {
   skill: SkillData;
-  selectable: boolean;
-  checkboxId: string;
-  selected: boolean;
-  selection: ReturnType<typeof useBundleSelection>;
   sheetHandle?: SkillDetailHandle;
+  leading?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-3 px-4">
-      {selectable && (
-        <Checkbox
-          id={checkboxId}
-          checked={selected}
-          onCheckedChange={() => {
-            if (selection)
-              selection.toggleSkill({
-                source: skill.source,
-                skillId: skill.skillId,
-                name: skill.name,
-              });
-          }}
-          className="shrink-0"
-        />
-      )}
+      {leading}
       <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
         <span className="text-sm font-semibold">
           <SkillName skill={skill} sheetHandle={sheetHandle} />
@@ -213,58 +223,47 @@ function SkillRowContent({
   );
 }
 
-export function SkillRowView({
+export function SkillRowView({ skill, sheetHandle }: SkillViewProps) {
+  return <SkillRowContent skill={skill} sheetHandle={sheetHandle} />;
+}
+
+export function SelectableSkillRow({
   skill,
-  selectable = false,
   sheetHandle,
   className,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
-  const selection = useBundleSelection();
-  const selected =
-    selectable && selection
-      ? selection.isSelected(skill.source, skill.skillId)
-      : false;
-
-  const contentProps = { skill, selectable, checkboxId, selected, selection, sheetHandle };
-
-  if (selectable) {
-    return (
-      <SelectableWrapper
-        checkboxId={checkboxId}
-        className={cn(
-          "py-3",
-          "[&:has(+_label_[data-checked])]:border-b-primary/30 dark:[&:has(+_label_[data-checked])]:border-b-primary/30",
-          className,
-        )}
-      >
-        <SkillRowContent {...contentProps} />
-      </SelectableWrapper>
-    );
-  }
-
-  return <SkillRowContent {...contentProps} />;
+  return (
+    <SelectableWrapper
+      checkboxId={checkboxId}
+      className={cn(
+        "py-3",
+        "[&:has(+_label_[data-checked])]:border-b-primary/30 dark:[&:has(+_label_[data-checked])]:border-b-primary/30",
+        className,
+      )}
+    >
+      <SkillRowContent
+        skill={skill}
+        sheetHandle={sheetHandle}
+        leading={<SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />}
+      />
+    </SelectableWrapper>
+  );
 }
 
 // ---------------------------------------------------------------------------
-// SkillCardView
+// Card variants
 // ---------------------------------------------------------------------------
 
 function SkillCardContent({
   skill,
-  selectable,
-  checkboxId,
-  selected,
-  selection,
   sheetHandle,
+  leading,
 }: {
   skill: SkillData;
-  selectable: boolean;
-  checkboxId: string;
-  selected: boolean;
-  selection: ReturnType<typeof useBundleSelection>;
   sheetHandle?: SkillDetailHandle;
+  leading?: React.ReactNode;
 }) {
   const cardTimestamp = skill.contentUpdatedAt ?? skill.createdAt;
   const cardTimeLabel =
@@ -274,21 +273,7 @@ function SkillCardContent({
     <>
       <CardHeader className="gap-1">
         <div className="flex items-center gap-2">
-          {selectable && (
-            <Checkbox
-              id={checkboxId}
-              checked={selected}
-              onCheckedChange={() => {
-                if (selection)
-                  selection.toggleSkill({
-                    source: skill.source,
-                    skillId: skill.skillId,
-                    name: skill.name,
-                  });
-              }}
-              className="shrink-0"
-            />
-          )}
+          {leading}
           <CardTitle className="text-sm leading-snug flex items-center">
             <SkillName
               skill={skill}
@@ -317,46 +302,33 @@ function SkillCardContent({
 
 export function SkillCardView({
   skill,
-  selectable = false,
+  sheetHandle,
+  className,
+}: SkillViewProps) {
+  return (
+    <Card className={cn("gap-3 py-4", className)}>
+      <SkillCardContent skill={skill} sheetHandle={sheetHandle} />
+    </Card>
+  );
+}
+
+export function SelectableSkillCard({
+  skill,
   sheetHandle,
   className,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
-  const selection = useBundleSelection();
-  const selected =
-    selectable && selection
-      ? selection.isSelected(skill.source, skill.skillId)
-      : false;
-
-  const contentProps = { skill, selectable, checkboxId, selected, selection, sheetHandle };
-
-  if (selectable) {
-    return (
-      <SelectableWrapper
-        checkboxId={checkboxId}
-        className={cn("gap-3 py-4 h-full", className)}
-      >
-        <SkillCardContent {...contentProps} />
-      </SelectableWrapper>
-    );
-  }
-
   return (
-    <Card className={cn("gap-3 py-4", className)}>
-      <SkillCardContent {...contentProps} />
-    </Card>
+    <SelectableWrapper
+      checkboxId={checkboxId}
+      className={cn("gap-3 py-4 h-full", className)}
+    >
+      <SkillCardContent
+        skill={skill}
+        sheetHandle={sheetHandle}
+        leading={<SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />}
+      />
+    </SelectableWrapper>
   );
-}
-
-// ---------------------------------------------------------------------------
-// SkillCard — thin dispatcher (preserves existing API)
-// ---------------------------------------------------------------------------
-
-export function SkillCard({
-  variant = "card",
-  ...props
-}: SkillViewProps & { variant?: "card" | "row" }) {
-  if (variant === "row") return <SkillRowView {...props} />;
-  return <SkillCardView {...props} />;
 }

@@ -17,7 +17,10 @@ import {
   TabsPanels,
   TabsContent,
 } from "@/components/ui/cubby-ui/tabs";
-import { useBundleSelection } from "@/lib/bundle-selection-context";
+import {
+  useBundleActions,
+  useIsSkillSelected,
+} from "@/lib/bundle-selection";
 import { formatInstalls } from "@/lib/utils";
 
 interface SkillRef {
@@ -48,8 +51,8 @@ function CompareColumn({ source, skillId }: SkillRef) {
   const { data: content, isPending: contentLoading } = useQuery(
     convexQuery(api.skills.getContent, { source, skillId }),
   );
-  const selection = useBundleSelection();
-  const isSelected = selection?.isSelected(source, skillId) ?? false;
+  const isSelected = useIsSkillSelected(source, skillId);
+  const { toggleSkill } = useBundleActions();
 
   if (skillLoading) {
     return (
@@ -112,21 +115,19 @@ function CompareColumn({ source, skillId }: SkillRef) {
         )}
       </div>
 
-      {selection && (
-        <Button
-          variant={isSelected ? "outline" : "primary"}
-          size="sm"
-          onClick={() =>
-            selection.toggleSkill({
-              source: skill.source,
-              skillId: skill.skillId,
-              name: skill.name,
-            })
-          }
-        >
-          {isSelected ? "Remove from bundle" : "Add to bundle"}
-        </Button>
-      )}
+      <Button
+        variant={isSelected ? "outline" : "primary"}
+        size="sm"
+        onClick={() =>
+          toggleSkill({
+            source: skill.source,
+            skillId: skill.skillId,
+            name: skill.name,
+          })
+        }
+      >
+        {isSelected ? "Remove from bundle" : "Add to bundle"}
+      </Button>
     </div>
   );
 }

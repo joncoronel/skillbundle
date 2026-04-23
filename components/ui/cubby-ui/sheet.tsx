@@ -16,7 +16,7 @@ import { Cancel01Icon } from "@hugeicons/core-free-icons";
 const sheetContentVariants = cva(
   [
     "bg-popover text-popover-foreground fixed z-50 flex max-h-full min-h-0 w-full max-w-full min-w-0 flex-col outline-hidden",
-    "ease-[cubic-bezier(.32,.72,0,1)] transition-all duration-400",
+    "ease-[cubic-bezier(.32,.72,0,1)] transition-[translate] duration-400",
     // Nested sheet support
     "scale-[calc(1-0.05*var(--nested-dialogs))]",
     // Overlay (hidden by default, fades in/out when nested using allow-discrete)

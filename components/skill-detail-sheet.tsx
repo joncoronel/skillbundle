@@ -23,7 +23,10 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { useBundleSelection } from "@/lib/bundle-selection-context";
+import {
+  useBundleActions,
+  useIsSkillSelected,
+} from "@/lib/bundle-selection";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
 
@@ -63,10 +66,8 @@ function SkillDetailSheetContent({
     }),
   );
 
-  const selection = useBundleSelection();
-  const isSelected = selection
-    ? selection.isSelected(skill.source, skill.skillId)
-    : false;
+  const isSelected = useIsSkillSelected(skill.source, skill.skillId);
+  const { toggleSkill } = useBundleActions();
 
   return (
     <>
@@ -123,28 +124,26 @@ function SkillDetailSheetContent({
             className="size-3.5"
           />
         </Link>
-        {selection && (
-          <Button
-            variant={isSelected ? "outline" : "primary"}
-            size="sm"
-            leftSection={
-              <HugeiconsIcon
-                icon={isSelected ? MinusSignIcon : PlusSignIcon}
-                strokeWidth={2}
-                className="size-3.5"
-              />
-            }
-            onClick={() =>
-              selection.toggleSkill({
-                source: skill.source,
-                skillId: skill.skillId,
-                name: skill.name,
-              })
-            }
-          >
-            {isSelected ? "Remove from bundle" : "Add to bundle"}
-          </Button>
-        )}
+        <Button
+          variant={isSelected ? "outline" : "primary"}
+          size="sm"
+          leftSection={
+            <HugeiconsIcon
+              icon={isSelected ? MinusSignIcon : PlusSignIcon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          }
+          onClick={() =>
+            toggleSkill({
+              source: skill.source,
+              skillId: skill.skillId,
+              name: skill.name,
+            })
+          }
+        >
+          {isSelected ? "Remove from bundle" : "Add to bundle"}
+        </Button>
       </SheetFooter>
     </>
   );

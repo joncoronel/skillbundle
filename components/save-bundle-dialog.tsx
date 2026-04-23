@@ -21,7 +21,10 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
-import { useBundleSelection } from "@/lib/bundle-selection-context";
+import {
+  useBundleActions,
+  useSelectedSkills,
+} from "@/lib/bundle-selection";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
@@ -35,7 +38,8 @@ export function SaveBundleDialog({
   open,
   onOpenChange,
 }: SaveBundleDialogProps) {
-  const selection = useBundleSelection();
+  const selectedSkills = useSelectedSkills();
+  const { clearAll } = useBundleActions();
   const createBundle = useMutation(api.bundles.createBundle);
   const router = useRouter();
   const [name, setName] = useState("");
@@ -47,9 +51,7 @@ export function SaveBundleDialog({
     limits !== null &&
     bundleCount !== undefined &&
     bundleCount >= limits.maxBundles;
-
-  if (!selection) return null;
-  const { selectedSkills, clearAll, count } = selection;
+  const count = selectedSkills.length;
 
   async function handleSave() {
     if (!name.trim() || count === 0) return;
