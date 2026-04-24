@@ -144,13 +144,17 @@ export async function embedTexts(
 
     // Per-input length errors: parse the offending index so the caller can
     // mark just that one skill unembeddable and continue with the rest.
+    // Guard the generic `input[N]` fallback on a length-related keyword so
+    // an unrelated 400 that happens to mention `input[0]` doesn't get
+    // misclassified as a too-long error.
     if (res.status === 400) {
-      // Try OpenAI-style format first, then generic index pattern
-      const badIndexMatch =
+      const indexMatch =
         body.match(/Invalid 'input\[(\d+)\]'/) ??
         body.match(/input\[(\d+)\]/);
-      if (badIndexMatch) {
-        throw new EmbeddingInputTooLongError(parseInt(badIndexMatch[1], 10));
+      const looksLikeLength =
+        /too long|exceeds?|maximum|length|token/i.test(body);
+      if (indexMatch && looksLikeLength) {
+        throw new EmbeddingInputTooLongError(parseInt(indexMatch[1], 10));
       }
     }
 

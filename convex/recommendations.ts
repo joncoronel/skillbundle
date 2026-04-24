@@ -1,4 +1,9 @@
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -130,10 +135,26 @@ export const setCachedFingerprint = internalMutation({
   },
 });
 
-export const cleanupExpiredFingerprintCache = internalMutation({
+// Action + batch mutation so the daily cleanup keeps chewing through expired
+// rows if more than one batch has accumulated, without risking a single
+// mutation's write limit.
+export const cleanupExpiredFingerprintCache = internalAction({
   args: {},
   handler: async (ctx) => {
     const cutoff = Date.now() - FINGERPRINT_CACHE_TTL_MS;
+    while (true) {
+      const deleted: number = await ctx.runMutation(
+        internal.recommendations.cleanupExpiredFingerprintCacheBatch,
+        { cutoff },
+      );
+      if (deleted === 0) break;
+    }
+  },
+});
+
+export const cleanupExpiredFingerprintCacheBatch = internalMutation({
+  args: { cutoff: v.number() },
+  handler: async (ctx, { cutoff }) => {
     const expired = await ctx.db
       .query("repoFingerprintCache")
       .filter((q) => q.lt(q.field("cachedAt"), cutoff))
@@ -142,6 +163,7 @@ export const cleanupExpiredFingerprintCache = internalMutation({
     for (const entry of expired) {
       await ctx.db.delete(entry._id);
     }
+    return expired.length;
   },
 });
 
