@@ -71,6 +71,7 @@ export default async function SkillPage({ params }: { params: Params }) {
         hasContentFetchError: skill.hasContentFetchError ?? false,
       }}
       content={skill.content ?? null}
+      skillMdUrl={skill.skillMdUrl ?? null}
     />
   );
 }

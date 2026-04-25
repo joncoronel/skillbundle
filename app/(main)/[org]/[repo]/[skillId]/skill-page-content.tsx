@@ -1,6 +1,8 @@
 import Link from "next/link";
-import Markdown from "react-markdown";
+import { LabeledSection } from "@/components/labeled-section";
+import { MarkdownContent } from "@/components/markdown-content";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
+import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { formatInstalls, timeAgo } from "@/lib/utils";
 
 interface Skill {
@@ -18,10 +20,18 @@ interface Skill {
 interface SkillPageContentProps {
   skill: Skill;
   content: string | null;
+  skillMdUrl: string | null;
 }
 
-export function SkillPageContent({ skill, content }: SkillPageContentProps) {
+export async function SkillPageContent({
+  skill,
+  content,
+  skillMdUrl,
+}: SkillPageContentProps) {
   const installCommand = `npx skills add ${skill.source} --skill ${skill.skillId}`;
+  const preHighlighted = content
+    ? await highlightMarkdownCode(content)
+    : undefined;
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-12 pb-24">
@@ -44,9 +54,11 @@ export function SkillPageContent({ skill, content }: SkillPageContentProps) {
       )}
 
       {/* Header */}
-      <h1 className="font-display text-3xl font-semibold tracking-tight mb-3">{skill.name}</h1>
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
+        {skill.name}
+      </h1>
 
-      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <span className="tabular-nums">
           {formatInstalls(skill.installs)} installs
         </span>
@@ -69,34 +81,54 @@ export function SkillPageContent({ skill, content }: SkillPageContentProps) {
 
       {/* Install warning */}
       {skill.hasContentFetchError && !skill.isDelisted && (
-        <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
-          This skill&apos;s source file could not be found in its repository. The install command may not work.
+        <div className="mt-6 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
+          This skill&apos;s source file could not be found in its repository.
+          The install command may not work.
         </div>
       )}
 
-      {/* Install command */}
-      <div className="group relative rounded-xl bg-muted mb-8">
-        <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16">
-          {installCommand}
-        </pre>
-        <div className="absolute top-1.5 right-1.5">
-          <CopyButton content={installCommand} />
+      {/* INSTALL */}
+      <LabeledSection label="Install" className="mt-10">
+        <div className="group relative rounded-xl bg-muted">
+          <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16">
+            {installCommand}
+          </pre>
+          <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
+            <CopyButton
+              content={installCommand}
+              className="backdrop-blur-sm"
+            />
+          </div>
         </div>
-      </div>
+      </LabeledSection>
 
-      {/* Content */}
-      <div className="prose prose-sm dark:prose-invert max-w-none">
-        {skill.description && (
-          <p className="lead text-muted-foreground">{skill.description}</p>
-        )}
-        {content ? (
-          <Markdown>{content}</Markdown>
-        ) : !skill.description ? (
-          <p className="text-muted-foreground">
-            No detailed content available for this skill.
+      {/* OVERVIEW */}
+      {skill.description && (
+        <LabeledSection label="Overview" className="mt-10">
+          <p className="text-lg leading-relaxed text-pretty text-muted-foreground">
+            {skill.description}
           </p>
-        ) : null}
-      </div>
+        </LabeledSection>
+      )}
+
+      {/* DOCUMENTATION */}
+      {content && (
+        <LabeledSection label="Documentation" className="mt-14">
+          <MarkdownContent
+            preHighlighted={preHighlighted}
+            baseUrl={skillMdUrl}
+          >
+            {content}
+          </MarkdownContent>
+        </LabeledSection>
+      )}
+
+      {/* Empty state */}
+      {!skill.description && !content && (
+        <p className="mt-10 text-sm text-muted-foreground">
+          No documentation available for this skill.
+        </p>
+      )}
     </div>
   );
 }

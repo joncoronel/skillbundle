@@ -3,6 +3,8 @@
 
 @plugin "@tailwindcss/typography";
 
+@source "../node_modules/streamdown/dist/*.js";
+
 @custom-variant dark (&:is([data-theme="dark"] *));
 
 /* Theme color-scheme setup */

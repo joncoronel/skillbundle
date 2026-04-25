@@ -2265,6 +2265,10 @@ export const backfillLastSeenInApi = internalAction({
 
 export const getContent = query({
   args: { source: v.string(), skillId: v.string() },
+  returns: v.object({
+    content: v.union(v.string(), v.null()),
+    skillMdUrl: v.union(v.string(), v.null()),
+  }),
   handler: async (ctx, { source, skillId }) => {
     const skill = await ctx.db
       .query("skills")
@@ -2272,7 +2276,10 @@ export const getContent = query({
         q.eq("source", source).eq("skillId", skillId),
       )
       .unique();
-    return skill?.content ?? null;
+    return {
+      content: skill?.content ?? null,
+      skillMdUrl: skill?.skillMdUrl ?? null,
+    };
   },
 });
 

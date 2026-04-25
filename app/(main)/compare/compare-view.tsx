@@ -1,10 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import Link from "next/link";
-import Markdown from "react-markdown";
+import { LabeledSection } from "@/components/labeled-section";
+import { MarkdownContent } from "@/components/markdown-content";
 import { api } from "@/convex/_generated/api";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
@@ -48,11 +50,6 @@ function CompareColumn({ source, skillId }: SkillRef) {
   const { data: skill, isPending: skillLoading } = useQuery(
     convexQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
   );
-  const { data: content, isPending: contentLoading } = useQuery(
-    convexQuery(api.skills.getContent, { source, skillId }),
-  );
-  const isSelected = useIsSkillSelected(source, skillId);
-  const { toggleSkill } = useBundleActions();
 
   if (skillLoading) {
     return (
@@ -93,48 +90,99 @@ function CompareColumn({ source, skillId }: SkillRef) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border p-4">
-        {contentLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-          </div>
-        ) : content ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            {skill.description && (
-              <p className="lead text-muted-foreground">{skill.description}</p>
-            )}
-            <Markdown>{content}</Markdown>
-          </div>
-        ) : skill.description ? (
-          <p className="text-sm text-muted-foreground">{skill.description}</p>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No detailed content available.
-          </p>
-        )}
+        <CompareColumnBody
+          source={source}
+          skillId={skillId}
+          description={skill.description ?? null}
+        />
       </div>
 
-      <Button
-        variant={isSelected ? "outline" : "primary"}
-        size="sm"
-        onClick={() =>
-          toggleSkill({
-            source: skill.source,
-            skillId: skill.skillId,
-            name: skill.name,
-          })
-        }
-      >
-        {isSelected ? "Remove from bundle" : "Add to bundle"}
-      </Button>
+      <BundleToggleButton
+        source={skill.source}
+        skillId={skill.skillId}
+        name={skill.name}
+      />
     </div>
+  );
+}
+
+function CompareColumnBody({
+  source,
+  skillId,
+  description,
+}: {
+  source: string;
+  skillId: string;
+  description: string | null;
+}) {
+  const { data: contentData, isPending: contentLoading } = useQuery(
+    convexQuery(api.skills.getContent, { source, skillId }),
+  );
+  const content = contentData?.content ?? null;
+  const baseUrl = contentData?.skillMdUrl ?? null;
+
+  if (contentLoading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+      </div>
+    );
+  }
+
+  if (!content && !description) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No detailed content available.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {description && (
+        <LabeledSection label="Overview">
+          <p className="text-base leading-relaxed text-pretty text-muted-foreground">
+            {description}
+          </p>
+        </LabeledSection>
+      )}
+      {content && (
+        <LabeledSection label="Documentation">
+          <MarkdownContent baseUrl={baseUrl}>{content}</MarkdownContent>
+        </LabeledSection>
+      )}
+    </div>
+  );
+}
+
+function BundleToggleButton({
+  source,
+  skillId,
+  name,
+}: {
+  source: string;
+  skillId: string;
+  name: string;
+}) {
+  const isSelected = useIsSkillSelected(source, skillId);
+  const { toggleSkill } = useBundleActions();
+  return (
+    <Button
+      variant={isSelected ? "outline" : "primary"}
+      size="sm"
+      onClick={() => toggleSkill({ source, skillId, name })}
+    >
+      {isSelected ? "Remove from bundle" : "Add to bundle"}
+    </Button>
   );
 }
 
 export function CompareView() {
   const searchParams = useSearchParams();
-  const refs = parseSkillRefs(searchParams.get("skills"));
+  const skillsParam = searchParams.get("skills");
+  const refs = useMemo(() => parseSkillRefs(skillsParam), [skillsParam]);
 
   if (refs.length < 2) {
     return (
