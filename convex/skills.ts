@@ -2265,6 +2265,10 @@ export const backfillLastSeenInApi = internalAction({
 
 export const getContent = query({
   args: { source: v.string(), skillId: v.string() },
+  returns: v.object({
+    content: v.union(v.string(), v.null()),
+    skillMdUrl: v.union(v.string(), v.null()),
+  }),
   handler: async (ctx, { source, skillId }) => {
     const skill = await ctx.db
       .query("skills")

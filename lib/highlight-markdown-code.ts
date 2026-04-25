@@ -8,7 +8,7 @@ export function codeKey(language: string, code: string): string {
   return `${language}\n---\n${code}`;
 }
 
-const FENCE_REGEX = /```(\w+)?[ \t]*\n([\s\S]*?)\n```/g;
+const FENCE_REGEX = /```([\w+-]+)?[ \t]*\n([\s\S]*?)\n```/g;
 
 export async function highlightMarkdownCode(
   markdown: string,

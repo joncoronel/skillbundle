@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { LabeledSection } from "@/components/labeled-section";
-import { MarkdownContent } from "@/components/markdown-content";
 import { api } from "@/convex/_generated/api";
 import {
   Sheet,
@@ -30,6 +30,25 @@ import {
 } from "@/lib/bundle-selection";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
+
+// Streamdown + shiki are heavy and only render after the user opens a sheet,
+// so keep them out of the discovery list's initial JS payload.
+const MarkdownContent = dynamic(
+  () =>
+    import("@/components/markdown-content").then((m) => ({
+      default: m.MarkdownContent,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+      </div>
+    ),
+  },
+);
 
 export type SkillDetailHandle = ReturnType<typeof createSheetHandle<SkillData>>;
 
@@ -60,18 +79,6 @@ function SkillDetailSheetContent({
   skill: SkillData;
   handle: SkillDetailHandle;
 }) {
-  const { data: contentData, isPending: contentLoading } = useQuery(
-    convexQuery(api.skills.getContent, {
-      source: skill.source,
-      skillId: skill.skillId,
-    }),
-  );
-  const content = contentData?.content ?? null;
-  const baseUrl = contentData?.skillMdUrl ?? null;
-
-  const isSelected = useIsSkillSelected(skill.source, skill.skillId);
-  const { toggleSkill } = useBundleActions();
-
   return (
     <>
       <SheetHeader>
@@ -92,33 +99,7 @@ function SkillDetailSheetContent({
         </SheetDescription>
       </SheetHeader>
       <SheetBody>
-        {contentLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        ) : content || skill.description ? (
-          <div className="space-y-8">
-            {skill.description && (
-              <LabeledSection label="Overview">
-                <p className="text-base leading-relaxed text-pretty text-muted-foreground">
-                  {skill.description}
-                </p>
-              </LabeledSection>
-            )}
-            {content && (
-              <LabeledSection label="Documentation">
-                <MarkdownContent baseUrl={baseUrl}>{content}</MarkdownContent>
-              </LabeledSection>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No detailed content available for this skill.
-          </p>
-        )}
+        <SkillDetailBody skill={skill} />
       </SheetBody>
       <SheetFooter>
         <Link
@@ -133,27 +114,82 @@ function SkillDetailSheetContent({
             className="size-3.5"
           />
         </Link>
-        <Button
-          variant={isSelected ? "outline" : "primary"}
-          size="sm"
-          leftSection={
-            <HugeiconsIcon
-              icon={isSelected ? MinusSignIcon : PlusSignIcon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-          }
-          onClick={() =>
-            toggleSkill({
-              source: skill.source,
-              skillId: skill.skillId,
-              name: skill.name,
-            })
-          }
-        >
-          {isSelected ? "Remove from bundle" : "Add to bundle"}
-        </Button>
+        <BundleToggleButton skill={skill} />
       </SheetFooter>
     </>
+  );
+}
+
+function SkillDetailBody({ skill }: { skill: SkillData }) {
+  const { data: contentData, isPending: contentLoading } = useQuery(
+    convexQuery(api.skills.getContent, {
+      source: skill.source,
+      skillId: skill.skillId,
+    }),
+  );
+  const content = contentData?.content ?? null;
+  const baseUrl = contentData?.skillMdUrl ?? null;
+
+  if (contentLoading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
+
+  if (!content && !skill.description) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No detailed content available for this skill.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {skill.description && (
+        <LabeledSection label="Overview">
+          <p className="text-base leading-relaxed text-pretty text-muted-foreground">
+            {skill.description}
+          </p>
+        </LabeledSection>
+      )}
+      {content && (
+        <LabeledSection label="Documentation">
+          <MarkdownContent baseUrl={baseUrl}>{content}</MarkdownContent>
+        </LabeledSection>
+      )}
+    </div>
+  );
+}
+
+function BundleToggleButton({ skill }: { skill: SkillData }) {
+  const isSelected = useIsSkillSelected(skill.source, skill.skillId);
+  const { toggleSkill } = useBundleActions();
+  return (
+    <Button
+      variant={isSelected ? "outline" : "primary"}
+      size="sm"
+      leftSection={
+        <HugeiconsIcon
+          icon={isSelected ? MinusSignIcon : PlusSignIcon}
+          strokeWidth={2}
+          className="size-3.5"
+        />
+      }
+      onClick={() =>
+        toggleSkill({
+          source: skill.source,
+          skillId: skill.skillId,
+          name: skill.name,
+        })
+      }
+    >
+      {isSelected ? "Remove from bundle" : "Add to bundle"}
+    </Button>
   );
 }
