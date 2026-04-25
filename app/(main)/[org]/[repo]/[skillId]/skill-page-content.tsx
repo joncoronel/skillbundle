@@ -93,8 +93,11 @@ export async function SkillPageContent({
           <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16">
             {installCommand}
           </pre>
-          <div className="absolute top-1.5 right-1.5">
-            <CopyButton content={installCommand} />
+          <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
+            <CopyButton
+              content={installCommand}
+              className="backdrop-blur-sm"
+            />
           </div>
         </div>
       </LabeledSection>
