@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { LabeledSection } from "@/components/labeled-section";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -126,8 +128,13 @@ async function SkillDetailContent({
           href={`https://github.com/${skill.source}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:text-foreground transition-colors hover:underline"
+          className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors hover:underline"
         >
+          <HugeiconsIcon
+            icon={GithubIcon}
+            strokeWidth={2}
+            className="size-3.5"
+          />
           {skill.source}
         </a>
         <span>·</span>
