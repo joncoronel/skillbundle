@@ -178,6 +178,10 @@ async function RepoListContent({ source }: { source: string }) {
               )}
             >
               <div className="flex items-center gap-3 px-4">
+                {/* Skill detail pages are heavy to render (markdown + Shiki),
+                    and repos commonly have 20+ skills — prefetching them all
+                    would fire many expensive requests for skills the user
+                    won't click. */}
                 <Link
                   href={`/${skill.source}/${skill.skillId}`}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"

@@ -10,6 +10,9 @@ const isPublicRoute = createRouteMatcher([
   "/explore",
   "/compare",
   "/pricing",
+  // Static routes above take precedence in Next.js routing, so
+  // /explore, /dashboard, etc. resolve to their own pages — these
+  // dynamic matchers only catch otherwise-unmatched segments.
   "/:org", // Org directory pages
   "/:org/:repo", // Repo skill directory pages
   "/:org/:repo/:skillId", // Skill detail pages

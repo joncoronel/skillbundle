@@ -24,17 +24,7 @@ type Params = Promise<{ org: string }>;
 async function loadOrg(org: string) {
   "use cache";
   cacheLife("days");
-
-  const { repos, totalSkillCount, totalInstalls } = await fetchQuery(
-    api.skills.listRepoAggregatesByOrg,
-    { org },
-  );
-
-  return {
-    repos,
-    skillCount: totalSkillCount,
-    totalInstalls,
-  };
+  return fetchQuery(api.skills.listRepoAggregatesByOrg, { org });
 }
 
 export async function generateMetadata({
@@ -43,7 +33,7 @@ export async function generateMetadata({
   params: Params;
 }): Promise<Metadata> {
   const { org } = await params;
-  const { repos, skillCount } = await loadOrg(org);
+  const { repos, totalSkillCount } = await loadOrg(org);
 
   if (repos.length === 0) {
     return { title: "Organization not found | SkillStack" };
@@ -52,8 +42,8 @@ export async function generateMetadata({
   const title = `${org} — ${repos.length} repo${
     repos.length === 1 ? "" : "s"
   } | SkillStack`;
-  const description = `${skillCount} AI coding skill${
-    skillCount === 1 ? "" : "s"
+  const description = `${totalSkillCount} AI coding skill${
+    totalSkillCount === 1 ? "" : "s"
   } across ${repos.length} repositor${
     repos.length === 1 ? "y" : "ies"
   } published by ${org}.`;
@@ -100,7 +90,7 @@ export default async function OrgPage({ params }: { params: Params }) {
 }
 
 async function OrgListContent({ org }: { org: string }) {
-  const { repos, skillCount, totalInstalls } = await loadOrg(org);
+  const { repos, totalSkillCount, totalInstalls } = await loadOrg(org);
 
   if (repos.length === 0) {
     notFound();
@@ -115,7 +105,7 @@ async function OrgListContent({ org }: { org: string }) {
           </span>
           <span aria-hidden="true">·</span>
           <span>
-            {skillCount} skill{skillCount === 1 ? "" : "s"}
+            {totalSkillCount} skill{totalSkillCount === 1 ? "" : "s"}
           </span>
           <span aria-hidden="true">·</span>
           <span>{formatInstalls(totalInstalls)} installs</span>
