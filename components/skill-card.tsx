@@ -10,7 +10,6 @@ import {
   CardFooter,
   CardAction,
 } from "@/components/ui/cubby-ui/card";
-import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { SheetTrigger } from "@/components/ui/cubby-ui/sheet";
@@ -20,42 +19,14 @@ import {
 } from "@/lib/bundle-selection";
 import { cn, formatInstalls, timeAgo } from "@/lib/utils";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
+import {
+  deriveSkillStatus,
+  SkillStatusBadge,
+} from "@/components/skill-status-badge";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
 // ---------------------------------------------------------------------------
-
-type SkillStatus = "delisted" | "fetch-error" | "updated" | null;
-
-function deriveSkillStatus(props: {
-  isDelisted?: boolean;
-  hasContentFetchError?: boolean;
-  updatedSinceAdded?: boolean;
-}): SkillStatus {
-  if (props.isDelisted) return "delisted";
-  if (props.hasContentFetchError) return "fetch-error";
-  if (props.updatedSinceAdded) return "updated";
-  return null;
-}
-
-const STATUS_BADGE_CONFIG: Record<
-  Exclude<SkillStatus, null>,
-  { label: string; variant: "warning" | "info" }
-> = {
-  delisted: { label: "No longer listed", variant: "warning" },
-  "fetch-error": { label: "Install may fail", variant: "warning" },
-  updated: { label: "Updated", variant: "info" },
-};
-
-function SkillStatusBadge({ status }: { status: SkillStatus }) {
-  if (!status) return null;
-  const { label, variant } = STATUS_BADGE_CONFIG[status];
-  return (
-    <Badge variant={variant} className="text-[10px] px-1.5 py-0.5">
-      {label}
-    </Badge>
-  );
-}
 
 export interface SkillData {
   name: string;

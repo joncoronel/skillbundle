@@ -10,6 +10,8 @@ const isPublicRoute = createRouteMatcher([
   "/explore",
   "/compare",
   "/pricing",
+  "/:org", // Org directory pages
+  "/:org/:repo", // Repo skill directory pages
   "/:org/:repo/:skillId", // Skill detail pages
 ]);
 

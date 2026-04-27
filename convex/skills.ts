@@ -1991,6 +1991,92 @@ export const listPopularSkills = query({
 });
 
 /**
+ * Every skill summary belonging to a given source ("org/repo"). Powers the
+ * repo directory page. Returns delisted rows too — the page filters them at
+ * render time so a future "show delisted" toggle is a UI-only change.
+ */
+export const listBySource = query({
+  args: { source: v.string() },
+  handler: async (ctx, { source }) => {
+    return await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) => q.eq("source", source))
+      .collect();
+  },
+});
+
+/**
+ * Per-repo aggregates for every repo under a given org, plus org-level totals.
+ * Powers the org directory page. Aggregates inside Convex so the wire payload
+ * is O(repos) instead of O(skills) — for an org with N skills across R repos,
+ * we ship R aggregate rows instead of N full summary rows (~200 B each).
+ *
+ * Uses a prefix range scan on `by_source_skillId` because `source` is stored
+ * as the full "org/repo" string. The exclusive upper bound `${org}0` works
+ * because '/' (0x2F) is followed by '0' (0x30) in ASCII — no valid source can
+ * fall between `${org}/` and `${org}0`.
+ *
+ * Delisted rows are excluded here so the page doesn't have to filter them.
+ */
+export const listRepoAggregatesByOrg = query({
+  args: { org: v.string() },
+  handler: async (ctx, { org }) => {
+    const summaries = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.gte("source", `${org}/`).lt("source", `${org}0`),
+      )
+      .collect();
+
+    const map = new Map<
+      string,
+      {
+        repo: string;
+        source: string;
+        skillCount: number;
+        totalInstalls: number;
+        latestUpdate: number;
+      }
+    >();
+    let totalSkillCount = 0;
+    let totalInstalls = 0;
+    let latestUpdate = 0;
+
+    for (const skill of summaries) {
+      if (skill.isDelisted) continue;
+      totalSkillCount += 1;
+      totalInstalls += skill.installs;
+      const fetched = skill.contentFetchedAt ?? 0;
+      if (fetched > latestUpdate) latestUpdate = fetched;
+
+      const slash = skill.source.indexOf("/");
+      const repo =
+        slash === -1 ? skill.source : skill.source.slice(slash + 1);
+      const existing = map.get(skill.source);
+      if (existing) {
+        existing.skillCount += 1;
+        existing.totalInstalls += skill.installs;
+        if (fetched > existing.latestUpdate) existing.latestUpdate = fetched;
+      } else {
+        map.set(skill.source, {
+          repo,
+          source: skill.source,
+          skillCount: 1,
+          totalInstalls: skill.installs,
+          latestUpdate: fetched,
+        });
+      }
+    }
+
+    const repos = [...map.values()].sort(
+      (a, b) => b.totalInstalls - a.totalInstalls,
+    );
+
+    return { repos, totalSkillCount, totalInstalls, latestUpdate };
+  },
+});
+
+/**
  * Internal query used by recommendations.ts to load skill metadata after a
  * vector search returns ranked skill IDs. Looks up the corresponding
  * skillSummaries rows (~200 bytes each) instead of the full skills rows
