@@ -4,11 +4,10 @@ import { useEffect, useRef } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Loading03Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
+import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
 
 type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
 
@@ -147,11 +146,7 @@ export function DefaultSkillsList({
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       {isFetchingNextPage && (
         <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
-          <HugeiconsIcon
-            icon={Loading03Icon}
-            strokeWidth={2}
-            className="size-3.5 animate-spin"
-          />
+          <DotMatrixLoader size="xs" ariaLabel="Loading more skills" />
           <span className="text-xs">Loading more skills…</span>
         </div>
       )}

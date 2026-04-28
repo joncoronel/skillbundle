@@ -38,7 +38,6 @@ import { ForkBundleButton } from "@/components/explore/fork-bundle-button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Share01Icon,
-  Loading03Icon,
   Edit01Icon,
   Cancel01Icon,
 } from "@hugeicons/core-free-icons";
@@ -276,13 +275,7 @@ function MetadataItems({
   );
 }
 
-function SectionHeader({
-  count,
-  title,
-}: {
-  count: number;
-  title: string;
-}) {
+function SectionHeader({ count, title }: { count: number; title: string }) {
   return (
     <div className="mb-5">
       <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
@@ -429,8 +422,8 @@ function SharePopover({
                 loading={generating}
                 rightSection={
                   <HugeiconsIcon
-                    icon={generating ? Loading03Icon : Share01Icon}
-                    className={generating ? "size-4 animate-spin" : "size-4"}
+                    icon={Share01Icon}
+                    className="size-4"
                     strokeWidth={2}
                   />
                 }

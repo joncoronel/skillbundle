@@ -44,7 +44,15 @@
       "Read(//Users/jonny/Documents/Projects/skillstack/app/\\(main\\)/dev/**)",
       "Read(//c/Users/jonny/Documents/Projects/skillstack/app/\\(main\\)/dev/**)",
       "Bash(grep -r import.*from /c/Users/jonny/Documents/Projects/skillstack/app --include=*.tsx --include=*.ts --include=*.jsx --include=*.js)",
-      "Bash(grep -r \"clerk\\\\|@clerk\\\\|useAuth\\\\|useUser\\\\|useClerk\\\\|ClerkProvider\\\\|SignedIn\\\\|SignedOut\\\\|getToken\\\\|currentUser\\\\|ConvexProviderWithClerk\" /c/Users/jonny/Documents/Projects/skillstack --include=*.tsx --include=*.ts --include=*.jsx --include=*.js --include=*.json ! -path */node_modules/* ! -path */.next/* ! -path */.git/*)"
+      "Bash(grep -r \"clerk\\\\|@clerk\\\\|useAuth\\\\|useUser\\\\|useClerk\\\\|ClerkProvider\\\\|SignedIn\\\\|SignedOut\\\\|getToken\\\\|currentUser\\\\|ConvexProviderWithClerk\" /c/Users/jonny/Documents/Projects/skillstack --include=*.tsx --include=*.ts --include=*.jsx --include=*.js --include=*.json ! -path */node_modules/* ! -path */.next/* ! -path */.git/*)",
+      "Bash(git grep *)",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep \"Loader2\\\\|LoaderCircle\\\\|animate-spin\")",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep \"isPending\\\\|isLoading\")",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -l \"Suspense\\\\|fallback\" --cached -- \"*.tsx\" \"*.ts\")",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -l \"Suspense\" -- \"*.tsx\" \"*.ts\")",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -n \"Loader\\\\|spinner\\\\|loading\" app/\\\\\\(main\\\\\\)/stack/ app/\\\\\\(main\\\\\\)/explore/)",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -n \"Button.*loading\\\\|Button.*disabled\" --include=\"*.tsx\")",
+      "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep \"Button.*loading\" -- \"*.tsx\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth"

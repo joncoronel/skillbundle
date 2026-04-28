@@ -4,6 +4,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Button as BaseButton } from "@base-ui/react/button";
 import { cn } from "@/lib/utils";
+import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
 
 const buttonVariants = cva(
   "relative inline-flex items-center cursor-pointer justify-center whitespace-nowrap rounded-lg text-sm font-medium data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color,scale,opacity,shadow] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid active:shadow-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)]",
@@ -58,13 +59,29 @@ function Button({
   rightSection,
   ...props
 }: ButtonProps) {
+  const loader = loading ? (
+    <DotMatrixLoader size="sm" ariaLabel="Loading" />
+  ) : null;
+
+  let resolvedLeft = leftSection;
+  let resolvedRight = rightSection;
+  if (loader) {
+    if (rightSection) {
+      resolvedRight = loader;
+    } else if (leftSection) {
+      resolvedLeft = loader;
+    } else {
+      resolvedRight = loader;
+    }
+  }
+
   const buttonContent = (
     <>
-      {leftSection}
+      {resolvedLeft}
       <span className="px-1 grid place-items-center *:[grid-area:1/1]">
         {children}
       </span>
-      {rightSection}
+      {resolvedRight}
     </>
   );
 
