@@ -21,10 +21,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
-import {
-  useBundleActions,
-  useSelectedSkills,
-} from "@/lib/bundle-selection";
+import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
@@ -122,11 +119,7 @@ export function SaveBundleDialog({
                 {limits && !limits.canMakePrivate ? (
                   <Tooltip>
                     <TooltipTrigger render={<div />}>
-                      <Switch
-                        id="bundle-public"
-                        checked={true}
-                        disabled
-                      />
+                      <Switch id="bundle-public" checked={true} disabled />
                     </TooltipTrigger>
                     <TooltipContent sideOffset={8}>
                       Upgrade to Pro to make bundles private
@@ -163,7 +156,7 @@ export function SaveBundleDialog({
             disabled={atLimit || !name.trim() || saving}
             loading={saving}
           >
-            Save bundle
+            {saving ? "Saving…" : "Save bundle"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -428,7 +428,7 @@ function SharePopover({
                   />
                 }
               >
-                Create share link
+                {generating ? "Creating link…" : "Create share link"}
               </Button>
             </>
           )}
@@ -582,7 +582,7 @@ function RenameBundleDialog({
             disabled={!name.trim() || saving}
             loading={saving}
           >
-            Rename
+            {saving ? "Renaming…" : "Rename"}
           </Button>
         </DialogFooter>
       </DialogContent>

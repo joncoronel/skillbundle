@@ -1,0 +1,44 @@
+.dmxr-loader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  color: currentColor;
+}
+
+.dmxr-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+}
+
+.dmxr-dot {
+  --dmxr-cycle: 1000ms;
+  --dmxr-duration: calc(var(--dmxr-cycle) / var(--dmxr-speed, 1.35));
+  background: currentColor;
+  border-radius: 999px;
+  opacity: 0.24;
+  animation: dmxr-ripple var(--dmxr-duration) ease-in-out infinite;
+  animation-delay: calc(var(--dmxr-ring, 0) * 0.24 * var(--dmxr-duration));
+  will-change: opacity;
+}
+
+@keyframes dmxr-ripple {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  34% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.24;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dmxr-dot {
+    animation: none;
+    opacity: calc(0.2 + (1 - var(--dmxr-ring, 0) / 4) * 0.75);
+  }
+}

@@ -1,0 +1,77 @@
+.dmxc-loader {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  color: currentColor;
+}
+
+.dmxc-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+}
+
+.dmxc-dot {
+  background: currentColor;
+  border-radius: 999px;
+}
+
+.dmxc-ring {
+  --dmxc-cycle: 1100ms;
+  --dmxc-duration: calc(var(--dmxc-cycle) / var(--dmxc-speed, 1.6));
+  animation: dmxc-comet var(--dmxc-duration) step-end infinite;
+  animation-delay: calc(
+    (var(--dmxc-ring-pos) - 12) * var(--dmxc-duration) / 12
+  );
+  will-change: opacity;
+}
+
+@keyframes dmxc-comet {
+  0% {
+    opacity: 1;
+  }
+  8.333% {
+    opacity: 0.78;
+  }
+  16.667% {
+    opacity: 0.56;
+  }
+  25% {
+    opacity: 0.36;
+  }
+  33.333% {
+    opacity: 0.22;
+  }
+  41.667% {
+    opacity: 0.08;
+  }
+  50% {
+    opacity: 0.72;
+  }
+  58.333% {
+    opacity: 0.5616;
+  }
+  66.667% {
+    opacity: 0.4032;
+  }
+  75% {
+    opacity: 0.2592;
+  }
+  83.333% {
+    opacity: 0.1584;
+  }
+  91.667% {
+    opacity: 0.08;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dmxc-ring {
+    animation: none;
+    opacity: calc(0.2 + (var(--dmxc-ring-pos) / 11) * 0.56);
+  }
+}

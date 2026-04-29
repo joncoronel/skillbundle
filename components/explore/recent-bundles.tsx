@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { BundleCard, BundleCardSkeleton } from "@/components/bundle-card";
-import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
+import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 
 export function RecentBundles() {
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -79,7 +79,7 @@ export function RecentBundles() {
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       {status === "LoadingMore" && (
         <div className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <DotMatrixLoader size="xs" ariaLabel="Loading more bundles" />
+          <DotMatrixComet size="xs" ariaLabel="Loading more bundles" />
           <span>Loading more</span>
         </div>
       )}

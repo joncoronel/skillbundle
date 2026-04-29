@@ -178,7 +178,7 @@ function ManageSubscriptionButton() {
       onClick={handleClick}
       loading={loading}
     >
-      Manage subscription
+      {loading ? "Opening…" : "Manage subscription"}
     </Button>
   );
 }

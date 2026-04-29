@@ -7,7 +7,7 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
-import { DotMatrixLoader } from "@/components/ui/dot-matrix-loader";
+import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 
 type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
 
@@ -146,7 +146,7 @@ export function DefaultSkillsList({
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       {isFetchingNextPage && (
         <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
-          <DotMatrixLoader size="xs" ariaLabel="Loading more skills" />
+          <DotMatrixComet size="xs" ariaLabel="Loading more skills" />
           <span className="text-xs">Loading more skills…</span>
         </div>
       )}
