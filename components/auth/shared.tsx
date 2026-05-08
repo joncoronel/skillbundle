@@ -7,6 +7,29 @@ import { Button } from "@/components/ui/cubby-ui/button";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { cn } from "@/lib/utils";
 
+/**
+ * Validate the proxy-injected `redirect_url` query param is same-origin
+ * before passing it to Clerk's auth flow. Prevents open-redirect / phishing
+ * via crafted `?redirect_url=https://evil.com` links, while still honoring
+ * the legitimate post-auth destination set by `auth.protect()` in the proxy.
+ *
+ * Returns just the path+search+hash so Clerk receives a relative URL.
+ *
+ * Client-only: relies on `window.location.origin`. The SSR guard prevents
+ * a crash if a future caller pulls this into a render path on the server.
+ */
+export function getSafeRedirectUrl(raw: string | null): string {
+  if (!raw) return "/";
+  if (typeof window === "undefined") return "/";
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.origin !== window.location.origin) return "/";
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch {
+    return "/";
+  }
+}
+
 export function AuthFieldLabel({
   className,
   ...props

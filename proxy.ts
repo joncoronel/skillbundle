@@ -1,41 +1,47 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in",
-  "/sign-in/sso-callback",
-  "/sign-up",
-  "/sign-up/sso-callback",
-  "/stack/(.*)",
-  "/explore",
-  "/compare",
-  "/pricing",
-  // Static routes above take precedence in Next.js routing, so
-  // /explore, /dashboard, etc. resolve to their own pages — these
-  // dynamic matchers only catch otherwise-unmatched segments.
-  "/:org", // Org directory pages
-  "/:org/:repo", // Repo skill directory pages
-  "/:org/:repo/:skillId", // Skill detail pages
+// Inverted from public-list because the org matchers (`/:org`, `/:org/:repo`)
+// match any single/double-segment path — including `/dashboard`, `/settings`,
+// `/dev` — making them silently public. Next.js routing precedence resolves
+// /dashboard to the right PAGE, but createRouteMatcher only does pattern
+// matching, not routing precedence. Listing private routes explicitly avoids
+// that pitfall.
+const isPrivateRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/settings(.*)",
+  "/dev(.*)",
 ]);
 
 const isAuthRoute = createRouteMatcher(["/sign-in", "/sign-up"]);
 
 export default clerkMiddleware(async (auth, request) => {
-  const { userId } = await auth();
+  const { isAuthenticated } = await auth();
 
   // Redirect signed-in users away from auth pages
-  if (isAuthRoute(request) && userId) {
-    return Response.redirect(new URL("/", request.url));
+  if (isAuthRoute(request) && isAuthenticated) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
-  if (!isPublicRoute(request)) {
+  // Try Clerk's `auth.protect()` — if it works in this setup, it handles the
+  // 307 redirect AND preserves the return URL via `redirect_url` automatically.
+  // Reference: https://github.com/clerk/javascript/issues/8302 — in Next.js 16
+  // the proxy runs in Node.js runtime, where NEXT_PUBLIC_CLERK_SIGN_IN_URL
+  // isn't always populated; in that case the helper falls back to "" and the
+  // redirect resolves to the current URL (no-op). The bug is reported in
+  // pnpm-workspace + Turbo monorepos; a single-package repo may be unaffected.
+  if (isPrivateRoute(request) && !isAuthenticated) {
     await auth.protect();
   }
 });
 
 export const config = {
   matcher: [
+    // Skip Next.js internals and all static files
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // API routes
     "/(api|trpc)(.*)",
+    // Clerk-specific frontend API routes (per Clerk v7 docs)
+    "/__clerk/(.*)",
   ],
 };

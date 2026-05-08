@@ -68,10 +68,6 @@ export function DashboardContent({
   const sortedBundles = useMemo(() => {
     const list = [...bundles];
     switch (sortBy) {
-      case "most-viewed":
-        return list.sort(
-          (a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0),
-        );
       case "most-copied":
         return list.sort(
           (a, b) => (b.copyCount ?? 0) - (a.copyCount ?? 0),
@@ -126,7 +122,7 @@ export function DashboardContent({
                   createdAt={bundle.createdAt}
                   creatorName="You"
                   isPublic={bundle.isPublic}
-                  viewCount={bundle.viewCount}
+                  copyCount={bundle.copyCount}
                   actions={
                     <div className="flex gap-2">
                       <Button

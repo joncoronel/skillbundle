@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -35,20 +36,34 @@ import {
   PopoverContent,
 } from "@/components/ui/cubby-ui/popover";
 import { ForkBundleButton } from "@/components/explore/fork-bundle-button";
+import { StarButton } from "@/components/star-button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Share01Icon,
   Edit01Icon,
   Cancel01Icon,
+  StarIcon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
 import { timeAgo } from "@/lib/utils";
+
+// Admin-only — lazy-loaded so non-admins don't pay the bundle cost. The JSX
+// site is also gated on `viewerIsAdmin`, so the chunk is only fetched when
+// it'll actually render.
+const FeatureToggleButton = dynamic(
+  () =>
+    import("@/components/admin/feature-toggle-button").then(
+      (m) => m.FeatureToggleButton,
+    ),
+  { ssr: false },
+);
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
   preloadedPlan: Preloaded<typeof api.plans.currentPlan>;
   urlId: string;
   shareToken?: string;
+  isAuthenticated: boolean;
 }
 
 const skillDetailHandle = createSkillDetailHandle();
@@ -58,20 +73,12 @@ export function BundleView({
   preloadedPlan,
   urlId,
   shareToken,
+  isAuthenticated,
 }: BundleViewProps) {
   const bundle = usePreloadedQuery(preloadedBundle);
   const planData = usePreloadedQuery(preloadedPlan);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const queryArgs = { urlId, shareToken };
-  const recordEvent = useMutation(api.bundleEvents.recordEvent);
-  const viewTracked = useRef(false);
-
-  useEffect(() => {
-    if (bundle?._id && !viewTracked.current) {
-      viewTracked.current = true;
-      recordEvent({ bundleId: bundle._id, eventType: "view" }).catch(() => {});
-    }
-  }, [bundle?._id, recordEvent]);
   const updateVisibility = useMutation(
     api.bundles.updateBundleVisibility,
   ).withOptimisticUpdate((localStore, { isPublic }) => {
@@ -110,9 +117,31 @@ export function BundleView({
         <header>
           <div className="flex items-start justify-between gap-6">
             <div className="min-w-0">
-              <p className="text-sm text-muted-foreground">
-                by {bundle.creatorName}
-              </p>
+              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                {/*
+                 * Show the badge only when the bundle is *actually* surfaced
+                 * as featured — i.e. both editorial-marked AND public.
+                 * `featuredAt` deliberately persists across visibility flips so
+                 * re-publishing auto-restores featured status, but during the
+                 * private window the badge would be misleading (the bundle
+                 * isn't on /explore Featured, and listFeatured filters by
+                 * isPublic at the query level).
+                 */}
+                {bundle.featuredAt !== undefined && bundle.isPublic ? (
+                  <>
+                    <span className="inline-flex items-center gap-1 font-medium text-primary">
+                      <HugeiconsIcon
+                        icon={StarIcon}
+                        aria-hidden
+                        className="size-3.5 fill-primary"
+                      />
+                      Featured
+                    </span>
+                    <span aria-hidden>·</span>
+                  </>
+                ) : null}
+                <span>by {bundle.creatorName}</span>
+              </div>
               <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight leading-hero text-balance wrap-break-word md:text-5xl">
                 {bundle.name}
               </h1>
@@ -121,9 +150,9 @@ export function BundleView({
                 <MetadataItems
                   skillCount={skillCount}
                   createdAt={bundle.createdAt}
-                  viewCount={bundle.viewCount}
                   copyCount={bundle.copyCount}
                   forkCount={bundle.forkCount}
+                  starCount={bundle.starCount}
                 />
               </p>
 
@@ -140,44 +169,71 @@ export function BundleView({
                 </p>
               )}
 
-              {bundle.isOwner && (
-                <div className="mt-6 flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRenameDialogOpen(true)}
-                    leftSection={
-                      <HugeiconsIcon
-                        icon={Edit01Icon}
-                        strokeWidth={2}
-                        className="size-3.5"
+              <div className="mt-6 flex flex-wrap items-center gap-2 empty:hidden">
+                {/*
+                 * Show on public bundles (anyone can star), AND on private
+                 * bundles where the viewer has an existing star — so a user
+                 * who starred while public can still unstar after the owner
+                 * flips private. Matches `toggleStar`'s deliberate allowance
+                 * to delete existing stars regardless of visibility.
+                 */}
+                {bundle.isPublic || bundle.viewerHasStarred ? (
+                  <StarButton
+                    bundleId={bundle._id}
+                    starred={bundle.viewerHasStarred}
+                    count={bundle.starCount}
+                    isAuthenticated={isAuthenticated}
+                  />
+                ) : null}
+                {bundle.isOwner ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRenameDialogOpen(true)}
+                      leftSection={
+                        <HugeiconsIcon
+                          icon={Edit01Icon}
+                          strokeWidth={2}
+                          className="size-3.5"
+                        />
+                      }
+                    >
+                      Rename
+                    </Button>
+                    <VisibilityToggle
+                      bundleId={bundle._id}
+                      isPublic={bundle.isPublic}
+                      canMakePrivate={planData.limits?.canMakePrivate ?? false}
+                      updateVisibility={updateVisibility}
+                    />
+                    {!bundle.isPublic ? (
+                      <SharePopover
+                        bundleId={bundle._id}
+                        urlId={bundle.urlId}
+                        shareToken={bundle.shareToken}
+                        onGenerate={generateShare}
+                        onRevoke={revokeShare}
                       />
-                    }
-                  >
-                    Rename
-                  </Button>
-                  <VisibilityToggle
+                    ) : null}
+                  </>
+                ) : null}
+                {bundle.viewerIsAdmin ? (
+                  <FeatureToggleButton
                     bundleId={bundle._id}
                     isPublic={bundle.isPublic}
-                    canMakePrivate={planData.limits?.canMakePrivate ?? false}
-                    updateVisibility={updateVisibility}
+                    featuredAt={bundle.featuredAt}
                   />
-                  {!bundle.isPublic && (
-                    <SharePopover
-                      bundleId={bundle._id}
-                      urlId={bundle.urlId}
-                      shareToken={bundle.shareToken}
-                      onGenerate={generateShare}
-                      onRevoke={revokeShare}
-                    />
-                  )}
-                </div>
-              )}
+                ) : null}
+              </div>
             </div>
 
             {!bundle.isOwner && (
               <div className="shrink-0">
-                <ForkBundleButton bundleId={bundle._id} />
+                <ForkBundleButton
+                  bundleId={bundle._id}
+                  isAuthenticated={isAuthenticated}
+                />
               </div>
             )}
           </div>
@@ -235,28 +291,28 @@ export function BundleView({
 function MetadataItems({
   skillCount,
   createdAt,
-  viewCount,
   copyCount,
   forkCount,
+  starCount,
 }: {
   skillCount: number;
   createdAt: number;
-  viewCount: number;
   copyCount: number;
   forkCount: number;
+  starCount: number;
 }) {
   const items: string[] = [
     `${skillCount} skill${skillCount !== 1 ? "s" : ""}`,
     `Created ${timeAgo(createdAt)}`,
   ];
-  if (viewCount > 0) {
-    items.push(`${viewCount} view${viewCount !== 1 ? "s" : ""}`);
-  }
   if (copyCount > 0) {
     items.push(`${copyCount} ${copyCount !== 1 ? "copies" : "copy"}`);
   }
   if (forkCount > 0) {
     items.push(`${forkCount} fork${forkCount !== 1 ? "s" : ""}`);
+  }
+  if (starCount > 0) {
+    items.push(`${starCount} star${starCount !== 1 ? "s" : ""}`);
   }
 
   return (

@@ -1,7 +1,9 @@
 "use client";
 
 import { useSignIn, useSignUp } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { getSafeRedirectUrl } from "./shared";
 
 type OAuthStrategy = "oauth_google" | "oauth_github";
 
@@ -48,14 +50,16 @@ interface OAuthButtonsProps {
 export function OAuthButtons({ mode }: OAuthButtonsProps) {
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
+  const searchParams = useSearchParams();
 
   const handleOAuth = async (strategy: OAuthStrategy) => {
     const auth = mode === "sign-in" ? signIn : signUp;
+    const redirectUrl = getSafeRedirectUrl(searchParams.get("redirect_url"));
 
     await auth.sso({
       strategy,
       redirectCallbackUrl: `/${mode === "sign-in" ? "sign-in" : "sign-up"}/sso-callback`,
-      redirectUrl: "/",
+      redirectUrl,
     });
   };
 

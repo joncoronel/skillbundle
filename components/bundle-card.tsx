@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { StarIcon } from "@hugeicons/core-free-icons";
 import {
   Card,
   CardHeader,
@@ -28,9 +30,10 @@ interface BundleCardProps {
   creatorImage?: string;
   isPublic?: boolean;
   actions?: React.ReactNode;
-  viewCount?: number;
   copyCount?: number;
   forkCount?: number;
+  starCount?: number;
+  hideCreator?: boolean;
 }
 
 export function BundleCard({
@@ -42,14 +45,15 @@ export function BundleCard({
   creatorImage,
   isPublic = true,
   actions,
-  viewCount,
   copyCount,
   forkCount,
+  starCount,
+  hideCreator = false,
 }: BundleCardProps) {
   const hasStats =
-    viewCount !== undefined ||
     copyCount !== undefined ||
-    forkCount !== undefined;
+    forkCount !== undefined ||
+    starCount !== undefined;
 
   const content = (
     <Card className="gap-3 py-4 transition-colors hover:bg-accent/50">
@@ -57,59 +61,70 @@ export function BundleCard({
         <CardTitle className="text-sm leading-snug">{name}</CardTitle>
         <CardAction>
           <div className="flex items-center gap-1.5">
-            {!isPublic && (
+            {!isPublic ? (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
                 Private
               </Badge>
-            )}
+            ) : null}
             <span className="text-xs font-mono tabular-nums text-muted-foreground">
               {skillCount} skill{skillCount !== 1 ? "s" : ""}
             </span>
           </div>
         </CardAction>
-        <CardDescription className="flex items-center gap-1.5 text-xs">
-          {creatorImage && (
-            <Avatar className="size-4">
-              <AvatarImage src={creatorImage} alt={creatorName} />
-              <AvatarFallback className="text-[8px]">
-                {getInitials(creatorName)}
-              </AvatarFallback>
-            </Avatar>
-          )}
-          <span>
-            by {creatorName} &middot; {timeAgo(createdAt)}
-          </span>
-        </CardDescription>
+        {hideCreator ? (
+          <CardDescription className="text-xs">
+            {timeAgo(createdAt)}
+          </CardDescription>
+        ) : (
+          <CardDescription className="flex items-center gap-1.5 text-xs">
+            {creatorImage ? (
+              <Avatar className="size-4">
+                <AvatarImage src={creatorImage} alt={creatorName} />
+                <AvatarFallback className="text-[8px]">
+                  {getInitials(creatorName)}
+                </AvatarFallback>
+              </Avatar>
+            ) : null}
+            <span>
+              by {creatorName} &middot; {timeAgo(createdAt)}
+            </span>
+          </CardDescription>
+        )}
       </CardHeader>
-      {hasStats && (
+      {hasStats ? (
         <CardContent className="pt-0">
           <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-muted-foreground">
-            {viewCount !== undefined && (
-              <span>
-                {viewCount} {viewCount === 1 ? "view" : "views"}
-              </span>
-            )}
-            {copyCount !== undefined && viewCount !== undefined && (
-              <span>&middot;</span>
-            )}
-            {copyCount !== undefined && (
+            {copyCount !== undefined ? (
               <span>
                 {copyCount} {copyCount === 1 ? "copy" : "copies"}
               </span>
-            )}
-            {forkCount !== undefined &&
-              (viewCount !== undefined || copyCount !== undefined) && (
-                <span>&middot;</span>
-              )}
-            {forkCount !== undefined && (
+            ) : null}
+            {forkCount !== undefined && copyCount !== undefined ? (
+              <span aria-hidden>&middot;</span>
+            ) : null}
+            {forkCount !== undefined ? (
               <span>
                 {forkCount} {forkCount === 1 ? "fork" : "forks"}
               </span>
-            )}
+            ) : null}
+            {starCount !== undefined &&
+            (copyCount !== undefined || forkCount !== undefined) ? (
+              <span aria-hidden>&middot;</span>
+            ) : null}
+            {starCount !== undefined ? (
+              <span className="inline-flex items-center gap-1">
+                <HugeiconsIcon
+                  icon={StarIcon}
+                  aria-hidden
+                  className="size-3 fill-current"
+                />
+                {starCount}
+              </span>
+            ) : null}
           </div>
         </CardContent>
-      )}
-      {actions && <CardFooter>{actions}</CardFooter>}
+      ) : null}
+      {actions ? <CardFooter>{actions}</CardFooter> : null}
     </Card>
   );
 
@@ -137,11 +152,11 @@ export function BundleCardSkeleton({ hasStats = false }: { hasStats?: boolean })
           <Skeleton className="h-lh w-28 rounded" />
         </CardDescription>
       </CardHeader>
-      {hasStats && (
+      {hasStats ? (
         <CardContent className="pt-0">
           <Skeleton className="h-lh w-36 rounded text-xs" />
         </CardContent>
-      )}
+      ) : null}
     </Card>
   );
 }

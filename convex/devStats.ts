@@ -17,25 +17,42 @@ export const MAX_DISCOVERY_FAILURES = 3;
 // Admin guard — checks caller's email against ADMIN_EMAILS env var
 // ---------------------------------------------------------------------------
 
-async function assertAdmin(ctx: { auth: QueryCtx["auth"] }) {
+// Parsed once per Convex deployment / cold start. Worth caching since
+// `checkIsAdmin` runs on every reactive re-evaluation of `getByUrlId`, and
+// re-splitting the env var per call is wasted work.
+const ADMIN_EMAILS: readonly string[] = (process.env.ADMIN_EMAILS ?? "")
+  .split(",")
+  .map((e) => e.trim())
+  .filter(Boolean);
+
+// Non-throwing admin check. Use when you need a boolean without short-circuiting
+// the surrounding query (e.g. folding `viewerIsAdmin` into a public bundle query).
+export async function checkIsAdmin(ctx: {
+  auth: QueryCtx["auth"];
+}): Promise<boolean> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity?.email) return false;
+  return ADMIN_EMAILS.includes(identity.email);
+}
+
+// Synchronous overload for callers that already have the user's email in scope
+// (e.g. after `getCurrentUser`). Avoids a second `ctx.auth.getUserIdentity()`
+// call in hot paths like `getByUrlId` that reactively re-runs on every bundle update.
+export function checkIsAdminByEmail(email: string | undefined): boolean {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email);
+}
+
+export async function assertAdmin(ctx: { auth: QueryCtx["auth"] }) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity?.email) throw new Error("Not authenticated");
-  const adminEmails = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
-  if (adminEmails.length === 0) throw new Error("ADMIN_EMAILS not configured");
-  if (!adminEmails.includes(identity.email)) throw new Error("Not authorized");
+  if (ADMIN_EMAILS.length === 0) throw new Error("ADMIN_EMAILS not configured");
+  if (!ADMIN_EMAILS.includes(identity.email)) throw new Error("Not authorized");
 }
 
 export const isAdmin = query({
   args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.email) return false;
-    const adminEmails = (process.env.ADMIN_EMAILS ?? "")
-      .split(",")
-      .map((e) => e.trim())
-      .filter(Boolean);
-    return adminEmails.includes(identity.email);
-  },
+  handler: async (ctx) => checkIsAdmin(ctx),
 });
 
 // ---------------------------------------------------------------------------

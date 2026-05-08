@@ -20,11 +20,11 @@ interface InstallCommandsProps {
 export function InstallCommands({ skills, bundleId }: InstallCommandsProps) {
   const commands = generateInstallCommands(skills);
   const [copiedAll, setCopiedAll] = useState(false);
-  const recordEvent = useMutation(api.bundleEvents.recordEvent);
+  const recordCopy = useMutation(api.bundleEvents.recordCopy);
 
   function trackCopy() {
     if (bundleId) {
-      recordEvent({ bundleId, eventType: "copy" }).catch(() => {});
+      recordCopy({ bundleId }).catch(() => {});
     }
   }
 

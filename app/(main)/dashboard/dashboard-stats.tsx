@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 type PlanData = FunctionReturnType<typeof api.plans.currentPlan>;
 
 interface BundleLike {
-  viewCount?: number;
   copyCount?: number;
   forkCount?: number;
 }
@@ -19,11 +18,10 @@ interface DashboardStatsProps {
 export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
   const totals = bundles.reduce(
     (acc, b) => ({
-      views: acc.views + (b.viewCount ?? 0),
       copies: acc.copies + (b.copyCount ?? 0),
       forks: acc.forks + (b.forkCount ?? 0),
     }),
-    { views: 0, copies: 0, forks: 0 },
+    { copies: 0, forks: 0 },
   );
 
   const maxBundles = limits.maxBundles;
@@ -34,14 +32,13 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
     : `${bundles.length}`;
 
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <StatCell
         label="Bundles"
         value={bundlesValue}
         sub={hasCap ? (plan === "free" ? "Free plan" : undefined) : "Unlimited"}
         emphasize={atCap}
       />
-      <StatCell label="Views" value={formatNumber(totals.views)} />
       <StatCell label="Copies" value={formatNumber(totals.copies)} />
       <StatCell label="Forks" value={formatNumber(totals.forks)} />
     </div>

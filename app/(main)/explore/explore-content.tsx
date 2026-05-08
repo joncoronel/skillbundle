@@ -12,14 +12,14 @@ import { exploreQueryParser } from "@/lib/search-params";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { ExploreFilters } from "@/components/explore/explore-filters";
-import { TrendingBundles } from "@/components/explore/trending-bundles";
-import { RecentBundles } from "@/components/explore/recent-bundles";
+import { FeaturedShowcase } from "@/components/explore/featured-showcase";
+import { ExploreTabs } from "@/components/explore/explore-tabs";
 import { BundleCard, BundleCardSkeleton } from "@/components/bundle-card";
 
 export function ExploreContent() {
   const [query, setQuery] = useQueryState("q", exploreQueryParser);
   const [debouncedQuery] = useDebounce(query.trim(), 300);
-  // If raw query is empty, bypass debounce and show trending immediately.
+  // If raw query is empty, bypass debounce and show browse view immediately.
   const effectiveQuery = query.trim() ? debouncedQuery : "";
   const isSearching = effectiveQuery.length > 0;
 
@@ -49,8 +49,8 @@ export function ExploreContent() {
       <Crossfade active={isSearching}>
         {/* Browse state */}
         <div className="space-y-14">
-          <TrendingBundles />
-          <RecentBundles />
+          <FeaturedShowcase />
+          <ExploreTabs />
         </div>
         {/* Search state */}
         <SearchResults query={effectiveQuery} onClear={() => setQuery(null)} />
@@ -78,11 +78,11 @@ function SearchResults({
       <div className="mb-5">
         <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
           &ldquo;{query}&rdquo;
-          {results && (
+          {results ? (
             <span className="ml-2 font-normal text-muted-foreground tabular-nums">
               · {count}
             </span>
-          )}
+          ) : null}
         </h2>
       </div>
       {isFetching && !results ? (
@@ -116,9 +116,9 @@ function SearchResults({
               createdAt={bundle.createdAt}
               creatorName={bundle.creatorName}
               creatorImage={bundle.creatorImage}
-              viewCount={bundle.viewCount}
               copyCount={bundle.copyCount}
               forkCount={bundle.forkCount}
+              starCount={bundle.starCount}
             />
           ))}
         </div>

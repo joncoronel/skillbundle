@@ -191,42 +191,53 @@ export default defineSchema({
         addedAt: v.optional(v.number()),
       }),
     ),
+    // IMPORTANT: this field is denormalized onto bundleStats.isPublic so the
+    // by_public_starCount index can filter at the index level. Any code path
+    // that mutates isPublic here MUST mirror the change to the corresponding
+    // bundleStats row IF one exists (see updateBundleVisibility for the
+    // pattern). When no stats row exists yet, downstream creation paths
+    // (recordCopy, forkBundle, toggleStar) read the bundle's current isPublic
+    // at insert time, so the invariant holds eventually.
     isPublic: v.boolean(),
     shareToken: v.optional(v.string()),
     forkedFrom: v.optional(v.id("bundles")),
     createdAt: v.number(),
+    featuredAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_urlId", ["urlId"])
     .index("by_public_createdAt", ["isPublic", "createdAt"])
+    .index("by_featured", ["featuredAt"])
+    .index("by_public_featured", ["isPublic", "featuredAt"])
     .searchIndex("search_name", {
       searchField: "name",
       filterFields: ["isPublic"],
     }),
 
-  bundleEvents: defineTable({
-    bundleId: v.id("bundles"),
-    eventType: v.union(
-      v.literal("view"),
-      v.literal("copy"),
-      v.literal("fork"),
-    ),
-    userId: v.optional(v.id("users")),
-    createdAt: v.number(),
-  })
-    .index("by_bundle_createdAt", ["bundleId", "createdAt"])
-    .index("by_type_createdAt", ["eventType", "createdAt"]),
-
   bundleStats: defineTable({
     bundleId: v.id("bundles"),
-    viewCount: v.number(),
+    // Denormalized from bundles.isPublic so the by_public_starCount index can
+    // rank-and-filter at the index level. Required (not optional) so the
+    // invariant is enforced by the schema — every row is guaranteed to have
+    // isPublic set, and rows can never silently drop out of "Most starred".
+    // All insert paths (recordCopy, forkBundle, toggleStar) read it from the
+    // bundle; updateBundleVisibility mirrors flips onto any existing stats row.
+    isPublic: v.boolean(),
     copyCount: v.number(),
     forkCount: v.number(),
-    recentCopyCount: v.number(),
+    starCount: v.optional(v.number()),
     lastEventAt: v.number(),
   })
     .index("by_bundleId", ["bundleId"])
-    .index("by_recentCopies", ["recentCopyCount"]),
+    .index("by_public_starCount", ["isPublic", "starCount"]),
+
+  bundleStars: defineTable({
+    bundleId: v.id("bundles"),
+    userId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_user_bundle", ["userId", "bundleId"])
+    .index("by_bundle", ["bundleId"]),
 
   syncStats: defineTable({
     totalSkills: v.number(),

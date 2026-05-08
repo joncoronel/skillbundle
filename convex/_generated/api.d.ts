@@ -9,6 +9,7 @@
  */
 
 import type * as bundleEvents from "../bundleEvents.js";
+import type * as bundleStars from "../bundleStars.js";
 import type * as bundles from "../bundles.js";
 import type * as crons from "../crons.js";
 import type * as devStats from "../devStats.js";
@@ -33,6 +34,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   bundleEvents: typeof bundleEvents;
+  bundleStars: typeof bundleStars;
   bundles: typeof bundles;
   crons: typeof crons;
   devStats: typeof devStats;

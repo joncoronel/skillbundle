@@ -8,11 +8,10 @@ import {
   SelectValue,
 } from "@/components/ui/cubby-ui/select";
 
-export type SortBy = "newest" | "most-viewed" | "most-copied" | "alphabetical";
+export type SortBy = "newest" | "most-copied" | "alphabetical";
 
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
   { value: "newest", label: "Newest" },
-  { value: "most-viewed", label: "Most viewed" },
   { value: "most-copied", label: "Most copied" },
   { value: "alphabetical", label: "A–Z" },
 ];

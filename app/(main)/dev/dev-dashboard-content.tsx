@@ -1,9 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { StarIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -122,6 +126,7 @@ export function DevDashboardContent() {
       />
       <EmbeddingPanel />
       <DelistedAnalysis />
+      <FeaturedBundlesSection />
       <AdminActions />
     </div>
   );
@@ -778,6 +783,139 @@ function DelistedAnalysis() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Featured Bundles
+// ---------------------------------------------------------------------------
+
+type FeaturedBundle =
+  FunctionReturnType<typeof api.bundles.listFeatured>[number];
+
+function FeaturedBundlesSection() {
+  const { data: bundles } = useQuery(
+    convexQuery(api.bundles.listFeatured, { includePrivate: true }),
+  );
+  const setFeatured = useMutation(api.bundles.setBundleFeatured);
+  const [pendingId, setPendingId] = useState<Id<"bundles"> | null>(null);
+
+  const handleUnfeature = async (bundleId: Id<"bundles">) => {
+    setPendingId(bundleId);
+    try {
+      await setFeatured({ bundleId, featured: false });
+      toast.info({ title: "Removed from featured" });
+    } catch (e) {
+      toast.error({ title: "Couldn't update featured status" });
+      console.error(e);
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Featured Bundles</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {bundles === undefined ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : bundles.length === 0 ? (
+          <EmptyFeaturedState />
+        ) : (
+          <div className="rounded-lg border divide-y">
+            {bundles.map((b) => (
+              <FeaturedBundleRow
+                key={b._id}
+                bundle={b}
+                onUnfeature={handleUnfeature}
+                isPending={pendingId === b._id}
+              />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FeaturedBundleRow({
+  bundle,
+  onUnfeature,
+  isPending,
+}: {
+  bundle: FeaturedBundle;
+  onUnfeature: (id: Id<"bundles">) => void;
+  isPending: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <HugeiconsIcon
+        icon={StarIcon}
+        aria-hidden
+        className="size-4 fill-primary text-primary shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/stack/${bundle.urlId}`}
+            className="truncate text-sm font-medium underline-offset-2 decoration-muted-foreground/40 hover:underline focus-visible:underline outline-none"
+          >
+            {bundle.name}
+          </Link>
+          {!bundle.isPublic ? (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 shrink-0">
+              Private
+            </Badge>
+          ) : null}
+        </div>
+        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+          <span className="truncate">by {bundle.creatorName}</span>
+          <span aria-hidden>·</span>
+          <span>
+            {bundle.skillCount} skill{bundle.skillCount !== 1 ? "s" : ""}
+          </span>
+          {bundle.featuredAt !== undefined ? (
+            <>
+              <span aria-hidden>·</span>
+              <span>featured {timeAgo(bundle.featuredAt)}</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => onUnfeature(bundle._id)}
+        loading={isPending}
+      >
+        Unfeature
+      </Button>
+    </div>
+  );
+}
+
+function EmptyFeaturedState() {
+  return (
+    <div className="rounded-lg border border-dashed px-4 py-10 text-center">
+      <HugeiconsIcon
+        icon={StarIcon}
+        aria-hidden
+        strokeWidth={1.5}
+        className="mx-auto size-6 text-muted-foreground"
+      />
+      <p className="mt-3 text-sm font-medium">No featured bundles yet.</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Visit any public bundle and click{" "}
+        <span className="font-semibold text-foreground">Feature</span> to add
+        one. Featured bundles surface in the Featured section on Explore.
+      </p>
+    </div>
   );
 }
 

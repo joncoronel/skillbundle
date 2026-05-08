@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useSignUp, useAuth } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import {
   InputOTP,
@@ -19,6 +19,7 @@ import {
   AuthFieldLabel,
   AuthFormError,
   AuthSubmitButton,
+  getSafeRedirectUrl,
   resolveClerkErrorMessage,
   type ClerkErrorLike,
 } from "./shared";
@@ -37,6 +38,7 @@ export function SignUpForm() {
   const [resendError, setResendError] = React.useState<string | null>(null);
   const [advancedToVerify, setAdvancedToVerify] = React.useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const emailError = errors?.fields?.emailAddress;
   const passwordError = errors?.fields?.password;
@@ -104,10 +106,11 @@ export function SignUpForm() {
     await signUp.verifications.verifyEmailCode({ code });
 
     if (signUp.status === "complete") {
+      const redirectUrl = getSafeRedirectUrl(searchParams.get("redirect_url"));
       await signUp.finalize({
         navigate: ({ session, decorateUrl }) => {
           if (session?.currentTask) return;
-          const url = decorateUrl("/");
+          const url = decorateUrl(redirectUrl);
           if (url.startsWith("http")) {
             window.location.href = url;
           } else {

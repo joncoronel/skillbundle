@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { getAuthToken } from "@/lib/auth";
+import { getAuth, getAuthToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { BundleView } from "./bundle-view";
 
@@ -26,13 +26,15 @@ async function BundleLoader({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ share?: string }>;
 }) {
-  // Note: this Promise.all works because params, searchParams, and getAuthToken()
-  // all access dynamic data (route params, search params, cookies) which "unlocks"
-  // Math.random() for the preloadQuery calls below. If you ever add another
-  // preloadQuery to this top group, it will fail with cacheComponents enabled.
-  const [{ id }, { share }, token] = await Promise.all([
+  // Note: this Promise.all works because params, searchParams, getAuth(), and
+  // getAuthToken() all access dynamic data (route params, search params,
+  // cookies) which "unlocks" Math.random() for the preloadQuery calls below.
+  // If you ever add another preloadQuery to this top group, it will fail with
+  // cacheComponents enabled.
+  const [{ id }, { share }, auth, token] = await Promise.all([
     params,
     searchParams,
+    getAuth(),
     getAuthToken(),
   ]);
   const [preloadedBundle, preloadedPlan] = await Promise.all([
@@ -44,12 +46,20 @@ async function BundleLoader({
     preloadQuery(api.plans.currentPlan, {}, { token }),
   ]);
 
+  // Auth state from the actual session. We deliberately don't derive this
+  // from `token !== undefined` because getAuthToken() returns undefined on
+  // both "not signed in" AND ClerkOfflineError — using the session userId
+  // means a signed-in user during a transient Clerk outage doesn't get
+  // bounced to /sign-in when clicking action buttons.
+  const isAuthenticated = auth.userId !== null;
+
   return (
     <BundleView
       preloadedBundle={preloadedBundle}
       preloadedPlan={preloadedPlan}
       urlId={id}
       shareToken={share}
+      isAuthenticated={isAuthenticated}
     />
   );
 }
