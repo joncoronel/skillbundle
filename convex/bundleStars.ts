@@ -94,6 +94,13 @@ export const toggleStar = mutation({
 // Trade-off: brief eventual-consistency window where the bundle row is gone
 // but star rows linger. No UI surfaces them by bundleId once the bundle is
 // deleted, so the window is invisible to users.
+//
+// Failure mode: Convex retries failed scheduled jobs with exponential backoff,
+// then drops them after exhaustion. If that happens, the orphan bundleStars
+// rows stay forever — invisible to UI, but storage drift. If we ever observe
+// real failures here, add a periodic cron that scans for stars whose
+// `bundleId` no longer resolves (or pair this with a retry-counter table).
+// Pre-launch / low traffic this is fine.
 // ---------------------------------------------------------------------------
 
 export const cleanupStarsForBundle = internalAction({

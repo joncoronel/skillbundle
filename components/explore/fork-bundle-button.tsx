@@ -36,7 +36,10 @@ export function ForkBundleButton({
 
   async function handleFork() {
     if (!isAuthenticated) {
-      router.push("/sign-in");
+      // Preserve the bundle URL so the user lands back here after sign-in
+      // instead of bouncing to /. Mirrors what the proxy does for hard nav.
+      const path = window.location.pathname + window.location.search;
+      router.push(`/sign-in?redirect_url=${encodeURIComponent(path)}`);
       return;
     }
 

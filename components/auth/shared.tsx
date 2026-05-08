@@ -14,9 +14,13 @@ import { cn } from "@/lib/utils";
  * the legitimate post-auth destination set by `auth.protect()` in the proxy.
  *
  * Returns just the path+search+hash so Clerk receives a relative URL.
+ *
+ * Client-only: relies on `window.location.origin`. The SSR guard prevents
+ * a crash if a future caller pulls this into a render path on the server.
  */
 export function getSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
+  if (typeof window === "undefined") return "/";
   try {
     const parsed = new URL(raw, window.location.origin);
     if (parsed.origin !== window.location.origin) return "/";

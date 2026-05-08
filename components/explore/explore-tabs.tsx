@@ -23,6 +23,13 @@ export function ExploreTabs() {
   // Lazy-but-sticky: only mount BundleGrid for tabs the user has visited,
   // then keep them mounted (TabsContent keepMounted) so subsequent tab
   // switches don't re-fetch the page or flash the skeleton.
+  //
+  // The setState-during-render below is React's documented "derived from
+  // props" pattern (https://react.dev/reference/react/useState#storing-information-from-previous-renders).
+  // The `if (!has(sort))` guard is load-bearing: React renders this component
+  // twice — first run schedules the state update and discards the render,
+  // second run sees the new Set, the guard is false, no further updates.
+  // Without the guard this would loop infinitely.
   const [visitedTabs, setVisitedTabs] = useState<Set<ExploreSortValue>>(
     () => new Set([sort]),
   );
