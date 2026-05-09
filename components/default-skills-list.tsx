@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import { convexQuery } from "@convex-dev/react-query";
@@ -53,11 +53,15 @@ export function DefaultSkillsList({
   // forward navigation. "popular" is the default and stays unrepresented in
   // the URL — only "trending" and "hot" emit `?tab=...`.
   const [tab, setTab] = useQueryState("tab", leaderboardTabParser);
+  const handleTabChange = useCallback(
+    (v: string) => setTab(v as LeaderboardTab),
+    [setTab],
+  );
 
   return (
     <Tabs
       value={tab}
-      onValueChange={(v) => setTab(v as LeaderboardTab)}
+      onValueChange={handleTabChange}
       className="mt-4"
     >
       <div className="mb-4 flex items-baseline justify-between gap-4 flex-wrap">

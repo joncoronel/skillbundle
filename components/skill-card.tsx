@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId } from "react";
+import { memo, useCallback, useId } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -143,7 +143,7 @@ function SelectableWrapper({
 // The Checkbox wired up to the global bundle selection. Lives inside a
 // `SelectableWrapper` (a <Label>) so the whole row/card acts as the click
 // target via `htmlFor={checkboxId}`.
-function SkillSelectionCheckbox({
+const SkillSelectionCheckbox = memo(function SkillSelectionCheckbox({
   skill,
   checkboxId,
 }: {
@@ -167,7 +167,7 @@ function SkillSelectionCheckbox({
       className="shrink-0"
     />
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Shared props
@@ -186,20 +186,28 @@ interface SkillViewProps {
 // Row variants
 // ---------------------------------------------------------------------------
 
-function SkillRowContent({
+// Renders the checkbox internally (via `selectable`/`checkboxId`) instead of
+// accepting a JSX node prop, so React.memo's shallow compare can short-circuit
+// on stable primitive props — passing a fresh JSX element each render would
+// always look "changed."
+const SkillRowContent = memo(function SkillRowContent({
   skill,
   sheetHandle,
-  leading,
+  selectable,
+  checkboxId,
   showHotChip,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
-  leading?: React.ReactNode;
+  selectable?: boolean;
+  checkboxId?: string;
   showHotChip?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 px-4">
-      {leading}
+      {selectable && checkboxId ? (
+        <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
+      ) : null}
       <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
         <span className="text-sm font-semibold inline-flex items-center gap-1">
           <SkillName skill={skill} sheetHandle={sheetHandle} />
@@ -217,9 +225,9 @@ function SkillRowContent({
       </div>
     </div>
   );
-}
+});
 
-export function SkillRowView({
+export const SkillRowView = memo(function SkillRowView({
   skill,
   sheetHandle,
   showHotChip,
@@ -231,9 +239,9 @@ export function SkillRowView({
       showHotChip={showHotChip}
     />
   );
-}
+});
 
-export function SelectableSkillRow({
+export const SelectableSkillRow = memo(function SelectableSkillRow({
   skill,
   sheetHandle,
   className,
@@ -254,25 +262,28 @@ export function SelectableSkillRow({
         skill={skill}
         sheetHandle={sheetHandle}
         showHotChip={showHotChip}
-        leading={<SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />}
+        selectable
+        checkboxId={checkboxId}
       />
     </SelectableWrapper>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Card variants
 // ---------------------------------------------------------------------------
 
-function SkillCardContent({
+const SkillCardContent = memo(function SkillCardContent({
   skill,
   sheetHandle,
-  leading,
+  selectable,
+  checkboxId,
   showHotChip,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
-  leading?: React.ReactNode;
+  selectable?: boolean;
+  checkboxId?: string;
   showHotChip?: boolean;
 }) {
   const cardTimestamp = skill.contentUpdatedAt ?? skill.createdAt;
@@ -291,7 +302,9 @@ function SkillCardContent({
     <>
       <CardHeader className="gap-1">
         <div className="flex items-center gap-2">
-          {leading}
+          {selectable && checkboxId ? (
+            <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
+          ) : null}
           <CardTitle className="text-sm leading-snug flex items-center gap-1">
             <SkillName
               skill={skill}
@@ -343,9 +356,9 @@ function SkillCardContent({
       )}
     </>
   );
-}
+});
 
-export function SkillCardView({
+export const SkillCardView = memo(function SkillCardView({
   skill,
   sheetHandle,
   className,
@@ -360,9 +373,9 @@ export function SkillCardView({
       />
     </Card>
   );
-}
+});
 
-export function SelectableSkillCard({
+export const SelectableSkillCard = memo(function SelectableSkillCard({
   skill,
   sheetHandle,
   className,
@@ -379,8 +392,9 @@ export function SelectableSkillCard({
         skill={skill}
         sheetHandle={sheetHandle}
         showHotChip={showHotChip}
-        leading={<SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />}
+        selectable
+        checkboxId={checkboxId}
       />
     </SelectableWrapper>
   );
-}
+});

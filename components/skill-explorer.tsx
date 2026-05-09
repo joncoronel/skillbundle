@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryState } from "nuqs";
 import { useDebounce } from "use-debounce";
 import type { FunctionReturnType } from "convex/server";
@@ -91,6 +91,11 @@ export function SkillExplorer({
     setRepoUrl(trimmed);
   }
 
+  const handleModeChange = useCallback(
+    (value: string) => setMode(value as ModeValue),
+    [setMode],
+  );
+
   const isText = mode === "text";
   const inputValue = isText ? textQuery : repoInput;
   const placeholder = isText
@@ -100,7 +105,7 @@ export function SkillExplorer({
 
   return (
     <>
-      <Tabs value={mode} onValueChange={(value) => setMode(value as ModeValue)}>
+      <Tabs value={mode} onValueChange={handleModeChange}>
         <TabsList variant="underline" className="mb-3">
           <TabsTrigger value="text">
             <HugeiconsIcon
