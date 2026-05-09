@@ -16,7 +16,8 @@
       "Bash(grep -E \"\\(skill-audit|skill-detail-sheet|\\\\[skillId\\\\]|site\\\\\\\\\\\\\\\\\\)\")",
       "Bash(node \"C:\\\\Users\\\\jonny\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\load-context.mjs\")",
       "Read(//tmp/**)",
-      "Read(//c/tmp/**)"
+      "Read(//c/tmp/**)",
+      "Bash(pnpm --version)"
     ]
   }
 }
