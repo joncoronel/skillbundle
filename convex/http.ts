@@ -67,7 +67,14 @@ async function validateRequest(req: Request): Promise<WebhookEvent | null> {
   }
 }
 
-// Polar webhook route — creates /polar/events POST endpoint
-polar.registerRoutes(http as any);
+// Polar webhook route — creates /polar/events POST endpoint.
+// The double-cast to `unknown` is the same workaround polar's own README
+// recommends (it uses `as any`): @convex-dev/polar bundles its own
+// `HttpRouter` type that's structurally identical to ours but compiles
+// against a different Convex package version, so the strict assignability
+// check rejects what's actually a valid argument at runtime.
+polar.registerRoutes(
+  http as unknown as Parameters<typeof polar.registerRoutes>[0],
+);
 
 export default http;

@@ -1,0 +1,37 @@
+name: Test
+
+# Runs on every PR (any base branch) and on every push to master.
+# PR runs gate the merge button. Master runs catch anything that snuck
+# through (e.g. force-pushes that bypassed PR review).
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# Cancel an in-flight run on the same ref when a newer commit lands.
+# Prevents stacked CI runs from queueing on rapid PR pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
