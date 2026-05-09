@@ -11,7 +11,12 @@
       "Bash(agent-browser close:*)",
       "Bash(echo \"---EXIT: $?\")",
       "Bash(grep -r \"SignInErrors\" node_modules/@clerk/*/dist/types --include=\"*.d.ts\" -l)",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "Bash(npm run *)",
+      "Bash(grep -E \"\\(skill-audit|skill-detail-sheet|\\\\[skillId\\\\]|site\\\\\\\\\\\\\\\\\\)\")",
+      "Bash(node \"C:\\\\Users\\\\jonny\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\load-context.mjs\")",
+      "Read(//tmp/**)",
+      "Read(//c/tmp/**)"
     ]
   }
 }

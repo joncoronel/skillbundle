@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useCallback, useId } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -23,6 +23,8 @@ import {
   deriveSkillStatus,
   SkillStatusBadge,
 } from "@/components/skill-status-badge";
+import { HotMomentumChip, OfficialBadge } from "@/components/skill-badges";
+import { skillHref } from "@/lib/skill-urls";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
@@ -41,6 +43,12 @@ export interface SkillData {
   createdAt?: number;
   isDelisted?: boolean;
   hasContentFetchError?: boolean;
+  // v1 API fields, denormalized onto skillSummaries.
+  curatedOwner?: string;
+  worstAuditStatus?: string;
+  worstAuditRiskLevel?: string;
+  trendingRank?: number;
+  hotChange?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +77,7 @@ function SkillName({
   }
   return (
     <Link
-      href={`/${skill.source}/${skill.skillId}`}
+      href={skillHref(skill.source, skill.skillId)}
       className={cn("hover:underline text-left", className)}
       prefetch={false}
     >
@@ -81,9 +89,11 @@ function SkillName({
 function SkillMeta({
   skill,
   showLabel,
+  showHotChip,
 }: {
   skill: SkillData;
   showLabel?: boolean;
+  showHotChip?: boolean;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -94,6 +104,9 @@ function SkillMeta({
           updatedSinceAdded: skill.updatedSinceAdded,
         })}
       />
+      {showHotChip && skill.hotChange !== undefined && skill.hotChange > 0 && (
+        <HotMomentumChip change={skill.hotChange} />
+      )}
       <span className="text-xs font-mono tabular-nums text-muted-foreground">
         {formatInstalls(skill.installs)}
         {showLabel && " installs"}
@@ -139,17 +152,18 @@ function SkillSelectionCheckbox({
 }) {
   const isSelected = useIsSkillSelected(skill.source, skill.skillId);
   const { toggleSkill } = useBundleActions();
+  const handleToggle = useCallback(() => {
+    toggleSkill({
+      source: skill.source,
+      skillId: skill.skillId,
+      name: skill.name,
+    });
+  }, [toggleSkill, skill.source, skill.skillId, skill.name]);
   return (
     <Checkbox
       id={checkboxId}
       checked={isSelected}
-      onCheckedChange={() =>
-        toggleSkill({
-          source: skill.source,
-          skillId: skill.skillId,
-          name: skill.name,
-        })
-      }
+      onCheckedChange={handleToggle}
       className="shrink-0"
     />
   );
@@ -163,6 +177,9 @@ interface SkillViewProps {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   className?: string;
+  /** Show the hour-over-hour hot momentum chip next to install count.
+   *  Off by default — only the home page's Hot tab opts in. */
+  showHotChip?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,35 +190,54 @@ function SkillRowContent({
   skill,
   sheetHandle,
   leading,
+  showHotChip,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   leading?: React.ReactNode;
+  showHotChip?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 px-4">
       {leading}
       <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
-        <span className="text-sm font-semibold">
+        <span className="text-sm font-semibold inline-flex items-center gap-1">
           <SkillName skill={skill} sheetHandle={sheetHandle} />
+          {skill.curatedOwner && (
+            <OfficialBadge
+              owner={skill.curatedOwner}
+              className="self-center"
+            />
+          )}
         </span>
         <span className="text-sm text-muted-foreground">{skill.source}</span>
       </div>
       <div className="ml-auto shrink-0">
-        <SkillMeta skill={skill} />
+        <SkillMeta skill={skill} showHotChip={showHotChip} />
       </div>
     </div>
   );
 }
 
-export function SkillRowView({ skill, sheetHandle }: SkillViewProps) {
-  return <SkillRowContent skill={skill} sheetHandle={sheetHandle} />;
+export function SkillRowView({
+  skill,
+  sheetHandle,
+  showHotChip,
+}: SkillViewProps) {
+  return (
+    <SkillRowContent
+      skill={skill}
+      sheetHandle={sheetHandle}
+      showHotChip={showHotChip}
+    />
+  );
 }
 
 export function SelectableSkillRow({
   skill,
   sheetHandle,
   className,
+  showHotChip,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
@@ -217,6 +253,7 @@ export function SelectableSkillRow({
       <SkillRowContent
         skill={skill}
         sheetHandle={sheetHandle}
+        showHotChip={showHotChip}
         leading={<SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />}
       />
     </SelectableWrapper>
@@ -231,40 +268,77 @@ function SkillCardContent({
   skill,
   sheetHandle,
   leading,
+  showHotChip,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   leading?: React.ReactNode;
+  showHotChip?: boolean;
 }) {
   const cardTimestamp = skill.contentUpdatedAt ?? skill.createdAt;
   const cardTimeLabel =
     skill.contentUpdatedAt !== undefined ? "Updated" : "Added";
+
+  // Audit signal: warn/fail get a short colored text line in the footer
+  // (paired with the timestamp). Pass/unknown render nothing — bundles full
+  // of clean skills stay quiet; the flagged few earn the attention.
+  const auditFail = skill.worstAuditStatus === "fail";
+  const auditWarn = skill.worstAuditStatus === "warn";
+  const showAudit = auditFail || auditWarn;
+  const showFooter = showAudit || cardTimestamp !== undefined;
 
   return (
     <>
       <CardHeader className="gap-1">
         <div className="flex items-center gap-2">
           {leading}
-          <CardTitle className="text-sm leading-snug flex items-center">
+          <CardTitle className="text-sm leading-snug flex items-center gap-1">
             <SkillName
               skill={skill}
               sheetHandle={sheetHandle}
               className="[text-box:trim-both_cap_alphabetic]"
             />
+            {skill.curatedOwner && (
+              <OfficialBadge owner={skill.curatedOwner} />
+            )}
           </CardTitle>
         </div>
         <CardAction>
-          <SkillMeta skill={skill} showLabel />
+          <SkillMeta skill={skill} showLabel showHotChip={showHotChip} />
         </CardAction>
         <CardDescription className="text-xs line-clamp-2">
           {skill.description ?? skill.source}
         </CardDescription>
       </CardHeader>
-      {cardTimestamp !== undefined && (
-        <CardFooter className="mt-auto pt-0 justify-end">
-          <span className="text-[11px] text-muted-foreground/60">
-            {cardTimeLabel} {timeAgo(cardTimestamp)}
-          </span>
+      {showFooter && (
+        <CardFooter className="mt-auto pt-0 justify-between gap-3">
+          {showAudit ? (
+            <span
+              className={cn(
+                "text-[11px] font-medium",
+                auditFail
+                  ? "text-danger-foreground"
+                  : "text-warning-foreground",
+              )}
+              title={`Security audit ${auditFail ? "failed" : "flagged for review"}${
+                skill.worstAuditRiskLevel
+                  ? ` (${skill.worstAuditRiskLevel} risk)`
+                  : ""
+              }`}
+            >
+              {auditFail ? "Risk" : "Review"}
+              {skill.worstAuditRiskLevel
+                ? ` · ${skill.worstAuditRiskLevel}`
+                : ""}
+            </span>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          {cardTimestamp !== undefined && (
+            <span className="text-[11px] text-muted-foreground/60">
+              {cardTimeLabel} {timeAgo(cardTimestamp)}
+            </span>
+          )}
         </CardFooter>
       )}
     </>
@@ -275,10 +349,15 @@ export function SkillCardView({
   skill,
   sheetHandle,
   className,
+  showHotChip,
 }: SkillViewProps) {
   return (
     <Card className={cn("gap-3 py-4", className)}>
-      <SkillCardContent skill={skill} sheetHandle={sheetHandle} />
+      <SkillCardContent
+        skill={skill}
+        sheetHandle={sheetHandle}
+        showHotChip={showHotChip}
+      />
     </Card>
   );
 }
@@ -287,6 +366,7 @@ export function SelectableSkillCard({
   skill,
   sheetHandle,
   className,
+  showHotChip,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
@@ -298,6 +378,7 @@ export function SelectableSkillCard({
       <SkillCardContent
         skill={skill}
         sheetHandle={sheetHandle}
+        showHotChip={showHotChip}
         leading={<SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />}
       />
     </SelectableWrapper>

@@ -633,6 +633,9 @@ export const analyzeRepo = action({
         result._id as Id<"skillEmbeddings">,
       );
       if (!summary) continue;
+      // Drop fork/copy duplicates from recommendation results — the user
+      // expects to see the canonical skill, not a re-uploaded clone of it.
+      if (summary.isDuplicate) continue;
 
       const variant = {
         source: summary.source,

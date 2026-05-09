@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@/convex/_generated/api";
@@ -30,17 +31,26 @@ export function SkillSearchResults({
     gcTime: 5 * 60_000,
   });
 
-  if (!query) return null;
+  const skills: SkillData[] = useMemo(
+    () =>
+      (data ?? []).map((r) => ({
+        source: r.source,
+        skillId: r.skillId,
+        name: r.name,
+        description: r.description,
+        installs: r.installs,
+        isDelisted: r.isDelisted,
+        hasContentFetchError: r.hasContentFetchError,
+        curatedOwner: r.curatedOwner,
+        worstAuditStatus: r.worstAuditStatus,
+        worstAuditRiskLevel: r.worstAuditRiskLevel,
+        trendingRank: r.trendingRank,
+        hotChange: r.hotChange,
+      })),
+    [data],
+  );
 
-  const skills: SkillData[] = (data ?? []).map((r) => ({
-    source: r.source,
-    skillId: r.skillId,
-    name: r.name,
-    description: r.description,
-    installs: r.installs,
-    isDelisted: r.isDelisted,
-    hasContentFetchError: r.hasContentFetchError,
-  }));
+  if (!query) return null;
 
   return (
     <div className="mt-4">

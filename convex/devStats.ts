@@ -14,6 +14,371 @@ import { v } from "convex/values";
 export const MAX_DISCOVERY_FAILURES = 3;
 
 // ---------------------------------------------------------------------------
+// v1 migration diagnostic — one-shot read-only health check
+// ---------------------------------------------------------------------------
+
+/**
+ * Single-call snapshot of the post-migration state. Reports counts that
+ * answer: did the listing pass populate every row's lastSeenInApi? Did the
+ * detail-fetch chain drain (needsContentFetch should be near 0)? Are
+ * syncHashes now real SHA-256 strings? Are well-known sources present with
+ * content? How many duplicates were flagged?
+ *
+ * Paginated through internalQuery batches so the action accumulates counts
+ * across multiple read-budget-bounded queries (no single query reads the
+ * whole table at once — that would exceed Convex's 16 MB per-call limit
+ * once the table grew past ~19k rows).
+ *
+ * Run via: npx convex run devStats:v1MigrationDiagnostic
+ */
+interface DiagnosticBatch {
+  total: number;
+  delisted: number;
+  needsContentFetch: number;
+  hasContentFetchError: number;
+  isDuplicate: number;
+  withDescription: number;
+  lastSeenInApiPopulated: number;
+  sha256SyncHash: number;
+  legacySyncHash: number;
+  noSyncHash: number;
+  github: number;
+  wellKnown: number;
+  wellKnownWithContent: number;
+  wellKnownDomains: string[];
+  sampleSha256: string[];
+  wellKnownExample: { source: string; skillId: string } | null;
+  nextCursor: string;
+  isDone: boolean;
+}
+
+export const v1MigrationDiagnosticBatch = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }): Promise<DiagnosticBatch> => {
+    // Page size 1000 × ~880 bytes per row ≈ 880 KB per call. Comfortably
+    // under the 16 MB read budget with headroom.
+    const result = await ctx.db
+      .query("skillSummaries")
+      .paginate({ numItems: 1000, cursor: cursor ?? null });
+
+    const counts = {
+      total: 0,
+      delisted: 0,
+      needsContentFetch: 0,
+      hasContentFetchError: 0,
+      isDuplicate: 0,
+      withDescription: 0,
+      lastSeenInApiPopulated: 0,
+      sha256SyncHash: 0,
+      legacySyncHash: 0,
+      noSyncHash: 0,
+      github: 0,
+      wellKnown: 0,
+      wellKnownWithContent: 0,
+    };
+    const wellKnownDomains: string[] = [];
+    const sampleSha256: string[] = [];
+    let wellKnownExample: { source: string; skillId: string } | null = null;
+
+    for (const s of result.page) {
+      counts.total++;
+      if (s.isDelisted) counts.delisted++;
+      if (s.needsContentFetch) counts.needsContentFetch++;
+      if (s.hasContentFetchError) counts.hasContentFetchError++;
+      if (s.isDuplicate) counts.isDuplicate++;
+      if (s.description && s.description.length > 0) counts.withDescription++;
+      if (s.lastSeenInApi !== undefined) counts.lastSeenInApiPopulated++;
+
+      if (s.syncHash === undefined) {
+        counts.noSyncHash++;
+      } else if (
+        s.syncHash.length === 64 &&
+        /^[0-9a-f]+$/.test(s.syncHash)
+      ) {
+        counts.sha256SyncHash++;
+        if (sampleSha256.length < 3) sampleSha256.push(s.syncHash);
+      } else {
+        counts.legacySyncHash++;
+      }
+
+      const orgSegment = s.source.split("/")[0] ?? "";
+      const isWellKnown = orgSegment.includes(".");
+      if (isWellKnown) {
+        counts.wellKnown++;
+        if (!wellKnownDomains.includes(orgSegment)) {
+          wellKnownDomains.push(orgSegment);
+        }
+        if (s.description && s.description.length > 0) {
+          counts.wellKnownWithContent++;
+          if (!wellKnownExample) {
+            wellKnownExample = { source: s.source, skillId: s.skillId };
+          }
+        }
+      } else {
+        counts.github++;
+      }
+    }
+
+    return {
+      ...counts,
+      wellKnownDomains,
+      sampleSha256,
+      wellKnownExample,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+/**
+ * Pages through skills with hasContentFetchError=true and buckets them by
+ * source-type plus live-probes a sample to see what skills.sh is actually
+ * returning. Helps understand whether errors are real (slug-encoding-style
+ * bugs in our code), transient (server 500s), or just "skills.sh has no
+ * snapshot for this skill" (which the old pipeline would have silently
+ * retired via MAX_DISCOVERY_FAILURES).
+ *
+ * Run via: npx convex run devStats:v1ErrorAnalysis
+ */
+interface ErrorBucketBatch {
+  errorRows: Array<{ source: string; skillId: string; isWellKnown: boolean }>;
+  nextCursor: string;
+  isDone: boolean;
+}
+
+export const v1ErrorAnalysisBatch = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }): Promise<ErrorBucketBatch> => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_hasContentFetchError", (q) =>
+        q.eq("hasContentFetchError", true),
+      )
+      .paginate({ numItems: 1000, cursor: cursor ?? null });
+
+    const errorRows = result.page.map((s) => ({
+      source: s.source,
+      skillId: s.skillId,
+      isWellKnown: (s.source.split("/")[0] ?? "").includes("."),
+    }));
+
+    return {
+      errorRows,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const v1ErrorAnalysis = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    const allErrors: Array<{
+      source: string;
+      skillId: string;
+      isWellKnown: boolean;
+    }> = [];
+
+    while (!isDone) {
+      const batch: ErrorBucketBatch = await ctx.runQuery(
+        internal.devStats.v1ErrorAnalysisBatch,
+        { cursor },
+      );
+      for (const row of batch.errorRows) allErrors.push(row);
+      cursor = batch.nextCursor;
+      isDone = batch.isDone;
+    }
+
+    const githubErrors = allErrors.filter((r) => !r.isWellKnown);
+    const wellKnownErrors = allErrors.filter((r) => r.isWellKnown);
+
+    // Bucket GitHub errors by org so we can spot patterns (one bad org
+    // dominating vs random spread).
+    const orgCounts = new Map<string, number>();
+    for (const e of githubErrors) {
+      const org = e.source.split("/")[0] ?? e.source;
+      orgCounts.set(org, (orgCounts.get(org) ?? 0) + 1);
+    }
+    const topOrgs = Array.from(orgCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([org, count]) => ({ org, count }));
+
+    // Bucket well-known errors by domain.
+    const domainCounts = new Map<string, number>();
+    for (const e of wellKnownErrors) {
+      const domain = e.source.split("/")[0] ?? e.source;
+      domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+    }
+    const wellKnownByDomain = Array.from(domainCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([domain, count]) => ({ domain, count }));
+
+    // Live-probe up to 5 GitHub errors and 5 well-known errors. Calls the
+    // v1 detail endpoint directly and reports what came back. This is what
+    // tells us whether errors are 404 (skills.sh has no snapshot), 500
+    // (their server crashed), or 200-with-no-SKILL.md (snapshot exists but
+    // the file isn't named SKILL.md).
+    const probeSamples = [
+      ...githubErrors.slice(0, 5),
+      ...wellKnownErrors.slice(0, 5),
+    ];
+
+    const probes: Array<{
+      source: string;
+      skillId: string;
+      status: number;
+      hasFiles: boolean;
+      fileCount: number;
+      hasSkillMd: boolean;
+      filePaths: string[];
+      bodyPreview?: string;
+    }> = [];
+
+    for (const sample of probeSamples) {
+      const url = `https://skills.sh/api/v1/skills/${sample.source}/${encodeURIComponent(sample.skillId)}`;
+      try {
+        const res = await fetch(url, {
+          headers: process.env.SKILLS_SH_API_KEY
+            ? { Authorization: `Bearer ${process.env.SKILLS_SH_API_KEY}` }
+            : {},
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            files: Array<{ path: string }> | null;
+          };
+          const filePaths = (data.files ?? []).map((f) => f.path);
+          probes.push({
+            source: sample.source,
+            skillId: sample.skillId,
+            status: res.status,
+            hasFiles: data.files !== null,
+            fileCount: filePaths.length,
+            hasSkillMd: filePaths.includes("SKILL.md"),
+            filePaths: filePaths.slice(0, 10),
+          });
+        } else {
+          const text = await res.text().catch(() => "");
+          probes.push({
+            source: sample.source,
+            skillId: sample.skillId,
+            status: res.status,
+            hasFiles: false,
+            fileCount: 0,
+            hasSkillMd: false,
+            filePaths: [],
+            bodyPreview: text.slice(0, 200),
+          });
+        }
+      } catch (e) {
+        probes.push({
+          source: sample.source,
+          skillId: sample.skillId,
+          status: -1,
+          hasFiles: false,
+          fileCount: 0,
+          hasSkillMd: false,
+          filePaths: [],
+          bodyPreview: String(e).slice(0, 200),
+        });
+      }
+    }
+
+    return {
+      total: allErrors.length,
+      githubCount: githubErrors.length,
+      wellKnownCount: wellKnownErrors.length,
+      topErroringGithubOrgs: topOrgs,
+      wellKnownErrorsByDomain: wellKnownByDomain,
+      probes,
+    };
+  },
+});
+
+export const v1MigrationDiagnostic = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+
+    const totals = {
+      total: 0,
+      delisted: 0,
+      needsContentFetch: 0,
+      hasContentFetchError: 0,
+      isDuplicate: 0,
+      withDescription: 0,
+      lastSeenInApiPopulated: 0,
+      sha256SyncHash: 0,
+      legacySyncHash: 0,
+      noSyncHash: 0,
+      github: 0,
+      wellKnown: 0,
+      wellKnownWithContent: 0,
+    };
+    const wellKnownDomains = new Set<string>();
+    const sampleSha256: string[] = [];
+    let wellKnownExample: { source: string; skillId: string } | null = null;
+
+    while (!isDone) {
+      const batch: DiagnosticBatch = await ctx.runQuery(
+        internal.devStats.v1MigrationDiagnosticBatch,
+        { cursor },
+      );
+      totals.total += batch.total;
+      totals.delisted += batch.delisted;
+      totals.needsContentFetch += batch.needsContentFetch;
+      totals.hasContentFetchError += batch.hasContentFetchError;
+      totals.isDuplicate += batch.isDuplicate;
+      totals.withDescription += batch.withDescription;
+      totals.lastSeenInApiPopulated += batch.lastSeenInApiPopulated;
+      totals.sha256SyncHash += batch.sha256SyncHash;
+      totals.legacySyncHash += batch.legacySyncHash;
+      totals.noSyncHash += batch.noSyncHash;
+      totals.github += batch.github;
+      totals.wellKnown += batch.wellKnown;
+      totals.wellKnownWithContent += batch.wellKnownWithContent;
+      for (const d of batch.wellKnownDomains) wellKnownDomains.add(d);
+      for (const h of batch.sampleSha256) {
+        if (sampleSha256.length < 3) sampleSha256.push(h);
+      }
+      if (!wellKnownExample && batch.wellKnownExample) {
+        wellKnownExample = batch.wellKnownExample;
+      }
+      cursor = batch.nextCursor;
+      isDone = batch.isDone;
+    }
+
+    return {
+      total: totals.total,
+      delisted: totals.delisted,
+      active: totals.total - totals.delisted,
+      needsContentFetch: totals.needsContentFetch,
+      hasContentFetchError: totals.hasContentFetchError,
+      isDuplicate: totals.isDuplicate,
+      withDescription: totals.withDescription,
+      lastSeenInApiPopulated: totals.lastSeenInApiPopulated,
+      syncHash: {
+        sha256: totals.sha256SyncHash,
+        legacy: totals.legacySyncHash,
+        missing: totals.noSyncHash,
+        sampleSha256,
+      },
+      sourceTypes: {
+        github: totals.github,
+        wellKnown: totals.wellKnown,
+        wellKnownDistinctOrgs: wellKnownDomains.size,
+        wellKnownDomains: Array.from(wellKnownDomains).sort(),
+        wellKnownWithContent: totals.wellKnownWithContent,
+        wellKnownExample,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Admin guard — checks caller's email against ADMIN_EMAILS env var
 // ---------------------------------------------------------------------------
 
@@ -546,11 +911,7 @@ export const triggerSync = action({
 
 export const triggerBackfill = action({
   args: {
-    type: v.union(
-      v.literal("summaries"),
-      v.literal("syncFlags"),
-      v.literal("embeddings"),
-    ),
+    type: v.union(v.literal("summaries"), v.literal("embeddings")),
   },
   handler: async (ctx, { type }) => {
     await assertAdmin(ctx);
@@ -559,13 +920,6 @@ export const triggerBackfill = action({
         await ctx.scheduler.runAfter(
           0,
           internal.skills.backfillSkillSummaries,
-          {},
-        );
-        break;
-      case "syncFlags":
-        await ctx.scheduler.runAfter(
-          0,
-          internal.skills.backfillAllSyncFlags,
           {},
         );
         break;

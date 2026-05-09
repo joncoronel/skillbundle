@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { GithubIcon } from "@hugeicons/core-free-icons";
+import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import {
   deriveSkillStatus,
@@ -22,21 +22,17 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
-import { skillHref } from "@/lib/skill-urls";
 
-type Params = Promise<{ org: string; repo: string }>;
+type Params = Promise<{ source: string }>;
 
-async function loadRepo(source: string) {
+async function loadSource(source: string) {
   "use cache";
   cacheLife("days");
-
   const skills = await fetchQuery(api.skills.listBySource, { source });
   const visible = skills
     .filter((s) => !s.isDelisted)
     .sort((a, b) => b.installs - a.installs);
-
   const totalInstalls = visible.reduce((sum, s) => sum + s.installs, 0);
-
   return { skills: visible, totalInstalls };
 }
 
@@ -45,15 +41,16 @@ export async function generateMetadata({
 }: {
   params: Params;
 }): Promise<Metadata> {
-  const { org, repo } = await params;
-  const source = `${org}/${repo}`;
-  const { skills } = await loadRepo(source);
+  const { source } = await params;
+  const { skills } = await loadSource(source);
 
   if (skills.length === 0) {
-    return { title: "Repository not found | SkillStack" };
+    return { title: "Source not found | SkillStack" };
   }
 
-  const title = `${source} — skills | SkillStack`;
+  const title = `${source} — ${skills.length} skill${
+    skills.length === 1 ? "" : "s"
+  } | SkillStack`;
   const description = `${skills.length} AI coding skill${
     skills.length === 1 ? "" : "s"
   } published by ${source}.`;
@@ -65,9 +62,12 @@ export async function generateMetadata({
   };
 }
 
-export default async function RepoPage({ params }: { params: Params }) {
-  const { org, repo } = await params;
-  const source = `${org}/${repo}`;
+export default async function WellKnownSourcePage({
+  params,
+}: {
+  params: Params;
+}) {
+  const { source } = await params;
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
@@ -84,36 +84,24 @@ export default async function RepoPage({ params }: { params: Params }) {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink
-              render={({ className }) => (
-                <Link href={`/${org}`} className={className}>
-                  {org}
-                </Link>
-              )}
-            />
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>{repo}</BreadcrumbPage>
+            <BreadcrumbPage>{source}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
 
       <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-semibold tracking-tight leading-hero text-balance mb-6">
-        <span className="text-muted-foreground/70">{org}/</span>
-        <wbr />
-        <span>{repo}</span>
+        {source}
       </h1>
 
-      <Suspense fallback={<RepoListSkeleton />}>
-        <RepoListContent source={source} />
+      <Suspense fallback={<SourceListSkeleton />}>
+        <SourceListContent source={source} />
       </Suspense>
     </div>
   );
 }
 
-async function RepoListContent({ source }: { source: string }) {
-  const { skills, totalInstalls } = await loadRepo(source);
+async function SourceListContent({ source }: { source: string }) {
+  const { skills, totalInstalls } = await loadSource(source);
 
   if (skills.length === 0) {
     notFound();
@@ -136,20 +124,20 @@ async function RepoListContent({ source }: { source: string }) {
             nativeButton={false}
             render={
               <a
-                href={`https://github.com/${source}`}
+                href={`https://${source}`}
                 target="_blank"
                 rel="noopener noreferrer"
               />
             }
             leftSection={
               <HugeiconsIcon
-                icon={GithubIcon}
+                icon={GlobalSearchIcon}
                 strokeWidth={2}
                 className="size-3.5"
               />
             }
           >
-            View on GitHub
+            Visit {source}
           </Button>
         </div>
       </div>
@@ -179,12 +167,8 @@ async function RepoListContent({ source }: { source: string }) {
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                {/* Skill detail pages are heavy to render (markdown + Shiki),
-                    and repos commonly have 20+ skills — prefetching them all
-                    would fire many expensive requests for skills the user
-                    won't click. */}
                 <Link
-                  href={skillHref(skill.source, skill.skillId)}
+                  href={`/site/${skill.source}/${skill.skillId}`}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"
                   prefetch={false}
                 >
@@ -210,7 +194,7 @@ async function RepoListContent({ source }: { source: string }) {
   );
 }
 
-function RepoListSkeleton() {
+function SourceListSkeleton() {
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
@@ -232,9 +216,9 @@ function RepoListSkeleton() {
       </div>
 
       <div className="grid">
-        {Array.from({ length: 6 }).map((_, i) => {
+        {Array.from({ length: 4 }).map((_, i) => {
           const isFirst = i === 0;
-          const isLast = i === 5;
+          const isLast = i === 3;
           return (
             <div
               key={i}

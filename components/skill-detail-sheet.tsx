@@ -30,6 +30,9 @@ import {
 } from "@/lib/bundle-selection";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
+import { OfficialBadge } from "@/components/skill-badges";
+import { SkillAuditSection } from "@/components/skill-audit-section";
+import { skillHref } from "@/lib/skill-urls";
 
 // Streamdown + shiki are heavy and only render after the user opens a sheet,
 // so keep them out of the discovery list's initial JS payload.
@@ -82,7 +85,10 @@ function SkillDetailSheetContent({
   return (
     <>
       <SheetHeader>
-        <SheetTitle className="font-display">{skill.name}</SheetTitle>
+        <SheetTitle className="font-display flex items-center gap-1.5">
+          {skill.name}
+          {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
+        </SheetTitle>
         <SheetDescription>
           <span className="tabular-nums">
             {formatInstalls(skill.installs)} installs
@@ -103,7 +109,7 @@ function SkillDetailSheetContent({
       </SheetBody>
       <SheetFooter>
         <Link
-          href={`/${skill.source}/${skill.skillId}`}
+          href={skillHref(skill.source, skill.skillId)}
           className={buttonVariants({ variant: "outline", size: "sm" })}
           onNavigate={() => handle.close()}
         >
@@ -121,16 +127,25 @@ function SkillDetailSheetContent({
 }
 
 function SkillDetailBody({ skill }: { skill: SkillData }) {
+  // Fetch content + audits in parallel and gate the body render on BOTH.
+  // The detail sheet is a single visual block — letting audits resolve and
+  // paint before the markdown lands causes the audit section to flash in
+  // and then jump down when the longer documentation finally renders. Wait
+  // for both before showing anything.
   const { data: contentData, isPending: contentLoading } = useQuery(
     convexQuery(api.skills.getContent, {
       source: skill.source,
       skillId: skill.skillId,
     }),
   );
-  const content = contentData?.content ?? null;
-  const baseUrl = contentData?.skillMdUrl ?? null;
+  const { data: auditData, isPending: auditLoading } = useQuery(
+    convexQuery(api.audits.getBySourceAndSkillId, {
+      source: skill.source,
+      skillId: skill.skillId,
+    }),
+  );
 
-  if (contentLoading) {
+  if (contentLoading || auditLoading) {
     return (
       <div className="space-y-3">
         <Skeleton className="h-4 w-3/4" />
@@ -140,6 +155,10 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
       </div>
     );
   }
+
+  const content = contentData?.content ?? null;
+  const baseUrl = contentData?.skillMdUrl ?? null;
+  const audits = auditData?.audits ?? null;
 
   if (!content && !skill.description) {
     return (
@@ -158,6 +177,11 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
           </p>
         </LabeledSection>
       )}
+      <SkillAuditSection
+        source={skill.source}
+        skillId={skill.skillId}
+        audits={audits}
+      />
       {content && (
         <LabeledSection label="Documentation">
           <MarkdownContent baseUrl={baseUrl}>{content}</MarkdownContent>

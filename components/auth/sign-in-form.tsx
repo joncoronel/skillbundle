@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useSignIn } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { AuthFrame } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
@@ -22,7 +22,6 @@ export function SignInForm() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   // Cache Components keeps this route mounted via React Activity on
   // navigation, which otherwise preserves input values between visits.
@@ -47,7 +46,9 @@ export function SignInForm() {
     if (error) return;
 
     if (signIn.status === "complete") {
-      const redirectUrl = getSafeRedirectUrl(searchParams.get("redirect_url"));
+      const redirectUrl = getSafeRedirectUrl(
+        new URLSearchParams(window.location.search).get("redirect_url"),
+      );
       await signIn.finalize({
         navigate: ({ session, decorateUrl }) => {
           if (session?.currentTask) return;

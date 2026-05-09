@@ -282,6 +282,13 @@ export const getByUrlId = query({
               createdAt: skill?._creationTime,
               isDelisted: skill?.isDelisted ?? false,
               hasContentFetchError: skill?.hasContentFetchError ?? false,
+              // Drives the inline verified-publisher mark on bundle cards.
+              curatedOwner: skill?.curatedOwner,
+              // Drives the audit-status text in the bundle card's footer
+              // ("Review · MEDIUM" / "Risk · CRITICAL") for skills whose
+              // audit verdict came back warn or fail.
+              worstAuditStatus: skill?.worstAuditStatus,
+              worstAuditRiskLevel: skill?.worstAuditRiskLevel,
             };
           }),
         ),

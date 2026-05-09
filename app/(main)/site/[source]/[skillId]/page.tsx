@@ -1,21 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GithubIcon } from "@hugeicons/core-free-icons";
+import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import {
   loadSkill,
   SkillDetailPage,
 } from "@/components/skill-detail-page";
 
-type Params = Promise<{ org: string; repo: string; skillId: string }>;
+type Params = Promise<{ source: string; skillId: string }>;
 
 export async function generateMetadata({
   params,
 }: {
   params: Params;
 }): Promise<Metadata> {
-  const { org, repo, skillId } = await params;
-  const source = `${org}/${repo}`;
-
+  const { source, skillId } = await params;
   const skill = await loadSkill(source, skillId);
 
   if (!skill) {
@@ -29,26 +27,25 @@ export async function generateMetadata({
   return {
     title,
     description,
-    openGraph: {
-      title,
-      description,
-      type: "article",
-    },
+    openGraph: { title, description, type: "article" },
   };
 }
 
-export default async function SkillPage({ params }: { params: Params }) {
-  const { org, repo, skillId } = await params;
-  const source = `${org}/${repo}`;
-  const installCommand = `npx skills add ${source} --skill ${skillId}`;
+export default async function WellKnownSkillPage({
+  params,
+}: {
+  params: Params;
+}) {
+  const { source, skillId } = await params;
+  const installCommand = `npx skills add ${source}/${skillId}`;
 
   return (
     <SkillDetailPage
       source={source}
       skillId={skillId}
       installCommand={installCommand}
-      externalUrl={`https://github.com/${source}`}
-      externalIcon={GithubIcon}
+      externalUrl={`https://${source}`}
+      externalIcon={GlobalSearchIcon}
       externalLabel={source}
       breadcrumb={
         <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
@@ -57,17 +54,10 @@ export default async function SkillPage({ params }: { params: Params }) {
           </Link>
           <span>/</span>
           <Link
-            href={`/${org}`}
+            href={`/site/${source}`}
             className="hover:text-foreground transition-colors"
           >
-            {org}
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/${source}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {repo}
+            {source}
           </Link>
           <span>/</span>
           <span className="text-foreground">{skillId}</span>

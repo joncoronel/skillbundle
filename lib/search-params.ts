@@ -9,6 +9,11 @@ export const modeParser = parseAsStringLiteral(modeValues).withDefault("text");
 export const searchQueryParser = parseAsString.withDefault("");
 export const repoUrlParser = parseAsString.withDefault("");
 
+const leaderboardTabValues = ["popular", "trending", "hot"] as const;
+export type LeaderboardTabValue = (typeof leaderboardTabValues)[number];
+export const leaderboardTabParser =
+  parseAsStringLiteral(leaderboardTabValues).withDefault("popular");
+
 // -- Explore page (/explore) parsers --
 
 export const exploreQueryParser = parseAsString.withDefault("");

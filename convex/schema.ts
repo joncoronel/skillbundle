@@ -17,18 +17,66 @@ export default defineSchema({
     content: v.optional(v.string()),
     installs: v.number(),
     leaderboard: v.string(),
+    // Discovered raw.githubusercontent.com URL for the SKILL.md file. Set by
+    // discoverSkillMdUrls after walking the GitHub Tree (or empty string if
+    // discovery failed). Used by fetchSkillContent for the actual download.
+    // Empty for well-known sources (they go through v1 detail instead).
     skillMdUrl: v.optional(v.string()),
     contentFetchedAt: v.optional(v.number()),
     contentUpdatedAt: v.optional(v.number()),
     lastSynced: v.number(),
+    // SHA-256 hex over the SKILL.md contents. Computed locally for raw GitHub
+    // fetches (sha256Hex helper); copied directly from skills.sh's API for
+    // well-known sources via v1 detail. Used for the hash-skip path: if the
+    // newly-fetched hash matches stored, skip parse/embed/write entirely.
     syncHash: v.optional(v.string()),
+    // GitHub-source skill needs SKILL.md path discovery via the Tree API.
+    // Set true on first sync OR when content fetch fails twice (path likely
+    // moved). Cleared by updateSkillMdUrl after discovery runs (success or
+    // exhausted). Not used by well-known sources.
     needsDiscovery: v.optional(v.boolean()),
+    // Skill needs its content downloaded. For GitHub: set after discovery
+    // resolves a URL, drained by fetchSkillContent (raw fetch). For well-
+    // known: set on first sync, drained by fetchSkillDetailBatch (v1 detail).
     needsContentFetch: v.optional(v.boolean()),
+    // Increments on each consecutive content-fetch failure. After 2 fails,
+    // markContentFetchFailed clears the URL and re-flags for discovery —
+    // assumes the SKILL.md path moved upstream.
     contentFetchFailCount: v.optional(v.number()),
+    // First content-fetch failure shows this badge in the UI ("Install may
+    // fail"). Cleared on success or on 2nd failure (which moves to discovery).
     hasContentFetchError: v.optional(v.boolean()),
+    // Increments each time discovery fails to find a SKILL.md. After
+    // MAX_DISCOVERY_FAILURES (3), markStaleContent stops re-flagging the
+    // skill — it's "exhausted." Reset to 0 when installs change (active
+    // installs are a signal the repo is alive) or when discovery succeeds.
+    discoveryFailCount: v.optional(v.number()),
     lastSeenInApi: v.optional(v.number()),
     isDelisted: v.optional(v.boolean()),
-    discoveryFailCount: v.optional(v.number()),
+    // True when skills.sh has flagged this skill as a fork/copy of another.
+    // Listing/search queries default-filter rows where this is true.
+    isDuplicate: v.optional(v.boolean()),
+    // Set when this skill belongs to the curated first-party set (the owner
+    // string from /skills/curated, e.g. "vercel-labs"). Undefined for
+    // non-curated skills. Drives the "Official" badge on cards.
+    curatedOwner: v.optional(v.string()),
+    // Trending leaderboard rank (1..N). Undefined when not on the trending
+    // leaderboard. Refreshed by syncTrending cron.
+    trendingRank: v.optional(v.number()),
+    // Hot view: current-hour installs minus same-hour-yesterday. Refreshed by
+    // syncHot. Used to render momentum chips on cards spiking in install rate.
+    hotChange: v.optional(v.number()),
+    hotInstallsYesterday: v.optional(v.number()),
+    // Worst audit verdict across all providers, denormalized so the cards
+    // can render a badge without a join. Mirrors the value on `skillAudits`.
+    // "pass" | "warn" | "fail" | "unknown". Undefined when audits never fetched.
+    worstAuditStatus: v.optional(v.string()),
+    worstAuditRiskLevel: v.optional(v.string()),
+    // Audit-fetch pipeline state. Same shape as needsContentFetch — set true
+    // on new/relisted skills and on rows whose auditFetchedAt is >7 days old
+    // (re-flagged by markStaleContent). Drained by fetchAuditBatch.
+    needsAudit: v.optional(v.boolean()),
+    auditFetchedAt: v.optional(v.number()),
     // Embedding pipeline state. The actual vector lives in the
     // `skillEmbeddings` table — these fields are just bookkeeping for the
     // daily cron worker that populates it.
@@ -106,6 +154,26 @@ export default defineSchema({
     // rows themselves. Optional because legacy summaries (from before the
     // table split) won't have it set until the backfill runs.
     skillEmbeddingId: v.optional(v.id("skillEmbeddings")),
+    // Mirrored from skills row. Used for default-filtering forks/copies out
+    // of listing and search queries.
+    isDuplicate: v.optional(v.boolean()),
+    // Mirrored from skills row. Drives the "Official" badge on every card.
+    // The value is the curated owner slug (e.g. "vercel-labs"). Used as a
+    // filter field on the search index for "Official only" search results.
+    curatedOwner: v.optional(v.string()),
+    // Mirrored from skills row. Powers the home page's Trending tab.
+    trendingRank: v.optional(v.number()),
+    // Mirrored from skills row. Powers the home page's Hot rail and the
+    // momentum chips on cards.
+    hotChange: v.optional(v.number()),
+    hotInstallsYesterday: v.optional(v.number()),
+    // Mirrored from skills row. Drives the audit pill on cards (one read,
+    // no join into skillAudits).
+    worstAuditStatus: v.optional(v.string()),
+    worstAuditRiskLevel: v.optional(v.string()),
+    // Mirrored audit-fetch pipeline state.
+    needsAudit: v.optional(v.boolean()),
+    auditFetchedAt: v.optional(v.number()),
   })
     .index("by_source_skillId", ["source", "skillId"])
     .index("by_skillEmbeddingId", ["skillEmbeddingId"])
@@ -128,13 +196,58 @@ export default defineSchema({
     // through these indexes touch only the few rows that match.
     .index("by_embeddingSkipReason", ["embeddingSkipReason"])
     .index("by_embeddingMode", ["embeddingMode"])
+    // Trending tab on the home page: walk by trendingRank ascending, filtered
+    // to non-delisted rows. Convex orders undefined < numbers, so queries MUST
+    // use `q.eq("isDelisted", false).gt("trendingRank", 0)` to skip the
+    // ~75k undefined rows that come first in the index walk.
+    .index("by_isDelisted_trendingRank", ["isDelisted", "trendingRank"])
+    // Hot rail: walk by hotChange descending. Same undefined-skip rule applies
+    // — queries MUST use `q.eq("isDelisted", false).gt("hotChange", 0)`.
+    .index("by_isDelisted_hotChange", ["isDelisted", "hotChange"])
+    // Curated/official browsing — owner pages and the "Official only" filter.
+    // Queries MUST use `q.gt("curatedOwner", "")` so the walk skips the
+    // overwhelmingly-undefined rows at the start of the index.
+    .index("by_curatedOwner", ["curatedOwner"])
+    // Audit-fetch queue. Queries with `q.eq("needsAudit", true)` walk only
+    // the skills that need their audit refreshed. Drained by fetchAuditBatch.
+    .index("by_needsAudit", ["needsAudit"])
     // Full-text search index for the home page text search. Lives on
     // skillSummaries (~200 bytes/row) instead of skills (~25 KB/row) so each
     // page of search results is ~5 KB on the wire instead of ~625 KB.
     .searchIndex("search_name", {
       searchField: "name",
-      filterFields: ["isDelisted"],
+      filterFields: ["isDelisted", "curatedOwner"],
     }),
+
+  // One row per audited skill. Lives in its own table because audits change
+  // independently of skill content (re-run periodically by skills.sh's audit
+  // partners) and would bloat the skills row otherwise. The denormalized
+  // `worstAuditStatus` field on `skills` and `skillSummaries` is what list
+  // views read; this table is for the detail panel's per-provider breakdown.
+  skillAudits: defineTable({
+    skillDocId: v.id("skills"),
+    source: v.string(),
+    skillId: v.string(),
+    audits: v.array(
+      v.object({
+        provider: v.string(),
+        slug: v.string(),
+        status: v.string(), // "pass" | "warn" | "fail"
+        summary: v.string(),
+        auditedAt: v.string(),
+        riskLevel: v.optional(v.string()),
+        categories: v.optional(v.array(v.string())),
+      }),
+    ),
+    // Worst status across providers, computed at write time. Faster than
+    // re-reducing on every read. "pass" if all pass; "warn" if any warn and
+    // none fail; "fail" if any fail; "unknown" when no audits exist yet.
+    worstStatus: v.string(),
+    worstRiskLevel: v.optional(v.string()),
+    fetchedAt: v.number(),
+  })
+    .index("by_skillDocId", ["skillDocId"])
+    .index("by_source_skillId", ["source", "skillId"]),
 
   githubTreeCache: defineTable({
     repo: v.string(),

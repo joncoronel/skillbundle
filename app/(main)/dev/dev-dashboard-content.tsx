@@ -956,12 +956,6 @@ function AdminActions() {
       fn: () => triggerBackfill({ type: "summaries" as const }),
     },
     {
-      label: "Backfill Sync Flags",
-      description:
-        "Set missing needsDiscovery/needsContentFetch/syncHash on skill rows.",
-      fn: () => triggerBackfill({ type: "syncFlags" as const }),
-    },
-    {
       label: "Refresh Stats",
       description:
         "Recalculate dashboard stat counts by scanning all summaries.",

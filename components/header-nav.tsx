@@ -8,6 +8,7 @@ import {
   CompassIcon,
   DashboardSquare01Icon,
   Tag01Icon,
+  CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,18 @@ export function DesktopNav() {
         }
       >
         Explore
+      </NavLink>
+      <NavLink
+        href="/official"
+        icon={
+          <HugeiconsIcon
+            icon={CheckmarkCircle02Icon}
+            strokeWidth={2}
+            className="size-4"
+          />
+        }
+      >
+        Official
       </NavLink>
       <NavLink
         href="/dashboard"

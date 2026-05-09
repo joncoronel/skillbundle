@@ -40,6 +40,8 @@ import type { api } from "@/convex/_generated/api";
 interface SkillExplorerProps {
   canAutoDetect: boolean;
   initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
+  initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
+  initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
 }
 
 const TEXT_DEBOUNCE_MS = 300;
@@ -49,6 +51,8 @@ const skillDetailHandle = createSkillDetailHandle();
 export function SkillExplorer({
   canAutoDetect,
   initialPopularSkills,
+  initialTrending,
+  initialHot,
 }: SkillExplorerProps) {
   const [mode, setMode] = useQueryState("mode", modeParser);
   const [textQuery, setTextQuery] = useQueryState("q", searchQueryParser);
@@ -206,6 +210,8 @@ export function SkillExplorer({
             <div hidden={!!effectiveTextQuery}>
               <DefaultSkillsList
                 initialPage={initialPopularSkills}
+                initialTrending={initialTrending}
+                initialHot={initialHot}
                 sheetHandle={skillDetailHandle}
               />
             </div>

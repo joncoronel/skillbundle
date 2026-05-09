@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useSignUp, useAuth } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import {
   InputOTP,
@@ -38,7 +38,6 @@ export function SignUpForm() {
   const [resendError, setResendError] = React.useState<string | null>(null);
   const [advancedToVerify, setAdvancedToVerify] = React.useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const emailError = errors?.fields?.emailAddress;
   const passwordError = errors?.fields?.password;
@@ -106,7 +105,9 @@ export function SignUpForm() {
     await signUp.verifications.verifyEmailCode({ code });
 
     if (signUp.status === "complete") {
-      const redirectUrl = getSafeRedirectUrl(searchParams.get("redirect_url"));
+      const redirectUrl = getSafeRedirectUrl(
+        new URLSearchParams(window.location.search).get("redirect_url"),
+      );
       await signUp.finalize({
         navigate: ({ session, decorateUrl }) => {
           if (session?.currentTask) return;

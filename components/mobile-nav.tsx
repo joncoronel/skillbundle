@@ -20,6 +20,7 @@ import {
   DashboardSquare01Icon,
   Menu01Icon,
   Tag01Icon,
+  CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { cn } from "@/lib/utils";
@@ -56,6 +57,13 @@ export function MobileNav() {
               isActive={pathname === "/explore"}
             >
               Explore
+            </DrawerNavLink>
+            <DrawerNavLink
+              href="/official"
+              icon={CheckmarkCircle02Icon}
+              isActive={pathname === "/official"}
+            >
+              Official
             </DrawerNavLink>
             <DrawerNavLink
               href="/dashboard"
