@@ -3,8 +3,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Loading03Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
@@ -110,18 +108,8 @@ export function SkillSearchResults({
         </>
       ) : skills.length > 0 ? (
         <>
-          <p className="text-xs text-muted-foreground mb-3 flex items-center gap-2">
-            <span>
-              {skills.length} result{skills.length !== 1 && "s"}
-            </span>
-            {isPlaceholderData && (
-              <HugeiconsIcon
-                icon={Loading03Icon}
-                strokeWidth={2}
-                className="size-3 animate-spin"
-                aria-label="Loading new results"
-              />
-            )}
+          <p className="text-xs text-muted-foreground mb-3">
+            {skills.length} result{skills.length !== 1 && "s"}
           </p>
           <div className="grid">
             {skills.map((skill, i) => {
