@@ -5,7 +5,6 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import type { FunctionReturnType } from "convex/server";
 import { useQueryState } from "nuqs";
-import { useDebounce } from "use-debounce";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
@@ -22,7 +21,20 @@ type BundleSearchResults = FunctionReturnType<typeof api.bundles.searchPublic>;
 export function ExploreContent() {
   const [query, setQuery] = useQueryState("q", exploreQueryParser);
   const trimmedQuery = query.trim();
-  const [debouncedQuery] = useDebounce(trimmedQuery, 300);
+  // Debounce with synchronous reset on clear — without that, a fast retype
+  // after clearing would see the previous query's debounced value leak through
+  // (e.g. type "f", clear, type "g" within 300ms → effectiveQuery briefly
+  // resolves to "f" and `hasSettled` flips back to true on the cached "f"
+  // hit, crossfading the user to the wrong query's results).
+  const [debouncedQuery, setDebouncedQuery] = useState(trimmedQuery);
+  if (!trimmedQuery && debouncedQuery) {
+    setDebouncedQuery("");
+  }
+  useEffect(() => {
+    if (!trimmedQuery) return;
+    const timer = setTimeout(() => setDebouncedQuery(trimmedQuery), 300);
+    return () => clearTimeout(timer);
+  }, [trimmedQuery]);
   // If raw query is empty, bypass debounce and show browse view immediately.
   const effectiveQuery = trimmedQuery ? debouncedQuery : "";
 
