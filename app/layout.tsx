@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
-import Script from "next/script";
+// import Script from "next/script";
 
 import { Providers } from "./providers";
 import "./globals.css";
@@ -22,13 +22,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
+      {/* <head>
+      // Note: Useful for debugging React hydration issues
         <Script
           src="//unpkg.com/react-scan/dist/auto.global.js"
           crossOrigin="anonymous"
           strategy="beforeInteractive"
         />
-      </head>
+      </head> */}
       <Suspense>
         <body
           className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
