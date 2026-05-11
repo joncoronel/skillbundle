@@ -17,7 +17,8 @@
       "Bash(node \"C:\\\\Users\\\\jonny\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\load-context.mjs\")",
       "Read(//tmp/**)",
       "Read(//c/tmp/**)",
-      "Bash(pnpm --version)"
+      "Bash(pnpm --version)",
+      "Bash(pnpm test *)"
     ]
   }
 }

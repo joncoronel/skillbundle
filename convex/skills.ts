@@ -811,12 +811,19 @@ export const updateSkillMdUrl = internalMutation({
     const now = Date.now();
     const skill = await ctx.db.get(docId);
     const newFailCount = hasUrl ? 0 : (skill?.discoveryFailCount ?? 0) + 1;
+    // Discovery failure surfaces the same "Install may fail" badge as
+    // content-fetch failure: the user-facing reality is identical (we have
+    // no SKILL.md, so `npx skills add` may install nothing useful), and the
+    // existing badge logic in components/skill-status-badge.tsx already
+    // keys off hasContentFetchError. Without this, low-install curated
+    // skills whose SKILL.md was deleted upstream (or never existed) render
+    // a bare skill page with no warning — see the Bitwarden case.
     await ctx.db.patch(docId, {
       skillMdUrl,
       needsDiscovery: false,
       needsContentFetch: hasUrl,
       discoveryFailCount: newFailCount,
-      ...(hasUrl && { hasContentFetchError: false }),
+      hasContentFetchError: !hasUrl,
       ...(!hasUrl && { contentFetchedAt: now }),
     });
     if (skill) {
@@ -833,6 +840,7 @@ export const updateSkillMdUrl = internalMutation({
           needsDiscovery: false,
           needsContentFetch: hasUrl,
           discoveryFailCount: newFailCount,
+          hasContentFetchError: !hasUrl,
           ...(!hasUrl && { contentFetchedAt: now }),
         });
       }

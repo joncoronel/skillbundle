@@ -238,3 +238,133 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
   // Verify the fetcher was actually called, not just bypassed.
   expect(getSkillSyncData).toHaveBeenCalledWith("example.com", "needs-fetch");
 });
+
+test("updateSkillMdUrl: discovery failure sets hasContentFetchError on both rows", async () => {
+  const t = makeTest();
+
+  // Pre-seed a GitHub-source row in the state it'd be in right after a
+  // syncCurated Pass 0 insert: flagged for discovery, no URL yet, no error
+  // flag. This mirrors the real-world Bitwarden case — a low-install
+  // curated skill whose SKILL.md isn't actually present in the repo.
+  const now = Date.now();
+  const skillDocId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("skills", {
+      source: "bitwarden/ai-plugins",
+      skillId: "reviewing-incremental-changes",
+      name: "Reviewing Incremental Changes",
+      installs: 15,
+      leaderboard: "curated",
+      lastSynced: now,
+      lastSeenInApi: now,
+      isDelisted: false,
+      needsDiscovery: true,
+      needsContentFetch: false,
+    });
+    await ctx.db.insert("skillSummaries", {
+      source: "bitwarden/ai-plugins",
+      skillId: "reviewing-incremental-changes",
+      name: "Reviewing Incremental Changes",
+      installs: 15,
+      lastSeenInApi: now,
+      skillDocId: id,
+      isDelisted: false,
+      needsDiscovery: true,
+      needsContentFetch: false,
+    });
+    return id;
+  });
+
+  // Simulate the failure-callback that discoverSkillMdUrls makes when the
+  // GitHub Tree walk turns up no SKILL.md anywhere.
+  await t.mutation(internal.skills.updateSkillMdUrl, {
+    docId: skillDocId,
+    skillMdUrl: "",
+  });
+
+  await t.run(async (ctx) => {
+    const skill = await ctx.db.get(skillDocId);
+    expect(skill!.hasContentFetchError).toBe(true);
+    expect(skill!.skillMdUrl).toBe("");
+    expect(skill!.discoveryFailCount).toBe(1);
+    expect(skill!.needsDiscovery).toBe(false);
+    expect(skill!.needsContentFetch).toBe(false);
+
+    // Summary mirrors the flag — the home page reads from summaries, so
+    // without this the "Install may fail" badge wouldn't render on cards.
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q
+          .eq("source", "bitwarden/ai-plugins")
+          .eq("skillId", "reviewing-incremental-changes"),
+      )
+      .unique();
+    expect(summary!.hasContentFetchError).toBe(true);
+    expect(summary!.hasSkillMdUrl).toBe(false);
+  });
+});
+
+test("updateSkillMdUrl: rediscovery success clears hasContentFetchError on both rows", async () => {
+  const t = makeTest();
+
+  // Pre-seed a row in the "previously failed" state: error flag set, no URL.
+  // Mirrors a row that exhausted content-fetch and was re-flagged for
+  // discovery, OR one that failed discovery on a prior run.
+  const now = Date.now();
+  const skillDocId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("skills", {
+      source: "example/repo",
+      skillId: "recovered",
+      name: "Recovered",
+      installs: 100,
+      leaderboard: "all-time",
+      lastSynced: now,
+      lastSeenInApi: now,
+      isDelisted: false,
+      hasContentFetchError: true,
+      skillMdUrl: "",
+      discoveryFailCount: 1,
+      needsDiscovery: true,
+    });
+    await ctx.db.insert("skillSummaries", {
+      source: "example/repo",
+      skillId: "recovered",
+      name: "Recovered",
+      installs: 100,
+      lastSeenInApi: now,
+      skillDocId: id,
+      isDelisted: false,
+      hasContentFetchError: true,
+      skillMdUrl: "",
+      hasSkillMdUrl: false,
+      discoveryFailCount: 1,
+      needsDiscovery: true,
+    });
+    return id;
+  });
+
+  // Upstream put the SKILL.md back; discoverSkillMdUrls now finds it.
+  await t.mutation(internal.skills.updateSkillMdUrl, {
+    docId: skillDocId,
+    skillMdUrl: "https://raw.githubusercontent.com/example/repo/main/SKILL.md",
+  });
+
+  await t.run(async (ctx) => {
+    const skill = await ctx.db.get(skillDocId);
+    expect(skill!.hasContentFetchError).toBe(false);
+    expect(skill!.skillMdUrl).toBe(
+      "https://raw.githubusercontent.com/example/repo/main/SKILL.md",
+    );
+    expect(skill!.discoveryFailCount).toBe(0);
+    expect(skill!.needsContentFetch).toBe(true);
+
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", "example/repo").eq("skillId", "recovered"),
+      )
+      .unique();
+    expect(summary!.hasContentFetchError).toBe(false);
+    expect(summary!.hasSkillMdUrl).toBe(true);
+  });
+});
