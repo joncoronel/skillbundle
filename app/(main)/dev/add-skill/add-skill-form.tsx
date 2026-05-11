@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { parseSkillInput } from "@/lib/parse-skill-input";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import {
@@ -43,6 +44,23 @@ export function AddSkillForm() {
     e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || pending) return;
+
+    // Validate the input shape client-side BEFORE calling the action. Convex
+    // intentionally forwards all server-side throws to the browser console in
+    // dev (visible as a red "Server Error" overlay), and there's no way to
+    // suppress that — even with ConvexError. Validating client-side means
+    // bad input never reaches the server, so no overlay for what's really
+    // just a typo. The action still re-validates as defense-in-depth.
+    try {
+      parseSkillInput(trimmed);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error({
+        title: "Couldn't add skill",
+        description: friendlyError(message),
+      });
+      return;
+    }
 
     setPending(true);
     try {
@@ -160,6 +178,12 @@ function skillDetailHref(source: string, skillId: string): string {
 // (e.g. "[Request ID: ...]") in toasts.
 function friendlyError(raw: string): string {
   const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
+  if (/URL must be from skills\.sh/i.test(cleaned)) {
+    return "That URL isn't from skills.sh. Paste a skills.sh URL or a source/slug.";
+  }
+  if (/looks like a domain/i.test(cleaned)) {
+    return cleaned;
+  }
   if (/skills\.sh API 404/i.test(cleaned)) {
     return "Skill not found on skills.sh. Manual adds must already be listed there.";
   }

@@ -16,12 +16,30 @@
  * "curated" whenever installs tick up between the 06:00 syncSkills and 06:30
  * syncCurated runs.
  */
-import { vi, test, expect, beforeEach } from "vitest";
+import { vi, test, expect, beforeEach, afterEach } from "vitest";
 import { internal } from "../convex/_generated/api";
 import { makeTest } from "./_setup";
 
+// Fake timers swallow the post-syncCurated schedule cascade in these tests.
+// `syncCurated` ends with `ctx.scheduler.runAfter(0, backfillDiscoverUrls, {})`
+// to drain the discovery + content-fetch chain. None of the assertions in this
+// file depend on that chain running — they verify Pass 0/1/2/3 state, which is
+// all in place before the schedule fires. With real timers, the scheduled
+// function fires after the test transaction closes and crashes with
+// "Transaction not started" (visible noise, not a failure). With fake timers
+// that are never advanced, the schedule is queued and discarded on teardown.
+//
+// Intentional trade-off: this means a future regression where syncCurated
+// *fails to schedule* the chain would not be caught here — it'd need a
+// dedicated test (with fake timers + finishAllScheduledFunctions + chain
+// mocks) elsewhere.
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 vi.mock("../convex/lib/skillsApi", async (importOriginal) => {

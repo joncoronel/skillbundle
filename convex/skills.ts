@@ -9,7 +9,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   embedTexts,
   truncateForEmbedding,
@@ -29,6 +29,7 @@ import {
   NOT_MODIFIED,
 } from "./lib/github";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
+import { parseSkillInput } from "../lib/parse-skill-input";
 
 // ---------------------------------------------------------------------------
 // Sync actions
@@ -2842,55 +2843,11 @@ const MANUAL_LEADERBOARD = "manual";
 // a skill the main sync just handled.
 const MANUAL_REFRESH_FRESHNESS_MS = 23 * 60 * 60 * 1000;
 
-/**
- * Parse a skill identifier from any of:
- *   - "https://skills.sh/vercel-labs/agent-skills/next-js-development"
- *   - "vercel-labs/agent-skills/next-js-development" (the v1 API `id` shape)
- *   - "mintlify.com/mintlify" (well-known source)
- *
- * Source-vs-slug split mirrors isGitHubSource: a dot in the first segment
- * means it's a well-known source (1-segment source), no dot means GitHub
- * (2-segment source). The remainder is the slug.
- */
-function parseSkillInput(input: string): { source: string; skillId: string } {
-  let raw = input.trim();
-  // If it parses as a URL, use the pathname. Strips host (incl. www.), query
-  // (?utm=...), and fragment (#...) uniformly. Falls back to treating the
-  // input as a raw "source/slug" if it doesn't parse as a URL.
-  try {
-    const url = new URL(raw);
-    if (url.hostname.replace(/^www\./, "") === "skills.sh") {
-      raw = url.pathname;
-    }
-  } catch {
-    // not a URL — keep raw as-is
-  }
-  raw = raw.replace(/^\/+/, "").replace(/\/+$/, "");
-  if (!raw) {
-    throw new Error("Skill input is empty.");
-  }
-
-  const parts = raw.split("/").filter(Boolean);
-  if (parts.length < 2) {
-    throw new Error(
-      `Invalid skill input "${input}". Expected "source/slug" or a skills.sh URL.`,
-    );
-  }
-
-  // Dot in first segment → well-known source (e.g. "skills.sh", "mintlify.com").
-  const isWellKnown = parts[0].includes(".");
-  const sourceSegments = isWellKnown ? 1 : 2;
-
-  if (parts.length <= sourceSegments) {
-    throw new Error(
-      `Invalid skill input "${input}". Slug is missing after source.`,
-    );
-  }
-
-  const source = parts.slice(0, sourceSegments).join("/");
-  const skillId = parts.slice(sourceSegments).join("/");
-  return { source, skillId };
-}
+// parseSkillInput lives at lib/parse-skill-input.ts so the /dev/add-skill form
+// can import it and validate input client-side. Validating before calling the
+// action prevents Convex's dev-mode "Server Error" console overlay for what's
+// really just bad input. The action below still calls parseSkillInput as
+// defense-in-depth (and wraps thrown Error → ConvexError for production).
 
 // Mirror the loose regex used by the discovery path (~line 734): "name: X",
 // optionally quoted. Restricted to the YAML frontmatter block so we don't
@@ -2996,7 +2953,18 @@ export const addSkillManually = action({
   }> => {
     await assertAdmin(ctx);
 
-    const { source, skillId } = parseSkillInput(input);
+    // Wrap parseSkillInput's plain Error → ConvexError so production preserves
+    // the message instead of redacting to a generic "Server Error". (Defense-
+    // in-depth — the form already validates client-side; this only matters if
+    // someone calls the action via the Convex dashboard or programmatically.)
+    let source: string;
+    let skillId: string;
+    try {
+      ({ source, skillId } = parseSkillInput(input));
+    } catch (err) {
+      if (err instanceof Error) throw new ConvexError(err.message);
+      throw err;
+    }
 
     // Skip the API call if the catalog already has this skill in good standing.
     // Re-adding is harmless (upsertSkillsBatch is idempotent), but we'd rather
