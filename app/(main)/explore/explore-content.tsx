@@ -1,18 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  useQuery,
-  useQueryClient,
-  keepPreviousData,
-} from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import type { FunctionReturnType } from "convex/server";
 import { useQueryState } from "nuqs";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
-import { exploreQueryParser, SEARCH_DEBOUNCE_MS } from "@/lib/search-params";
+import { exploreQueryParser } from "@/lib/search-params";
+import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { ExploreFilters } from "@/components/explore/explore-filters";
@@ -24,62 +19,17 @@ type BundleSearchResults = FunctionReturnType<typeof api.bundles.searchPublic>;
 
 export function ExploreContent() {
   const [query, setQuery] = useQueryState("q", exploreQueryParser);
-  const trimmedQuery = query.trim();
-  // Debounce with synchronous reset on clear — without that, a fast retype
-  // after clearing would see the previous query's debounced value leak through
-  // (e.g. type "f", clear, type "g" within the debounce window → effectiveQuery briefly
-  // resolves to "f" and `hasSettled` flips back to true on the cached "f"
-  // hit, crossfading the user to the wrong query's results).
-  const [debouncedQuery, setDebouncedQuery] = useState(trimmedQuery);
-  if (!trimmedQuery && debouncedQuery) {
-    setDebouncedQuery("");
-  }
-  useEffect(() => {
-    if (!trimmedQuery) return;
-    const timer = setTimeout(
-      () => setDebouncedQuery(trimmedQuery),
-      SEARCH_DEBOUNCE_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [trimmedQuery]);
 
-  // If the trimmed query already has cached data in TanStack Query's cache,
-  // bypass the debounce and use it directly — useQuery hits the cache
-  // synchronously and renders results without waiting. Falls back to the
-  // debounced value for queries that haven't been searched yet (so the
-  // backend isn't pinged on every keystroke).
-  const queryClient = useQueryClient();
-  const cachedQueryKey = trimmedQuery
-    ? convexQuery(api.bundles.searchPublic, { query: trimmedQuery }).queryKey
-    : null;
-  const isCachedForTrimmed = cachedQueryKey
-    ? queryClient.getQueryData(cachedQueryKey) !== undefined
-    : false;
-
-  const effectiveQuery = trimmedQuery
-    ? isCachedForTrimmed
-      ? trimmedQuery
-      : debouncedQuery
-    : "";
-
-  const {
-    data: results,
-    isFetching,
-    isPlaceholderData,
-  } = useQuery({
-    ...convexQuery(
-      api.bundles.searchPublic,
-      effectiveQuery ? { query: effectiveQuery } : "skip",
-    ),
-    // Keep prior rows visible during refinement ("d" → "dd") so the user
-    // never sees the results disappear into a skeleton between keystrokes.
-    placeholderData: keepPreviousData,
-    // Suppress the background refetch that fires on every remount/key
-    // switch — the convex subscription keeps cached data live, so a cached
-    // hit doesn't need to re-hit the backend just to confirm freshness.
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
-  });
+  // Shared search machinery (debounce + cache bypass + spinner state). We
+  // *do* read `queryResult.data` and `queryResult.isPlaceholderData` here —
+  // those are the inputs to the crossfade's `hasSettled` state machine
+  // below — so Proxy tracking subscribes this component to them as expected.
+  const { effectiveQuery, isInputLoading, queryResult } =
+    useDebouncedCachedSearch({
+      rawQuery: query,
+      fn: api.bundles.searchPublic,
+    });
+  const { data: results, isPlaceholderData } = queryResult;
 
   // Has the current search session settled at least once? Gates the crossfade:
   //   - First search (""→"d"): browse stays until "d" lands → flips true → crossfade
@@ -98,10 +48,6 @@ export function ExploreContent() {
   }
 
   const showResults = effectiveQuery.length > 0 && hasSettled;
-  const isInputLoading =
-    trimmedQuery.length > 0 &&
-    !isCachedForTrimmed &&
-    (trimmedQuery !== effectiveQuery || isFetching || isPlaceholderData);
 
   const inputRef = useRef<HTMLInputElement>(null);
 

@@ -1,12 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  keepPreviousData,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
 import { useQueryState } from "nuqs";
 import type { FunctionReturnType } from "convex/server";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -21,9 +15,9 @@ import {
   modeParser,
   searchQueryParser,
   repoUrlParser,
-  SEARCH_DEBOUNCE_MS,
   type ModeValue,
 } from "@/lib/search-params";
+import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -63,61 +57,16 @@ export function SkillExplorer({
   const [textQuery, setTextQuery] = useQueryState("q", searchQueryParser);
   const [repoUrl, setRepoUrl] = useQueryState("repo", repoUrlParser);
 
-  // Debounce the search query so results don't re-fetch on every keystroke.
-  // The empty-input case is reset synchronously at render time — without that,
-  // a fast retype after clearing would see the previous query's value leak
-  // through and break the fresh-search-after-clear skeleton heuristic in
-  // SkillSearchResults.
-  const trimmedTextQuery = textQuery.trim();
-  const [debouncedText, setDebouncedText] = useState(trimmedTextQuery);
-  if (!trimmedTextQuery && debouncedText) {
-    setDebouncedText("");
-  }
-  useEffect(() => {
-    if (!trimmedTextQuery) return;
-    const timer = setTimeout(
-      () => setDebouncedText(trimmedTextQuery),
-      SEARCH_DEBOUNCE_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [trimmedTextQuery]);
-
-  // If the trimmed query already has cached data in TanStack Query's cache,
-  // bypass the debounce and use it directly — the inner useQuery in
-  // SkillSearchResults hits the cache synchronously and renders results
-  // without waiting. Falls back to the debounced value for queries that
-  // haven't been searched yet (so the backend isn't pinged on every keystroke).
-  const queryClient = useQueryClient();
-  const cachedSkillsKey = trimmedTextQuery
-    ? convexQuery(api.skills.searchSkills, { query: trimmedTextQuery })
-        .queryKey
-    : null;
-  const isCachedSkills = cachedSkillsKey
-    ? queryClient.getQueryData(cachedSkillsKey) !== undefined
-    : false;
-
-  const effectiveTextQuery = trimmedTextQuery
-    ? isCachedSkills
-      ? trimmedTextQuery
-      : debouncedText
-    : "";
-
-  // Subscribe to the same useQuery here (TanStack dedupes; the real consumer
-  // lives in SkillSearchResults) so we can drive the input-spinner state
-  // synchronously — useQuery itself initiates the fetch on key change and
-  // marks `isPlaceholderData` true in the same render. Destructuring just
-  // these two props means TanStack's Proxy tracking won't re-render the
-  // parent when `data` changes (Convex live updates, fetch settles), so we
-  // get the perf isolation for free without an explicit `notifyOnChangeProps`.
-  const { isFetching, isPlaceholderData } = useQuery({
-    ...convexQuery(
-      api.skills.searchSkills,
-      effectiveTextQuery ? { query: effectiveTextQuery } : "skip",
-    ),
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
-  });
+  // Search machinery (debounce + cache bypass + spinner state) lives in the
+  // shared hook. The data consumer is `<SkillSearchResults>`, not this
+  // component, so we deliberately don't destructure `query.data` here —
+  // that keeps Proxy tracking from re-rendering the parent on Convex
+  // live updates of search results.
+  const { effectiveQuery: effectiveTextQuery, isInputLoading: textIsLoading } =
+    useDebouncedCachedSearch({
+      rawQuery: textQuery,
+      fn: api.skills.searchSkills,
+    });
 
   // Local input state for the repo field — only pushed to the URL on submit.
   const [repoInput, setRepoInput] = useState(repoUrl);
@@ -157,17 +106,9 @@ export function SkillExplorer({
   const placeholder = isText
     ? "Search skills by name…"
     : "https://github.com/owner/repo";
-  // Spinner is "any pending search work for the current input": debounce
-  // hasn't caught up, fetch is in flight, or we're showing placeholder data
-  // for a previous query. Skipped when cached (results are already showing,
-  // no need for a loading indicator).
-  const isInputLoading =
-    isText &&
-    trimmedTextQuery.length > 0 &&
-    !isCachedSkills &&
-    (trimmedTextQuery !== effectiveTextQuery ||
-      isFetching ||
-      isPlaceholderData);
+  // Spinner only shows in text mode — the hook's `textIsLoading` covers
+  // every "pending search work" state for the text input.
+  const isInputLoading = isText && textIsLoading;
   const Icon = isText ? Search01Icon : GithubIcon;
 
   return (
