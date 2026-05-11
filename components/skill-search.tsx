@@ -16,10 +16,19 @@ interface SkillSearchResultsProps {
 }
 
 /**
- * Renders results for a Convex full-text search over skill names.
- * Uses TanStack Query (via convexQuery) for caching + live reactivity.
- * Driven by an external query prop — the input itself lives in the parent
+ * Renders results for a Convex full-text search over skill names. Uses
+ * TanStack Query (via convexQuery) for caching + live reactivity. Driven
+ * by an external `query` prop — the input itself lives in the parent
  * (skill-explorer) so the same input can swap between text + repo modes.
+ *
+ * **Coupled to parent visibility lifecycle.** This component is designed
+ * to be kept mounted under a `<div hidden>` toggle (the parent shows/hides
+ * via display:none, never unmounts). The `if (!query && !data) return null`
+ * guard below relies on this contract — `placeholderData: keepPreviousData`
+ * keeps prior rows in the tree during typing-modify ("f" → "fg"), and the
+ * hide-toggle then avoids paying the 60-row mount cost on every browse ↔
+ * search transition. **Reusing this component without the parent
+ * hide-toggle will leave stale rows visible after the query is cleared.**
  */
 export function SkillSearchResults({
   query,

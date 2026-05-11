@@ -36,6 +36,11 @@ export function ExploreContent() {
   //   - Refinement ("d"→"dd"): stays true; placeholder keeps "d" rows visible
   //   - Clear: resets to false → crossfade back to browse
   //   - Fresh after clear ("d"→clear→"g"): false again until "g" lands (no stale flash)
+  // Always starts false — including on direct-link loads with `?q=foo` —
+  // so the browse content (Featured + tabs) stays visible as useful filler
+  // while the search fetches, mirroring the in-session flow. Seeding from
+  // the URL would land us in showResults=true with no data yet, blanking
+  // the page during the fetch (SearchResults returns null when !results).
   const [hasSettled, setHasSettled] = useState(false);
   if (!effectiveQuery && hasSettled) setHasSettled(false);
   if (

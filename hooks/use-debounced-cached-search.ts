@@ -68,6 +68,14 @@ export function useDebouncedCachedSearch<Fn extends SearchQueryFn>({
   // types can resolve (TS can't simplify `ConvexQueryArgsOrSkip<Fn>` while
   // Fn is still a generic). The Fn generic is preserved at the return-type
   // boundary so callers keep their data-typing.
+  //
+  // Trip-wire: structural subtyping means a future search-style query with
+  // *extra required args* (e.g. `{ query: string; cursor: string }`) would
+  // still satisfy `Fn extends SearchQueryFn` and pass this cast — but would
+  // runtime-error inside convexQuery because we only ever pass
+  // `{ query: ... }`. Both current callers are exactly `{ query: string }`;
+  // if that changes, swap the cast for an `argsFor: (q: string) =>
+  // FunctionArgs<Fn>` callback prop so TS enforces the args shape per call.
   const fnBase = fn as SearchQueryFn;
 
   const trimmed = rawQuery.trim();
@@ -83,6 +91,11 @@ export function useDebouncedCachedSearch<Fn extends SearchQueryFn>({
   }, [trimmed]);
 
   const queryClient = useQueryClient();
+  // Rebuilt every render — convexQuery's allocation is cheap (one object +
+  // a 3-element key array) and getQueryData hashes the key for lookup, so a
+  // useMemo here would cost more in deps-comparison bookkeeping than it
+  // saves. Documented to head off future "wait, should this be memoized?"
+  // re-debates.
   const cachedKey = trimmed
     ? convexQuery(fnBase, { query: trimmed }).queryKey
     : null;
