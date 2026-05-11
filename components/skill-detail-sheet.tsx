@@ -160,14 +160,12 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
   const baseUrl = contentData?.skillMdUrl ?? null;
   const audits = auditData?.audits ?? null;
 
-  if (!content && !skill.description) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No detailed content available for this skill.
-      </p>
-    );
-  }
-
+  // Mirrors the full detail page (components/skill-detail-page.tsx): render
+  // each section independently and show a fallback at the bottom only when
+  // both description and content are absent. The audit section is an
+  // independent signal — a skill with no docs but a real audit verdict is
+  // still worth showing, especially for skills whose SKILL.md couldn't be
+  // discovered upstream.
   return (
     <div className="space-y-8">
       {skill.description && (
@@ -186,6 +184,11 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
         <LabeledSection label="Documentation">
           <MarkdownContent baseUrl={baseUrl}>{content}</MarkdownContent>
         </LabeledSection>
+      )}
+      {!content && !skill.description && (
+        <p className="text-sm text-muted-foreground">
+          No detailed content available for this skill.
+        </p>
       )}
     </div>
   );

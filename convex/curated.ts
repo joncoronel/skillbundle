@@ -23,6 +23,10 @@ import { getCurated } from "./lib/skillsApi";
 
 const APPLY_BATCH_SIZE = 200;
 const CLEANUP_PAGE_SIZE = 200;
+// Matches BATCH_SIZE in convex/skills.ts:syncSkills. upsertSkillsBatch's
+// slow path inserts a skills row, a skillSummaries row, and reads an index
+// probe — keep the batch small enough to stay well under the 4096-read cap.
+const UPSERT_BATCH_SIZE = 20;
 
 export const syncCurated = internalAction({
   args: {},
@@ -45,11 +49,16 @@ export const syncCurated = internalAction({
       return;
     }
 
-    // Flatten owner→skills map into a single list of (source, skillId, owner).
+    // Flatten owner→skills map into a single list of (source, skillId, owner)
+    // plus the per-skill fields upsertSkillsBatch needs in Pass 0. Carrying
+    // them on the same shape avoids a second walk of response.data.
     const curatedEntries: Array<{
       source: string;
       skillId: string;
       owner: string;
+      name: string;
+      installs: number;
+      isDuplicate: boolean;
     }> = [];
     for (const ownerEntry of response.data) {
       for (const skill of ownerEntry.skills) {
@@ -57,6 +66,9 @@ export const syncCurated = internalAction({
           source: skill.source,
           skillId: skill.slug,
           owner: ownerEntry.owner,
+          name: skill.name,
+          installs: skill.installs,
+          isDuplicate: skill.isDuplicate ?? false,
         });
       }
     }
@@ -65,14 +77,45 @@ export const syncCurated = internalAction({
       `Curated set: ${response.totalOwners} owners, ${response.totalSkills} skills (received ${curatedEntries.length} entries)`,
     );
 
+    // Pass 0: ensure every curated skill exists in our DB. The regular sync
+    // (syncSkills) drops anything below MIN_INSTALLS=50 before upserting, so
+    // curated publishers with only low-install skills (e.g. Bitwarden) would
+    // otherwise have zero rows here and 404 on /<owner>. Reuses the canonical
+    // insert path so new rows get the full pipeline (discovery, content fetch,
+    // embedding, audit) just like leaderboard rows. Idempotent for existing
+    // rows — fast-path A in upsertSkillsBatch just touches lastSeenInApi.
+    let totalUpserted = 0;
+    for (let i = 0; i < curatedEntries.length; i += UPSERT_BATCH_SIZE) {
+      const chunk = curatedEntries.slice(i, i + UPSERT_BATCH_SIZE);
+      await ctx.runMutation(internal.skills.upsertSkillsBatch, {
+        skills: chunk.map((e) => ({
+          source: e.source,
+          skillId: e.skillId,
+          name: e.name,
+          installs: e.installs,
+          isDuplicate: e.isDuplicate,
+        })),
+        leaderboard: "curated",
+      });
+      totalUpserted += chunk.length;
+    }
+
     // Pass 1: stamp curatedOwner. Chunk entries into APPLY_BATCH_SIZE-sized
-    // mutation calls so each stays under Convex's 4096-read limit.
+    // mutation calls so each stays under Convex's 4096-read limit. Strip the
+    // Pass-0-only fields (name/installs/isDuplicate) before sending — the
+    // stamping mutation only needs source/skillId/owner.
     let totalStamped = 0;
     for (let i = 0; i < curatedEntries.length; i += APPLY_BATCH_SIZE) {
       const chunk = curatedEntries.slice(i, i + APPLY_BATCH_SIZE);
       const { stamped } = await ctx.runMutation(
         internal.curated.applyCuratedSetBatch,
-        { entries: chunk },
+        {
+          entries: chunk.map((e) => ({
+            source: e.source,
+            skillId: e.skillId,
+            owner: e.owner,
+          })),
+        },
       );
       totalStamped += stamped;
     }
@@ -125,8 +168,16 @@ export const syncCurated = internalAction({
     });
 
     console.log(
-      `syncCurated: stamped ${totalStamped}, cleared ${totalCleared}, owners ${ownerRows.length}`,
+      `syncCurated: upserted ${totalUpserted}, stamped ${totalStamped}, cleared ${totalCleared}, owners ${ownerRows.length}`,
     );
+
+    // Drain the discovery / content-fetch / audit chain for any rows Pass 0
+    // just inserted. Without this, freshly-inserted curated rows wait for the
+    // next syncSkills run (~17h later) before their SKILL.md is fetched.
+    // Mirrors the chain kick-off at the end of markStaleContent. Idempotent
+    // — if nothing new was inserted, backfillDiscoverUrls scans, finds zero rows
+    // with needsDiscovery=true that aren't already scheduled, and exits.
+    await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
   },
 });
 
