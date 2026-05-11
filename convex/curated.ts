@@ -174,8 +174,8 @@ export const syncCurated = internalAction({
     // Drain the discovery / content-fetch / audit chain for any rows Pass 0
     // just inserted. Without this, freshly-inserted curated rows wait for the
     // next syncSkills run (~17h later) before their SKILL.md is fetched.
-    // Mirrors the chain kick-off at convex/skills.ts:1337. Idempotent — if
-    // nothing new was inserted, backfillDiscoverUrls scans, finds zero rows
+    // Mirrors the chain kick-off at the end of markStaleContent. Idempotent
+    // — if nothing new was inserted, backfillDiscoverUrls scans, finds zero rows
     // with needsDiscovery=true that aren't already scheduled, and exits.
     await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
   },

@@ -362,10 +362,14 @@ export const upsertSkillsBatch = internalMutation({
             }
           : {};
 
+        // `leaderboard` is deliberately NOT patched on the existing-row path.
+        // It's an origin tag — "which sync flow first surfaced this row" —
+        // and overwriting it on every delta makes the field nondeterministic
+        // (last-writer-wins between syncSkills at 06:00 and syncCurated at
+        // 06:30 for any row that changed in between). Set on insert only.
         await ctx.db.patch(summary.skillDocId, {
           name: skill.name,
           installs: skill.installs,
-          leaderboard,
           lastSynced: now,
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
@@ -399,13 +403,14 @@ export const upsertSkillsBatch = internalMutation({
 
       if (existing) {
         // Orphaned skill row — patch it like the fast path.
+        // `leaderboard` is NOT patched here for the same reason as the fast
+        // path above: it's an origin tag, set on insert only.
         skillDocId = existing._id;
         const wasRelisted = existing.isDelisted ?? false;
         const installsChanged = existing.installs !== skill.installs;
         await ctx.db.patch(existing._id, {
           name: skill.name,
           installs: skill.installs,
-          leaderboard,
           lastSynced: now,
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
