@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
+import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SkillCardView } from "@/components/skill-card";
@@ -21,6 +22,7 @@ import {
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
 import { Input } from "@/components/ui/cubby-ui/input";
+import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +30,12 @@ import {
   DialogTitle,
   DialogBody,
   DialogFooter,
+  DialogClose,
+  DialogTrigger,
+  createDialogHandle,
 } from "@/components/ui/cubby-ui/dialog";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import {
   Popover,
   PopoverTrigger,
@@ -41,11 +47,15 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Share01Icon,
   Edit01Icon,
+  Edit02Icon,
   Cancel01Icon,
   StarIcon,
+  PencilEdit02Icon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
 import { timeAgo } from "@/lib/utils";
+import { EditableSkillSection } from "@/components/bundle-edit/editable-skill-section";
+import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
 
 // Admin-only — lazy-loaded so non-admins don't pay the bundle cost. The JSX
 // site is also gated on `viewerIsAdmin`, so the chunk is only fetched when
@@ -67,6 +77,8 @@ interface BundleViewProps {
 }
 
 const skillDetailHandle = createSkillDetailHandle();
+const descriptionDialogHandle = createDialogHandle();
+const renameBundleDialogHandle = createDialogHandle();
 
 export function BundleView({
   preloadedBundle,
@@ -77,7 +89,7 @@ export function BundleView({
 }: BundleViewProps) {
   const bundle = usePreloadedQuery(preloadedBundle);
   const planData = usePreloadedQuery(preloadedPlan);
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [editingSkills, setEditingSkills] = useState(false);
   const queryArgs = { urlId, shareToken };
   const updateVisibility = useMutation(
     api.bundles.updateBundleVisibility,
@@ -146,6 +158,11 @@ export function BundleView({
                 {bundle.name}
               </h1>
 
+              <BundleDescription
+                description={bundle.description}
+                isOwner={bundle.isOwner}
+              />
+
               <p className="mt-4 text-sm text-muted-foreground tabular-nums">
                 <MetadataItems
                   skillCount={skillCount}
@@ -187,20 +204,24 @@ export function BundleView({
                 ) : null}
                 {bundle.isOwner ? (
                   <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setRenameDialogOpen(true)}
-                      leftSection={
-                        <HugeiconsIcon
-                          icon={Edit01Icon}
-                          strokeWidth={2}
-                          className="size-3.5"
-                        />
+                    <DialogTrigger
+                      handle={renameBundleDialogHandle}
+                      render={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          leftSection={
+                            <HugeiconsIcon
+                              icon={Edit01Icon}
+                              strokeWidth={2}
+                              className="size-3.5"
+                            />
+                          }
+                        >
+                          Rename
+                        </Button>
                       }
-                    >
-                      Rename
-                    </Button>
+                    />
                     <VisibilityToggle
                       bundleId={bundle._id}
                       isPublic={bundle.isPublic}
@@ -256,29 +277,81 @@ export function BundleView({
         </section>
 
         <section>
-          <SectionHeader count={skillCount} title="What's inside." />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {bundle.skills.map((skill) => (
-              <SkillCardView
-                key={`${skill.source}/${skill.skillId}`}
-                skill={skill}
-                sheetHandle={skillDetailHandle}
-              />
-            ))}
+          {/* Co-locate the Edit-skills affordance with the section it
+              modifies. The bundle-identity actions (Rename, Visibility,
+              Share) stay up in the header; "Edit skills" belongs next to
+              "What's inside" because that's the content it acts on. */}
+          <div className="flex items-center justify-between gap-3">
+            <SectionHeader count={skillCount} title="What's inside." />
+            {bundle.isOwner ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditingSkills(true)}
+                disabled={editingSkills}
+                leftSection={
+                  <HugeiconsIcon
+                    icon={PencilEdit02Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                }
+              >
+                Edit skills
+              </Button>
+            ) : null}
           </div>
+          {/* Read-only grid: visible whenever we're not in edit mode (or
+              for non-owners who can never enter edit mode). */}
+          {!(bundle.isOwner && editingSkills) ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {bundle.skills.map((skill) => (
+                <SkillCardView
+                  key={`${skill.source}/${skill.skillId}`}
+                  skill={skill}
+                  sheetHandle={skillDetailHandle}
+                  enableQuickAdd={isAuthenticated}
+                  currentBundleId={bundle._id}
+                />
+              ))}
+            </div>
+          ) : null}
+          {/* Edit infrastructure: mounts unconditionally for owners so the
+              BundleEditBar can animate in/out via its `open` prop instead
+              of being yanked out of the tree when edit mode exits. The
+              diff grid renders only when `editing` is true. */}
+          {bundle.isOwner ? (
+            <EditableSkillSection
+              key={bundle._id}
+              editing={editingSkills}
+              bundleId={bundle._id}
+              queryArgs={queryArgs}
+              initialSkills={bundle.skills}
+              sheetHandle={skillDetailHandle}
+              onExit={() => setEditingSkills(false)}
+            />
+          ) : null}
         </section>
       </div>
 
-      <SkillDetailSheet handle={skillDetailHandle} />
+      <SkillDetailSheet
+        handle={skillDetailHandle}
+        footerAction="copy-install"
+      />
 
       {bundle.isOwner && (
-        <RenameBundleDialog
-          open={renameDialogOpen}
-          onOpenChange={setRenameDialogOpen}
-          bundleId={bundle._id}
-          currentName={bundle.name}
-          queryArgs={queryArgs}
-        />
+        <>
+          <RenameBundleDialog
+            bundleId={bundle._id}
+            currentName={bundle.name}
+            queryArgs={queryArgs}
+          />
+          <DescriptionDialog
+            bundleId={bundle._id}
+            currentDescription={bundle.description}
+            queryArgs={queryArgs}
+          />
+        </>
       )}
     </main>
   );
@@ -552,22 +625,18 @@ function VisibilityToggle({
 // ---------------------------------------------------------------------------
 
 interface RenameBundleDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   bundleId: Id<"bundles">;
   currentName: string;
   queryArgs: { urlId: string; shareToken?: string };
 }
 
 function RenameBundleDialog({
-  open,
-  onOpenChange,
   bundleId,
   currentName,
   queryArgs,
 }: RenameBundleDialogProps) {
+  const titleId = useId();
   const [name, setName] = useState(currentName);
-  const [saving, setSaving] = useState(false);
   const updateName = useMutation(
     api.bundles.updateBundleName,
   ).withOptimisticUpdate((localStore, { name: newName }) => {
@@ -580,67 +649,236 @@ function RenameBundleDialog({
     }
   });
 
-  useEffect(() => {
-    if (open) setName(currentName);
-  }, [open, currentName]);
-
-  async function handleSave() {
+  // Non-blocking save: fire the mutation, close instantly, surface failures
+  // via toast. The optimistic update has already patched the page header,
+  // so closing immediately matches reality. Convex auto-reverts on failure.
+  function handleSubmit() {
     const trimmed = name.trim();
-    if (!trimmed || trimmed === currentName) {
-      onOpenChange(false);
-      return;
+    if (!trimmed) return;
+    if (trimmed !== currentName) {
+      const pending = updateName({ bundleId, name: trimmed });
+      pending.catch((error: unknown) => {
+        let message = "Couldn't reach the server. Try again.";
+        if (error instanceof ConvexError && typeof error.data === "string") {
+          message = error.data;
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
+        toast.error({
+          title: "Couldn't rename bundle",
+          description: message,
+        });
+      });
     }
-
-    setSaving(true);
-    try {
-      await updateName({ bundleId, name: trimmed });
-      onOpenChange(false);
-    } finally {
-      setSaving(false);
-    }
+    renameBundleDialogHandle.close();
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      handle={renameBundleDialogHandle}
+      onOpenChange={(open) => {
+        // Reset to the latest currentName on every open transition. See
+        // DescriptionDialog for the rationale on reset-on-open vs effect.
+        if (open) setName(currentName);
+      }}
+    >
       <DialogContent variant="inset">
         <DialogHeader>
-          <DialogTitle>Rename bundle</DialogTitle>
+          <DialogTitle id={titleId}>Rename bundle</DialogTitle>
         </DialogHeader>
-        <DialogBody>
-          <div>
-            <label
-              htmlFor="rename-bundle-name"
-              className="text-sm font-medium mb-1.5 block"
-            >
-              Bundle name
-            </label>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSubmit();
+          }}
+          className="flex flex-1 min-h-0 flex-col"
+        >
+          <DialogBody>
             <Input
-              id="rename-bundle-name"
+              aria-labelledby={titleId}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSave();
-              }}
+              placeholder="My React stack"
+              required
             />
-          </div>
-        </DialogBody>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <Button type="submit" variant="primary" disabled={!name.trim()}>
+              Rename
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bundle description display + edit
+// ---------------------------------------------------------------------------
+
+function BundleDescription({
+  description,
+  isOwner,
+}: {
+  description?: string;
+  isOwner: boolean;
+}) {
+  if (!description) {
+    if (!isOwner) return null;
+    return (
+      <DialogTrigger
+        handle={descriptionDialogHandle}
+        render={
+          <button
+            type="button"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={!name.trim() || saving}
-            loading={saving}
-          >
-            {saving ? "Renaming…" : "Rename"}
-          </Button>
-        </DialogFooter>
+            <HugeiconsIcon
+              icon={Edit02Icon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+            Add a description
+          </button>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="mt-3 group/desc relative max-w-2xl">
+      <p className="text-sm text-foreground/85 wrap-break-word whitespace-pre-wrap">
+        {description}
+      </p>
+      {isOwner ? (
+        <DialogTrigger
+          handle={descriptionDialogHandle}
+          render={
+            <button
+              type="button"
+              aria-label="Edit description"
+              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <HugeiconsIcon
+                icon={Edit02Icon}
+                strokeWidth={2}
+                className="size-3"
+              />
+              Edit description
+            </button>
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+interface DescriptionDialogProps {
+  bundleId: Id<"bundles">;
+  currentDescription?: string;
+  queryArgs: { urlId: string; shareToken?: string };
+}
+
+function DescriptionDialog({
+  bundleId,
+  currentDescription,
+  queryArgs,
+}: DescriptionDialogProps) {
+  const titleId = useId();
+  const [value, setValue] = useState(currentDescription ?? "");
+  const updateDescription = useMutation(
+    api.bundles.updateBundleDescription,
+  ).withOptimisticUpdate((localStore, { description }) => {
+    const current = localStore.getQuery(api.bundles.getByUrlId, queryArgs);
+    if (current !== undefined && current !== null) {
+      const trimmed = description.trim();
+      localStore.setQuery(api.bundles.getByUrlId, queryArgs, {
+        ...current,
+        description: trimmed.length === 0 ? undefined : trimmed,
+      });
+    }
+  });
+
+  // Non-blocking save: fire the mutation, close the dialog immediately,
+  // surface failures via toast. The optimistic update has already patched
+  // the page's view of the description, so closing instantly matches
+  // reality. Convex auto-reverts the cache on failure.
+  function handleSubmit() {
+    const trimmed = value.trim();
+    if (trimmed !== (currentDescription ?? "")) {
+      const pending = updateDescription({ bundleId, description: trimmed });
+      pending.catch((error: unknown) => {
+        let message = "Couldn't reach the server. Try again.";
+        if (error instanceof ConvexError && typeof error.data === "string") {
+          message = error.data;
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
+        toast.error({
+          title: "Couldn't save description",
+          description: message,
+        });
+      });
+    }
+    descriptionDialogHandle.close();
+  }
+
+  const overLimit = value.trim().length > MAX_BUNDLE_DESCRIPTION_LENGTH;
+
+  return (
+    <Dialog
+      handle={descriptionDialogHandle}
+      onOpenChange={(open) => {
+        // Snap the textarea to the latest currentDescription each time the
+        // dialog opens. Reset-on-open (not on close) ensures the field is
+        // fresh against the truth at the moment the user sees it — handles
+        // both stale-draft-after-cancel and external currentDescription
+        // updates that happened while the dialog was closed.
+        if (open) setValue(currentDescription ?? "");
+      }}
+    >
+      <DialogContent variant="inset">
+        <DialogHeader>
+          <DialogTitle id={titleId}>
+            {currentDescription ? "Edit description" : "Add a description"}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSubmit();
+          }}
+          className="flex flex-1 min-h-0 flex-col"
+        >
+          <DialogBody>
+            <Textarea
+              aria-labelledby={titleId}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="What's this bundle for?"
+              className="min-h-28"
+              maxLength={MAX_BUNDLE_DESCRIPTION_LENGTH + 50}
+            />
+            <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground tabular-nums">
+              <span>Optional</span>
+              <span
+                className={
+                  overLimit ? "text-destructive font-medium" : undefined
+                }
+              >
+                {value.trim().length} / {MAX_BUNDLE_DESCRIPTION_LENGTH}
+              </span>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline">Cancel</Button>} />
+            <Button type="submit" variant="primary" disabled={overLimit}>
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

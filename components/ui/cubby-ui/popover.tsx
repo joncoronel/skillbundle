@@ -44,7 +44,7 @@ function PopoverPopup({ className, ...props }: BasePopover.Popup.Props) {
     <BasePopover.Popup
       data-slot="popover-popup"
       className={cn(
-        "bg-popover text-popover-foreground ring-border/60 max-h-(--available-height) max-w-(--available-width) origin-(--transform-origin) rounded-md shadow-[0_8px_20px_0_oklch(0.18_0_0/0.10)] ring-1",
+        "bg-popover text-popover-foreground ring-border/60 max-h-(--available-height) max-w-(--available-width) origin-(--transform-origin) rounded-2xl shadow-[0_8px_20px_0_oklch(0.18_0_0/0.10)] ring-1",
         className,
       )}
       {...props}
@@ -139,7 +139,7 @@ function PopoverContent({
             "bg-popover text-popover-foreground ring-border/60 relative",
             "h-(--popup-height,auto) w-(--popup-width,auto)",
             "max-h-(--available-height) max-w-(--available-width)",
-            "origin-(--transform-origin) overflow-hidden rounded-md shadow-[0_8px_20px_0_oklch(0.18_0_0/0.10)] ring-1",
+            "origin-(--transform-origin) overflow-hidden rounded-2xl shadow-[0_8px_20px_0_oklch(0.18_0_0/0.10)] ring-1",
             // Size/opacity transitions
             "transition-[width,height,scale,opacity] duration-[350ms,350ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
@@ -167,7 +167,7 @@ function PopoverContent({
             data-slot="popover-viewport"
             className={cn(
               // Base viewport styles
-              "relative size-full overflow-clip px-4 py-4 [--viewport-padding:1rem]",
+              "relative size-full overflow-clip px-2.5 py-2.5 [--viewport-padding:0.625rem]",
               "not-data-transitioning:overflow-y-auto",
               // Content width calculation (edge-to-edge minus padding)
               "**:data-current:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",

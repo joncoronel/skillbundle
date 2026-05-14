@@ -24,6 +24,7 @@ import { timeAgo, getInitials } from "@/lib/utils";
 interface BundleCardProps {
   name: string;
   urlId: string;
+  description?: string;
   skillCount: number;
   createdAt: number;
   creatorName: string;
@@ -39,6 +40,7 @@ interface BundleCardProps {
 export function BundleCard({
   name,
   urlId,
+  description,
   skillCount,
   createdAt,
   creatorName,
@@ -90,6 +92,11 @@ export function BundleCard({
             </span>
           </CardDescription>
         )}
+        {description ? (
+          <p className="mt-2 text-xs text-muted-foreground line-clamp-2 wrap-break-word">
+            {description}
+          </p>
+        ) : null}
       </CardHeader>
       {hasStats ? (
         <CardContent className="pt-0">

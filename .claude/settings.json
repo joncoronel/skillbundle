@@ -19,7 +19,13 @@
       "Read(//c/tmp/**)",
       "Bash(pnpm --version)",
       "Bash(pnpm test *)",
-      "Bash(git -C \"c:\\\\Users\\\\jonny\\\\Documents\\\\Projects\\\\skillstack\" show 5fcea90 --stat)"
+      "Bash(git -C \"c:\\\\Users\\\\jonny\\\\Documents\\\\Projects\\\\skillstack\" show 5fcea90 --stat)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\jonny\\\\Documents\\\\Projects\\\\skillstack\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\jonny\\\\Documents\\\\Projects\\\\skillstack\" -Depth 2)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\jonny\\\\Documents\\\\Projects\\\\skillstack\" | Select-Object Name, @{Name=\"Type\";Expression={if\\($_.PSIsContainer\\){\"DIR\"}else{\"FILE\"}}} | Format-Table -AutoSize)",
+      "Bash(xargs -I {} grep -lE \"useEffect|useLayoutEffect\" \"c:/Users/jonny/Documents/Projects/skillstack/{}\")"
     ]
   }
 }

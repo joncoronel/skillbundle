@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
+import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { BundleCard } from "@/components/bundle-card";
@@ -18,6 +19,8 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogClose,
+  AlertDialogTrigger,
+  createAlertDialogHandle,
 } from "@/components/ui/cubby-ui/alert-dialog";
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
@@ -30,6 +33,8 @@ interface DashboardContentProps {
   preloadedBundles: Preloaded<typeof api.bundles.listByUser>;
   preloadedPlan: Preloaded<typeof api.plans.currentPlan>;
 }
+
+const deleteBundleHandle = createAlertDialogHandle<Id<"bundles">>();
 
 export function DashboardContent({
   preloadedBundles,
@@ -62,7 +67,6 @@ export function DashboardContent({
     }
   });
   const limits = planData.limits;
-  const [deletingId, setDeletingId] = useState<Id<"bundles"> | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>("newest");
 
   const sortedBundles = useMemo(() => {
@@ -80,10 +84,20 @@ export function DashboardContent({
     }
   }, [bundles, sortBy]);
 
-  async function handleDelete() {
-    if (!deletingId) return;
-    await deleteBundle({ bundleId: deletingId });
-    setDeletingId(null);
+  // Non-blocking delete: AlertDialogClose closes the dialog immediately,
+  // the optimistic update filters the bundle out of the list synchronously,
+  // and failures surface via toast. Convex auto-reverts the cache on error.
+  function handleDelete(bundleId: Id<"bundles">) {
+    const pending = deleteBundle({ bundleId });
+    pending.catch((error: unknown) => {
+      let message = "Couldn't reach the server. Try again.";
+      if (error instanceof ConvexError && typeof error.data === "string") {
+        message = error.data;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+      toast.error({ title: "Couldn't delete bundle", description: message });
+    });
   }
 
   if (bundles.length === 0) {
@@ -118,6 +132,7 @@ export function DashboardContent({
                 <BundleCard
                   name={bundle.name}
                   urlId={bundle.urlId}
+                  description={bundle.description}
                   skillCount={bundle.skills.length}
                   createdAt={bundle.createdAt}
                   creatorName="You"
@@ -167,20 +182,25 @@ export function DashboardContent({
                       >
                         {bundle.isPublic ? "Make private" : "Make public"}
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => setDeletingId(bundle._id)}
-                        leftSection={
-                          <HugeiconsIcon
-                            icon={Delete01Icon}
-                            strokeWidth={2}
-                            className="size-3.5"
-                          />
+                      <AlertDialogTrigger
+                        handle={deleteBundleHandle}
+                        payload={bundle._id}
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            leftSection={
+                              <HugeiconsIcon
+                                icon={Delete01Icon}
+                                strokeWidth={2}
+                                className="size-3.5"
+                              />
+                            }
+                          >
+                            Delete
+                          </Button>
                         }
-                      >
-                        Delete
-                      </Button>
+                      />
                     </div>
                   }
                 />
@@ -190,33 +210,33 @@ export function DashboardContent({
         </section>
       </div>
 
-      <AlertDialog
-        open={deletingId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletingId(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete bundle</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this bundle and its shareable link.
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose
-              render={<Button variant="outline">Cancel</Button>}
-            />
-            <AlertDialogClose
-              render={
-                <Button variant="destructive" onClick={handleDelete}>
-                  Delete
-                </Button>
-              }
-            />
-          </AlertDialogFooter>
-        </AlertDialogContent>
+      <AlertDialog handle={deleteBundleHandle}>
+        {({ payload: bundleId }) => (
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete bundle</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this bundle and its shareable
+                link. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogClose
+                render={<Button variant="outline">Cancel</Button>}
+              />
+              <AlertDialogClose
+                render={
+                  <Button
+                    variant="destructive"
+                    onClick={() => bundleId && handleDelete(bundleId)}
+                  >
+                    Delete
+                  </Button>
+                }
+              />
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        )}
       </AlertDialog>
     </>
   );

@@ -2,19 +2,27 @@
 
 import { memo, useCallback, useId } from "react";
 import Link from "next/link";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import {
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  Cancel01Icon,
+  Download04Icon,
+} from "@hugeicons/core-free-icons";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardFooter,
-  CardAction,
 } from "@/components/ui/cubby-ui/card";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { SheetTrigger } from "@/components/ui/cubby-ui/sheet";
 import {
   useBundleActions,
+  useIsSelectionAtCap,
   useIsSkillSelected,
 } from "@/lib/bundle-selection";
 import { cn, formatInstalls, timeAgo } from "@/lib/utils";
@@ -25,6 +33,23 @@ import {
 } from "@/components/skill-status-badge";
 import { HotMomentumChip, OfficialBadge } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
+import { QuickAddPopover } from "@/components/quick-add-popover";
+
+export interface SkillEditControls {
+  onRemove: () => void;
+  /**
+   * Override the default `×` icon. Used by the edit-mode diff view to swap in
+   * a restore (↶) icon for cards that are marked as pending-remove, so the
+   * same button slot communicates "put it back" instead of "remove again."
+   */
+  removeIcon?: IconSvgElement;
+  /** Override aria-label / title for the remove button. */
+  removeLabel?: string;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Types & helpers
@@ -107,7 +132,12 @@ function SkillMeta({
       {showHotChip && skill.hotChange !== undefined && skill.hotChange > 0 && (
         <HotMomentumChip change={skill.hotChange} />
       )}
-      <span className="text-xs font-mono tabular-nums text-muted-foreground">
+      <span className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground">
+        <HugeiconsIcon
+          icon={Download04Icon}
+          strokeWidth={2}
+          className="size-4"
+        />
         {formatInstalls(skill.installs)}
         {showLabel && " installs"}
       </span>
@@ -142,7 +172,10 @@ function SelectableWrapper({
 
 // The Checkbox wired up to the global bundle selection. Lives inside a
 // `SelectableWrapper` (a <Label>) so the whole row/card acts as the click
-// target via `htmlFor={checkboxId}`.
+// target via `htmlFor={checkboxId}`. When the selection has hit the
+// bundle-skill cap, unchecked cards disable their checkbox so the user
+// can't accumulate an over-cap selection — uncheck (remove) keeps working
+// because it frees capacity.
 const SkillSelectionCheckbox = memo(function SkillSelectionCheckbox({
   skill,
   checkboxId,
@@ -151,6 +184,8 @@ const SkillSelectionCheckbox = memo(function SkillSelectionCheckbox({
   checkboxId: string;
 }) {
   const isSelected = useIsSkillSelected(skill.source, skill.skillId);
+  const atCap = useIsSelectionAtCap();
+  const disabled = atCap && !isSelected;
   const { toggleSkill } = useBundleActions();
   const handleToggle = useCallback(() => {
     toggleSkill({
@@ -164,6 +199,7 @@ const SkillSelectionCheckbox = memo(function SkillSelectionCheckbox({
       id={checkboxId}
       checked={isSelected}
       onCheckedChange={handleToggle}
+      disabled={disabled}
       className="shrink-0"
     />
   );
@@ -180,7 +216,92 @@ interface SkillViewProps {
   /** Show the hour-over-hour hot momentum chip next to install count.
    *  Off by default — only the home page's Hot tab opts in. */
   showHotChip?: boolean;
+  /** When set, the card renders edit controls (remove + optional reorder)
+   *  in place of the install-count meta. Owner-only on the bundle detail
+   *  page's edit mode. */
+  editControls?: SkillEditControls;
+  /** Render a "+" affordance next to install count that opens the
+   *  "add to existing bundle" picker. Opt-in per usage site so it doesn't
+   *  conflict with selection-based screens (homepage tabs). Ignored when
+   *  `editControls` is set. */
+  enableQuickAdd?: boolean;
+  /** When rendering inside a bundle detail page, pass the current bundle's
+   *  id so the QuickAddPopover can mark that bundle's row as "CURRENT" and
+   *  disable its checkbox — removal from the current bundle should go
+   *  through Edit skills, not the popover. */
+  currentBundleId?: string;
 }
+
+const SkillEditControlButtons = memo(function SkillEditControlButtons({
+  controls,
+}: {
+  controls: SkillEditControls;
+}) {
+  const {
+    onRemove,
+    removeIcon,
+    removeLabel,
+    onMoveUp,
+    onMoveDown,
+    canMoveUp,
+    canMoveDown,
+  } = controls;
+  const showReorder = onMoveUp !== undefined || onMoveDown !== undefined;
+  const removeButtonLabel = removeLabel ?? "Remove skill from bundle";
+  return (
+    <div className="flex items-center gap-0.5">
+      {showReorder && (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon_xs"
+            disabled={!canMoveUp}
+            onClick={onMoveUp}
+            aria-label="Move skill up"
+            title="Move up"
+          >
+            <HugeiconsIcon
+              icon={ArrowUp01Icon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon_xs"
+            disabled={!canMoveDown}
+            onClick={onMoveDown}
+            aria-label="Move skill down"
+            title="Move down"
+          >
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          </Button>
+        </>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon_xs"
+        onClick={onRemove}
+        aria-label={removeButtonLabel}
+        title={removeButtonLabel}
+        className="text-muted-foreground hover:text-foreground"
+      >
+        <HugeiconsIcon
+          icon={removeIcon ?? Cancel01Icon}
+          strokeWidth={2}
+          className="size-3.5"
+        />
+      </Button>
+    </div>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Row variants
@@ -212,10 +333,7 @@ const SkillRowContent = memo(function SkillRowContent({
         <span className="text-sm font-semibold inline-flex items-center gap-1">
           <SkillName skill={skill} sheetHandle={sheetHandle} />
           {skill.curatedOwner && (
-            <OfficialBadge
-              owner={skill.curatedOwner}
-              className="self-center"
-            />
+            <OfficialBadge owner={skill.curatedOwner} className="self-center" />
           )}
         </span>
         <span className="text-sm text-muted-foreground">{skill.source}</span>
@@ -296,7 +414,6 @@ const SkillCardContent = memo(function SkillCardContent({
   const auditFail = skill.worstAuditStatus === "fail";
   const auditWarn = skill.worstAuditStatus === "warn";
   const showAudit = auditFail || auditWarn;
-  const showFooter = showAudit || cardTimestamp !== undefined;
 
   return (
     <>
@@ -311,21 +428,22 @@ const SkillCardContent = memo(function SkillCardContent({
               sheetHandle={sheetHandle}
               className="[text-box:trim-both_cap_alphabetic]"
             />
-            {skill.curatedOwner && (
-              <OfficialBadge owner={skill.curatedOwner} />
-            )}
+            {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
           </CardTitle>
         </div>
-        <CardAction>
-          <SkillMeta skill={skill} showLabel showHotChip={showHotChip} />
-        </CardAction>
         <CardDescription className="text-xs line-clamp-2">
           {skill.description ?? skill.source}
         </CardDescription>
       </CardHeader>
-      {showFooter && (
-        <CardFooter className="mt-auto pt-0 justify-between gap-3">
-          {showAudit ? (
+      {/* Footer carries the skill metadata strip — install count + status
+          badge on the left, optional audit label, timestamp on the right.
+          Always rendered now (rather than conditional on timestamp/audit)
+          because install count is always present and the top-right corner
+          of the card is reserved for the quick-add affordance. */}
+      <CardFooter className="mt-auto pt-0 justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <SkillMeta skill={skill} showHotChip={showHotChip} />
+          {showAudit && (
             <span
               className={cn(
                 "text-[11px] font-medium",
@@ -344,16 +462,14 @@ const SkillCardContent = memo(function SkillCardContent({
                 ? ` · ${skill.worstAuditRiskLevel}`
                 : ""}
             </span>
-          ) : (
-            <span aria-hidden="true" />
           )}
-          {cardTimestamp !== undefined && (
-            <span className="text-[11px] text-muted-foreground/60">
-              {cardTimeLabel} {timeAgo(cardTimestamp)}
-            </span>
-          )}
-        </CardFooter>
-      )}
+        </div>
+        {cardTimestamp !== undefined && (
+          <span className="text-[11px] text-muted-foreground/60">
+            {cardTimeLabel} {timeAgo(cardTimestamp)}
+          </span>
+        )}
+      </CardFooter>
     </>
   );
 });
@@ -363,14 +479,40 @@ export const SkillCardView = memo(function SkillCardView({
   sheetHandle,
   className,
   showHotChip,
+  editControls,
+  enableQuickAdd,
+  currentBundleId,
 }: SkillViewProps) {
+  // Edit controls and quick-add both live as absolutely-positioned overlays
+  // in the top-right corner. They're mutually exclusive — edit mode wins
+  // when both are active, since the card's primary affordance there is
+  // "remove / restore from this bundle," not "add to a different bundle."
+  // Keeping them out of the header flow means the title row has no
+  // competing actions to share space with.
+  const showQuickAdd = enableQuickAdd && !editControls;
   return (
-    <Card className={cn("gap-3 py-4", className)}>
+    <Card className={cn("relative gap-3 py-4", className)}>
       <SkillCardContent
         skill={skill}
         sheetHandle={sheetHandle}
         showHotChip={showHotChip}
       />
+      {editControls ? (
+        <div className="absolute right-2 top-2 z-10">
+          <SkillEditControlButtons controls={editControls} />
+        </div>
+      ) : showQuickAdd ? (
+        <div className="absolute right-2 top-2 z-10">
+          <QuickAddPopover
+            skill={{
+              source: skill.source,
+              skillId: skill.skillId,
+              name: skill.name,
+            }}
+            currentBundleId={currentBundleId}
+          />
+        </div>
+      ) : null}
     </Card>
   );
 });

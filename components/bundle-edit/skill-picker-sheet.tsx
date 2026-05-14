@@ -1,0 +1,424 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Add01Icon,
+  Cancel01Icon,
+  Search01Icon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
+
+import { api } from "@/convex/_generated/api";
+import { Button } from "@/components/ui/cubby-ui/button";
+import { Input } from "@/components/ui/cubby-ui/input";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/cubby-ui/sheet";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
+import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
+import { cn, formatInstalls } from "@/lib/utils";
+import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
+
+// Show the cap status line once the staged count is within this many slots
+// of the cap. Picked so the user gets a heads-up before adds start failing,
+// not so early it becomes background noise.
+const CAP_WARNING_WINDOW = 10;
+
+export interface PickerSkill {
+  source: string;
+  skillId: string;
+  name: string;
+  description?: string;
+  installs: number;
+  curatedOwner?: string;
+  worstAuditStatus?: string;
+  worstAuditRiskLevel?: string;
+}
+
+function skillKey(source: string, skillId: string) {
+  return `${source}::${skillId}`;
+}
+
+export interface BundleEditSkillPickerProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Keys already in the staged skill list (current + pending adds, minus pending removes). */
+  existingKeys: Set<string>;
+  onAdd: (skill: PickerSkill) => void;
+  /** Toggle off — un-stages a pending add, or stages a removal of a saved-bundle skill. */
+  onRemove: (source: string, skillId: string) => void;
+}
+
+export function BundleEditSkillPicker({
+  open,
+  onOpenChange,
+  existingKeys,
+  onAdd,
+  onRemove,
+}: BundleEditSkillPickerProps) {
+  const [rawQuery, setRawQuery] = useState("");
+  const [lastOpen, setLastOpen] = useState(open);
+
+  // Reset the query whenever the sheet transitions to closed so reopening
+  // starts clean. Render-time state adjustment per React docs (avoids the
+  // cascading-render warning from setting state inside an effect).
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (!open) setRawQuery("");
+  }
+
+  const { effectiveQuery, isInputLoading } = useDebouncedCachedSearch({
+    rawQuery,
+    fn: api.skills.searchSkills,
+  });
+
+  // Staged count drives the cap preempt. `existingKeys` already represents
+  // "current bundle + staged adds − staged removes," so its size is the
+  // count we'd send to the server if the user saved right now.
+  const stagedCount = existingKeys.size;
+  const atCap = stagedCount >= MAX_BUNDLE_SKILLS;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle>Add skills</SheetTitle>
+          <SheetDescription>
+            Search the catalog and stage skills to add. Changes commit when you
+            save the bundle.
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody className="flex flex-col gap-3">
+          <div className="relative">
+            {isInputLoading ? (
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 size-4 flex items-center justify-center text-muted-foreground pointer-events-none">
+                <DotMatrixRipple size="xs" ariaLabel="Searching" />
+              </span>
+            ) : (
+              <HugeiconsIcon
+                icon={Search01Icon}
+                strokeWidth={2}
+                className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
+              />
+            )}
+            <Input
+              placeholder="Search skills by name…"
+              value={rawQuery}
+              onChange={(e) => setRawQuery(e.target.value)}
+              className="pl-9 pr-9"
+            />
+            {rawQuery && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setRawQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+              >
+                <HugeiconsIcon
+                  icon={Cancel01Icon}
+                  strokeWidth={2}
+                  className="size-4"
+                />
+              </button>
+            )}
+          </div>
+
+          {/* Cap status. Quiet below the threshold (just a count when the
+              user is approaching), explicit at the cap (with the reason
+              spelled out so a disabled Add button doesn't read as a bug). */}
+          {stagedCount >= MAX_BUNDLE_SKILLS - CAP_WARNING_WINDOW ? (
+            <p
+              className={cn(
+                "text-xs tabular-nums",
+                atCap ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {atCap
+                ? `Bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum. Remove a skill to add more.`
+                : `${stagedCount} / ${MAX_BUNDLE_SKILLS} staged`}
+            </p>
+          ) : null}
+
+          {effectiveQuery ? (
+            <PickerSearchResults
+              query={effectiveQuery}
+              existingKeys={existingKeys}
+              atCap={atCap}
+              onAdd={onAdd}
+              onRemove={onRemove}
+            />
+          ) : (
+            <PickerPopularResults
+              existingKeys={existingKeys}
+              atCap={atCap}
+              onAdd={onAdd}
+              onRemove={onRemove}
+            />
+          )}
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function PickerSearchResults({
+  query,
+  existingKeys,
+  atCap,
+  onAdd,
+  onRemove,
+}: {
+  query: string;
+  existingKeys: Set<string>;
+  atCap: boolean;
+  onAdd: (skill: PickerSkill) => void;
+  onRemove: (source: string, skillId: string) => void;
+}) {
+  const { data, isPending } = useQuery({
+    ...convexQuery(api.skills.searchSkills, { query }),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
+
+  if (isPending) {
+    return <PickerListSkeleton />;
+  }
+
+  const results = data ?? [];
+  if (results.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-8 text-center">
+        No skills found for &ldquo;{query}&rdquo;
+      </p>
+    );
+  }
+
+  return (
+    <PickerList>
+      {results.map((s) => (
+        <PickerRow
+          key={skillKey(s.source, s.skillId)}
+          skill={{
+            source: s.source,
+            skillId: s.skillId,
+            name: s.name,
+            description: s.description,
+            installs: s.installs,
+            curatedOwner: s.curatedOwner,
+            worstAuditStatus: s.worstAuditStatus,
+            worstAuditRiskLevel: s.worstAuditRiskLevel,
+          }}
+          existingKeys={existingKeys}
+          atCap={atCap}
+          onAdd={onAdd}
+          onRemove={onRemove}
+        />
+      ))}
+    </PickerList>
+  );
+}
+
+function PickerPopularResults({
+  existingKeys,
+  atCap,
+  onAdd,
+  onRemove,
+}: {
+  existingKeys: Set<string>;
+  atCap: boolean;
+  onAdd: (skill: PickerSkill) => void;
+  onRemove: (source: string, skillId: string) => void;
+}) {
+  const { data, isPending } = useQuery({
+    ...convexQuery(api.skills.listPopularSkills, {
+      paginationOpts: { numItems: 30, cursor: null },
+    }),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
+
+  if (isPending) {
+    return <PickerListSkeleton />;
+  }
+
+  const results = data?.page ?? [];
+  if (results.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-8 text-center">
+        No skills to show.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">Popular skills</p>
+      <PickerList>
+        {results.map((s) => (
+          <PickerRow
+            key={skillKey(s.source, s.skillId)}
+            skill={{
+              source: s.source,
+              skillId: s.skillId,
+              name: s.name,
+              description: s.description,
+              installs: s.installs,
+              curatedOwner: s.curatedOwner,
+              worstAuditStatus: s.worstAuditStatus,
+              worstAuditRiskLevel: s.worstAuditRiskLevel,
+            }}
+            existingKeys={existingKeys}
+            atCap={atCap}
+            onAdd={onAdd}
+            onRemove={onRemove}
+          />
+        ))}
+      </PickerList>
+    </>
+  );
+}
+
+function PickerList({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col divide-y divide-border/60 rounded-xl border bg-card dark:border-border/50">
+      {children}
+    </div>
+  );
+}
+
+function PickerListSkeleton() {
+  // Mirrors the PickerRow layout: a column with name + source row, an
+  // optional description line, an install count, and a trailing Add button.
+  return (
+    <PickerList>
+      {Array.from({ length: 12 }).map((_, i) => (
+        <div key={i} className="flex items-start gap-3 px-3 py-3" aria-hidden>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex items-baseline gap-2">
+              <Skeleton className="h-3.5 w-28 rounded-sm" />
+              <Skeleton className="h-3 w-20 rounded-sm" />
+            </div>
+            <Skeleton className="h-3 w-full rounded-sm" />
+            <Skeleton className="h-3 w-16 rounded-sm" />
+          </div>
+          <Skeleton className="h-7 w-14 shrink-0 rounded-md" />
+        </div>
+      ))}
+    </PickerList>
+  );
+}
+
+function PickerRow({
+  skill,
+  existingKeys,
+  atCap,
+  onAdd,
+  onRemove,
+}: {
+  skill: PickerSkill;
+  existingKeys: Set<string>;
+  atCap: boolean;
+  onAdd: (skill: PickerSkill) => void;
+  onRemove: (source: string, skillId: string) => void;
+}) {
+  const key = useMemo(
+    () => skillKey(skill.source, skill.skillId),
+    [skill.source, skill.skillId],
+  );
+  const added = existingKeys.has(key);
+  // The cap only blocks adds. Removes never violate the cap, so a row
+  // that's already staged keeps a working Remove button at all times.
+  const addDisabled = atCap && !added;
+
+  return (
+    <div className="flex items-start gap-3 px-3 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          {added ? (
+            // Small inline state indicator so the list is scannable
+            // ("which of these are already in my bundle?") without making
+            // the action button do the work of communicating state.
+            <HugeiconsIcon
+              icon={Tick02Icon}
+              strokeWidth={2}
+              className="size-3.5 self-center text-success-foreground/70"
+              aria-label="In bundle"
+            />
+          ) : null}
+          <span className="text-sm font-semibold leading-tight">
+            {skill.name}
+          </span>
+          <span className="text-xs text-muted-foreground">{skill.source}</span>
+        </div>
+        {skill.description ? (
+          <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+            {skill.description}
+          </p>
+        ) : null}
+        <p className="mt-1 text-[11px] font-mono tabular-nums text-muted-foreground/80">
+          {formatInstalls(skill.installs)} installs
+        </p>
+      </div>
+      {added ? (
+        // Always-visible Remove button. Destructive on hover so the
+        // commit intent is clear before the click. State is already
+        // communicated by the inline ✓ next to the skill name, so the
+        // button itself doesn't need to do double duty.
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => onRemove(skill.source, skill.skillId)}
+          aria-label={`Remove ${skill.name} from bundle`}
+          className="shrink-0 text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+          leftSection={
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          }
+        >
+          Remove
+        </Button>
+      ) : (
+        // Add disables when the sheet is at cap. No per-row tooltip — the
+        // status line above the result list already explains why every
+        // Add is disabled, so tooltips on every row would be redundant
+        // chrome. Screen readers still get the cap context via aria-label.
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => onAdd(skill)}
+          disabled={addDisabled}
+          aria-label={
+            addDisabled
+              ? `Add ${skill.name} (bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum)`
+              : `Add ${skill.name} to bundle`
+          }
+          className="shrink-0"
+          leftSection={
+            <HugeiconsIcon
+              icon={Add01Icon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          }
+        >
+          Add
+        </Button>
+      )}
+    </div>
+  );
+}
