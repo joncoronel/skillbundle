@@ -72,6 +72,12 @@ export function QuickAddPopover({
   // the authenticated `+` button, so the layout doesn't reflow when auth
   // eventually resolves — preventing the post-hard-refresh flash where the
   // button appeared late and pushed surrounding content.
+  //
+  // Accepted tradeoff: a signed-in user who clicks `+` during the
+  // auth-loading window (typically <100ms post-hydration) gets routed to
+  // /sign-in instead of the popover. Rare, the recovery is one click,
+  // and any alternative (loading skeleton, dual-button cross-fade)
+  // reintroduces the layout shift we're explicitly avoiding here.
   if (!isAuthenticated || isLoading) {
     return (
       <Button

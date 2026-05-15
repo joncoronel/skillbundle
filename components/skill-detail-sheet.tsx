@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +27,7 @@ import {
 import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import {
   useBundleActions,
   useIsSkillSelected,
@@ -256,24 +256,25 @@ function BundleToggleButton({ skill }: { skill: SkillData }) {
 }
 
 function CopyInstallButton({ skill }: { skill: SkillData }) {
-  const [copied, setCopied] = useState(false);
   // Defer to the canonical install-command generator so the format stays
   // in lockstep with the bundle-level install commands (single source of
   // truth for `npx skills add ...`).
   const command = generateInstallCommands([
     { source: skill.source, skillId: skill.skillId },
   ])[0]?.command;
+  // useCopyToClipboard owns the 2s `isCopied` reset and its unmount
+  // cleanup — covers the case where the sheet closes during the window
+  // (which would otherwise schedule setState on a torn-down component).
+  // It also adds an `execCommand` fallback for insecure contexts where
+  // navigator.clipboard throws.
+  const { isCopied, copyToClipboard } = useCopyToClipboard();
 
   async function handleCopy() {
     if (!command) return;
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access can fail in insecure contexts or when the user
-      // has denied permission. Surface the failure rather than leaving
-      // the button silently stuck in "Copy install."
+    const success = await copyToClipboard(command);
+    if (!success) {
+      // Both navigator.clipboard and the execCommand fallback failed —
+      // tell the user instead of leaving the button stuck.
       toast.error({
         title: "Couldn't copy",
         description: "Your browser blocked clipboard access.",
@@ -288,13 +289,13 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
       onClick={handleCopy}
       leftSection={
         <HugeiconsIcon
-          icon={copied ? Tick02Icon : Copy01Icon}
+          icon={isCopied ? Tick02Icon : Copy01Icon}
           strokeWidth={2}
           className="size-3.5"
         />
       }
     >
-      {copied ? "Copied!" : "Copy install"}
+      {isCopied ? "Copied!" : "Copy install"}
     </Button>
   );
 }

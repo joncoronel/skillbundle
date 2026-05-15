@@ -26,7 +26,6 @@ export interface BundleEditBarProps {
   removedCount: number;
   /** True when the user has unsaved changes (adds/removes/reorders). */
   dirty: boolean;
-  saving?: boolean;
   onSave: () => void;
   onCancel: () => void;
   /** Opens the skill picker sheet. Lives on the bar so it's reachable
@@ -40,17 +39,11 @@ export function BundleEditBar({
   addedCount,
   removedCount,
   dirty,
-  saving,
   onSave,
   onCancel,
   onAddSkills,
 }: BundleEditBarProps) {
   const atCap = skillCount >= MAX_BUNDLE_SKILLS;
-  const addDisabled = saving || atCap;
-  // Tooltip only when disabled by the cap, so the reason for the disable
-  // surfaces on hover. While saving, the disable is transient and
-  // self-explanatory — no tooltip needed.
-  const showCapTooltip = atCap && !saving;
 
   const addButton = (
     <Button
@@ -58,7 +51,7 @@ export function BundleEditBar({
       variant="outline"
       size="sm"
       onClick={onAddSkills}
-      disabled={addDisabled}
+      disabled={atCap}
       leftSection={
         <HugeiconsIcon
           icon={Add01Icon}
@@ -126,7 +119,7 @@ export function BundleEditBar({
           <div className="flex flex-1 sm:hidden" />
 
           <div className="flex shrink-0 items-center gap-2">
-            {showCapTooltip ? (
+            {atCap ? (
               <Tooltip>
                 <TooltipTrigger render={<span tabIndex={0} />}>
                   {addButton}
@@ -143,7 +136,6 @@ export function BundleEditBar({
               variant="ghost"
               size="sm"
               onClick={onCancel}
-              disabled={saving}
             >
               Cancel
             </Button>
@@ -152,15 +144,10 @@ export function BundleEditBar({
               variant="primary"
               size="sm"
               onClick={onSave}
-              disabled={!dirty || saving}
-              loading={saving}
+              disabled={!dirty}
             >
-              {saving ? "Saving…" : (
-                <>
-                  <span className="sm:hidden">Save</span>
-                  <span className="hidden sm:inline">Save changes</span>
-                </>
-              )}
+              <span className="sm:hidden">Save</span>
+              <span className="hidden sm:inline">Save changes</span>
             </Button>
           </div>
         </div>

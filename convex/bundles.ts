@@ -170,6 +170,11 @@ export const createBundle = mutation({
       skills: skills.map((s) => ({ ...s, addedAt: now })),
       isPublic,
       createdAt: now,
+      // Stamp updatedAt on insert so every row has it from day one. Without
+      // this, new bundles have `updatedAt: undefined` until their first
+      // patch, which would force any future index/sort on `updatedAt` to
+      // either filter out `undefined` or backfill legacy rows.
+      updatedAt: now,
     });
 
     return { bundleId, urlId };
@@ -733,6 +738,7 @@ export const forkBundle = mutation({
       isPublic: true,
       forkedFrom: bundleId,
       createdAt: now,
+      updatedAt: now,
     });
 
     // Update source bundle stats — increment fork counter only.

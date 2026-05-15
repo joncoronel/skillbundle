@@ -244,19 +244,12 @@ export function EditableSkillSection({
         open={pickerOpen && editing}
         onOpenChange={setPickerOpen}
         existingKeys={edit.stagedKeys}
-        onAdd={(s) =>
-          edit.addSkill({
-            source: s.source,
-            skillId: s.skillId,
-            name: s.name,
-            description: s.description,
-            installs: s.installs,
-            curatedOwner: s.curatedOwner,
-            worstAuditStatus: s.worstAuditStatus,
-            worstAuditRiskLevel: s.worstAuditRiskLevel,
-          })
-        }
-        onRemove={(source, skillId) => edit.removeSkill(source, skillId)}
+        // PickerSkill's shape is a subset of SkillData (matching required
+        // fields + same optional ones), so a direct binding works via
+        // structural typing — the previous field-by-field copy was an
+        // identity transform.
+        onAdd={edit.addSkill}
+        onRemove={edit.removeSkill}
       />
 
       <BundleEditBar
@@ -265,7 +258,6 @@ export function EditableSkillSection({
         addedCount={edit.addedCount}
         removedCount={edit.removedCount}
         dirty={edit.dirty}
-        saving={false}
         onSave={handleSave}
         onCancel={handleCancelClick}
         onAddSkills={() => setPickerOpen(true)}
