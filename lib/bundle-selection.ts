@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { atomWithStorage, selectAtom } from "jotai/utils";
+import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
 
 export interface SelectedSkill {
   source: string;
@@ -24,16 +25,22 @@ const selectedSkillsAtom = atomWithStorage<SelectedSkill[]>(
   { getOnInit: false },
 );
 
+// Defense-in-depth: even if a caller bypasses the UI disable, the toggle
+// refuses to push the selection past the bundle-skill cap. Removes always
+// succeed (they free capacity, never violate the cap).
 const toggleSkillAtom = atom(null, (get, set, skill: SelectedSkill) => {
   const current = get(selectedSkillsAtom);
   const k = key(skill.source, skill.skillId);
   const exists = current.some((s) => key(s.source, s.skillId) === k);
-  set(
-    selectedSkillsAtom,
-    exists
-      ? current.filter((s) => key(s.source, s.skillId) !== k)
-      : [...current, skill],
-  );
+  if (exists) {
+    set(
+      selectedSkillsAtom,
+      current.filter((s) => key(s.source, s.skillId) !== k),
+    );
+    return;
+  }
+  if (current.length >= MAX_BUNDLE_SKILLS) return;
+  set(selectedSkillsAtom, [...current, skill]);
 });
 
 const removeSkillAtom = atom(
@@ -89,4 +96,17 @@ export function useBundleActions() {
 // (BundleBar, SaveBundleDialog).
 export function useSelectedSkills() {
   return useAtomValue(selectedSkillsAtom);
+}
+
+// Granular cap subscription. Returns a stable boolean: re-renders fire only
+// when the count crosses the cap, not on every selection change. Skill cards
+// use this to disable their selection affordance when the user is at the
+// per-bundle limit.
+const isSelectionAtCapAtom = selectAtom(
+  selectedSkillsAtom,
+  (skills) => skills.length >= MAX_BUNDLE_SKILLS,
+);
+
+export function useIsSelectionAtCap() {
+  return useAtomValue(isSelectionAtCapAtom);
 }

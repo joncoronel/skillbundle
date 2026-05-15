@@ -5,12 +5,16 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserOrThrow } from "./users";
 import { getUserPlanWithLimits } from "./lib/plans";
 import { assertAdmin, checkIsAdminByEmail } from "./devStats";
+import {
+  MAX_BUNDLE_DESCRIPTION_LENGTH,
+  MAX_BUNDLE_SKILLS,
+} from "../lib/bundle-limits";
 
 // ---------------------------------------------------------------------------
 // URL ID helpers
@@ -42,6 +46,62 @@ async function countUserBundles(ctx: MutationCtx, userId: Id<"users">) {
   return bundles.length;
 }
 
+/**
+ * Verifies every `(source, skillId)` pair points at a real row in the
+ * `skills` table. Used by the surfaces that accept user-supplied skill
+ * arrays (`createBundle`, `updateBundleSkills`) to keep ghost references
+ * out of the bundles table.
+ *
+ * Why not `forkBundle`: that mutation copies skills from an existing
+ * server-side bundle, which was already validated when its own skills
+ * were added. Re-validating on fork would also block forking legacy
+ * bundles that predate this check — a separate cleanup migration is
+ * the right shape for that, not a runtime gate on fork.
+ *
+ * Lookups run in parallel via the `by_source_skillId` index. The
+ * caller can pass duplicates safely; we dedupe by `${source}::${skillId}`
+ * before querying so the worst case is one query per unique skill.
+ */
+async function assertSkillsExist(
+  ctx: MutationCtx,
+  skills: Array<{ source: string; skillId: string }>,
+) {
+  const uniqueByKey = new Map<string, { source: string; skillId: string }>();
+  for (const s of skills) {
+    uniqueByKey.set(`${s.source}::${s.skillId}`, s);
+  }
+  const unique = Array.from(uniqueByKey.values());
+  if (unique.length === 0) return;
+
+  const results = await Promise.all(
+    unique.map((s) =>
+      ctx.db
+        .query("skills")
+        .withIndex("by_source_skillId", (q) =>
+          q.eq("source", s.source).eq("skillId", s.skillId),
+        )
+        .unique(),
+    ),
+  );
+
+  const missing: string[] = [];
+  for (let i = 0; i < unique.length; i++) {
+    if (results[i] === null) {
+      missing.push(`${unique[i].source}/${unique[i].skillId}`);
+    }
+  }
+
+  if (missing.length > 0) {
+    // Cap the listed names to avoid a huge error payload when a client
+    // sends a large bogus array.
+    const sample = missing.slice(0, 5).join(", ");
+    const tail = missing.length > 5 ? `, +${missing.length - 5} more` : "";
+    throw new ConvexError(
+      `Unknown skill${missing.length > 1 ? "s" : ""}: ${sample}${tail}`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -49,6 +109,7 @@ async function countUserBundles(ctx: MutationCtx, userId: Id<"users">) {
 export const createBundle = mutation({
   args: {
     name: v.string(),
+    description: v.optional(v.string()),
     skills: v.array(
       v.object({
         source: v.string(),
@@ -57,28 +118,63 @@ export const createBundle = mutation({
     ),
     isPublic: v.boolean(),
   },
-  handler: async (ctx, { name, skills, isPublic }) => {
+  handler: async (ctx, { name, description, skills, isPublic }) => {
     const user = await getCurrentUserOrThrow(ctx);
     const { limits } = await getUserPlanWithLimits(ctx);
 
     const bundleCount = await countUserBundles(ctx, user._id);
     if (bundleCount >= limits.maxBundles) {
-      throw new Error("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
+      throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
     }
     if (!isPublic && !limits.canMakePrivate) {
-      throw new Error("Private bundles require a Pro plan.");
+      throw new ConvexError("Private bundles require a Pro plan.");
     }
+
+    // Defense-in-depth: the client form gates on `name.trim()` before
+    // submitting, but the server has to defend too — a direct call via
+    // the Convex dashboard or a custom client would otherwise be able to
+    // insert empty/whitespace-only names. Matches updateBundleName.
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      throw new ConvexError("Name cannot be empty");
+    }
+
+    const trimmedDescription = description?.trim();
+    if (
+      trimmedDescription !== undefined &&
+      trimmedDescription.length > MAX_BUNDLE_DESCRIPTION_LENGTH
+    ) {
+      throw new ConvexError(
+        `Description must be ${MAX_BUNDLE_DESCRIPTION_LENGTH} characters or fewer.`,
+      );
+    }
+
+    if (skills.length > MAX_BUNDLE_SKILLS) {
+      throw new ConvexError(
+        `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
+      );
+    }
+    await assertSkillsExist(ctx, skills);
 
     const urlId = await ensureUniqueUrlId(ctx);
 
     const now = Date.now();
     const bundleId = await ctx.db.insert("bundles", {
       userId: user._id,
-      name,
+      name: trimmedName,
+      description:
+        trimmedDescription && trimmedDescription.length > 0
+          ? trimmedDescription
+          : undefined,
       urlId,
       skills: skills.map((s) => ({ ...s, addedAt: now })),
       isPublic,
       createdAt: now,
+      // Stamp updatedAt on insert so every row has it from day one. Without
+      // this, new bundles have `updatedAt: undefined` until their first
+      // patch, which would force any future index/sort on `updatedAt` to
+      // either filter out `undefined` or backfill legacy rows.
+      updatedAt: now,
     });
 
     return { bundleId, urlId };
@@ -95,13 +191,13 @@ export const updateBundleVisibility = mutation({
     const bundle = await ctx.db.get(bundleId);
 
     if (!bundle || bundle.userId !== user._id) {
-      throw new Error("Bundle not found or unauthorized");
+      throw new ConvexError("Bundle not found or unauthorized");
     }
 
     if (!isPublic) {
       const { limits } = await getUserPlanWithLimits(ctx);
       if (!limits.canMakePrivate) {
-        throw new Error("Private bundles require a Pro plan.");
+        throw new ConvexError("Private bundles require a Pro plan.");
       }
     }
 
@@ -129,15 +225,101 @@ export const updateBundleName = mutation({
     const bundle = await ctx.db.get(bundleId);
 
     if (!bundle || bundle.userId !== user._id) {
-      throw new Error("Bundle not found or unauthorized");
+      throw new ConvexError("Bundle not found or unauthorized");
     }
 
     const trimmed = name.trim();
     if (!trimmed) {
-      throw new Error("Name cannot be empty");
+      throw new ConvexError("Name cannot be empty");
     }
 
-    await ctx.db.patch(bundleId, { name: trimmed });
+    await ctx.db.patch(bundleId, { name: trimmed, updatedAt: Date.now() });
+  },
+});
+
+export const updateBundleDescription = mutation({
+  args: {
+    bundleId: v.id("bundles"),
+    description: v.string(),
+  },
+  handler: async (ctx, { bundleId, description }) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    const bundle = await ctx.db.get(bundleId);
+
+    if (!bundle || bundle.userId !== user._id) {
+      throw new ConvexError("Bundle not found or unauthorized");
+    }
+
+    const trimmed = description.trim();
+    if (trimmed.length > MAX_BUNDLE_DESCRIPTION_LENGTH) {
+      throw new ConvexError(
+        `Description must be ${MAX_BUNDLE_DESCRIPTION_LENGTH} characters or fewer.`,
+      );
+    }
+
+    await ctx.db.patch(bundleId, {
+      description: trimmed.length === 0 ? undefined : trimmed,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+// Single bulk mutation for add/remove/reorder. The caller submits the final
+// skill list; we dedupe by (source, skillId) keeping the first occurrence,
+// preserve `addedAt` for skills already in the bundle, and stamp `addedAt`
+// on new entries.
+export const updateBundleSkills = mutation({
+  args: {
+    bundleId: v.id("bundles"),
+    skills: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, { bundleId, skills }) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    const bundle = await ctx.db.get(bundleId);
+
+    if (!bundle || bundle.userId !== user._id) {
+      throw new ConvexError("Bundle not found or unauthorized");
+    }
+
+    if (skills.length > MAX_BUNDLE_SKILLS) {
+      throw new ConvexError(
+        `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
+      );
+    }
+    await assertSkillsExist(ctx, skills);
+
+    const existingByKey = new Map(
+      bundle.skills.map((s) => [`${s.source}::${s.skillId}`, s]),
+    );
+
+    const now = Date.now();
+    const seen = new Set<string>();
+    const nextSkills: typeof bundle.skills = [];
+
+    for (const s of skills) {
+      const key = `${s.source}::${s.skillId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const prior = existingByKey.get(key);
+      nextSkills.push({
+        source: s.source,
+        skillId: s.skillId,
+        addedAt: prior?.addedAt ?? now,
+      });
+    }
+
+    await ctx.db.patch(bundleId, {
+      skills: nextSkills,
+      updatedAt: now,
+    });
+
+    return { skillCount: nextSkills.length };
   },
 });
 
@@ -148,7 +330,7 @@ export const generateShareToken = mutation({
     const bundle = await ctx.db.get(bundleId);
 
     if (!bundle || bundle.userId !== user._id) {
-      throw new Error("Bundle not found or unauthorized");
+      throw new ConvexError("Bundle not found or unauthorized");
     }
 
     const token = Array.from({ length: 4 }, () =>
@@ -167,7 +349,7 @@ export const revokeShareToken = mutation({
     const bundle = await ctx.db.get(bundleId);
 
     if (!bundle || bundle.userId !== user._id) {
-      throw new Error("Bundle not found or unauthorized");
+      throw new ConvexError("Bundle not found or unauthorized");
     }
 
     await ctx.db.patch(bundleId, { shareToken: undefined });
@@ -181,7 +363,7 @@ export const deleteBundle = mutation({
     const bundle = await ctx.db.get(bundleId);
 
     if (!bundle || bundle.userId !== user._id) {
-      throw new Error("Bundle not found or unauthorized");
+      throw new ConvexError("Bundle not found or unauthorized");
     }
 
     // Sync delete of bounded child rows: bundleStats has at most one row per
@@ -334,9 +516,11 @@ export const getByUrlId = query({
     return {
       _id: bundle._id,
       name: bundle.name,
+      description: bundle.description,
       urlId: bundle.urlId,
       isPublic: bundle.isPublic,
       createdAt: bundle.createdAt,
+      updatedAt: bundle.updatedAt,
       skills: skillsWithData,
       creatorName: creator?.name ?? "Anonymous",
       isOwner,
@@ -386,6 +570,7 @@ export async function enrichBundle(
   bundle: {
     _id: ReturnType<typeof v.id<"bundles">>["type"];
     name: string;
+    description?: string;
     urlId: string;
     skills: Array<{ source: string; skillId: string; addedAt?: number }>;
     createdAt: number;
@@ -413,6 +598,7 @@ export async function enrichBundle(
   return {
     _id: bundle._id,
     name: bundle.name,
+    description: bundle.description,
     urlId: bundle.urlId,
     isPublic: bundle.isPublic,
     skillCount: bundle.skills.length,
@@ -526,15 +712,15 @@ export const forkBundle = mutation({
 
     const bundleCount = await countUserBundles(ctx, user._id);
     if (bundleCount >= limits.maxBundles) {
-      throw new Error("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
+      throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
     }
 
     const source = await ctx.db.get(bundleId);
-    if (!source) throw new Error("Bundle not found");
+    if (!source) throw new ConvexError("Bundle not found");
 
     // Must be public or owned by user
     if (!source.isPublic && source.userId !== user._id) {
-      throw new Error("Cannot fork a private bundle");
+      throw new ConvexError("Cannot fork a private bundle");
     }
 
     const urlId = await ensureUniqueUrlId(ctx);
@@ -552,6 +738,7 @@ export const forkBundle = mutation({
       isPublic: true,
       forkedFrom: bundleId,
       createdAt: now,
+      updatedAt: now,
     });
 
     // Update source bundle stats — increment fork counter only.
@@ -593,9 +780,9 @@ export const setBundleFeatured = mutation({
     // the canonical shape for auth-then-act paths.
     await assertAdmin(ctx);
     const bundle = await ctx.db.get(bundleId);
-    if (!bundle) throw new Error("Bundle not found");
+    if (!bundle) throw new ConvexError("Bundle not found");
     if (featured && !bundle.isPublic) {
-      throw new Error("Cannot feature a private bundle");
+      throw new ConvexError("Cannot feature a private bundle");
     }
     await ctx.db.patch(bundleId, {
       featuredAt: featured ? Date.now() : undefined,

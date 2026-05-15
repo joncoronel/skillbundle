@@ -8,7 +8,11 @@
  *   npx convex env set SKILLS_SH_API_KEY sk_live_...
  */
 
-const BASE_URL = "https://skills.sh/api/v1";
+// Hit www.skills.sh directly: the apex domain 307-redirects to www, and both
+// fetch() and curl drop the Authorization header on cross-host redirects.
+// Calling apex with a key produces a misleading 401 "authentication_required"
+// response from the www host (which never saw the key).
+const BASE_URL = "https://www.skills.sh/api/v1";
 
 export class SkillsApiRateLimitError extends Error {
   retryAfterSeconds: number;

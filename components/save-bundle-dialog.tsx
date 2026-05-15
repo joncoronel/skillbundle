@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import {
@@ -11,8 +12,11 @@ import {
   DialogTitle,
   DialogBody,
   DialogFooter,
+  DialogClose,
+  createDialogHandle,
 } from "@/components/ui/cubby-ui/dialog";
 import { Input } from "@/components/ui/cubby-ui/input";
+import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Switch } from "@/components/ui/cubby-ui/switch";
 import { Badge } from "@/components/ui/cubby-ui/badge";
@@ -25,21 +29,25 @@ import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
 
-interface SaveBundleDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export type SaveBundleDialogHandle = ReturnType<typeof createDialogHandle>;
+
+export function createSaveBundleDialogHandle(): SaveBundleDialogHandle {
+  return createDialogHandle();
 }
 
-export function SaveBundleDialog({
-  open,
-  onOpenChange,
-}: SaveBundleDialogProps) {
+interface SaveBundleDialogProps {
+  handle: SaveBundleDialogHandle;
+}
+
+export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   const selectedSkills = useSelectedSkills();
   const { clearAll } = useBundleActions();
   const createBundle = useMutation(api.bundles.createBundle);
   const router = useRouter();
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [saving, setSaving] = useState(false);
   const { limits } = useUserPlan();
@@ -50,13 +58,19 @@ export function SaveBundleDialog({
     bundleCount >= limits.maxBundles;
   const count = selectedSkills.length;
 
+  const trimmedDescription = description.trim();
+  const descriptionOverLimit =
+    trimmedDescription.length > MAX_BUNDLE_DESCRIPTION_LENGTH;
+
   async function handleSave() {
-    if (!name.trim() || count === 0) return;
+    if (!name.trim() || count === 0 || descriptionOverLimit) return;
 
     setSaving(true);
     try {
       const result = await createBundle({
         name: name.trim(),
+        description:
+          trimmedDescription.length > 0 ? trimmedDescription : undefined,
         skills: selectedSkills.map(({ source, skillId }) => ({
           source,
           skillId,
@@ -66,11 +80,16 @@ export function SaveBundleDialog({
 
       clearAll();
       setName("");
-      onOpenChange(false);
+      setDescription("");
+      handle.close();
       router.push(`/stack/${result.urlId}`);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to save bundle";
+      let message = "Failed to save bundle";
+      if (error instanceof ConvexError && typeof error.data === "string") {
+        message = error.data;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
       toast.error({ title: "Cannot save bundle", description: message });
     } finally {
       setSaving(false);
@@ -78,7 +97,7 @@ export function SaveBundleDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog handle={handle}>
       <DialogContent variant="inset">
         <DialogHeader>
           <DialogTitle className="font-display">Save bundle</DialogTitle>
@@ -106,6 +125,36 @@ export function SaveBundleDialog({
                     if (e.key === "Enter") handleSave();
                   }}
                 />
+              </div>
+              <div>
+                <label
+                  htmlFor="bundle-description"
+                  className="text-sm font-medium mb-1.5 block"
+                >
+                  Description
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    Optional
+                  </span>
+                </label>
+                <Textarea
+                  id="bundle-description"
+                  placeholder="What's this bundle for?"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="min-h-20"
+                  maxLength={MAX_BUNDLE_DESCRIPTION_LENGTH + 50}
+                />
+                <div className="mt-1 flex items-center justify-end text-xs text-muted-foreground tabular-nums">
+                  <span
+                    className={
+                      descriptionOverLimit
+                        ? "text-destructive font-medium"
+                        : undefined
+                    }
+                  >
+                    {trimmedDescription.length} / {MAX_BUNDLE_DESCRIPTION_LENGTH}
+                  </span>
+                </div>
               </div>
               <div className="flex items-center justify-between">
                 <label htmlFor="bundle-public" className="text-sm font-medium">
@@ -143,17 +192,19 @@ export function SaveBundleDialog({
           )}
         </DialogBody>
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
+          <DialogClose
+            render={
+              <Button variant="outline" disabled={saving}>
+                Cancel
+              </Button>
+            }
+          />
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={atLimit || !name.trim() || saving}
+            disabled={
+              atLimit || !name.trim() || saving || descriptionOverLimit
+            }
             loading={saving}
           >
             {saving ? "Saving…" : "Save bundle"}

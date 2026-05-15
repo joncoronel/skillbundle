@@ -5,7 +5,7 @@ import { useAnimatedHeight } from "@/hooks/cubby-ui/use-animated-height";
 import { cn } from "@/lib/utils";
 
 const CROSSFADE_BASE = cn(
-  "transition-[opacity,filter,translate,display] duration-200 ease-out-cubic transition-discrete",
+  "transition-[opacity,filter,translate,display] duration-240 ease-[cubic-bezier(0.32,0.72,0,1)] transition-discrete",
   "motion-reduce:transition-none",
 );
 
@@ -32,7 +32,7 @@ export function Crossfade({
   return (
     <div
       ref={outerRef}
-      className="transition-[height] duration-270 ease-[cubic-bezier(0.25,1,0.5,1)]"
+      className="transition-[height] duration-270 ease-[cubic-bezier(0.32,0.72,0,1)]"
     >
       <div ref={innerRef} className="grid">
         <div

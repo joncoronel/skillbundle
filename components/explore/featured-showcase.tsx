@@ -36,6 +36,7 @@ export function FeaturedShowcase() {
               key={bundle._id}
               name={bundle.name}
               urlId={bundle.urlId}
+              description={bundle.description}
               skillCount={bundle.skillCount}
               createdAt={bundle.createdAt}
               creatorName={bundle.creatorName}

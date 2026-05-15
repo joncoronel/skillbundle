@@ -320,6 +320,7 @@ export default defineSchema({
     userId: v.id("users"),
     name: v.string(),
     urlId: v.string(),
+    description: v.optional(v.string()),
     skills: v.array(
       v.object({
         source: v.string(),
@@ -338,6 +339,7 @@ export default defineSchema({
     shareToken: v.optional(v.string()),
     forkedFrom: v.optional(v.id("bundles")),
     createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
     featuredAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])

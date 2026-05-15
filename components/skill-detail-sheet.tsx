@@ -19,15 +19,20 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
+  Copy01Icon,
   PlusSignIcon,
   MinusSignIcon,
+  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import {
   useBundleActions,
   useIsSkillSelected,
 } from "@/lib/bundle-selection";
+import { generateInstallCommands } from "@/lib/install-commands";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
 import { OfficialBadge } from "@/components/skill-badges";
@@ -59,16 +64,39 @@ export function createSkillDetailHandle() {
   return createSheetHandle<SkillData>();
 }
 
+/**
+ * Footer action mode.
+ *
+ *  - `"select"` (default): toggles the skill in the global bundle-selection
+ *    store. Used on the homepage / explore where the bottom BundleBar
+ *    reads from that store and the user is composing a new bundle.
+ *  - `"copy-install"`: copies a single-skill `npx skills add` command to
+ *    the clipboard. Used on the bundle detail page, where the selection
+ *    store has no visible surface (BundleBar isn't mounted) and the
+ *    useful action for an individual skill is "install just this one."
+ */
+type FooterAction = "select" | "copy-install";
+
 interface SkillDetailSheetProps {
   handle: SkillDetailHandle;
+  footerAction?: FooterAction;
 }
 
-export function SkillDetailSheet({ handle }: SkillDetailSheetProps) {
+export function SkillDetailSheet({
+  handle,
+  footerAction = "select",
+}: SkillDetailSheetProps) {
   return (
     <Sheet handle={handle}>
       {({ payload: skill }) => (
         <SheetContent side="right" variant="floating" className="sm:max-w-lg">
-          {skill && <SkillDetailSheetContent skill={skill} handle={handle} />}
+          {skill && (
+            <SkillDetailSheetContent
+              skill={skill}
+              handle={handle}
+              footerAction={footerAction}
+            />
+          )}
         </SheetContent>
       )}
     </Sheet>
@@ -78,9 +106,11 @@ export function SkillDetailSheet({ handle }: SkillDetailSheetProps) {
 function SkillDetailSheetContent({
   skill,
   handle,
+  footerAction,
 }: {
   skill: SkillData;
   handle: SkillDetailHandle;
+  footerAction: FooterAction;
 }) {
   return (
     <>
@@ -120,7 +150,11 @@ function SkillDetailSheetContent({
             className="size-3.5"
           />
         </Link>
-        <BundleToggleButton skill={skill} />
+        {footerAction === "copy-install" ? (
+          <CopyInstallButton skill={skill} />
+        ) : (
+          <BundleToggleButton skill={skill} />
+        )}
       </SheetFooter>
     </>
   );
@@ -217,6 +251,51 @@ function BundleToggleButton({ skill }: { skill: SkillData }) {
       }
     >
       {isSelected ? "Remove from bundle" : "Add to bundle"}
+    </Button>
+  );
+}
+
+function CopyInstallButton({ skill }: { skill: SkillData }) {
+  // Defer to the canonical install-command generator so the format stays
+  // in lockstep with the bundle-level install commands (single source of
+  // truth for `npx skills add ...`).
+  const command = generateInstallCommands([
+    { source: skill.source, skillId: skill.skillId },
+  ])[0]?.command;
+  // useCopyToClipboard owns the 2s `isCopied` reset and its unmount
+  // cleanup — covers the case where the sheet closes during the window
+  // (which would otherwise schedule setState on a torn-down component).
+  // It also adds an `execCommand` fallback for insecure contexts where
+  // navigator.clipboard throws.
+  const { isCopied, copyToClipboard } = useCopyToClipboard();
+
+  async function handleCopy() {
+    if (!command) return;
+    const success = await copyToClipboard(command);
+    if (!success) {
+      // Both navigator.clipboard and the execCommand fallback failed —
+      // tell the user instead of leaving the button stuck.
+      toast.error({
+        title: "Couldn't copy",
+        description: "Your browser blocked clipboard access.",
+      });
+    }
+  }
+
+  return (
+    <Button
+      variant="primary"
+      size="sm"
+      onClick={handleCopy}
+      leftSection={
+        <HugeiconsIcon
+          icon={isCopied ? Tick02Icon : Copy01Icon}
+          strokeWidth={2}
+          className="size-3.5"
+        />
+      }
+    >
+      {isCopied ? "Copied!" : "Copy install"}
     </Button>
   );
 }

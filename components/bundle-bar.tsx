@@ -28,8 +28,13 @@ import {
   useSelectedSkills,
 } from "@/lib/bundle-selection";
 import { generateAllCommandsText } from "@/lib/install-commands";
-import { SaveBundleDialog } from "@/components/save-bundle-dialog";
+import {
+  SaveBundleDialog,
+  createSaveBundleDialogHandle,
+} from "@/components/save-bundle-dialog";
 import { cn } from "@/lib/utils";
+
+const saveBundleDialogHandle = createSaveBundleDialogHandle();
 
 export function BundleBar() {
   const selectedSkills = useSelectedSkills();
@@ -37,7 +42,6 @@ export function BundleBar() {
   const { isAuthenticated: isSignedIn } = useConvexAuth();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   const count = selectedSkills.length;
@@ -77,7 +81,7 @@ export function BundleBar() {
       router.push("/sign-in");
       return;
     }
-    setDialogOpen(true);
+    saveBundleDialogHandle.open(null);
   }
 
   return (
@@ -240,7 +244,7 @@ export function BundleBar() {
         </SheetContent>
       </Sheet>
 
-      <SaveBundleDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <SaveBundleDialog handle={saveBundleDialogHandle} />
     </>
   );
 }
