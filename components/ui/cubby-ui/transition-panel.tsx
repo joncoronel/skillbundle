@@ -20,7 +20,7 @@ type TransitionPanelProps = React.ComponentProps<"div"> & {
   axis?: "x" | "y";
 };
 
-type TransitionPanelViewProps = {
+type TransitionPanelViewProps = React.ComponentProps<"div"> & {
   /**
    * Identifier matched against the parent's `activeKey` to determine which
    * view is visible.
@@ -41,17 +41,20 @@ type TransitionPanelViewProps = {
    * follow the focused element.
    */
   initialFocus?: TransitionPanelInitialFocus;
-  children: React.ReactNode;
 };
 
 const X_SLIDE = "18%";
 const Y_SLIDE = "12px";
 
-// Selector for elements that can hold focus. Mirrors floating-ui's tabbable
-// utility's set, stripped to the common cases we care about for in-page
-// focus management (no audio/video controls, no iframe/object/embed, etc).
+// Selector for elements that can hold focus. Mirrors Base UI's tabbable
+// candidate set, minus the rarely-relevant `iframe`, `object`, `embed`,
+// `details`, and `audio/video[controls]` cases — consumers in those niches
+// should pass an explicit `initialFocus` ref. Includes `[contenteditable]`
+// so rich-text editor surfaces (TipTap, Lexical, ProseMirror, etc.) are
+// caught automatically, and excludes `input[type="hidden"]` since hidden
+// inputs are never a focus target.
 const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"]), [contenteditable]:not([contenteditable="false"])';
 
 type ViewEntry = {
   el: HTMLElement;
@@ -383,6 +386,7 @@ function TransitionPanel({
     <div
       {...rest}
       ref={setRootRef}
+      data-slot="transition-panel"
       data-axis={axis}
       data-activation-direction={activationDirection}
       style={
@@ -392,6 +396,13 @@ function TransitionPanel({
           // which inherit the property). Consumer's inline style spreads
           // after, so any `--tp-duration` they set wins.
           "--tp-duration": "240ms",
+          // Bleed area for the overflow clip. Defaults to 0 because the
+          // recommended composition puts internal padding inside each
+          // view, so focus rings / shadows already render in safe
+          // territory. Bump (e.g. "8px") when the panel is nested inside
+          // a padded container where view content sits flush with the
+          // panel's clip edge.
+          "--tp-clip-margin": "0px",
           ...style,
         } as React.CSSProperties
       }
@@ -404,12 +415,21 @@ function TransitionPanel({
         // shifting all content up and exposing any clipped bottom region.
         // `overflow: clip` makes the element a true non-scroll container.
         //
+        // `overflow-clip-margin` gives the clip box a bleed area so
+        // focus rings, drop shadows, and other decorations that extend
+        // just outside an element's box can still render. Defaults to
+        // 0 (see `--tp-clip-margin` above) because the recommended
+        // composition keeps decoration-bearing elements inside view
+        // padding, so they're already inside the clip box. Set it to a
+        // few pixels when the panel is nested inside a padded container
+        // where content sits flush with the clip edge.
+        //
         // `contain-layout` scopes the height-driven layout work to this
         // subtree so the browser can skip recalculating surrounding layouts.
         // Side effect: this element becomes a containing block for `position:
         // fixed` / `absolute` descendants. Unlikely to matter for typical
         // panel content; flag if you put a viewport-positioned element here.
-        "overflow-clip contain-layout",
+        "overflow-clip contain-layout [overflow-clip-margin:var(--tp-clip-margin)]",
         "transition-[height] duration-(--tp-duration) ease-[cubic-bezier(0.32,0.72,0,1)]",
         "motion-reduce:transition-none",
         className,
@@ -429,7 +449,11 @@ TransitionPanel.displayName = "TransitionPanel";
 function TransitionPanelView({
   viewKey,
   initialFocus = true,
+  ref,
+  className,
+  style,
   children,
+  ...rest
 }: TransitionPanelViewProps) {
   const ctx = React.use(TransitionPanelContext);
   if (!ctx) {
@@ -439,7 +463,23 @@ function TransitionPanelView({
   }
   const { activeKey, axis, enterFrom, exitTo, mounted, registerView } = ctx;
   const isActive = viewKey === activeKey;
-  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Compose the consumer `ref` with the internal `wrapperRef` used by
+  // `registerView`. Mirrors the pattern on `TransitionPanel` so callers
+  // can attach observers or imperatively measure the view wrapper without
+  // breaking the panel's own DOM reads.
+  const setWrapperRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      wrapperRef.current = node;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref) {
+        (ref as React.RefObject<HTMLDivElement | null>).current = node;
+      }
+    },
+    [ref],
+  );
 
   // useLayoutEffect (not useEffect) so registration happens before the
   // panel's own layout-effect-driven focus move. React runs layout effects
@@ -453,20 +493,28 @@ function TransitionPanelView({
 
   return (
     <div
-      ref={wrapperRef}
+      {...rest}
+      ref={setWrapperRef}
       aria-hidden={!isActive}
       inert={!isActive}
+      data-slot="transition-panel-view"
       data-active={isActive ? "" : undefined}
       data-viewkey={viewKey}
       style={
         {
+          // Consumer style spreads first so they can add their own
+          // properties (padding, background, custom CSS vars). The
+          // direction-aware slide vars override after — these are
+          // panel-controlled and change every render, so a consumer
+          // setting them would just break the slide animation.
+          ...style,
           "--tp-enter": enterFrom,
           "--tp-exit": exitTo,
         } as React.CSSProperties
       }
       className={cn(
         "[grid-area:1/1]",
-        "transition-[opacity,translate,display] duration-(--tp-duration) ease-[cubic-bezier(0.32,0.72,0,1)] transition-discrete",
+        "transition-[opacity,translate,display] transition-discrete duration-(--tp-duration) ease-[cubic-bezier(0.32,0.72,0,1)]",
         "motion-reduce:transition-none",
         mounted && "starting:opacity-0",
         mounted &&
@@ -474,13 +522,14 @@ function TransitionPanelView({
             ? "starting:translate-x-(--tp-enter)"
             : "starting:translate-y-(--tp-enter)"),
         isActive
-          ? "opacity-100 translate-x-0 translate-y-0"
+          ? "translate-x-0 translate-y-0 opacity-100"
           : cn(
-              "contain-[size] hidden opacity-0 pointer-events-none",
+              "pointer-events-none hidden opacity-0 contain-[size]",
               axis === "x"
                 ? "translate-x-(--tp-exit)"
                 : "translate-y-(--tp-exit)",
             ),
+        className,
       )}
     >
       {children}
