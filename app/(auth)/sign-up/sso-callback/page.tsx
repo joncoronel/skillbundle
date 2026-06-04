@@ -1,13 +1,19 @@
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
+import { AuthFrame } from "@/components/auth/auth-frame";
 
 export default function SignUpSSOCallbackPage() {
-  // Bot protection runs during account creation, which for OAuth completes
-  // here in the redirect callback. Render the #clerk-captcha element so Clerk's
-  // Smart CAPTCHA can mount instead of falling back to the Invisible widget.
+  // For OAuth sign-ups, signUp.create() runs here in the redirect callback, so
+  // Clerk's bot-protection CAPTCHA needs the #clerk-captcha element present —
+  // otherwise it falls back to an invisible widget that can hard-block real
+  // users falsely flagged as bots. The AuthFrame gives a branded loading state
+  // instead of a blank screen while the callback resolves.
   return (
-    <>
-      <AuthenticateWithRedirectCallback />
+    <AuthFrame
+      title="Signing you in…"
+      description="One moment while we finish setting up your account."
+    >
       <div id="clerk-captcha" />
-    </>
+      <AuthenticateWithRedirectCallback />
+    </AuthFrame>
   );
 }

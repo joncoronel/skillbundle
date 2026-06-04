@@ -1,13 +1,15 @@
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
+import { AuthFrame } from "@/components/auth/auth-frame";
 
 export default function SignInSSOCallbackPage() {
-  // A sign-in via OAuth for a not-yet-registered user transfers into sign-up,
-  // whose bot-protection challenge completes here. Provide #clerk-captcha so
-  // Smart CAPTCHA can mount rather than falling back to the Invisible widget.
+  // OAuth sign-in for a not-yet-registered user transfers into sign-up, whose
+  // bot-protection CAPTCHA completes here — so #clerk-captcha must be present
+  // (without it Clerk's invisible fallback can hard-block falsely-flagged
+  // users). The AuthFrame avoids a blank screen while the callback resolves.
   return (
-    <>
-      <AuthenticateWithRedirectCallback />
+    <AuthFrame title="Signing you in…" description="One moment.">
       <div id="clerk-captcha" />
-    </>
+      <AuthenticateWithRedirectCallback />
+    </AuthFrame>
   );
 }
