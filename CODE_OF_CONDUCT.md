@@ -9,6 +9,6 @@ https://www.contributor-covenant.org/version/2/1/code_of_conduct/
 
 ## Reporting
 
-If you experience or witness behavior that violates this Code of Conduct, please report it by emailing **jonathan.coronel96@gmail.com**. All reports will be reviewed and handled confidentially.
+If you experience or witness behavior that violates this Code of Conduct, please report it by emailing **joncorone@gmail.com**. All reports will be reviewed and handled confidentially.
 
 Maintainers are responsible for clarifying and enforcing these standards and may take appropriate, fair corrective action in response to any behavior they deem inappropriate.
