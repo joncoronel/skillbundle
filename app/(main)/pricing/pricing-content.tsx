@@ -14,9 +14,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
 
 const PLAN_KEYS: Plan[] = ["free", "pro"];
-// Must match convex/polar.ts product IDs
-const PRO_MONTHLY_PRODUCT_ID = "648a8fd1-9982-4881-a719-f34b0e809276";
-const PRO_YEARLY_PRODUCT_ID = "6dcec0ce-e54d-41b9-a910-9255ea336d43";
+// Product IDs come from env (NEXT_PUBLIC_*), set per environment to match
+// convex/polar.ts: dev/local → sandbox IDs, prod (Vercel) → production IDs.
+const PRO_MONTHLY_PRODUCT_ID =
+  process.env.NEXT_PUBLIC_POLAR_PRO_MONTHLY_PRODUCT_ID!;
+const PRO_YEARLY_PRODUCT_ID =
+  process.env.NEXT_PUBLIC_POLAR_PRO_YEARLY_PRODUCT_ID!;
 
 type Cycle = "monthly" | "yearly";
 

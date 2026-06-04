@@ -47,27 +47,25 @@ npx convex env set --prod POLAR_WEBHOOK_SECRET "production-secret"
 npx convex env set --prod POLAR_SERVER "production"
 ```
 
-## 3. Update Product IDs in Code
+## 3. Product IDs (environment variables, not hardcoded)
 
-Polar product IDs are UUIDs (e.g. `81f91b1c-5b5b-464e-8be2-d925e3652c59`), not `prod_…`
-strings. Replace the sandbox UUIDs with the production ones in **two** files — the values
-must match across both.
+Product IDs are read from env vars so sandbox (dev/local) and production each use their
+own — nothing to edit in code. `convex/polar.ts` reads `POLAR_PRO_MONTHLY_PRODUCT_ID` /
+`POLAR_PRO_YEARLY_PRODUCT_ID`; `app/(main)/pricing/pricing-content.tsx` reads the
+`NEXT_PUBLIC_` mirrors. Polar product IDs are UUIDs (e.g. `81f91b1c-…`), not `prod_…`.
 
-**`convex/polar.ts`** — `products` object:
+Set them in **four** places:
 
-```ts
-const products = {
-  proMonthly: "<prod-monthly-uuid>",
-  proYearly: "<prod-yearly-uuid>",
-} as const;
-```
+| Location | Vars | Values |
+| --- | --- | --- |
+| Convex **dev** (`npx convex env set …`) | `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID` | sandbox IDs |
+| Convex **prod** (`npx convex env set --prod …`) | same two | production IDs |
+| `.env.local` | `NEXT_PUBLIC_POLAR_PRO_MONTHLY_PRODUCT_ID`, `NEXT_PUBLIC_POLAR_PRO_YEARLY_PRODUCT_ID` | sandbox IDs |
+| Vercel (Production scope) | same two `NEXT_PUBLIC_…` | production IDs |
 
-**`app/(main)/pricing/pricing-content.tsx`** — the two product-ID constants:
-
-```ts
-const PRO_MONTHLY_PRODUCT_ID = "<prod-monthly-uuid>"; // same as proMonthly above
-const PRO_YEARLY_PRODUCT_ID = "<prod-yearly-uuid>";   // same as proYearly above
-```
+> Set the prod-side vars (Convex prod **and** Vercel) **before deploying** — otherwise
+> production checkout resolves `undefined` product IDs. The `NEXT_PUBLIC_` vars are inlined
+> at build time, so a Vercel redeploy is required after changing them.
 
 ## 4. Decide on Feature Gating
 

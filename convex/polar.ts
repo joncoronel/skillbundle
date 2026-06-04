@@ -3,12 +3,14 @@ import { api, components } from "./_generated/api";
 import { internalAction, query } from "./_generated/server";
 import { DataModel } from "./_generated/dataModel";
 
-// Product IDs from Polar (production). Also referenced in:
-// - app/(main)/pricing/pricing-content.tsx (PRO_MONTHLY_PRODUCT_ID)
+// Product IDs are read from env so each environment uses its own Polar
+// products without hardcoding: dev/local → sandbox IDs, prod → production IDs.
+// Set POLAR_PRO_MONTHLY_PRODUCT_ID / POLAR_PRO_YEARLY_PRODUCT_ID on each Convex
+// deployment. The frontend mirrors these as NEXT_PUBLIC_* in pricing-content.tsx.
 const products = {
-  proMonthly: "648a8fd1-9982-4881-a719-f34b0e809276",
-  proYearly: "6dcec0ce-e54d-41b9-a910-9255ea336d43",
-} as const;
+  proMonthly: process.env.POLAR_PRO_MONTHLY_PRODUCT_ID!,
+  proYearly: process.env.POLAR_PRO_YEARLY_PRODUCT_ID!,
+};
 
 export const getUserInfo = query({
   args: {},
