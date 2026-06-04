@@ -1,6 +1,6 @@
 import { Polar } from "@convex-dev/polar";
 import { api, components } from "./_generated/api";
-import { query } from "./_generated/server";
+import { internalAction, query } from "./_generated/server";
 import { DataModel } from "./_generated/dataModel";
 
 // Product IDs from Polar (production). Also referenced in:
@@ -50,3 +50,17 @@ export const {
   generateCheckoutLink,
   generateCustomerPortalUrl,
 } = polar.api();
+
+// Manually backfill the component's product cache from the Polar API. The
+// product.created/updated webhook normally keeps this in sync, but if products
+// existed before the webhook was capturing events the cache is empty, which
+// makes getCurrentSubscription throw "Product not found" when resolving a
+// subscription's product. internalAction so it isn't publicly callable but
+// stays runnable from the CLI:
+//   npx convex run polar:syncProducts --prod
+export const syncProducts = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    await polar.syncProducts(ctx);
+  },
+});
