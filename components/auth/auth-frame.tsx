@@ -22,7 +22,7 @@ export function AuthFrame({
           className="group inline-flex items-baseline gap-1.5 font-display text-lg font-semibold tracking-tight"
         >
           <span className="inline-block size-1.5 translate-y-[-2px] rounded-full bg-primary transition-transform group-hover:scale-125" />
-          skillstack
+          skillbundle
         </Link>
       </header>
 

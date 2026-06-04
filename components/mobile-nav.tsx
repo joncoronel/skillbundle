@@ -46,7 +46,7 @@ export function MobileNav() {
           <DrawerHandle />
           <DrawerHeader>
             <DrawerTitle className="font-display text-lg font-bold tracking-tight">
-              SkillStack
+              SkillBundle
               <span className="ml-0.5 inline-block size-1.5 rounded-full bg-primary align-super" />
             </DrawerTitle>
           </DrawerHeader>

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { ownerHref } from "@/lib/skill-urls";
 
 export const metadata: Metadata = {
-  title: "Official skills | SkillStack",
+  title: "Official skills | SkillBundle",
   description:
     "First-party skills curated by the makers — companies and orgs publishing skills for the technology they build.",
 };

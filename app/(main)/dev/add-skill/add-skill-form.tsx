@@ -153,7 +153,7 @@ export function AddSkillForm() {
                   />
                 }
               >
-                Open on skillstack
+                Open on SkillBundle
               </Button>
             </div>
           </CardContent>

@@ -4,7 +4,7 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { HomeContent } from "./home-content";
 
-const HOME_TITLE = "SkillStack — Build your AI skill stack";
+const HOME_TITLE = "SkillBundle — Build your AI skill bundle";
 const HOME_DESCRIPTION =
   "Discover, compare, and bundle AI coding assistant skills for Cursor, Claude, and other agents. Pick your stack, share with a link.";
 
@@ -61,7 +61,7 @@ export default async function Home() {
         <h1 className="font-display text-5xl font-semibold tracking-tight leading-hero text-balance sm:text-6xl lg:text-7xl">
           Build your
           <br />
-          <span className="text-primary">AI skill stack</span>
+          <span className="text-primary">AI skill bundle</span>
         </h1>
         <p className="mt-6 max-w-lg text-muted-foreground sm:text-lg sm:leading-relaxed lg:max-w-xl">
           Discover, compare, and bundle skills for AI coding assistants like

@@ -19,7 +19,7 @@ function key(source: string, skillId: string) {
 // stored value pops in once the atom is subscribed on the client. That matches
 // the behavior of the old useEffect-based hydration.
 const selectedSkillsAtom = atomWithStorage<SelectedSkill[]>(
-  "skillstack:selection",
+  "skillbundle:selection",
   [],
   undefined,
   { getOnInit: false },

@@ -30,7 +30,7 @@ const SKILLS: Skill[] = [
 // translateY(-33.333%) in the `scroll-stack` keyframe for a seamless loop.
 const LOOP: Skill[] = [...SKILLS, ...SKILLS, ...SKILLS];
 
-export function SkillStackPanel() {
+export function SkillBundlePanel() {
   return (
     <aside
       aria-hidden="true"

@@ -36,12 +36,12 @@ export async function generateMetadata({
   const { repos, totalSkillCount } = await loadOrg(org);
 
   if (repos.length === 0) {
-    return { title: "Organization not found | SkillStack" };
+    return { title: "Organization not found | SkillBundle" };
   }
 
   const title = `${org} — ${repos.length} repo${
     repos.length === 1 ? "" : "s"
-  } | SkillStack`;
+  } | SkillBundle`;
   const description = `${totalSkillCount} AI coding skill${
     totalSkillCount === 1 ? "" : "s"
   } across ${repos.length} repositor${

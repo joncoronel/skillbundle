@@ -1,36 +1,73 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SkillBundle
+
+SkillBundle helps developers discover, compare, and bundle AI coding-assistant skills for their tech stack. Pick your technologies, get matched with relevant skills from the [skills.sh](https://skills.sh) ecosystem, then save and share curated bundles with ready-to-run install commands.
+
+> Rename in progress: this project was previously named **SkillStack**.
+
+## Features
+
+- **Discovery** — browse skills by technology, popularity, trending, and "hot" leaderboards.
+- **Bundles** — curate skills into reusable bundles and share them with a link.
+- **Install commands** — copy a single command to install a whole bundle.
+- **Auth & billing** — account sync via Clerk, optional Pro plan via Polar.
+
+## Tech Stack
+
+- **Framework:** Next.js (App Router) + React
+- **Backend:** [Convex](https://convex.dev) — database, serverless functions, cron jobs
+- **Auth:** [Clerk](https://clerk.com) (JWT, synced to Convex via webhooks)
+- **Billing:** [Polar](https://polar.sh) (merchant of record)
+- **Styling:** Tailwind CSS v4
+- **Package manager:** pnpm
+- **Hosting:** Vercel
 
 ## Getting Started
 
-First, run the development server:
+You need [pnpm](https://pnpm.io) and a [Convex](https://convex.dev) account.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Run the Next.js dev server and the Convex dev server side by side (both are required):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm dev        # Next.js
+npx convex dev  # Convex (separate terminal)
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Learn More
+## Environment Variables
 
-To learn more about Next.js, take a look at the following resources:
+Frontend (`.env.local`):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `NEXT_PUBLIC_CONVEX_URL`
+- `NEXT_PUBLIC_CONVEX_SITE_URL`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`
+- `NEXT_PUBLIC_SITE_URL`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Convex (set with `npx convex env set …`):
 
-## Deploy on Vercel
+- `CLERK_JWT_ISSUER_DOMAIN`, `CLERK_WEBHOOK_SECRET`
+- `POLAR_ORGANIZATION_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SERVER`
+- `SKILLS_SH_API_KEY`, `VOYAGE_API_KEY`
+- `GITHUB_TOKEN` (optional), `ADMIN_EMAILS`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Scripts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `pnpm dev` — Next.js dev server
+- `pnpm build` — production build
+- `pnpm lint` — ESLint
+- `pnpm test` — Vitest
+- `npx convex dev` / `npx convex deploy` — Convex dev / deploy
+
+## Contributing
+
+Contributions are welcome. Please read the [Code of Conduct](./CODE_OF_CONDUCT.md) before participating.
+
+## License
+
+[MIT](./LICENSE) © Jonathan Coronel

@@ -34,7 +34,7 @@ function authHeaders(): Record<string, string> {
   const key = process.env.SKILLS_SH_API_KEY;
   const headers: Record<string, string> = {
     Accept: "application/json",
-    "User-Agent": "SkillStack",
+    "User-Agent": "SkillBundle",
   };
   if (key) headers.Authorization = `Bearer ${key}`;
   return headers;

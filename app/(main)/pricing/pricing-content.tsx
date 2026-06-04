@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
 
 const PLAN_KEYS: Plan[] = ["free", "pro"];
 // Must match convex/polar.ts product IDs
-const PRO_MONTHLY_PRODUCT_ID = "81f91b1c-5b5b-464e-8be2-d925e3652c59";
-const PRO_YEARLY_PRODUCT_ID = "5a16b4c6-bcd2-4f50-980f-3239c1fea660";
+const PRO_MONTHLY_PRODUCT_ID = "648a8fd1-9982-4881-a719-f34b0e809276";
+const PRO_YEARLY_PRODUCT_ID = "6dcec0ce-e54d-41b9-a910-9255ea336d43";
 
 type Cycle = "monthly" | "yearly";
 

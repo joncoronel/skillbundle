@@ -8,7 +8,7 @@ export function githubHeaders(): Record<string, string> {
   const token = process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
-    "User-Agent": "SkillStack",
+    "User-Agent": "SkillBundle",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;

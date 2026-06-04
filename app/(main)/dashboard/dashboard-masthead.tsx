@@ -12,7 +12,7 @@ export function DashboardMasthead() {
             Your bundles.
           </h1>
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">
-            Saved skill stacks, ready to share or install.
+            Saved skill bundles, ready to share or install.
           </p>
         </div>
         <Button

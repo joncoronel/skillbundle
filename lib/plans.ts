@@ -38,8 +38,8 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
     name: "Pro",
     tagline: "For power users",
     description: "Auto-detect, unlimited bundles, private sharing.",
-    priceMonthly: 9,
-    priceYearly: 90,
+    priceMonthly: 8,
+    priceYearly: 72,
     highlighted: true,
     features: [
       "GitHub repo auto-detection",
