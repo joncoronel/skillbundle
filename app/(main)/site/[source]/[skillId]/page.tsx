@@ -17,10 +17,10 @@ export async function generateMetadata({
   const skill = await loadSkill(source, skillId);
 
   if (!skill) {
-    return { title: "Skill Not Found | SkillStack" };
+    return { title: "Skill Not Found | SkillBundle" };
   }
 
-  const title = `${skill.name} | SkillStack`;
+  const title = `${skill.name} | SkillBundle`;
   const description =
     skill.description ?? `${skill.name} — a skill from ${source}`;
 

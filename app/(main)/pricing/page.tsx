@@ -6,7 +6,7 @@ import { PricingComparison } from "./pricing-comparison";
 import { PricingFaq } from "./pricing-faq";
 
 export const metadata: Metadata = {
-  title: "Pricing - SkillStack",
+  title: "Pricing - SkillBundle",
   description:
     "Pick a plan that fits how you build. Start free, upgrade when auto-detection and unlimited bundles start paying for themselves.",
 };

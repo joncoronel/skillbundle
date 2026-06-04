@@ -1,4 +1,4 @@
-# SkillStack Design Context
+# SkillBundle Design Context
 
 ## Users
 
@@ -6,13 +6,13 @@
 
 **Mindset on arrival:** A mix of discovery-driven exploration ("what skills exist for my stack?") and task-driven efficiency ("I know what I want, let me bundle it and get the install command"). The experience should reward both modes — browsing should feel interesting, and the action path should feel fast.
 
-**Job to be done:** Find the right AI coding skills for their tech stack, save them into reusable bundles, and share or install them with minimal friction. SkillStack is the one-stop shop — discovery, comparison, curation, and distribution in one place.
+**Job to be done:** Find the right AI coding skills for their tech stack, save them into reusable bundles, and share or install them with minimal friction. SkillBundle is the one-stop shop — discovery, comparison, curation, and distribution in one place.
 
 ## Brand Personality
 
 **Three words:** Sharp, fast, inviting.
 
-**Expanded:** SkillStack feels like a well-made developer tool that respects your time. It's confident and opinionated in its presentation — not tentative or generic. There's a cleverness to the interactions and copy that makes it feel like it was built by someone who actually uses these tools. It moves quickly, communicates clearly, and doesn't waste space on ceremony.
+**Expanded:** SkillBundle feels like a well-made developer tool that respects your time. It's confident and opinionated in its presentation — not tentative or generic. There's a cleverness to the interactions and copy that makes it feel like it was built by someone who actually uses these tools. It moves quickly, communicates clearly, and doesn't waste space on ceremony.
 
 **Emotional goals:** Confidence (I'm picking the right skills), efficiency (this is fast), and a quiet sense of delight (this feels good to use).
 

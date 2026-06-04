@@ -10,7 +10,8 @@ Steps to switch from Polar sandbox to production and go live with billing.
 
 1. Go to [polar.sh](https://polar.sh) (production, not sandbox)
 2. Navigate to **Settings > Webhooks > Add Webhook**
-3. URL: `https://doting-bee-475.convex.site/polar/events`
+3. URL: `https://<your-prod-deployment>.convex.site/polar/events`
+   - Use your **production** Convex site URL (from `npx convex deploy` / the Convex dashboard), NOT the dev `doting-bee-475` deployment.
 4. Enable events:
    - `product.created`
    - `product.updated`
@@ -24,8 +25,8 @@ Create 2 products in the Polar dashboard:
 
 | Product Name             | Type               | Price     |
 | ------------------------ | ------------------ | --------- |
-| SkillStack Pro Monthly   | Recurring (Monthly)| $9/month  |
-| SkillStack Pro Yearly    | Recurring (Yearly) | $90/year  |
+| SkillBundle Pro Monthly  | Recurring (Monthly)| $9/month  |
+| SkillBundle Pro Yearly   | Recurring (Yearly) | $90/year  |
 
 Copy each **Product ID** after creating them.
 
@@ -38,32 +39,34 @@ Copy each **Product ID** after creating them.
 
 ## 2. Update Convex Environment Variables
 
+Target the **production** deployment with `--prod` (these vars live on Convex, not Vercel):
+
 ```bash
-npx convex env set POLAR_ORGANIZATION_TOKEN "production-token"
-npx convex env set POLAR_WEBHOOK_SECRET "production-secret"
-npx convex env set POLAR_SERVER "production"
+npx convex env set --prod POLAR_ORGANIZATION_TOKEN "production-token"
+npx convex env set --prod POLAR_WEBHOOK_SECRET "production-secret"
+npx convex env set --prod POLAR_SERVER "production"
 ```
 
 ## 3. Update Product IDs in Code
 
-Replace sandbox product IDs with production ones in two files:
+Polar product IDs are UUIDs (e.g. `81f91b1c-5b5b-464e-8be2-d925e3652c59`), not `prod_…`
+strings. Replace the sandbox UUIDs with the production ones in **two** files — the values
+must match across both.
 
 **`convex/polar.ts`** — `products` object:
 
 ```ts
 const products = {
-  proMonthly: "prod_xxxxxxxxxxxxx",
-  proYearly: "prod_xxxxxxxxxxxxx",
+  proMonthly: "<prod-monthly-uuid>",
+  proYearly: "<prod-yearly-uuid>",
 } as const;
 ```
 
-**`app/(main)/pricing/pricing-content.tsx`** — `PRODUCT_ID_MAP`:
+**`app/(main)/pricing/pricing-content.tsx`** — the two product-ID constants:
 
 ```ts
-const PRODUCT_ID_MAP: Record<Plan, string[] | null> = {
-  free: null,
-  pro: ["prod_xxxxxxxxxxxxx"],  // same as proMonthly above
-};
+const PRO_MONTHLY_PRODUCT_ID = "<prod-monthly-uuid>"; // same as proMonthly above
+const PRO_YEARLY_PRODUCT_ID = "<prod-yearly-uuid>";   // same as proYearly above
 ```
 
 ## 4. Decide on Feature Gating

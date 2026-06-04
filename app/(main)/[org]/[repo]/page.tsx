@@ -50,10 +50,10 @@ export async function generateMetadata({
   const { skills } = await loadRepo(source);
 
   if (skills.length === 0) {
-    return { title: "Repository not found | SkillStack" };
+    return { title: "Repository not found | SkillBundle" };
   }
 
-  const title = `${source} — skills | SkillStack`;
+  const title = `${source} — skills | SkillBundle`;
   const description = `${skills.length} AI coding skill${
     skills.length === 1 ? "" : "s"
   } published by ${source}.`;

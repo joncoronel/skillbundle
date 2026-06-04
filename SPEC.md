@@ -1,4 +1,4 @@
-# Skill Stack Builder — Product Spec
+# SkillBundle — Product Spec
 
 ## Overview
 

@@ -9,7 +9,7 @@ import "./globals.css";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
-  title: "SkillStack",
+  title: "SkillBundle",
   description:
     "Discover, compare, and bundle AI coding assistant skills for your tech stack",
 };

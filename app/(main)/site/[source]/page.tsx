@@ -45,12 +45,12 @@ export async function generateMetadata({
   const { skills } = await loadSource(source);
 
   if (skills.length === 0) {
-    return { title: "Source not found | SkillStack" };
+    return { title: "Source not found | SkillBundle" };
   }
 
   const title = `${source} — ${skills.length} skill${
     skills.length === 1 ? "" : "s"
-  } | SkillStack`;
+  } | SkillBundle`;
   const description = `${skills.length} AI coding skill${
     skills.length === 1 ? "" : "s"
   } published by ${source}.`;
