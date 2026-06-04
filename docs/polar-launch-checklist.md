@@ -25,8 +25,8 @@ Create 2 products in the Polar dashboard:
 
 | Product Name             | Type               | Price     |
 | ------------------------ | ------------------ | --------- |
-| SkillBundle Pro Monthly  | Recurring (Monthly)| $9/month  |
-| SkillBundle Pro Yearly   | Recurring (Yearly) | $90/year  |
+| SkillBundle Pro Monthly  | Recurring (Monthly)| $8/month  |
+| SkillBundle Pro Yearly   | Recurring (Yearly) | $72/year  |
 
 Copy each **Product ID** after creating them.
 

@@ -22,7 +22,7 @@ const FAQ = [
   },
   {
     q: "Is there a yearly discount?",
-    a: "Yes — yearly is $90 instead of $108, roughly 17% off. Toggle the billing cycle above the plan cards to switch.",
+    a: "Yes — yearly is $72 instead of $96, 25% off (three months free). Toggle the billing cycle above the plan cards to switch.",
   },
 ];
 

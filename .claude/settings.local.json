@@ -53,10 +53,15 @@
       "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -n \"Loader\\\\|spinner\\\\|loading\" app/\\\\\\(main\\\\\\)/stack/ app/\\\\\\(main\\\\\\)/explore/)",
       "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -n \"Button.*loading\\\\|Button.*disabled\" --include=\"*.tsx\")",
       "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep \"Button.*loading\" -- \"*.tsx\")",
-      "Bash(gh repo *)"
+      "Bash(gh repo *)",
+      "Bash(python3 *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "uidotsh",
+    "shadcn"
+  ]
 }
