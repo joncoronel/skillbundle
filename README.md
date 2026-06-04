@@ -2,7 +2,7 @@
 
 SkillBundle helps developers discover, compare, and bundle AI coding-assistant skills for their tech stack. Pick your technologies, get matched with relevant skills from the [skills.sh](https://skills.sh) ecosystem, then save and share curated bundles with ready-to-run install commands.
 
-> Rename in progress: this project was previously named **SkillStack**.
+**🔗 Live at [skillbundle.dev](https://skillbundle.dev)**
 
 ## Features
 
@@ -42,19 +42,20 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Frontend (`.env.local`):
 
-- `NEXT_PUBLIC_CONVEX_URL`
-- `NEXT_PUBLIC_CONVEX_SITE_URL`
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-- `CLERK_SECRET_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
 - `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`
 - `NEXT_PUBLIC_SITE_URL`
+- `NEXT_PUBLIC_POLAR_PRO_MONTHLY_PRODUCT_ID`, `NEXT_PUBLIC_POLAR_PRO_YEARLY_PRODUCT_ID`
+- `NEXT_PUBLIC_CONVEX_URL` is written automatically by `npx convex dev` — no need to set it by hand.
 
 Convex (set with `npx convex env set …`):
 
 - `CLERK_JWT_ISSUER_DOMAIN`, `CLERK_WEBHOOK_SECRET`
 - `POLAR_ORGANIZATION_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SERVER`
+- `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID`
 - `SKILLS_SH_API_KEY`, `VOYAGE_API_KEY`
 - `GITHUB_TOKEN` (optional), `ADMIN_EMAILS`
+- `CRONS_ENABLED` — set to `true` on production only. Cron jobs (skill sync, leaderboards) are skipped unless this is `true`, so dev deployments don't run the sync. Populate a dev deployment on demand with `npx convex run skills:syncSkills`.
 
 ## Scripts
 
