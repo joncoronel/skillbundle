@@ -3,7 +3,8 @@ import Link from "next/link";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import {
   loadSkill,
-  SkillDetailPage,
+  SkillDetailShell,
+  SkillDetailContent,
 } from "@/components/skill-detail-page";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
@@ -50,13 +51,25 @@ export async function generateMetadata({
   };
 }
 
-export default async function SkillPage({ params }: { params: Params }) {
+// The page itself is just the static shell — no `await params` here, so Cache
+// Components can prerender and serve it instantly for any URL. Params are read
+// inside the shell's Suspense boundary by `SkillContent`, so the body streams
+// in behind the skeleton instead of blocking the response.
+export default function SkillPage({ params }: { params: Params }) {
+  return (
+    <SkillDetailShell>
+      <SkillContent params={params} />
+    </SkillDetailShell>
+  );
+}
+
+async function SkillContent({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
   const installCommand = `npx skills add ${source} --skill ${skillId}`;
 
   return (
-    <SkillDetailPage
+    <SkillDetailContent
       source={source}
       skillId={skillId}
       installCommand={installCommand}

@@ -54,7 +54,7 @@ async function loadTimeAgo(timestamp: number) {
   return timeAgo(timestamp);
 }
 
-type SkillDetailPageProps = {
+type SkillDetailContentProps = {
   source: string;
   skillId: string;
   installCommand: string;
@@ -65,7 +65,24 @@ type SkillDetailPageProps = {
   breadcrumb: ReactNode;
 };
 
-export function SkillDetailPage({
+/**
+ * Static page shell. Everything here is param-independent, so Cache Components
+ * prerenders it at build and serves it instantly for ANY skill URL — generated
+ * or not, link-click or hard refresh. The param-dependent content (passed as
+ * `children`) is read inside this Suspense boundary, so it streams in behind
+ * the skeleton instead of blocking the initial response. After the first
+ * render, `generateStaticParams` + ISR saves the resolved page, so repeat
+ * visits get the finished HTML with no skeleton.
+ */
+export function SkillDetailShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      <Suspense fallback={<SkillDetailContentSkeleton />}>{children}</Suspense>
+    </div>
+  );
+}
+
+export async function SkillDetailContent({
   source,
   skillId,
   installCommand,
@@ -73,46 +90,7 @@ export function SkillDetailPage({
   externalIcon,
   externalLabel,
   breadcrumb,
-}: SkillDetailPageProps) {
-  return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
-      {breadcrumb}
-
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
-        {skillId}
-      </h1>
-
-      <Suspense
-        fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
-      >
-        <SkillDetailBody
-          source={source}
-          skillId={skillId}
-          installCommand={installCommand}
-          externalUrl={externalUrl}
-          externalIcon={externalIcon}
-          externalLabel={externalLabel}
-        />
-      </Suspense>
-    </div>
-  );
-}
-
-async function SkillDetailBody({
-  source,
-  skillId,
-  installCommand,
-  externalUrl,
-  externalIcon,
-  externalLabel,
-}: {
-  source: string;
-  skillId: string;
-  installCommand: string;
-  externalUrl: string;
-  externalIcon: IconSvgElement;
-  externalLabel: string;
-}) {
+}: SkillDetailContentProps) {
   const [skill, audits] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
@@ -132,6 +110,12 @@ async function SkillDetailBody({
 
   return (
     <>
+      {breadcrumb}
+
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
+        {skillId}
+      </h1>
+
       {skill.isDelisted && (
         <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
           This skill is no longer listed on skills.sh
@@ -214,13 +198,19 @@ async function SkillDetailBody({
   );
 }
 
-export function SkillDetailPageSkeleton({
-  installCommand,
-}: {
-  installCommand: string;
-}) {
+// Fallback for the Suspense boundary in `SkillDetailShell`. Stands in for the
+// full param-dependent content — breadcrumb, title, and body — since all of it
+// now resolves inside the boundary. This is what shows instantly on a first
+// (uncached) visit while the page renders; once saved, repeat visits skip it.
+function SkillDetailContentSkeleton() {
   return (
     <>
+      <div className="mb-6">
+        <Skeleton className="h-4 w-64 max-w-full" />
+      </div>
+
+      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
+
       <div className="flex items-center gap-2 text-sm">
         <Skeleton className="h-4 w-20" />
         <span aria-hidden="true" className="text-muted-foreground">
@@ -234,11 +224,7 @@ export function SkillDetailPageSkeleton({
       </div>
 
       <LabeledSection label="Install" className="mt-10">
-        <div className="rounded-xl bg-muted w-fit max-w-full">
-          <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16 invisible">
-            {installCommand}
-          </pre>
-        </div>
+        <Skeleton className="h-11 w-72 max-w-full rounded-xl" />
       </LabeledSection>
 
       <LabeledSection label="Overview" className="mt-10">

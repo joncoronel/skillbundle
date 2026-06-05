@@ -3,7 +3,8 @@ import Link from "next/link";
 import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import {
   loadSkill,
-  SkillDetailPage,
+  SkillDetailShell,
+  SkillDetailContent,
 } from "@/components/skill-detail-page";
 
 type Params = Promise<{ source: string; skillId: string }>;
@@ -42,16 +43,24 @@ export async function generateMetadata({
   };
 }
 
-export default async function WellKnownSkillPage({
-  params,
-}: {
-  params: Params;
-}) {
+// The page itself is just the static shell — no `await params` here, so Cache
+// Components can prerender and serve it instantly for any URL. Params are read
+// inside the shell's Suspense boundary by `SkillContent`, so the body streams
+// in behind the skeleton instead of blocking the response.
+export default function WellKnownSkillPage({ params }: { params: Params }) {
+  return (
+    <SkillDetailShell>
+      <SkillContent params={params} />
+    </SkillDetailShell>
+  );
+}
+
+async function SkillContent({ params }: { params: Params }) {
   const { source, skillId } = await params;
   const installCommand = `npx skills add ${source}/${skillId}`;
 
   return (
-    <SkillDetailPage
+    <SkillDetailContent
       source={source}
       skillId={skillId}
       installCommand={installCommand}
