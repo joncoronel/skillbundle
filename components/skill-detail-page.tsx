@@ -34,6 +34,26 @@ export async function loadAudits(source: string, skillId: string) {
   return row?.audits ?? null;
 }
 
+// Shiki's highlighter calls `Date.now()` internally, which isn't permitted on
+// the static prerender path under Cache Components. Wrapping the highlight in a
+// cache boundary satisfies that constraint and content-addresses the result
+// (keyed by the markdown), so unchanged content reuses the cached HTML.
+async function loadHighlightedCode(content: string) {
+  "use cache";
+  cacheLife("days");
+  return highlightMarkdownCode(content);
+}
+
+// `timeAgo` reads `Date.now()`, which isn't permitted on the static prerender
+// path under Cache Components. Computing it inside a cache boundary is allowed;
+// the relative label is then cached for ~a day (refreshed on revalidation),
+// which is plenty fresh for an "Updated N days ago" string.
+async function loadTimeAgo(timestamp: number) {
+  "use cache";
+  cacheLife("days");
+  return timeAgo(timestamp);
+}
+
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
@@ -103,8 +123,12 @@ async function SkillDetailBody({
   }
 
   const preHighlighted = skill.content
-    ? await highlightMarkdownCode(skill.content)
+    ? await loadHighlightedCode(skill.content)
     : undefined;
+
+  const timeLabel = skill.contentUpdatedAt
+    ? `Updated ${await loadTimeAgo(skill.contentUpdatedAt)}`
+    : `Added ${await loadTimeAgo(skill._creationTime)}`;
 
   return (
     <>
@@ -134,11 +158,7 @@ async function SkillDetailBody({
           {externalLabel}
         </a>
         <span>·</span>
-        {skill.contentUpdatedAt ? (
-          <span>Updated {timeAgo(skill.contentUpdatedAt)}</span>
-        ) : (
-          <span>Added {timeAgo(skill._creationTime)}</span>
-        )}
+        <span>{timeLabel}</span>
       </div>
 
       {skill.hasContentFetchError && !skill.isDelisted && (

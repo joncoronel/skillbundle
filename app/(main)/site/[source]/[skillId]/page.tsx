@@ -8,6 +8,17 @@ import {
 
 type Params = Promise<{ source: string; skillId: string }>;
 
+// We deliberately prebuild nothing real at build time. Cache Components only
+// requires `generateStaticParams` to return at least one param to turn on the
+// render-and-save behavior; with `dynamicParams` at its default (`true`), every
+// skill is rendered and saved to disk on its first request and served from
+// cache thereafter. Popular skills get built naturally as they're visited, so
+// there's no reason to fan out Convex reads at build time. The lone placeholder
+// satisfies the validator and resolves to `notFound()`.
+export function generateStaticParams() {
+  return [{ source: "__placeholder__", skillId: "__placeholder__" }];
+}
+
 export async function generateMetadata({
   params,
 }: {
