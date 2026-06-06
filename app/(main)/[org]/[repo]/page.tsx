@@ -179,14 +179,12 @@ async function RepoListContent({ source }: { source: string }) {
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                {/* Skill detail pages are heavy to render (markdown + Shiki),
-                    and repos commonly have 20+ skills — prefetching them all
-                    would fire many expensive requests for skills the user
-                    won't click. */}
+                {/* Prefetch is left on: the skill route is an instant-navigation
+                    route, so prefetching fetches only the cheap static shell
+                    (skeleton), not the heavy markdown/Shiki render. */}
                 <Link
                   href={skillHref(skill.source, skill.skillId)}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"
-                  prefetch={false}
                 >
                   {skill.name}
                 </Link>

@@ -1,9 +1,10 @@
 import "server-only";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense, type ReactNode } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { GithubIcon, GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { LabeledSection } from "@/components/labeled-section";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -34,85 +35,36 @@ export async function loadAudits(source: string, skillId: string) {
   return row?.audits ?? null;
 }
 
-// Shiki's highlighter calls `Date.now()` internally, which isn't permitted on
-// the static prerender path under Cache Components. Wrapping the highlight in a
-// cache boundary satisfies that constraint and content-addresses the result
-// (keyed by the markdown), so unchanged content reuses the cached HTML.
 async function loadHighlightedCode(content: string) {
   "use cache";
   cacheLife("days");
   return highlightMarkdownCode(content);
 }
 
-// `timeAgo` reads `Date.now()`, which isn't permitted on the static prerender
-// path under Cache Components. Computing it inside a cache boundary is allowed;
-// the relative label is then cached for ~a day (refreshed on revalidation),
-// which is plenty fresh for an "Updated N days ago" string.
 async function loadTimeAgo(timestamp: number) {
   "use cache";
   cacheLife("days");
   return timeAgo(timestamp);
 }
 
-type SkillDetailPageProps = {
-  source: string;
-  skillId: string;
-  installCommand: string;
-  externalUrl: string;
-  externalIcon: IconSvgElement;
-  externalLabel: string;
-  /** Breadcrumb slot rendered above the h1. */
-  breadcrumb: ReactNode;
-};
-
-export function SkillDetailPage({
+// The full skill page content, cached per (source, skillId) with `use cache`,
+// so it's part of the prefetchable static shell for instant navigations. It's
+// rendered inside the route's `<Suspense>` (params read via `.then()`), so a
+// cold skill shows the skeleton fallback while it renders, while a warm one
+// appears instantly from the prefetched cache. Reuses loadSkill/loadAudits so
+// `generateMetadata` shares the same data-cache entries.
+export async function CachedSkillDetail({
   source,
   skillId,
-  installCommand,
-  externalUrl,
-  externalIcon,
-  externalLabel,
-  breadcrumb,
-}: SkillDetailPageProps) {
-  return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
-      {breadcrumb}
-
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
-        {skillId}
-      </h1>
-
-      <Suspense
-        fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
-      >
-        <SkillDetailBody
-          source={source}
-          skillId={skillId}
-          installCommand={installCommand}
-          externalUrl={externalUrl}
-          externalIcon={externalIcon}
-          externalLabel={externalLabel}
-        />
-      </Suspense>
-    </div>
-  );
-}
-
-async function SkillDetailBody({
-  source,
-  skillId,
-  installCommand,
-  externalUrl,
-  externalIcon,
-  externalLabel,
+  variant,
 }: {
   source: string;
   skillId: string;
-  installCommand: string;
-  externalUrl: string;
-  externalIcon: IconSvgElement;
-  externalLabel: string;
+  variant: "github" | "site";
 }) {
+  "use cache";
+  cacheLife("days");
+
   const [skill, audits] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
@@ -125,13 +77,59 @@ async function SkillDetailBody({
   const preHighlighted = skill.content
     ? await loadHighlightedCode(skill.content)
     : undefined;
-
   const timeLabel = skill.contentUpdatedAt
     ? `Updated ${await loadTimeAgo(skill.contentUpdatedAt)}`
     : `Added ${await loadTimeAgo(skill._creationTime)}`;
 
+  const isGitHub = variant === "github";
+  const installCommand = isGitHub
+    ? `npx skills add ${source} --skill ${skillId}`
+    : `npx skills add ${source}/${skillId}`;
+  const externalUrl = isGitHub
+    ? `https://github.com/${source}`
+    : `https://${source}`;
+  const externalIcon = isGitHub ? GithubIcon : GlobalSearchIcon;
+  const [org, repo] = source.split("/");
+
   return (
     <>
+      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
+        <Link href="/" className="hover:text-foreground transition-colors">
+          Home
+        </Link>
+        <span>/</span>
+        {isGitHub ? (
+          <>
+            <Link
+              href={`/${org}`}
+              className="hover:text-foreground transition-colors"
+            >
+              {org}
+            </Link>
+            <span>/</span>
+            <Link
+              href={`/${source}`}
+              className="hover:text-foreground transition-colors"
+            >
+              {repo}
+            </Link>
+          </>
+        ) : (
+          <Link
+            href={`/site/${source}`}
+            className="hover:text-foreground transition-colors"
+          >
+            {source}
+          </Link>
+        )}
+        <span>/</span>
+        <span className="text-foreground">{skillId}</span>
+      </nav>
+
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
+        {skillId}
+      </h1>
+
       {skill.isDelisted && (
         <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
           This skill is no longer listed on skills.sh
@@ -155,7 +153,7 @@ async function SkillDetailBody({
             strokeWidth={2}
             className="size-3.5"
           />
-          {externalLabel}
+          {source}
         </a>
         <span>·</span>
         <span>{timeLabel}</span>
@@ -214,11 +212,21 @@ async function SkillDetailBody({
   );
 }
 
-export function SkillDetailPageSkeleton({
-  installCommand,
-}: {
-  installCommand: string;
-}) {
+// Full inner skeleton (breadcrumb + title + body) used as the `<Suspense>`
+// fallback while a cold skill's content renders.
+export function SkillDetailContentSkeleton() {
+  return (
+    <>
+      <div className="mb-6">
+        <Skeleton className="h-4 w-64 max-w-full" />
+      </div>
+      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
+      <SkillDetailPageSkeleton installCommand="npx skills add ..." />
+    </>
+  );
+}
+
+function SkillDetailPageSkeleton({ installCommand }: { installCommand: string }) {
   return (
     <>
       <div className="flex items-center gap-2 text-sm">
