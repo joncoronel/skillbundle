@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { GithubIcon } from "@hugeicons/core-free-icons";
-import { loadSkill, SkillDetailPage } from "@/components/skill-detail-page";
+import {
+  loadSkill,
+  SkillDetailPage,
+} from "@/components/skill-detail-page";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
 
@@ -47,10 +50,6 @@ export async function generateMetadata({
   };
 }
 
-// `await params` at the top makes the whole page the unit Cache Components
-// renders and SAVES on first request (see SkillDetailPage). Repeat visits get
-// the saved HTML — no skeleton, no Convex read. The first-visit skeleton comes
-// from `loading.tsx`.
 export default async function SkillPage({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;

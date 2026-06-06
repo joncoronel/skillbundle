@@ -1,6 +1,6 @@
 import "server-only";
 import { notFound } from "next/navigation";
-import { type ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -65,16 +65,6 @@ type SkillDetailPageProps = {
   breadcrumb: ReactNode;
 };
 
-/**
- * Skill detail page. The body is rendered inline (no in-page Suspense) so the
- * whole page is a single unit: with `generateStaticParams` + Cache Components,
- * Next renders it on the first request and SAVES it, so repeat visits get the
- * finished HTML with no skeleton and no Convex read. The first-visit skeleton
- * comes from the route-level `loading.tsx` (see `SkillDetailPageLoading`) — we
- * deliberately do NOT wrap the body in `<Suspense>`, because that would flip
- * the route into "static shell + stream the body on every request" mode, which
- * shows the skeleton on every visit.
- */
 export function SkillDetailPage({
   source,
   skillId,
@@ -92,14 +82,18 @@ export function SkillDetailPage({
         {skillId}
       </h1>
 
-      <SkillDetailBody
-        source={source}
-        skillId={skillId}
-        installCommand={installCommand}
-        externalUrl={externalUrl}
-        externalIcon={externalIcon}
-        externalLabel={externalLabel}
-      />
+      <Suspense
+        fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
+      >
+        <SkillDetailBody
+          source={source}
+          skillId={skillId}
+          installCommand={installCommand}
+          externalUrl={externalUrl}
+          externalIcon={externalIcon}
+          externalLabel={externalLabel}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -111,7 +105,14 @@ async function SkillDetailBody({
   externalUrl,
   externalIcon,
   externalLabel,
-}: Omit<SkillDetailPageProps, "breadcrumb">) {
+}: {
+  source: string;
+  skillId: string;
+  installCommand: string;
+  externalUrl: string;
+  externalIcon: IconSvgElement;
+  externalLabel: string;
+}) {
   const [skill, audits] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
@@ -213,19 +214,13 @@ async function SkillDetailBody({
   );
 }
 
-// Route-level fallback, rendered by each route's `loading.tsx`. The router
-// shows this instantly on navigation while the page is generated (and saved)
-// on its first visit. It includes the page chrome (container, breadcrumb,
-// title) since it stands in for the whole page before any of it has rendered.
-export function SkillDetailPageLoading() {
+export function SkillDetailPageSkeleton({
+  installCommand,
+}: {
+  installCommand: string;
+}) {
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
-      <div className="mb-6">
-        <Skeleton className="h-4 w-64 max-w-full" />
-      </div>
-
-      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
-
+    <>
       <div className="flex items-center gap-2 text-sm">
         <Skeleton className="h-4 w-20" />
         <span aria-hidden="true" className="text-muted-foreground">
@@ -239,7 +234,11 @@ export function SkillDetailPageLoading() {
       </div>
 
       <LabeledSection label="Install" className="mt-10">
-        <Skeleton className="h-11 w-72 max-w-full rounded-xl" />
+        <div className="rounded-xl bg-muted w-fit max-w-full">
+          <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16 invisible">
+            {installCommand}
+          </pre>
+        </div>
       </LabeledSection>
 
       <LabeledSection label="Overview" className="mt-10">
@@ -264,6 +263,6 @@ export function SkillDetailPageLoading() {
           </div>
         </div>
       </LabeledSection>
-    </div>
+    </>
   );
 }
