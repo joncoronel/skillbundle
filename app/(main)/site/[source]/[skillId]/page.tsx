@@ -1,23 +1,20 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
+import { Suspense } from "react";
 import {
   loadSkill,
-  SkillDetailPage,
+  CachedSkillDetail,
+  SkillDetailContentSkeleton,
 } from "@/components/skill-detail-page";
 
 type Params = Promise<{ source: string; skillId: string }>;
 
-// We deliberately prebuild nothing real at build time. Cache Components only
-// requires `generateStaticParams` to return at least one param to turn on the
-// render-and-save behavior; with `dynamicParams` at its default (`true`), every
-// skill is rendered and saved to disk on its first request and served from
-// cache thereafter. Popular skills get built naturally as they're visited, so
-// there's no reason to fan out Convex reads at build time. The lone placeholder
-// satisfies the validator and resolves to `notFound()`.
-export function generateStaticParams() {
-  return [{ source: "__placeholder__", skillId: "__placeholder__" }];
-}
+// Instant navigation (Cache Components) — same pattern as the GitHub skill
+// route. See that file for the rationale behind `prefetch: "runtime"` + a real
+// `samples` entry.
+export const unstable_instant = {
+  prefetch: "runtime",
+  samples: [{ params: { source: "open.feishu.cn", skillId: "lark-approval" } }],
+};
 
 export async function generateMetadata({
   params,
@@ -42,38 +39,14 @@ export async function generateMetadata({
   };
 }
 
-export default async function WellKnownSkillPage({
-  params,
-}: {
-  params: Params;
-}) {
-  const { source, skillId } = await params;
-  const installCommand = `npx skills add ${source}/${skillId}`;
-
+export default function WellKnownSkillPage({ params }: { params: Params }) {
   return (
-    <SkillDetailPage
-      source={source}
-      skillId={skillId}
-      installCommand={installCommand}
-      externalUrl={`https://${source}`}
-      externalIcon={GlobalSearchIcon}
-      externalLabel={source}
-      breadcrumb={
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
-          <Link href="/" className="hover:text-foreground transition-colors">
-            Home
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/site/${source}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {source}
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">{skillId}</span>
-        </nav>
-      }
-    />
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      <Suspense fallback={<SkillDetailContentSkeleton />}>
+        {params.then(({ source, skillId }) => (
+          <CachedSkillDetail source={source} skillId={skillId} variant="site" />
+        ))}
+      </Suspense>
+    </div>
   );
 }

@@ -104,7 +104,6 @@ function SkillName({
     <Link
       href={skillHref(skill.source, skill.skillId)}
       className={cn("hover:underline text-left", className)}
-      prefetch={false}
     >
       {skill.name}
     </Link>

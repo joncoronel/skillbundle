@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
       "@hugeicons/react",
       "@hugeicons/core-free-icons",
     ],
+    // Adds the "Instant Navs" panel to Next DevTools for inspecting the static
+    // shell on page loads and client navigations.
+    instantNavigationDevToolsToggle: true,
   },
 };
 

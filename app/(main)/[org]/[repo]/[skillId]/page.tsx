@@ -1,25 +1,28 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { GithubIcon } from "@hugeicons/core-free-icons";
+import { Suspense } from "react";
 import {
   loadSkill,
-  SkillDetailPage,
+  CachedSkillDetail,
+  SkillDetailContentSkeleton,
 } from "@/components/skill-detail-page";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
 
-// We deliberately prebuild nothing real at build time. Cache Components only
-// requires `generateStaticParams` to return at least one param to turn on the
-// render-and-save behavior; with `dynamicParams` at its default (`true`), every
-// skill is rendered and saved to disk on its first request and served from
-// cache thereafter. Popular skills get built naturally as they're visited, so
-// there's no reason to fan out Convex reads at build time. The lone placeholder
-// satisfies the validator and resolves to `notFound()`.
-export function generateStaticParams() {
-  return [
-    { org: "__placeholder__", repo: "__placeholder__", skillId: "__placeholder__" },
-  ];
-}
+// Instant navigation (Cache Components). The page is NOT async — params are read
+// inside the <Suspense> via `.then()`, and the content is cached per skill in
+// `CachedSkillDetail` (`use cache`). A cold skill shows the skeleton fallback
+// while it renders; a warm one appears instantly from the prefetched shell.
+//
+// `unstable_instant` validates this structure at dev/build time. We use
+// `prefetch: "runtime"` with a real `samples` entry because validation renders
+// the cached content against real data, and our Convex query rejects the
+// placeholder params that `prefetch: "static"` would feed in.
+export const unstable_instant = {
+  prefetch: "runtime",
+  samples: [
+    { params: { org: "vercel-labs", repo: "skills", skillId: "find-skills" } },
+  ],
+};
 
 export async function generateMetadata({
   params,
@@ -50,42 +53,18 @@ export async function generateMetadata({
   };
 }
 
-export default async function SkillPage({ params }: { params: Params }) {
-  const { org, repo, skillId } = await params;
-  const source = `${org}/${repo}`;
-  const installCommand = `npx skills add ${source} --skill ${skillId}`;
-
+export default function SkillPage({ params }: { params: Params }) {
   return (
-    <SkillDetailPage
-      source={source}
-      skillId={skillId}
-      installCommand={installCommand}
-      externalUrl={`https://github.com/${source}`}
-      externalIcon={GithubIcon}
-      externalLabel={source}
-      breadcrumb={
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
-          <Link href="/" className="hover:text-foreground transition-colors">
-            Home
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/${org}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {org}
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/${source}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {repo}
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">{skillId}</span>
-        </nav>
-      }
-    />
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      <Suspense fallback={<SkillDetailContentSkeleton />}>
+        {params.then(({ org, repo, skillId }) => (
+          <CachedSkillDetail
+            source={`${org}/${repo}`}
+            skillId={skillId}
+            variant="github"
+          />
+        ))}
+      </Suspense>
+    </div>
   );
 }
