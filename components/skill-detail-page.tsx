@@ -1,8 +1,8 @@
 import "server-only";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
+import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
-import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { api } from "@/convex/_generated/api";
 import { LabeledSection } from "@/components/labeled-section";
@@ -14,45 +14,29 @@ import { formatInstalls, timeAgo } from "@/lib/utils";
 import { OfficialBadge } from "@/components/skill-badges";
 import { SkillAuditSection } from "@/components/skill-audit-section";
 
-// Shared cached loaders. Both the `/[org]/[repo]/[skillId]` and the
-// `/site/[source]/[skillId]` routes import these (also from generateMetadata),
-// so the metadata pass and the body pass dedupe to a single cache entry per
-// (source, skillId).
-export async function loadSkill(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
-}
+// Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
+// fetch, which would mark the route dynamic and break static/ISR generation.
+// Wrapping in `unstable_cache` isolates that fetch and caches the result by
+// (source, skillId) — the args are part of the cache key — so the route can be
+// statically generated and the `generateMetadata` pass + body share one entry.
+export const loadSkill = unstable_cache(
+  (source: string, skillId: string) =>
+    fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
+  ["skill-detail"],
+  { revalidate: 86400 },
+);
 
-export async function loadAudits(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
-    source,
-    skillId,
-  });
-  return row?.audits ?? null;
-}
-
-// Shiki's highlighter calls `Date.now()` internally, which isn't permitted on
-// the static prerender path under Cache Components. Wrapping the highlight in a
-// cache boundary satisfies that constraint and content-addresses the result
-// (keyed by the markdown), so unchanged content reuses the cached HTML.
-async function loadHighlightedCode(content: string) {
-  "use cache";
-  cacheLife("days");
-  return highlightMarkdownCode(content);
-}
-
-// `timeAgo` reads `Date.now()`, which isn't permitted on the static prerender
-// path under Cache Components. Computing it inside a cache boundary is allowed;
-// the relative label is then cached for ~a day (refreshed on revalidation),
-// which is plenty fresh for an "Updated N days ago" string.
-async function loadTimeAgo(timestamp: number) {
-  "use cache";
-  cacheLife("days");
-  return timeAgo(timestamp);
-}
+export const loadAudits = unstable_cache(
+  async (source: string, skillId: string) => {
+    const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
+      source,
+      skillId,
+    });
+    return row?.audits ?? null;
+  },
+  ["skill-audits"],
+  { revalidate: 86400 },
+);
 
 type SkillDetailPageProps = {
   source: string;
@@ -123,12 +107,12 @@ async function SkillDetailBody({
   }
 
   const preHighlighted = skill.content
-    ? await loadHighlightedCode(skill.content)
+    ? await highlightMarkdownCode(skill.content)
     : undefined;
 
   const timeLabel = skill.contentUpdatedAt
-    ? `Updated ${await loadTimeAgo(skill.contentUpdatedAt)}`
-    : `Added ${await loadTimeAgo(skill._creationTime)}`;
+    ? `Updated ${timeAgo(skill.contentUpdatedAt)}`
+    : `Added ${timeAgo(skill._creationTime)}`;
 
   return (
     <>
@@ -264,5 +248,22 @@ export function SkillDetailPageSkeleton({
         </div>
       </LabeledSection>
     </>
+  );
+}
+
+// Route-level fallback for each skill route's `loading.tsx`. The router shows
+// this instantly while a not-yet-generated skill is rendered on-demand; once
+// ISR caches the page, repeat visits serve the finished HTML and never hit this.
+export function SkillDetailPageLoading() {
+  return (
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      <div className="mb-6">
+        <Skeleton className="h-4 w-64 max-w-full" />
+      </div>
+
+      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
+
+      <SkillDetailPageSkeleton installCommand="npx skills add ..." />
+    </div>
   );
 }

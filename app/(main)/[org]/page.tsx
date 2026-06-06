@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
-import { cacheLife } from "next/cache";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
@@ -21,11 +21,22 @@ import { cn, formatInstalls } from "@/lib/utils";
 
 type Params = Promise<{ org: string }>;
 
-async function loadOrg(org: string) {
-  "use cache";
-  cacheLife("days");
-  return fetchQuery(api.skills.listRepoAggregatesByOrg, { org });
+// Classic ISR: generate each org page on first request and cache it.
+export const revalidate = 86400; // 1 day
+export const dynamicParams = true;
+
+export function generateStaticParams() {
+  return [];
 }
+
+// `unstable_cache` isolates `fetchQuery`'s no-store fetch (so the route can be
+// statically generated) and caches per `org` (args are part of the key). It
+// also dedupes the call between `generateMetadata` and the page body.
+const loadOrg = unstable_cache(
+  (org: string) => fetchQuery(api.skills.listRepoAggregatesByOrg, { org }),
+  ["org-aggregates"],
+  { revalidate: 86400 },
+);
 
 export async function generateMetadata({
   params,
