@@ -1,7 +1,7 @@
 import "server-only";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchQuery } from "convex/nextjs";
+import { ConvexHttpClient } from "convex/browser";
 import { cacheLife } from "next/cache";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon, GlobalSearchIcon } from "@hugeicons/core-free-icons";
@@ -15,6 +15,13 @@ import { formatInstalls, timeAgo } from "@/lib/utils";
 import { OfficialBadge } from "@/components/skill-badges";
 import { SkillAuditSection } from "@/components/skill-audit-section";
 
+// EXPERIMENT: `fetchQuery` from convex/nextjs forces `cache: "no-store"` on its
+// underlying fetch, which seems to stop `use cache` from persisting to Vercel's
+// data cache (every render re-queried Convex in prod, though it cached fine in
+// `next start`). Using `ConvexHttpClient` directly skips that no-store override,
+// to see whether the cached result then persists across requests on Vercel.
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
 // Shared cached loaders. Both the `/[org]/[repo]/[skillId]` and the
 // `/site/[source]/[skillId]` routes import these (also from generateMetadata),
 // so the metadata pass and the body pass dedupe to a single cache entry per
@@ -22,13 +29,15 @@ import { SkillAuditSection } from "@/components/skill-audit-section";
 export async function loadSkill(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
-  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
+  console.log(`[SKILL-FETCH] loadSkill ${source}/${skillId}`);
+  return convex.query(api.skills.getBySourceAndSkillId, { source, skillId });
 }
 
 export async function loadAudits(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
-  const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
+  console.log(`[SKILL-FETCH] loadAudits ${source}/${skillId}`);
+  const row = await convex.query(api.audits.getBySourceAndSkillId, {
     source,
     skillId,
   });
