@@ -863,7 +863,7 @@ function FeaturedBundleRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Link
-            href={`/stack/${bundle.urlId}`}
+            href={`/bundle/${bundle.urlId}`}
             className="truncate text-sm font-medium underline-offset-2 decoration-muted-foreground/40 hover:underline focus-visible:underline outline-none"
           >
             {bundle.name}

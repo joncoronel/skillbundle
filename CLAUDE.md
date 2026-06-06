@@ -44,7 +44,7 @@ ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`
 
 ### Auth Flow
 
-Clerk handles authentication. The middleware (`proxy.ts`) protects non-public routes. Public routes: `/`, `/sign-in`, `/sign-up`, `/stack/*`, `/explore`. Clerk webhooks sync user data to the Convex `users` table.
+Clerk handles authentication. The middleware (`proxy.ts`) protects non-public routes. Public routes: `/`, `/sign-in`, `/sign-up`, `/bundle/*`, `/explore`. Clerk webhooks sync user data to the Convex `users` table.
 
 ### Technology Tagging
 

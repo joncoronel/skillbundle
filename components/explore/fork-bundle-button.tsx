@@ -58,7 +58,7 @@ export function ForkBundleButton({
     setForking(true);
     try {
       const result = await forkBundle({ bundleId });
-      router.push(`/stack/${result.urlId}`);
+      router.push(`/bundle/${result.urlId}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to fork bundle";

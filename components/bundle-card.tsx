@@ -139,7 +139,7 @@ export function BundleCard({
     return content;
   }
 
-  return <Link href={`/stack/${urlId}`}>{content}</Link>;
+  return <Link href={`/bundle/${urlId}`}>{content}</Link>;
 }
 
 export function BundleCardSkeleton({ hasStats = false }: { hasStats?: boolean }) {
