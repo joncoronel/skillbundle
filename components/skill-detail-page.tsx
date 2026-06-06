@@ -22,12 +22,14 @@ import { SkillAuditSection } from "@/components/skill-audit-section";
 export async function loadSkill(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
+  console.log(`[SKILL-FETCH] loadSkill ${source}/${skillId}`);
   return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
 }
 
 export async function loadAudits(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
+  console.log(`[SKILL-FETCH] loadAudits ${source}/${skillId}`);
   const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
     source,
     skillId,
