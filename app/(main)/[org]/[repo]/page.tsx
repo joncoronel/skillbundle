@@ -191,14 +191,13 @@ async function RepoListContent({ source }: { source: string }) {
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                {/* Skill detail pages are heavy to render (markdown + Shiki),
-                    and repos commonly have 20+ skills — prefetching them all
-                    would fire many expensive requests for skills the user
-                    won't click. */}
+                {/* Default prefetch on. The skill route is SSG (ISR), so a
+                    prefetch generates the page on demand the first time and
+                    caches it — a one-time cost that warms the cache, after which
+                    navigation is instant and Convex isn't hit again. */}
                 <Link
                   href={skillHref(skill.source, skill.skillId)}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"
-                  prefetch={false}
                 >
                   {skill.name}
                 </Link>

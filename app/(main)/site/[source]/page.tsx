@@ -183,7 +183,6 @@ async function SourceListContent({ source }: { source: string }) {
                 <Link
                   href={`/site/${skill.source}/${skill.skillId}`}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"
-                  prefetch={false}
                 >
                   {skill.name}
                 </Link>
