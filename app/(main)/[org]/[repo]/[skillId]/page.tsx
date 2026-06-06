@@ -11,17 +11,20 @@ type Params = Promise<{ org: string; repo: string; skillId: string }>;
 // Instant navigation (Cache Components). The page is NOT async — params are read
 // inside the <Suspense> via `.then()`, and the content is cached per skill in
 // `CachedSkillDetail` (`use cache`). A cold skill shows the skeleton fallback
-// while it renders; a warm one appears instantly from the prefetched shell.
+// while it renders; a warm one appears instantly.
 //
-// `unstable_instant` validates this structure at dev/build time. We use
-// `prefetch: "runtime"` with a real `samples` entry because validation renders
-// the cached content against real data, and our Convex query rejects the
-// placeholder params that `prefetch: "static"` would feed in.
+// `prefetch: "static"` makes a prefetch fetch only the static shell, so a
+// listing that links to many skills does NOT render (and Convex-query) every
+// row on load — the render happens on the actual click instead. `"runtime"`
+// would re-render each prefetched route at request time (a Convex query per
+// skill, every reload), which is the behavior we're avoiding.
+//
+// Validation is disabled because `"static"` validation renders the cached
+// content with placeholder params, which our strict Convex query rejects. The
+// structure itself is correct (it validated under `"runtime"` + samples).
 export const unstable_instant = {
-  prefetch: "runtime",
-  samples: [
-    { params: { org: "vercel-labs", repo: "skills", skillId: "find-skills" } },
-  ],
+  prefetch: "static",
+  unstable_disableValidation: true,
 };
 
 export async function generateMetadata({

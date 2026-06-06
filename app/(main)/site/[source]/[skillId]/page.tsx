@@ -9,11 +9,10 @@ import {
 type Params = Promise<{ source: string; skillId: string }>;
 
 // Instant navigation (Cache Components) — same pattern as the GitHub skill
-// route. See that file for the rationale behind `prefetch: "runtime"` + a real
-// `samples` entry.
+// route. See that file for why `prefetch: "static"` + disabled validation.
 export const unstable_instant = {
-  prefetch: "runtime",
-  samples: [{ params: { source: "open.feishu.cn", skillId: "lark-approval" } }],
+  prefetch: "static",
+  unstable_disableValidation: true,
 };
 
 export async function generateMetadata({
