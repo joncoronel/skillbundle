@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
-import { cacheLife } from "next/cache";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
@@ -26,19 +26,31 @@ import { skillHref } from "@/lib/skill-urls";
 
 type Params = Promise<{ org: string; repo: string }>;
 
-async function loadRepo(source: string) {
-  "use cache";
-  cacheLife("days");
+// Classic ISR: generate each repo page on first request and cache it.
+export const revalidate = 86400; // 1 day
+export const dynamicParams = true;
 
-  const skills = await fetchQuery(api.skills.listBySource, { source });
-  const visible = skills
-    .filter((s) => !s.isDelisted)
-    .sort((a, b) => b.installs - a.installs);
-
-  const totalInstalls = visible.reduce((sum, s) => sum + s.installs, 0);
-
-  return { skills: visible, totalInstalls };
+export function generateStaticParams() {
+  return [];
 }
+
+// `unstable_cache` isolates `fetchQuery`'s no-store fetch (so the route can be
+// statically generated) and caches per `source` (args are part of the key). It
+// also dedupes the call between `generateMetadata` and the page body.
+const loadRepo = unstable_cache(
+  async (source: string) => {
+    const skills = await fetchQuery(api.skills.listBySource, { source });
+    const visible = skills
+      .filter((s) => !s.isDelisted)
+      .sort((a, b) => b.installs - a.installs);
+
+    const totalInstalls = visible.reduce((sum, s) => sum + s.installs, 0);
+
+    return { skills: visible, totalInstalls };
+  },
+  ["repo-skills"],
+  { revalidate: 86400 },
+);
 
 export async function generateMetadata({
   params,
@@ -179,12 +191,14 @@ async function RepoListContent({ source }: { source: string }) {
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                {/* Prefetch is left on: the skill route is an instant-navigation
-                    route, so prefetching fetches only the cheap static shell
-                    (skeleton), not the heavy markdown/Shiki render. */}
+                {/* Skill detail pages are heavy to render (markdown + Shiki),
+                    and repos commonly have 20+ skills — prefetching them all
+                    would fire many expensive requests for skills the user
+                    won't click. */}
                 <Link
                   href={skillHref(skill.source, skill.skillId)}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"
+                  prefetch={false}
                 >
                   {skill.name}
                 </Link>

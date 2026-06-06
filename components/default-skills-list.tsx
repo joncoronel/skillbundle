@@ -39,9 +39,9 @@ type LeaderboardTab = LeaderboardTabValue;
 
 /**
  * Tabbed leaderboard shown on the home page when no search is active.
- * All three tabs are server-prefetched + cached at the page level
- * (cacheLife "hours") and seeded as initialData here, so tab switches
- * render instantly with no client-side fetch on first visit.
+ * All three tabs are server-prefetched + cached (`unstable_cache`, ~1h) and
+ * seeded as initialData here, so tab switches render instantly with no
+ * client-side fetch on first visit.
  */
 export function DefaultSkillsList({
   initialPage,
