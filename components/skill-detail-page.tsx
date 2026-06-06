@@ -1,6 +1,6 @@
 import "server-only";
 import { notFound } from "next/navigation";
-import { Suspense, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -54,7 +54,7 @@ async function loadTimeAgo(timestamp: number) {
   return timeAgo(timestamp);
 }
 
-type SkillDetailContentProps = {
+type SkillDetailPageProps = {
   source: string;
   skillId: string;
   installCommand: string;
@@ -66,23 +66,16 @@ type SkillDetailContentProps = {
 };
 
 /**
- * Static page shell. Everything here is param-independent, so Cache Components
- * prerenders it at build and serves it instantly for ANY skill URL — generated
- * or not, link-click or hard refresh. The param-dependent content (passed as
- * `children`) is read inside this Suspense boundary, so it streams in behind
- * the skeleton instead of blocking the initial response. After the first
- * render, `generateStaticParams` + ISR saves the resolved page, so repeat
- * visits get the finished HTML with no skeleton.
+ * Skill detail page. The body is rendered inline (no in-page Suspense) so the
+ * whole page is a single unit: with `generateStaticParams` + Cache Components,
+ * Next renders it on the first request and SAVES it, so repeat visits get the
+ * finished HTML with no skeleton and no Convex read. The first-visit skeleton
+ * comes from the route-level `loading.tsx` (see `SkillDetailPageLoading`) — we
+ * deliberately do NOT wrap the body in `<Suspense>`, because that would flip
+ * the route into "static shell + stream the body on every request" mode, which
+ * shows the skeleton on every visit.
  */
-export function SkillDetailShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
-      <Suspense fallback={<SkillDetailContentSkeleton />}>{children}</Suspense>
-    </div>
-  );
-}
-
-export async function SkillDetailContent({
+export function SkillDetailPage({
   source,
   skillId,
   installCommand,
@@ -90,7 +83,35 @@ export async function SkillDetailContent({
   externalIcon,
   externalLabel,
   breadcrumb,
-}: SkillDetailContentProps) {
+}: SkillDetailPageProps) {
+  return (
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      {breadcrumb}
+
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
+        {skillId}
+      </h1>
+
+      <SkillDetailBody
+        source={source}
+        skillId={skillId}
+        installCommand={installCommand}
+        externalUrl={externalUrl}
+        externalIcon={externalIcon}
+        externalLabel={externalLabel}
+      />
+    </div>
+  );
+}
+
+async function SkillDetailBody({
+  source,
+  skillId,
+  installCommand,
+  externalUrl,
+  externalIcon,
+  externalLabel,
+}: Omit<SkillDetailPageProps, "breadcrumb">) {
   const [skill, audits] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
@@ -110,12 +131,6 @@ export async function SkillDetailContent({
 
   return (
     <>
-      {breadcrumb}
-
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
-        {skillId}
-      </h1>
-
       {skill.isDelisted && (
         <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
           This skill is no longer listed on skills.sh
@@ -198,13 +213,13 @@ export async function SkillDetailContent({
   );
 }
 
-// Fallback for the Suspense boundary in `SkillDetailShell`. Stands in for the
-// full param-dependent content — breadcrumb, title, and body — since all of it
-// now resolves inside the boundary. This is what shows instantly on a first
-// (uncached) visit while the page renders; once saved, repeat visits skip it.
-function SkillDetailContentSkeleton() {
+// Route-level fallback, rendered by each route's `loading.tsx`. The router
+// shows this instantly on navigation while the page is generated (and saved)
+// on its first visit. It includes the page chrome (container, breadcrumb,
+// title) since it stands in for the whole page before any of it has rendered.
+export function SkillDetailPageLoading() {
   return (
-    <>
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
@@ -249,6 +264,6 @@ function SkillDetailContentSkeleton() {
           </div>
         </div>
       </LabeledSection>
-    </>
+    </div>
   );
 }
