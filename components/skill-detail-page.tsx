@@ -56,12 +56,12 @@ async function loadTimeAgo(timestamp: number) {
   return timeAgo(timestamp);
 }
 
-// The full skill page content, cached per (source, skillId) with `use cache`,
-// so it's part of the prefetchable static shell for instant navigations. It's
-// rendered inside the route's `<Suspense>` (params read via `.then()`), so a
-// cold skill shows the skeleton fallback while it renders, while a warm one
-// appears instantly from the prefetched cache. Reuses loadSkill/loadAudits so
-// `generateMetadata` shares the same data-cache entries.
+// Plain async component, rendered inline by the page — NOT `use cache`. Only the
+// data functions above are cached. With `generateStaticParams` present this is
+// the Cache Components "full page caching" pattern: the whole route is a single
+// prerender, so an on-demand skill renders once and is saved to the durable
+// route cache for subsequent requests — rather than being a per-request `use
+// cache` hole (which is ephemeral on serverless and re-queried every request).
 export async function CachedSkillDetail({
   source,
   skillId,
@@ -71,9 +71,6 @@ export async function CachedSkillDetail({
   skillId: string;
   variant: "github" | "site";
 }) {
-  "use cache";
-  cacheLife("days");
-
   const [skill, audits] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),

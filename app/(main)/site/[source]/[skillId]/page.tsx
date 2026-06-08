@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import {
-  loadSkill,
-  CachedSkillDetail,
-  SkillDetailContentSkeleton,
-} from "@/components/skill-detail-page";
+import { loadSkill, CachedSkillDetail } from "@/components/skill-detail-page";
 
 type Params = Promise<{ source: string; skillId: string }>;
 
-// Instant navigation (Cache Components) — same pattern as the GitHub skill
-// route. See that file for the `prefetch: "runtime"` rationale.
-export const unstable_instant = {
-  prefetch: "runtime",
-  samples: [{ params: { source: "open.feishu.cn", skillId: "lark-approval" } }],
-};
+// Full-page caching — same shape as the GitHub skill route. The page is a
+// prerender: an on-demand skill renders once and is saved to the durable route
+// cache, then served from cache on repeat visits (no per-request Convex). Only
+// the data functions in CachedSkillDetail are `use cache`; the UI renders inline
+// so the rendered HTML is part of the saved page, not an ephemeral runtime hole.
+//
+// cacheComponents requires at least one entry here for build-time validation; we
+// prebuild a single known skill and the rest generate on first request.
+export async function generateStaticParams() {
+  return [{ source: "open.feishu.cn", skillId: "lark-approval" }];
+}
 
 export async function generateMetadata({
   params,
@@ -38,14 +38,12 @@ export async function generateMetadata({
   };
 }
 
-export default function WellKnownSkillPage({ params }: { params: Params }) {
+export default async function WellKnownSkillPage({ params }: { params: Params }) {
+  const { source, skillId } = await params;
+
   return (
     <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
-      <Suspense fallback={<SkillDetailContentSkeleton />}>
-        {params.then(({ source, skillId }) => (
-          <CachedSkillDetail source={source} skillId={skillId} variant="site" />
-        ))}
-      </Suspense>
+      <CachedSkillDetail source={source} skillId={skillId} variant="site" />
     </div>
   );
 }
