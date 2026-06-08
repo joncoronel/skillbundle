@@ -6,7 +6,6 @@ import { GeistPixelCircle } from "geist/font/pixel";
 
 import { Providers } from "./providers";
 import "./globals.css";
-import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "SkillBundle",
@@ -21,15 +20,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <Suspense>
-        <body
-          className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
-        >
-          <div className="root">
-            <Providers>{children}</Providers>
-          </div>
-        </body>
-      </Suspense>
+      <body
+        className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
+      >
+        <div className="root">
+          <Providers>{children}</Providers>
+        </div>
+      </body>
     </html>
   );
 }

@@ -1,25 +1,13 @@
-import { Suspense } from "react";
 import { preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { getAuth, getAuthToken } from "@/lib/auth";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { BundleView } from "./bundle-view";
 
-export default function BundlePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ share?: string }>;
-}) {
-  return (
-    <Suspense fallback={<BundleViewSkeleton />}>
-      <BundleLoader params={params} searchParams={searchParams} />
-    </Suspense>
-  );
-}
-
-async function BundleLoader({
+// No page-level <Suspense> here: the whole page is async data loading, so the
+// route's `loading.tsx` is the single loading boundary (shown while this awaits
+// during navigation). A page-level Suspense with the same skeleton would be
+// redundant with loading.tsx.
+export default async function BundlePage({
   params,
   searchParams,
 }: {
@@ -27,7 +15,7 @@ async function BundleLoader({
   searchParams: Promise<{ share?: string }>;
 }) {
   // Read the route param, share token, and auth (cookies) in parallel, then
-  // preload the bundle and plan below with the user's token.
+  // preload the bundle and plan with the user's token.
   const [{ id }, { share }, auth, token] = await Promise.all([
     params,
     searchParams,
@@ -58,37 +46,5 @@ async function BundleLoader({
       shareToken={share}
       isAuthenticated={isAuthenticated}
     />
-  );
-}
-
-function BundleViewSkeleton() {
-  return (
-    <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
-      <div className="space-y-12">
-        <div>
-          <Skeleton className="h-3 w-36 rounded" />
-          <Skeleton className="mt-3 h-12 w-2/3 rounded md:h-14" />
-          <Skeleton className="mt-4 h-3 w-80 rounded" />
-        </div>
-
-        <section>
-          <div className="mb-5">
-            <Skeleton className="h-7 w-48 rounded" />
-          </div>
-          <Skeleton className="h-28 w-full rounded-lg" />
-        </section>
-
-        <section>
-          <div className="mb-5">
-            <Skeleton className="h-7 w-44 rounded" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-2xl" />
-            ))}
-          </div>
-        </section>
-      </div>
-    </main>
   );
 }

@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { HomeContent } from "./home-content";
 
-// The home page renders client-interactive search UI (which reads
-// `searchParams`), so the route is rendered dynamically. To avoid hitting
-// Convex on every request, the initial leaderboards are cached with
-// `unstable_cache` (1h) — the data layer is cached even though the page isn't
-// statically generated.
-export const revalidate = 3600; // 1 hour
+// Rendered dynamically via `connection()` (in the component below) so the
+// client search UI's params resolve on the server — the full page ships in the
+// initial HTML, with no client-side Suspense flash. The initial leaderboards
+// are still cached with `unstable_cache` (1h), so per-request renders don't hit
+// Convex.
 
 const HOME_TITLE = "SkillBundle — Build your AI skill bundle";
 const HOME_DESCRIPTION =
@@ -50,6 +50,8 @@ const getInitialHot = unstable_cache(
 );
 
 export default async function Home() {
+  await connection();
+
   // Fire all three in parallel — they're independent.
   const [initialPopularSkills, initialTrending, initialHot] = await Promise.all(
     [getInitialPopularSkills(), getInitialTrending(), getInitialHot()],
