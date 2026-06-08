@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -12,7 +11,6 @@ import {
   SkillStatusBadge,
 } from "@/components/skill-status-badge";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -38,6 +36,15 @@ async function loadRepo(source: string) {
   const totalInstalls = visible.reduce((sum, s) => sum + s.installs, 0);
 
   return { skills: visible, totalInstalls };
+}
+
+// Full-page caching pattern (same as the skill routes): the list renders inline,
+// not inside a <Suspense> hole, so the whole page is one prerender saved to the
+// durable route cache on demand. `generateStaticParams` needs ≥1 entry for
+// build-time validation; the rest generate on first request. `loading.tsx`
+// covers the cold/direct-load skeleton.
+export async function generateStaticParams() {
+  return [{ org: "vercel-labs", repo: "skills" }];
 }
 
 export async function generateMetadata({
@@ -68,6 +75,11 @@ export async function generateMetadata({
 export default async function RepoPage({ params }: { params: Params }) {
   const { org, repo } = await params;
   const source = `${org}/${repo}`;
+  const { skills, totalInstalls } = await loadRepo(source);
+
+  if (skills.length === 0) {
+    notFound();
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
@@ -105,22 +117,6 @@ export default async function RepoPage({ params }: { params: Params }) {
         <span>{repo}</span>
       </h1>
 
-      <Suspense fallback={<RepoListSkeleton />}>
-        <RepoListContent source={source} />
-      </Suspense>
-    </div>
-  );
-}
-
-async function RepoListContent({ source }: { source: string }) {
-  const { skills, totalInstalls } = await loadRepo(source);
-
-  if (skills.length === 0) {
-    notFound();
-  }
-
-  return (
-    <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
         <div className="flex items-center gap-3 text-sm font-mono tabular-nums text-muted-foreground">
           <span>
@@ -179,9 +175,9 @@ async function RepoListContent({ source }: { source: string }) {
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                {/* Prefetch is left on: the skill route is an instant-navigation
-                    route, so prefetching fetches only the cheap static shell
-                    (skeleton), not the heavy markdown/Shiki render. */}
+                {/* prefetch={true} forces a full prefetch (page + data), so the
+                    skill is cached before the click — instant, no skeleton, and
+                    repeat prefetches don't re-hit Convex. */}
                 <Link
                   href={skillHref(skill.source, skill.skillId)}
                   className="text-sm font-semibold hover:underline min-w-0 truncate"
@@ -205,57 +201,6 @@ async function RepoListContent({ source }: { source: string }) {
           );
         })}
       </div>
-    </>
-  );
-}
-
-function RepoListSkeleton() {
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
-        <div className="flex items-center gap-3 text-sm">
-          <Skeleton className="h-4 w-20" />
-          <span aria-hidden="true" className="text-muted-foreground">
-            ·
-          </span>
-          <Skeleton className="h-4 w-24" />
-        </div>
-        <div className="ml-auto">
-          <Skeleton className="h-8 w-32 rounded-lg" />
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-        <span>Skill</span>
-        <span>Installs</span>
-      </div>
-
-      <div className="grid">
-        {Array.from({ length: 6 }).map((_, i) => {
-          const isFirst = i === 0;
-          const isLast = i === 5;
-          return (
-            <div
-              key={i}
-              className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3",
-                isFirst
-                  ? "rounded-b-none"
-                  : isLast
-                    ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0",
-              )}
-            >
-              <div className="flex items-center gap-3 px-4">
-                <Skeleton className="h-4 w-40" />
-                <div className="ml-auto shrink-0">
-                  <Skeleton className="h-3 w-12" />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
+    </div>
   );
 }

@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import { fetchQuery } from "convex/nextjs";
 import { cacheLife } from "next/cache";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -25,6 +23,15 @@ async function loadOrg(org: string) {
   "use cache";
   cacheLife("days");
   return fetchQuery(api.skills.listRepoAggregatesByOrg, { org });
+}
+
+// Full-page caching pattern (same as the skill routes): the list renders inline,
+// not inside a <Suspense> hole, so the whole page is one prerender that's saved
+// to the durable route cache on demand. `generateStaticParams` needs ≥1 entry
+// for build-time validation; the rest generate on first request. `loading.tsx`
+// covers the cold/direct-load skeleton.
+export async function generateStaticParams() {
+  return [{ org: "vercel-labs" }];
 }
 
 export async function generateMetadata({
@@ -57,6 +64,11 @@ export async function generateMetadata({
 
 export default async function OrgPage({ params }: { params: Params }) {
   const { org } = await params;
+  const { repos, totalSkillCount, totalInstalls } = await loadOrg(org);
+
+  if (repos.length === 0) {
+    notFound();
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
@@ -82,22 +94,6 @@ export default async function OrgPage({ params }: { params: Params }) {
         {org}
       </h1>
 
-      <Suspense fallback={<OrgListSkeleton />}>
-        <OrgListContent org={org} />
-      </Suspense>
-    </div>
-  );
-}
-
-async function OrgListContent({ org }: { org: string }) {
-  const { repos, totalSkillCount, totalInstalls } = await loadOrg(org);
-
-  if (repos.length === 0) {
-    notFound();
-  }
-
-  return (
-    <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
         <div className="flex items-center gap-3 text-sm font-mono tabular-nums text-muted-foreground">
           <span>
@@ -164,6 +160,7 @@ async function OrgListContent({ org }: { org: string }) {
                   <Link
                     href={`/${repo.source}`}
                     className="text-sm font-semibold hover:underline"
+                    prefetch={true}
                   >
                     {repo.repo}
                   </Link>
@@ -179,64 +176,6 @@ async function OrgListContent({ org }: { org: string }) {
           );
         })}
       </div>
-    </>
-  );
-}
-
-function OrgListSkeleton() {
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
-        <div className="flex items-center gap-3 text-sm">
-          <Skeleton className="h-4 w-28" />
-          <span aria-hidden="true" className="text-muted-foreground">
-            ·
-          </span>
-          <Skeleton className="h-4 w-20" />
-          <span aria-hidden="true" className="text-muted-foreground">
-            ·
-          </span>
-          <Skeleton className="h-4 w-24" />
-        </div>
-        <div className="ml-auto">
-          <Skeleton className="h-8 w-32 rounded-lg" />
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-        <span>Source</span>
-        <span>Installs</span>
-      </div>
-
-      <div className="grid">
-        {Array.from({ length: 6 }).map((_, i) => {
-          const isFirst = i === 0;
-          const isLast = i === 5;
-          return (
-            <div
-              key={i}
-              className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3",
-                isFirst
-                  ? "rounded-b-none"
-                  : isLast
-                    ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0",
-              )}
-            >
-              <div className="flex items-center gap-3 px-4">
-                <div className="flex items-baseline gap-x-2 min-w-0">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-3 w-12" />
-                </div>
-                <div className="ml-auto shrink-0">
-                  <Skeleton className="h-3 w-12" />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
+    </div>
   );
 }
