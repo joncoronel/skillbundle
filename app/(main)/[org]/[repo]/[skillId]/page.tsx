@@ -22,35 +22,6 @@ export async function generateStaticParams() {
   return [{ org: "vercel-labs", repo: "skills", skillId: "find-skills" }];
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Params;
-}): Promise<Metadata> {
-  const { org, repo, skillId } = await params;
-  const source = `${org}/${repo}`;
-
-  const skill = await loadSkill(source, skillId);
-
-  if (!skill) {
-    return { title: "Skill Not Found | SkillBundle" };
-  }
-
-  const title = `${skill.name} | SkillBundle`;
-  const description =
-    skill.description ?? `${skill.name} — a skill from ${source}`;
-
-  return {
-    title,
-    description,
-    openGraph: {
-      title,
-      description,
-      type: "article",
-    },
-  };
-}
-
 export default async function SkillPage({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
 
