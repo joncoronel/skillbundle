@@ -21,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <Suspense>
+      <Suspense fallback={null}>
         <body
           className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
         >
