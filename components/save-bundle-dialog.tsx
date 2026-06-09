@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
@@ -51,7 +51,15 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   const [isPublic, setIsPublic] = useState(true);
   const [saving, setSaving] = useState(false);
   const { limits } = useUserPlan();
-  const bundleCount = useQuery(api.bundles.countByUser);
+  // Skip the query until authenticated. countByUser returns 0 for anonymous
+  // users, so subscribing while signed out is wasted work — and gating on auth
+  // also drops the redundant unauthenticated re-run during the Clerk → Convex
+  // token handoff. Mirrors useUserPlan and fork-bundle-button.
+  const { isAuthenticated } = useConvexAuth();
+  const bundleCount = useQuery(
+    api.bundles.countByUser,
+    isAuthenticated ? {} : "skip",
+  );
   const atLimit =
     limits !== null &&
     bundleCount !== undefined &&
