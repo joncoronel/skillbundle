@@ -1,11 +1,9 @@
-import { connection } from "next/server";
 import { ExploreContent } from "./explore-content";
 
 export default async function ExplorePage() {
   // Render dynamically so ExploreContent's search params (nuqs) resolve on the
   // server — the full page ships in the initial HTML instead of bailing to
   // client rendering behind a Suspense fallback (which flashes empty on load).
-  await connection();
 
   return (
     <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">

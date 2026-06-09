@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
+
 import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
@@ -50,8 +50,6 @@ const getInitialHot = unstable_cache(
 );
 
 export default async function Home() {
-  await connection();
-
   // Fire all three in parallel — they're independent.
   const [initialPopularSkills, initialTrending, initialHot] = await Promise.all(
     [getInitialPopularSkills(), getInitialTrending(), getInitialHot()],
