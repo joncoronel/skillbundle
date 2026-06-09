@@ -22,6 +22,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
+import { LinkPending } from "@/components/link-pending";
 
 type Params = Promise<{ source: string }>;
 
@@ -182,9 +183,10 @@ async function SourceListContent({ source }: { source: string }) {
               <div className="flex items-center gap-3 px-4">
                 <Link
                   href={`/site/${skill.source}/${skill.skillId}`}
-                  className="text-sm font-semibold hover:underline min-w-0 truncate"
+                  className="text-sm font-semibold hover:underline min-w-0 flex items-center gap-1.5"
                 >
-                  {skill.name}
+                  <span className="truncate">{skill.name}</span>
+                  <LinkPending />
                 </Link>
                 <div className="ml-auto shrink-0 flex items-center gap-1.5">
                   <SkillStatusBadge

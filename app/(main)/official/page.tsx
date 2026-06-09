@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { cn } from "@/lib/utils";
 import { ownerHref } from "@/lib/skill-urls";
+import { LinkPending } from "@/components/link-pending";
 
 export const metadata: Metadata = {
   title: "Official skills | SkillBundle",
@@ -101,7 +102,12 @@ async function OfficialContent() {
               )}
             >
               <div className="flex items-baseline gap-3 min-w-0">
-                <span className="text-sm font-semibold">{owner.owner}</span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-semibold truncate">
+                    {owner.owner}
+                  </span>
+                  <LinkPending />
+                </span>
                 <span className="ml-auto flex items-baseline gap-3 text-xs font-mono tabular-nums text-muted-foreground shrink-0">
                   <span>
                     {owner.repoCount} repo{owner.repoCount === 1 ? "" : "s"}

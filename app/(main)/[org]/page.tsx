@@ -18,6 +18,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
+import { LinkPending } from "@/components/link-pending";
 
 type Params = Promise<{ org: string }>;
 
@@ -174,9 +175,10 @@ async function OrgListContent({ org }: { org: string }) {
                 <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
                   <Link
                     href={`/${repo.source}`}
-                    className="text-sm font-semibold hover:underline"
+                    className="text-sm font-semibold hover:underline inline-flex items-center gap-1.5"
                   >
-                    {repo.repo}
+                    <span>{repo.repo}</span>
+                    <LinkPending />
                   </Link>
                   <span className="text-xs font-mono tabular-nums text-muted-foreground">
                     {repo.skillCount} skill{repo.skillCount === 1 ? "" : "s"}

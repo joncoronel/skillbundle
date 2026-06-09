@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
 import { skillHref } from "@/lib/skill-urls";
+import { LinkPending } from "@/components/link-pending";
 
 type Params = Promise<{ org: string; repo: string }>;
 
@@ -197,9 +198,10 @@ async function RepoListContent({ source }: { source: string }) {
                     navigation is instant and Convex isn't hit again. */}
                 <Link
                   href={skillHref(skill.source, skill.skillId)}
-                  className="text-sm font-semibold hover:underline min-w-0 truncate"
+                  className="text-sm font-semibold hover:underline min-w-0 flex items-center gap-1.5"
                 >
-                  {skill.name}
+                  <span className="truncate">{skill.name}</span>
+                  <LinkPending />
                 </Link>
                 <div className="ml-auto shrink-0 flex items-center gap-1.5">
                   <SkillStatusBadge
