@@ -8,6 +8,7 @@ import {
 import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { revalidateHomeTag } from "./lib/revalidate";
 
 // Number of discovery attempts before a skill is considered exhausted
 // and stops being retried automatically.
@@ -230,6 +231,13 @@ export const recalculateStats = internalAction({
     });
 
     console.log(`Recalculated sync stats: ${JSON.stringify(totals)}`);
+
+    // End of the daily sync pipeline — installs (the Popular ranking key) are
+    // now settled, so refresh the home page's cached first page of Popular.
+    // This keeps the cached page 1 aligned with the live Convex data that the
+    // client's infinite-scroll pagination reads, so the two don't diverge at
+    // the page boundary.
+    await revalidateHomeTag("home-popular");
   },
 });
 

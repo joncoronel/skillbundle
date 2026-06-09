@@ -22,6 +22,7 @@ import type * as leaderboards from "../leaderboards.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_github from "../lib/github.js";
 import type * as lib_plans from "../lib/plans.js";
+import type * as lib_revalidate from "../lib/revalidate.js";
 import type * as lib_skillsApi from "../lib/skillsApi.js";
 import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "lib/embeddings": typeof lib_embeddings;
   "lib/github": typeof lib_github;
   "lib/plans": typeof lib_plans;
+  "lib/revalidate": typeof lib_revalidate;
   "lib/skillsApi": typeof lib_skillsApi;
   plans: typeof plans;
   polar: typeof polar;

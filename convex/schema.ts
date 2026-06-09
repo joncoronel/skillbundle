@@ -63,8 +63,12 @@ export default defineSchema({
     // Trending leaderboard rank (1..N). Undefined when not on the trending
     // leaderboard. Refreshed by syncTrending cron.
     trendingRank: v.optional(v.number()),
-    // Hot view: current-hour installs minus same-hour-yesterday. Refreshed by
-    // syncHot. Used to render momentum chips on cards spiking in install rate.
+    // Hot view: rank (1..N) in the v1 "hot" leaderboard, which orders by
+    // current-hour install volume. Undefined when not on the hot view.
+    // Refreshed by syncHot. `hotChange` is the hour-over-hour install delta
+    // (can be negative) used for the momentum chip; `hotInstallsYesterday` is
+    // the same-hour-yesterday count. Not the ranking key — hotRank is.
+    hotRank: v.optional(v.number()),
     hotChange: v.optional(v.number()),
     hotInstallsYesterday: v.optional(v.number()),
     // Worst audit verdict across all providers, denormalized so the cards
@@ -164,7 +168,9 @@ export default defineSchema({
     // Mirrored from skills row. Powers the home page's Trending tab.
     trendingRank: v.optional(v.number()),
     // Mirrored from skills row. Powers the home page's Hot rail and the
-    // momentum chips on cards.
+    // momentum chips on cards. hotRank is the ranking key (v1 hot order, by
+    // current-hour install volume); hotChange/hotInstallsYesterday feed the chip.
+    hotRank: v.optional(v.number()),
     hotChange: v.optional(v.number()),
     hotInstallsYesterday: v.optional(v.number()),
     // Mirrored from skills row. Drives the audit pill on cards (one read,
@@ -201,18 +207,12 @@ export default defineSchema({
     // use `q.eq("isDelisted", false).gt("trendingRank", 0)` to skip the
     // ~75k undefined rows that come first in the index walk.
     .index("by_isDelisted_trendingRank", ["isDelisted", "trendingRank"])
-    // Hot rail: walk by hotChange descending. Same undefined-skip rule applies
-    // — queries MUST use `q.eq("isDelisted", false).gt("hotChange", 0)`.
-    .index("by_isDelisted_hotChange", ["isDelisted", "hotChange"])
-    // Companion index for the applyHot cleanup walk. A row that "spikes to
-    // flat" can end up with hotChange=0 but hotInstallsYesterday still set;
-    // the by_isDelisted_hotChange walk's `gt(0)` range would miss it, so the
-    // cleanup unions both indices to clear orphaned hotInstallsYesterday.
-    // Queries MUST use `q.eq("isDelisted", false).gt("hotInstallsYesterday", 0)`.
-    .index("by_isDelisted_hotInstallsYesterday", [
-      "isDelisted",
-      "hotInstallsYesterday",
-    ])
+    // Hot rail: walk by hotRank ascending, filtered to non-delisted. hotRank
+    // mirrors the v1 "hot" view's order (by current-hour install volume), so
+    // the rail matches skills.sh. Queries MUST use
+    // `q.eq("isDelisted", false).gt("hotRank", 0)` to skip the undefined
+    // majority that sorts first in Convex's index order.
+    .index("by_isDelisted_hotRank", ["isDelisted", "hotRank"])
     // Curated/official browsing — owner pages and the "Official only" filter.
     // Queries MUST use `q.gt("curatedOwner", "")` so the walk skips the
     // overwhelmingly-undefined rows at the start of the index.

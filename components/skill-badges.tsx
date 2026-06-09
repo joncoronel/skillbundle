@@ -1,5 +1,6 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  ArrowDown02Icon,
   ArrowUp02Icon,
   CheckmarkBadge02Icon,
 } from "@hugeicons/core-free-icons";
@@ -40,9 +41,11 @@ export function OfficialBadge({
 }
 
 /**
- * Momentum chip showing how much an install count moved hour-over-hour.
- * Only renders for positive deltas (we don't surface decay; it'd just be
- * negativity bait without the context of a long timeline).
+ * Momentum chip showing how much an install count moved hour-over-hour on the
+ * Hot rail. Green/up for a positive delta, red/down for a negative one — the
+ * v1 hot view ranks by current-hour install volume, so the hottest skills are
+ * frequently cooling vs the same hour yesterday. Renders nothing for a flat
+ * (zero) delta.
  */
 export function HotMomentumChip({
   change,
@@ -51,23 +54,28 @@ export function HotMomentumChip({
   change: number;
   className?: string;
 }) {
-  if (change <= 0) return null;
+  if (change === 0) return null;
+  const rising = change > 0;
+  const sign = rising ? "+" : "−";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
-        "bg-success/10 text-success-foreground border border-success/20",
+        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium tabular-nums",
+        rising
+          ? "bg-success/10 text-success-foreground border-success/20"
+          : "bg-destructive/10 text-destructive border-destructive/20",
         className,
       )}
-      title={`+${change.toLocaleString()} installs vs same hour yesterday`}
+      title={`${sign}${Math.abs(change).toLocaleString()} installs vs same hour yesterday`}
     >
       <HugeiconsIcon
-        icon={ArrowUp02Icon}
+        icon={rising ? ArrowUp02Icon : ArrowDown02Icon}
         strokeWidth={2}
         className="size-2.5"
         aria-hidden="true"
       />
-      +{formatInstalls(change)}
+      {sign}
+      {formatInstalls(Math.abs(change))}
     </span>
   );
 }

@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
-import { convexQuery } from "@convex-dev/react-query";
 import type { FunctionReturnType } from "convex/server";
 import { useQueryState } from "nuqs";
 import { api } from "@/convex/_generated/api";
@@ -77,7 +76,7 @@ export function DefaultSkillsList({
           <p className="text-xs text-muted-foreground mt-1">
             {tab === "popular" && "Sorted by all-time installs from "}
             {tab === "trending" && "Rising over the last few days on "}
-            {tab === "hot" && "Spiking in installs vs. the same hour yesterday on "}
+            {tab === "hot" && "Most installed in the last hour on "}
             <a
               href="https://skills.sh"
               target="_blank"
@@ -203,23 +202,13 @@ function TrendingList({
   initialData: TrendingPage;
   sheetHandle: SkillDetailHandle;
 }) {
-  // Seeded with initialData from the cached server fetch — useQuery skips the
-  // first fetch entirely. staleTime: Infinity prevents background refetches
-  // for the session; users get fresh data on next page load (cache is hourly).
-  const { data } = useQuery({
-    ...convexQuery(api.leaderboards.listTrending, {
-      paginationOpts: { numItems: 60, cursor: null },
-    }),
-    initialData,
-    staleTime: Infinity,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
+  // Rendered straight from the server-cached snapshot — no live Convex
+  // subscription. The cache is refreshed on-demand by the trending cron (see
+  // app/api/revalidate/route.ts), so this stays current without a
+  // stale-then-live swap on load.
   const skills = useMemo(
-    () => (data?.page ?? []).map(rowToSkill),
-    [data?.page],
+    () => (initialData?.page ?? []).map(rowToSkill),
+    [initialData],
   );
   if (skills.length === 0) {
     return <EmptyState message="No trending data yet — check back after the next sync." />;
@@ -238,19 +227,14 @@ function HotList({
   initialData: HotData;
   sheetHandle: SkillDetailHandle;
 }) {
-  const { data } = useQuery({
-    ...convexQuery(api.leaderboards.listHot, { limit: 30 }),
-    initialData,
-    staleTime: Infinity,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const skills = useMemo(() => (data ?? []).map(rowToSkill), [data]);
+  // Rendered straight from the server-cached snapshot — no live Convex
+  // subscription. The cache is refreshed on-demand by the 30-min hot cron (see
+  // app/api/revalidate/route.ts), so this stays current without the
+  // empty-then-populated flash on load.
+  const skills = useMemo(() => (initialData ?? []).map(rowToSkill), [initialData]);
   if (skills.length === 0) {
     return (
-      <EmptyState message="Nothing hot at the moment. Check back in 30 minutes." />
+      <EmptyState message="No hot skills right now — check back after the next sync." />
     );
   }
   return (

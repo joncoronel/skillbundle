@@ -1679,6 +1679,7 @@ export const delistSkillsBatch = internalMutation({
           // and causes drift if the row ever relists later via
           // upsertSkillsBatch's fast-path.
           trendingRank: undefined,
+          hotRank: undefined,
           hotChange: undefined,
           hotInstallsYesterday: undefined,
         });
@@ -1699,6 +1700,7 @@ export const delistSkillsBatch = internalMutation({
           needsEmbedding: false,
           // Mirror the leaderboard cleanup from skillSummaries above.
           trendingRank: undefined,
+          hotRank: undefined,
           hotChange: undefined,
           hotInstallsYesterday: undefined,
         });

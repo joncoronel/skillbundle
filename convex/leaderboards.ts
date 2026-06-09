@@ -23,6 +23,7 @@ import {
   listSkills as v1ListSkills,
   SkillsApiRateLimitError,
 } from "./lib/skillsApi";
+import { revalidateHomeTag } from "./lib/revalidate";
 
 const TRENDING_LIMIT = 200; // top N to track
 const HOT_LIMIT = 50;
@@ -61,6 +62,7 @@ export const syncTrending = internalAction({
     }));
 
     await ctx.runMutation(internal.leaderboards.applyTrending, { ranked });
+    await revalidateHomeTag("home-trending");
   },
 });
 
@@ -152,14 +154,21 @@ export const syncHot = internalAction({
       return;
     }
 
-    const ranked = response.data.map((s) => ({
+    // Preserve the API's order as hotRank (1..N). The v1 "hot" view ranks by
+    // current-hour install volume, NOT by `change` — `change` is the
+    // hour-over-hour delta and is frequently negative even for the hottest
+    // skills. We mirror the API's ranking (like trending) so our Hot tab
+    // matches skills.sh; `change` is kept only to drive the momentum chip.
+    const ranked = response.data.map((s, i) => ({
       source: s.source,
       skillId: s.slug,
+      hotRank: i + 1,
       hotChange: s.change ?? 0,
       hotInstallsYesterday: s.installsYesterday ?? 0,
     }));
 
     await ctx.runMutation(internal.leaderboards.applyHot, { ranked });
+    await revalidateHomeTag("home-hot");
   },
 });
 
@@ -169,6 +178,7 @@ export const applyHot = internalMutation({
       v.object({
         source: v.string(),
         skillId: v.string(),
+        hotRank: v.number(),
         hotChange: v.number(),
         hotInstallsYesterday: v.number(),
       }),
@@ -192,68 +202,134 @@ export const applyHot = internalMutation({
       if (!summary) continue;
 
       if (
+        summary.hotRank !== entry.hotRank ||
         summary.hotChange !== entry.hotChange ||
         summary.hotInstallsYesterday !== entry.hotInstallsYesterday
       ) {
-        await ctx.db.patch(summary._id, {
+        const fields = {
+          hotRank: entry.hotRank,
           hotChange: entry.hotChange,
           hotInstallsYesterday: entry.hotInstallsYesterday,
-        });
-        await ctx.db.patch(summary.skillDocId, {
-          hotChange: entry.hotChange,
-          hotInstallsYesterday: entry.hotInstallsYesterday,
-        });
+        };
+        await ctx.db.patch(summary._id, fields);
+        await ctx.db.patch(summary.skillDocId, fields);
         stamped++;
       }
     }
 
-    // Clear hot fields from rows that fell off. Walk BOTH the hotChange and
-    // hotInstallsYesterday indices and union the IDs — a row that "spiked to
-    // flat" can have hotChange=0 (or even negative) while hotInstallsYesterday
-    // is still > 0, so the hotChange walk's `gt(0)` would miss it and leave
-    // hotInstallsYesterday set forever. Walking both indices catches that
-    // orphan case. Each index walk skips its respective undefined range,
-    // keeping the totals bounded (at most a few hundred rows after dedup).
-    const [previouslyHotByChange, previouslyHotByInstalls] = await Promise.all(
-      [
-        ctx.db
-          .query("skillSummaries")
-          .withIndex("by_isDelisted_hotChange", (q) =>
-            q.eq("isDelisted", false).gt("hotChange", 0),
-          )
-          .collect(),
-        ctx.db
-          .query("skillSummaries")
-          .withIndex("by_isDelisted_hotInstallsYesterday", (q) =>
-            q.eq("isDelisted", false).gt("hotInstallsYesterday", 0),
-          )
-          .collect(),
-      ],
-    );
+    // Clear hot fields from rows that fell off the leaderboard. hotRank is set
+    // on exactly the rows currently in the hot view, so a single walk of the
+    // rank index (gt(0) to skip the undefined majority) finds them all — no
+    // need to union multiple indices.
+    const previouslyHot = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_hotRank", (q) =>
+        q.eq("isDelisted", false).gt("hotRank", 0),
+      )
+      .collect();
 
-    const previouslyHot = new Map<
-      string,
-      (typeof previouslyHotByChange)[number]
-    >();
-    for (const s of previouslyHotByChange) previouslyHot.set(s._id, s);
-    for (const s of previouslyHotByInstalls) previouslyHot.set(s._id, s);
-
-    for (const summary of previouslyHot.values()) {
+    for (const summary of previouslyHot) {
       const key = `${summary.source}|${summary.skillId}`;
       if (!seen.has(key)) {
-        await ctx.db.patch(summary._id, {
+        const clearedFields = {
+          hotRank: undefined,
           hotChange: undefined,
           hotInstallsYesterday: undefined,
-        });
-        await ctx.db.patch(summary.skillDocId, {
-          hotChange: undefined,
-          hotInstallsYesterday: undefined,
-        });
+        };
+        await ctx.db.patch(summary._id, clearedFields);
+        await ctx.db.patch(summary.skillDocId, clearedFields);
         cleared++;
       }
     }
 
     console.log(`syncHot: stamped ${stamped}, cleared ${cleared}`);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// One-time migration (safe to delete once run in production)
+// ---------------------------------------------------------------------------
+
+/**
+ * One-time hygiene scan that clears hot fields from any row that shouldn't
+ * carry them. Two classes:
+ *  - Pre-migration orphans: had hotChange/hotInstallsYesterday set before
+ *    hotRank existed, so they have no rank and the new applyHot cleanup (which
+ *    walks by_isDelisted_hotRank) can't find them.
+ *  - Delisted-but-hot: rows delisted while hot before the delist path learned
+ *    to clear hotRank — invisible while delisted, but a stale rank could
+ *    briefly surface if they relist.
+ * A row legitimately keeps hot fields only while it's a live member of the hot
+ * view (non-delisted + ranked); everything else is cleared. Full table scan
+ * (hot fields aren't broadly indexed); one-time. Run once:
+ *   npx convex run leaderboards:clearStaleHotFields --prod
+ */
+export const clearStaleHotFields = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | null = null;
+    let isDone = false;
+    let cleared = 0;
+    let scanned = 0;
+
+    while (!isDone) {
+      const res: {
+        cursor: string;
+        isDone: boolean;
+        cleared: number;
+        scanned: number;
+      } = await ctx.runMutation(
+        internal.leaderboards.clearStaleHotFieldsBatch,
+        { cursor },
+      );
+      cursor = res.cursor;
+      isDone = res.isDone;
+      cleared += res.cleared;
+      scanned += res.scanned;
+    }
+
+    console.log(
+      `clearStaleHotFields: cleared ${cleared} orphan rows (scanned ${scanned})`,
+    );
+  },
+});
+
+export const clearStaleHotFieldsBatch = internalMutation({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("skillSummaries")
+      .paginate({ numItems: 500, cursor });
+
+    let cleared = 0;
+    for (const s of page.page) {
+      const hasHotFields =
+        s.hotRank !== undefined ||
+        s.hotChange !== undefined ||
+        s.hotInstallsYesterday !== undefined;
+      // A row should carry hot fields only while it's a live member of the hot
+      // view: non-delisted with a rank. Clear everything else — pre-migration
+      // orphans (fields, no rank) and delisted-but-hot rows (rank that outlived
+      // a delist).
+      const isCurrentlyHot = s.isDelisted === false && s.hotRank !== undefined;
+      if (hasHotFields && !isCurrentlyHot) {
+        const clearedFields = {
+          hotRank: undefined,
+          hotChange: undefined,
+          hotInstallsYesterday: undefined,
+        };
+        await ctx.db.patch(s._id, clearedFields);
+        await ctx.db.patch(s.skillDocId, clearedFields);
+        cleared++;
+      }
+    }
+
+    return {
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+      cleared,
+      scanned: page.page.length,
+    };
   },
 });
 
@@ -287,22 +363,24 @@ export const listTrending = query({
 });
 
 /**
- * Hot rail: top ~10 most-spiking skills by hour-over-hour install delta.
- * Small enough to return in one shot.
+ * Hot rail: top N skills in the v1 "hot" view, which ranks by current-hour
+ * install volume (mirrored into hotRank). NOT filtered by `change` — the
+ * hottest skills frequently have a negative hour-over-hour delta, so a
+ * positive-only filter would (and did) leave the rail empty. Small enough to
+ * return in one shot.
  */
 export const listHot = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
-    // Walk the dedicated by_isDelisted_hotChange index with a positive-only
-    // range so we skip every row where hotChange is undefined. After the
-    // range, we have at most ~50 rows (HOT_LIMIT), so the in-memory sort is
-    // cheap. Order desc inside the index walk so the slice is the top N.
+    // Walk by hotRank ascending; gt("hotRank", 0) skips the undefined majority
+    // that sorts first in Convex's index order. The index holds at most
+    // HOT_LIMIT ranked rows, so this is cheap.
     const rows = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted_hotChange", (q) =>
-        q.eq("isDelisted", false).gt("hotChange", 0),
+      .withIndex("by_isDelisted_hotRank", (q) =>
+        q.eq("isDelisted", false).gt("hotRank", 0),
       )
-      .order("desc")
+      .order("asc")
       .take(limit ?? 10);
 
     return rows.filter((s) => !s.isDuplicate);

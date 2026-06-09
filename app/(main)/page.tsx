@@ -5,11 +5,14 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { HomeContent } from "./home-content";
 
-// Rendered dynamically via `connection()` (in the component below) so the
-// client search UI's params resolve on the server — the full page ships in the
-// initial HTML, with no client-side Suspense flash. The initial leaderboards
-// are still cached with `unstable_cache` (1h), so per-request renders don't hit
-// Convex.
+// The page is static: the hero prerenders and the client search UI (nuqs)
+// renders behind the root-layout Suspense, so the route stays prefetchable.
+// The three leaderboards are cached with `unstable_cache` and tagged; the
+// Convex leaderboard crons revalidate those tags on each sync (see
+// app/api/revalidate/route.ts), so the snapshots stay fresh without a
+// per-request Convex hit — and the tabs render straight from this data with no
+// live subscription, so there's no stale-then-live flash on the client. The
+// `revalidate` windows are a safety net for a missed cron ping.
 
 const HOME_TITLE = "SkillBundle — Build your AI skill bundle";
 const HOME_DESCRIPTION =
@@ -31,7 +34,7 @@ const getInitialPopularSkills = unstable_cache(
       paginationOpts: { numItems: 30, cursor: null },
     }),
   ["home-popular-skills"],
-  { revalidate: 3600 },
+  { tags: ["home-popular"], revalidate: 86400 },
 );
 
 const getInitialTrending = unstable_cache(
@@ -40,13 +43,13 @@ const getInitialTrending = unstable_cache(
       paginationOpts: { numItems: 60, cursor: null },
     }),
   ["home-trending"],
-  { revalidate: 3600 },
+  { tags: ["home-trending"], revalidate: 3600 },
 );
 
 const getInitialHot = unstable_cache(
   () => fetchQuery(api.leaderboards.listHot, { limit: 30 }),
   ["home-hot"],
-  { revalidate: 3600 },
+  { tags: ["home-hot"], revalidate: 3600 },
 );
 
 export default async function Home() {

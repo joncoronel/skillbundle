@@ -128,7 +128,7 @@ function SkillMeta({
           updatedSinceAdded: skill.updatedSinceAdded,
         })}
       />
-      {showHotChip && skill.hotChange !== undefined && skill.hotChange > 0 && (
+      {showHotChip && skill.hotChange !== undefined && skill.hotChange !== 0 && (
         <HotMomentumChip change={skill.hotChange} />
       )}
       <span className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground">
