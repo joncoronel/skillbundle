@@ -6,7 +6,11 @@ import { useConvex } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useQueryState } from "nuqs";
 import { api } from "@/convex/_generated/api";
-import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
+import {
+  SelectableSkillRow,
+  type SkillData,
+  type LeaderboardMetric,
+} from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 import {
@@ -214,7 +218,7 @@ function TrendingList({
     return <EmptyState message="No trending data yet — check back after the next sync." />;
   }
   return (
-    <SkillRowGrid skills={skills} sheetHandle={sheetHandle} showTrendingInstalls />
+    <SkillRowGrid skills={skills} sheetHandle={sheetHandle} metric="trending" />
   );
 }
 
@@ -240,7 +244,7 @@ function HotList({
     );
   }
   return (
-    <SkillRowGrid skills={skills} sheetHandle={sheetHandle} showHotChip />
+    <SkillRowGrid skills={skills} sheetHandle={sheetHandle} metric="hot" />
   );
 }
 
@@ -251,13 +255,11 @@ function HotList({
 function SkillRowGrid({
   skills,
   sheetHandle,
-  showHotChip,
-  showTrendingInstalls,
+  metric,
 }: {
   skills: SkillData[];
   sheetHandle: SkillDetailHandle;
-  showHotChip?: boolean;
-  showTrendingInstalls?: boolean;
+  metric?: LeaderboardMetric;
 }) {
   return (
     <div className="grid">
@@ -270,8 +272,7 @@ function SkillRowGrid({
             key={`${skill.source}/${skill.skillId}`}
             skill={skill}
             sheetHandle={sheetHandle}
-            showHotChip={showHotChip}
-            showTrendingInstalls={showTrendingInstalls}
+            metric={metric}
             className={
               isSolo
                 ? undefined

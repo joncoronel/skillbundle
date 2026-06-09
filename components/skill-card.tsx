@@ -117,32 +117,49 @@ function SkillName({
   );
 }
 
+/**
+ * Which leaderboard rail a row belongs to, when it isn't the default lifetime
+ * view. Each rail shows the windowed install count its list is ranked by (in
+ * place of lifetime installs) so the ordering is legible; "hot" also shows the
+ * momentum chip. One discriminated value rather than a boolean per rail, so the
+ * modes stay mutually exclusive.
+ */
+export type LeaderboardMetric = "hot" | "trending";
+
+const METRIC_DISPLAY: Record<
+  LeaderboardMetric,
+  {
+    value: (skill: SkillData) => number | undefined;
+    title: string;
+    suffix: string;
+  }
+> = {
+  hot: {
+    value: (skill) => skill.hot1hInstalls,
+    title: "Installs in the last hour",
+    suffix: " in last hr",
+  },
+  trending: {
+    value: (skill) => skill.trendingInstalls,
+    title: "Installs in the last 24 hours",
+    suffix: " in last 24h",
+  },
+};
+
 function SkillMeta({
   skill,
   showLabel,
-  showHotChip,
-  showTrendingInstalls,
+  metric,
 }: {
   skill: SkillData;
   showLabel?: boolean;
-  showHotChip?: boolean;
-  showTrendingInstalls?: boolean;
+  metric?: LeaderboardMetric;
 }) {
-  // Hot rail shows the current-hour install volume; Trending shows the ~24h
-  // volume — each the metric its list is ranked by, in place of lifetime
-  // installs, so the ordering is legible.
-  const hourly = showHotChip && skill.hot1hInstalls !== undefined;
-  const daily = showTrendingInstalls && skill.trendingInstalls !== undefined;
-  const installCount = hourly
-    ? skill.hot1hInstalls!
-    : daily
-      ? skill.trendingInstalls!
-      : skill.installs;
-  const windowTitle = hourly
-    ? "Installs in the last hour"
-    : daily
-      ? "Installs in the last 24 hours"
-      : undefined;
+  // For a leaderboard rail, show the windowed install count it's ranked by in
+  // place of lifetime installs, so the ordering is legible.
+  const display = metric ? METRIC_DISPLAY[metric] : undefined;
+  const windowed = display?.value(skill);
+  const installCount = windowed ?? skill.installs;
   return (
     <div className="flex items-center gap-1.5">
       <SkillStatusBadge
@@ -152,12 +169,12 @@ function SkillMeta({
           updatedSinceAdded: skill.updatedSinceAdded,
         })}
       />
-      {showHotChip && skill.hotChange !== undefined && skill.hotChange !== 0 && (
+      {metric === "hot" && skill.hotChange !== undefined && skill.hotChange !== 0 && (
         <HotMomentumChip change={skill.hotChange} />
       )}
       <span
         className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground"
-        title={windowTitle}
+        title={windowed !== undefined ? display?.title : undefined}
       >
         <HugeiconsIcon
           icon={Download04Icon}
@@ -165,7 +182,7 @@ function SkillMeta({
           className="size-4"
         />
         {formatInstalls(installCount)}
-        {showLabel && (hourly ? " in last hr" : daily ? " in last 24h" : " installs")}
+        {showLabel && (windowed !== undefined ? display?.suffix : " installs")}
       </span>
     </div>
   );
@@ -239,12 +256,10 @@ interface SkillViewProps {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   className?: string;
-  /** Show the hour-over-hour hot momentum chip next to install count.
-   *  Off by default — only the home page's Hot tab opts in. */
-  showHotChip?: boolean;
-  /** Show the ~24h trending-window install count in place of lifetime
-   *  installs. Off by default — only the home page's Trending tab opts in. */
-  showTrendingInstalls?: boolean;
+  /** Which leaderboard rail this row belongs to (default: lifetime view).
+   *  "hot" adds the momentum chip and shows hourly installs; "trending" shows
+   *  ~24h installs. Only the home page's Hot/Trending tabs set it. */
+  metric?: LeaderboardMetric;
   /** When set, the card renders edit controls (remove + optional reorder)
    *  in place of the install-count meta. Owner-only on the bundle detail
    *  page's edit mode. */
@@ -345,15 +360,13 @@ const SkillRowContent = memo(function SkillRowContent({
   sheetHandle,
   selectable,
   checkboxId,
-  showHotChip,
-  showTrendingInstalls,
+  metric,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   selectable?: boolean;
   checkboxId?: string;
-  showHotChip?: boolean;
-  showTrendingInstalls?: boolean;
+  metric?: LeaderboardMetric;
 }) {
   return (
     <div className="flex items-center gap-3 px-4">
@@ -370,11 +383,7 @@ const SkillRowContent = memo(function SkillRowContent({
         <span className="text-sm text-muted-foreground">{skill.source}</span>
       </div>
       <div className="ml-auto shrink-0">
-        <SkillMeta
-          skill={skill}
-          showHotChip={showHotChip}
-          showTrendingInstalls={showTrendingInstalls}
-        />
+        <SkillMeta skill={skill} metric={metric} />
       </div>
     </div>
   );
@@ -383,14 +392,10 @@ const SkillRowContent = memo(function SkillRowContent({
 export const SkillRowView = memo(function SkillRowView({
   skill,
   sheetHandle,
-  showHotChip,
+  metric,
 }: SkillViewProps) {
   return (
-    <SkillRowContent
-      skill={skill}
-      sheetHandle={sheetHandle}
-      showHotChip={showHotChip}
-    />
+    <SkillRowContent skill={skill} sheetHandle={sheetHandle} metric={metric} />
   );
 });
 
@@ -398,8 +403,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
   skill,
   sheetHandle,
   className,
-  showHotChip,
-  showTrendingInstalls,
+  metric,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
@@ -415,8 +419,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
       <SkillRowContent
         skill={skill}
         sheetHandle={sheetHandle}
-        showHotChip={showHotChip}
-        showTrendingInstalls={showTrendingInstalls}
+        metric={metric}
         selectable
         checkboxId={checkboxId}
       />
@@ -433,13 +436,13 @@ const SkillCardContent = memo(function SkillCardContent({
   sheetHandle,
   selectable,
   checkboxId,
-  showHotChip,
+  metric,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   selectable?: boolean;
   checkboxId?: string;
-  showHotChip?: boolean;
+  metric?: LeaderboardMetric;
 }) {
   const cardTimestamp = skill.contentUpdatedAt ?? skill.createdAt;
   const cardTimeLabel =
@@ -479,7 +482,7 @@ const SkillCardContent = memo(function SkillCardContent({
           of the card is reserved for the quick-add affordance. */}
       <CardFooter className="mt-auto pt-0 justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <SkillMeta skill={skill} showHotChip={showHotChip} />
+          <SkillMeta skill={skill} metric={metric} />
           {showAudit && (
             <span
               className={cn(
@@ -515,7 +518,7 @@ export const SkillCardView = memo(function SkillCardView({
   skill,
   sheetHandle,
   className,
-  showHotChip,
+  metric,
   editControls,
   enableQuickAdd,
   currentBundleId,
@@ -529,11 +532,7 @@ export const SkillCardView = memo(function SkillCardView({
   const showQuickAdd = enableQuickAdd && !editControls;
   return (
     <Card className={cn("relative gap-3 py-4", className)}>
-      <SkillCardContent
-        skill={skill}
-        sheetHandle={sheetHandle}
-        showHotChip={showHotChip}
-      />
+      <SkillCardContent skill={skill} sheetHandle={sheetHandle} metric={metric} />
       {editControls ? (
         <div className="absolute right-2 top-2 z-10">
           <SkillEditControlButtons controls={editControls} />
@@ -558,7 +557,7 @@ export const SelectableSkillCard = memo(function SelectableSkillCard({
   skill,
   sheetHandle,
   className,
-  showHotChip,
+  metric,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
@@ -570,7 +569,7 @@ export const SelectableSkillCard = memo(function SelectableSkillCard({
       <SkillCardContent
         skill={skill}
         sheetHandle={sheetHandle}
-        showHotChip={showHotChip}
+        metric={metric}
         selectable
         checkboxId={checkboxId}
       />
