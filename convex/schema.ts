@@ -65,9 +65,11 @@ export default defineSchema({
     trendingRank: v.optional(v.number()),
     // Hot view: rank (1..N) in the v1 "hot" leaderboard, which orders by
     // current-hour install volume. Undefined when not on the hot view.
-    // Refreshed by syncHot. `hotChange` is the hour-over-hour install delta
-    // (can be negative) used for the momentum chip; `hotInstallsYesterday` is
-    // the same-hour-yesterday count. Not the ranking key — hotRank is.
+    // Refreshed by syncHot. `hotChange` is the day-over-day delta for the
+    // current hour — current-hour installs minus the same hour yesterday (per
+    // the v1 hot view), so it can be negative — used for the momentum chip;
+    // `hotInstallsYesterday` is that same-hour-yesterday count (so current-hour
+    // volume = hotChange + hotInstallsYesterday). Not the ranking key — hotRank is.
     hotRank: v.optional(v.number()),
     hotChange: v.optional(v.number()),
     hotInstallsYesterday: v.optional(v.number()),

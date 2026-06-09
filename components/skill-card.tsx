@@ -74,6 +74,10 @@ export interface SkillData {
   worstAuditRiskLevel?: string;
   trendingRank?: number;
   hotChange?: number;
+  /** Installs in the current hour (delta + same-hour-yesterday). Set only for
+   *  Hot-rail rows; rendered there in place of lifetime installs, since it's
+   *  the value the Hot list is ranked by. */
+  hot1hInstalls?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +123,10 @@ function SkillMeta({
   showLabel?: boolean;
   showHotChip?: boolean;
 }) {
+  // On the Hot rail, show the current-hour install volume (the metric the rail
+  // is ranked by) instead of lifetime installs, so the ordering is legible.
+  const showHourly = showHotChip && skill.hot1hInstalls !== undefined;
+  const installCount = showHourly ? skill.hot1hInstalls! : skill.installs;
   return (
     <div className="flex items-center gap-1.5">
       <SkillStatusBadge
@@ -131,14 +139,17 @@ function SkillMeta({
       {showHotChip && skill.hotChange !== undefined && skill.hotChange !== 0 && (
         <HotMomentumChip change={skill.hotChange} />
       )}
-      <span className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground">
+      <span
+        className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground"
+        title={showHourly ? "Installs in the last hour" : undefined}
+      >
         <HugeiconsIcon
           icon={Download04Icon}
           strokeWidth={2}
           className="size-4"
         />
-        {formatInstalls(skill.installs)}
-        {showLabel && " installs"}
+        {formatInstalls(installCount)}
+        {showLabel && (showHourly ? " in last hr" : " installs")}
       </span>
     </div>
   );

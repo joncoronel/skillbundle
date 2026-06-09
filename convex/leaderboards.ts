@@ -155,10 +155,11 @@ export const syncHot = internalAction({
     }
 
     // Preserve the API's order as hotRank (1..N). The v1 "hot" view ranks by
-    // current-hour install volume, NOT by `change` — `change` is the
-    // hour-over-hour delta and is frequently negative even for the hottest
-    // skills. We mirror the API's ranking (like trending) so our Hot tab
-    // matches skills.sh; `change` is kept only to drive the momentum chip.
+    // current-hour install volume, NOT by `change` — `change` is the day-over-
+    // day delta (current-hour installs minus the same hour yesterday) and is
+    // frequently negative even for the hottest skills. We mirror the API's
+    // ranking (like trending) so our Hot tab matches skills.sh; `change` is
+    // kept only to drive the momentum chip.
     const ranked = response.data.map((s, i) => ({
       source: s.source,
       skillId: s.slug,

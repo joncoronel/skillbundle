@@ -304,6 +304,7 @@ function rowToSkill(r: {
   worstAuditRiskLevel?: string;
   trendingRank?: number;
   hotChange?: number;
+  hotInstallsYesterday?: number;
 }): SkillData {
   return {
     source: r.source,
@@ -318,5 +319,13 @@ function rowToSkill(r: {
     worstAuditRiskLevel: r.worstAuditRiskLevel,
     trendingRank: r.trendingRank,
     hotChange: r.hotChange,
+    // Current-hour install volume = this hour's installs, reconstructed from
+    // the delta + same-hour-yesterday. Only set for Hot-rail rows; it's the
+    // metric the Hot list is ranked by, shown there in place of lifetime
+    // installs so the ordering is legible.
+    hot1hInstalls:
+      r.hotChange !== undefined
+        ? Math.max(0, r.hotChange + (r.hotInstallsYesterday ?? 0))
+        : undefined,
   };
 }
