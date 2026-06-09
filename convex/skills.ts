@@ -135,6 +135,8 @@ async function upsertSkillSummary(
     isDuplicate?: boolean;
     curatedOwner?: string;
     trendingRank?: number;
+    trendingInstalls?: number;
+    hotRank?: number;
     hotChange?: number;
     hotInstallsYesterday?: number;
     worstAuditStatus?: string;
@@ -181,6 +183,10 @@ async function upsertSkillSummary(
       ...(fields.trendingRank !== undefined && {
         trendingRank: fields.trendingRank,
       }),
+      ...(fields.trendingInstalls !== undefined && {
+        trendingInstalls: fields.trendingInstalls,
+      }),
+      ...(fields.hotRank !== undefined && { hotRank: fields.hotRank }),
       ...(fields.hotChange !== undefined && { hotChange: fields.hotChange }),
       ...(fields.hotInstallsYesterday !== undefined && {
         hotInstallsYesterday: fields.hotInstallsYesterday,
@@ -245,6 +251,8 @@ async function upsertSkillSummary(
       isDuplicate: fields.isDuplicate ?? false,
       curatedOwner: fields.curatedOwner,
       trendingRank: fields.trendingRank,
+      trendingInstalls: fields.trendingInstalls,
+      hotRank: fields.hotRank,
       hotChange: fields.hotChange,
       hotInstallsYesterday: fields.hotInstallsYesterday,
       worstAuditStatus: fields.worstAuditStatus,
@@ -1679,6 +1687,7 @@ export const delistSkillsBatch = internalMutation({
           // and causes drift if the row ever relists later via
           // upsertSkillsBatch's fast-path.
           trendingRank: undefined,
+          trendingInstalls: undefined,
           hotRank: undefined,
           hotChange: undefined,
           hotInstallsYesterday: undefined,
@@ -1700,6 +1709,7 @@ export const delistSkillsBatch = internalMutation({
           needsEmbedding: false,
           // Mirror the leaderboard cleanup from skillSummaries above.
           trendingRank: undefined,
+          trendingInstalls: undefined,
           hotRank: undefined,
           hotChange: undefined,
           hotInstallsYesterday: undefined,

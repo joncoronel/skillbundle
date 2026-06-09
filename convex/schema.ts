@@ -63,6 +63,10 @@ export default defineSchema({
     // Trending leaderboard rank (1..N). Undefined when not on the trending
     // leaderboard. Refreshed by syncTrending cron.
     trendingRank: v.optional(v.number()),
+    // Installs over the trending window (~24h) from the v1 "trending" view —
+    // the metric that view is ranked by (NOT lifetime installs). Shown on the
+    // Trending tab. Set and cleared in lockstep with trendingRank.
+    trendingInstalls: v.optional(v.number()),
     // Hot view: rank (1..N) in the v1 "hot" leaderboard, which orders by
     // current-hour install volume. Undefined when not on the hot view.
     // Refreshed by syncHot. `hotChange` is the day-over-day delta for the
@@ -169,6 +173,9 @@ export default defineSchema({
     curatedOwner: v.optional(v.string()),
     // Mirrored from skills row. Powers the home page's Trending tab.
     trendingRank: v.optional(v.number()),
+    // Mirrored from skills row. The v1 trending view's windowed install count
+    // (~24h), shown on the Trending tab. Set/cleared with trendingRank.
+    trendingInstalls: v.optional(v.number()),
     // Mirrored from skills row. Powers the home page's Hot rail and the
     // momentum chips on cards. hotRank is the ranking key (v1 hot order, by
     // current-hour install volume); hotChange/hotInstallsYesterday feed the chip.

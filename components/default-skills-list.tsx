@@ -70,12 +70,12 @@ export function DefaultSkillsList({
             className="font-display text-lg font-semibold tracking-tight"
           >
             {tab === "popular" && "Popular skills"}
-            {tab === "trending" && "Trending this week"}
+            {tab === "trending" && "Trending today"}
             {tab === "hot" && "Hot right now"}
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
             {tab === "popular" && "Sorted by all-time installs from "}
-            {tab === "trending" && "Rising over the last few days on "}
+            {tab === "trending" && "Most installed in the last 24 hours on "}
             {tab === "hot" && "Most installed in the last hour on "}
             <a
               href="https://skills.sh"
@@ -213,7 +213,9 @@ function TrendingList({
   if (skills.length === 0) {
     return <EmptyState message="No trending data yet — check back after the next sync." />;
   }
-  return <SkillRowGrid skills={skills} sheetHandle={sheetHandle} />;
+  return (
+    <SkillRowGrid skills={skills} sheetHandle={sheetHandle} showTrendingInstalls />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -250,10 +252,12 @@ function SkillRowGrid({
   skills,
   sheetHandle,
   showHotChip,
+  showTrendingInstalls,
 }: {
   skills: SkillData[];
   sheetHandle: SkillDetailHandle;
   showHotChip?: boolean;
+  showTrendingInstalls?: boolean;
 }) {
   return (
     <div className="grid">
@@ -267,6 +271,7 @@ function SkillRowGrid({
             skill={skill}
             sheetHandle={sheetHandle}
             showHotChip={showHotChip}
+            showTrendingInstalls={showTrendingInstalls}
             className={
               isSolo
                 ? undefined
@@ -303,6 +308,7 @@ function rowToSkill(r: {
   worstAuditStatus?: string;
   worstAuditRiskLevel?: string;
   trendingRank?: number;
+  trendingInstalls?: number;
   hotChange?: number;
   hotInstallsYesterday?: number;
 }): SkillData {
@@ -318,6 +324,7 @@ function rowToSkill(r: {
     worstAuditStatus: r.worstAuditStatus,
     worstAuditRiskLevel: r.worstAuditRiskLevel,
     trendingRank: r.trendingRank,
+    trendingInstalls: r.trendingInstalls,
     hotChange: r.hotChange,
     // Current-hour install volume = this hour's installs, reconstructed from
     // the delta + same-hour-yesterday. Only set for Hot-rail rows; it's the

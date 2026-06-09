@@ -55,10 +55,13 @@ export const syncTrending = internalAction({
       return;
     }
 
+    // `installs` in the trending view is the windowed (~24h) install count the
+    // view is ranked by, NOT lifetime — keep it to show on the Trending tab.
     const ranked = response.data.map((s, i) => ({
       source: s.source,
       skillId: s.slug,
       trendingRank: i + 1,
+      trendingInstalls: s.installs,
     }));
 
     await ctx.runMutation(internal.leaderboards.applyTrending, { ranked });
@@ -73,6 +76,7 @@ export const applyTrending = internalMutation({
         source: v.string(),
         skillId: v.string(),
         trendingRank: v.number(),
+        trendingInstalls: v.number(),
       }),
     ),
   },
@@ -94,11 +98,16 @@ export const applyTrending = internalMutation({
         .unique();
       if (!summary) continue;
 
-      if (summary.trendingRank !== entry.trendingRank) {
-        await ctx.db.patch(summary._id, { trendingRank: entry.trendingRank });
-        await ctx.db.patch(summary.skillDocId, {
+      if (
+        summary.trendingRank !== entry.trendingRank ||
+        summary.trendingInstalls !== entry.trendingInstalls
+      ) {
+        const fields = {
           trendingRank: entry.trendingRank,
-        });
+          trendingInstalls: entry.trendingInstalls,
+        };
+        await ctx.db.patch(summary._id, fields);
+        await ctx.db.patch(summary.skillDocId, fields);
         stamped++;
       }
     }
@@ -117,8 +126,12 @@ export const applyTrending = internalMutation({
     for (const summary of previouslyRanked) {
       const key = `${summary.source}|${summary.skillId}`;
       if (!seen.has(key)) {
-        await ctx.db.patch(summary._id, { trendingRank: undefined });
-        await ctx.db.patch(summary.skillDocId, { trendingRank: undefined });
+        const clearedFields = {
+          trendingRank: undefined,
+          trendingInstalls: undefined,
+        };
+        await ctx.db.patch(summary._id, clearedFields);
+        await ctx.db.patch(summary.skillDocId, clearedFields);
         cleared++;
       }
     }

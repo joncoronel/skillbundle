@@ -78,6 +78,9 @@ export interface SkillData {
    *  Hot-rail rows; rendered there in place of lifetime installs, since it's
    *  the value the Hot list is ranked by. */
   hot1hInstalls?: number;
+  /** Installs over the trending window (~24h). Set only for Trending-rail
+   *  rows; rendered there in place of lifetime installs. */
+  trendingInstalls?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,15 +121,28 @@ function SkillMeta({
   skill,
   showLabel,
   showHotChip,
+  showTrendingInstalls,
 }: {
   skill: SkillData;
   showLabel?: boolean;
   showHotChip?: boolean;
+  showTrendingInstalls?: boolean;
 }) {
-  // On the Hot rail, show the current-hour install volume (the metric the rail
-  // is ranked by) instead of lifetime installs, so the ordering is legible.
-  const showHourly = showHotChip && skill.hot1hInstalls !== undefined;
-  const installCount = showHourly ? skill.hot1hInstalls! : skill.installs;
+  // Hot rail shows the current-hour install volume; Trending shows the ~24h
+  // volume — each the metric its list is ranked by, in place of lifetime
+  // installs, so the ordering is legible.
+  const hourly = showHotChip && skill.hot1hInstalls !== undefined;
+  const daily = showTrendingInstalls && skill.trendingInstalls !== undefined;
+  const installCount = hourly
+    ? skill.hot1hInstalls!
+    : daily
+      ? skill.trendingInstalls!
+      : skill.installs;
+  const windowTitle = hourly
+    ? "Installs in the last hour"
+    : daily
+      ? "Installs in the last 24 hours"
+      : undefined;
   return (
     <div className="flex items-center gap-1.5">
       <SkillStatusBadge
@@ -141,7 +157,7 @@ function SkillMeta({
       )}
       <span
         className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground"
-        title={showHourly ? "Installs in the last hour" : undefined}
+        title={windowTitle}
       >
         <HugeiconsIcon
           icon={Download04Icon}
@@ -149,7 +165,7 @@ function SkillMeta({
           className="size-4"
         />
         {formatInstalls(installCount)}
-        {showLabel && (showHourly ? " in last hr" : " installs")}
+        {showLabel && (hourly ? " in last hr" : daily ? " in last 24h" : " installs")}
       </span>
     </div>
   );
@@ -226,6 +242,9 @@ interface SkillViewProps {
   /** Show the hour-over-hour hot momentum chip next to install count.
    *  Off by default — only the home page's Hot tab opts in. */
   showHotChip?: boolean;
+  /** Show the ~24h trending-window install count in place of lifetime
+   *  installs. Off by default — only the home page's Trending tab opts in. */
+  showTrendingInstalls?: boolean;
   /** When set, the card renders edit controls (remove + optional reorder)
    *  in place of the install-count meta. Owner-only on the bundle detail
    *  page's edit mode. */
@@ -327,12 +346,14 @@ const SkillRowContent = memo(function SkillRowContent({
   selectable,
   checkboxId,
   showHotChip,
+  showTrendingInstalls,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   selectable?: boolean;
   checkboxId?: string;
   showHotChip?: boolean;
+  showTrendingInstalls?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 px-4">
@@ -349,7 +370,11 @@ const SkillRowContent = memo(function SkillRowContent({
         <span className="text-sm text-muted-foreground">{skill.source}</span>
       </div>
       <div className="ml-auto shrink-0">
-        <SkillMeta skill={skill} showHotChip={showHotChip} />
+        <SkillMeta
+          skill={skill}
+          showHotChip={showHotChip}
+          showTrendingInstalls={showTrendingInstalls}
+        />
       </div>
     </div>
   );
@@ -374,6 +399,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
   sheetHandle,
   className,
   showHotChip,
+  showTrendingInstalls,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
@@ -390,6 +416,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
         skill={skill}
         sheetHandle={sheetHandle}
         showHotChip={showHotChip}
+        showTrendingInstalls={showTrendingInstalls}
         selectable
         checkboxId={checkboxId}
       />
