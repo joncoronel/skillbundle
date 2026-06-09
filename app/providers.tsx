@@ -13,7 +13,14 @@ import {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <NuqsAdapter>
-      <ClerkProvider afterSignOutUrl="/sign-in">
+      {/*
+        prefetchUI={false} stops Clerk from preloading its ~262 KiB prebuilt-UI
+        bundle (@clerk/ui: ui-common, vendors_ui, framework_ui, ui.browser). The
+        app uses Clerk only through headless hooks (useAuth/useUser/useSignIn/
+        etc.) and never mounts a prebuilt component, so the UI bundle is dead
+        weight. The core clerk.browser.js still loads for auth state.
+      */}
+      <ClerkProvider afterSignOutUrl="/sign-in" prefetchUI={false}>
         <ConvexClientProvider>
           <ThemeProvider
             attribute="data-theme"
