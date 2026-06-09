@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
-import { cacheLife } from "next/cache";
+import { connection } from "next/server";
+import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { HomeContent } from "./home-content";
+
+// Rendered dynamically via `connection()` (in the component below) so the
+// client search UI's params resolve on the server — the full page ships in the
+// initial HTML, with no client-side Suspense flash. The initial leaderboards
+// are still cached with `unstable_cache` (1h), so per-request renders don't hit
+// Convex.
 
 const HOME_TITLE = "SkillBundle — Build your AI skill bundle";
 const HOME_DESCRIPTION =
@@ -18,34 +25,33 @@ export const metadata: Metadata = {
   },
 };
 
-// Each leaderboard is cached on its own so cache invalidation is per-tab.
-// All three use cacheLife("hours") — Popular updates daily, Trending updates
-// hourly via cron, and Hot updates every 30 min but doesn't need to feel
-// minute-fresh on the home page (1h staleness is fine for a "what's hot"
-// surface; the underlying delta is hour-over-hour anyway).
-async function getInitialPopularSkills() {
-  "use cache";
-  cacheLife("hours");
-  return fetchQuery(api.skills.listPopularSkills, {
-    paginationOpts: { numItems: 30, cursor: null },
-  });
-}
+const getInitialPopularSkills = unstable_cache(
+  () =>
+    fetchQuery(api.skills.listPopularSkills, {
+      paginationOpts: { numItems: 30, cursor: null },
+    }),
+  ["home-popular-skills"],
+  { revalidate: 3600 },
+);
 
-async function getInitialTrending() {
-  "use cache";
-  cacheLife("hours");
-  return fetchQuery(api.leaderboards.listTrending, {
-    paginationOpts: { numItems: 60, cursor: null },
-  });
-}
+const getInitialTrending = unstable_cache(
+  () =>
+    fetchQuery(api.leaderboards.listTrending, {
+      paginationOpts: { numItems: 60, cursor: null },
+    }),
+  ["home-trending"],
+  { revalidate: 3600 },
+);
 
-async function getInitialHot() {
-  "use cache";
-  cacheLife("hours");
-  return fetchQuery(api.leaderboards.listHot, { limit: 30 });
-}
+const getInitialHot = unstable_cache(
+  () => fetchQuery(api.leaderboards.listHot, { limit: 30 }),
+  ["home-hot"],
+  { revalidate: 3600 },
+);
 
 export default async function Home() {
+  await connection();
+
   // Fire all three in parallel — they're independent.
   const [initialPopularSkills, initialTrending, initialHot] = await Promise.all(
     [getInitialPopularSkills(), getInitialTrending(), getInitialHot()],

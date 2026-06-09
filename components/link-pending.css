@@ -1,0 +1,39 @@
+.link-pending {
+  flex-shrink: 0;
+  width: 0.4em;
+  height: 0.4em;
+  border-radius: 9999px;
+  background: currentColor;
+  /* Always rendered so it reserves its space and never shifts the row;
+     invisible until a navigation actually stalls. */
+  opacity: 0;
+  visibility: hidden;
+}
+
+.link-pending[data-pending] {
+  visibility: visible;
+  /* Fade in only after a 100ms grace period, so a fast (warm) navigation
+     resolves first and never flashes the dot, then breathe slowly. */
+  animation:
+    link-pending-in 220ms ease 100ms forwards,
+    link-pending-pulse 1.4s ease-in-out 100ms infinite;
+}
+
+@keyframes link-pending-in {
+  to {
+    opacity: 0.4;
+  }
+}
+
+@keyframes link-pending-pulse {
+  50% {
+    opacity: 0.14;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link-pending[data-pending] {
+    /* Keep the 100ms debounce, settle to a steady muted dot, no pulse. */
+    animation: link-pending-in 1ms linear 100ms forwards;
+  }
+}

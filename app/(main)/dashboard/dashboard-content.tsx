@@ -144,7 +144,7 @@ export function DashboardContent({
                         variant="outline"
                         size="xs"
                         nativeButton={false}
-                        render={<Link href={`/stack/${bundle.urlId}`} />}
+                        render={<Link href={`/bundle/${bundle.urlId}`} />}
                         leftSection={
                           <HugeiconsIcon
                             icon={EyeIcon}

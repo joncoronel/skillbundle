@@ -90,7 +90,7 @@ Two input methods:
 - Generates a unique shareable slug
 
 **Share:**
-- Public URL: `/stack/{slug}`
+- Public URL: `/bundle/{slug}`
 - Shows all skills in the bundle with descriptions
 - No auth required to view
 
@@ -130,7 +130,7 @@ Two input methods:
 
 - `/` — Home with stack selection and skill discovery
 - `/compare` — Side-by-side skill comparison (could also be a modal)
-- `/stack/[slug]` — Public bundle view
+- `/bundle/[slug]` — Public bundle view
 - `/explore` — Browse community bundles
 - `/dashboard` — User's saved bundles (authenticated)
 

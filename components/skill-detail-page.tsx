@@ -1,10 +1,9 @@
 import "server-only";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ConvexHttpClient } from "convex/browser";
-import { cacheLife } from "next/cache";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { GithubIcon, GlobalSearchIcon } from "@hugeicons/core-free-icons";
+import { Suspense, type ReactNode } from "react";
+import { unstable_cache } from "next/cache";
+import { fetchQuery } from "convex/nextjs";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { api } from "@/convex/_generated/api";
 import { LabeledSection } from "@/components/labeled-section";
 import { MarkdownContent } from "@/components/markdown-content";
@@ -15,65 +14,89 @@ import { formatInstalls, timeAgo } from "@/lib/utils";
 import { OfficialBadge } from "@/components/skill-badges";
 import { SkillAuditSection } from "@/components/skill-audit-section";
 
-// EXPERIMENT: `fetchQuery` from convex/nextjs forces `cache: "no-store"` on its
-// underlying fetch, which seems to stop `use cache` from persisting to Vercel's
-// data cache (every render re-queried Convex in prod, though it cached fine in
-// `next start`). Using `ConvexHttpClient` directly skips that no-store override,
-// to see whether the cached result then persists across requests on Vercel.
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+// Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
+// fetch, which would mark the route dynamic and break static/ISR generation.
+// Wrapping in `unstable_cache` isolates that fetch and caches the result by
+// (source, skillId) — the args are part of the cache key — so the route can be
+// statically generated and the `generateMetadata` pass + body share one entry.
+export const loadSkill = unstable_cache(
+  (source: string, skillId: string) =>
+    fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
+  ["skill-detail"],
+  { revalidate: 86400 },
+);
 
-// Shared cached loaders. Both the `/[org]/[repo]/[skillId]` and the
-// `/site/[source]/[skillId]` routes import these (also from generateMetadata),
-// so the metadata pass and the body pass dedupe to a single cache entry per
-// (source, skillId).
-export async function loadSkill(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  console.log(`[SKILL-FETCH] loadSkill ${source}/${skillId}`);
-  return convex.query(api.skills.getBySourceAndSkillId, { source, skillId });
-}
+export const loadAudits = unstable_cache(
+  async (source: string, skillId: string) => {
+    const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
+      source,
+      skillId,
+    });
+    return row?.audits ?? null;
+  },
+  ["skill-audits"],
+  { revalidate: 86400 },
+);
 
-export async function loadAudits(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  console.log(`[SKILL-FETCH] loadAudits ${source}/${skillId}`);
-  const row = await convex.query(api.audits.getBySourceAndSkillId, {
-    source,
-    skillId,
-  });
-  return row?.audits ?? null;
-}
+type SkillDetailPageProps = {
+  source: string;
+  skillId: string;
+  installCommand: string;
+  externalUrl: string;
+  externalIcon: IconSvgElement;
+  externalLabel: string;
+  /** Breadcrumb slot rendered above the h1. */
+  breadcrumb: ReactNode;
+};
 
-async function loadHighlightedCode(content: string) {
-  "use cache";
-  cacheLife("days");
-  return highlightMarkdownCode(content);
-}
-
-async function loadTimeAgo(timestamp: number) {
-  "use cache";
-  cacheLife("days");
-  return timeAgo(timestamp);
-}
-
-// The full skill page content, cached per (source, skillId) with `use cache`,
-// so it's part of the prefetchable static shell for instant navigations. It's
-// rendered inside the route's `<Suspense>` (params read via `.then()`), so a
-// cold skill shows the skeleton fallback while it renders, while a warm one
-// appears instantly from the prefetched cache. Reuses loadSkill/loadAudits so
-// `generateMetadata` shares the same data-cache entries.
-export async function CachedSkillDetail({
+export function SkillDetailPage({
   source,
   skillId,
-  variant,
+  installCommand,
+  externalUrl,
+  externalIcon,
+  externalLabel,
+  breadcrumb,
+}: SkillDetailPageProps) {
+  return (
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      {breadcrumb}
+
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
+        {skillId}
+      </h1>
+
+      <Suspense
+        fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
+      >
+        <SkillDetailBody
+          source={source}
+          skillId={skillId}
+          installCommand={installCommand}
+          externalUrl={externalUrl}
+          externalIcon={externalIcon}
+          externalLabel={externalLabel}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+async function SkillDetailBody({
+  source,
+  skillId,
+  installCommand,
+  externalUrl,
+  externalIcon,
+  externalLabel,
 }: {
   source: string;
   skillId: string;
-  variant: "github" | "site";
+  installCommand: string;
+  externalUrl: string;
+  externalIcon: IconSvgElement;
+  externalLabel: string;
 }) {
-  "use cache";
-  cacheLife("days");
-
   const [skill, audits] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
@@ -84,61 +107,15 @@ export async function CachedSkillDetail({
   }
 
   const preHighlighted = skill.content
-    ? await loadHighlightedCode(skill.content)
+    ? await highlightMarkdownCode(skill.content)
     : undefined;
-  const timeLabel = skill.contentUpdatedAt
-    ? `Updated ${await loadTimeAgo(skill.contentUpdatedAt)}`
-    : `Added ${await loadTimeAgo(skill._creationTime)}`;
 
-  const isGitHub = variant === "github";
-  const installCommand = isGitHub
-    ? `npx skills add ${source} --skill ${skillId}`
-    : `npx skills add ${source}/${skillId}`;
-  const externalUrl = isGitHub
-    ? `https://github.com/${source}`
-    : `https://${source}`;
-  const externalIcon = isGitHub ? GithubIcon : GlobalSearchIcon;
-  const [org, repo] = source.split("/");
+  const timeLabel = skill.contentUpdatedAt
+    ? `Updated ${timeAgo(skill.contentUpdatedAt)}`
+    : `Added ${timeAgo(skill._creationTime)}`;
 
   return (
     <>
-      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
-        <Link href="/" className="hover:text-foreground transition-colors">
-          Home
-        </Link>
-        <span>/</span>
-        {isGitHub ? (
-          <>
-            <Link
-              href={`/${org}`}
-              className="hover:text-foreground transition-colors"
-            >
-              {org}
-            </Link>
-            <span>/</span>
-            <Link
-              href={`/${source}`}
-              className="hover:text-foreground transition-colors"
-            >
-              {repo}
-            </Link>
-          </>
-        ) : (
-          <Link
-            href={`/site/${source}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {source}
-          </Link>
-        )}
-        <span>/</span>
-        <span className="text-foreground">{skillId}</span>
-      </nav>
-
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
-        {skillId}
-      </h1>
-
       {skill.isDelisted && (
         <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
           This skill is no longer listed on skills.sh
@@ -162,7 +139,7 @@ export async function CachedSkillDetail({
             strokeWidth={2}
             className="size-3.5"
           />
-          {source}
+          {externalLabel}
         </a>
         <span>·</span>
         <span>{timeLabel}</span>
@@ -221,21 +198,11 @@ export async function CachedSkillDetail({
   );
 }
 
-// Full inner skeleton (breadcrumb + title + body) used as the `<Suspense>`
-// fallback while a cold skill's content renders.
-export function SkillDetailContentSkeleton() {
-  return (
-    <>
-      <div className="mb-6">
-        <Skeleton className="h-4 w-64 max-w-full" />
-      </div>
-      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
-      <SkillDetailPageSkeleton installCommand="npx skills add ..." />
-    </>
-  );
-}
-
-function SkillDetailPageSkeleton({ installCommand }: { installCommand: string }) {
+export function SkillDetailPageSkeleton({
+  installCommand,
+}: {
+  installCommand: string;
+}) {
   return (
     <>
       <div className="flex items-center gap-2 text-sm">
@@ -281,5 +248,22 @@ function SkillDetailPageSkeleton({ installCommand }: { installCommand: string })
         </div>
       </LabeledSection>
     </>
+  );
+}
+
+// Route-level fallback for each skill route's `loading.tsx`. The router shows
+// this instantly while a not-yet-generated skill is rendered on-demand; once
+// ISR caches the page, repeat visits serve the finished HTML and never hit this.
+export function SkillDetailPageLoading() {
+  return (
+    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+      <div className="mb-6">
+        <Skeleton className="h-4 w-64 max-w-full" />
+      </div>
+
+      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
+
+      <SkillDetailPageSkeleton installCommand="npx skills add ..." />
+    </div>
   );
 }

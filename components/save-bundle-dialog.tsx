@@ -82,7 +82,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
       setName("");
       setDescription("");
       handle.close();
-      router.push(`/stack/${result.urlId}`);
+      router.push(`/bundle/${result.urlId}`);
     } catch (error) {
       let message = "Failed to save bundle";
       if (error instanceof ConvexError && typeof error.data === "string") {

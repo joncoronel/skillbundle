@@ -3,7 +3,7 @@ import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
 import { DesktopNav } from "@/components/header-nav";
 import { MobileNav } from "@/components/mobile-nav";
-import { HeaderAuth } from "@/components/header-auth";
+import { HeaderAuthClient } from "@/components/header-auth-client";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
@@ -32,9 +32,7 @@ export function AppHeader() {
             </div>
           </Suspense>
 
-          <Suspense fallback={<Skeleton className="size-8 rounded-full" />}>
-            <HeaderAuth />
-          </Suspense>
+          <HeaderAuthClient />
         </div>
       </div>
     </header>

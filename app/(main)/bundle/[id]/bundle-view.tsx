@@ -177,7 +177,7 @@ export function BundleView({
                 <p className="mt-2 text-sm text-muted-foreground">
                   Forked from{" "}
                   <Link
-                    href={`/stack/${bundle.forkedFrom.urlId}`}
+                    href={`/bundle/${bundle.forkedFrom.urlId}`}
                     className="text-foreground underline-offset-2 hover:underline"
                   >
                     {bundle.forkedFrom.name}
@@ -472,8 +472,8 @@ function SharePopover({
   const [generating, setGenerating] = useState(false);
   const shareUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/stack/${urlId}?share=${shareToken}`
-      : `/stack/${urlId}?share=${shareToken}`;
+      ? `${window.location.origin}/bundle/${urlId}?share=${shareToken}`
+      : `/bundle/${urlId}?share=${shareToken}`;
 
   async function handleGenerate() {
     setGenerating(true);

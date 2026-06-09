@@ -1,19 +1,23 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import Link from "next/link";
+import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import {
   loadSkill,
-  CachedSkillDetail,
-  SkillDetailContentSkeleton,
+  SkillDetailPage,
 } from "@/components/skill-detail-page";
 
 type Params = Promise<{ source: string; skillId: string }>;
 
-// Instant navigation (Cache Components) — same pattern as the GitHub skill
-// route. See that file for the `prefetch: "runtime"` rationale.
-export const unstable_instant = {
-  prefetch: "runtime",
-  samples: [{ params: { source: "open.feishu.cn", skillId: "lark-approval" } }],
-};
+// Classic ISR. We prebuild nothing at build time; each skill is generated on
+// its first request and cached (dynamicParams defaults to true). The route's
+// `loading.tsx` shows a skeleton during that first generation, and repeat
+// visits serve the cached page until `revalidate` elapses.
+export const revalidate = 86400; // 1 day
+export const dynamicParams = true;
+
+export function generateStaticParams() {
+  return [];
+}
 
 export async function generateMetadata({
   params,
@@ -38,14 +42,38 @@ export async function generateMetadata({
   };
 }
 
-export default function WellKnownSkillPage({ params }: { params: Params }) {
+export default async function WellKnownSkillPage({
+  params,
+}: {
+  params: Params;
+}) {
+  const { source, skillId } = await params;
+  const installCommand = `npx skills add ${source}/${skillId}`;
+
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
-      <Suspense fallback={<SkillDetailContentSkeleton />}>
-        {params.then(({ source, skillId }) => (
-          <CachedSkillDetail source={source} skillId={skillId} variant="site" />
-        ))}
-      </Suspense>
-    </div>
+    <SkillDetailPage
+      source={source}
+      skillId={skillId}
+      installCommand={installCommand}
+      externalUrl={`https://${source}`}
+      externalIcon={GlobalSearchIcon}
+      externalLabel={source}
+      breadcrumb={
+        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
+          <Link href="/" className="hover:text-foreground transition-colors">
+            Home
+          </Link>
+          <span>/</span>
+          <Link
+            href={`/site/${source}`}
+            className="hover:text-foreground transition-colors"
+          >
+            {source}
+          </Link>
+          <span>/</span>
+          <span className="text-foreground">{skillId}</span>
+        </nav>
+      }
+    />
   );
 }
