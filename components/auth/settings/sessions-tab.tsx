@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useClerk } from "@clerk/nextjs";
-import { revokeSession } from "@/app/(main)/settings/custom/actions";
+import { revokeSession } from "@/app/(main)/settings/actions";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";

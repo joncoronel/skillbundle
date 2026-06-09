@@ -20,7 +20,7 @@ export const loadExploreSearchParams = createLoader({
   q: parseAsString.withDefault(""),
 });
 
-// -- Settings page (/settings/custom) --
+// -- Settings page (/settings) --
 
 const settingsTabValues = ["profile", "security", "billing"] as const;
 

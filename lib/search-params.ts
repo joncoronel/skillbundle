@@ -28,7 +28,7 @@ export type ExploreSortValue = (typeof exploreSortValues)[number];
 export const exploreSortParser =
   parseAsStringLiteral(exploreSortValues).withDefault("newest");
 
-// -- Settings page (/settings/custom) parsers --
+// -- Settings page (/settings) parsers --
 
 const settingsTabValues = ["profile", "security", "billing"] as const;
 export type SettingsTabValue = (typeof settingsTabValues)[number];

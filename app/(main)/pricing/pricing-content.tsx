@@ -219,7 +219,7 @@ function ProCardAction({ cycle }: { cycle: Cycle }) {
         variant="outline"
         size="lg"
         className="w-full"
-        render={<Link href="/settings/custom?tab=billing" />}
+        render={<Link href="/settings?tab=billing" />}
       >
         Manage subscription
       </Button>

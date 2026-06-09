@@ -19,7 +19,7 @@ export function ConnectedAccountsSection() {
         strategy: strategy as Parameters<
           typeof user.createExternalAccount
         >[0]["strategy"],
-        redirectUrl: "/settings/custom",
+        redirectUrl: "/settings",
       }),
     { onNeedsReverification },
   );

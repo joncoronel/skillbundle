@@ -6,7 +6,6 @@ import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   DashboardSquare01Icon,
-  UserIcon,
   Settings01Icon,
   Logout01Icon,
   Tag01Icon,
@@ -71,13 +70,6 @@ export function UserMenu() {
           render={<Link href="/settings" />}
           onClick={() => setOpen(false)}
         >
-          <HugeiconsIcon icon={UserIcon} strokeWidth={2} className="size-4" />
-          Manage account
-        </DropdownMenuLinkItem>
-        <DropdownMenuLinkItem
-          render={<Link href="/settings/custom" />}
-          onClick={() => setOpen(false)}
-        >
           <HugeiconsIcon
             icon={Settings01Icon}
             strokeWidth={2}
@@ -86,7 +78,7 @@ export function UserMenu() {
           Account settings
         </DropdownMenuLinkItem>
         <DropdownMenuLinkItem
-          render={<Link href="/settings/custom?tab=billing" />}
+          render={<Link href="/settings?tab=billing" />}
           onClick={() => setOpen(false)}
         >
           <HugeiconsIcon icon={Tag01Icon} strokeWidth={2} className="size-4" />
