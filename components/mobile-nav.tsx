@@ -107,8 +107,8 @@ function DrawerNavLink({
     <DrawerClose
       render={<Link href={href} aria-current={isActive ? "page" : undefined} />}
       className={cn(
-        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent",
-        isActive && "bg-accent text-foreground",
+        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-surface-hover",
+        isActive && "bg-surface-selected text-foreground",
       )}
     >
       <HugeiconsIcon icon={icon} strokeWidth={2} className="size-4" />

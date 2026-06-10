@@ -57,7 +57,7 @@ export function SkillAuditSection({
                 href={detailUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between gap-3 px-4 py-2.5 hover:duration-0 duration-200 transition-colors hover:bg-muted"
+                className="flex items-center justify-between gap-3 px-4 py-2.5 hover:duration-0 duration-200 transition-colors hover:bg-surface-hover"
               >
                 <span className="text-sm font-medium text-foreground">
                   {audit.provider}

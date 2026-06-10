@@ -428,7 +428,7 @@ function ErrorSkillsList({
               >
                 <SelectTrigger
                   size="sm"
-                  className="w-auto min-w-16 border-transparent bg-transparent shadow-none before:hidden dark:bg-transparent"
+                  className="w-auto min-w-16 border-transparent bg-transparent"
                 >
                   <SelectValue />
                 </SelectTrigger>

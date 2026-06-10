@@ -9,15 +9,16 @@ import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { useRender } from "@base-ui/react/use-render";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/cubby-ui/button";
+import {
+  INNER_EDGE_FROM_ATTACH_SIDE,
+  elevatedSurface,
+  flushSurface,
+  type SurfaceLevel,
+} from "@/lib/cubby-ui/elevated";
 import { ScrollArea } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
-
-// ---------------------------------------------------------------------------
-// Types & context
-// ---------------------------------------------------------------------------
-
 type DrawerPosition = "right" | "left" | "top" | "bottom";
 
 const DrawerContext = React.createContext<{ position: DrawerPosition }>({
@@ -33,10 +34,6 @@ const directionMap: Record<
   right: "right",
   top: "up",
 };
-
-// ---------------------------------------------------------------------------
-// Root
-// ---------------------------------------------------------------------------
 
 const createBaseDrawerHandle: typeof DrawerPrimitive.createHandle =
   DrawerPrimitive.createHandle;
@@ -58,10 +55,6 @@ function BaseDrawer({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Primitives (pass-through)
-// ---------------------------------------------------------------------------
-
 const BaseDrawerPortal: typeof DrawerPrimitive.Portal = DrawerPrimitive.Portal;
 
 function BaseDrawerTrigger(
@@ -78,10 +71,6 @@ function BaseDrawerClose(
 
 const BaseDrawerContent: typeof DrawerPrimitive.Content =
   DrawerPrimitive.Content;
-
-// ---------------------------------------------------------------------------
-// Provider / Indent
-// ---------------------------------------------------------------------------
 
 function BaseDrawerProvider({ ...props }: DrawerPrimitive.Provider.Props) {
   return <DrawerPrimitive.Provider {...props} />;
@@ -117,10 +106,6 @@ function BaseDrawerIndentBackground({
   );
 }
 
-// ---------------------------------------------------------------------------
-// SwipeArea
-// ---------------------------------------------------------------------------
-
 function BaseDrawerSwipeArea({
   className,
   position: positionProp,
@@ -147,10 +132,6 @@ function BaseDrawerSwipeArea({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Backdrop
-// ---------------------------------------------------------------------------
-
 function BaseDrawerBackdrop({
   className,
   ...props
@@ -166,10 +147,6 @@ function BaseDrawerBackdrop({
     />
   );
 }
-
-// ---------------------------------------------------------------------------
-// Viewport
-// ---------------------------------------------------------------------------
 
 function BaseDrawerViewport({
   className,
@@ -200,10 +177,6 @@ function BaseDrawerViewport({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Popup (convenience composite: Portal + Backdrop + Viewport + Popup)
-// ---------------------------------------------------------------------------
-
 function BaseDrawerPopup({
   className,
   children,
@@ -211,12 +184,18 @@ function BaseDrawerPopup({
   position: positionProp,
   variant = "default",
   showBar = false,
+  level = 5,
+  shadowLevel = 5,
   ...props
 }: DrawerPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   position?: DrawerPosition;
   variant?: "default" | "floating";
   showBar?: boolean;
+  /** Surface elevation level (1-8). Defaults to 5 — the dialog/sheet/drawer tier. */
+  level?: SurfaceLevel;
+  /** Shadow weight (1-8). Pinned to 5 by default. */
+  shadowLevel?: SurfaceLevel;
 }) {
   const { position: contextPosition } = React.useContext(DrawerContext);
   const position = positionProp ?? contextPosition;
@@ -228,7 +207,14 @@ function BaseDrawerPopup({
         <DrawerPrimitive.Popup
           className={cn(
             // Base layout
-            "bg-popover text-popover-foreground relative flex max-h-full min-h-0 w-full min-w-0 flex-col shadow-lg will-change-transform outline-none",
+            "text-popover-foreground relative flex max-h-full min-h-0 w-full min-w-0 flex-col will-change-transform outline-none",
+            // Surface elevation — floating variants get the full 4-edge rim
+            // overlay; flush (`default`) variants get a single-edge rim only
+            // on the inner-facing edge so the other edges don't show a 1px
+            // line at the viewport boundary.
+            variant === "floating"
+              ? elevatedSurface(level, shadowLevel)
+              : flushSurface(level, INNER_EDGE_FROM_ATTACH_SIDE[position]),
             // Transition
             "transition-[transform,box-shadow,height,background-color] duration-400 ease-[cubic-bezier(.32,.72,0,1)]",
             "touch-none",
@@ -239,10 +225,8 @@ function BaseDrawerPopup({
             "[--scale:clamp(0,calc(var(--scale-base)+(var(--stack-step)*var(--stack-progress))),1)]",
             "[--shrink:calc(1-var(--scale))]",
             "[--stack-peek-offset:max(0px,calc((var(--nested-drawers)-var(--stack-progress))*var(--peek)))]",
-            // Subtle border ring
-            "ring-border ring-1",
-            // Bleed pseudo (fills gap when dragged past edge)
-            "after:bg-popover after:pointer-events-none after:absolute",
+            // Bleed pseudo (fills gap when dragged past edge) — uses ::before so ::after stays free for the rim overlay
+            "before:pointer-events-none before:absolute before:bg-(--popup-surface,var(--popover))",
             // States
             "data-swiping:select-none",
             "data-nested-drawer-open:overflow-hidden",
@@ -264,7 +248,7 @@ function BaseDrawerPopup({
                 // Transition includes margin/padding for snap changes but not enter/exit
                 "not-data-starting-style:not-data-ending-style:transition-[transform,box-shadow,height,background-color,margin,padding]",
                 // Bleed pseudo
-                "after:inset-x-0 after:top-full after:h-[var(--bleed)]",
+                "before:inset-x-0 before:top-full before:h-(--bleed)",
                 // Bar support
                 "has-data-[slot=base-drawer-bar]:pt-2",
                 // Nested stacking
@@ -280,7 +264,7 @@ function BaseDrawerPopup({
                 "transform-[translateY(var(--drawer-swipe-movement-y))]",
                 "data-starting-style:transform-[translateY(calc(-100%-var(--inset)))]",
                 "data-ending-style:transform-[translateY(calc(-100%-var(--inset)))]",
-                "after:inset-x-0 after:bottom-full after:h-[var(--bleed)]",
+                "before:inset-x-0 before:bottom-full before:h-(--bleed)",
                 "has-data-[slot=base-drawer-bar]:pb-2",
                 // Nested stacking
                 "h-[var(--drawer-height,auto)]",
@@ -296,7 +280,7 @@ function BaseDrawerPopup({
                 "transform-[translateX(var(--drawer-swipe-movement-x))]",
                 "data-starting-style:transform-[translateX(calc(-100%-var(--inset)))]",
                 "data-ending-style:transform-[translateX(calc(-100%-var(--inset)))]",
-                "after:inset-y-0 after:end-full after:w-[var(--bleed)]",
+                "before:inset-y-0 before:end-full before:w-(--bleed)",
                 "has-data-[slot=base-drawer-bar]:pe-2",
                 "origin-right",
                 "data-nested-drawer-open:transform-[translateX(calc(var(--drawer-swipe-movement-x)+var(--stack-peek-offset)))_scale(var(--scale))]",
@@ -308,7 +292,7 @@ function BaseDrawerPopup({
                 "transform-[translateX(var(--drawer-swipe-movement-x))]",
                 "data-starting-style:transform-[translateX(calc(100%+var(--inset)))]",
                 "data-ending-style:transform-[translateX(calc(100%+var(--inset)))]",
-                "after:inset-y-0 after:start-full after:w-[var(--bleed)]",
+                "before:inset-y-0 before:start-full before:w-(--bleed)",
                 "has-data-[slot=base-drawer-bar]:ps-2",
                 "origin-left",
                 "data-nested-drawer-open:transform-[translateX(calc(var(--drawer-swipe-movement-x)-var(--stack-peek-offset)))_scale(var(--scale))]",
@@ -324,11 +308,12 @@ function BaseDrawerPopup({
                   position === "top" && "rounded-b-2xl",
                   position === "left" && "rounded-e-2xl",
                   position === "right" && "rounded-s-2xl",
-                  "rounded-2xl after:bg-transparent",
+                  "rounded-2xl before:bg-transparent",
                 ),
             className,
           )}
           data-slot="base-drawer-popup"
+          data-level={level}
           {...props}
         >
           {children}
@@ -347,10 +332,6 @@ function BaseDrawerPopup({
     </BaseDrawerPortal>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
 
 function BaseDrawerHeader({
   className,
@@ -376,10 +357,6 @@ function BaseDrawerHeader({
   });
 }
 
-// ---------------------------------------------------------------------------
-// Footer
-// ---------------------------------------------------------------------------
-
 function BaseDrawerFooter({
   className,
   variant = "default",
@@ -397,7 +374,7 @@ function BaseDrawerFooter({
       variant === "default" &&
         "in-[[data-slot=base-drawer-popup]:has([data-slot=base-drawer-panel])]:pt-3 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]",
       variant === "inset" &&
-        "border-t bg-muted/72 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]",
+        "border-t bg-muted pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]",
       className,
     ),
     "data-slot": "base-drawer-footer",
@@ -409,10 +386,6 @@ function BaseDrawerFooter({
     render: allowSelection ? <BaseDrawerContent render={render} /> : render,
   });
 }
-
-// ---------------------------------------------------------------------------
-// Title / Description
-// ---------------------------------------------------------------------------
 
 function BaseDrawerTitle({ className, ...props }: DrawerPrimitive.Title.Props) {
   return (
@@ -439,10 +412,6 @@ function BaseDrawerDescription({
     />
   );
 }
-
-// ---------------------------------------------------------------------------
-// Panel (scrollable body)
-// ---------------------------------------------------------------------------
 
 function BaseDrawerPanel({
   className,
@@ -482,10 +451,6 @@ function BaseDrawerPanel({
   return content;
 }
 
-// ---------------------------------------------------------------------------
-// Bar (drag handle indicator)
-// ---------------------------------------------------------------------------
-
 function BaseDrawerBar({
   className,
   position: positionProp,
@@ -501,7 +466,7 @@ function BaseDrawerBar({
   const defaultProps = {
     "aria-hidden": true as const,
     className: cn(
-      "absolute flex touch-none items-center justify-center p-3 before:rounded-full before:bg-input",
+      "absolute flex touch-none items-center justify-center p-3 before:rounded-full before:bg-muted-foreground/30",
       horizontal
         ? "inset-y-0 before:h-12 before:w-1"
         : "inset-x-0 before:h-1 before:w-12",
@@ -520,10 +485,6 @@ function BaseDrawerBar({
     render,
   });
 }
-
-// ---------------------------------------------------------------------------
-// Menu components
-// ---------------------------------------------------------------------------
 
 function BaseDrawerMenu({
   className,
@@ -553,7 +514,7 @@ function BaseDrawerMenuItem({
 }) {
   const defaultProps = {
     className: cn(
-      "flex min-h-9 w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-64 data-[variant=destructive]:text-destructive-foreground sm:min-h-8 sm:text-sm [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4.5 sm:[&>svg:not([class*='size-'])]:size-4 [&>svg]:pointer-events-none [&>svg]:-mx-0.5 [&>svg]:shrink-0",
+      "flex min-h-9 w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-base text-foreground outline-none hover:bg-surface-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-60 data-[variant=destructive]:text-destructive-foreground sm:min-h-8 sm:text-sm [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4.5 sm:[&>svg:not([class*='size-'])]:size-4 [&>svg]:pointer-events-none [&>svg]:-mx-0.5 [&>svg]:shrink-0",
       className,
     ),
     "data-slot": "base-drawer-menu-item",
@@ -631,14 +592,18 @@ function BaseDrawerMenuTrigger({
   return (
     <BaseDrawerTrigger
       className={cn(
-        "text-foreground hover:bg-accent hover:text-accent-foreground flex min-h-9 w-full cursor-default items-center gap-2 rounded-sm px-2 py-1 text-base outline-none select-none sm:min-h-8 sm:text-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
+        "text-foreground hover:bg-surface-hover hover:text-accent-foreground flex min-h-9 w-full cursor-default items-center gap-2 rounded-sm px-2 py-1 text-base outline-none select-none sm:min-h-8 sm:text-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       data-slot="base-drawer-menu-trigger"
       {...props}
     >
       {children}
-      <HugeiconsIcon icon={ArrowRight01Icon} className="ms-auto -me-0.5 opacity-80" strokeWidth={2} />
+      <HugeiconsIcon
+        icon={ArrowRight01Icon}
+        className="ms-auto -me-0.5 opacity-80"
+        strokeWidth={2}
+      />
     </BaseDrawerTrigger>
   );
 }
@@ -661,7 +626,7 @@ function BaseDrawerMenuCheckboxItem({
     <CheckboxPrimitive.Root
       checked={checked}
       className={cn(
-        "text-foreground hover:bg-accent hover:text-accent-foreground grid min-h-9 w-full cursor-default items-center gap-2 rounded-sm px-2 py-1 text-base outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-64 sm:min-h-8 sm:text-sm [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
+        "text-foreground hover:bg-surface-hover hover:text-accent-foreground grid min-h-9 w-full cursor-default items-center gap-2 rounded-sm px-2 py-1 text-base outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-60 sm:min-h-8 sm:text-sm [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
         variant === "switch"
           ? "grid-cols-[1fr_auto] gap-4 pe-1.5"
           : "grid-cols-[1rem_1fr] pe-4",
@@ -678,7 +643,7 @@ function BaseDrawerMenuCheckboxItem({
         <>
           <span className="col-start-1">{children}</span>
           <CheckboxPrimitive.Indicator
-            className="focus-visible:ring-ring focus-visible:ring-offset-background data-checked:bg-primary data-unchecked:bg-input col-start-2 inline-flex h-[calc(var(--thumb-size)+2px)] w-[calc(var(--thumb-size)*2-2px)] shrink-0 items-center rounded-full p-px transition-[background-color,box-shadow] duration-200 outline-none [--thumb-size:1rem] focus-visible:ring-2 focus-visible:ring-offset-1 data-disabled:opacity-64 sm:[--thumb-size:0.75rem]"
+            className="focus-visible:outline-ring/50 data-checked:bg-primary data-unchecked:bg-muted col-start-2 inline-flex h-[calc(var(--thumb-size)+2px)] w-[calc(var(--thumb-size)*2-2px)] shrink-0 items-center rounded-full p-px outline-0 outline-offset-0 outline-transparent transition-[background-color,box-shadow,outline-width,outline-offset,outline-color] duration-200 ease-out outline-solid [--thumb-size:1rem] focus-visible:outline-2 focus-visible:outline-offset-2 data-disabled:opacity-60 sm:[--thumb-size:0.75rem]"
             keepMounted
           >
             <span className="bg-background pointer-events-none block aspect-square h-full origin-left rounded-[var(--thumb-size)] shadow-sm will-change-transform [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s] in-[[data-slot=base-drawer-menu-checkbox-item]:active]:not-data-disabled:scale-x-110 in-[[data-slot=base-drawer-menu-checkbox-item][data-checked]]:origin-[var(--thumb-size)_50%] in-[[data-slot=base-drawer-menu-checkbox-item][data-checked]]:translate-x-[calc(var(--thumb-size)-4px)]" />
@@ -735,7 +700,7 @@ function BaseDrawerMenuRadioItem({
   return (
     <RadioPrimitive.Root
       className={cn(
-        "text-foreground hover:bg-accent hover:text-accent-foreground grid min-h-9 w-full cursor-default items-center gap-2 rounded-sm px-2 py-1 text-base outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-64 sm:min-h-8 sm:text-sm [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
+        "text-foreground hover:bg-surface-hover hover:text-accent-foreground grid min-h-9 w-full cursor-default items-center gap-2 rounded-sm px-2 py-1 text-base outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-60 sm:min-h-8 sm:text-sm [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0 [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
         "grid-cols-[1rem_1fr] items-center pe-4",
         className,
       )}
@@ -764,10 +729,6 @@ function BaseDrawerMenuRadioItem({
     </RadioPrimitive.Root>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Exports
-// ---------------------------------------------------------------------------
 
 export {
   BaseDrawer,

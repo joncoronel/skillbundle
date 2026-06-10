@@ -11,7 +11,7 @@
   /* Negative animation-delay shifts the start phase so the sheen enters
      from the viewport's left edge at page load instead of sitting in the
      center. Matches the shadcn convention of -1s on 2s (half-cycle). */
-  animation: shimmer 1.25s -0.5s linear infinite;
+  animation: shimmer 1.5s -0.75s linear infinite;
 }
 
 @keyframes shimmer {

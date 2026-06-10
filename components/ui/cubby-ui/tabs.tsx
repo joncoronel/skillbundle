@@ -5,6 +5,7 @@ import { Tabs as BaseTabs } from "@base-ui/react/tabs";
 import { cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { useAnimatedHeight } from "@/hooks/cubby-ui/use-animated-height";
 
 type TabsVariant = "capsule" | "underline";
@@ -85,7 +86,7 @@ const tabIndicatorVariants = cva(
           "data-[orientation=horizontal]:bottom-0 data-[orientation=horizontal]:top-auto data-[orientation=horizontal]:h-0.75 data-[orientation=horizontal]:translate-y-0",
         ],
         capsule: [
-          "bg-card dark:bg-accent  border bg-clip-padding shadow-[0_1px_2px_0_oklch(0.18_0_0/0.06)]",
+          solidSurface(5, 1),
           "data-[orientation=vertical]:w-auto",
           "data-[orientation=horizontal]:top-1/2 data-[orientation=horizontal]:h-(--active-tab-height)",
         ],

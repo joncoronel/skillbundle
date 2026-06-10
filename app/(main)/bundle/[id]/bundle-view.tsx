@@ -523,9 +523,8 @@ function SharePopover({
                   Anyone with this link can view
                 </span>
                 <Button
-                  variant="ghost"
+                  variant="destructive-soft"
                   size="xs"
-                  className="text-destructive"
                   onClick={() => onRevoke({ bundleId })}
                   leftSection={
                     <HugeiconsIcon
@@ -696,6 +695,7 @@ function RenameBundleDialog({
           <DialogBody>
             <Input
               aria-labelledby={titleId}
+              variant="elevated"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My React stack"
@@ -855,6 +855,7 @@ function DescriptionDialog({
           <DialogBody>
             <Textarea
               aria-labelledby={titleId}
+              variant="elevated"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="What's this bundle for?"

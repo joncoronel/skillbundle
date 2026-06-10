@@ -119,6 +119,7 @@ export function QuickAddPopover({
         side="bottom"
         align="end"
         sideOffset={6}
+        level={5}
         className="p-0 **:data-[slot=popover-viewport]:p-0! **:data-[slot=popover-viewport]:[--viewport-padding:0px]"
       >
         <QuickAddPanel skill={skill} currentBundleId={currentBundleId} />
@@ -147,7 +148,7 @@ function QuickAddPanel({
   const createInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <TransitionPanel activeKey={view} axis="x" className="w-72">
+    <TransitionPanel activeKey={view} className="w-72">
       <TransitionPanelView viewKey="list">
         <BundleListView
           skill={skill}
@@ -307,6 +308,7 @@ function BundleListView({
               className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none"
             />
             <Input
+              variant="elevated"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter bundles…"
@@ -350,7 +352,7 @@ function BundleListView({
                     className="flex w-full items-center gap-2.5 px-2 py-1.5 rounded-md"
                     title="Use Edit skills to remove from this bundle"
                   >
-                    <Checkbox name={bundle._id} disabled />
+                    <Checkbox variant="elevated" name={bundle._id} disabled />
                     <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                       {bundle.name}
                     </span>
@@ -375,7 +377,7 @@ function BundleListView({
                     className="flex w-full items-center gap-2.5 px-2 py-1.5 rounded-md opacity-60"
                     title={`Bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum`}
                   >
-                    <Checkbox name={bundle._id} disabled />
+                    <Checkbox variant="elevated" name={bundle._id} disabled />
                     <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                       {bundle.name}
                     </span>
@@ -388,9 +390,9 @@ function BundleListView({
               return (
                 <label
                   key={bundle._id}
-                  className="flex w-full items-center gap-2.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/50 transition-colors"
+                  className="flex w-full items-center gap-2.5 px-2 py-1.5 rounded-md cursor-pointer hover:bg-surface-hover transition-colors"
                 >
-                  <Checkbox name={bundle._id} />
+                  <Checkbox variant="elevated" name={bundle._id} />
                   <span className="min-w-0 flex-1 truncate text-sm">
                     {bundle.name}
                   </span>
@@ -407,7 +409,7 @@ function BundleListView({
       <button
         type="button"
         onClick={onCreate}
-        className="border-t flex items-center gap-2 px-3 py-2.5 text-left text-sm text-foreground hover:bg-accent/50 focus-visible:bg-accent/50 outline-none transition-colors"
+        className="border-t flex items-center gap-2 px-3 py-2.5 text-left text-sm text-foreground hover:bg-surface-hover focus-visible:bg-surface-hover outline-none transition-colors"
       >
         <HugeiconsIcon
           icon={Add01Icon}
@@ -549,6 +551,7 @@ function CreateBundleView({
           <div className="px-3 py-2.5 space-y-2">
             <Input
               ref={inputRef}
+              variant="elevated"
               placeholder="Bundle name"
               value={name}
               onChange={(e) => setName(e.target.value)}

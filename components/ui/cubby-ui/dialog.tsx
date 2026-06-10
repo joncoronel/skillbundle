@@ -5,13 +5,16 @@ import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
+  elevatedSurface,
+  type SurfaceLevel,
+} from "@/lib/cubby-ui/elevated";
+import {
   ScrollArea,
   type ScrollAreaProps,
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
-
 interface DialogConfigContextValue {
   modal: boolean | "trap-focus";
 }
@@ -77,16 +80,21 @@ function DialogViewport({ className, ...props }: BaseDialog.Viewport.Props) {
   );
 }
 
-// Content component
 function DialogContent({
   className,
   children,
   showCloseButton = true,
   variant = "default",
+  level = 5,
+  shadowLevel = 5,
   ...props
 }: BaseDialog.Popup.Props & {
   showCloseButton?: boolean;
   variant?: "default" | "inset";
+  /** Surface elevation level for the dialog bg (1-8). Defaults to 5 — the standard "dialog tier" above page/cards/popovers. Bump to 7 for a hero/critical modal. */
+  level?: SurfaceLevel;
+  /** Shadow weight (1-8). Pinned to 5 by default — matches the dialog tier, dramatic enough to anchor the modal without overpowering. Bump to 7 for hero modals. */
+  shadowLevel?: SurfaceLevel;
 }) {
   const { modal } = React.useContext(DialogConfigContext);
   const isModal = modal === true;
@@ -97,9 +105,12 @@ function DialogContent({
         <BaseDialog.Popup
           data-slot="dialog-content"
           data-variant={variant}
+          data-level={level}
           className={cn(
-            "bg-popover text-popover-foreground relative z-50 flex max-h-full min-h-0 w-full max-w-full min-w-0 flex-col overflow-hidden shadow-lg",
-            "ring-border rounded-2xl ring-1 sm:max-w-lg",
+            "text-popover-foreground relative z-50 flex max-h-full min-h-0 w-full max-w-full min-w-0 flex-col overflow-hidden",
+            "rounded-2xl sm:max-w-lg",
+            // Surface elevation — bg + shadow + rim overlay (rim uses ::after at z-[2])
+            elevatedSurface(level, shadowLevel),
             // Mobile: bottom sheet style
             // "right-0 bottom-0 left-0 rounded-t-lg",
             // Desktop: centered modal
@@ -112,10 +123,10 @@ function DialogContent({
             // Desktop animations: scale and fade
             "data-starting-style:translate-y-[calc(1.25rem)] data-starting-style:scale-95 data-starting-style:opacity-0",
             "data-ending-style:translate-y-[calc(1.25rem)] data-ending-style:scale-95 data-ending-style:opacity-0",
-            // Nested dialog overlay (hidden by default, fades in/out using allow-discrete)
-            "after:pointer-events-none after:absolute after:inset-0 after:hidden after:rounded-[inherit] after:bg-black/5 after:opacity-0 after:transition-[opacity,display] after:transition-discrete after:duration-200",
-            "data-nested-dialog-open:after:block data-nested-dialog-open:after:opacity-100",
-            "starting:data-nested-dialog-open:after:opacity-0",
+            // Nested dialog overlay — uses ::before (not ::after, that's the rim) at z-[3] so it paints above content AND above the rim
+            "before:pointer-events-none before:absolute before:inset-0 before:z-3 before:hidden before:rounded-[inherit] before:bg-black/5 before:opacity-0 before:transition-[opacity,display] before:transition-discrete before:duration-200",
+            "data-nested-dialog-open:before:block data-nested-dialog-open:before:opacity-100",
+            "starting:data-nested-dialog-open:before:opacity-0",
             !isModal && "pointer-events-auto",
             className,
           )}
@@ -137,14 +148,9 @@ function DialogContent({
   );
 }
 
-// Header component
-//
-// Slot-presence checks (header/body/footer "is X around?") use ancestor `:has()`
-// queries on `[data-slot=dialog-content]` rather than adjacent-sibling selectors.
-// Ancestor `:has()` descends through arbitrary wrappers (form, ErrorBoundary,
-// Suspense, conditional fragments) so consumers don't have to keep these slots
-// as direct DOM siblings of DialogContent. The footer's `pt-3` rule already
-// used this pattern; bringing the rest in line.
+// Slot-presence padding uses ancestor `:has()` on `[data-slot=dialog-content]`
+// so header/body/footer can be wrapped in forms, ErrorBoundaries, or fragments
+// without breaking spacing — adjacent-sibling selectors wouldn't reach through.
 function DialogHeader({
   className,
   ...props
@@ -165,7 +171,6 @@ function DialogHeader({
   );
 }
 
-// Body component
 function DialogBody({
   className,
   nativeScroll = false,
@@ -211,7 +216,6 @@ function DialogBody({
   );
 }
 
-// Footer component
 function DialogFooter({
   className,
   ...props
@@ -226,7 +230,7 @@ function DialogFooter({
         // Reduce top padding when body is present
         "not-in-data-[variant=inset]:in-[[data-slot=dialog-content]:has([data-slot=dialog-body])]:pt-3",
         // Inset variant: muted background with top border for separation
-        "in-data-[variant=inset]:border-border in-data-[variant=inset]:bg-muted/72 in-data-[variant=inset]:rounded-b-2xl in-data-[variant=inset]:border-t in-data-[variant=inset]:pt-4 in-data-[variant=inset]:pb-4",
+        "in-data-[variant=inset]:border-border in-data-[variant=inset]:bg-muted in-data-[variant=inset]:rounded-b-2xl in-data-[variant=inset]:border-t in-data-[variant=inset]:pt-4 in-data-[variant=inset]:pb-4",
         className,
       )}
       {...props}
@@ -234,7 +238,6 @@ function DialogFooter({
   );
 }
 
-// Title component
 function DialogTitle({ className, ...props }: BaseDialog.Title.Props) {
   return (
     <BaseDialog.Title
@@ -247,7 +250,6 @@ function DialogTitle({ className, ...props }: BaseDialog.Title.Props) {
   );
 }
 
-// Description component
 function DialogDescription({
   className,
   ...props
