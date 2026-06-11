@@ -12,43 +12,11 @@ import { DangerZone } from "./danger-zone";
 
 export type { BackendSession };
 
-function SecuritySkeleton() {
-  return (
-    <div className="flex flex-col gap-10">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-4 w-48" />
-        </div>
-        <div className="flex flex-col gap-4 lg:col-span-2">
-          <Skeleton className="h-9 w-36" />
-        </div>
-      </div>
-      <Separator />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-4 w-56" />
-        </div>
-        <div className="flex flex-col gap-3 lg:col-span-2">
-          {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between rounded-lg border p-3"
-            >
-              <div className="flex flex-col gap-1">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-3 w-40" />
-              </div>
-              <Skeleton className="h-8 w-16" />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// The section chrome (titles, descriptions, separators) is static text, so it
+// renders immediately and never shifts. Only the two data-dependent slots show
+// skeletons — the password area (Clerk user) and the sessions list (server
+// action) — and each fills in independently as its data arrives, instead of
+// swapping the whole tab layout twice. DangerZone gates itself internally.
 export function SecurityTab() {
   const { isLoaded, user } = useUser();
 
@@ -62,21 +30,26 @@ export function SecurityTab() {
     refetchOnWindowFocus: false,
   });
 
-  if (!isLoaded || !user) return <SecuritySkeleton />;
-
-  const hasPassword = user.passwordEnabled;
+  const userReady = isLoaded && !!user;
+  const hasPassword = !!user?.passwordEnabled;
 
   return (
     <div className="flex flex-col gap-10">
       <SettingsSection
         title="Password"
         description={
-          hasPassword
-            ? "Change your account password"
-            : "Set a password for email-based sign in"
+          !userReady
+            ? "Manage your account password"
+            : hasPassword
+              ? "Change your account password"
+              : "Set a password for email-based sign in"
         }
       >
-        <PasswordSection hasPassword={hasPassword} />
+        {userReady ? (
+          <PasswordSection hasPassword={hasPassword} />
+        ) : (
+          <Skeleton className="h-9 w-36" />
+        )}
       </SettingsSection>
 
       <Separator />
