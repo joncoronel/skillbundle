@@ -111,6 +111,7 @@ export function BundleEditSkillPicker({
               />
             )}
             <Input
+              variant="elevated"
               placeholder="Search skills by name…"
               value={rawQuery}
               onChange={(e) => setRawQuery(e.target.value)}

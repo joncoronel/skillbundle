@@ -89,12 +89,17 @@ export function BundleBar() {
       <Sheet open={visible} modal={false}>
         <SheetContent
           side="bottom"
-          variant="floating"
+          variant="default"
           showCloseButton={false}
           className={cn(
             "flex flex-col overflow-hidden",
-            "max-sm:inset-x-0 max-sm:bottom-0 max-sm:w-full max-sm:max-w-none max-sm:rounded-none max-sm:ring-0 max-sm:border-t max-sm:shadow-[0_-4px_20px_-4px_rgb(0_0_0/0.15)] max-sm:data-starting-style:translate-y-full max-sm:data-ending-style:translate-y-full",
-            "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:shadow-lg sm:ring-border sm:ring-1",
+            // Mobile: the `default` (flush) variant already provides a
+            // full-width bottom drawer with the directional (upward) surface
+            // shadow + top inner-edge rim — no overrides needed.
+            // sm+: lift into a centered, rounded floating pill with the
+            // all-around solidSurface shadow (4-edge rim). The sm:dark: shadow
+            // override is needed to outrank the flush variant's dark: shadow.
+            "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:bottom-4 sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:data-ending-style:translate-y-[calc(100%+1rem)]",
           )}
         >
           <Collapsible open={isOpen}>
@@ -106,7 +111,7 @@ export function BundleBar() {
                 {selectedSkills.map((skill) => (
                   <li
                     key={`${skill.source}/${skill.skillId}`}
-                    className="flex items-center gap-3 px-4 py-2 text-sm  hover:bg-muted/60 dark:hover:bg-muted"
+                    className="flex items-center gap-3 px-4 py-2 text-sm hover:bg-surface-hover"
                   >
                     <div className="min-w-0 flex-1 truncate">
                       <span className="font-medium">{skill.name}</span>
@@ -164,7 +169,7 @@ export function BundleBar() {
               onClick={() => setExpanded((v) => !v)}
               aria-expanded={isOpen}
               aria-controls="bundle-tray"
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 pr-2 pl-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 pr-2 pl-1 text-left transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
                 <HugeiconsIcon

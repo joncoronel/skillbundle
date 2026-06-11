@@ -213,22 +213,22 @@ function ReverificationDialog({
             disabled={!ready}
           >
             <InputOTPGroup>
-              <InputOTPSlot index={0} />
+              <InputOTPSlot index={0} variant="elevated" />
             </InputOTPGroup>
             <InputOTPGroup>
-              <InputOTPSlot index={1} />
+              <InputOTPSlot index={1} variant="elevated" />
             </InputOTPGroup>
             <InputOTPGroup>
-              <InputOTPSlot index={2} />
+              <InputOTPSlot index={2} variant="elevated" />
             </InputOTPGroup>
             <InputOTPGroup>
-              <InputOTPSlot index={3} />
+              <InputOTPSlot index={3} variant="elevated" />
             </InputOTPGroup>
             <InputOTPGroup>
-              <InputOTPSlot index={4} />
+              <InputOTPSlot index={4} variant="elevated" />
             </InputOTPGroup>
             <InputOTPGroup>
-              <InputOTPSlot index={5} />
+              <InputOTPSlot index={5} variant="elevated" />
             </InputOTPGroup>
           </InputOTP>
           <button

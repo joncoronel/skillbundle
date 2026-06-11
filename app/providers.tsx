@@ -23,7 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ClerkProvider afterSignOutUrl="/sign-in" prefetchUI={false}>
         <ConvexClientProvider>
           <ThemeProvider
-            attribute="data-theme"
+            attribute="class"
             defaultTheme="system"
             enableSystem
             disableTransitionOnChange

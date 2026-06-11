@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/cubby-ui/alert-dialog";
 import { SkillCardView, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
-import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border";
+import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border/marching-border";
 import { useBundleEdit } from "@/hooks/use-bundle-edit";
 import { cn } from "@/lib/utils";
 import { BundleEditSkillPicker } from "./skill-picker-sheet";

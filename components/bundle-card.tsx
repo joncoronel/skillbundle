@@ -58,7 +58,7 @@ export function BundleCard({
     starCount !== undefined;
 
   const content = (
-    <Card className="gap-3 py-4 transition-colors hover:bg-accent/50">
+    <Card className="gap-3 py-4 transition-colors hover:bg-surface-hover">
       <CardHeader className="gap-1">
         <CardTitle className="text-sm leading-snug">{name}</CardTitle>
         <CardAction>

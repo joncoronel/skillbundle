@@ -46,27 +46,32 @@ export function ThemeSwitcher() {
       variant="ghost"
       size="icon_sm"
     >
-      {/* Light mode: sun */}
-      <HugeiconsIcon
-        icon={Sun02Icon}
-        data-visible={active === "light" || undefined}
-        className="absolute motion-safe:transition-all! motion-safe:duration-200 motion-safe:rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
-        strokeWidth={2}
-      />
-      {/* Dark mode: moon */}
-      <HugeiconsIcon
-        icon={Moon02Icon}
-        data-visible={active === "dark" || undefined}
-        className="absolute motion-safe:transition-all! motion-safe:duration-200 motion-safe:-rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
-        strokeWidth={2}
-      />
-      {/* System mode: computer */}
-      <HugeiconsIcon
-        icon={ComputerIcon}
-        data-visible={active === "system" || undefined}
-        className="absolute motion-safe:transition-all! motion-safe:duration-200 motion-safe:rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
-        strokeWidth={2}
-      />
+      {/* Stack the three icons in a single grid cell so they overlap and
+          crossfade. Owned here (not via the button's children wrapper, which
+          no longer stacks its children). */}
+      <span className="relative grid size-4 place-items-center *:[grid-area:1/1]">
+        {/* Light mode: sun */}
+        <HugeiconsIcon
+          icon={Sun02Icon}
+          data-visible={active === "light" || undefined}
+          className="motion-safe:transition-all! motion-safe:duration-200 motion-safe:rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
+          strokeWidth={2}
+        />
+        {/* Dark mode: moon */}
+        <HugeiconsIcon
+          icon={Moon02Icon}
+          data-visible={active === "dark" || undefined}
+          className="motion-safe:transition-all! motion-safe:duration-200 motion-safe:-rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
+          strokeWidth={2}
+        />
+        {/* System mode: computer */}
+        <HugeiconsIcon
+          icon={ComputerIcon}
+          data-visible={active === "system" || undefined}
+          className="motion-safe:transition-all! motion-safe:duration-200 motion-safe:rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
+          strokeWidth={2}
+        />
+      </span>
     </Button>
   );
 }

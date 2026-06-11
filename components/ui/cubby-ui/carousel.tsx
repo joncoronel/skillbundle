@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
-
 type CarouselApi = UseEmblaCarouselType[1];
 type UseCarouselParameters = Parameters<typeof useEmblaCarousel>;
 type CarouselOptions = UseCarouselParameters[0];
@@ -197,7 +196,7 @@ function CarouselPrevious({
       onClick={scrollPrev}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} />
+      <HugeiconsIcon icon={ArrowLeft01Icon}  strokeWidth={2} />
       <span className="sr-only">Previous slide</span>
     </Button>
   );
@@ -227,7 +226,7 @@ function CarouselNext({
       onClick={scrollNext}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={2} />
+      <HugeiconsIcon icon={ArrowRight01Icon}  strokeWidth={2} />
       <span className="sr-only">Next slide</span>
     </Button>
   );

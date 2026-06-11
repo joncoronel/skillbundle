@@ -126,6 +126,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                 </label>
                 <Input
                   id="bundle-name"
+                  variant="elevated"
                   placeholder="My React stack"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -146,6 +147,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                 </label>
                 <Textarea
                   id="bundle-description"
+                  variant="elevated"
                   placeholder="What's this bundle for?"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}

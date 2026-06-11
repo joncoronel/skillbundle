@@ -17,7 +17,6 @@ import { useDataTable } from "@/components/ui/cubby-ui/data-table/data-table-con
 function DataTableColumnToggle() {
 	const { table } = useDataTable()
 
-	// Get toggleable columns (exclude selection column)
 	const toggleableColumns = table
 		.getAllColumns()
 		.filter((col) => col.id !== "__select__" && col.getCanHide())

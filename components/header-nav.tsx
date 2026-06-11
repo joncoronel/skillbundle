@@ -81,7 +81,7 @@ function NavLink({
       variant="ghost"
       size="sm"
       render={<Link href={href} aria-current={isActive ? "page" : undefined} />}
-      className={cn("gap-1.5", isActive && "bg-accent text-foreground")}
+      className={cn("gap-1.5", isActive && "bg-surface-selected text-foreground")}
       leftSection={icon}
     >
       {children}

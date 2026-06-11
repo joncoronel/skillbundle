@@ -5,13 +5,16 @@ import { AlertDialog as BaseAlertDialog } from "@base-ui/react/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
+  elevatedSurface,
+  type SurfaceLevel,
+} from "@/lib/cubby-ui/elevated";
+import {
   ScrollArea,
   type ScrollAreaProps,
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
-
 const AlertDialog = BaseAlertDialog.Root;
 
 const createAlertDialogHandle = BaseAlertDialog.createHandle;
@@ -67,10 +70,16 @@ function AlertDialogContent({
   children,
   showCloseButton = false,
   variant = "default",
+  level = 5,
+  shadowLevel = 5,
   ...props
 }: BaseAlertDialog.Popup.Props & {
   showCloseButton?: boolean;
   variant?: "default" | "inset";
+  /** Surface elevation level for the dialog bg (1-8). Defaults to 5. Bump to 7 for a critical/destructive confirmation that needs extra gravity. */
+  level?: SurfaceLevel;
+  /** Shadow weight (1-8). Pinned to 5 by default. */
+  shadowLevel?: SurfaceLevel;
 }) {
   return (
     <AlertDialogPortal>
@@ -79,9 +88,12 @@ function AlertDialogContent({
         <BaseAlertDialog.Popup
           data-slot="alert-dialog-content"
           data-variant={variant}
+          data-level={level}
           className={cn(
-            "bg-popover text-popover-foreground relative z-50 flex max-h-full min-h-0 w-full max-w-full min-w-0 flex-col overflow-hidden shadow-lg",
-            "ring-border rounded-2xl ring-1 sm:max-w-lg",
+            "text-popover-foreground relative z-50 flex max-h-full min-h-0 w-full max-w-full min-w-0 flex-col overflow-hidden",
+            "rounded-2xl sm:max-w-lg",
+            // Surface elevation — bg + shadow + rim overlay (rim uses ::after at z-[2])
+            elevatedSurface(level, shadowLevel),
             // Nested dialog offset
             "-translate-y-[calc(1.25rem*var(--nested-dialogs))]",
             // Scale effect for nested dialogs
@@ -91,10 +103,10 @@ function AlertDialogContent({
             // Animations: scale and fade
             "data-starting-style:translate-y-[calc(1.25rem)] data-starting-style:scale-95 data-starting-style:opacity-0",
             "data-ending-style:translate-y-[calc(1.25rem)] data-ending-style:scale-95 data-ending-style:opacity-0",
-            // Nested dialog overlay (hidden by default, fades in/out using allow-discrete)
-            "after:pointer-events-none after:absolute after:inset-0 after:hidden after:rounded-[inherit] after:bg-black/5 after:opacity-0 after:transition-[opacity,display] after:transition-discrete after:duration-200",
-            "data-nested-dialog-open:after:block data-nested-dialog-open:after:opacity-100",
-            "starting:data-nested-dialog-open:after:opacity-0",
+            // Nested dialog overlay — uses ::before (not ::after, that's the rim) at z-3 so it paints above content AND above the rim
+            "before:pointer-events-none before:absolute before:inset-0 before:z-3 before:hidden before:rounded-[inherit] before:bg-black/5 before:opacity-0 before:transition-[opacity,display] before:transition-discrete before:duration-200",
+            "data-nested-dialog-open:before:block data-nested-dialog-open:before:opacity-100",
+            "starting:data-nested-dialog-open:before:opacity-0",
             className,
           )}
           {...props}
@@ -115,11 +127,9 @@ function AlertDialogContent({
   );
 }
 
-// Slot-presence checks use ancestor `:has()` queries on
-// `[data-slot=alert-dialog-content]` rather than adjacent-sibling selectors,
-// so consumers can wrap header/body/footer in form, ErrorBoundary, Suspense,
-// or conditional fragments without breaking padding. Matches the Dialog
-// primitive's approach.
+// Slot-presence padding uses ancestor `:has()` on `[data-slot=alert-dialog-content]`
+// so header/body/footer can be wrapped in forms, ErrorBoundaries, or fragments
+// without breaking spacing — adjacent-sibling selectors wouldn't reach through.
 function AlertDialogHeader({
   className,
   ...props
@@ -199,7 +209,7 @@ function AlertDialogFooter({
         // Reduce top padding when body is present
         "not-in-data-[variant=inset]:in-[[data-slot=alert-dialog-content]:has([data-slot=alert-dialog-body])]:pt-3",
         // Inset variant: muted background with top border for separation
-        "in-data-[variant=inset]:border-border in-data-[variant=inset]:bg-muted/72 in-data-[variant=inset]:rounded-b-2xl in-data-[variant=inset]:border-t in-data-[variant=inset]:pt-4 in-data-[variant=inset]:pb-4",
+        "in-data-[variant=inset]:border-border in-data-[variant=inset]:bg-muted in-data-[variant=inset]:rounded-b-2xl in-data-[variant=inset]:border-t in-data-[variant=inset]:pt-4 in-data-[variant=inset]:pb-4",
         className,
       )}
       {...props}

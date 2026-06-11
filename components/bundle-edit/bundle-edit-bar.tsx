@@ -68,12 +68,17 @@ export function BundleEditBar({
     <Sheet open={open} modal={false}>
       <SheetContent
         side="bottom"
-        variant="floating"
+        variant="default"
         showCloseButton={false}
         className={cn(
           "flex flex-col overflow-hidden",
-          "max-sm:inset-x-0 max-sm:bottom-0 max-sm:w-full max-sm:max-w-none max-sm:rounded-none max-sm:ring-0 max-sm:border-t max-sm:shadow-[0_-4px_20px_-4px_rgb(0_0_0/0.15)] max-sm:data-starting-style:translate-y-full max-sm:data-ending-style:translate-y-full",
-          "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:shadow-lg sm:ring-border sm:ring-1",
+          // Mobile: the `default` (flush) variant already provides a
+          // full-width bottom drawer with the directional (upward) surface
+          // shadow + top inner-edge rim — no overrides needed.
+          // sm+: lift into a centered, rounded floating pill with the
+          // all-around solidSurface shadow (4-edge rim). The sm:dark: shadow
+          // override is needed to outrank the flush variant's dark: shadow.
+          "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:bottom-4 sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:data-ending-style:translate-y-[calc(100%+1rem)]",
         )}
       >
         <div className="flex items-center gap-2 px-3 py-2 sm:gap-4 sm:px-4 sm:py-2.5">

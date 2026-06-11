@@ -240,6 +240,7 @@ const SkillSelectionCheckbox = memo(function SkillSelectionCheckbox({
   return (
     <Checkbox
       id={checkboxId}
+      variant="elevated"
       checked={isSelected}
       onCheckedChange={handleToggle}
       disabled={disabled}

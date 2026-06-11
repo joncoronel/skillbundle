@@ -52,7 +52,7 @@ export function BundleSectionHeader({
           <SelectTrigger
             id="bundle-sort"
             size="sm"
-            className="w-auto min-w-36 border-transparent bg-transparent shadow-none before:hidden dark:bg-transparent"
+            className="w-auto min-w-36 border-transparent bg-transparent"
           >
             <SelectValue />
           </SelectTrigger>
