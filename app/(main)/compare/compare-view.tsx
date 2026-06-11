@@ -32,7 +32,7 @@ interface SkillRef {
 
 function parseSkillRefs(param: string | null): SkillRef[] {
   if (!param) return [];
-  return param
+  const refs = param
     .split(",")
     .map((ref) => {
       // Format: owner/repo:skillId
@@ -44,6 +44,15 @@ function parseSkillRefs(param: string | null): SkillRef[] {
       };
     })
     .filter((r): r is SkillRef => r !== null);
+  // Dedupe — repeated refs in the URL would render columns with duplicate
+  // React keys.
+  const seen = new Set<string>();
+  return refs.filter((r) => {
+    const k = `${r.source}:${r.skillId}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 function CompareColumn({ source, skillId }: SkillRef) {
@@ -217,9 +226,13 @@ export function CompareView() {
         ))}
       </div>
 
-      {/* Mobile: tabs */}
+      {/* Mobile: tabs. Keyed by the ref list so the uncontrolled defaultValue
+          resets if the skills param changes while mounted. */}
       <div className="md:hidden">
-        <Tabs defaultValue={`${refs[0].source}:${refs[0].skillId}`}>
+        <Tabs
+          key={refs.map((r) => `${r.source}:${r.skillId}`).join(",")}
+          defaultValue={`${refs[0].source}:${refs[0].skillId}`}
+        >
           <TabsList>
             {refs.slice(0, 3).map((ref) => (
               <TabsTrigger
