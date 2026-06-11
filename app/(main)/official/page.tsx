@@ -90,8 +90,8 @@ async function OfficialContent() {
               key={owner.owner}
               href={ownerHref(owner.owner)}
               className={cn(
-                "block bg-card rounded-2xl border dark:border-border/50 py-3 px-4",
-                "hover:bg-surface-hover duration-150 hover:duration-0 transition-colors",
+                "relative block bg-card rounded-2xl border dark:border-border/50 py-3 px-4",
+                "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0  hover:after:opacity-100",
                 isSolo
                   ? undefined
                   : isFirst
