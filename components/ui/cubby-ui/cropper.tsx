@@ -1,7 +1,7 @@
 "use client";
 
 import { Cropper as CropperPrimitive } from "@origin-space/image-cropper";
-import { forwardRef, useCallback, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -458,8 +458,10 @@ const useCropper = (options: UseCropperOptions = {}) => {
   const zoomRef = useRef(zoom);
   const aspectRatioRef = useRef(aspectRatio);
 
-  zoomRef.current = zoom;
-  aspectRatioRef.current = aspectRatio;
+  useEffect(() => {
+    zoomRef.current = zoom;
+    aspectRatioRef.current = aspectRatio;
+  }, [zoom, aspectRatio]);
 
   const handleZoomChange = useCallback(
     (newZoom: number) => {
