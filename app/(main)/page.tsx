@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
 
+import { Suspense } from "react";
 import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { HomeContent } from "./home-content";
+import { HomeFallback } from "./home-fallback";
 
-// The page is static: the hero prerenders and the client search UI (nuqs)
-// renders behind the root-layout Suspense, so the route stays prefetchable.
+// The page is static. <HomeContent> reads search params (nuqs), which
+// suspends during prerendering — the Suspense fallback below renders the
+// identical default no-params state (hero + search shell + popular
+// leaderboard), so the prerendered HTML is the full page and the route stays
+// prefetchable. After hydration the live tree applies any actual URL params.
 // The three leaderboards are cached with `unstable_cache` and tagged; the
 // Convex leaderboard crons revalidate those tags on each sync (see
 // app/api/revalidate/route.ts), so the snapshots stay fresh without a
@@ -58,23 +63,38 @@ export default async function Home() {
     [getInitialPopularSkills(), getInitialTrending(), getInitialHot()],
   );
 
+  const hero = (
+    <section className="mx-auto max-w-5xl px-4 pt-24 pb-10">
+      <h1 className="font-display text-5xl font-semibold tracking-tight leading-hero text-balance sm:text-6xl lg:text-7xl">
+        Build your
+        <br />
+        <span className="text-primary">AI skill bundle</span>
+      </h1>
+      <p className="mt-6 max-w-lg text-muted-foreground sm:text-lg sm:leading-relaxed lg:max-w-xl">
+        Discover, compare, and bundle skills for AI coding assistants like
+        Cursor and Claude. Pick your stack, share with a link.
+      </p>
+    </section>
+  );
+
   return (
-    <HomeContent
-      initialPopularSkills={initialPopularSkills}
-      initialTrending={initialTrending}
-      initialHot={initialHot}
+    <Suspense
+      fallback={
+        <HomeFallback
+          hero={hero}
+          initialPopularSkills={initialPopularSkills}
+          initialTrending={initialTrending}
+          initialHot={initialHot}
+        />
+      }
     >
-      <section className="mx-auto max-w-5xl px-4 pt-24 pb-10">
-        <h1 className="font-display text-5xl font-semibold tracking-tight leading-hero text-balance sm:text-6xl lg:text-7xl">
-          Build your
-          <br />
-          <span className="text-primary">AI skill bundle</span>
-        </h1>
-        <p className="mt-6 max-w-lg text-muted-foreground sm:text-lg sm:leading-relaxed lg:max-w-xl">
-          Discover, compare, and bundle skills for AI coding assistants like
-          Cursor and Claude. Pick your stack, share with a link.
-        </p>
-      </section>
-    </HomeContent>
+      <HomeContent
+        initialPopularSkills={initialPopularSkills}
+        initialTrending={initialTrending}
+        initialHot={initialHot}
+      >
+        {hero}
+      </HomeContent>
+    </Suspense>
   );
 }

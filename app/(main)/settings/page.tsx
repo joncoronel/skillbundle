@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import type { SearchParams } from "nuqs/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { verifySession } from "@/lib/auth";
@@ -65,7 +66,13 @@ export default async function SettingsPage({
         </p>
       </div>
 
-      <CustomSettingsPage sessionsPromise={sessionsPromise} />
+      {/* The page is already dynamic (auth + awaited searchParams), but
+          CustomSettingsPage reads search params via nuqs — keep a boundary so
+          a future data-flow change can't reintroduce the missing-Suspense
+          build error. */}
+      <Suspense fallback={null}>
+        <CustomSettingsPage sessionsPromise={sessionsPromise} />
+      </Suspense>
     </main>
   );
 }

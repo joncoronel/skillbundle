@@ -1,9 +1,13 @@
+import { Suspense } from "react";
+
+import { ExploreFallback } from "@/components/explore/explore-fallback";
 import { ExploreContent } from "./explore-content";
 
-export default async function ExplorePage() {
-  // Render dynamically so ExploreContent's search params (nuqs) resolve on the
-  // server — the full page ships in the initial HTML instead of bailing to
-  // client rendering behind a Suspense fallback (which flashes empty on load).
+export default function ExplorePage() {
+  // The page is static. <ExploreContent> reads search params (nuqs), which
+  // suspends during prerendering — the fallback renders the identical default
+  // browse state so the prerendered HTML is a full-looking page and the route
+  // stays prefetchable. After hydration the live tree applies any URL params.
 
   return (
     <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
@@ -17,7 +21,9 @@ export default async function ExplorePage() {
       </header>
 
       <div className="mt-10 space-y-14">
-        <ExploreContent />
+        <Suspense fallback={<ExploreFallback />}>
+          <ExploreContent />
+        </Suspense>
       </div>
     </main>
   );

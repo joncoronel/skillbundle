@@ -111,6 +111,8 @@ export function SkillExplorer({
   const isInputLoading = isText && textIsLoading;
   const Icon = isText ? Search01Icon : GithubIcon;
 
+  // The text-mode default state (tabs list + search input shell) is mirrored
+  // statically in app/(main)/home-fallback.tsx — keep that markup in sync.
   return (
     <>
       <Tabs value={mode} onValueChange={handleModeChange}>
