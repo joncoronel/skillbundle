@@ -19,11 +19,3 @@ export const loadHomeSearchParams = createLoader({
 export const loadExploreSearchParams = createLoader({
   q: parseAsString.withDefault(""),
 });
-
-// -- Settings page (/settings) --
-
-const settingsTabValues = ["profile", "security", "billing"] as const;
-
-export const loadSettingsSearchParams = createLoader({
-  tab: parseAsStringLiteral(settingsTabValues).withDefault("profile"),
-});

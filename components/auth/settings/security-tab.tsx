@@ -1,7 +1,8 @@
 "use client";
 
-import * as React from "react";
 import { useUser } from "@clerk/nextjs";
+import { useQuery } from "@tanstack/react-query";
+import { getSessions } from "@/app/(main)/settings/actions";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SettingsSection } from "./settings-section";
@@ -48,12 +49,18 @@ function SecuritySkeleton() {
   );
 }
 
-export function SecurityTab({
-  sessionsPromise,
-}: {
-  sessionsPromise: Promise<BackendSession[]>;
-}) {
+export function SecurityTab() {
   const { isLoaded, user } = useUser();
+
+  // Fetched on demand when this tab mounts — the /settings page is static, so
+  // sessions come from the server action instead of a server-render fetch.
+  // One-shot per visit, matching the old server-passed promise.
+  const { data: sessions } = useQuery({
+    queryKey: ["clerk-sessions"],
+    queryFn: () => getSessions(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
 
   if (!isLoaded || !user) return <SecuritySkeleton />;
 
@@ -78,9 +85,11 @@ export function SecurityTab({
         title="Active sessions"
         description="Manage your active sessions across devices"
       >
-        <React.Suspense fallback={<SessionsSkeleton />}>
-          <SessionsTab sessionsPromise={sessionsPromise} />
-        </React.Suspense>
+        {sessions === undefined ? (
+          <SessionsSkeleton />
+        ) : (
+          <SessionsTab initialSessions={sessions} />
+        )}
       </SettingsSection>
 
       <Separator />

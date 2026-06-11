@@ -1,60 +1,23 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import type { SearchParams } from "nuqs/server";
-import { clerkClient } from "@clerk/nextjs/server";
-import { verifySession } from "@/lib/auth";
-import { loadSettingsSearchParams } from "@/lib/search-params.server";
 import {
   CustomSettingsPage,
-  type BackendSession,
+  CustomSettingsPageView,
 } from "@/components/auth/settings/custom-settings-page";
+
+// The page is static — auth is enforced by the middleware (proxy.ts) and all
+// tab content is client-rendered (Clerk hooks, Convex queries, and the
+// sessions server action fetched from the Security tab). CustomSettingsPage
+// reads the tab search param (nuqs), which suspends during prerendering — the
+// fallback renders the identical default state (Profile tab, whose content
+// shows its own skeleton until Clerk loads) so the route stays prefetchable
+// and navigation is instant.
 
 export const metadata: Metadata = {
   title: "Account Settings",
 };
 
-async function getSessions(): Promise<BackendSession[]> {
-  const { userId } = await verifySession();
-
-  try {
-    const client = await clerkClient();
-    const response = await client.sessions.getSessionList({
-      userId,
-      status: "active",
-      limit: 50,
-    });
-
-    return response.data.map((session) => ({
-      id: session.id,
-      status: session.status,
-      lastActiveAt: session.lastActiveAt,
-      createdAt: session.createdAt,
-      latestActivity: session.latestActivity
-        ? {
-            deviceType: session.latestActivity.deviceType,
-            browserName: session.latestActivity.browserName,
-            browserVersion: session.latestActivity.browserVersion,
-            ipAddress: session.latestActivity.ipAddress,
-            city: session.latestActivity.city,
-            country: session.latestActivity.country,
-            isMobile: session.latestActivity.isMobile,
-          }
-        : null,
-    }));
-  } catch (err) {
-    console.error("Failed to fetch sessions:", err);
-    return [];
-  }
-}
-
-export default async function SettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
-  await loadSettingsSearchParams(searchParams);
-  const sessionsPromise = getSessions();
-
+export default function SettingsPage() {
   return (
     <main className="mx-auto max-w-4xl px-4 pt-12 pb-20">
       <div className="mb-8">
@@ -66,12 +29,8 @@ export default async function SettingsPage({
         </p>
       </div>
 
-      {/* The page is already dynamic (auth + awaited searchParams), but
-          CustomSettingsPage reads search params via nuqs — keep a boundary so
-          a future data-flow change can't reintroduce the missing-Suspense
-          build error. */}
-      <Suspense fallback={null}>
-        <CustomSettingsPage sessionsPromise={sessionsPromise} />
+      <Suspense fallback={<CustomSettingsPageView activeTab="profile" />}>
+        <CustomSettingsPage />
       </Suspense>
     </main>
   );
