@@ -10,7 +10,10 @@ import {
   TabsPanels,
   TabsContent,
 } from "@/components/ui/cubby-ui/tabs";
-import { settingsTabParser } from "@/lib/search-params";
+import {
+  settingsTabParser,
+  type SettingsTabValue,
+} from "@/lib/search-params";
 import { ReverificationProvider } from "./reverification-provider";
 import { ProfileTab } from "./profile-tab";
 import { SecurityTab, type BackendSession } from "./security-tab";
@@ -18,11 +21,7 @@ import { BillingTab } from "./billing-tab";
 
 export type { BackendSession };
 
-export function CustomSettingsPage({
-  sessionsPromise,
-}: {
-  sessionsPromise: Promise<BackendSession[]>;
-}) {
+export function CustomSettingsPage() {
   const [activeTab, setActiveTab] = useQueryState("tab", settingsTabParser);
 
   function handleTabChange(value: string | number | null) {
@@ -31,8 +30,26 @@ export function CustomSettingsPage({
   }
 
   return (
+    <CustomSettingsPageView activeTab={activeTab} onTabChange={handleTabChange} />
+  );
+}
+
+/**
+ * Presentational settings tabs with the active tab controlled via props — no
+ * URL state. Rendered by `CustomSettingsPage` (nuqs-backed) and by the
+ * settings page's Suspense fallback, which must not touch useSearchParams so
+ * the default state can statically prerender.
+ */
+export function CustomSettingsPageView({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab: SettingsTabValue;
+  onTabChange?: (value: string | number | null) => void;
+}) {
+  return (
     <ReverificationProvider>
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-8">
+      <Tabs value={activeTab} onValueChange={onTabChange} className="gap-8">
         <TabsList variant="underline">
           <TabsTrigger value="profile">
             <HugeiconsIcon icon={UserIcon} data-icon="inline-start" />
@@ -52,7 +69,7 @@ export function CustomSettingsPage({
             <ProfileTab />
           </TabsContent>
           <TabsContent value="security">
-            <SecurityTab sessionsPromise={sessionsPromise} />
+            <SecurityTab />
           </TabsContent>
           <TabsContent value="billing">
             <BillingTab />

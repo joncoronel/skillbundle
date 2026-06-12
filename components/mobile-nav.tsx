@@ -18,6 +18,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   CompassIcon,
   DashboardSquare01Icon,
+  GitCompareIcon,
   Menu01Icon,
   Tag01Icon,
   CheckmarkCircle02Icon,
@@ -64,6 +65,13 @@ export function MobileNav() {
               isActive={pathname === "/official"}
             >
               Official
+            </DrawerNavLink>
+            <DrawerNavLink
+              href="/compare"
+              icon={GitCompareIcon}
+              isActive={pathname === "/compare"}
+            >
+              Compare
             </DrawerNavLink>
             <DrawerNavLink
               href="/dashboard"

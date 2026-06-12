@@ -46,11 +46,10 @@ export function SessionsSkeleton() {
 }
 
 export function SessionsTab({
-  sessionsPromise,
+  initialSessions,
 }: {
-  sessionsPromise: Promise<BackendSession[]>;
+  initialSessions: BackendSession[];
 }) {
-  const initialSessions = React.use(sessionsPromise);
   const { session: currentSession } = useClerk();
   const [sessions, setSessions] = React.useState(initialSessions);
 

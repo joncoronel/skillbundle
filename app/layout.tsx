@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
-import { Suspense } from "react";
 
 import { Providers } from "./providers";
 import "./globals.css";
@@ -21,15 +20,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <Suspense>
-        <body
-          className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
-        >
-          <div className="root">
-            <Providers>{children}</Providers>
-          </div>
-        </body>
-      </Suspense>
+      <body
+        className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
+      >
+        <div className="root">
+          <Providers>{children}</Providers>
+        </div>
+      </body>
     </html>
   );
 }

@@ -31,7 +31,6 @@ import {
 import { SkillSearchResults } from "@/components/skill-search";
 import { DefaultSkillsList } from "@/components/default-skills-list";
 import { RepoAnalysisResults } from "@/components/repo-url-input";
-import { BundleBar } from "@/components/bundle-bar";
 import {
   SkillDetailSheet,
   createSkillDetailHandle,
@@ -111,6 +110,8 @@ export function SkillExplorer({
   const isInputLoading = isText && textIsLoading;
   const Icon = isText ? Search01Icon : GithubIcon;
 
+  // The text-mode default state (tabs list + search input shell) is mirrored
+  // statically in app/(main)/home-fallback.tsx — keep that markup in sync.
   return (
     <>
       <Tabs value={mode} onValueChange={handleModeChange}>
@@ -255,7 +256,8 @@ export function SkillExplorer({
         </TabsPanels>
       </Tabs>
 
-      <BundleBar />
+      {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
+          state persists across navigation to /compare. */}
       <SkillDetailSheet handle={skillDetailHandle} />
     </>
   );

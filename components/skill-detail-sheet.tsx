@@ -20,6 +20,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   Copy01Icon,
+  GitCompareIcon,
   PlusSignIcon,
   MinusSignIcon,
   Tick02Icon,
@@ -33,6 +34,7 @@ import {
   useIsSkillSelected,
 } from "@/lib/bundle-selection";
 import { generateInstallCommands } from "@/lib/install-commands";
+import { compareHref } from "@/lib/compare";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
 import { OfficialBadge } from "@/components/skill-badges";
@@ -150,6 +152,18 @@ function SkillDetailSheetContent({
             className="size-3.5"
           />
         </Link>
+        <Link
+          href={compareHref([{ source: skill.source, skillId: skill.skillId }])}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+          onNavigate={() => handle.close()}
+        >
+          <HugeiconsIcon
+            icon={GitCompareIcon}
+            strokeWidth={2}
+            className="size-3.5"
+          />
+          Compare
+        </Link>
         {footerAction === "copy-install" ? (
           <CopyInstallButton skill={skill} />
         ) : (
@@ -166,6 +180,10 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
   // paint before the markdown lands causes the audit section to flash in
   // and then jump down when the longer documentation finally renders. Wait
   // for both before showing anything.
+  //
+  // Direct Convex queries by design — see the cost note in
+  // app/(main)/compare/compare-content.tsx (CompareColumn) for the cached
+  // route-handler escape hatch and when it would be worth switching to it.
   const { data: contentData, isPending: contentLoading } = useQuery(
     convexQuery(api.skills.getContent, {
       source: skill.source,

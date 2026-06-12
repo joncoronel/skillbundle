@@ -62,9 +62,38 @@ export function DefaultSkillsList({
   );
 
   return (
+    <DefaultSkillsListView
+      tab={tab}
+      onTabChange={handleTabChange}
+      initialPage={initialPage}
+      initialTrending={initialTrending}
+      initialHot={initialHot}
+      sheetHandle={sheetHandle}
+    />
+  );
+}
+
+/**
+ * Presentational leaderboard with the active tab controlled via props — no
+ * URL state. Rendered by `DefaultSkillsList` (nuqs-backed) and by the home
+ * page's Suspense fallback, which must not touch useSearchParams so the
+ * default state can statically prerender.
+ */
+export function DefaultSkillsListView({
+  tab,
+  onTabChange,
+  initialPage,
+  initialTrending,
+  initialHot,
+  sheetHandle,
+}: DefaultSkillsListProps & {
+  tab: LeaderboardTabValue;
+  onTabChange: (value: string) => void;
+}) {
+  return (
     <Tabs
       value={tab}
-      onValueChange={handleTabChange}
+      onValueChange={onTabChange}
       className="mt-4"
     >
       <div className="mb-4 flex items-baseline justify-between gap-4 flex-wrap">

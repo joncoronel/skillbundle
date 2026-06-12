@@ -1,38 +1,22 @@
-import { Suspense } from "react";
-import { preloadQuery } from "convex/nextjs";
-import { api } from "@/convex/_generated/api";
-import { verifySession, getAuthToken } from "@/lib/auth";
 import { DashboardContent } from "./dashboard-content";
 import { DashboardMasthead } from "./dashboard-masthead";
-import { DashboardSkeleton } from "./dashboard-skeleton";
+
+// The page is static — auth is enforced by the middleware (proxy.ts), and the
+// per-user data is client-fetched over the already-authenticated Convex
+// websocket (see DashboardContent). Same treatment as /settings: the shell
+// contains no user data, so it prefetches and paints instantly on nav, and
+// visits don't consume Vercel function invocations. The trade-off is cold
+// direct loads (bookmarks) showing the skeleton until the client Convex
+// handshake completes, where the old dynamic version streamed data in the
+// HTML — in-app navigation dominates for a top-nav destination.
 
 export default function DashboardPage() {
   return (
     <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
       <div className="space-y-10">
         <DashboardMasthead />
-
-        <Suspense fallback={<DashboardSkeleton />}>
-          <DashboardLoader />
-        </Suspense>
+        <DashboardContent />
       </div>
     </main>
-  );
-}
-
-async function DashboardLoader() {
-  // Note: verifySession() + getAuthToken() both access cookies, which "unlocks"
-  // Math.random() for the preloadQuery calls below. cacheComponents requires
-  // dynamic data access before any code that uses Math.random().
-  const [, token] = await Promise.all([verifySession(), getAuthToken()]);
-  const [preloadedBundles, preloadedPlan] = await Promise.all([
-    preloadQuery(api.bundles.listByUser, {}, { token }),
-    preloadQuery(api.plans.currentPlan, {}, { token }),
-  ]);
-  return (
-    <DashboardContent
-      preloadedBundles={preloadedBundles}
-      preloadedPlan={preloadedPlan}
-    />
   );
 }

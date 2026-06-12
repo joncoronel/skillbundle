@@ -54,10 +54,21 @@
       "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep -n \"Button.*loading\\\\|Button.*disabled\" --include=\"*.tsx\")",
       "Bash(git -C /c/Users/jonny/Documents/Projects/skillstack grep \"Button.*loading\" -- \"*.tsx\")",
       "Bash(gh repo *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "PowerShell(pnpm exec eslint \"app/\\(main\\)/compare\" components/skill-picker.tsx components/bundle-edit/skill-picker-sheet.tsx lib/compare.ts)",
+      "PowerShell(if \\($LASTEXITCODE -eq 0\\) { \"LINT CLEAN\" })",
+      "Bash(agent-browser find *)",
+      "Bash(agent-browser type *)",
+      "Bash(agent-browser click *)",
+      "Bash(agent-browser press *)",
+      "PowerShell(pnpm exec eslint \"app/\\(main\\)/compare/compare-content.tsx\")",
+      "PowerShell($h = Get-Content \".next\\\\server\\\\app\\\\dashboard.html\" -Raw; foreach \\($s in \"Your bundles.\", \"New bundle\"\\) { \"$s -> $\\($h.Contains\\($s\\)\\)\" })",
+      "PowerShell(pnpm start -- -p 3100)",
+      "Bash(gh pr *)"
     ],
     "additionalDirectories": [
-      "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth"
+      "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",
+      "C:\\tmp"
     ]
   },
   "enabledMcpjsonServers": [

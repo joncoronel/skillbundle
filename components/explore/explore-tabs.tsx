@@ -20,6 +20,27 @@ const OPTIONS: ReadonlyArray<{ value: ExploreSortValue; label: string }> = [
 export function ExploreTabs() {
   const [sort, setSort] = useQueryState("sort", exploreSortParser);
 
+  const handleSwitchSort = (next: ExploreSortValue) => {
+    // Strip the param when it matches the default so the URL stays clean.
+    setSort(next === "newest" ? null : next);
+  };
+
+  return <ExploreTabsView sort={sort} onSortChange={handleSwitchSort} />;
+}
+
+/**
+ * Presentational sort tabs with the active sort controlled via props — no URL
+ * state. Rendered by `ExploreTabs` (nuqs-backed) and by the explore page's
+ * Suspense fallback, which must not touch useSearchParams so the default
+ * state can statically prerender.
+ */
+export function ExploreTabsView({
+  sort,
+  onSortChange,
+}: {
+  sort: ExploreSortValue;
+  onSortChange: (next: ExploreSortValue) => void;
+}) {
   // Lazy-but-sticky: only mount BundleGrid for tabs the user has visited,
   // then keep them mounted (TabsContent keepMounted) so subsequent tab
   // switches don't re-fetch the page or flash the skeleton.
@@ -37,16 +58,11 @@ export function ExploreTabs() {
     setVisitedTabs((prev) => new Set([...prev, sort]));
   }
 
-  const handleSwitchSort = (next: ExploreSortValue) => {
-    // Strip the param when it matches the default so the URL stays clean.
-    setSort(next === "newest" ? null : next);
-  };
-
   return (
     <Tabs
       value={sort}
       onValueChange={(value) => {
-        handleSwitchSort(value as ExploreSortValue);
+        onSortChange(value as ExploreSortValue);
       }}
     >
       <TabsList
@@ -64,7 +80,7 @@ export function ExploreTabs() {
         {OPTIONS.map((opt) => (
           <TabsContent keepMounted key={opt.value} value={opt.value}>
             {visitedTabs.has(opt.value) ? (
-              <BundleGrid sort={opt.value} onSwitchSort={handleSwitchSort} />
+              <BundleGrid sort={opt.value} onSwitchSort={onSortChange} />
             ) : null}
           </TabsContent>
         ))}

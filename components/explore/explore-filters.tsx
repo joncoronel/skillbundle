@@ -25,6 +25,37 @@ export function ExploreFilters({
   loading,
 }: ExploreFiltersProps) {
   const [query, setQuery] = useQueryState("q", exploreQueryParser);
+
+  return (
+    <ExploreFiltersView
+      className={className}
+      ref={ref}
+      loading={loading}
+      query={query}
+      onQueryChange={(value) => setQuery(value || null)}
+      onClear={() => setQuery(null)}
+    />
+  );
+}
+
+/**
+ * Presentational search input with the query controlled via props — no URL
+ * state. Rendered by `ExploreFilters` (nuqs-backed) and by the explore page's
+ * Suspense fallback, which must not touch useSearchParams so the default
+ * state can statically prerender.
+ */
+export function ExploreFiltersView({
+  className,
+  ref,
+  loading,
+  query,
+  onQueryChange,
+  onClear,
+}: ExploreFiltersProps & {
+  query: string;
+  onQueryChange: (value: string) => void;
+  onClear: () => void;
+}) {
   const hasQuery = query.length > 0;
 
   return (
@@ -45,13 +76,13 @@ export function ExploreFilters({
           ref={ref}
           placeholder="Search bundles..."
           value={query}
-          onChange={(e) => setQuery(e.target.value || null)}
+          onChange={(e) => onQueryChange(e.target.value)}
         />
         <InputGroupAddon align="inline-end">
           {hasQuery ? (
             <InputGroupButton
               size="icon_xs"
-              onClick={() => setQuery(null)}
+              onClick={onClear}
               aria-label="Clear search"
             >
               <HugeiconsIcon

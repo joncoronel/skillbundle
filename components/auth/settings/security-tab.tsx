@@ -1,7 +1,9 @@
 "use client";
 
-import * as React from "react";
 import { useUser } from "@clerk/nextjs";
+import { useQuery } from "@tanstack/react-query";
+import { getSessions } from "@/app/(main)/settings/actions";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SettingsSection } from "./settings-section";
@@ -11,65 +13,49 @@ import { DangerZone } from "./danger-zone";
 
 export type { BackendSession };
 
-function SecuritySkeleton() {
-  return (
-    <div className="flex flex-col gap-10">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-4 w-48" />
-        </div>
-        <div className="flex flex-col gap-4 lg:col-span-2">
-          <Skeleton className="h-9 w-36" />
-        </div>
-      </div>
-      <Separator />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-4 w-56" />
-        </div>
-        <div className="flex flex-col gap-3 lg:col-span-2">
-          {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between rounded-lg border p-3"
-            >
-              <div className="flex flex-col gap-1">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-3 w-40" />
-              </div>
-              <Skeleton className="h-8 w-16" />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function SecurityTab({
-  sessionsPromise,
-}: {
-  sessionsPromise: Promise<BackendSession[]>;
-}) {
+// The section chrome (titles, descriptions, separators) is static text, so it
+// renders immediately and never shifts. Only the two data-dependent slots show
+// skeletons — the password area (Clerk user) and the sessions list (server
+// action) — and each fills in independently as its data arrives, instead of
+// swapping the whole tab layout twice. DangerZone gates itself internally.
+export function SecurityTab() {
   const { isLoaded, user } = useUser();
 
-  if (!isLoaded || !user) return <SecuritySkeleton />;
+  // Fetched on demand when this tab mounts — the /settings page is static, so
+  // sessions come from the server action instead of a server-render fetch.
+  // One-shot per visit, matching the old server-passed promise.
+  const {
+    data: sessions,
+    isError: sessionsError,
+    refetch: refetchSessions,
+  } = useQuery({
+    queryKey: ["clerk-sessions"],
+    queryFn: () => getSessions(),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
 
-  const hasPassword = user.passwordEnabled;
+  const userReady = isLoaded && !!user;
+  const hasPassword = !!user?.passwordEnabled;
 
   return (
     <div className="flex flex-col gap-10">
       <SettingsSection
         title="Password"
         description={
-          hasPassword
-            ? "Change your account password"
-            : "Set a password for email-based sign in"
+          !userReady
+            ? "Manage your account password"
+            : hasPassword
+              ? "Change your account password"
+              : "Set a password for email-based sign in"
         }
       >
-        <PasswordSection hasPassword={hasPassword} />
+        {userReady ? (
+          <PasswordSection hasPassword={hasPassword} />
+        ) : (
+          <Skeleton className="h-9 w-36" />
+        )}
       </SettingsSection>
 
       <Separator />
@@ -78,9 +64,24 @@ export function SecurityTab({
         title="Active sessions"
         description="Manage your active sessions across devices"
       >
-        <React.Suspense fallback={<SessionsSkeleton />}>
-          <SessionsTab sessionsPromise={sessionsPromise} />
-        </React.Suspense>
+        {sessionsError ? (
+          <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-4">
+            <p className="text-sm text-muted-foreground">
+              Couldn&apos;t load your sessions.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchSessions()}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : sessions === undefined ? (
+          <SessionsSkeleton />
+        ) : (
+          <SessionsTab initialSessions={sessions} />
+        )}
       </SettingsSection>
 
       <Separator />

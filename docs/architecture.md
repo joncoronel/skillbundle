@@ -1,21 +1,21 @@
 # Next.js 16 + Convex + Clerk Architecture Guide
 
-Patterns for building a full-stack app with Next.js 16 (App Router), Convex as the backend/database, and Clerk for authentication.
+Patterns used in this app: Next.js 16 (App Router) on Vercel, Convex as the backend/database, Clerk for authentication.
 
 ## Stack
 
-| Layer        | Tech                                    | Role                                           |
-| ------------ | --------------------------------------- | ---------------------------------------------- |
-| Frontend     | Next.js 16 (App Router), React 19      | SSR, streaming, static shells, PPR             |
-| Backend + DB | Convex                                  | Real-time queries, mutations, actions, storage |
-| Auth         | Clerk (Core 3) + `convex/react-clerk`   | Auth via Clerk, bridged to Convex via JWT      |
-| Billing      | Polar + `@convex-dev/polar`             | Subscription billing via Polar MoR, synced to Convex |
-| Data Layer   | TanStack Query + `@convex-dev/react-query` | Client-side query integration                |
-| URL State    | nuqs                                    | Type-safe URL search param state management  |
+| Layer | Tech | Role |
+| --- | --- | --- |
+| Frontend | Next.js 16 (App Router), React 19 | Static shells, ISR, streaming |
+| Backend + DB | Convex | Real-time queries, mutations, actions, storage |
+| Auth | Clerk (Core 3) + `convex/react-clerk` | Auth via Clerk, bridged to Convex via JWT |
+| Billing | Polar + `@convex-dev/polar` | Subscription billing via Polar MoR, synced to Convex |
+| Data Layer | TanStack Query + `@convex-dev/react-query` | Client-side query integration |
+| URL State | nuqs | Type-safe URL search param state management |
 
 ### Key dependencies
 
-```
+```text
 @clerk/nextjs        # Core 3
 @clerk/backend       # Core 3
 convex
@@ -27,94 +27,89 @@ nuqs
 svix
 ```
 
----
-
-## 1. Cache Components & Partial Prerendering (PPR)
-
-### Overview
-
-`cacheComponents: true` in `next.config.ts` enables Partial Prerendering — routes produce a **static HTML shell** at build time, with dynamic content streaming in via `<Suspense>` at request time.
-
-```ts
-// next.config.ts
-const nextConfig: NextConfig = {
-  cacheComponents: true,
-};
-```
-
-### How PPR works
-
-At build time, Next.js prerenders the component tree. Components that access dynamic data (`cookies()`, `headers()`, `searchParams`, network requests) cannot complete during prerendering. They must be either:
-
-1. **Wrapped in `<Suspense>`** — deferred to request time, fallback becomes part of static shell
-2. **Marked with `"use cache"`** — cached result included in static shell
-
-If neither is done, the build fails with: `Uncached data was accessed outside of <Suspense>`.
-
-### Route types in build output
-
-| Symbol | Type | Meaning |
-| ------ | ---- | ------- |
-| `○` | Static | Fully prerendered, no dynamic content |
-| `◐` | Partial Prerender | Static shell + dynamic streaming |
-| `ƒ` | Dynamic | Fully server-rendered per request |
-
-### The `<body>` Suspense catch-all
-
-The root layout wraps `<body>` in `<Suspense>` as a runtime catch-all. This prevents blank page flashes when dynamic access isn't caught by an inner boundary.
-
-```tsx
-// app/layout.tsx
-export default function RootLayout({ children }) {
-  return (
-    <html lang="en">
-      <Suspense>
-        <body>
-          <Providers>{children}</Providers>
-        </body>
-      </Suspense>
-    </html>
-  );
-}
-```
-
-**Why `<body>` not `<html>`?** Wrapping above `<html>` causes the browser to receive an empty response initially (no `<html>` element to render into), resulting in a visible blank flash. Wrapping `<body>` keeps `<html>` and `<head>` (scripts, fonts) in the static shell.
-
-**Important:** The `<body>` Suspense is a runtime catch-all only. The build prerenderer still requires per-page Suspense boundaries for pages with dynamic access. Both are needed.
-
-### `use cache` directive
-
-Replaces the old `force-static` + `revalidate` route segment config:
-
-```tsx
-// Before (incompatible with cacheComponents)
-export const dynamic = "force-static";
-export const revalidate = 86400;
-
-// After
-export default async function Page({ params }) {
-  "use cache";
-  cacheLife("days");
-  // ...
-}
-```
-
-Works for pages, components, functions, and API route handlers.
-
-### Constraints
-
-- Any `searchParams`, `cookies()`, `auth()` access must be inside `<Suspense>` or `use cache`
-- Client components using `useSearchParams()` (including nuqs's `useQueryState` which uses it internally) may trigger the dynamic constraint during SSR prerendering. If this happens, either wrap the client component in `<Suspense>` or use a nuqs server loader to access `searchParams` beforehand.
-- `Math.random()` cannot be called before accessing dynamic data — this means Convex's `preloadQuery` (which uses `Math.random()` internally for logger IDs) cannot run before `searchParams` or `cookies()` has been accessed. They must be sequential, not `Promise.all()`'d.
-- Client components rendered during SSR that access auth state (e.g., via Clerk/Convex provider chain) also trigger the dynamic access constraint
+> **History note:** the app originally used `cacheComponents` (Partial Prerendering) and a root-layout `<Suspense>` around `<body>`. Both were removed — cacheComponents because runtime-discovered dynamic params (`/[org]/...`) could never be cached or prefetched (vercel/next.js#85240), and the root Suspense because it made the prerendered HTML of *every* route an empty document (no static shell until JS hydrated). If you find references to either pattern in old commits or comments, they describe the abandoned architecture.
 
 ---
 
-## 2. Authentication Setup
+## 1. Rendering & Caching Strategy
+
+### Guiding principles
+
+1. **Static-first.** A route is static unless it has a reason not to be. Static pages are served from the CDN (no function invocation), are fully prefetchable by `<Link>` (instant client navigation), and paint a real shell before JS loads.
+2. **Per-user data is fetched on the client over the Convex websocket**, never baked into pages. The static shell contains zero user data; auth-gated routes are protected by middleware.
+3. **Push load toward Convex, not Vercel functions.** The app runs on Vercel Hobby (fixed allotments, no overage) and Convex Pro (25M calls/month + paid overage, plus Convex's own query cache). When choosing where work runs, the platform with headroom wins. This is why client→Convex direct queries are preferred over route handlers / server-side fetching wherever the data is per-user or interactive.
+
+### Route inventory
+
+| Route | Type | Data strategy |
+| ----- | ---- | ------------- |
+| `/` (home) | `○` Static, 1h revalidate | Leaderboards server-cached via `unstable_cache` + tags, revalidated by Convex crons; search is client-side |
+| `/explore` | `○` Static | All data client-fetched (Convex `useQuery`) |
+| `/compare` | `○` Static | Skills in `?skills=` param (nuqs), one client Convex query per column |
+| `/settings` | `○` Static | Clerk hooks client-side; sessions via server action, fetched on demand |
+| `/dashboard` | `○` Static | `listByUser` + `currentPlan` client-fetched over the authed websocket |
+| `/official`, `/pricing` | `○` Static | — |
+| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `●` ISR (on-demand) | `generateStaticParams() => []` + `dynamicParams` + `revalidate: 86400`; data via `unstable_cache`-wrapped `fetchQuery` loaders |
+| `/bundle/[id]` | `ƒ` Dynamic | `preloadQuery` with auth token + `generateMetadata` for link unfurls |
+| `/api/revalidate` | `ƒ` Route handler | Secret-gated tag revalidation, called by Convex crons |
+
+### Why each type
+
+**Static + client data (most routes).** The whole page shell — including a meaningful default state, see §8 — prerenders at build. Navigation between these routes is instant (full prefetch). Per-user or interactive data arrives via the client Convex connection, which the root provider keeps open and authenticated across the whole session, so in-app navigations pay no handshake.
+
+**ISR for the skill catalog routes.** Skill/org/repo pages are public, high-cardinality, and shared. `generateStaticParams() => []` + `dynamicParams: true` means: first visitor to a path triggers a server render, everyone after gets a cached static page for 24h. The data layer underneath (`loadSkill`, `loadAudits` in `components/skill-detail-page.tsx`) is `unstable_cache`-wrapped `fetchQuery`, keyed by args, so `generateMetadata` and the page body share one Convex call — and other surfaces (anything importing `loadSkill`) share the same cache entries.
+
+> `fetchQuery` forces `cache: "no-store"` on its underlying fetch, which would mark a route dynamic. Wrapping it in `unstable_cache` isolates that and is what makes static/ISR generation possible. This is the standard pattern for any server-side Convex read on a non-dynamic route.
+
+**Dynamic only for `/bundle/[id]`.** It's the shareable artifact — its most important traffic is cold loads of shared links by visitors with no warm Clerk/Convex session, and access control involves share tokens (`?share=`) plus optional auth. Server rendering puts the bundle content in the initial HTML and enables `generateMetadata` (bundle name/description in OG tags so links unfurl in chat apps). A `loading.tsx` provides navigation feedback. This is the only route still using `preloadQuery`/`usePreloadedQuery`.
+
+**Deliberately NOT dynamic — compare.** `/compare` was briefly a path-param ISR route (`/compare/[[...refs]]`); it was reverted to a static page + `?skills=` query param because comparison combos are high-cardinality, order-sensitive, and rarely revisited — per-combo ISR entries (or per-request renders) pay for pages nobody loads twice, and crawlers could mint unbounded cache writes. With query params + client fetching there is exactly one route, and add/remove column is a shallow URL update with no navigation.
+
+### Home leaderboard caching + cron revalidation
+
+The home page's three leaderboards are fetched at build/revalidate time via `unstable_cache` with tags (`home-popular`, `home-trending`, `home-hot`). The Convex leaderboard crons POST to `/api/revalidate` (shared-secret gated, tag allowlist) right after writing new ranks, expiring the tag so the next visit rebuilds the snapshot. The `revalidate` windows on the caches are a safety net for missed pings. This gives fresh-enough data with zero per-request Convex calls and no stale-then-live flash (the tabs render the snapshot directly, no client subscription).
+
+---
+
+## 2. The Suspense-with-Default-State-Fallback Pattern
+
+This is the load-bearing pattern that keeps routes static while using nuqs/`useSearchParams`.
+
+### The problem
+
+Any client component calling `useSearchParams()` — which includes every nuqs `useQueryState` consumer, since the `next/app` adapter wraps it — **suspends during static prerendering** (the params aren't knowable at build). Without a `<Suspense>` boundary the production build fails (`Missing Suspense boundary with useSearchParams`). With a boundary, whatever the boundary's *fallback* renders is what lands in the prerendered HTML.
+
+So the fallback is not a loading state — **it is the page's static shell.** A bare/empty fallback means a blank page until hydration.
+
+### The pattern
+
+Each route wraps its params-reading client island in a `<Suspense>` whose fallback renders the **default no-params state of the real UI** — real content, pixel-identical to what the live component shows when no params are set:
+
+```tsx
+// app/(main)/page.tsx (server, static)
+<Suspense fallback={<HomeFallback hero={hero} {...initialData} />}>
+  <HomeContent {...initialData}>{hero}</HomeContent>
+</Suspense>
+```
+
+- The static HTML contains the full default page (home: hero + search bar + the real popular leaderboard, since that data is server-cached and available at build).
+- On the client, `useSearchParams` resolves synchronously, so at hydration React swaps the fallback DOM for the live tree. With no params set, they're identical — invisible. With params (`/?q=x`), the default state paints first and the param state applies after hydration. That trade-off is accepted (and matches in-session behavior).
+- **Fallbacks must not call `useSearchParams`/`useQueryState`** (they'd re-suspend). To avoid duplicating markup, components are split into a presentational `*View` (state via props) + a thin nuqs-backed wrapper — e.g. `DefaultSkillsListView`/`DefaultSkillsList`, `ExploreFiltersView`, `ExploreTabsView`, `CustomSettingsPageView`. The fallback renders the View with default values.
+- Where the default state is unknowable (compare: column count lives in the URL), the fallback is a state-neutral skeleton instead.
+
+Per-route fallbacks: `app/(main)/home-fallback.tsx`, `components/explore/explore-fallback.tsx`, `CustomSettingsPageView` (settings), `CompareFallback` (in compare's page.tsx).
+
+### Docs grounding
+
+Next.js recommends fallbacks that are "meaningful" and "match the dimensions of the content" (streaming guide); rendering the actual default UI is the maximal version of that. nuqs's own docs prescribe the same structure (server page → Suspense → client island).
+
+---
+
+## 3. Authentication Setup
 
 ### How the pieces connect
 
-```
+```text
 Browser                     Next.js Server              Convex Backend
 ───────                     ──────────────              ──────────────
 User clicks "Sign in"
@@ -144,11 +139,9 @@ Clerk ──► POST /clerk-users-webhook ──► Convex HTTP action
 
 ### Convex auth config
 
-`convex/auth.config.ts` — Tells Convex how to validate Clerk JWTs:
+`convex/auth.config.ts` — tells Convex how to validate Clerk JWTs:
 
 ```ts
-import type { AuthConfig } from "convex/server";
-
 export default {
   providers: [
     {
@@ -159,15 +152,15 @@ export default {
 } satisfies AuthConfig;
 ```
 
-Set `CLERK_JWT_ISSUER_DOMAIN` on the Convex dashboard. In development: `https://verb-noun-00.clerk.accounts.dev`. In production: `https://clerk.<your-domain>.com`.
+Set `CLERK_JWT_ISSUER_DOMAIN` on the Convex dashboard. Development: `https://verb-noun-00.clerk.accounts.dev`. Production: `https://clerk.<your-domain>.com`.
 
 ### Clerk webhook handler
 
-`convex/http.ts` — Syncs Clerk user events to the Convex `users` table. Handles `user.created`, `user.updated`, and `user.deleted` events, validated with Svix HMAC signatures. Set `CLERK_WEBHOOK_SECRET` on the Convex dashboard.
+`convex/http.ts` — syncs Clerk user events to the Convex `users` table (`user.created` / `user.updated` / `user.deleted`), validated with Svix HMAC signatures. Set `CLERK_WEBHOOK_SECRET` on the Convex dashboard.
 
 ### User helpers in Convex
 
-`convex/users.ts` — Two key helpers used across all Convex functions:
+`convex/users.ts`:
 
 ```ts
 export async function getCurrentUser(ctx: QueryCtx) {
@@ -183,118 +176,54 @@ export async function getCurrentUserOrThrow(ctx: QueryCtx) {
 }
 ```
 
-- `ctx.auth.getUserIdentity()` — Convex's built-in auth. Validates the JWT and returns identity claims.
-- `identity.subject` — Maps to Clerk's `userId` (e.g. `user_2abc...`), used to look up the user in the Convex `users` table via the `byExternalId` index.
+`identity.subject` is Clerk's `userId`, matched against `users.externalId`.
 
 ### Server-side auth helpers
 
-`lib/auth.ts` — Used in Server Components and server actions:
+`lib/auth.ts` — used by the remaining server-side consumers (the bundle page, server actions, `/dev` admin pages):
 
-```ts
-import "server-only";
-
-import { cache } from "react";
-import { auth } from "@clerk/nextjs/server";
-import { ClerkOfflineError } from "@clerk/nextjs/errors";
-import { redirect } from "next/navigation";
-
-// Cached wrapper — dedupes multiple auth() calls within the same request
-export const getAuth = cache(() => auth());
-
-export async function getAuthToken() {
-  try {
-    return (await (await getAuth()).getToken({ template: "convex" })) ?? undefined;
-  } catch (error) {
-    if (error instanceof ClerkOfflineError) return undefined;
-    throw error;
-  }
-}
-
-export const verifySession = cache(async () => {
-  const { userId } = await getAuth();
-  if (!userId) redirect("/sign-in");
-  return { userId };
-});
-```
-
-- `getAuth()` — Cached wrapper around Clerk's `auth()`. Clerk's `auth()` does not deduplicate internally, so this ensures multiple calls in the same render pass (e.g., `HeaderAuth` in the layout + `verifySession()` in the page) only parse the cookie once.
-- `getAuthToken()` — Gets a Convex-specific JWT from Clerk for use with `preloadQuery()`. Catches `ClerkOfflineError` (Core 3: `getToken()` throws when network is unavailable instead of returning `null`).
-- `verifySession()` — Checks auth and redirects if not signed in. Wrapped in React `cache()` to deduplicate within a single request.
+- `getAuth()` — React-`cache()`d wrapper around Clerk's `auth()` (dedupes cookie parsing within a request).
+- `getAuthToken()` — Convex-template JWT for `preloadQuery`/`fetchQuery`; catches `ClerkOfflineError` (Core 3 throws instead of returning null when offline).
+- `verifySession()` — auth check + redirect to `/sign-in`; `cache()`d.
+- `verifyAdmin()` — `verifySession` + Convex admin check for `/dev` routes.
 
 ### Clerk middleware
 
-`proxy.ts` — Route-level auth protection. Define public routes and protect everything else:
+`proxy.ts` — **an explicit private-route list, not a public list**:
 
 ```ts
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in", "/sign-in/sso-callback",
-  "/sign-up", "/sign-up/sso-callback",
-  "/pricing",
-  // Add your public routes here
+// Inverted from public-list because the org matchers (`/:org`, `/:org/:repo`)
+// match any single/double-segment path — including `/dashboard`, `/settings`,
+// `/dev` — making them silently public. createRouteMatcher does pattern
+// matching, not routing precedence.
+const isPrivateRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/settings(.*)",
+  "/dev(.*)",
 ]);
-
-const isAuthRoute = createRouteMatcher(["/sign-in", "/sign-up"]);
-
-export default clerkMiddleware(async (auth, request) => {
-  const { userId } = await auth();
-  // Redirect signed-in users away from auth pages
-  if (isAuthRoute(request) && userId) {
-    return Response.redirect(new URL("/", request.url));
-  }
-  if (!isPublicRoute(request)) {
-    await auth.protect();
-  }
-});
 ```
+
+This inversion matters anywhere route lists exist in this app (see also `GlobalBundleBar`'s allow-list): because the catch-all org routes shadow everything, **always allow-list, never exclude-list.**
 
 ---
 
-## 3. Auth Protection Patterns (3-Layer Defense)
+## 4. Auth Protection Layers
 
-| Layer              | Where                       | How                                              | Behavior                 |
+| Layer              | Where                       | How                                              | Protects                 |
 | ------------------ | --------------------------- | ------------------------------------------------ | ------------------------ |
-| Route protection   | `proxy.ts` (middleware)     | `auth.protect()` on non-public routes            | Redirects to Clerk login |
-| Page protection    | Server Components           | `verifySession()` + `redirect()`                 | Redirects to `/sign-in`  |
-| Data protection    | Convex functions            | `getCurrentUserOrThrow(ctx)` + ownership checks  | Throws / returns `null`  |
+| Route protection   | `proxy.ts` (middleware)     | `auth.protect()` on private routes               | Page access (redirect)   |
+| Data protection    | Convex functions            | `getCurrentUserOrThrow(ctx)` + ownership checks  | The actual data          |
+| Action protection  | Server actions              | `verifySession()` at the top                     | Server-side operations   |
 
-**Why three layers?**
+Static auth-gated pages (`/dashboard`, `/settings`) intentionally have **no page-level auth check** — there's nothing to protect in the shell (no user data), the middleware gates access, and every Convex query/mutation/action checks auth itself. The shells being publicly cacheable is by design. Pages that fetch user data server-side (`/bundle/[id]`, server actions like `getSessions`) keep their explicit server-side auth.
 
-- Middleware alone isn't sufficient — it can be bypassed. The Next.js docs recommend defense-in-depth.
-- `verifySession()` in pages provides a server-side fallback.
-- Convex functions are the final gate — even if someone bypasses the frontend, data access requires a valid JWT.
-
-**Example: protected page with all three layers**
-
-```tsx
-// proxy.ts — /protected-page is NOT in public routes, so middleware blocks unauthenticated users
-
-// page.tsx — defense-in-depth with PPR
-export default function ProtectedPage() {
-  return (
-    <main>
-      <h1>Your items</h1> {/* Static shell */}
-      <Suspense fallback={<ListSkeleton />}>
-        <PageLoader />
-      </Suspense>
-    </main>
-  );
-}
-
-async function PageLoader() {
-  const [, token] = await Promise.all([verifySession(), getAuthToken()]);
-  const preloaded = await preloadQuery(api.items.listByUser, {}, { token });
-  return <PageContent preloaded={preloaded} />;
-}
-
-// convex/items.ts — data-level protection
+```ts
+// convex — the final gate, always present
 export const listByUser = query({
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
     if (!user) return [];
-    return ctx.db.query("items")
+    return ctx.db.query("bundles")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
   },
@@ -303,148 +232,62 @@ export const listByUser = query({
 
 ---
 
-## 4. Provider Setup
+## 5. Provider Setup
 
-### Provider nesting order
+`ClerkProvider` must wrap `ConvexProviderWithClerk` — Convex needs Clerk's context.
 
-`ClerkProvider` must wrap `ConvexProviderWithClerk` — Convex needs access to Clerk's context.
+```text
+app/layout.tsx (Server Component — plain <html><body>, no Suspense)
+  └─ <Providers>                          (app/providers.tsx, "use client")
+       └─ NuqsAdapter                     (nuqs/adapters/next/app)
+            └─ ClerkProvider              (prefetchUI={false} — see note)
+                 └─ ConvexClientProvider  (app/ConvexClientProvider.tsx)
+                      └─ ConvexProviderWithClerk
+                           └─ QueryClientProvider (TanStack Query)
+                                └─ ThemeProvider   (next-themes, disableTransitionOnChange)
+                                     └─ ToastProvider / AnchoredToastProvider
+                                          └─ {children}
 
+app/(main)/layout.tsx
+  └─ AppHeader + {children} + GlobalBundleBar
 ```
-app/layout.tsx (Server Component)
-  └─ <Suspense>                               (wraps <body>, catch-all for cacheComponents)
-       └─ <Providers>                          (app/providers.tsx, "use client")
-            └─ NuqsAdapter                     (enables shallow URL state updates)
-                 └─ ClerkProvider
-                      └─ ConvexClientProvider   (app/ConvexClientProvider.tsx)
-                           └─ ConvexProviderWithClerk  (bridges Clerk auth → Convex)
-                                └─ QueryClientProvider (TanStack Query)
-                                     └─ ThemeProvider
-                                          └─ ToastProvider
-                                               └─ {children}
-```
+
+Notes:
+
+- **`ClerkProvider prefetchUI={false}`** — the app uses Clerk only through headless hooks and never mounts a prebuilt component, so the ~262 KiB prebuilt-UI bundle is skipped.
+- **`ThemeProvider disableTransitionOnChange`** — next-themes injects a global `* { transition: none !important }` for a moment while applying the theme class, **including at hydration**. Any animation that fires in the first ~15ms after hydration gets eaten by it (this is why `BundleBar` defers its entrance by two rAFs — see §9).
+- **`GlobalBundleBar`** lives in the `(main)` layout, not per page, so the same component instance (and its open/collapsed state) persists across home ↔ compare navigations. It's gated by a pathname **allow-list** (`/`, `/compare`) per the §3 inversion rule.
 
 ### ConvexClientProvider
 
-`app/ConvexClientProvider.tsx` — Bridges Clerk to Convex and sets up TanStack Query:
+Bridges Clerk to Convex and wires TanStack Query through `@convex-dev/react-query` (`queryKeyHashFn`/`queryFn` from `ConvexQueryClient`), so `useQuery(convexQuery(...))` calls are live Convex subscriptions with React Query caching semantics. The websocket connects once at app load and stays open/authenticated for the whole session — this is what makes "static shell + client data" navigation fast.
 
-```tsx
-"use client";
-
-import { ReactNode } from "react";
-import { ConvexReactClient } from "convex/react";
-import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { useAuth } from "@clerk/nextjs";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConvexQueryClient } from "@convex-dev/react-query";
-
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-const convexQueryClient = new ConvexQueryClient(convex);
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      queryKeyHashFn: convexQueryClient.hashFn(),
-      queryFn: convexQueryClient.queryFn(),
-    },
-  },
-});
-convexQueryClient.connect(queryClient);
-
-export function ConvexClientProvider({ children }: { children: ReactNode }) {
-  return (
-    <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
-    </ConvexProviderWithClerk>
-  );
-}
-```
-
-> **Note:** `useAuth` from `@clerk/nextjs` is passed as a **prop** to `ConvexProviderWithClerk`. This is the one correct use of Clerk's `useAuth`. Everywhere else, use `useConvexAuth()` from `convex/react`.
+> `useAuth` from `@clerk/nextjs` is passed as a prop to `ConvexProviderWithClerk`. That's its one correct use; everywhere else use `useConvexAuth()` from `convex/react`.
 
 ---
 
-## 5. Auth in the App Header (Hybrid Server/Client Pattern)
+## 6. App Header
 
-The header uses a hybrid approach: the server decides signed-in vs signed-out (cheap cookie read), then the client handles user data (reactive, free via Clerk).
-
-### Architecture
-
-`AppHeader` is a **server component** that composes client sub-components, each wrapped in its own `<Suspense>` for PPR:
-
-```
-AppHeader (SERVER — static shell: <header>, logo)
-├── ⏳ Suspense → <MobileNav />       (CLIENT: useState, usePathname)
-├── Logo                                (static HTML)
-├── ⏳ Suspense → <DesktopNav />       (CLIENT: usePathname)
-├── ⏳ Suspense → <ThemeSwitcher />    (CLIENT: useTheme)
-└── ⏳ Suspense → <HeaderAuth />       (SERVER: async, getAuth())
-                   ├── signed out → <Link> "Sign in" button
-                   └── signed in → <UserMenu /> (CLIENT: useUser, useClerk)
-```
-
-### Key files
-
-- `components/app-header.tsx` — Server component, renders static header shell with Suspense boundaries
-- `components/header-auth.tsx` — Async server component, calls `getAuth()` to decide what to render
-- `components/header-nav.tsx` — Client component, desktop nav links with active state via `usePathname()`
-- `components/mobile-nav.tsx` — Client component, hamburger + drawer with `useState`
-- `components/auth/user-menu.tsx` — Client component, uses Clerk's `useUser()` for user data, `useClerk()` for sign out
-
-### Why this split?
-
-With `cacheComponents`, client components that access auth state during SSR trigger the "uncached data" constraint. By making `HeaderAuth` an async server component:
-
-- **Signed-out users** get a plain `<Link>` button — zero JS for auth, no Clerk hooks loaded
-- **Signed-in users** get `<UserMenu>` which uses `useUser()` client-side (reactive, free via Clerk)
-- The server auth check (`getAuth()`) is a cached cookie parse — very fast, deduped with other auth calls in the same request
-
-### Tradeoffs considered
-
-| Approach | Skeleton | Server cost | Client JS | Reactivity |
-| -------- | -------- | ----------- | --------- | ---------- |
-| **Hybrid (current)** | Suspense fallback while `getAuth()` resolves | Cheap cookie parse per request | UserMenu only for signed-in users | `useUser()` reactive |
-| Pure client (`useConvexAuth`) | Client skeleton while Convex auth hydrates | None | All users download auth + dropdown JS | `useConvexAuth()` reactive |
-| Full server (preloadQuery) | Suspense fallback | Cookie + Convex query per request | Minimal | Real-time via `usePreloadedQuery` |
-
-The hybrid approach was chosen for the balance of: no unnecessary JS for signed-out users, no Convex billing cost for the header, and `useUser()` being free and reactive.
+`AppHeader` is a server component rendering a static shell; the interactive pieces are client components behind small Suspense boundaries with skeleton fallbacks (`DesktopNav`, `ThemeSwitcher`). Auth UI is **fully client-side** (`HeaderAuthClient`): a server-side cookie read would force every route dynamic, which conflicts with the static-first strategy. Signed-out users see the Sign in button after hydration; signed-in users get the user menu via Clerk's `useUser()`.
 
 ---
 
-## 6. Client-Side Auth State
+## 7. Client-Side Auth State
 
-For components other than the header, use Convex's auth hooks — **not** Clerk's — for UI that depends on auth state. This ensures the JWT has been fetched **and** validated by Convex before rendering authenticated content.
+Use Convex's auth hooks — not Clerk's — for UI that depends on auth state, so the JWT has been fetched **and validated by Convex** before authenticated content renders.
 
-### Hook: `useConvexAuth()` vs `useAuth()`
+| Hook | From | Returns | Use when |
+| --- | --- | --- | --- |
+| `useConvexAuth()` | `convex/react` | `{ isAuthenticated, isLoading }` | Checking auth state in components |
+| `useAuth()` | `@clerk/nextjs` | `{ isSignedIn, userId, ... }` | **Only** as a prop to `ConvexProviderWithClerk` |
 
-| Hook             | From              | Returns                         | Use when                                |
-| ---------------- | ----------------- | -------------------------------- | --------------------------------------- |
-| `useConvexAuth()`| `convex/react`    | `{ isAuthenticated, isLoading }` | Checking auth state in components       |
-| `useAuth()`      | `@clerk/nextjs`   | `{ isSignedIn, userId, ... }`    | **Only** as a prop to `ConvexProviderWithClerk` |
-
-### Skipping queries for unauthenticated users
-
-Use `useConvexAuth()` to conditionally skip Convex queries when the user isn't signed in:
-
-```tsx
-import { useQuery, useConvexAuth } from "convex/react";
-
-const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-const result = useQuery(api.plans.currentPlan, isAuthenticated ? {} : "skip");
-```
-
-Passing `"skip"` tells Convex not to run the query at all — no subscription, no server round-trip.
-
-### Avoiding stale state during auth hydration
-
-When auth is loading, `isAuthenticated` is `false` but the user may be signed in. Defaulting to unauthenticated state can cause a flash of wrong content (e.g., "Free plan" before "Pro plan" loads). Check `isLoading` from `useConvexAuth()` to show a skeleton during the transition:
+Skip queries for unauthenticated users (`"skip"` = no subscription, no round-trip), and check `isLoading` to avoid flashing wrong defaults during auth hydration:
 
 ```tsx
 // hooks/use-user-plan.ts
 export function useUserPlan() {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const result = useQuery(api.plans.currentPlan, isAuthenticated ? {} : "skip");
-
   return {
     plan: (result?.plan ?? "free") as Plan,
     limits: result?.limits ?? null,
@@ -456,365 +299,222 @@ export function useUserPlan() {
 
 ---
 
-## 7. Data Fetching Patterns
+## 8. Data Fetching Patterns
 
-### Pattern: Static shell + Suspense loader + preload
+### Pattern: client fetch on a static page (the default)
 
-The core PPR pattern. The page component is sync (renders the static shell), an async loader inside Suspense preloads data on the server, and the client hydrates it into a live subscription.
+Per-user or interactive data on static routes. `undefined` covers both "auth handshake in flight" and "query loading":
 
 ```tsx
-// page.tsx — server component
-export default function ProtectedPage() {
-  return (
-    <main>
-      <h1>Your items</h1>                       {/* Static shell */}
-      <Suspense fallback={<ListSkeleton />}>
-        <PageLoader />                           {/* Streams when ready */}
-      </Suspense>
-    </main>
-  );
-}
-
-async function PageLoader() {
-  const [, token] = await Promise.all([verifySession(), getAuthToken()]);
-  const preloaded = await preloadQuery(api.items.listByUser, {}, { token });
-  return <PageContent preloaded={preloaded} />;
-}
+// app/(main)/dashboard/dashboard-content.tsx
+const bundles = useQuery(api.bundles.listByUser);   // convex/react
+const planData = useQuery(api.plans.currentPlan);
+if (bundles === undefined || planData === undefined) return <DashboardSkeleton />;
+return <DashboardLoaded bundles={bundles} planData={planData} />;
 ```
 
-```tsx
-// Client component — data is instant, then subscribes for real-time updates
-"use client";
+Two client-query flavors coexist:
 
-export function PageContent({
-  preloaded,
-}: {
-  preloaded: Preloaded<typeof api.items.listByUser>;
-}) {
-  const items = usePreloadedQuery(preloaded);
-  // items is immediately available, and auto-updates via WebSocket
-}
+- **`useQuery` from `convex/react`** — when mutations with optimistic updates target the same query (dashboard): the optimistic `localStore` writes flow straight into these subscriptions.
+- **`useQuery(convexQuery(...))` via TanStack** — when React Query semantics help: `placeholderData: keepPreviousData` for search-as-you-type, `staleTime`/`gcTime` session caching (compare columns, pickers, explore).
+
+### Pattern: `unstable_cache` + `fetchQuery` server loaders (ISR routes)
+
+```tsx
+// components/skill-detail-page.tsx
+export const loadSkill = unstable_cache(
+  (source: string, skillId: string) =>
+    fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
+  ["skill-detail"],
+  { revalidate: 86400 },
+);
 ```
 
-### Pattern: `use cache` for static-ish pages
+Args are part of the cache key. Shared across `generateMetadata` + page body + any other importer. Cross-user — one Convex call per skill per day, total.
 
-For pages with stable data that don't need auth, use `"use cache"` + `cacheLife()` instead of Suspense. Replaces the old `force-static` + `revalidate` config.
+> A considered-and-rejected extension: exposing `loadSkill` to the client via a GET route handler so compare/detail-sheet fetches share this cache. Rejected on plan economics (it trades Convex Pro calls for capped Vercel Hobby invocations) — see the note in `app/(main)/compare/compare-content.tsx`.
+
+### Pattern: `preloadQuery` + `usePreloadedQuery` (bundle page only)
+
+Server preloads with the user's token; the client hydrates the result into a live subscription:
 
 ```tsx
-// page.tsx — cached public page
-export default async function CachedPage({ params }) {
-  "use cache";
-  cacheLife("days");
-
-  const { id } = await params;
-  const item = await fetchQuery(api.items.getById, { id });
-  if (!item) notFound();
-
-  return <ItemPageContent item={item} />;
-}
+const [preloadedBundle, preloadedPlan] = await Promise.all([
+  preloadQuery(api.bundles.getByUrlId, { urlId: id, shareToken: share }, { token }),
+  preloadQuery(api.plans.currentPlan, {}, { token }),
+]);
+return <BundleView preloadedBundle={preloadedBundle} ... />;
 ```
 
-Also works for API routes:
+### Pattern: server actions for auth-bound server reads
+
+`/settings`'s sessions list needs Clerk's backend API. It's a server action (`getSessions` in `app/(main)/settings/actions.ts`) called from the client via React Query — fetched only when the Security tab actually mounts, keeping the page static. Actions are POSTs (never HTTP-cached): right for per-user reads and mutations, wrong for cacheable public data.
+
+### Pattern: mutations with optimistic updates
 
 ```tsx
-// app/api/skill-summaries/route.ts
-async function getSkillSearchIndex() {
-  "use cache";
-  cacheLife("days");
-  // ... fetch and build search index
-  return data;
-}
-
-export async function GET() {
-  const data = await getSkillSearchIndex();
-  return NextResponse.json(data);
-}
+const deleteBundle = useMutation(api.bundles.deleteBundle)
+  .withOptimisticUpdate((localStore, { bundleId }) => {
+    const current = localStore.getQuery(api.bundles.listByUser, {});
+    if (current !== undefined) {
+      localStore.setQuery(api.bundles.listByUser, {},
+        current.filter((b) => b._id !== bundleId));
+    }
+  });
 ```
 
 ### Pattern: Convex full-text search
 
-For searching Convex data, define a search index in the schema and use `withSearchIndex` in queries:
-
-```ts
-// convex/schema.ts — define search index on the table
-items: defineTable({
-  name: v.string(),
-  isPublic: v.boolean(),
-  // ...
-}).searchIndex("search_name", {
-  searchField: "name",
-  filterFields: ["isPublic"],
-}),
-
-// convex/items.ts — query using the search index
-export const searchPublic = query({
-  args: { query: v.string(), limit: v.optional(v.number()) },
-  handler: async (ctx, { query, limit = 20 }) => {
-    return ctx.db
-      .query("items")
-      .withSearchIndex("search_name", (q) =>
-        q.search("name", query).eq("isPublic", true),
-      )
-      .take(limit);
-  },
-});
-```
-
-### Pattern: TanStack Query for dynamic client queries
-
-For queries that depend on client-side state (e.g. user selections, search filters), use `convexQuery()` with TanStack Query's `useQuery`:
-
-```tsx
-import { useQuery } from "@tanstack/react-query";
-import { convexQuery } from "@convex-dev/react-query";
-
-const { data, isPending } = useQuery(
-  convexQuery(
-    api.items.listByCategory,
-    selectedCategories.length > 0
-      ? { categories: selectedCategories }
-      : "skip",
-  ),
-);
-```
-
-### Pattern: Mutations with optimistic updates
-
-```tsx
-const deleteItem = useMutation(
-  api.items.remove,
-).withOptimisticUpdate((localStore, { itemId }) => {
-  const current = localStore.getQuery(api.items.listByUser, {});
-  if (current !== undefined) {
-    localStore.setQuery(
-      api.items.listByUser,
-      {},
-      current.filter((item) => item._id !== itemId),
-    );
-  }
-});
-```
+Search index in the schema, `withSearchIndex` in queries; search reads go against the slim `skillSummaries` table (~200 B/row) instead of `skills` (~25 KB/row) to keep result sets small on the wire.
 
 ---
 
-## 8. Billing / Subscriptions
+## 9. Hydration-Safe Client State (localStorage etc.)
 
-### How Polar integrates
+The static shell can never contain client-only state (localStorage, theme, etc.). Three rules keep that from causing bugs:
 
-The `@convex-dev/polar` component is registered in `convex/convex.config.ts` and manages subscription data via webhooks. Polar acts as a Merchant of Record (MoR) — it handles payments, tax, and compliance.
+1. **Reads of client-only state must report the server-knowable value during the hydration render.** `hooks/use-hydrated.ts` (`useSyncExternalStore`, false during SSR/hydration, true after) gates `useIsSkillSelected` / `useIsSelectionAtCap` in `lib/bundle-selection.ts`. Without this, any early subscriber (e.g. the layout-mounted `BundleBar`) can load the stored value *before* React lazily hydrates the skill-list island — the rows then hydrate as "checked" against unchecked server HTML → hydration mismatch → full client re-render. The jotai atom itself uses `atomWithStorage(..., { getOnInit: false })` for the same reason.
+2. **State arriving post-hydration should animate, not pop.** Because the flip happens between two painted frames on persistent DOM, CSS transitions fire naturally (row selection highlights). For elements that *mount* with the state (BundleBar's sheet), entrance animation needs either `@starting-style` (Tailwind `starting:` — animates insertion itself) or a deferred open. BundleBar uses both: `starting:` classes plus a two-rAF `enterReady` delay, the latter because next-themes' transition kill-switch (§5) eats any transition in the first frames after hydration.
+3. **Expected pop-in is accepted, not hidden.** Selections appearing a beat after the static shell paints is the honest cost of static + localStorage; the old architecture only looked "instant" because the page was blank until JS ran.
 
+---
+
+## 10. URL State Management (nuqs)
+
+### Setup
+
+`NuqsAdapter` (`nuqs/adapters/next/app`) wraps the app. All parsers live in `lib/search-params.ts` — including a custom `compareSkillsParser` built with `createParser` (parse/serialize/eq for the `SkillRef[]` list, with dedupe + cap baked into parsing so hand-edited URLs normalize).
+
+Params are read **client-side only** (no server loaders — the routes are static, so there is no server render that could see them). Every `useQueryState` consumer therefore needs the §2 Suspense pattern.
+
+```tsx
+const [refs, setRefs] = useQueryState("skills", compareSkillsParser);
+setRefs(next.length > 0 ? next : null);  // null removes the param entirely
 ```
+
+Updates are shallow History API writes — no navigation, no server render. This is what makes compare's add/remove-column instant with the picker sheet staying open.
+
+### Known quirk: hydration URL canonicalization
+
+On hard loads, Next's router canonicalizes the address bar through `URLSearchParams` serialization, percent-encoding `/ : ,` (e.g. compare's `?skills=` becomes `%2F%3A%2C` soup) until the next in-page nuqs write restores the readable form. Both forms decode identically — purely cosmetic. **Don't fight it:** a one-time mount `history.replaceState` was tried and measurably loses the race (the router's write lands later). The compare page's "Copy link" button builds links via `compareHref()` instead, guaranteeing readable shared URLs regardless of the address bar.
+
+Related: catch-all route params arrive percent-encoded to the page but decoded to `generateMetadata` — decode defensively if you ever parse them.
+
+---
+
+## 11. Billing / Subscriptions
+
+The `@convex-dev/polar` component is registered in `convex/convex.config.ts` and manages subscription data via webhooks. Polar is the Merchant of Record.
+
+```text
 User clicks "Upgrade to Pro"
-       │
        ├──► CheckoutLink generates Polar checkout URL
        │    User completes payment on Polar
-       │              │
-       │              ├──► Polar sends webhook to /polar/events
-       │              │    @convex-dev/polar processes event
-       │              │    Stores subscription in Convex
-       │              │
-       │              ◄── Subscription active
+       │              ├──► Polar webhook → /polar/events
+       │              │    @convex-dev/polar stores subscription in Convex
        ◄──────────────
 getUserPlan() returns "pro"
 ```
 
-### Plan resolution
-
-`convex/lib/plans.ts` — Server-side plan logic:
-
-- `getUserPlan(ctx)` — calls `polar.getCurrentSubscription()`, maps `productKey` to a plan (e.g., `"free"` or `"pro"`)
-- `getPlanLimits(plan)` — returns feature limits per plan
-- `FEATURE_GATING_ENABLED` — master switch. When `false` (MVP), all users get full access. Flip to `true` to enforce limits.
-
-`convex/plans.ts` — exposes `currentPlan` query to the frontend.
-
-`hooks/use-user-plan.ts` — client-side hook returning `{ plan, limits, gatingEnabled, isLoading }`.
-
-### Feature gating
-
-Two-layer enforcement:
-
-1. **Server-side** — Convex mutations/actions check plan limits before allowing operations (e.g., max item count, premium features)
-2. **Client-side** — UI disables controls, shows upgrade prompts, and uses `useUserPlan()` for gate checks
-
-### Webhook routes
-
-`convex/http.ts` registers two webhook endpoints:
-
-- `POST /clerk-users-webhook` — Clerk user sync (Svix validated)
-- `POST /polar/events` — Polar subscription/product sync (registered via `polar.registerRoutes()`)
+- `convex/lib/plans.ts` — `getUserPlan(ctx)` (maps Polar `productKey` → plan), `getPlanLimits(plan)`, `FEATURE_GATING_ENABLED` master switch (when `false`, all users get full access).
+- `convex/plans.ts` — `currentPlan` query for the frontend; `hooks/use-user-plan.ts` on the client.
+- Enforcement is two-layer: Convex mutations check limits server-side; UI disables controls / shows upgrade prompts client-side.
+- Webhooks in `convex/http.ts`: `POST /clerk-users-webhook` (Svix) and `POST /polar/events` (`polar.registerRoutes()`).
 
 ---
 
-## 9. URL State Management (nuqs)
+## 12. Request Lifecycles
 
-### How it works
-
-nuqs provides type-safe URL search parameter state. Client components use `useQueryState()` which internally calls Next.js's `useSearchParams()` to read URL params and `useRouter()` to update them via shallow navigation.
-
-```tsx
-// Client component — reads and writes URL state
-const [tab, setTab] = useQueryState("tab", tabParser);
-```
-
-**Provider**: `NuqsAdapter` wraps the app (outermost in the provider chain) to enable shallow URL updates.
-
-### Why the server loader exists
-
-`useQueryState` works without a server loader — it reads params client-side after hydration. The server loader (`createLoader`) serves two purposes:
-
-1. **SSR correctness** — Without the loader, the server renders with default parser values (e.g., `tab = "browse"`). If the URL is `?tab=search`, the client corrects it on hydration, causing a flash of wrong content. The loader parses the URL params on the server so the SSR HTML matches the URL from the start.
-
-2. **`preloadQuery` compatibility** — Convex's `preloadQuery` uses `Math.random()` internally. Under `cacheComponents`, `Math.random()` cannot run before dynamic data (like `searchParams`) has been accessed. The loader accesses `searchParams` first, "unlocking" `preloadQuery` to run after it. Without the loader, pages that use both nuqs and `preloadQuery` (like the explore page) will fail with a `Math.random()` error.
-
-The loader has negligible cost — it parses a URL string with no network requests. Pages are already dynamic from other accesses (layout auth, etc.), so the loader doesn't change the route's static/dynamic classification.
-
-**Server side** — `lib/search-params.server.ts`:
-
-```tsx
-// lib/search-params.server.ts
-export const loadPageSearchParams = createLoader({
-  q: parseAsString.withDefault(""),
-  tab: parseAsStringLiteral(["browse", "search"] as const).withDefault("browse"),
-  filters: parseAsArrayOf(parseAsString).withDefault([]),
-});
-
-// page.tsx
-export default async function Page({ searchParams }) {
-  await loadPageSearchParams(searchParams);
-  return <PageContent />;
-}
-```
-
-**Client side** — `lib/search-params.ts`:
-
-Parsers are defined separately and used with `useQueryState()` for reactive URL state with shallow updates (no full page re-render).
-
-```tsx
-const [tab, setTab] = useQueryState("tab", tabParser);
-```
-
-### When is the server loader required?
-
-| Scenario | Server loader needed? |
-| -------- | --------------------- |
-| Page uses `preloadQuery` after nuqs params | **Yes** — `preloadQuery` uses `Math.random()` which requires prior `searchParams` access |
-| Page needs SSR HTML to match URL state | **Recommended** — prevents flash of default values on initial render |
-| Page is already dynamic from auth and doesn't use `preloadQuery` | **Optional** — page works without it, loader just improves SSR correctness |
-
----
-
-## 10. Full Request Lifecycle (PPR)
-
-What happens when a user visits an authenticated page with `cacheComponents` enabled:
+### Static route (home, explore, compare, dashboard, settings)
 
 ```text
-1. CDN / Edge
-   └─ Static shell served immediately (prerendered HTML: <html>, <head>, headings, skeletons)
-   └─ Browser starts parsing HTML, loading scripts/fonts
+1. CDN serves prerendered HTML immediately
+   └─ Full default-state shell paints (hero, search bar, leaderboard / skeletons)
+2. Middleware (proxy.ts) ran before serving — private routes redirect unauthenticated users
+3. JS loads, React hydrates
+   └─ Suspense islands swap fallback DOM for live trees (identical when no params)
+   └─ nuqs applies any URL params; localStorage state flips in (§9)
+4. Convex connection
+   └─ ConvexProviderWithClerk fetches JWT via useAuth, websocket authenticates
+   └─ Client queries resolve (skeletons → data); subscriptions stay live
+5. Subsequent in-app navigations
+   └─ Static routes are prefetched → instant paint
+   └─ Queries run over the already-authenticated websocket → fast data
+```
 
-2. Middleware (proxy.ts)
-   └─ Clerk checks session cookie
-   └─ Protected route → auth.protect()
-   └─ If no session → redirect to Clerk sign-in
+### Dynamic route (/bundle/[id])
 
-3. Layout streams
-   └─ Header static parts (logo) already in shell
-   └─ HeaderAuth Suspense resolves → getAuth() reads cookie
-   └─ Signed in → <UserMenu /> streams in
-   └─ Nav links stream in (usePathname resolution)
-
-4. Page streams
-   └─ Static content (headings) already in shell
-   └─ Suspense boundary's skeleton already in shell
-   └─ PageLoader resolves:
-      └─ verifySession() + getAuthToken() in parallel
-      └─ preloadQuery() fetches data with auth token
-      └─ <PageContent> streams in replacing skeleton
-
-5. Client hydration
-   └─ ConvexProviderWithClerk fetches auth token via useAuth
-   └─ Convex validates JWT against Clerk's public key
-   └─ usePreloadedQuery() hydrates from server data → instant
-   └─ Convex subscribes for real-time updates via WebSocket
-   └─ UserMenu: useUser() hydrates from Clerk → avatar appears
+```text
+1. Middleware → request reaches the function
+2. generateMetadata + page run: params/searchParams/cookies read,
+   preloadQuery fetches with the user's token
+3. HTML streams with bundle content included (loading.tsx covered the nav)
+4. Client hydrates; usePreloadedQuery seeds the live subscription
 ```
 
 ---
 
-## 11. User Sync Flow
+## 13. User Sync Flow
 
-Clerk user data is synced to Convex via webhooks, not client-side:
+Clerk user data syncs to Convex via webhooks, not client-side:
 
-```
+```text
 Clerk (user signs up / updates profile / deletes account)
-  │
-  ├──► POST <CONVEX_SITE_URL>/clerk-users-webhook
-  │    Headers: svix-id, svix-timestamp, svix-signature
-  │
+  ├──► POST <CONVEX_SITE_URL>/clerk-users-webhook  (svix-id/timestamp/signature)
   └──► convex/http.ts
-       ├─ Svix validates webhook signature
-       ├─ user.created / user.updated → upsertFromClerk mutation
-       │  Maps: first_name + last_name → name
-       │        email_addresses.find(primary_email_address_id) → email
-       │        image_url → image
-       │        id → externalId
-       └─ user.deleted → deleteFromClerk mutation
+       ├─ Svix validates signature
+       ├─ user.created / user.updated → upsertFromClerk
+       └─ user.deleted → deleteFromClerk
 ```
 
-The `externalId` field (Clerk's `userId`) is how Convex functions link JWT identity to database records:
-`ctx.auth.getUserIdentity().subject` === Clerk `userId` === `users.externalId`
-
-The Convex `users` table contains `name`, `email`, `image` — a denormalized copy of Clerk data. This enables Convex queries to resolve user display info without calling Clerk's API. For user profile mutations (update name, set avatar, etc.), use Clerk's `useUser()` hook which provides the live `UserResource` with methods.
+`ctx.auth.getUserIdentity().subject` === Clerk `userId` === `users.externalId`. The `users` table holds a denormalized `name`/`email`/`image` copy so Convex queries resolve display info without Clerk API calls. For profile *mutations*, use Clerk's `useUser()` (live `UserResource`).
 
 ---
 
-## Recommended File Structure
+## File Structure (architecture-relevant)
 
 ```text
 lib/
-  auth.ts                   # Server-side auth helpers (getAuth, getAuthToken, verifySession)
-  search-params.ts          # nuqs client-side parsers
-  search-params.server.ts   # nuqs server-side loaders (createLoader)
-  utils.ts                  # Shared utilities (cn, error helpers)
+  auth.ts                   # getAuth, getAuthToken, verifySession, verifyAdmin
+  search-params.ts          # ALL nuqs parsers (incl. custom compareSkillsParser)
+  compare.ts                # SkillRef helpers, parse/serialize, compareHref
+  bundle-selection.ts       # jotai atomWithStorage + hydration-gated read hooks
 
 hooks/
-  use-user-plan.ts          # Plan/limits hook — skips query for unauth, handles auth loading
+  use-hydrated.ts           # false during SSR/hydration render, true after
+  use-user-plan.ts          # plan/limits, auth-aware skip + loading
+  use-debounced-cached-search.ts
 
 convex/
-  convex.config.ts          # App config, registers @convex-dev/polar component
-  auth.config.ts            # Clerk JWT issuer domain config
-  http.ts                   # Webhook handlers (Clerk user sync + Polar billing)
-  schema.ts                 # Database schema with indexes and search indexes
-  users.ts                  # User CRUD, getCurrentUser/getCurrentUserOrThrow
-  polar.ts                  # Polar client config, product mapping, API exports
-  plans.ts                  # currentPlan query (exposes plan to frontend)
-  subscriptions.ts          # Subscription details query (billing UI)
-  lib/
-    plans.ts                # getUserPlan(), PlanLimits, FEATURE_GATING_ENABLED
+  convex.config.ts          # registers @convex-dev/polar
+  auth.config.ts            # Clerk JWT issuer
+  http.ts                   # Clerk + Polar webhooks
+  schema.ts / users.ts / bundles.ts / skills.ts / plans.ts / crons.ts
 
 app/
-  layout.tsx                # Root layout — <Suspense> around <body> for PPR catch-all
-  providers.tsx             # Provider chain (NuqsAdapter → Clerk → Convex → Theme → Toast)
-  ConvexClientProvider.tsx  # ConvexProviderWithClerk + TanStack Query setup
+  layout.tsx                # plain <html><body> — NO root Suspense
+  providers.tsx             # NuqsAdapter → Clerk(prefetchUI:false) → Convex → Theme → Toast
+  ConvexClientProvider.tsx  # ConvexProviderWithClerk + TanStack wiring
+  api/revalidate/route.ts   # secret-gated tag revalidation (Convex crons call it)
   (main)/
-    layout.tsx              # App layout — renders header + children
-    page.tsx                # Home — async with nuqs loader
-    [protected-route]/
-      page.tsx              # Suspense + loader pattern (verifySession + preloadQuery)
-    [cached-route]/
-      page.tsx              # "use cache" + cacheLife for stable public data
-    [static-route]/
-      page.tsx              # Fully static, no dynamic access
+    layout.tsx              # AppHeader + children + GlobalBundleBar
+    page.tsx                # static; Suspense + HomeFallback (mirrored default state)
+    home-fallback.tsx
+    explore/                # static; Suspense + ExploreFallback
+    compare/                # static; nuqs skills param, client columns, picker sheet
+    dashboard/              # static; client useQuery + DashboardSkeleton gate
+    settings/               # static; getSessions server action in actions.ts
+    bundle/[id]/            # DYNAMIC; preloadQuery + generateMetadata + loading.tsx
+    [org]/...  site/...     # ISR; gSP []+dynamicParams+revalidate, unstable_cache loaders
 
 components/
-  app-header.tsx            # Server component — static shell + Suspense per sub-component
-  header-auth.tsx           # Async server component — getAuth() for signed-in/signed-out
-  header-nav.tsx            # Client component — nav links with usePathname
-  mobile-nav.tsx            # Client component — hamburger + drawer
-  auth/
-    user-menu.tsx           # Client component — useUser() for data, useClerk() for signOut
+  app-header.tsx            # server shell; client islands in Suspense
+  header-auth-client.tsx    # fully client auth UI (keeps routes static)
+  global-bundle-bar.tsx     # layout-mounted, pathname ALLOW-list
+  bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style
+  skill-detail-page.tsx     # loadSkill/loadAudits (unstable_cache loaders)
+  skill-picker.tsx          # shared picker pieces (bundle edit + compare)
 
-proxy.ts                    # Clerk middleware (route protection)
-next.config.ts              # cacheComponents: true
+proxy.ts                    # Clerk middleware — PRIVATE-route list (inverted)
+next.config.ts              # no cacheComponents; optimizePackageImports only
 ```
