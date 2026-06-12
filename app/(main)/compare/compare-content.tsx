@@ -7,9 +7,9 @@ import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowLeft01Icon,
   Cancel01Icon,
   Link04Icon,
+  PencilEdit02Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
@@ -17,6 +17,7 @@ import { LabeledSection } from "@/components/labeled-section";
 import { MarkdownContent } from "@/components/markdown-content";
 import { OfficialBadge } from "@/components/skill-badges";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import type { PickerSkill } from "@/components/skill-picker";
 import { formatInstalls } from "@/lib/utils";
@@ -76,8 +77,30 @@ export function CompareContent() {
         <EmptyState onOpenPicker={openPicker} />
       ) : (
         <>
-          <div className="mb-4 flex justify-end">
-            <CopyComparisonLink refs={refs} />
+          <div className="mb-4 flex min-h-7 flex-wrap items-center justify-between gap-3">
+            <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+              <span className="tabular-nums">
+                {refs.length} / {MAX_COMPARE_SKILLS}
+              </span>{" "}
+              skills
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={openPicker}
+                leftSection={
+                  <HugeiconsIcon
+                    icon={PencilEdit02Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                }
+              >
+                Edit skills
+              </Button>
+              <CopyComparisonLink refs={refs} />
+            </div>
           </div>
           <CompareGrid refs={refs} onOpenPicker={openPicker}>
           {refs.map((ref) => (
@@ -144,27 +167,22 @@ function CopyComparisonLink({ refs }: { refs: SkillRef[] }) {
 
 function EmptyState({ onOpenPicker }: { onOpenPicker: () => void }) {
   return (
-    <div className="py-16 text-center">
-      <p className="text-lg font-medium">Nothing to compare yet</p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Pick 2 or 3 skills to see their docs and stats side by side.
-      </p>
-      <div className="mt-6 flex items-center justify-center gap-3">
-        <ComparePickerEmptyTrigger onClick={onOpenPicker} />
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={<Link href="/" />}
-          leftSection={
-            <HugeiconsIcon
-              icon={ArrowLeft01Icon}
-              strokeWidth={2}
-              className="size-4"
-            />
-          }
-        >
-          Back to home
-        </Button>
+    <div className="relative overflow-hidden rounded-xl bg-muted/40">
+      <DotMatrix />
+      <div className="relative px-6 py-16 md:px-12 md:py-24">
+        <h2 className="font-display text-4xl font-semibold tracking-tight leading-hero text-balance md:text-5xl">
+          Nothing to compare yet.
+        </h2>
+        <p className="mt-4 max-w-md text-sm text-muted-foreground">
+          Pick two or three skills to read their docs and stats side by side,
+          then send the winner straight to your bundle.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <ComparePickerEmptyTrigger onClick={onOpenPicker} />
+          <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>
+            Browse skills
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -206,14 +224,33 @@ function CompareGrid({
 }
 
 /**
- * One compare column at its final dimensions: header band, fixed-height
- * scrollable body, action row. Pending, not-found, and loaded states render
- * the same shell so data arriving causes no layout shift.
+ * One stat strip cell: tiny mono label over a value. The strip rows align
+ * across columns because every shell renders the same strip at the same
+ * position, which is what makes the columns comparable at a glance.
+ */
+function StatCell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 px-5 py-3">
+      <dt className="font-mono text-label font-medium uppercase tracking-eyebrow text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1 flex h-5 min-w-0 items-center gap-1.5 text-sm font-medium">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * One compare column at its final dimensions: a single card holding the
+ * title band, an aligned two-cell stat strip, a fixed-height scrollable doc
+ * area, and the action row. Pending, not-found, and loaded states render the
+ * same shell so data arriving causes no layout shift.
  */
 function ColumnShell({
   title,
   titleHref,
-  meta,
+  stats,
   onRemove,
   removeLabel,
   body,
@@ -221,7 +258,7 @@ function ColumnShell({
 }: {
   title: string;
   titleHref?: string;
-  meta: ReactNode;
+  stats: ReactNode;
   onRemove?: () => void;
   removeLabel?: string;
   body: ReactNode;
@@ -232,9 +269,9 @@ function ColumnShell({
     // padding — percentages would resolve against the padded content box
     // and break the centering math.
     <article className="flex w-[86vw] shrink-0 snap-center flex-col sm:w-[70vw] md:w-auto md:shrink">
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold">
+      <div className="flex flex-col overflow-hidden rounded-2xl border bg-card dark:border-border/50">
+        <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
+          <h2 className="min-w-0 truncate text-lg font-semibold">
             {titleHref ? (
               <Link href={titleHref} className="hover:underline">
                 {title}
@@ -243,31 +280,44 @@ function ColumnShell({
               title
             )}
           </h2>
-          <div className="mt-1 flex h-5 min-w-0 items-center gap-2 text-sm text-muted-foreground">
-            {meta}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={removeLabel}
+              className="mt-0.5 shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+            >
+              <HugeiconsIcon
+                icon={Cancel01Icon}
+                strokeWidth={2}
+                className="size-3.5"
+              />
+            </button>
+          )}
+        </header>
+
+        <dl className="grid grid-cols-2 divide-x divide-border/60 border-y border-border/60 dark:divide-border/40 dark:border-border/40">
+          {stats}
+        </dl>
+
+        <div className="relative">
+          <div className="h-[min(60vh,44rem)] overflow-y-auto overscroll-contain p-5">
+            {body}
           </div>
+          {/* Scroll affordance: long docs fade out instead of clipping flat
+              against the action row. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-linear-to-t from-card"
+          />
         </div>
-        {onRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            aria-label={removeLabel}
-            className="mt-1 shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
-          >
-            <HugeiconsIcon
-              icon={Cancel01Icon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-          </button>
+
+        {footer && (
+          <div className="border-t border-border/60 p-3 dark:border-border/40">
+            {footer}
+          </div>
         )}
-      </header>
-
-      <div className="mt-4 h-[min(60vh,44rem)] overflow-y-auto overscroll-contain rounded-xl border p-5">
-        {body}
       </div>
-
-      <div className="mt-4">{footer}</div>
     </article>
   );
 }
@@ -308,7 +358,16 @@ function CompareColumn({
     return (
       <ColumnShell
         title={skillId}
-        meta={<Skeleton className="h-4 w-40 max-w-full" />}
+        stats={
+          <>
+            <StatCell label="Installs">
+              <Skeleton className="h-4 w-12" />
+            </StatCell>
+            <StatCell label="Source">
+              <Skeleton className="h-4 w-28 max-w-full" />
+            </StatCell>
+          </>
+        }
         {...removeProps}
         body={
           <div className="space-y-3">
@@ -327,7 +386,18 @@ function CompareColumn({
     return (
       <ColumnShell
         title={skillId}
-        meta={<span className="truncate">{source}</span>}
+        stats={
+          <>
+            <StatCell label="Installs">
+              <span aria-hidden="true" className="text-muted-foreground">
+                —
+              </span>
+            </StatCell>
+            <StatCell label="Source">
+              <span className="truncate text-muted-foreground">{source}</span>
+            </StatCell>
+          </>
+        }
         {...removeProps}
         body={
           <p className="text-sm text-muted-foreground">
@@ -344,21 +414,24 @@ function CompareColumn({
     <ColumnShell
       title={skill.name}
       titleHref={`/${skill.source}/${skill.skillId}`}
-      meta={
+      stats={
         <>
-          {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
-          <span className="shrink-0 tabular-nums">
-            {formatInstalls(skill.installs)} installs
-          </span>
-          <span aria-hidden="true">·</span>
-          <a
-            href={`https://github.com/${skill.source}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="truncate transition-colors hover:text-foreground hover:underline"
-          >
-            {skill.source}
-          </a>
+          <StatCell label="Installs">
+            <span className="tabular-nums">
+              {formatInstalls(skill.installs)}
+            </span>
+          </StatCell>
+          <StatCell label="Source">
+            <a
+              href={`https://github.com/${skill.source}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-muted-foreground transition-colors hover:text-foreground hover:underline"
+            >
+              {skill.source}
+            </a>
+            {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
+          </StatCell>
         </>
       }
       {...removeProps}

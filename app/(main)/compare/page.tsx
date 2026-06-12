@@ -19,16 +19,16 @@ export const metadata: Metadata = {
 };
 
 // State-neutral fallback: the columns depend entirely on the search param
-// (unknown at prerender), so this renders the page chrome plus one panel at
+// (unknown at prerender), so this renders the toolbar row plus one panel at
 // the columns' final height — content subdivides that area in place.
 function CompareFallback() {
   return (
     <div>
-      <Skeleton className="h-6 w-44" />
-      <div className="mt-2">
-        <Skeleton className="h-4 w-64 max-w-full" />
+      <div className="flex h-7 items-center justify-between gap-3">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-7 w-48 max-w-full" />
       </div>
-      <Skeleton className="mt-4 h-[min(60vh,44rem)] w-full rounded-xl" />
+      <Skeleton className="mt-4 h-[min(60vh,44rem)] w-full rounded-2xl" />
     </div>
   );
 }
@@ -36,12 +36,20 @@ function CompareFallback() {
 export default function ComparePage() {
   return (
     <main className="mx-auto max-w-7xl px-4 pt-12 pb-24">
-      <h1 className="font-display text-2xl font-semibold tracking-tight mb-8">
-        Compare Skills
-      </h1>
-      <Suspense fallback={<CompareFallback />}>
-        <CompareContent />
-      </Suspense>
+      <header>
+        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-semibold tracking-tight leading-hero text-balance">
+          Compare.
+        </h1>
+        <p className="mt-3 max-w-prose text-sm text-muted-foreground">
+          Docs, install counts, and sources side by side. Pick up to three
+          skills and see which one earns the spot in your bundle.
+        </p>
+      </header>
+      <div className="mt-10">
+        <Suspense fallback={<CompareFallback />}>
+          <CompareContent />
+        </Suspense>
+      </div>
       {/* The floating bundle selection bar is mounted by the (main) layout
           (GlobalBundleBar), so the instance carried over from the discovery
           surfaces persists here. */}

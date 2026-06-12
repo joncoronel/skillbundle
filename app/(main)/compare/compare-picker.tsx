@@ -40,7 +40,7 @@ export function ComparePickerRailTrigger({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label="Add a skill to the comparison"
-      className="flex min-h-48 w-16 shrink-0 snap-center items-center justify-center self-stretch rounded-xl border border-dashed text-muted-foreground transition-colors hover:border-solid hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2 md:w-auto"
+      className="flex min-h-48 w-16 shrink-0 snap-center items-center justify-center self-stretch rounded-2xl border border-dashed text-muted-foreground transition-colors hover:border-solid hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2 md:w-auto"
     >
       <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-5" />
     </button>

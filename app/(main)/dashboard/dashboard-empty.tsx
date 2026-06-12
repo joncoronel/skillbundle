@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { DotMatrix } from "@/components/ui/dot-matrix";
 
 export function DashboardEmpty() {
   return (
@@ -31,44 +32,5 @@ export function DashboardEmpty() {
         </div>
       </div>
     </div>
-  );
-}
-
-function DotMatrix() {
-  const cols = 24;
-  const rows = 10;
-  const spacing = 16;
-  const accentCol = 17;
-  const accentRow = 2;
-
-  return (
-    <svg
-      aria-hidden
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      width="100%"
-      height="100%"
-      preserveAspectRatio="xMaxYMin slice"
-    >
-      <g transform="translate(12, 12)">
-        {Array.from({ length: rows }).map((_, r) =>
-          Array.from({ length: cols }).map((_, c) => {
-            const isAccent = r === accentRow && c === accentCol;
-            return (
-              <circle
-                key={`${r}-${c}`}
-                cx={c * spacing}
-                cy={r * spacing}
-                r={isAccent ? 2.25 : 1}
-                className={
-                  isAccent
-                    ? "fill-primary"
-                    : "fill-foreground/10"
-                }
-              />
-            );
-          }),
-        )}
-      </g>
-    </svg>
   );
 }
