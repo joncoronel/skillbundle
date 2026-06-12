@@ -1,4 +1,9 @@
-import { parseAsString, parseAsStringLiteral } from "nuqs";
+import { createParser, parseAsString, parseAsStringLiteral } from "nuqs";
+import {
+  parseSkillsParam,
+  serializeSkillsParam,
+  type SkillRef,
+} from "@/lib/compare";
 
 // Shared debounce duration for all search inputs (home, /explore). Picked
 // short enough to feel responsive on a typing pause, long enough that mid-
@@ -27,6 +32,14 @@ const exploreSortValues = ["newest", "starred"] as const;
 export type ExploreSortValue = (typeof exploreSortValues)[number];
 export const exploreSortParser =
   parseAsStringLiteral(exploreSortValues).withDefault("newest");
+
+// -- Compare page (/compare) parsers --
+
+export const compareSkillsParser = createParser<SkillRef[]>({
+  parse: (value) => parseSkillsParam(value),
+  serialize: serializeSkillsParam,
+  eq: (a, b) => serializeSkillsParam(a) === serializeSkillsParam(b),
+}).withDefault([]);
 
 // -- Settings page (/settings) parsers --
 

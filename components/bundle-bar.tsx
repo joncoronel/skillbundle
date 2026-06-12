@@ -23,10 +23,8 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
-import {
-  useBundleActions,
-  useSelectedSkills,
-} from "@/lib/bundle-selection";
+import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
+import { compareHref } from "@/lib/compare";
 import { generateAllCommandsText } from "@/lib/install-commands";
 import {
   SaveBundleDialog,
@@ -44,8 +42,26 @@ export function BundleBar() {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
+  // Hold the sheet closed until two painted frames after mount. On reload
+  // with a stored selection, the open would otherwise land inside the brief
+  // window where next-themes' disableTransitionOnChange globally suppresses
+  // transitions while applying the theme class at hydration — the enter
+  // slide gets eaten and the bar pops in. Two rAFs clear both the hydration
+  // commit and the theme snippet removal, so the open always animates.
+  const [enterReady, setEnterReady] = useState(false);
+  useEffect(() => {
+    let second: number;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setEnterReady(true));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, []);
+
   const count = selectedSkills.length;
-  const visible = count > 0;
+  const visible = enterReady && count > 0;
   const isOpen = expanded && visible;
 
   useEffect(() => {
@@ -100,6 +116,13 @@ export function BundleBar() {
             // all-around solidSurface shadow (4-edge rim). The sm:dark: shadow
             // override is needed to outrank the flush variant's dark: shadow.
             "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:bottom-4 sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:data-ending-style:translate-y-[calc(100%+1rem)]",
+            // @starting-style mirror of the enter transforms: Base UI's
+            // data-starting-style only animates opens it orchestrates between
+            // painted frames — when the bar mounts already-open (selection
+            // loading from localStorage right after hydration), there is no
+            // prior frame and it pops in. @starting-style animates the
+            // element's *insertion* itself, so that case slides in too.
+            "starting:translate-y-full sm:starting:translate-y-[calc(100%+1rem)]",
           )}
         >
           <Collapsible open={isOpen}>
@@ -140,11 +163,13 @@ export function BundleBar() {
                     variant="outline"
                     size="xs"
                     onClick={() => {
-                      const params = selectedSkills
-                        .map((s) => `${s.source}:${s.skillId}`)
-                        .join(",");
                       router.push(
-                        `/compare?skills=${encodeURIComponent(params)}`,
+                        compareHref(
+                          selectedSkills.map((s) => ({
+                            source: s.source,
+                            skillId: s.skillId,
+                          })),
+                        ),
                       );
                     }}
                     leftSection={

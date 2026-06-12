@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { atomWithStorage, selectAtom } from "jotai/utils";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
 
 export interface SelectedSkill {
@@ -72,7 +73,13 @@ export function useIsSkillSelected(source: string, skillId: string) {
       }),
     [source, skillId],
   );
-  return useAtomValue(isSelectedAtom);
+  const isSelected = useAtomValue(isSelectedAtom);
+  // Report unselected during the hydration render no matter what the atom
+  // holds: the server HTML can't know localStorage, and a subscriber outside
+  // the page's Suspense island (the layout-mounted BundleBar) can load the
+  // stored value before the skill rows hydrate — rendering it then would
+  // mismatch the server HTML and force a full client re-render.
+  return useHydrated() && isSelected;
 }
 
 // Write-only handles. useSetAtom never triggers a re-render on atom changes,
@@ -108,5 +115,8 @@ const isSelectionAtCapAtom = selectAtom(
 );
 
 export function useIsSelectionAtCap() {
-  return useAtomValue(isSelectionAtCapAtom);
+  const atCap = useAtomValue(isSelectionAtCapAtom);
+  // Same hydration gating as useIsSkillSelected — the server always renders
+  // the not-at-cap affordances.
+  return useHydrated() && atCap;
 }

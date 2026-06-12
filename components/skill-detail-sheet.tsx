@@ -166,6 +166,10 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
   // paint before the markdown lands causes the audit section to flash in
   // and then jump down when the longer documentation finally renders. Wait
   // for both before showing anything.
+  //
+  // Direct Convex queries by design — see the cost note in
+  // app/(main)/compare/compare-content.tsx (CompareColumn) for the cached
+  // route-handler escape hatch and when it would be worth switching to it.
   const { data: contentData, isPending: contentLoading } = useQuery(
     convexQuery(api.skills.getContent, {
       source: skill.source,

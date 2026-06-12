@@ -142,7 +142,12 @@ export function MarkdownContent({
           <code
             className={cn(
               className,
-              "rounded-md bg-muted px-1.5 py-0.5 font-medium",
+              // break-words: long unbreakable tokens (file paths, URLs) have
+              // no break opportunities at `/` or `.`, so in narrow containers
+              // they'd overflow — and any overflow-y-auto ancestor (compare
+              // columns, the detail sheet) computes overflow-x:auto per spec,
+              // turning that overflow into a horizontal scrollbar.
+              "rounded-md bg-muted px-1.5 py-0.5 font-medium wrap-break-word",
             )}
           >
             {children}
