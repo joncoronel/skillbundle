@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { BundleCard } from "@/components/bundle-card";
@@ -24,24 +25,37 @@ import {
 } from "@/components/ui/cubby-ui/alert-dialog";
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
+import { DashboardSkeleton } from "./dashboard-skeleton";
 import {
   BundleSectionHeader,
   type SortBy,
 } from "./bundle-section-header";
 
-interface DashboardContentProps {
-  preloadedBundles: Preloaded<typeof api.bundles.listByUser>;
-  preloadedPlan: Preloaded<typeof api.plans.currentPlan>;
-}
-
 const deleteBundleHandle = createAlertDialogHandle<Id<"bundles">>();
 
-export function DashboardContent({
-  preloadedBundles,
-  preloadedPlan,
-}: DashboardContentProps) {
-  const bundles = usePreloadedQuery(preloadedBundles);
-  const planData = usePreloadedQuery(preloadedPlan);
+export function DashboardContent() {
+  // Client-fetched over the root layout's already-authenticated Convex
+  // websocket — the route is static (see page.tsx). Both queries are live
+  // subscriptions (what usePreloadedQuery degraded to after its first frame
+  // anyway), and the optimistic updates below write to the same client cache
+  // these read from. `undefined` covers both "auth handshake in flight" and
+  // "query loading" on cold loads.
+  const bundles = useQuery(api.bundles.listByUser);
+  const planData = useQuery(api.plans.currentPlan);
+
+  if (bundles === undefined || planData === undefined) {
+    return <DashboardSkeleton />;
+  }
+  return <DashboardLoaded bundles={bundles} planData={planData} />;
+}
+
+function DashboardLoaded({
+  bundles,
+  planData,
+}: {
+  bundles: FunctionReturnType<typeof api.bundles.listByUser>;
+  planData: FunctionReturnType<typeof api.plans.currentPlan>;
+}) {
   const deleteBundle = useMutation(
     api.bundles.deleteBundle,
   ).withOptimisticUpdate((localStore, { bundleId }) => {
