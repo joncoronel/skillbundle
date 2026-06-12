@@ -188,7 +188,11 @@ function CompareGrid({
   return (
     <div
       className={
-        "-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-4 md:mx-0 md:grid md:gap-6 md:overflow-visible md:px-0 md:pb-0 " +
+        // Edge padding = (100vw − column width) / 2, so the first and last
+        // columns have room to reach the centerline — snap-center can't
+        // scroll past the content edges, so without this only middle columns
+        // actually center.
+        "-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-[7vw] pb-4 sm:px-[15vw] md:mx-0 md:grid md:gap-6 md:overflow-visible md:px-0 md:pb-0 " +
         (withRail
           ? "md:grid-cols-[repeat(var(--compare-cols),minmax(0,1fr))_4rem]"
           : "md:grid-cols-[repeat(var(--compare-cols),minmax(0,1fr))]")
@@ -224,7 +228,10 @@ function ColumnShell({
   footer: ReactNode;
 }) {
   return (
-    <article className="flex w-[85%] shrink-0 snap-center flex-col sm:w-[70%] md:w-auto md:shrink">
+    // vw (not %) so the width pairs with the scroll container's vw edge
+    // padding — percentages would resolve against the padded content box
+    // and break the centering math.
+    <article className="flex w-[86vw] shrink-0 snap-center flex-col sm:w-[70vw] md:w-auto md:shrink">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold">

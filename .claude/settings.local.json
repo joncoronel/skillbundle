@@ -60,7 +60,8 @@
       "Bash(agent-browser find *)",
       "Bash(agent-browser type *)",
       "Bash(agent-browser click *)",
-      "Bash(agent-browser press *)"
+      "Bash(agent-browser press *)",
+      "PowerShell(pnpm exec eslint \"app/\\(main\\)/compare/compare-content.tsx\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth"
