@@ -1,15 +1,19 @@
 import "server-only";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { unstable_cache } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { GitCompareIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { LabeledSection } from "@/components/labeled-section";
 import { MarkdownContent } from "@/components/markdown-content";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
+import { compareHref } from "@/lib/compare";
 import { formatInstalls, timeAgo } from "@/lib/utils";
 import { OfficialBadge } from "@/components/skill-badges";
 import { SkillAuditSection } from "@/components/skill-audit-section";
@@ -62,9 +66,27 @@ export function SkillDetailPage({
     <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
       {breadcrumb}
 
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance mb-3">
-        {skillId}
-      </h1>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <h1 className="font-display min-w-0 text-3xl font-semibold tracking-tight text-balance">
+          {skillId}
+        </h1>
+        <Button
+          nativeButton={false}
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          render={<Link href={compareHref([{ source, skillId }])} />}
+          leftSection={
+            <HugeiconsIcon
+              icon={GitCompareIcon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          }
+        >
+          Compare
+        </Button>
+      </div>
 
       <Suspense
         fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}

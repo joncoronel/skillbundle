@@ -20,6 +20,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   Copy01Icon,
+  GitCompareIcon,
   PlusSignIcon,
   MinusSignIcon,
   Tick02Icon,
@@ -33,6 +34,7 @@ import {
   useIsSkillSelected,
 } from "@/lib/bundle-selection";
 import { generateInstallCommands } from "@/lib/install-commands";
+import { compareHref } from "@/lib/compare";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
 import { OfficialBadge } from "@/components/skill-badges";
@@ -149,6 +151,18 @@ function SkillDetailSheetContent({
             strokeWidth={2}
             className="size-3.5"
           />
+        </Link>
+        <Link
+          href={compareHref([{ source: skill.source, skillId: skill.skillId }])}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+          onNavigate={() => handle.close()}
+        >
+          <HugeiconsIcon
+            icon={GitCompareIcon}
+            strokeWidth={2}
+            className="size-3.5"
+          />
+          Compare
         </Link>
         {footerAction === "copy-install" ? (
           <CopyInstallButton skill={skill} />
