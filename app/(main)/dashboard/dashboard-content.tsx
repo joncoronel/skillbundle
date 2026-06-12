@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
@@ -34,14 +34,25 @@ import {
 const deleteBundleHandle = createAlertDialogHandle<Id<"bundles">>();
 
 export function DashboardContent() {
-  // Client-fetched over the root layout's already-authenticated Convex
-  // websocket — the route is static (see page.tsx). Both queries are live
-  // subscriptions (what usePreloadedQuery degraded to after its first frame
-  // anyway), and the optimistic updates below write to the same client cache
-  // these read from. `undefined` covers both "auth handshake in flight" and
-  // "query loading" on cold loads.
-  const bundles = useQuery(api.bundles.listByUser);
-  const planData = useQuery(api.plans.currentPlan);
+  // Client-fetched over the root layout's Convex websocket — the route is
+  // static (see page.tsx). Both queries are live subscriptions (what
+  // usePreloadedQuery degraded to after its first frame anyway), and the
+  // optimistic updates below write to the same client cache these read from.
+  //
+  // The queries MUST be gated on auth: subscriptions made before the
+  // Clerk→Convex handshake completes execute unauthenticated, and listByUser
+  // returns [] (not undefined) for an anonymous caller — ungated, a signed-in
+  // cold load briefly flashes the empty state. Skipped queries return
+  // undefined, so the skeleton covers the handshake window.
+  const { isAuthenticated } = useConvexAuth();
+  const bundles = useQuery(
+    api.bundles.listByUser,
+    isAuthenticated ? {} : "skip",
+  );
+  const planData = useQuery(
+    api.plans.currentPlan,
+    isAuthenticated ? {} : "skip",
+  );
 
   if (bundles === undefined || planData === undefined) {
     return <DashboardSkeleton />;

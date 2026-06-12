@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/cubby-ui/button";
 import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import type { PickerSkill } from "@/components/skill-picker";
+import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import { formatInstalls } from "@/lib/utils";
 import { compareSkillsParser } from "@/lib/search-params";
 import {
@@ -137,30 +138,27 @@ export function CompareContent() {
  * address bar shows after Next's hydration canonicalization.
  */
 function CopyComparisonLink({ refs }: { refs: SkillRef[] }) {
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(
-      window.location.origin + compareHref(refs),
-    );
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  // House clipboard hook (same one CopyButton uses): handles the timed
+  // revert with unmount cleanup, reports failure instead of throwing, and
+  // falls back to execCommand where the Clipboard API is denied.
+  const { isCopied, copyToClipboard } = useCopyToClipboard();
 
   return (
     <Button
       variant="outline"
       size="xs"
-      onClick={handleCopy}
+      onClick={() =>
+        copyToClipboard(window.location.origin + compareHref(refs))
+      }
       leftSection={
         <HugeiconsIcon
-          icon={copied ? Tick02Icon : Link04Icon}
+          icon={isCopied ? Tick02Icon : Link04Icon}
           strokeWidth={2}
           className="size-3.5"
         />
       }
     >
-      {copied ? "Copied" : "Copy link"}
+      {isCopied ? "Copied" : "Copy link"}
     </Button>
   );
 }

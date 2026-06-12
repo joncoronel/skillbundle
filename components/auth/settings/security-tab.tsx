@@ -3,6 +3,7 @@
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "@tanstack/react-query";
 import { getSessions } from "@/app/(main)/settings/actions";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SettingsSection } from "./settings-section";
@@ -23,11 +24,16 @@ export function SecurityTab() {
   // Fetched on demand when this tab mounts — the /settings page is static, so
   // sessions come from the server action instead of a server-render fetch.
   // One-shot per visit, matching the old server-passed promise.
-  const { data: sessions } = useQuery({
+  const {
+    data: sessions,
+    isError: sessionsError,
+    refetch: refetchSessions,
+  } = useQuery({
     queryKey: ["clerk-sessions"],
     queryFn: () => getSessions(),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   const userReady = isLoaded && !!user;
@@ -58,7 +64,20 @@ export function SecurityTab() {
         title="Active sessions"
         description="Manage your active sessions across devices"
       >
-        {sessions === undefined ? (
+        {sessionsError ? (
+          <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-4">
+            <p className="text-sm text-muted-foreground">
+              Couldn&apos;t load your sessions.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchSessions()}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : sessions === undefined ? (
           <SessionsSkeleton />
         ) : (
           <SessionsTab initialSessions={sessions} />

@@ -21,6 +21,10 @@ export async function generateMetadata({
     searchParams,
     getAuthToken(),
   ]);
+  // Deliberate conflation: transient Convex errors fall through to the same
+  // generic-title + noindex branch as missing/private bundles. For metadata,
+  // failing toward "say nothing" is the safe direction — the page itself
+  // still loads (or errors) on its own path below.
   const bundle = await fetchQuery(
     api.bundles.getByUrlId,
     { urlId: id, shareToken: share },
