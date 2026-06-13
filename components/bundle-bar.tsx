@@ -30,13 +30,14 @@ import {
   SaveBundleDialog,
   createSaveBundleDialogHandle,
 } from "@/components/save-bundle-dialog";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { cn } from "@/lib/utils";
 
 const saveBundleDialogHandle = createSaveBundleDialogHandle();
 
 export function BundleBar() {
   const selectedSkills = useSelectedSkills();
-  const { clearAll, removeSkill } = useBundleActions();
+  const { clearAll, removeSkill, replaceSelection } = useBundleActions();
   const { isAuthenticated: isSignedIn } = useConvexAuth();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
@@ -63,6 +64,7 @@ export function BundleBar() {
   const count = selectedSkills.length;
   const visible = enterReady && count > 0;
   const isOpen = expanded && visible;
+  const canCompare = count >= 2 && count <= 3;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -92,6 +94,24 @@ export function BundleBar() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  // Clearing is destructive (a curated selection can be dozens of skills) and
+  // the bar offers no confirmation step — so it's undoable instead. The toast
+  // restores the exact snapshot taken before the clear.
+  function handleClearAll() {
+    const cleared = selectedSkills;
+    clearAll();
+    const id = toast({
+      title: `Cleared ${cleared.length} skill${cleared.length !== 1 ? "s" : ""}`,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          replaceSelection(cleared);
+          if (id) toast.dismiss(id);
+        },
+      },
+    });
+  }
+
   function handleSave() {
     if (!isSignedIn) {
       router.push("/sign-in");
@@ -102,11 +122,29 @@ export function BundleBar() {
 
   return (
     <>
-      <Sheet open={visible} modal={false}>
+      <Sheet
+        open={visible}
+        modal={false}
+        // `open` is controlled by selection count, so Base UI's own dismissal
+        // (Escape) can't actually close the sheet — but it still swallows the
+        // Escape keydown before the window listener below sees it when focus
+        // is inside the popup. Route that close request to the tray collapse
+        // instead, which is what Escape should mean for a status bar.
+        onOpenChange={(open) => {
+          if (!open) setExpanded(false);
+        }}
+      >
         <SheetContent
           side="bottom"
           variant="default"
           showCloseButton={false}
+          // A non-modal status surface must never take focus: stealing it on
+          // open breaks Space-Space-Space row selection (the sheet mounts on
+          // the first selection) and on reload-with-stored-selection it would
+          // yank focus before the user has done anything. Same on close —
+          // leave focus where the user has it.
+          initialFocus={false}
+          finalFocus={false}
           className={cn(
             "flex flex-col overflow-hidden",
             // Mobile: the `default` (flush) variant already provides a
@@ -157,33 +195,55 @@ export function BundleBar() {
                   </li>
                 ))}
               </ul>
-              {count >= 2 && count <= 3 && (
-                <div className="flex justify-end px-3 py-2 sm:px-4">
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={() => {
-                      router.push(
-                        compareHref(
-                          selectedSkills.map((s) => ({
-                            source: s.source,
-                            skillId: s.skillId,
-                          })),
-                        ),
-                      );
-                    }}
-                    leftSection={
-                      <HugeiconsIcon
-                        icon={ArrowUpDownIcon}
-                        strokeWidth={2}
-                        className="size-3.5"
-                      />
-                    }
-                  >
-                    Compare
-                  </Button>
-                </div>
-              )}
+              <div className="flex items-center gap-2 px-3 py-2 sm:px-4">
+                {/* The header Clear all icon is sm+ only; this gives mobile
+                    an equivalent, with the same undo toast. */}
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={handleClearAll}
+                  className="text-muted-foreground sm:hidden"
+                >
+                  Clear all
+                </Button>
+                {/* Compare stays rendered outside its 2–3 range — a button
+                    that silently vanishes at the 4th selection makes the
+                    constraint impossible to learn. Disabled buttons can't
+                    show tooltips (pointer-events-none), so the rule is
+                    stated as visible text instead. */}
+                {!canCompare && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {count < 2
+                      ? "Pick 2–3 skills to compare"
+                      : "Compare works with 2–3 skills"}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className={cn(canCompare && "ml-auto")}
+                  disabled={!canCompare}
+                  onClick={() => {
+                    router.push(
+                      compareHref(
+                        selectedSkills.map((s) => ({
+                          source: s.source,
+                          skillId: s.skillId,
+                        })),
+                      ),
+                    );
+                  }}
+                  leftSection={
+                    <HugeiconsIcon
+                      icon={ArrowUpDownIcon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  Compare
+                </Button>
+              </div>
               <div className="h-px bg-border" />
             </CollapsibleContent>
           </Collapsible>
@@ -225,7 +285,7 @@ export function BundleBar() {
                     <Button
                       variant="ghost"
                       size="icon_sm"
-                      onClick={clearAll}
+                      onClick={handleClearAll}
                       aria-label="Clear all selected skills"
                       className="max-sm:hidden text-muted-foreground"
                     />

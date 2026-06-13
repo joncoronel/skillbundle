@@ -64,7 +64,8 @@
       "PowerShell(pnpm exec eslint \"app/\\(main\\)/compare/compare-content.tsx\")",
       "PowerShell($h = Get-Content \".next\\\\server\\\\app\\\\dashboard.html\" -Raw; foreach \\($s in \"Your bundles.\", \"New bundle\"\\) { \"$s -> $\\($h.Contains\\($s\\)\\)\" })",
       "PowerShell(pnpm start -- -p 3100)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(agent-browser keyboard *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",

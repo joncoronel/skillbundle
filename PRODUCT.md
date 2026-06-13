@@ -24,7 +24,7 @@
 
 **Intersection of references:** Both share sharp confidence, high contrast, geometric precision, and a single warm accent on a neutral base. Neither is soft or rounded. Both feel *designed* rather than assembled from a template.
 
-**Current direction:** Orange primary accent (`oklch(0.6 0.19 38)`), Geist Sans/Mono for UI, Bricolage Grotesque for display. This foundation is solid and aligned with the references — evolve it rather than replace it. The orange is distinctive and should stay as the signature color.
+**Current direction:** Blue primary accent (`oklch(0.6 0.2 250)`), Geist Sans/Mono for UI, Geist Pixel Circle for display. The pixel display face is a deliberate identity choice — keep it. This foundation is solid and aligned with the references — evolve it rather than replace it. The accent is distinctive and should stay as the signature color.
 
 **Theme:** Light and dark mode, system-preference default. Both modes should feel equally considered — dark mode is not an afterthought.
 

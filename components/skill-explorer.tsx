@@ -28,6 +28,7 @@ import {
   TabsPanels,
   TabsContent,
 } from "@/components/ui/cubby-ui/tabs";
+import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { SkillSearchResults } from "@/components/skill-search";
 import { DefaultSkillsList } from "@/components/default-skills-list";
 import { RepoAnalysisResults } from "@/components/repo-url-input";
@@ -36,6 +37,7 @@ import {
   createSkillDetailHandle,
 } from "@/components/skill-detail-sheet";
 import { api } from "@/convex/_generated/api";
+import { cn } from "@/lib/utils";
 
 interface SkillExplorerProps {
   canAutoDetect: boolean;
@@ -57,15 +59,45 @@ export function SkillExplorer({
   const [repoUrl, setRepoUrl] = useQueryState("repo", repoUrlParser);
 
   // Search machinery (debounce + cache bypass + spinner state) lives in the
-  // shared hook. The data consumer is `<SkillSearchResults>`, not this
-  // component, so we deliberately don't destructure `query.data` here —
-  // that keeps Proxy tracking from re-rendering the parent on Convex
-  // live updates of search results.
-  const { effectiveQuery: effectiveTextQuery, isInputLoading: textIsLoading } =
-    useDebouncedCachedSearch({
-      rawQuery: textQuery,
-      fn: api.skills.searchSkills,
-    });
+  // shared hook. We *do* read `queryResult.data`/`isPlaceholderData` here —
+  // they drive the crossfade's `hasSettled` state machine below — so Proxy
+  // tracking subscribes this component to them as intended (same contract
+  // as /explore's ExploreContent).
+  const {
+    effectiveQuery: effectiveTextQuery,
+    isInputLoading: textIsLoading,
+    queryResult: textQueryResult,
+  } = useDebouncedCachedSearch({
+    rawQuery: textQuery,
+    fn: api.skills.searchSkills,
+  });
+  const { data: textResults, isPlaceholderData: textIsPlaceholder } =
+    textQueryResult;
+
+  // Has the current search session settled at least once? Gates the
+  // crossfade the same way /explore does (see explore-content.tsx):
+  //   - First search (""→"d"): leaderboard stays visible as filler until
+  //     "d" lands → flips true → crossfade straight to real results
+  //   - Refinement ("d"→"dd"): stays true; placeholder keeps "d" rows visible
+  //   - Clear: resets to false → crossfade back to the leaderboard
+  //   - Fresh after clear ("d"→clear→"g"): false again until "g" lands
+  // Crossfading only on settled data means the pane never animates while a
+  // skeleton shimmers underneath — that combination (height + blur
+  // transition over an animating gradient) is what made the swap stutter.
+  // The input's inline spinner is the in-flight feedback instead. Always
+  // starts false, including direct-link loads with `?q=foo`, so the
+  // leaderboard shows while the search fetches rather than a blank pane.
+  const [searchSettled, setSearchSettled] = useState(false);
+  if (!effectiveTextQuery && searchSettled) setSearchSettled(false);
+  if (
+    effectiveTextQuery &&
+    textResults !== undefined &&
+    !textIsPlaceholder &&
+    !searchSettled
+  ) {
+    setSearchSettled(true);
+  }
+  const showSearchResults = effectiveTextQuery.length > 0 && searchSettled;
 
   // Local input state for the repo field — only pushed to the URL on submit.
   const [repoInput, setRepoInput] = useState(repoUrl);
@@ -222,35 +254,62 @@ export function SkillExplorer({
             (search results, repo analysis) survives mode switches. */}
         <TabsPanels>
           <TabsContent value="text">
-            {/* Both lists stay mounted: the default list preserves scroll +
-                pagination state across type-and-clear, and the search list
-                preserves its 60+ rows (each with jotai subscriptions) across
-                browse ↔ search toggles. `hidden` maps to display:none, which
-                also makes the default list's IntersectionObserver sentinel
-                non-intersecting while the user is searching. The search list
-                tracks "did the user clear in between" via a lastSettledQuery
-                state so the skeleton still fires for fresh-search-after-clear
-                without paying remount cost on every toggle. */}
-            <div hidden={!!effectiveTextQuery}>
-              <DefaultSkillsList
-                initialPage={initialPopularSkills}
-                initialTrending={initialTrending}
-                initialHot={initialHot}
-                sheetHandle={skillDetailHandle}
-              />
-            </div>
-            <div hidden={!effectiveTextQuery}>
-              <SkillSearchResults
-                query={effectiveTextQuery}
-                sheetHandle={skillDetailHandle}
-              />
-            </div>
+            {/* Both lists stay mounted inside the Crossfade: the default list
+                preserves scroll + pagination state across type-and-clear, and
+                the search list preserves its 60+ rows (each with jotai
+                subscriptions) across browse ↔ search toggles. Crossfade puts
+                `hidden` (display:none) on the inactive pane, which also makes
+                the default list's IntersectionObserver sentinel
+                non-intersecting while the user is searching, and animates the
+                opacity/height swap between the two. `active` waits for
+                searchSettled (see above) so the crossfade always lands on
+                real rows, never a loading skeleton. The fallback
+                (app/(main)/home-fallback.tsx) mirrors this wrapper DOM —
+                keep them in sync.
+
+                Each pane is dimmed while a search is in flight
+                (`isInputLoading`): on a first search the leaderboard is the
+                visible pane, so the dim gives a content-area "working" signal
+                beyond the small input spinner (matters on slow connections);
+                during refinement the previous results dim while the next set
+                fetches. Opacity-only, so it composes with the crossfade and
+                stays off the layout/paint path. */}
+            <Crossfade active={showSearchResults}>
+              <div
+                className={cn(
+                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
+                  isInputLoading && "opacity-55",
+                )}
+              >
+                <DefaultSkillsList
+                  initialPage={initialPopularSkills}
+                  initialTrending={initialTrending}
+                  initialHot={initialHot}
+                  sheetHandle={skillDetailHandle}
+                />
+              </div>
+              <div
+                className={cn(
+                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
+                  isInputLoading && "opacity-55",
+                )}
+              >
+                <SkillSearchResults
+                  query={effectiveTextQuery}
+                  sheetHandle={skillDetailHandle}
+                />
+              </div>
+            </Crossfade>
           </TabsContent>
           <TabsContent value="repo">
             <RepoAnalysisResults
               repoUrl={repoUrl}
               canAutoDetect={canAutoDetect}
               sheetHandle={skillDetailHandle}
+              onTryExample={(url) => {
+                setRepoInput(url);
+                setRepoUrl(url);
+              }}
             />
           </TabsContent>
         </TabsPanels>

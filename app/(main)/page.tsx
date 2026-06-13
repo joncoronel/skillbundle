@@ -63,16 +63,17 @@ export default async function Home() {
     [getInitialPopularSkills(), getInitialTrending(), getInitialHot()],
   );
 
+  // Compact, static hero band. The page's working surface (discover pane +
+  // bundle rail) is the headline act; the hero just states the job and gets
+  // out of the way. It never collapses or animates.
   const hero = (
-    <section className="mx-auto max-w-5xl px-4 pt-24 pb-10">
-      <h1 className="font-display text-5xl font-semibold tracking-tight leading-hero text-balance sm:text-6xl lg:text-7xl">
-        Build your
-        <br />
-        <span className="text-primary">AI skill bundle</span>
+    <section className="mx-auto max-w-5xl px-4 pt-12 pb-2 sm:pt-14">
+      <h1 className="font-display text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+        Pick skills. <span className="text-primary">Ship one install command.</span>
       </h1>
-      <p className="mt-6 max-w-lg text-muted-foreground sm:text-lg sm:leading-relaxed lg:max-w-xl">
-        Discover, compare, and bundle skills for AI coding assistants like
-        Cursor and Claude. Pick your stack, share with a link.
+      <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
+        Search and compare skills for Cursor, Claude Code, and other coding
+        agents. Bundle the ones you want and share the whole set with a link.
       </p>
     </section>
   );

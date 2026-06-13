@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import type { FunctionReturnType } from "convex/server";
 import { SkillExplorer } from "@/components/skill-explorer";
 import { useUserPlan } from "@/hooks/use-user-plan";
-import { HeroCollapse } from "./hero-collapse";
 import type { api } from "@/convex/_generated/api";
 
 type HomeContentProps = {
@@ -18,6 +17,10 @@ type HomeContentProps = {
   initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
 };
 
+// The hero (children) is a compact static band — it never collapses on
+// search; typing crossfades the explorer's results pane in place instead.
+// Wrapper markup is mirrored statically in app/(main)/home-fallback.tsx —
+// keep the two in sync or the post-hydration swap flashes.
 export function HomeContent({
   children,
   initialPopularSkills,
@@ -28,7 +31,7 @@ export function HomeContent({
 
   return (
     <>
-      <HeroCollapse>{children}</HeroCollapse>
+      {children}
       <main className="mx-auto max-w-5xl px-4 pt-6 pb-20">
         <SkillExplorer
           canAutoDetect={limits?.canAutoDetect ?? true}

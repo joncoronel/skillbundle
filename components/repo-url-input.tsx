@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon, GithubIcon } from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
 import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
@@ -19,12 +20,20 @@ import {
 import { cn } from "@/lib/utils";
 type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
 
+// Example for the empty state — a well-known TypeScript/React repo whose
+// fingerprint reliably produces recommendations.
+const EXAMPLE_REPO_NAME = "shadcn-ui/ui";
+const EXAMPLE_REPO_URL = `https://github.com/${EXAMPLE_REPO_NAME}`;
+
 
 interface RepoAnalysisResultsProps {
   /** The repo URL from the URL param. Empty = no analysis yet. */
   repoUrl: string;
   canAutoDetect: boolean;
   sheetHandle: SkillDetailHandle;
+  /** Fills the input and runs the analysis for the empty state's example
+   *  repo — wiring lives in the parent, which owns both pieces of state. */
+  onTryExample?: (url: string) => void;
 }
 
 /**
@@ -37,6 +46,7 @@ export function RepoAnalysisResults({
   repoUrl,
   canAutoDetect,
   sheetHandle,
+  onTryExample,
 }: RepoAnalysisResultsProps) {
   const convex = useConvex();
 
@@ -71,11 +81,49 @@ export function RepoAnalysisResults({
     : data?.error ?? null;
 
   if (loading) {
+    const rowCount = 6;
+    // Skeleton mirrors the three regions analysis renders — detected-stack
+    // header, count line, joined recommendation rows — so nothing shifts when
+    // results land. Repo analysis hits GitHub and can take a few seconds, and
+    // repo mode has no input spinner, so the header carries a visible
+    // "Analyzing…" status for the wait rather than leaving it silent.
+    const chipWidths = ["w-14", "w-20", "w-10", "w-16", "w-24", "w-12", "w-16"];
     return (
-      <div className="mt-4 grid gap-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 rounded-2xl" />
-        ))}
+      <div className="mt-4" aria-busy="true">
+        <div className="mb-4">
+          <p role="status" className="mb-2.5 text-xs text-muted-foreground">
+            Analyzing repository…
+          </p>
+          <div className="flex flex-wrap gap-1" aria-hidden="true">
+            {chipWidths.map((w, i) => (
+              <Skeleton key={i} className={cn("h-4.5 rounded-md", w)} />
+            ))}
+          </div>
+        </div>
+        <Skeleton className="mb-3 h-3 w-32 rounded-sm" aria-hidden="true" />
+        <div className="grid" aria-hidden="true">
+          {Array.from({ length: rowCount }).map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                "flex items-center gap-3 border bg-card px-4 py-3 dark:border-border/50",
+                i === 0 ? "rounded-t-2xl" : "border-t-0",
+                i === rowCount - 1 ? "rounded-b-2xl" : "",
+              )}
+            >
+              <Skeleton className="size-4 shrink-0 rounded-sm" />
+              <div className="flex items-baseline gap-x-2">
+                <Skeleton
+                  className={cn("h-5 rounded-sm", i % 2 === 0 ? "w-32" : "w-24")}
+                />
+                <Skeleton
+                  className={cn("h-4 rounded-sm", i % 3 === 0 ? "w-24" : "w-16")}
+                />
+              </div>
+              <Skeleton className="ml-auto h-4 w-12 shrink-0 rounded-sm" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -85,7 +133,37 @@ export function RepoAnalysisResults({
   }
 
   const result = data;
-  if (!result) return null;
+  // First use: nothing analyzed yet. This tab is otherwise a blank pane, so
+  // the empty state carries the explanation of what Analyze does and offers
+  // a zero-typing way to see it work.
+  if (!result) {
+    return (
+      <div className="mt-4 rounded-xl border border-dashed border-border px-6 py-10 text-center">
+        <HugeiconsIcon
+          icon={GithubIcon}
+          strokeWidth={1.5}
+          className="mx-auto size-6 text-muted-foreground/50"
+        />
+        <p className="mt-3 text-sm font-medium">
+          Get skills matched to a repo
+        </p>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+          Paste a GitHub repo URL and Analyze reads its languages and
+          packages, then recommends skills that fit the stack.
+        </p>
+        {onTryExample && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => onTryExample(EXAMPLE_REPO_URL)}
+          >
+            Try it on {EXAMPLE_REPO_NAME}
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   const recs = result.recommendations;
   const fingerprint = result.fingerprint;

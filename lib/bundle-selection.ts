@@ -61,6 +61,13 @@ const clearAllAtom = atom(null, (_get, set) => {
   set(selectedSkillsAtom, []);
 });
 
+// Wholesale replacement — used by Clear all's undo toast to restore the
+// snapshot taken before clearing. Capped as defense-in-depth, same as
+// toggleSkillAtom.
+const replaceSelectionAtom = atom(null, (_get, set, skills: SelectedSkill[]) => {
+  set(selectedSkillsAtom, skills.slice(0, MAX_BUNDLE_SKILLS));
+});
+
 // Subscribes only to a single skill's membership. selectAtom's default
 // Object.is equality means this re-renders only when this specific skill's
 // selection flips, not on every change to the selection array.
@@ -88,14 +95,16 @@ export function useBundleActions() {
   const toggleSkill = useSetAtom(toggleSkillAtom);
   const removeSkillRaw = useSetAtom(removeSkillAtom);
   const clearAll = useSetAtom(clearAllAtom);
+  const replaceSelection = useSetAtom(replaceSelectionAtom);
   return useMemo(
     () => ({
       toggleSkill,
       removeSkill: (source: string, skillId: string) =>
         removeSkillRaw({ source, skillId }),
       clearAll,
+      replaceSelection,
     }),
-    [toggleSkill, removeSkillRaw, clearAll],
+    [toggleSkill, removeSkillRaw, clearAll, replaceSelection],
   );
 }
 
