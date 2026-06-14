@@ -69,7 +69,9 @@
       "Bash(start \"\" \"C:/tmp/og-preview/index.html\")",
       "Bash(echo \"open manually: C:\\\\\\\\tmp\\\\\\\\og-preview\\\\\\\\index.html\")",
       "Bash(rmdir \"app/\\(main\\)/compare/og\")",
-      "Bash(rm -f /c/tmp/og-preview/compare-combo.png)"
+      "Bash(rm -f /c/tmp/og-preview/compare-combo.png)",
+      "Bash(rm -f \"app/\\(main\\)/bundle/[id]/og/route.tsx\")",
+      "Bash(mkdir -p \"app/\\(main\\)/bundle/[id]/og/[v]\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",

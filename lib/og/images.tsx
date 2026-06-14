@@ -39,10 +39,19 @@ const loadSkill = unstable_cache(
   { revalidate: 86400 },
 );
 
+// Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only
+// so it becomes part of the cache key (unstable_cache keys on the args). A new
+// version → a fresh entry → the next render reflects the edit; an unchanged
+// version is served from cache. The 1-day revalidate is a backstop for install
+// counts that drift via the daily sync without bumping updatedAt. Public
+// bundles only (no auth token) — private ones return null → brand fallback.
 const loadBundle = unstable_cache(
-  (urlId: string) => fetchQuery(api.bundles.getByUrlId, { urlId }),
+  (urlId: string, version: string) => {
+    void version;
+    return fetchQuery(api.bundles.getByUrlId, { urlId });
+  },
   ["og-bundle"],
-  { revalidate: 3600 },
+  { revalidate: 86400 },
 );
 
 const loadSourceSkills = unstable_cache(
@@ -204,9 +213,10 @@ export async function skillOgImage(source: string, skillId: string) {
   );
 }
 
-/** Bundle card: name, curator, and an overview of the whole bundle. */
-export async function bundleOgImage(urlId: string) {
-  const bundle = await loadBundle(urlId);
+/** Bundle card: name, curator, and an overview of the whole bundle. `version`
+ *  (the bundle's updatedAt) only keys the cache so edits produce a fresh render. */
+export async function bundleOgImage(urlId: string, version: string) {
+  const bundle = await loadBundle(urlId, version);
 
   if (!bundle) {
     return brandOgImage();

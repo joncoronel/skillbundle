@@ -41,6 +41,13 @@ export async function generateMetadata({
     bundle.description ||
     `A bundle of ${bundle.skills.length} AI coding assistant skill${bundle.skills.length === 1 ? "" : "s"}, curated by ${bundle.creatorName}.`;
 
+  // Version the OG image URL by updatedAt, in the PATH so each version is its
+  // own cached route (rendered once, then served from cache). Social platforms
+  // cache the unfurl image by URL for days; bumping the version on every edit
+  // makes both them and our cache serve the fresh card.
+  const version = bundle.updatedAt ?? bundle.createdAt;
+  const ogImage = `/bundle/${id}/og/${version}`;
+
   return {
     title: `${bundle.name} | SkillBundle`,
     description,
@@ -48,6 +55,7 @@ export async function generateMetadata({
       title: bundle.name,
       description,
       type: "website",
+      images: [{ url: ogImage, width: 1200, height: 630, alt: bundle.name }],
     },
     // Private bundles reached via share token shouldn't be indexed.
     ...(bundle.isPublic ? {} : { robots: { index: false } }),
