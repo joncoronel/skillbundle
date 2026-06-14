@@ -7,10 +7,25 @@ import { GeistPixelCircle } from "geist/font/pixel";
 import { Providers } from "./providers";
 import "./globals.css";
 
+// metadataBase makes every relative OG/Twitter image URL absolute (required by
+// crawlers). Prefer an explicit site URL, fall back to the Vercel-provided
+// deployment URL, then localhost for dev.
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "SkillBundle",
   description:
     "Discover, compare, and bundle AI coding assistant skills for your tech stack",
+  // X/Twitter renders large-format cards; the generated twitter-image files
+  // supply the actual artwork.
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export default function RootLayout({

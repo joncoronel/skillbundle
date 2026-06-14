@@ -65,7 +65,11 @@
       "PowerShell($h = Get-Content \".next\\\\server\\\\app\\\\dashboard.html\" -Raw; foreach \\($s in \"Your bundles.\", \"New bundle\"\\) { \"$s -> $\\($h.Contains\\($s\\)\\)\" })",
       "PowerShell(pnpm start -- -p 3100)",
       "Bash(gh pr *)",
-      "Bash(agent-browser keyboard *)"
+      "Bash(agent-browser keyboard *)",
+      "Bash(start \"\" \"C:/tmp/og-preview/index.html\")",
+      "Bash(echo \"open manually: C:\\\\\\\\tmp\\\\\\\\og-preview\\\\\\\\index.html\")",
+      "Bash(rmdir \"app/\\(main\\)/compare/og\")",
+      "Bash(rm -f /c/tmp/og-preview/compare-combo.png)"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",

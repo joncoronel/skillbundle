@@ -10,6 +10,12 @@ import { CompareContent } from "./compare-content";
 // static shell is prefetchable and adding/removing columns is a shallow URL
 // update with no navigation.
 
+// Kept fully static so the route stays a CDN-served shell. The OG image is the
+// generic compare card from the colocated `opengraph-image.tsx` (every
+// `?skills=` variant shares it). A per-combo card would mean reading
+// searchParams in generateMetadata, which forces per-request dynamic rendering
+// — a trade-off this high-cardinality, rarely-revisited page deliberately
+// avoids.
 export const metadata: Metadata = {
   title: "Compare Skills",
   description: "Compare AI coding assistant skills side by side.",

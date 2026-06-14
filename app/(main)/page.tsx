@@ -30,6 +30,17 @@ export const metadata: Metadata = {
     title: HOME_TITLE,
     description: HOME_DESCRIPTION,
     type: "website",
+    // Defining openGraph here detaches the auto-injected image from the root
+    // app/opengraph-image.tsx file, so point at it explicitly. (It also feeds
+    // the Twitter card, which falls back to og:image.)
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "SkillBundle — discover, compare, and bundle AI coding skills",
+      },
+    ],
   },
 };
 
