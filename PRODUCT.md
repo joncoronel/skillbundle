@@ -1,5 +1,9 @@
 # SkillBundle Design Context
 
+## Register
+
+product
+
 ## Users
 
 **Primary audience:** Developers, indie hackers, and vibe coders who use AI coding assistants (Cursor, Claude Code, etc.) and want to customize their skill setup.
@@ -40,7 +44,7 @@
 
 4. **Density when it matters, space when it doesn't.** Skill grids and comparison views can be information-dense — developers expect that. But hero sections, onboarding, and empty states should breathe. Match density to the user's intent at that moment.
 
-5. **One accent, used with intent.** Orange is the signature. Use it for primary actions, active states, and key highlights. Everything else lives in the neutral palette. The accent works because it's rare.
+5. **One accent, used with intent.** Blue (`oklch(0.6 0.2 250)`) is the signature. Use it for primary actions, active states, and key highlights. Everything else lives in the neutral palette. The accent works because it's rare.
 
 ## Accessibility
 
