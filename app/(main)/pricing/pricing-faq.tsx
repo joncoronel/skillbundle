@@ -39,7 +39,7 @@ export function PricingFaq() {
         </div>
         <h2
           id="faq-heading"
-          className="font-display text-3xl font-semibold tracking-tight md:text-4xl"
+          className="font-display text-3xl font-medium tracking-tight md:text-4xl"
         >
           Things people ask.
         </h2>

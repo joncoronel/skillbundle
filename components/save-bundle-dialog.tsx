@@ -108,7 +108,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
     <Dialog handle={handle}>
       <DialogContent variant="inset">
         <DialogHeader>
-          <DialogTitle className="font-display">Save bundle</DialogTitle>
+          <DialogTitle className="font-display font-medium">Save bundle</DialogTitle>
         </DialogHeader>
         <DialogBody>
           {atLimit ? (

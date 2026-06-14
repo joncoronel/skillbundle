@@ -100,7 +100,7 @@ export function DefaultSkillsListView({
         <div>
           <h2
             id="leaderboard-heading"
-            className="font-display text-lg font-semibold tracking-tight"
+            className="font-display text-lg font-medium tracking-tight"
           >
             {tab === "popular" && "Popular skills"}
             {tab === "trending" && "Trending today"}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { FunctionReturnType } from "convex/server";
 import { useQueryState } from "nuqs";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -113,7 +114,7 @@ function SearchResults({
   return (
     <section>
       <div className="mb-5">
-        <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
+        <h2 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
           &ldquo;{query}&rdquo;
           <span className="ml-2 font-normal text-muted-foreground tabular-nums">
             · {count}
@@ -121,18 +122,32 @@ function SearchResults({
         </h2>
       </div>
       {results.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 py-16">
+        <div className="flex flex-col items-center gap-3 py-20 text-center">
           <HugeiconsIcon
             icon={Search01Icon}
             strokeWidth={1.5}
             className="size-8 text-muted-foreground/40"
           />
-          <p className="text-sm text-muted-foreground">
-            No bundles match that search.
+          <h3 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
+            No matches.
+          </h3>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Nothing here for &ldquo;{query}&rdquo;. Try a different term, or
+            build the bundle yourself.
           </p>
-          <Button variant="outline" size="sm" onClick={onClear}>
-            Clear search
-          </Button>
+          <div className="mt-2 flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClear}>
+              Clear search
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<Link href="/" />}
+            >
+              Start a bundle
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

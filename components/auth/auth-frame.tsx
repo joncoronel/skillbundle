@@ -19,7 +19,7 @@ export function AuthFrame({
       <header>
         <Link
           href="/"
-          className="group inline-flex items-baseline gap-1.5 font-display text-lg font-semibold tracking-tight"
+          className="group inline-flex items-baseline gap-1.5 font-display text-lg font-medium tracking-tight"
         >
           <span className="inline-block size-1.5 translate-y-[-2px] rounded-full bg-primary transition-transform group-hover:scale-125" />
           skillbundle
@@ -28,7 +28,7 @@ export function AuthFrame({
 
       <main className="flex flex-1 items-center py-16">
         <div className="mx-auto w-full max-w-md">
-          <h1 className="font-display text-[clamp(2.5rem,6vw,3.75rem)] font-semibold tracking-tight leading-hero text-balance">
+          <h1 className="font-display text-[clamp(2.5rem,6vw,3.75rem)] font-medium tracking-tight leading-hero text-balance">
             {title}
           </h1>
           <p className="mt-4 max-w-sm text-sm text-muted-foreground sm:text-base">

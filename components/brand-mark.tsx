@@ -19,7 +19,7 @@ export function BrandMark({ className }: BrandMarkProps) {
         <path d="m9.3,25.2c-4.1,0.4 -7.9,4.9 -7.5,9.8l4.1,53.8l7.4,-41.4c0.3,-1.5 0.8,-3.1 1.3,-4.1l-5.3,-18.1z" />
         <path d="m110.5,36.6l-80.6,0c-6,0 -12.3,5.2 -13.2,11.4l-9,49.2c-0.5,4.6 2.8,8.9 7.5,8.9l82.6,0c6.1,0 11,-4.3 11.9,-9.8l8.7,-49.2c1.1,-5.5 -3.2,-10.2 -7.9,-10.5z" />
       </svg>
-      <span className="font-display text-lg font-bold tracking-tight">
+      <span className="font-display text-lg font-medium tracking-tight">
         skillbundle
       </span>
     </span>

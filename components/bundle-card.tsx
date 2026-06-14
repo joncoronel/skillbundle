@@ -34,7 +34,6 @@ interface BundleCardProps {
   copyCount?: number;
   forkCount?: number;
   starCount?: number;
-  hideCreator?: boolean;
 }
 
 export function BundleCard({
@@ -50,7 +49,6 @@ export function BundleCard({
   copyCount,
   forkCount,
   starCount,
-  hideCreator = false,
 }: BundleCardProps) {
   const hasStats =
     copyCount !== undefined ||
@@ -58,7 +56,7 @@ export function BundleCard({
     starCount !== undefined;
 
   const content = (
-    <Card className="gap-3 py-4 transition-colors hover:bg-surface-hover">
+    <Card className="h-full gap-3 py-4 transition-colors hover:bg-surface-hover">
       <CardHeader className="gap-1">
         <CardTitle className="text-sm leading-snug">{name}</CardTitle>
         <CardAction>
@@ -73,25 +71,19 @@ export function BundleCard({
             </span>
           </div>
         </CardAction>
-        {hideCreator ? (
-          <CardDescription className="text-xs">
-            {timeAgo(createdAt)}
-          </CardDescription>
-        ) : (
-          <CardDescription className="flex items-center gap-1.5 text-xs">
-            {creatorImage ? (
-              <Avatar className="size-4">
-                <AvatarImage src={creatorImage} alt={creatorName} />
-                <AvatarFallback className="text-[8px]">
-                  {getInitials(creatorName)}
-                </AvatarFallback>
-              </Avatar>
-            ) : null}
-            <span>
-              by {creatorName} &middot; {timeAgo(createdAt)}
-            </span>
-          </CardDescription>
-        )}
+        <CardDescription className="flex items-center gap-1.5 text-xs">
+          {creatorImage ? (
+            <Avatar className="size-4">
+              <AvatarImage src={creatorImage} alt={creatorName} />
+              <AvatarFallback className="text-[8px]">
+                {getInitials(creatorName)}
+              </AvatarFallback>
+            </Avatar>
+          ) : null}
+          <span>
+            by {creatorName} &middot; {timeAgo(createdAt)}
+          </span>
+        </CardDescription>
         {description ? (
           <p className="mt-2 text-xs text-muted-foreground line-clamp-2 wrap-break-word">
             {description}
@@ -99,7 +91,7 @@ export function BundleCard({
         ) : null}
       </CardHeader>
       {hasStats ? (
-        <CardContent className="pt-0">
+        <CardContent className="mt-auto pt-0">
           <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-muted-foreground">
             {copyCount !== undefined ? (
               <span>
@@ -139,12 +131,16 @@ export function BundleCard({
     return content;
   }
 
-  return <Link href={`/bundle/${urlId}`}>{content}</Link>;
+  return (
+    <Link href={`/bundle/${urlId}`} className="block h-full">
+      {content}
+    </Link>
+  );
 }
 
 export function BundleCardSkeleton({ hasStats = false }: { hasStats?: boolean }) {
   return (
-    <Card className="gap-3 py-4">
+    <Card className="h-full gap-3 py-4">
       <CardHeader className="gap-1">
         <CardTitle className="text-sm leading-snug">
           <Skeleton className="h-lh w-3/4 rounded" />

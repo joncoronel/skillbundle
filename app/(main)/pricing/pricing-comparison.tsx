@@ -17,7 +17,7 @@ export function PricingComparison() {
         </div>
         <h2
           id="compare-heading"
-          className="font-display text-3xl font-semibold tracking-tight md:text-4xl"
+          className="font-display text-3xl font-medium tracking-tight md:text-4xl"
         >
           Every feature, side by side.
         </h2>
@@ -45,7 +45,7 @@ export function PricingComparison() {
             )}
           >
             <div className="bg-muted/40 px-6 py-2.5">
-              <span className="font-display text-sm font-semibold tracking-tight">
+              <span className="font-display text-sm font-medium tracking-tight">
                 {group.title}
               </span>
             </div>

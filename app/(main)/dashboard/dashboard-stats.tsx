@@ -75,7 +75,7 @@ function StatCell({
           />
         )}
       </div>
-      <p className="mt-2 font-display text-3xl font-semibold tabular-nums leading-none">
+      <p className="mt-2 font-display text-3xl font-medium tabular-nums leading-none">
         {value}
       </p>
       {sub && (

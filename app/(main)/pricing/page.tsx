@@ -47,7 +47,7 @@ function PricingHero() {
     <section className="grid gap-8 md:grid-cols-[1.4fr_1fr] md:items-end">
       <div className="flex flex-col gap-5">
         <SectionEyebrow>Pricing</SectionEyebrow>
-        <h1 className="font-display text-5xl leading-hero font-semibold tracking-tight text-balance md:text-6xl lg:text-7xl">
+        <h1 className="font-display text-5xl leading-hero font-medium tracking-tight text-balance md:text-6xl lg:text-7xl">
           Pay for the
           <br />
           parts that
@@ -70,7 +70,7 @@ function ClosingCta() {
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="flex max-w-xl flex-col gap-3">
           <SectionEyebrow>Start stacking</SectionEyebrow>
-          <h2 className="font-display text-3xl leading-tight font-semibold tracking-tight text-balance md:text-4xl">
+          <h2 className="font-display text-3xl leading-tight font-medium tracking-tight text-balance md:text-4xl">
             Three saved bundles are free.
             <br />
             You&apos;ll know when you want more.

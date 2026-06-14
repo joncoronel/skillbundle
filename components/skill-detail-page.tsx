@@ -67,7 +67,7 @@ export function SkillDetailPage({
       {breadcrumb}
 
       <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <h1 className="font-display min-w-0 text-3xl font-semibold tracking-tight text-balance">
+        <h1 className="font-display min-w-0 text-3xl font-medium tracking-tight text-balance">
           {skillId}
         </h1>
         <Button

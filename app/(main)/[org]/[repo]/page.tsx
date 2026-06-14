@@ -112,7 +112,7 @@ export default async function RepoPage({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-semibold tracking-tight leading-hero text-balance mb-6">
+      <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-medium tracking-tight leading-hero text-balance mb-6">
         <span className="text-muted-foreground/70">{org}/</span>
         <wbr />
         <span>{repo}</span>

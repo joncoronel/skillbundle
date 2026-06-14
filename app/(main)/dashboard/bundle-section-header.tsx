@@ -29,7 +29,7 @@ export function BundleSectionHeader({
 }: BundleSectionHeaderProps) {
   return (
     <div className="flex items-center justify-between">
-      <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight text-balance">
+      <h2 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
         Bundles
         <span className="ml-2 font-normal text-muted-foreground tabular-nums">
           · {count}

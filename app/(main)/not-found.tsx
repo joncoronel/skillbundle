@@ -15,7 +15,7 @@ export default function NotFound() {
         <span> 404 NOT_FOUND</span>
       </p>
 
-      <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] font-semibold tracking-tight leading-hero text-balance mb-6">
+      <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] font-medium tracking-tight leading-hero text-balance mb-6">
         Not in the index.
       </h1>
 

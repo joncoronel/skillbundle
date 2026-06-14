@@ -21,7 +21,7 @@ export default function SettingsPage() {
   return (
     <main className="mx-auto max-w-4xl px-4 pt-12 pb-20">
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-semibold tracking-tight">
+        <h1 className="font-display text-3xl font-medium tracking-tight">
           Account Settings
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">

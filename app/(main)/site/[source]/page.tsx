@@ -103,7 +103,7 @@ export default async function WellKnownSourcePage({
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-semibold tracking-tight leading-hero text-balance mb-6">
+      <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-medium tracking-tight leading-hero text-balance mb-6">
         {source}
       </h1>
 

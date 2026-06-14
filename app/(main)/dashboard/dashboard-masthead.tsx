@@ -8,7 +8,7 @@ export function DashboardMasthead() {
     <header>
       <div className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-semibold tracking-tight leading-hero text-balance">
+          <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero text-balance">
             Your bundles.
           </h1>
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">

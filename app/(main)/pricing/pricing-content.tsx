@@ -99,7 +99,7 @@ function TierCard({ planKey, cycle }: { planKey: Plan; cycle: Cycle }) {
       <div className="relative flex flex-1 flex-col gap-8">
         <header className="flex items-baseline justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="font-display text-xl font-semibold tracking-tight">
+            <h2 className="font-display text-xl font-medium tracking-tight">
               {plan.name}
             </h2>
             <p className="text-muted-foreground text-sm">{plan.tagline}</p>
@@ -186,7 +186,7 @@ function Price({
   if (monthly === 0 && yearly === 0) {
     return (
       <div className="flex items-baseline gap-2">
-        <span className="font-display text-5xl font-semibold tracking-tight tabular-nums">
+        <span className="font-display text-5xl font-medium tracking-tight tabular-nums">
           $0
         </span>
         <span className="text-muted-foreground text-sm">forever</span>
@@ -199,7 +199,7 @@ function Price({
 
   return (
     <div className="flex items-baseline gap-2">
-      <span className="font-display text-5xl font-semibold tracking-tight tabular-nums">
+      <span className="font-display text-5xl font-medium tracking-tight tabular-nums">
         ${amount}
       </span>
       <span className="text-muted-foreground text-sm">{suffix}</span>
