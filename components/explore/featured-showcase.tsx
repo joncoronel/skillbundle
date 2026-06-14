@@ -24,15 +24,6 @@ type FeaturedBundle = {
   starCount?: number;
 };
 
-// Columns track the actual count so the curated row always fills — a single
-// feature spans full width (and, via the container query in the card, lays
-// out horizontally as a spotlight) instead of stranding empty columns.
-function gridCols(count: number) {
-  if (count <= 1) return "grid-cols-1";
-  if (count === 2) return "grid-cols-1 sm:grid-cols-2";
-  return "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
-}
-
 export function FeaturedShowcase() {
   const { data, isPending } = useQuery({
     ...convexQuery(api.bundles.listFeatured, { limit: FEATURED_LIMIT }),
@@ -51,10 +42,21 @@ export function FeaturedShowcase() {
 
       {isPending ? (
         <FeaturedSpotlightSkeleton />
+      ) : data!.length === 1 ? (
+        // A single pick reads as a full-width spotlight row rather than a
+        // lonely card stranded in a multi-column grid.
+        <FeaturedSpotlight bundle={data![0]} />
       ) : (
-        <div className={cn("grid gap-3", gridCols(data!.length))}>
+        <div
+          className={cn(
+            "grid gap-3",
+            data!.length === 2
+              ? "grid-cols-1 sm:grid-cols-2"
+              : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+          )}
+        >
           {data!.map((bundle) => (
-            <FeaturedBundleCard key={bundle._id} bundle={bundle} />
+            <FeaturedCard key={bundle._id} bundle={bundle} />
           ))}
         </div>
       )}
@@ -62,43 +64,69 @@ export function FeaturedShowcase() {
   );
 }
 
-function FeaturedBundleCard({ bundle }: { bundle: FeaturedBundle }) {
+// Single feature: name + description as one left-aligned unit, all meta grouped
+// into a single right-aligned column. Stacks on mobile, splits on sm+.
+function FeaturedSpotlight({ bundle }: { bundle: FeaturedBundle }) {
   return (
-    // Each card owns a container so width, not viewport, drives the layout:
-    // full-width (solo feature) goes horizontal; narrow (2–3 up) stays stacked.
-    <div className="@container h-full">
-      <Link href={`/bundle/${bundle.urlId}`} className="block h-full">
-        <Card
-          level={3}
-          shadowLevel={3}
-          className="h-full gap-4 p-5 transition-[background-color,box-shadow] duration-100 hover:bg-surface-hover @3xl:flex-row @3xl:items-center @3xl:gap-8"
-        >
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="text-base font-semibold leading-snug">
-                {bundle.name}
-              </h3>
-              <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                {bundle.skillCount} skill{bundle.skillCount !== 1 ? "s" : ""}
-              </span>
-            </div>
-            {bundle.description ? (
-              <p className="text-sm text-muted-foreground line-clamp-2 wrap-break-word">
-                {bundle.description}
-              </p>
-            ) : null}
-          </div>
-          <FeaturedStats bundle={bundle} />
-        </Card>
-      </Link>
-    </div>
+    <Link href={`/bundle/${bundle.urlId}`} className="block">
+      <Card
+        level={3}
+        shadowLevel={3}
+        className="gap-4 p-6 transition-[background-color,box-shadow] duration-100 hover:bg-surface-hover sm:flex-row sm:items-center sm:gap-8"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <h3 className="text-lg font-semibold leading-snug">{bundle.name}</h3>
+          {bundle.description ? (
+            <p className="text-sm text-muted-foreground line-clamp-2 wrap-break-word">
+              {bundle.description}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col gap-1 font-mono text-xs tabular-nums text-muted-foreground sm:items-end sm:text-right">
+          <span className="text-foreground">
+            {bundle.skillCount} skill{bundle.skillCount !== 1 ? "s" : ""}
+          </span>
+          <FeaturedStatLine bundle={bundle} />
+        </div>
+      </Card>
+    </Link>
   );
 }
 
-function FeaturedStats({ bundle }: { bundle: FeaturedBundle }) {
+// 2–3 features: vertical cards in a grid. Name + skills on top, description,
+// stats pinned to the bottom so they align across the row.
+function FeaturedCard({ bundle }: { bundle: FeaturedBundle }) {
+  return (
+    <Link href={`/bundle/${bundle.urlId}`} className="block h-full">
+      <Card
+        level={3}
+        shadowLevel={3}
+        className="h-full gap-3 p-5 transition-[background-color,box-shadow] duration-100 hover:bg-surface-hover"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-base font-semibold leading-snug">{bundle.name}</h3>
+          <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+            {bundle.skillCount} skill{bundle.skillCount !== 1 ? "s" : ""}
+          </span>
+        </div>
+        {bundle.description ? (
+          <p className="text-sm text-muted-foreground line-clamp-2 wrap-break-word">
+            {bundle.description}
+          </p>
+        ) : null}
+        <div className="mt-auto">
+          <FeaturedStatLine bundle={bundle} />
+        </div>
+      </Card>
+    </Link>
+  );
+}
+
+// The dot-separated copies · forks · stars · time line, shared by both layouts.
+function FeaturedStatLine({ bundle }: { bundle: FeaturedBundle }) {
   const { copyCount, forkCount, starCount } = bundle;
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs tabular-nums text-muted-foreground @3xl:justify-end">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs tabular-nums text-muted-foreground">
       {copyCount !== undefined ? (
         <span>
           {copyCount} {copyCount === 1 ? "copy" : "copies"}
@@ -137,16 +165,16 @@ function FeaturedSpotlightSkeleton() {
     <Card
       level={3}
       shadowLevel={3}
-      className="gap-4 p-5 @3xl:flex-row @3xl:items-center @3xl:gap-8"
+      className="gap-4 p-6 sm:flex-row sm:items-center sm:gap-8"
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex items-start justify-between gap-3">
-          <Skeleton className="h-lh w-40 rounded" />
-          <Skeleton className="h-lh w-14 shrink-0 rounded" />
-        </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <Skeleton className="h-lh w-40 rounded" />
         <Skeleton className="h-lh w-3/4 rounded" />
       </div>
-      <Skeleton className="h-lh w-36 shrink-0 rounded" />
+      <div className="flex shrink-0 flex-col gap-1 sm:items-end">
+        <Skeleton className="h-lh w-14 rounded" />
+        <Skeleton className="h-lh w-36 rounded" />
+      </div>
     </Card>
   );
 }
