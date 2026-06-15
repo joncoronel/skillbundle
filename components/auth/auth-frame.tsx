@@ -1,5 +1,6 @@
 import Link from "next/link";
 import * as React from "react";
+import { LogoMark } from "@/components/brand-mark";
 
 interface AuthFrameProps {
   title: string;
@@ -19,9 +20,9 @@ export function AuthFrame({
       <header>
         <Link
           href="/"
-          className="group inline-flex items-baseline gap-1.5 font-display text-lg font-medium tracking-tight"
+          className="group inline-flex items-center gap-2 font-display text-lg font-medium tracking-tight"
         >
-          <span className="inline-block size-1.5 translate-y-[-2px] rounded-full bg-primary transition-transform group-hover:scale-125" />
+          <LogoMark className="transition-transform group-hover:scale-110" />
           skillbundle
         </Link>
       </header>

@@ -24,6 +24,7 @@ import {
   CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { LogoMark } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 
 export function MobileNav() {
@@ -46,9 +47,9 @@ export function MobileNav() {
         <DrawerContent>
           <DrawerHandle />
           <DrawerHeader>
-            <DrawerTitle className="font-display text-lg font-medium tracking-tight">
-              SkillBundle
-              <span className="ml-0.5 inline-block size-1.5 rounded-full bg-primary align-super" />
+            <DrawerTitle className="flex items-center gap-2 font-display text-lg font-medium tracking-tight">
+              <LogoMark />
+              skillbundle
             </DrawerTitle>
           </DrawerHeader>
           <DrawerBody className="flex flex-col gap-1 px-4">
