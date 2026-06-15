@@ -1,5 +1,5 @@
-"use client";
-
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import {
   Accordion,
   AccordionContent,
@@ -16,6 +16,15 @@ const STATUS_PILL: Record<string, string> = {
   pass: "bg-success/15 text-success-foreground border-success/30",
   warn: "bg-warning/15 text-warning-foreground border-warning-border",
   fail: "bg-danger/15 text-danger-foreground border-danger-border",
+};
+
+// Spoken status for the trigger's accessible name. The visible pill is
+// styled uppercase ("WARN"), but screen readers should hear a natural word
+// rather than the clipped enum value.
+const STATUS_LABEL: Record<string, string> = {
+  pass: "passed",
+  warn: "warning",
+  fail: "failed",
 };
 
 // Risk-level → severity dot color. The verdict pill on the trigger carries the
@@ -127,7 +136,9 @@ export function SkillAuditSection({
             <AccordionItem key={audit.slug} value={audit.slug}>
               <AccordionTrigger
                 indicatorType="chevron"
-                aria-label={`${audit.provider}: ${audit.status}`}
+                aria-label={`${audit.provider}: audit ${
+                  STATUS_LABEL[audit.status] ?? audit.status
+                }`}
                 icon={
                   <span
                     className={cn(
@@ -164,7 +175,8 @@ export function SkillAuditSection({
                             aria-hidden="true"
                             className={cn(
                               "size-1.5 rounded-full",
-                              RISK_DOT[audit.riskLevel] ?? "bg-muted-foreground",
+                              RISK_DOT[audit.riskLevel] ??
+                                "bg-muted-foreground",
                             )}
                           />
                           {formatRisk(audit.riskLevel)}
@@ -196,20 +208,11 @@ export function SkillAuditSection({
                     className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Full report
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
+                    <HugeiconsIcon
+                      icon={ArrowUpRight01Icon}
+                      strokeWidth={2}
                       className="size-3"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M7 17 17 7M9 7h8v8"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    />
                   </a>
                 </div>
               </AccordionContent>
