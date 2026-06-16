@@ -456,8 +456,8 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           data={data}
           xDataKey="date"
           aspectRatio="5 / 2"
-          animationDuration={0}
-          margin={{ top: 16, right: 16, bottom: 30, left: 44 }}
+          animationDuration={400}
+          margin={{ top: 16, right: 16, bottom: 44, left: 44 }}
         >
           <Grid horizontal />
           <YAxis numTicks={4} />
@@ -467,8 +467,7 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
               dataKey={s.key}
               stroke={s.color}
               strokeWidth={2}
-              fadeEdges={false}
-              animate={false}
+              fadeEdges={true}
             />
           ))}
           <XAxis numTicks={6} />

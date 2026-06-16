@@ -42,6 +42,7 @@ import {
   ComparePickerRailTrigger,
   ComparePickerSheet,
 } from "./compare-picker";
+import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 
 export function CompareContent() {
   const [refs, setRefs] = useQueryState("skills", compareSkillsParser);
@@ -137,26 +138,26 @@ export function CompareContent() {
           </div>
           <CompareTrendSection series={series} loading={insightsPending} />
           <CompareGrid refs={refs} onOpenPicker={openPicker}>
-          {refs.map((ref, i) => {
-            const entry = insightFor(ref);
-            return (
-              <CompareColumn
-                key={refKey(ref)}
-                source={ref.source}
-                skillId={ref.skillId}
-                accent={COMPARE_LINE_COLORS[i] ?? COMPARE_LINE_COLORS[0]}
-                rank={entry?.installRank ?? null}
-                rankLoading={insightsPending}
-                // A lone column has nothing left to compare against, so removal
-                // stops making sense below two.
-                onRemove={
-                  refs.length >= 2
-                    ? () => removeSkill(ref.source, ref.skillId)
-                    : undefined
-                }
-              />
-            );
-          })}
+            {refs.map((ref, i) => {
+              const entry = insightFor(ref);
+              return (
+                <CompareColumn
+                  key={refKey(ref)}
+                  source={ref.source}
+                  skillId={ref.skillId}
+                  accent={COMPARE_LINE_COLORS[i] ?? COMPARE_LINE_COLORS[0]}
+                  rank={entry?.installRank ?? null}
+                  rankLoading={insightsPending}
+                  // A lone column has nothing left to compare against, so removal
+                  // stops making sense below two.
+                  onRemove={
+                    refs.length >= 2
+                      ? () => removeSkill(ref.source, ref.skillId)
+                      : undefined
+                  }
+                />
+              );
+            })}
           </CompareGrid>
         </>
       )}
@@ -216,7 +217,11 @@ function EmptyState({ onOpenPicker }: { onOpenPicker: () => void }) {
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <ComparePickerEmptyTrigger onClick={onOpenPicker} />
-          <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>
+          <Button
+            variant="ghost"
+            nativeButton={false}
+            render={<Link href="/" />}
+          >
             Browse skills
           </Button>
         </div>
@@ -279,11 +284,10 @@ function CompareTrendSection({
       <h2 className="mb-4 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
         Installs over time
       </h2>
-      {loading ? (
+      <Crossfade active={!loading}>
         <CompareTrendSkeleton />
-      ) : (
         <CompareTrendChart series={series} />
-      )}
+      </Crossfade>
     </section>
   );
 }
@@ -555,7 +559,9 @@ function CompareColumn({
             {rankLoading ? (
               <Skeleton className="h-4 w-12" />
             ) : rank != null ? (
-              <span className="tabular-nums">#{rank.toLocaleString("en-US")}</span>
+              <span className="tabular-nums">
+                #{rank.toLocaleString("en-US")}
+              </span>
             ) : (
               <StatDash />
             )}
