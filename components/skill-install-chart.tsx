@@ -160,6 +160,12 @@ export function InstallSparkline({
         aspectRatio="7 / 1"
         animationDuration={0}
         margin={{ top: 4, right: 3, bottom: 4, left: 3 }}
+        // The hover dot sits on the first/last point, which sit at the plot edges;
+        // with margins this small the dot is wider than the margin, so the SVG's
+        // default overflow:hidden shears it. Let the chart SVG overflow instead —
+        // it keeps the line full-width (no inset) and only the dot spills, by a
+        // few px, into the surrounding gutter.
+        className="[&_svg]:overflow-visible"
       >
         <Line
           dataKey="plot"
