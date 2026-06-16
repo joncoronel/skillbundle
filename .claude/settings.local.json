@@ -72,7 +72,8 @@
       "Bash(rm -f /c/tmp/og-preview/compare-combo.png)",
       "Bash(rm -f \"app/\\(main\\)/bundle/[id]/og/route.tsx\")",
       "Bash(mkdir -p \"app/\\(main\\)/bundle/[id]/og/[v]\")",
-      "mcp__playwright__browser_navigate"
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",

@@ -17,6 +17,7 @@ import { compareHref } from "@/lib/compare";
 import { formatInstalls, timeAgo } from "@/lib/utils";
 import { OfficialBadge } from "@/components/skill-badges";
 import { SkillAuditSection } from "@/components/skill-audit-section";
+import { SkillInsightsSection } from "@/components/skill-insights-section";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would mark the route dynamic and break static/ISR generation.
@@ -39,6 +40,13 @@ export const loadAudits = unstable_cache(
     return row?.audits ?? null;
   },
   ["skill-audits"],
+  { revalidate: 86400 },
+);
+
+export const loadInsights = unstable_cache(
+  (source: string, skillId: string) =>
+    fetchQuery(api.skills.getInsights, { source, skillId }),
+  ["skill-insights"],
   { revalidate: 86400 },
 );
 
@@ -119,9 +127,10 @@ async function SkillDetailBody({
   externalIcon: IconSvgElement;
   externalLabel: string;
 }) {
-  const [skill, audits] = await Promise.all([
+  const [skill, audits, insights] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
+    loadInsights(source, skillId),
   ]);
 
   if (!skill) {
@@ -193,6 +202,8 @@ async function SkillDetailBody({
         </LabeledSection>
       )}
 
+      <SkillInsightsSection insights={insights} className="mt-10" />
+
       <SkillAuditSection
         source={source}
         skillId={skillId}
@@ -253,6 +264,15 @@ export function SkillDetailPageSkeleton({
           <Skeleton className="h-5 w-full max-w-xl" />
           <Skeleton className="h-5 w-3/4 max-w-md" />
         </div>
+      </LabeledSection>
+
+      <LabeledSection label="Insights" className="mt-10">
+        <div className="flex flex-wrap items-center gap-3">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-4 w-28" />
+        </div>
+        <Skeleton className="mt-6 aspect-5/2 w-full rounded-xl" />
       </LabeledSection>
 
       <LabeledSection label="Documentation" className="mt-14">

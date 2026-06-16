@@ -79,16 +79,21 @@ export const syncSkills = internalAction({
 
       // Filter the long tail (matches pre-v1 behavior). Map slug → skillId so
       // existing tables/indexes don't change name. `isDuplicate` is preserved
-      // so the upsert path can persist it for default-filtering.
+      // so the upsert path can persist it for default-filtering. `rank` is the
+      // global all-time install rank (1..N), derived from the row's position in
+      // this leaderboard-ordered response (computed BEFORE the filter so the
+      // dropped long tail doesn't shift positions). Powers the rank/percentile
+      // stat on the skill page.
       const normalized = data
-        .filter((s) => s.installs >= MIN_INSTALLS)
-        .map((s) => ({
+        .map((s, idx) => ({
           source: s.source,
           skillId: s.slug,
           name: s.name,
           installs: s.installs,
           isDuplicate: s.isDuplicate ?? false,
-        }));
+          rank: page * LIST_PER_PAGE + idx + 1,
+        }))
+        .filter((s) => s.installs >= MIN_INSTALLS);
 
       if (normalized.length === 0) {
         console.log(`Stopping sync: installs dropped below ${MIN_INSTALLS}`);
@@ -129,6 +134,7 @@ async function upsertSkillSummary(
     name: string;
     description?: string;
     installs: number;
+    installRank?: number;
     syncHash?: string;
     lastSeenInApi?: number;
     isDelisted?: boolean;
@@ -169,6 +175,9 @@ async function upsertSkillSummary(
       name: fields.name,
       description: fields.description,
       installs: fields.installs,
+      ...(fields.installRank !== undefined && {
+        installRank: fields.installRank,
+      }),
       ...(fields.syncHash !== undefined && { syncHash: fields.syncHash }),
       ...(fields.lastSeenInApi !== undefined && {
         lastSeenInApi: fields.lastSeenInApi,
@@ -243,6 +252,7 @@ async function upsertSkillSummary(
       name: fields.name,
       description: fields.description,
       installs: fields.installs,
+      installRank: fields.installRank,
       syncHash: fields.syncHash,
       lastSeenInApi: fields.lastSeenInApi,
       // Default to false on insert so the by_isDelisted index is selective
@@ -275,6 +285,39 @@ async function upsertSkillSummary(
   }
 }
 
+// UTC calendar day ("YYYY-MM-DD") for snapshot keying. UTC (not local) so the
+// daily syncSkills cron always lands on a stable bucket regardless of where it
+// runs, and re-runs the same day hit the same row.
+function utcDay(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+// Append (or refresh) today's install count for a skill. Idempotent on
+// (skillDocId, day): the daily sync runs once, but rate-limit reschedules and
+// manual re-runs can replay it — so we patch an existing same-day row rather
+// than inserting a duplicate. Called for EVERY synced skill (including ones
+// whose installs didn't move) so the time series has a point per day.
+async function recordDailySnapshot(
+  ctx: MutationCtx,
+  skillDocId: Id<"skills">,
+  installs: number,
+  day: string,
+) {
+  const existing = await ctx.db
+    .query("skillSnapshots")
+    .withIndex("by_skill_day", (q) =>
+      q.eq("skillDocId", skillDocId).eq("day", day),
+    )
+    .unique();
+  if (existing) {
+    if (existing.installs !== installs) {
+      await ctx.db.patch(existing._id, { installs });
+    }
+  } else {
+    await ctx.db.insert("skillSnapshots", { skillDocId, day, installs });
+  }
+}
+
 export const upsertSkillsBatch = internalMutation({
   args: {
     skills: v.array(
@@ -284,6 +327,10 @@ export const upsertSkillsBatch = internalMutation({
         name: v.string(),
         installs: v.number(),
         isDuplicate: v.boolean(),
+        // All-time install rank from the leaderboard order. Only the all-time
+        // syncSkills path supplies it; curated/manual paths omit it (no
+        // meaningful rank there) and leave any existing installRank untouched.
+        rank: v.optional(v.number()),
       }),
     ),
     leaderboard: v.string(),
@@ -310,6 +357,7 @@ export const upsertSkillsBatch = internalMutation({
    */
   handler: async (ctx, { skills, leaderboard }) => {
     const now = Date.now();
+    const day = utcDay(now);
 
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
@@ -340,7 +388,18 @@ export const upsertSkillsBatch = internalMutation({
         // markDelistedSkills' 30-day window keeps moving. Skip the skill-row
         // patch entirely — its values are already correct.
         if (nothingChanged) {
-          await ctx.db.patch(summary._id, { lastSeenInApi: now });
+          await ctx.db.patch(summary._id, {
+            lastSeenInApi: now,
+            // Rank can shift even when this skill's own installs didn't, as
+            // other skills move around it. Cheap (~200B summary patch) and the
+            // heavy skills row is left untouched. Skipped when no rank was
+            // supplied (curated/manual paths).
+            ...(skill.rank !== undefined &&
+              summary.installRank !== skill.rank && {
+                installRank: skill.rank,
+              }),
+          });
+          await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
           continue;
         }
 
@@ -390,11 +449,13 @@ export const upsertSkillsBatch = internalMutation({
         await ctx.db.patch(summary._id, {
           name: skill.name,
           installs: skill.installs,
+          ...(skill.rank !== undefined && { installRank: skill.rank }),
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
           ...relistPatchSummary,
         });
+        await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
         continue;
       }
 
@@ -466,6 +527,7 @@ export const upsertSkillsBatch = internalMutation({
         name: skill.name,
         description: existing?.description,
         installs: skill.installs,
+        installRank: skill.rank,
         ...(existing?.syncHash !== undefined && { syncHash: existing.syncHash }),
         lastSeenInApi: now,
         isDuplicate: skill.isDuplicate,
@@ -494,6 +556,8 @@ export const upsertSkillsBatch = internalMutation({
           needsAudit: true,
         }),
       });
+
+      await recordDailySnapshot(ctx, skillDocId, skill.installs, day);
     }
   },
 });
@@ -2388,6 +2452,62 @@ export const getBySourceAndSkillId = query({
         q.eq("source", source).eq("skillId", skillId),
       )
       .unique();
+  },
+});
+
+// How many days of install history to return for the skill page chart. ~6
+// months is plenty for the daily line without sending an unbounded series.
+const INSIGHTS_HISTORY_DAYS = 180;
+
+/**
+ * Analytics for one skill's detail page: the daily install time series plus the
+ * rank/percentile and current momentum figures. Reads entirely from the cheap
+ * `skillSummaries` + `skillSnapshots` + `syncStats` tables — never the heavy
+ * `skills` row. The history is empty until daily snapshots accumulate (skills.sh
+ * has no backfill), so the client gates the chart on having enough points.
+ */
+export const getInsights = query({
+  args: { source: v.string(), skillId: v.string() },
+  handler: async (ctx, { source, skillId }) => {
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", source).eq("skillId", skillId),
+      )
+      .unique();
+
+    if (!summary) {
+      return {
+        snapshots: [],
+        installs: 0,
+        installRank: null,
+        totalSkills: null,
+        trendingRank: null,
+        hotChange: null,
+      };
+    }
+
+    const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
+    const rows = await ctx.db
+      .query("skillSnapshots")
+      .withIndex("by_skill_day", (q) =>
+        q.eq("skillDocId", summary.skillDocId).gte("day", cutoffDay),
+      )
+      .collect();
+    // Index order is (skillDocId, day) ascending, and "YYYY-MM-DD" sorts
+    // lexicographically by date, so these are already chronological.
+    const snapshots = rows.map((r) => ({ day: r.day, installs: r.installs }));
+
+    const stats = await ctx.db.query("syncStats").first();
+
+    return {
+      snapshots,
+      installs: summary.installs,
+      installRank: summary.installRank ?? null,
+      totalSkills: stats?.totalSkills ?? null,
+      trendingRank: summary.trendingRank ?? null,
+      hotChange: summary.hotChange ?? null,
+    };
   },
 });
 
