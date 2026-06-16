@@ -26,12 +26,6 @@ export type SkillInsights = {
 // ~1 point/day from when recording starts.
 export const MIN_POINTS = 2;
 
-// Trailing window the sidebar sparkline draws. The query keeps ~180 days for the
-// full "View details" chart, but the sparkline is a recent-momentum glance, so
-// it shows just the last week (and reads alongside the "+N past 7d" stat above
-// it). The dialog chart still gets the full series.
-export const SPARKLINE_DAYS = 7;
-
 export const intFmt = new Intl.NumberFormat("en-US").format;
 
 // The bklit charts read their palette from `--chart-*` CSS variables, which
@@ -94,17 +88,37 @@ export function topPercent(rank: number, total: number) {
 }
 
 /**
- * Installs gained over the trailing ~7 days, measured from the earliest
- * snapshot still inside the window. Null until the window has two points.
+ * The trailing ~7-day window: from the snapshot at or before 7 days ago (the
+ * baseline the gain is measured from) through the latest. Both `weekGain` and the
+ * sidebar sparkline read from this, so the sparkline always starts exactly where
+ * the "+N past 7d" stat counts from — they can't drift apart even if a daily
+ * snapshot is missing (a count-based slice would reach a different point than
+ * this date-based baseline). Returns the input untouched when it has under two
+ * points.
  */
-export function weekGain(snapshots: SkillInsights["snapshots"]) {
-  if (snapshots.length < 2) return null;
+export function weekWindow(snapshots: SkillInsights["snapshots"]) {
+  if (snapshots.length < 2) return snapshots;
   const latest = snapshots[snapshots.length - 1];
   const cutoff = toDate(latest.day).getTime() - 7 * 86_400_000;
-  const start =
-    [...snapshots].reverse().find((s) => toDate(s.day).getTime() <= cutoff) ??
-    snapshots[0];
-  const gain = latest.installs - start.installs;
+  let startIdx = 0;
+  for (let i = snapshots.length - 1; i >= 0; i--) {
+    if (toDate(snapshots[i].day).getTime() <= cutoff) {
+      startIdx = i;
+      break;
+    }
+  }
+  return snapshots.slice(startIdx);
+}
+
+/**
+ * Installs gained over the trailing ~7 days, measured from the window baseline.
+ * Null until the window has two points, or when the change isn't positive.
+ */
+export function weekGain(snapshots: SkillInsights["snapshots"]) {
+  const windowPoints = weekWindow(snapshots);
+  if (windowPoints.length < 2) return null;
+  const gain =
+    windowPoints[windowPoints.length - 1].installs - windowPoints[0].installs;
   return gain > 0 ? gain : null;
 }
 
@@ -128,9 +142,7 @@ export function InstallSparkline({
   onHover?: (state: SparklineHoverState) => void;
 }) {
   const data = useMemo(() => {
-    const min = points.length
-      ? Math.min(...points.map((p) => p.installs))
-      : 0;
+    const min = points.length ? Math.min(...points.map((p) => p.installs)) : 0;
     // `plot` = installs above the window floor: it drives the zero-based domain
     // so the line isn't flat. `installs` stays intact for the hover bridge.
     return points.map((p) => ({
@@ -254,7 +266,12 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           <Grid horizontal />
           {/* Bars on the default axis (daily, ~0–20), line on its own right
               axis (cumulative, hundreds) so each scales to fit. */}
-          <SeriesBar animate={false} dataKey="daily" fill={BAR_FILL} radius={4} />
+          <SeriesBar
+            animate={false}
+            dataKey="daily"
+            fill={BAR_FILL}
+            radius={4}
+          />
           <Line
             animate={false}
             dataKey="total"
@@ -294,7 +311,10 @@ function Legend() {
         />
       </LegendItem>
       <LegendItem label="Daily installs">
-        <span className="size-2.5 rounded-[3px]" style={{ background: BAR_FILL }} />
+        <span
+          className="size-2.5 rounded-[3px]"
+          style={{ background: BAR_FILL }}
+        />
       </LegendItem>
     </div>
   );

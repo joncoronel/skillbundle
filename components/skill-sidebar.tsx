@@ -24,9 +24,9 @@ import {
   InstallSparkline,
   InstallSparklineGhost,
   MIN_POINTS,
-  SPARKLINE_DAYS,
   intFmt,
   weekGain,
+  weekWindow,
   type SkillInsights,
   type SparklineHoverState,
 } from "@/components/skill-install-chart";
@@ -62,9 +62,11 @@ export function SkillSidebar({
   const { snapshots, installRank, trendingRank } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
-  // The sparkline is a recent-momentum glance: just the trailing week. The full
-  // history stays available in the "View details" dialog below.
-  const sparkPoints = snapshots.slice(-SPARKLINE_DAYS);
+  // The sparkline is a recent-momentum glance over the trailing week. It reads
+  // the same window as `weekGain`, so its leftmost point is exactly the baseline
+  // the "+N past 7d" stat counts from (they can't drift apart). Full history
+  // stays available in the "View details" dialog below.
+  const sparkPoints = weekWindow(snapshots);
 
   // Hovering the sparkline scrubs the headline number to that day's total.
   const [hover, setHover] = useState<SparklineHoverState>(null);
