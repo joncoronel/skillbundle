@@ -22,9 +22,9 @@ import {
 import {
   InstallChart,
   InstallSparkline,
+  InstallSparklineGhost,
   MIN_POINTS,
   intFmt,
-  topPercent,
   weekGain,
   type SkillInsights,
   type SparklineHoverState,
@@ -58,13 +58,9 @@ export function SkillSidebar({
   audits: SkillAuditEntry[] | null;
   stars: number | null;
 }) {
-  const { snapshots, installRank, totalSkills, trendingRank } = insights;
+  const { snapshots, installRank, trendingRank } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
-  const pct =
-    installRank != null && totalSkills != null
-      ? topPercent(installRank, totalSkills)
-      : null;
 
   // Hovering the sparkline scrubs the headline number to that day's total.
   const [hover, setHover] = useState<SparklineHoverState>(null);
@@ -95,10 +91,14 @@ export function SkillSidebar({
             <span className="tabular-nums">{formatDay(hover.day)}</span>
           ) : (
             <>
-              {pct != null && <span className="text-foreground">Top {pct}%</span>}
+              {installRank != null && (
+                <span className="tabular-nums text-foreground">
+                  Rank #{intFmt(installRank)}
+                </span>
+              )}
               {gain != null && (
                 <>
-                  {pct != null && <Dot />}
+                  {installRank != null && <Dot />}
                   <span className="tabular-nums text-success-foreground">
                     +{intFmt(gain)}{" "}
                     <span className="text-muted-foreground">past 7d</span>
@@ -107,7 +107,7 @@ export function SkillSidebar({
               )}
               {trendingRank != null && (
                 <>
-                  {(pct != null || gain != null) && <Dot />}
+                  {(installRank != null || gain != null) && <Dot />}
                   <span className="tabular-nums text-foreground">
                     Trending #{trendingRank}
                   </span>
@@ -154,21 +154,7 @@ export function SkillSidebar({
           // right — the history not yet recorded — so it reads as a placeholder
           // for where the trend will live, with no countdown.
           <div className="mt-3">
-            <svg
-              viewBox="0 0 120 32"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-              className="h-10 w-full text-muted-foreground/45 [mask-image:linear-gradient(to_right,#000,#000_30%,transparent)]"
-            >
-              <path
-                d="M0 25 C 18 23 30 18 46 17 C 62 16 78 11 96 8 C 108 5 114 5 120 4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
+            <InstallSparklineGhost />
             <p className="mt-2 text-xs text-pretty text-muted-foreground">
               Recording daily. The trend appears once there&apos;s enough
               history.

@@ -343,6 +343,15 @@ html {
   --chart-marker-foreground: oklch(0.3 0.01 260);
   --chart-ring-background: oklch(0.9 0.005 260 / 0.25);
   --chart-label: oklch(0.45 0.01 260);
+
+  /* Compare overlay chart: one line per compared skill. The single-accent rule
+     bends here because the chart's whole job is telling 2-3 series apart, so we
+     spend a small categorical set — all cool-family hues anchored on Signal
+     Blue (250) so it reads as a deliberate scale, not a clown palette. Series 1
+     stays the brand accent; 2 and 3 step to teal and violet. */
+  --compare-line-1: var(--primary);
+  --compare-line-2: oklch(0.62 0.12 195);
+  --compare-line-3: oklch(0.56 0.2 305);
 }
 
 .dark {
@@ -479,6 +488,12 @@ html {
   --chart-marker-foreground: oklch(0.9 0 0);
   --chart-ring-background: oklch(0.35 0.01 260 / 0.25);
   --chart-label: oklch(0.75 0.01 260);
+
+  /* Compare overlay series, lifted in lightness/chroma so they read against the
+     near-black chart background. See the light-theme block for the rationale. */
+  --compare-line-1: var(--primary);
+  --compare-line-2: oklch(0.74 0.13 195);
+  --compare-line-3: oklch(0.68 0.19 305);
 }
 
 @layer base {

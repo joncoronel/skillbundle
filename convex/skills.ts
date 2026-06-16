@@ -2511,6 +2511,67 @@ export const getInsights = query({
   },
 });
 
+// Hard cap on how many skills one compare request can pull series for. The
+// compare UI tops out at 3 columns; this is just a defensive bound so a
+// hand-crafted request can't fan out into an unbounded read.
+const COMPARE_MAX_REFS = 8;
+
+/**
+ * Batched insights for the compare page's single combined install chart: each
+ * skill's daily snapshot series plus its name and all-time rank, in one query
+ * so the overlay chart and the per-column rank stat share a single read. Like
+ * `getInsights`, this touches only the cheap `skillSummaries` + `skillSnapshots`
+ * tables. Missing skills (renamed/removed) come back with an empty series so the
+ * caller can still key results by `(source, skillId)` and render a column.
+ */
+export const getCompareInsights = query({
+  args: {
+    refs: v.array(v.object({ source: v.string(), skillId: v.string() })),
+  },
+  handler: async (ctx, { refs }) => {
+    const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
+    const skills = await Promise.all(
+      refs.slice(0, COMPARE_MAX_REFS).map(async ({ source, skillId }) => {
+        const summary = await ctx.db
+          .query("skillSummaries")
+          .withIndex("by_source_skillId", (q) =>
+            q.eq("source", source).eq("skillId", skillId),
+          )
+          .unique();
+
+        if (!summary) {
+          return {
+            source,
+            skillId,
+            name: skillId,
+            installs: 0,
+            installRank: null as number | null,
+            snapshots: [] as { day: string; installs: number }[],
+          };
+        }
+
+        const rows = await ctx.db
+          .query("skillSnapshots")
+          .withIndex("by_skill_day", (q) =>
+            q.eq("skillDocId", summary.skillDocId).gte("day", cutoffDay),
+          )
+          .collect();
+
+        return {
+          source,
+          skillId,
+          name: summary.name,
+          installs: summary.installs,
+          installRank: summary.installRank ?? null,
+          snapshots: rows.map((r) => ({ day: r.day, installs: r.installs })),
+        };
+      }),
+    );
+
+    return { skills };
+  },
+});
+
 /**
  * Full-text search over skill names. Returns up to 100 BM25-ordered results
  * (Convex search indexes do not support custom ordering).

@@ -47,8 +47,9 @@ export default function ComparePage() {
           Compare.
         </h1>
         <p className="mt-3 max-w-prose text-sm text-muted-foreground">
-          Docs, install counts, and sources side by side. Pick up to three
-          skills and see which one earns the spot in your bundle.
+          Installs, rank, audits, and docs side by side, with every skill&apos;s
+          install trend on one chart. Pick up to three and see which earns the
+          spot in your bundle.
         </p>
       </header>
       <div className="mt-10">
