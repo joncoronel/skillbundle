@@ -226,9 +226,13 @@ export function useChartInteraction({
   }, []);
 
   const handleTouchStart = useCallback(
+    // No event.preventDefault() here: React registers touch listeners as passive,
+    // so preventDefault is a no-op that logs "Unable to preventDefault inside
+    // passive event listener" under touch emulation. Scroll/zoom suppression is
+    // handled by `touch-action: none` on the interaction surface (interactionStyle
+    // + the chart root), which is the correct mechanism and needs no JS.
     (event: React.TouchEvent<SVGGElement>) => {
       if (event.touches.length === 1) {
-        event.preventDefault();
         const chartX = getChartX(event, 0);
         if (chartX === null) {
           return;
@@ -239,7 +243,6 @@ export function useChartInteraction({
           scheduleTooltip(tooltip);
         }
       } else if (event.touches.length === 2) {
-        event.preventDefault();
         resetTooltipDedupe();
         clearTooltip();
         const x0 = getChartX(event, 0);
@@ -269,9 +272,10 @@ export function useChartInteraction({
   );
 
   const handleTouchMove = useCallback(
+    // See handleTouchStart: preventDefault is intentionally omitted (passive
+    // listener no-op); `touch-action: none` suppresses scroll during the scrub.
     (event: React.TouchEvent<SVGGElement>) => {
       if (event.touches.length === 1) {
-        event.preventDefault();
         const chartX = getChartX(event, 0);
         if (chartX === null) {
           return;
@@ -282,7 +286,6 @@ export function useChartInteraction({
           scheduleTooltip(tooltip);
         }
       } else if (event.touches.length === 2) {
-        event.preventDefault();
         const x0 = getChartX(event, 0);
         const x1 = getChartX(event, 1);
         if (x0 === null || x1 === null) {
