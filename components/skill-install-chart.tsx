@@ -20,10 +20,11 @@ export type SkillInsights = {
   hotChange: number | null;
 };
 
-// Days of history before the time-series is worth charting. Below this the
-// sidebar shows a "still collecting" note instead of a sparkline/chart, since
-// skills.sh has no history to backfill — the series grows ~1 point/day.
-export const MIN_POINTS = 7;
+// Fewest snapshots needed to draw a line at all — two points make a segment, so
+// below this (0–1 points, day one) the sidebar shows the "still collecting"
+// ghost instead. skills.sh has no history to backfill, so the series grows
+// ~1 point/day from when recording starts.
+export const MIN_POINTS = 2;
 
 // Trailing window the sidebar sparkline draws. The query keeps ~180 days for the
 // full "View details" chart, but the sparkline is a recent-momentum glance, so
@@ -110,11 +111,14 @@ export function weekGain(snapshots: SkillInsights["snapshots"]) {
 export type SparklineHoverState = { value: number; day: string } | null;
 
 /**
- * Compact cumulative-installs sparkline for the sidebar: just the line, no
- * axes/grid/box. When `onHover` is passed it reports the hovered point's total
- * + day (read off the chart's interaction state) so the surrounding UI can
- * scrub the headline number, and shows a crosshair + dot indicator — no tooltip
- * popover, which would dwarf a chart this small.
+ * Compact cumulative-installs sparkline for the sidebar: bklit's line, keeping its
+ * spring dot and the hover dim/highlight, scaled so the slope is actually visible.
+ * The chart's y-domain is zero-based, and a cumulative count in the hundreds of
+ * thousands moves only a few percent over a week — plotting the absolute total
+ * pins the line flat at the top. So we plot each point's installs ABOVE the window
+ * minimum instead, which makes the domain span the real variation; the hover
+ * bridge still reads the untouched `installs` field, so the sidebar scrubs the
+ * true total.
  */
 export function InstallSparkline({
   points,
@@ -123,10 +127,19 @@ export function InstallSparkline({
   points: SkillInsights["snapshots"];
   onHover?: (state: SparklineHoverState) => void;
 }) {
-  const data = useMemo(
-    () => points.map((p) => ({ date: p.day, installs: p.installs })),
-    [points],
-  );
+  const data = useMemo(() => {
+    const min = points.length
+      ? Math.min(...points.map((p) => p.installs))
+      : 0;
+    // `plot` = installs above the window floor: it drives the zero-based domain
+    // so the line isn't flat. `installs` stays intact for the hover bridge.
+    return points.map((p) => ({
+      date: p.day,
+      installs: p.installs,
+      plot: p.installs - min,
+    }));
+  }, [points]);
+
   return (
     <div style={CHART_VARS}>
       <LineChart
@@ -137,7 +150,7 @@ export function InstallSparkline({
         margin={{ top: 4, right: 3, bottom: 4, left: 3 }}
       >
         <Line
-          dataKey="installs"
+          dataKey="plot"
           stroke="var(--primary)"
           strokeWidth={1.5}
           fadeEdges={false}
@@ -145,9 +158,9 @@ export function InstallSparkline({
         />
         {onHover && (
           <>
-            {/* Dot indicator only — no crosshair, and the box is hidden so we
-                don't float a popover over a 40px chart. The value is surfaced
-                in the sidebar via the hover bridge instead. */}
+            {/* Box hidden (no popover over a 40px chart) and crosshair off, but
+                the spring dot + line dim/highlight that ride along with the
+                tooltip stay. The value is surfaced via the hover bridge. */}
             <ChartTooltip
               showCrosshair={false}
               showDatePill={false}
@@ -159,6 +172,25 @@ export function InstallSparkline({
       </LineChart>
     </div>
   );
+}
+
+/** Pipes the hovered point's true total + day off the chart's interaction state. */
+function SparklineHoverBridge({
+  onHover,
+}: {
+  onHover: (state: SparklineHoverState) => void;
+}) {
+  const { tooltipData } = useChart();
+  const point = tooltipData?.point;
+  const value = typeof point?.installs === "number" ? point.installs : null;
+  const day = typeof point?.date === "string" ? point.date : null;
+  // Depend on the primitives, not the `tooltipData` object — its identity
+  // changes every render, which would re-fire `onHover` (and the parent's
+  // setState) in a loop.
+  useEffect(() => {
+    onHover(value != null && day != null ? { value, day } : null);
+  }, [value, day, onHover]);
+  return null;
 }
 
 /**
@@ -184,41 +216,6 @@ export function InstallSparklineGhost() {
       />
     </svg>
   );
-}
-
-/**
- * Trend sparkline that falls back to the ghost when there isn't enough history.
- * For surfaces with no headline number to scrub (e.g. compare columns).
- */
-export function SkillSparkline({
-  snapshots,
-}: {
-  snapshots: SkillInsights["snapshots"];
-}) {
-  return snapshots.length >= MIN_POINTS ? (
-    <InstallSparkline points={snapshots} />
-  ) : (
-    <InstallSparklineGhost />
-  );
-}
-
-/** Pipes the hovered point off the chart's interaction state into `onHover`. */
-function SparklineHoverBridge({
-  onHover,
-}: {
-  onHover: (state: SparklineHoverState) => void;
-}) {
-  const { tooltipData } = useChart();
-  const point = tooltipData?.point;
-  const value = typeof point?.installs === "number" ? point.installs : null;
-  const day = typeof point?.date === "string" ? point.date : null;
-  // Depend on the primitives, not the `tooltipData` object — its identity
-  // changes every render, which would re-fire `onHover` (and the parent's
-  // setState) in a loop.
-  useEffect(() => {
-    onHover(value != null && day != null ? { value, day } : null);
-  }, [value, day, onHover]);
-  return null;
 }
 
 /**

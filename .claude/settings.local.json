@@ -73,7 +73,8 @@
       "Bash(rm -f \"app/\\(main\\)/bundle/[id]/og/route.tsx\")",
       "Bash(mkdir -p \"app/\\(main\\)/bundle/[id]/og/[v]\")",
       "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_take_screenshot"
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_hover"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",

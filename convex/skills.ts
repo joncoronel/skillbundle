@@ -2455,9 +2455,14 @@ export const getBySourceAndSkillId = query({
   },
 });
 
-// How many days of install history to return for the skill page chart. ~6
-// months is plenty for the daily line without sending an unbounded series.
-const INSIGHTS_HISTORY_DAYS = 180;
+// How many days of install history the charts show — a trailing quarter. Caps
+// both the skill-page dialog chart and the compare overlay (both read this), so
+// the daily bars stay wide enough to read instead of collapsing into a wall at
+// ~180 bars. The `skillSnapshots` table keeps the full history regardless; this
+// only bounds what's fetched, so the window can be widened — or a zoom/brush
+// strip added over the full series — later without losing data. The sidebar
+// sparkline slices its own last week from this series.
+const INSIGHTS_HISTORY_DAYS = 90;
 
 /**
  * Analytics for one skill's detail page: the daily install time series plus the
