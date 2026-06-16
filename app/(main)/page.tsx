@@ -78,7 +78,7 @@ export default async function Home() {
   // bundle rail) is the headline act; the hero just states the job and gets
   // out of the way. It never collapses or animates.
   const hero = (
-    <section className="mx-auto max-w-5xl px-4 pt-12 pb-2 sm:pt-14">
+    <section className="mx-auto max-w-6xl px-4 pt-12 pb-2 sm:pt-14">
       <h1 className="font-display text-3xl font-medium tracking-tight text-balance sm:text-4xl">
         Pick skills. <span className="text-primary">Ship one install command.</span>
       </h1>

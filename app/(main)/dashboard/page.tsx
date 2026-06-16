@@ -12,7 +12,7 @@ import { DashboardMasthead } from "./dashboard-masthead";
 
 export default function DashboardPage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-10">
         <DashboardMasthead />
         <DashboardContent />

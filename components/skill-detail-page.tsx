@@ -14,10 +14,8 @@ import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
-import { formatInstalls, timeAgo } from "@/lib/utils";
-import { OfficialBadge } from "@/components/skill-badges";
-import { SkillAuditSection } from "@/components/skill-audit-section";
-import { SkillInsightsSection } from "@/components/skill-insights-section";
+import { timeAgo } from "@/lib/utils";
+import { SkillSidebar } from "@/components/skill-sidebar";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would mark the route dynamic and break static/ISR generation.
@@ -50,6 +48,36 @@ export const loadInsights = unstable_cache(
   { revalidate: 86400 },
 );
 
+// GitHub star count for the repo behind a skill. Fetched lazily (only for
+// viewed skills) and cached 24h, so it piggybacks on the page's existing ISR
+// regeneration rather than adding a daily sync over thousands of repos.
+// GitHub sources only (source is "owner/repo"); well-known sources have no repo.
+// Set GITHUB_TOKEN to lift GitHub's 60/hr unauthenticated limit to 5000/hr.
+export const loadStars = unstable_cache(
+  async (source: string): Promise<number | null> => {
+    if (!source.includes("/")) return null;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${source}`, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          ...(process.env.GITHUB_TOKEN
+            ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+            : {}),
+        },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { stargazers_count?: unknown };
+      return typeof data.stargazers_count === "number"
+        ? data.stargazers_count
+        : null;
+    } catch {
+      return null;
+    }
+  },
+  ["skill-stars"],
+  { revalidate: 86400 },
+);
+
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
@@ -71,7 +99,7 @@ export function SkillDetailPage({
   breadcrumb,
 }: SkillDetailPageProps) {
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       {breadcrumb}
 
       <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
@@ -127,10 +155,11 @@ async function SkillDetailBody({
   externalIcon: IconSvgElement;
   externalLabel: string;
 }) {
-  const [skill, audits, insights] = await Promise.all([
+  const [skill, audits, insights, stars] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
     loadInsights(source, skillId),
+    loadStars(source),
   ]);
 
   if (!skill) {
@@ -141,9 +170,8 @@ async function SkillDetailBody({
     ? await highlightMarkdownCode(skill.content)
     : undefined;
 
-  const timeLabel = skill.contentUpdatedAt
-    ? `Updated ${timeAgo(skill.contentUpdatedAt)}`
-    : `Added ${timeAgo(skill._creationTime)}`;
+  const updatedKind = skill.contentUpdatedAt ? "Updated" : "Added";
+  const updatedAgo = timeAgo(skill.contentUpdatedAt ?? skill._creationTime);
 
   return (
     <>
@@ -153,80 +181,82 @@ async function SkillDetailBody({
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-        {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
-        <span className="tabular-nums">
-          {formatInstalls(skill.installs)} installs
-        </span>
-        <span>·</span>
-        <a
-          href={externalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors hover:underline"
-        >
-          <HugeiconsIcon
-            icon={externalIcon}
-            strokeWidth={2}
-            className="size-3.5"
-          />
-          {externalLabel}
-        </a>
-        <span>·</span>
-        <span>{timeLabel}</span>
-      </div>
-
       {skill.hasContentFetchError && !skill.isDelisted && (
-        <div className="mt-6 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
+        <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
           This skill&apos;s source file could not be loaded. The install command
           may not work.
         </div>
       )}
 
-      <LabeledSection label="Install" className="mt-10">
-        <div className="group relative rounded-xl bg-muted w-fit max-w-full">
-          <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16">
-            {installCommand}
-          </pre>
-          <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
-            <CopyButton content={installCommand} className="backdrop-blur-sm" />
+      {/* Two-column on desktop: the skill's own content (install, overview,
+          docs) in column 1, supplemental facts in a sticky sidebar in column 2.
+          DOM order is install → overview → sidebar → docs, so on mobile (grid
+          off) the sidebar stacks *above* the long doc rather than at the very
+          bottom. */}
+      <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start lg:gap-x-12">
+        <LabeledSection label="Install" className="lg:col-start-1">
+          <div className="group relative w-fit max-w-full rounded-xl bg-muted">
+            <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
+              {installCommand}
+            </pre>
+            <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
+              <CopyButton
+                content={installCommand}
+                className="backdrop-blur-sm"
+              />
+            </div>
           </div>
-        </div>
-      </LabeledSection>
-
-      {skill.description && (
-        <LabeledSection label="Overview" className="mt-10">
-          <p className="text-lg leading-relaxed text-pretty text-muted-foreground">
-            {skill.description}
-          </p>
         </LabeledSection>
-      )}
 
-      <SkillInsightsSection insights={insights} className="mt-10" />
+        {skill.description && (
+          <LabeledSection label="Overview" className="mt-10 lg:col-start-1">
+            <p className="text-lg leading-relaxed text-pretty text-muted-foreground">
+              {skill.description}
+            </p>
+          </LabeledSection>
+        )}
 
-      <SkillAuditSection
-        source={source}
-        skillId={skillId}
-        audits={audits}
-        className="mt-10"
-      />
+        {/* Spans all rows of column 2 (`grid-row: 1 / span 99`) so it never
+            forces a column-1 row to its own height — placing it in just row 1
+            would inflate the Install row to the sidebar's height. self-start +
+            sticky keep it pinned at the top while the docs scroll. */}
+        <aside className="mt-10 lg:col-start-2 lg:mt-0 lg:self-start lg:sticky lg:top-20 lg:row-[1/span_99]">
+          <SkillSidebar
+            source={source}
+            skillId={skillId}
+            externalUrl={externalUrl}
+            externalIcon={externalIcon}
+            externalLabel={externalLabel}
+            curatedOwner={skill.curatedOwner}
+            installs={skill.installs}
+            insights={insights}
+            updatedKind={updatedKind}
+            updatedAgo={updatedAgo}
+            audits={audits}
+            stars={stars}
+          />
+        </aside>
 
-      {skill.content && (
-        <LabeledSection label="Documentation" className="mt-14">
-          <MarkdownContent
-            preHighlighted={preHighlighted}
-            baseUrl={skill.skillMdUrl ?? null}
+        {skill.content && (
+          <LabeledSection
+            label="Documentation"
+            className="mt-12 lg:col-start-1 lg:mt-14"
           >
-            {skill.content}
-          </MarkdownContent>
-        </LabeledSection>
-      )}
+            <MarkdownContent
+              preHighlighted={preHighlighted}
+              baseUrl={skill.skillMdUrl ?? null}
+            >
+              {skill.content}
+            </MarkdownContent>
+          </LabeledSection>
+        )}
 
-      {!skill.description && !skill.content && (
-        <p className="mt-10 text-sm text-muted-foreground">
-          No documentation available for this skill.
-        </p>
-      )}
+        {!skill.description && !skill.content && (
+          <p className="mt-10 text-sm text-muted-foreground lg:col-start-1">
+            No documentation available for this skill.
+          </p>
+        )}
+      </div>
     </>
   );
 }
@@ -237,28 +267,16 @@ export function SkillDetailPageSkeleton({
   installCommand: string;
 }) {
   return (
-    <>
-      <div className="flex items-center gap-2 text-sm">
-        <Skeleton className="h-4 w-20" />
-        <span aria-hidden="true" className="text-muted-foreground">
-          ·
-        </span>
-        <Skeleton className="h-4 w-40" />
-        <span aria-hidden="true" className="text-muted-foreground">
-          ·
-        </span>
-        <Skeleton className="h-4 w-24" />
-      </div>
-
-      <LabeledSection label="Install" className="mt-10">
-        <div className="rounded-xl bg-muted w-fit max-w-full">
-          <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16 invisible">
+    <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start lg:gap-x-12">
+      <LabeledSection label="Install" className="lg:col-start-1">
+        <div className="w-fit max-w-full rounded-xl bg-muted">
+          <pre className="invisible overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
             {installCommand}
           </pre>
         </div>
       </LabeledSection>
 
-      <LabeledSection label="Overview" className="mt-10">
+      <LabeledSection label="Overview" className="mt-10 lg:col-start-1">
         <div className="space-y-2">
           <Skeleton className="h-5 w-full max-w-2xl" />
           <Skeleton className="h-5 w-full max-w-xl" />
@@ -266,16 +284,29 @@ export function SkillDetailPageSkeleton({
         </div>
       </LabeledSection>
 
-      <LabeledSection label="Insights" className="mt-10">
-        <div className="flex flex-wrap items-center gap-3">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-28" />
+      <div className="mt-10 flex flex-col gap-7 lg:col-start-2 lg:mt-0 lg:row-[1/span_99] lg:self-start">
+        <div>
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="mt-2.5 h-7 w-24" />
+          <Skeleton className="mt-3 h-9 w-full rounded-lg" />
         </div>
-        <Skeleton className="mt-6 aspect-5/2 w-full rounded-xl" />
-      </LabeledSection>
+        <div>
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="mt-2.5 h-4 w-32" />
+        </div>
+        <div>
+          <Skeleton className="h-3 w-16" />
+          <div className="mt-2.5 space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        </div>
+      </div>
 
-      <LabeledSection label="Documentation" className="mt-14">
+      <LabeledSection
+        label="Documentation"
+        className="mt-12 lg:col-start-1 lg:mt-14"
+      >
         <div className="space-y-3">
           <Skeleton className="h-6 w-64" />
           <div className="space-y-2 pt-2">
@@ -289,7 +320,7 @@ export function SkillDetailPageSkeleton({
           </div>
         </div>
       </LabeledSection>
-    </>
+    </div>
   );
 }
 
@@ -298,7 +329,7 @@ export function SkillDetailPageSkeleton({
 // ISR caches the page, repeat visits serve the finished HTML and never hit this.
 export function SkillDetailPageLoading() {
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 // once ISR caches the page, repeat visits serve the finished HTML.
 export function ListingPageLoading() {
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       {/* breadcrumb */}
       <Skeleton className="mb-8 h-4 w-48 max-w-full" />
 

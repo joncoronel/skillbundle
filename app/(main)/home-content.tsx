@@ -32,7 +32,7 @@ export function HomeContent({
   return (
     <>
       {children}
-      <main className="mx-auto max-w-5xl px-4 pt-6 pb-20">
+      <main className="mx-auto max-w-6xl px-4 pt-6 pb-20">
         <SkillExplorer
           canAutoDetect={limits?.canAutoDetect ?? true}
           initialPopularSkills={initialPopularSkills}

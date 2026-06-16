@@ -71,7 +71,7 @@ export default async function OrgPage({ params }: { params: Params }) {
   const { org } = await params;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
