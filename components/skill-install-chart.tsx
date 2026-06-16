@@ -10,6 +10,7 @@ import { XAxis } from "@/components/charts/x-axis";
 import { YAxis } from "@/components/charts/y-axis";
 import { ChartTooltip } from "@/components/charts/tooltip";
 import { useChart } from "@/components/charts/chart-context";
+import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 
 export type SkillInsights = {
   snapshots: { day: string; installs: number }[];
@@ -484,6 +485,36 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
             }
           />
         </LineChart>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loading placeholder for the compare chart. The compare data is the one
+ * client-side fetch among our charts, so this is the only chart with a real
+ * loading phase. It reserves the loaded layout's height (legend row + the 5/2
+ * chart) and centers the house dot-matrix loader with a label, so the swap to
+ * the real chart doesn't shift and brings no reveal animation. The loader's CSS
+ * already drops to a static state under prefers-reduced-motion.
+ */
+export function CompareTrendSkeleton() {
+  return (
+    <div className="relative">
+      {/* Invisible spacers hold the legend row + chart height so loading → loaded
+          swaps in place. */}
+      <div className="mb-5 h-4" />
+      <div className="aspect-5/2 w-full" />
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+        {/* The loader paints from currentColor, and its own `.dmxr-loader` rule
+            pins that to currentColor — so the brand hue has to come from a parent,
+            not a class on the loader itself. */}
+        {/* <span className="text-primary"> */}
+        <DotMatrixRipple size="lg" ariaLabel="Loading install history" />
+        {/* </span> */}
+        <p aria-hidden="true" className="text-sm text-muted-foreground">
+          Loading install history
+        </p>
       </div>
     </div>
   );

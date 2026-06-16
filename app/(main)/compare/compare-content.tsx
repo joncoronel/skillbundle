@@ -19,6 +19,7 @@ import { OfficialBadge } from "@/components/skill-badges";
 import { AuditBadge } from "@/components/skill-audit-section";
 import {
   CompareTrendChart,
+  CompareTrendSkeleton,
   COMPARE_LINE_COLORS,
   type CompareSeries,
 } from "@/components/skill-install-chart";
@@ -279,7 +280,7 @@ function CompareTrendSection({
         Installs over time
       </h2>
       {loading ? (
-        <Skeleton className="h-[min(40vh,16rem)] w-full" />
+        <CompareTrendSkeleton />
       ) : (
         <CompareTrendChart series={series} />
       )}
