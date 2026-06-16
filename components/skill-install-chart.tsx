@@ -25,6 +25,12 @@ export type SkillInsights = {
 // skills.sh has no history to backfill — the series grows ~1 point/day.
 export const MIN_POINTS = 7;
 
+// Trailing window the sidebar sparkline draws. The query keeps ~180 days for the
+// full "View details" chart, but the sparkline is a recent-momentum glance, so
+// it shows just the last week (and reads alongside the "+N past 7d" stat above
+// it). The dialog chart still gets the full series.
+export const SPARKLINE_DAYS = 7;
+
 export const intFmt = new Intl.NumberFormat("en-US").format;
 
 // The bklit charts read their palette from `--chart-*` CSS variables, which

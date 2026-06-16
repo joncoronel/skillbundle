@@ -24,6 +24,7 @@ import {
   InstallSparkline,
   InstallSparklineGhost,
   MIN_POINTS,
+  SPARKLINE_DAYS,
   intFmt,
   weekGain,
   type SkillInsights,
@@ -61,6 +62,9 @@ export function SkillSidebar({
   const { snapshots, installRank, trendingRank } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
+  // The sparkline is a recent-momentum glance: just the trailing week. The full
+  // history stays available in the "View details" dialog below.
+  const sparkPoints = snapshots.slice(-SPARKLINE_DAYS);
 
   // Hovering the sparkline scrubs the headline number to that day's total.
   const [hover, setHover] = useState<SparklineHoverState>(null);
@@ -120,7 +124,7 @@ export function SkillSidebar({
         {hasChart ? (
           <Dialog>
             <div className="mt-3">
-              <InstallSparkline points={snapshots} onHover={setHover} />
+              <InstallSparkline points={sparkPoints} onHover={setHover} />
             </div>
             <DialogTrigger
               render={
