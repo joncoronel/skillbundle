@@ -279,13 +279,17 @@ export default defineSchema({
   // table is how we build "installs over time": the daily syncSkills cron
   // appends today's count here (idempotent on skillDocId+day). The same rows
   // power the momentum stat (installs gained over the last 7/30 days =
-  // latest.installs − the snapshot ~N days ago). Kept minimal on purpose;
-  // a retention prune (drop rows older than ~180 days) can be added later.
+  // latest.installs − the snapshot ~N days ago). A daily prune
+  // (skills.pruneSnapshots) drops rows older than the retention window so the
+  // table stays flat instead of growing forever; `by_day` lets it range-scan
+  // the oldest rows across all skills.
   skillSnapshots: defineTable({
     skillDocId: v.id("skills"),
     day: v.string(), // "YYYY-MM-DD" (UTC)
     installs: v.number(),
-  }).index("by_skill_day", ["skillDocId", "day"]),
+  })
+    .index("by_skill_day", ["skillDocId", "day"])
+    .index("by_day", ["day"]),
 
   // Denormalized owner-level rollup powering the /official directory page.
   // Computed by syncCurated from the same curated set that drives the

@@ -2577,6 +2577,59 @@ export const getCompareInsights = query({
   },
 });
 
+// How many days of daily snapshots to keep. The charts only read the trailing
+// INSIGHTS_HISTORY_DAYS (90), so anything older isn't shown — but we retain a
+// wider window as a buffer (the prune never races the query at the 90-day edge)
+// and to bank history for a future zoom/brush without waiting to re-accumulate.
+// Storage holds flat at ~SNAPSHOT_RETENTION_DAYS × (#skills ≥ 50 installs) rows
+// instead of growing ~1 row/skill/day forever. One-line knob: drop to 90 to
+// match the display window if you'd rather stay lean.
+const SNAPSHOT_RETENTION_DAYS = 180;
+const PRUNE_BATCH_SIZE = 500;
+
+/**
+ * Daily retention prune for `skillSnapshots`. Action + batch mutation (mirrors
+ * `githubCache.cleanupExpiredCache`): keep deleting the oldest rows a batch at a
+ * time so a single mutation never hits its write limit, until nothing older than
+ * the cutoff remains. Scheduled from crons.ts.
+ */
+export const pruneSnapshots = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const cutoffDay = utcDay(
+      Date.now() - SNAPSHOT_RETENTION_DAYS * 86_400_000,
+    );
+    let total = 0;
+    while (true) {
+      const deleted: number = await ctx.runMutation(
+        internal.skills.pruneSnapshotsBatch,
+        { cutoffDay },
+      );
+      total += deleted;
+      if (deleted === 0) break;
+    }
+    console.log(
+      `Pruned ${total} skillSnapshots rows older than ${cutoffDay}`,
+    );
+  },
+});
+
+export const pruneSnapshotsBatch = internalMutation({
+  args: { cutoffDay: v.string() },
+  handler: async (ctx, { cutoffDay }) => {
+    // `by_day` is day-ascending, so this walks the oldest rows first across all
+    // skills; delete a batch and report the count so the action knows to loop.
+    const stale = await ctx.db
+      .query("skillSnapshots")
+      .withIndex("by_day", (q) => q.lt("day", cutoffDay))
+      .take(PRUNE_BATCH_SIZE);
+    for (const row of stale) {
+      await ctx.db.delete(row._id);
+    }
+    return stale.length;
+  },
+});
+
 /**
  * Full-text search over skill names. Returns up to 100 BM25-ordered results
  * (Convex search indexes do not support custom ordering).

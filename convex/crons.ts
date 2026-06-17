@@ -32,6 +32,15 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.curated.syncCurated,
   );
 
+  // Daily at 06:45 UTC (after the sync has appended today's snapshots): drop
+  // snapshot rows past the retention window so skillSnapshots stays flat instead
+  // of growing ~1 row/skill/day forever. Batches itself via an action loop.
+  crons.daily(
+    "prune skill snapshots",
+    { hourUTC: 6, minuteUTC: 45 },
+    internal.skills.pruneSnapshots,
+  );
+
   // Hourly: trending leaderboard. Trending shifts within hours; hourly is
   // the natural cadence for a "trending this week" rail.
   crons.hourly(
