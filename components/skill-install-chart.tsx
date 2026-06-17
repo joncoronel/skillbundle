@@ -238,6 +238,20 @@ export function InstallSparklineGhost() {
 }
 
 /**
+ * One-sentence text summary of a cumulative install series, used as the
+ * `aria-label` so screen readers get the trend the chart SVG (aria-hidden) only
+ * shows visually.
+ */
+function seriesSummary(snapshots: SkillInsights["snapshots"]) {
+  if (snapshots.length === 0) return "no data yet";
+  const first = snapshots[0];
+  const last = snapshots[snapshots.length - 1];
+  if (snapshots.length === 1) return `${intFmt(last.installs)} installs`;
+  const verb = last.installs > first.installs ? "rose" : "held steady";
+  return `${verb} from ${intFmt(first.installs)} to ${intFmt(last.installs)} installs over ${snapshots.length} days`;
+}
+
+/**
  * The full install history: cumulative total (line, right axis) + daily gained
  * (bars, default axis) on independent scales. Lives in the chart dialog where
  * it has room; the sidebar shows the sparkline and opens this on demand.
@@ -261,7 +275,11 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   return (
     <div>
       <Legend />
-      <div style={CHART_VARS}>
+      <div
+        style={CHART_VARS}
+        role="img"
+        aria-label={`Install history: ${seriesSummary(snapshots)}.`}
+      >
         <ComposedChart
           data={series}
           xDataKey="date"
@@ -451,7 +469,13 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
   return (
     <div>
       <CompareLegend series={series} />
-      <div style={CHART_VARS}>
+      <div
+        style={CHART_VARS}
+        role="img"
+        aria-label={`Installs over time. ${drawable
+          .map((s) => `${s.name} ${seriesSummary(s.snapshots)}`)
+          .join("; ")}.`}
+      >
         <LineChart
           data={data}
           xDataKey="date"
