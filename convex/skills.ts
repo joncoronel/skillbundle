@@ -309,8 +309,17 @@ function utcDay(ts: number): string {
 // Append (or refresh) today's install count for a skill. Idempotent on
 // (skillDocId, day): the daily sync runs once, but rate-limit reschedules and
 // manual re-runs can replay it — so we patch an existing same-day row rather
-// than inserting a duplicate. Called for EVERY synced skill (including ones
-// whose installs didn't move) so the time series has a point per day.
+// than inserting a duplicate. Called for every skill on an install-owning sync
+// (syncSkills / manual, ownsInstalls=true), including ones whose installs didn't
+// move, so the time series has a point per day.
+//
+// Deliberately NOT called by syncCurated (ownsInstalls=false): the curated
+// endpoint's `installs` is unreliable (it's what was clobbering real counts), so
+// curated-only skills — sub-MIN_INSTALLS rows syncSkills never lists — get no
+// snapshots and won't appear in the install charts. That's the intended
+// trade-off: the time series is owned exclusively by the trustworthy all-time
+// source. If such a skill ever crosses MIN_INSTALLS, syncSkills picks it up and
+// starts snapshotting it from reliable data.
 async function recordDailySnapshot(
   ctx: MutationCtx,
   skillDocId: Id<"skills">,
