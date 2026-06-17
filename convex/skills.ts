@@ -49,6 +49,12 @@ export const syncSkills = internalAction({
     let hasMore = true;
     let totalSynced = 0;
 
+    // Pin the snapshot day once, up front, so every batch this run writes lands
+    // in the same UTC day-bucket even if the run spans 00:00 UTC (see the `day`
+    // arg on upsertSkillsBatch). The cron fires at 06:00 UTC so this is belt-and-
+    // suspenders today, but it also makes manual/off-hours runs deterministic.
+    const day = utcDay(Date.now());
+
     while (hasMore) {
       let response;
       try {
@@ -106,6 +112,7 @@ export const syncSkills = internalAction({
         await ctx.runMutation(internal.skills.upsertSkillsBatch, {
           skills: batch,
           leaderboard: "all-time",
+          day,
         });
       }
 
@@ -341,6 +348,22 @@ export const upsertSkillsBatch = internalMutation({
       }),
     ),
     leaderboard: v.string(),
+    // Whether this caller's `installs` is the authoritative source. True for
+    // syncSkills (all-time listing) and the manual paths (v1 detail) — both
+    // reliable. False for syncCurated: the /skills/curated endpoint's `installs`
+    // field is unreliable (it has returned values off by orders of magnitude),
+    // so the curated pass must NOT overwrite installs or write a daily snapshot
+    // on rows that already exist — it would clobber what syncSkills wrote 30
+    // minutes earlier. Curated still inserts genuinely-new rows (its only job
+    // beyond stamping curatedOwner) using the curated installs as a seed.
+    ownsInstalls: v.optional(v.boolean()),
+    // UTC snapshot day ("YYYY-MM-DD"), pinned by the caller. syncSkills computes
+    // it ONCE at the start of the run and passes it to every batch, so a long
+    // run that crosses 00:00 UTC still attributes all snapshots to the day it
+    // started — instead of splitting across two day-buckets as each batch reads
+    // its own clock. Omitted by single-skill callers (manual upserts), which
+    // fall back to the current day.
+    day: v.optional(v.string()),
   },
   /**
    * Listing-call upsert. Two paths:
@@ -362,9 +385,14 @@ export const upsertSkillsBatch = internalMutation({
    * endpoint. Set on insert and on relist (where content may have moved
    * while the skill was off our radar).
    */
-  handler: async (ctx, { skills, leaderboard }) => {
+  handler: async (
+    ctx,
+    { skills, leaderboard, ownsInstalls = true, day: pinnedDay },
+  ) => {
     const now = Date.now();
-    const day = utcDay(now);
+    // Prefer the caller's pinned day (see the `day` arg doc); fall back to the
+    // current UTC day for callers that don't pin.
+    const day = pinnedDay ?? utcDay(now);
 
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
@@ -383,7 +411,11 @@ export const upsertSkillsBatch = internalMutation({
       // -----------------------------------------------------------------
       if (summary) {
         const wasRelisted = summary.isDelisted ?? false;
-        const installsChanged = summary.installs !== skill.installs;
+        // Curated (ownsInstalls=false) must not react to its unreliable installs
+        // value: treat it as never-changed so it neither patches installs nor
+        // triggers a snapshot below.
+        const installsChanged =
+          ownsInstalls && summary.installs !== skill.installs;
         const nameChanged = summary.name !== skill.name;
         const duplicateChanged =
           (summary.isDuplicate ?? false) !== skill.isDuplicate;
@@ -406,7 +438,14 @@ export const upsertSkillsBatch = internalMutation({
                 installRank: skill.rank,
               }),
           });
-          await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
+          if (ownsInstalls) {
+            await recordDailySnapshot(
+              ctx,
+              summary.skillDocId,
+              skill.installs,
+              day,
+            );
+          }
           continue;
         }
 
@@ -446,7 +485,7 @@ export const upsertSkillsBatch = internalMutation({
         // 06:30 for any row that changed in between). Set on insert only.
         await ctx.db.patch(summary.skillDocId, {
           name: skill.name,
-          installs: skill.installs,
+          ...(ownsInstalls && { installs: skill.installs }),
           lastSynced: now,
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
@@ -455,14 +494,16 @@ export const upsertSkillsBatch = internalMutation({
         });
         await ctx.db.patch(summary._id, {
           name: skill.name,
-          installs: skill.installs,
+          ...(ownsInstalls && { installs: skill.installs }),
           ...(skill.rank !== undefined && { installRank: skill.rank }),
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
           ...relistPatchSummary,
         });
-        await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
+        if (ownsInstalls) {
+          await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
+        }
         continue;
       }
 
@@ -486,10 +527,11 @@ export const upsertSkillsBatch = internalMutation({
         // path above: it's an origin tag, set on insert only.
         skillDocId = existing._id;
         const wasRelisted = existing.isDelisted ?? false;
-        const installsChanged = existing.installs !== skill.installs;
+        const installsChanged =
+          ownsInstalls && existing.installs !== skill.installs;
         await ctx.db.patch(existing._id, {
           name: skill.name,
-          installs: skill.installs,
+          ...(ownsInstalls && { installs: skill.installs }),
           lastSynced: now,
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
@@ -527,13 +569,19 @@ export const upsertSkillsBatch = internalMutation({
         });
       }
 
-      // Mirror to summary (insert path of upsertSkillSummary).
+      // Mirror to summary (insert path of upsertSkillSummary). For a fresh
+      // summary the installs is just a seed — use skill.installs. But when this
+      // is an orphan (skill row already existed) AND the caller doesn't own
+      // installs (curated), seed from the existing row's value so curated's
+      // unreliable number can't land on the user-visible summary field even for
+      // one cycle.
       await upsertSkillSummary(ctx, {
         source: skill.source,
         skillId: skill.skillId,
         name: skill.name,
         description: existing?.description,
-        installs: skill.installs,
+        installs:
+          ownsInstalls || !existing ? skill.installs : existing.installs,
         installRank: skill.rank,
         ...(existing?.syncHash !== undefined && { syncHash: existing.syncHash }),
         lastSeenInApi: now,
@@ -564,7 +612,9 @@ export const upsertSkillsBatch = internalMutation({
         }),
       });
 
-      await recordDailySnapshot(ctx, skillDocId, skill.installs, day);
+      if (ownsInstalls) {
+        await recordDailySnapshot(ctx, skillDocId, skill.installs, day);
+      }
     }
   },
 });

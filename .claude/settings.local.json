@@ -80,7 +80,10 @@
       "Bash(node scripts/generate-icons.js)",
       "Bash(node -)",
       "Bash(awk '/^\\([A-Z]:\\\\\\\\|\\\\/\\)/{f=$0} /[0-9]+:[0-9]+ +error/{split\\(f,a,\"skillbundle\"\\); print a[2]}')",
-      "Bash(sed 's/:.*//')"
+      "Bash(sed 's/:.*//')",
+      "Skill(check)",
+      "Skill(check:*)",
+      "Bash(npx vitest *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",
