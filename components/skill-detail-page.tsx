@@ -41,14 +41,11 @@ export const loadAudits = unstable_cache(
   { revalidate: 86400 },
 );
 
-// Cached 24h to match the page's ISR cadence. That's exact for the daily fields
-// (install count, installRank, snapshots — all refreshed by the daily syncSkills
-// cron), but `getInsights` also carries the momentum fields, which refresh far
-// more often at the source: trendingRank hourly (syncTrending), hotChange every
-// 30 min (syncHot). So the sidebar's "Trending #N" can be up to 24h stale here,
-// fresher on the home-page rails. Acceptable — the whole detail page is daily-
-// stale by design (CDN-served, low Convex load) — just don't expect it to match
-// the live hot/trending rails elsewhere.
+// Cached 24h to match the page's ISR cadence. getInsights returns only daily-
+// cadence fields (install count, installRank, snapshots — all written by the
+// daily syncSkills cron), so this cache is never out of step with its source.
+// The faster-moving momentum fields (trending/hot) deliberately stay off this
+// page; they live on the home rails, kept fresh by their own crons.
 export const loadInsights = unstable_cache(
   (source: string, skillId: string) =>
     fetchQuery(api.skills.getInsights, { source, skillId }),

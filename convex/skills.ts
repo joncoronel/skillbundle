@@ -28,6 +28,7 @@ import {
   fetchRepoTree,
   NOT_MODIFIED,
 } from "./lib/github";
+import { revalidateHomeTag } from "./lib/revalidate";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 
@@ -114,6 +115,12 @@ export const syncSkills = internalAction({
     }
 
     console.log(`Synced ${totalSynced} skills (min ${MIN_INSTALLS} installs)`);
+
+    // Lifetime installs + installRank just changed, so refresh the home "Popular"
+    // tab (cached under this tag) in lockstep with the daily data instead of
+    // letting it drift on its own 24h time-based window. Best-effort no-op in dev
+    // (see revalidateHomeTag); trending/hot ping their own tags from their crons.
+    await revalidateHomeTag("home-popular");
 
     // Delist skills not seen for 30+ days.
     await ctx.scheduler.runAfter(5_000, internal.skills.markDelistedSkills, {});
@@ -2466,10 +2473,10 @@ const INSIGHTS_HISTORY_DAYS = 90;
 
 /**
  * Analytics for one skill's detail page: the daily install time series plus the
- * rank/percentile and current momentum figures. Reads entirely from the cheap
- * `skillSummaries` + `skillSnapshots` + `syncStats` tables — never the heavy
- * `skills` row. The history is empty until daily snapshots accumulate (skills.sh
- * has no backfill), so the client gates the chart on having enough points.
+ * count and all-time rank. Reads entirely from the cheap `skillSummaries` +
+ * `skillSnapshots` tables — never the heavy `skills` row. The history is empty
+ * until daily snapshots accumulate (skills.sh has no backfill), so the client
+ * gates the chart on having enough points.
  */
 export const getInsights = query({
   args: { source: v.string(), skillId: v.string() },
@@ -2482,14 +2489,7 @@ export const getInsights = query({
       .unique();
 
     if (!summary) {
-      return {
-        snapshots: [],
-        installs: 0,
-        installRank: null,
-        totalSkills: null,
-        trendingRank: null,
-        hotChange: null,
-      };
+      return { snapshots: [], installs: 0, installRank: null };
     }
 
     const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
@@ -2503,15 +2503,15 @@ export const getInsights = query({
     // lexicographically by date, so these are already chronological.
     const snapshots = rows.map((r) => ({ day: r.day, installs: r.installs }));
 
-    const stats = await ctx.db.query("syncStats").first();
-
+    // Only daily-cadence fields here (all written by the daily syncSkills): the
+    // skill page is ISR'd at 24h, so this stays internally consistent. The
+    // faster-moving momentum fields (trendingRank/hotChange) deliberately don't
+    // ride this cache — they live on the home rails, which their own crons keep
+    // fresh.
     return {
       snapshots,
       installs: summary.installs,
       installRank: summary.installRank ?? null,
-      totalSkills: stats?.totalSkills ?? null,
-      trendingRank: summary.trendingRank ?? null,
-      hotChange: summary.hotChange ?? null,
     };
   },
 });

@@ -16,9 +16,6 @@ export type SkillInsights = {
   snapshots: { day: string; installs: number }[];
   installs: number;
   installRank: number | null;
-  totalSkills: number | null;
-  trendingRank: number | null;
-  hotChange: number | null;
 };
 
 // Fewest snapshots needed to draw a line at all — two points make a segment, so
@@ -81,11 +78,6 @@ const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
 function toDate(day: string) {
   // "YYYY-MM-DD" is UTC; pin to UTC noon so the local label never slips a day.
   return new Date(`${day}T12:00:00Z`);
-}
-
-/** Percentile bucket (1–100) for an all-time install rank. */
-export function topPercent(rank: number, total: number) {
-  return Math.min(100, Math.max(1, Math.ceil((rank / total) * 100)));
 }
 
 /**

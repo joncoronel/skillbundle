@@ -59,7 +59,7 @@ export function SkillSidebar({
   audits: SkillAuditEntry[] | null;
   stars: number | null;
 }) {
-  const { snapshots, installRank, trendingRank } = insights;
+  const { snapshots, installRank } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
   // The sparkline is a recent-momentum glance over the trailing week. It reads
@@ -108,14 +108,6 @@ export function SkillSidebar({
                   <span className="tabular-nums text-success-foreground">
                     +{intFmt(gain)}{" "}
                     <span className="text-muted-foreground">past 7d</span>
-                  </span>
-                </>
-              )}
-              {trendingRank != null && (
-                <>
-                  {(installRank != null || gain != null) && <Dot />}
-                  <span className="tabular-nums text-foreground">
-                    Trending #{trendingRank}
                   </span>
                 </>
               )}
