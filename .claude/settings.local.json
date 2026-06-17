@@ -76,7 +76,9 @@
       "mcp__playwright__browser_take_screenshot",
       "mcp__playwright__browser_hover",
       "Skill(bklit-ui)",
-      "Skill(bklit-ui:*)"
+      "Skill(bklit-ui:*)",
+      "Bash(node scripts/generate-icons.js)",
+      "Bash(node -)"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",
