@@ -22,7 +22,7 @@ import {
   CompareTrendSkeleton,
   COMPARE_LINE_COLORS,
   type CompareSeries,
-} from "@/components/skill-install-chart";
+} from "@/components/compare-trend-chart";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";

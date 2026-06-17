@@ -19,17 +19,19 @@ import {
   AuditBadge,
   type SkillAuditEntry,
 } from "@/components/skill-audit-section";
+import { InstallChart } from "@/components/skill-install-chart";
 import {
-  InstallChart,
   InstallSparkline,
   InstallSparklineGhost,
+} from "@/components/skill-install-sparkline";
+import {
   MIN_POINTS,
   intFmt,
   weekGain,
   weekWindow,
   type SkillInsights,
   type SparklineHoverState,
-} from "@/components/skill-install-chart";
+} from "@/components/skill-chart-shared";
 import { formatInstalls } from "@/lib/utils";
 
 export function SkillSidebar({
