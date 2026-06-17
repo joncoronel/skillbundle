@@ -14,6 +14,12 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Node build/utility scripts (CommonJS, run outside the app bundle).
     "scripts/**",
+    // Vendored bklit chart components, installed-as-source via the @bklit shadcn
+    // registry (`npx shadcn add @bklit/...`). Third-party code we don't author:
+    // its ref-during-render / animation patterns don't satisfy this repo's strict
+    // React Compiler lint rules, the same way a node_module wouldn't. Treated like
+    // generated/vendored code (cf. convex/_generated) rather than linted here.
+    "components/charts/**",
   ]),
 ]);
 
