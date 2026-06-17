@@ -52,7 +52,7 @@ export function HomeFallback({
   return (
     <>
       {hero}
-      <main className="mx-auto max-w-5xl px-4 pt-6 pb-20">
+      <main className="mx-auto max-w-6xl px-4 pt-6 pb-20">
         <Tabs value="text" onValueChange={noop}>
           <TabsList variant="underline" className="mb-3">
             <TabsTrigger value="text">

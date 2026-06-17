@@ -10,28 +10,25 @@ import { LabeledSection } from "@/components/labeled-section";
 import { cn, timeAgo } from "@/lib/utils";
 import { externalAuditDetailUrl } from "@/lib/skill-urls";
 
-// Verdict pill on the trigger — the at-a-glance trust signal, kept from the
-// previous compact list. Unknown statuses fall back to a neutral chip.
+// Verdict pill — the at-a-glance trust signal. Unknown statuses fall back to a
+// neutral chip.
 const STATUS_PILL: Record<string, string> = {
   pass: "bg-success/15 text-success-foreground border-success/30",
   warn: "bg-warning/15 text-warning-foreground border-warning-border",
   fail: "bg-danger/15 text-danger-foreground border-danger-border",
 };
 
-// Spoken status for the trigger's accessible name. The visible pill is
-// styled uppercase ("WARN"), but screen readers should hear a natural word
-// rather than the clipped enum value.
+// Spoken status for accessible names. The visible pill is uppercase ("WARN"),
+// but screen readers should hear a natural word.
 const STATUS_LABEL: Record<string, string> = {
   pass: "passed",
   warn: "warning",
   fail: "failed",
 };
 
-// Risk-level → severity dot color. The verdict pill on the trigger carries the
-// loud signal; in the panel the level is detail, so a small saturated dot is
-// enough (color is never the sole cue — the "Risk" label + level text carry
-// it). Tolerant of values outside our typed enum: Agent Trust Hub returns
-// "SAFE", which isn't in AuditRiskLevel.
+// Risk-level → severity dot color (the verdict pill carries the loud signal;
+// in the panel the level is detail, so a small dot is enough). Tolerant of
+// values outside our enum — Agent Trust Hub returns "SAFE".
 const RISK_DOT: Record<string, string> = {
   NONE: "bg-success-foreground",
   SAFE: "bg-success-foreground",
@@ -51,6 +48,60 @@ export type SkillAuditEntry = {
   categories?: string[];
 };
 
+/** The verdict pill, shared by the sidebar summary list and the accordion. */
+export function AuditBadge({
+  status,
+  className,
+}: {
+  status: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider",
+        STATUS_PILL[status] ?? "bg-muted text-muted-foreground border-border",
+        className,
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+/** Worst verdict across providers, for the sidebar's one-line summary. */
+export function worstAuditStatus(audits: SkillAuditEntry[]): string {
+  if (audits.some((a) => a.status === "fail")) return "fail";
+  if (audits.some((a) => a.status === "warn")) return "warn";
+  return "pass";
+}
+
+/**
+ * Labeled "Security Audits" block wrapping the accordion, with the empty guard.
+ * Used by the quick-view sheet (the full skill page renders the accordion
+ * inside a dialog from the sidebar instead).
+ */
+export function SkillAuditSection({
+  source,
+  skillId,
+  audits,
+  className,
+}: {
+  source: string;
+  skillId: string;
+  audits: SkillAuditEntry[] | null | undefined;
+  className?: string;
+}) {
+  if (!audits || audits.length === 0) {
+    return null;
+  }
+  return (
+    <LabeledSection label="Security Audits" className={className}>
+      <AuditAccordion source={source} skillId={skillId} audits={audits} />
+    </LabeledSection>
+  );
+}
+
 /** "EXTERNAL_DOWNLOADS" → "External downloads". */
 function humanizeCategory(category: string): string {
   return category
@@ -66,9 +117,7 @@ function formatRisk(level: string): string {
 
 /**
  * Strip a leading "Risk: LEVEL ·" restatement from the summary when we render
- * Risk as its own field, so the same verdict doesn't appear twice. Snyk emits
- * "Risk: MEDIUM · 1 issue" → "1 issue"; "Risk: LOW · No issues" → "No issues";
- * a bare "Risk: LOW" → "" (summary hidden). Other providers' prose is untouched.
+ * Risk as its own field, so the verdict doesn't appear twice.
  */
 function summaryDetail(summary: string, hasRiskField: boolean): string {
   if (!hasRiskField) return summary.trim();
@@ -94,132 +143,107 @@ function MetaField({
 }
 
 /**
- * Per-provider security audits, expandable inline. Each provider is an
- * accordion row: verdict pill + provider name on the trigger; the panel reads
- * as a small fact sheet — a one-line summary over a metadata strip (risk level,
- * detected behaviors, audit date) and a quiet link to the provider's full
- * report on skills.sh for findings the API doesn't expose.
- *
- * All rows start collapsed; the verdict pill carries the at-a-glance signal,
- * and any provider can be expanded for detail. Renders nothing when there are
- * no audits — most skills won't have one until they've been installed once.
+ * Per-provider security audits, expandable inline. Each provider is a row:
+ * verdict pill + name on the trigger; the panel reads as a small fact sheet —
+ * a one-line summary over a metadata strip (risk, detected behaviors, date) and
+ * a quiet link to the provider's full report. Rendered inside the security
+ * dialog from the sidebar.
  */
-export function SkillAuditSection({
+export function AuditAccordion({
   source,
   skillId,
   audits,
-  className,
 }: {
   source: string;
   skillId: string;
-  audits: SkillAuditEntry[] | null | undefined;
-  className?: string;
+  audits: SkillAuditEntry[];
 }) {
-  if (!audits || audits.length === 0) {
-    return null;
-  }
-
   return (
-    <LabeledSection label="Security Audits" className={className}>
-      <Accordion variant="outline" multiple>
-        {audits.map((audit) => {
-          const pill =
-            STATUS_PILL[audit.status] ??
-            "bg-muted text-muted-foreground border-border";
-          const detailUrl = externalAuditDetailUrl(source, skillId, audit.slug);
-          const ts = Date.parse(audit.auditedAt);
-          const audited = Number.isNaN(ts) ? null : timeAgo(ts);
-          const detail = summaryDetail(audit.summary, !!audit.riskLevel);
-          const categories = audit.categories?.map(humanizeCategory) ?? [];
+    <Accordion variant="outline" multiple>
+      {audits.map((audit) => {
+        const detailUrl = externalAuditDetailUrl(source, skillId, audit.slug);
+        const ts = Date.parse(audit.auditedAt);
+        const audited = Number.isNaN(ts) ? null : timeAgo(ts);
+        const detail = summaryDetail(audit.summary, !!audit.riskLevel);
+        const categories = audit.categories?.map(humanizeCategory) ?? [];
 
-          return (
-            <AccordionItem key={audit.slug} value={audit.slug}>
-              <AccordionTrigger
-                indicatorType="chevron"
-                aria-label={`${audit.provider}: audit ${
-                  STATUS_LABEL[audit.status] ?? audit.status
-                }`}
-                icon={
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider",
-                      pill,
-                    )}
-                  >
-                    {audit.status}
-                  </span>
-                }
-                className="hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
-              >
-                {audit.provider}
-              </AccordionTrigger>
+        return (
+          <AccordionItem key={audit.slug} value={audit.slug}>
+            <AccordionTrigger
+              indicatorType="chevron"
+              aria-label={`${audit.provider}: audit ${
+                STATUS_LABEL[audit.status] ?? audit.status
+              }`}
+              icon={<AuditBadge status={audit.status} />}
+              className="hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
+            >
+              {audit.provider}
+            </AccordionTrigger>
 
-              <AccordionContent>
-                {detail && (
-                  <p className="max-w-[68ch] text-pretty text-sm leading-relaxed text-foreground">
-                    {detail}
-                  </p>
+            <AccordionContent>
+              {detail && (
+                <p className="max-w-[68ch] text-pretty text-sm leading-relaxed text-foreground">
+                  {detail}
+                </p>
+              )}
+
+              <div
+                className={cn(
+                  "flex flex-wrap items-center justify-between gap-x-6 gap-y-2",
+                  detail && "mt-4 border-t border-border pt-3",
                 )}
-
-                <div
-                  className={cn(
-                    "flex flex-wrap items-center justify-between gap-x-6 gap-y-2",
-                    detail && "mt-4 border-t border-border pt-3",
+              >
+                <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+                  {audit.riskLevel && (
+                    <MetaField label="Risk">
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            RISK_DOT[audit.riskLevel] ?? "bg-muted-foreground",
+                          )}
+                        />
+                        {formatRisk(audit.riskLevel)}
+                      </span>
+                    </MetaField>
                   )}
+
+                  {categories.length > 0 && (
+                    <MetaField label="Detected">
+                      <span className="text-xs font-medium text-foreground">
+                        {categories.join(", ")}
+                      </span>
+                    </MetaField>
+                  )}
+
+                  {audited && (
+                    <MetaField label="Audited">
+                      <span className="text-xs text-muted-foreground">
+                        {audited}
+                      </span>
+                    </MetaField>
+                  )}
+                </dl>
+
+                <a
+                  href={detailUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
-                    {audit.riskLevel && (
-                      <MetaField label="Risk">
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              "size-1.5 rounded-full",
-                              RISK_DOT[audit.riskLevel] ??
-                                "bg-muted-foreground",
-                            )}
-                          />
-                          {formatRisk(audit.riskLevel)}
-                        </span>
-                      </MetaField>
-                    )}
-
-                    {categories.length > 0 && (
-                      <MetaField label="Detected">
-                        <span className="text-xs font-medium text-foreground">
-                          {categories.join(", ")}
-                        </span>
-                      </MetaField>
-                    )}
-
-                    {audited && (
-                      <MetaField label="Audited">
-                        <span className="text-xs text-muted-foreground">
-                          {audited}
-                        </span>
-                      </MetaField>
-                    )}
-                  </dl>
-
-                  <a
-                    href={detailUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Full report
-                    <HugeiconsIcon
-                      icon={ArrowUpRight01Icon}
-                      strokeWidth={2}
-                      className="size-3"
-                    />
-                  </a>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          );
-        })}
-      </Accordion>
-    </LabeledSection>
+                  Full report
+                  <HugeiconsIcon
+                    icon={ArrowUpRight01Icon}
+                    strokeWidth={2}
+                    className="size-3"
+                  />
+                </a>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        );
+      })}
+    </Accordion>
   );
 }

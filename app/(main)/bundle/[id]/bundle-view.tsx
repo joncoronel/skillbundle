@@ -124,7 +124,7 @@ export function BundleView({
   const commandCount = generateInstallCommands(bundle.skills).length;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
           <div className="flex items-start justify-between gap-6">
@@ -423,7 +423,7 @@ function SectionHeader({ count, title }: { count: number; title: string }) {
 
 function BundleNotFound() {
   return (
-    <main className="mx-auto max-w-5xl px-4 pt-20 pb-20">
+    <main className="mx-auto max-w-6xl px-4 pt-20 pb-20">
       <div className="rounded-xl bg-muted/40 px-8 py-20 md:px-12">
         <h1 className="font-display text-4xl font-medium tracking-tight leading-hero text-balance md:text-5xl">
           This bundle isn&rsquo;t here.

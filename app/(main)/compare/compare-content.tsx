@@ -16,6 +16,13 @@ import { api } from "@/convex/_generated/api";
 import { LabeledSection } from "@/components/labeled-section";
 import { MarkdownContent } from "@/components/markdown-content";
 import { OfficialBadge } from "@/components/skill-badges";
+import { AuditBadge } from "@/components/skill-audit-section";
+import {
+  CompareTrendChart,
+  CompareTrendSkeleton,
+  COMPARE_LINE_COLORS,
+  type CompareSeries,
+} from "@/components/compare-trend-chart";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
@@ -35,6 +42,7 @@ import {
   ComparePickerRailTrigger,
   ComparePickerSheet,
 } from "./compare-picker";
+import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 
 export function CompareContent() {
   const [refs, setRefs] = useQueryState("skills", compareSkillsParser);
@@ -72,6 +80,31 @@ export function CompareContent() {
     setRefs(next.length > 0 ? next : null);
   };
 
+  // One batched read for the whole comparison: every column's all-time rank and
+  // daily snapshot series in a single query, so the combined chart and the
+  // per-column rank stat share it (no per-column insights fetch). Keyed by the
+  // refs array, so adding/removing a column refetches and React Query caches it.
+  const { data: insightsData, isPending: insightsPending } = useQuery({
+    ...convexQuery(api.skills.getCompareInsights, { refs }),
+    staleTime: 5 * 60_000,
+  });
+  const insightFor = (ref: SkillRef) =>
+    insightsData?.skills.find(
+      (s) => s.source === ref.source && s.skillId === ref.skillId,
+    );
+
+  // One line per compared skill, colored by column position so the chart line,
+  // the legend swatch, and the column header dot all share a hue.
+  const series: CompareSeries[] = refs.map((ref, i) => {
+    const entry = insightFor(ref);
+    return {
+      key: `s${i}`,
+      name: entry?.name ?? ref.skillId,
+      color: COMPARE_LINE_COLORS[i] ?? COMPARE_LINE_COLORS[0],
+      snapshots: entry?.snapshots ?? [],
+    };
+  });
+
   return (
     <>
       {refs.length === 0 ? (
@@ -103,21 +136,28 @@ export function CompareContent() {
               <CopyComparisonLink refs={refs} />
             </div>
           </div>
+          <CompareTrendSection series={series} loading={insightsPending} />
           <CompareGrid refs={refs} onOpenPicker={openPicker}>
-          {refs.map((ref) => (
-            <CompareColumn
-              key={refKey(ref)}
-              source={ref.source}
-              skillId={ref.skillId}
-              // A lone column has nothing left to compare against, so removal
-              // stops making sense below two.
-              onRemove={
-                refs.length >= 2
-                  ? () => removeSkill(ref.source, ref.skillId)
-                  : undefined
-              }
-            />
-          ))}
+            {refs.map((ref, i) => {
+              const entry = insightFor(ref);
+              return (
+                <CompareColumn
+                  key={refKey(ref)}
+                  source={ref.source}
+                  skillId={ref.skillId}
+                  accent={COMPARE_LINE_COLORS[i] ?? COMPARE_LINE_COLORS[0]}
+                  rank={entry?.installRank ?? null}
+                  rankLoading={insightsPending}
+                  // A lone column has nothing left to compare against, so removal
+                  // stops making sense below two.
+                  onRemove={
+                    refs.length >= 2
+                      ? () => removeSkill(ref.source, ref.skillId)
+                      : undefined
+                  }
+                />
+              );
+            })}
           </CompareGrid>
         </>
       )}
@@ -177,7 +217,11 @@ function EmptyState({ onOpenPicker }: { onOpenPicker: () => void }) {
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <ComparePickerEmptyTrigger onClick={onOpenPicker} />
-          <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>
+          <Button
+            variant="ghost"
+            nativeButton={false}
+            render={<Link href="/" />}
+          >
             Browse skills
           </Button>
         </div>
@@ -222,13 +266,40 @@ function CompareGrid({
 }
 
 /**
+ * The single combined install chart sitting above the columns: one line per
+ * compared skill, so trajectory reads across all of them at once instead of in
+ * separate per-column sparklines. The column header dots map each skill to its
+ * line. While the batched insights load it holds the chart's height with a
+ * skeleton so the columns below don't jump.
+ */
+function CompareTrendSection({
+  series,
+  loading,
+}: {
+  series: CompareSeries[];
+  loading: boolean;
+}) {
+  return (
+    <section className="mb-4 rounded-2xl border bg-card p-5 dark:border-border/50 md:mb-6">
+      <h2 className="mb-4 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+        Installs over time
+      </h2>
+      <Crossfade active={!loading}>
+        <CompareTrendSkeleton />
+        <CompareTrendChart series={series} />
+      </Crossfade>
+    </section>
+  );
+}
+
+/**
  * One stat strip cell: tiny mono label over a value. The strip rows align
  * across columns because every shell renders the same strip at the same
  * position, which is what makes the columns comparable at a glance.
  */
 function StatCell({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 px-5 py-3">
+    <div className="min-w-0 px-4 py-3">
       <dt className="font-mono text-label font-medium uppercase tracking-eyebrow text-muted-foreground">
         {label}
       </dt>
@@ -236,6 +307,15 @@ function StatCell({ label, children }: { label: string; children: ReactNode }) {
         {children}
       </dd>
     </div>
+  );
+}
+
+/** Faint em-dash placeholder for a stat with no value. */
+function StatDash() {
+  return (
+    <span aria-hidden="true" className="text-muted-foreground">
+      —
+    </span>
   );
 }
 
@@ -248,6 +328,8 @@ function StatCell({ label, children }: { label: string; children: ReactNode }) {
 function ColumnShell({
   title,
   titleHref,
+  subtitle,
+  accent,
   stats,
   onRemove,
   removeLabel,
@@ -256,6 +338,9 @@ function ColumnShell({
 }: {
   title: string;
   titleHref?: string;
+  subtitle?: ReactNode;
+  /** Series color tying this column to its line in the combined chart above. */
+  accent?: string;
   stats: ReactNode;
   onRemove?: () => void;
   removeLabel?: string;
@@ -269,15 +354,31 @@ function ColumnShell({
     <article className="flex w-[86vw] shrink-0 snap-center flex-col sm:w-[70vw] md:w-auto md:shrink">
       <div className="flex flex-col overflow-hidden rounded-2xl border bg-card dark:border-border/50">
         <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
-          <h2 className="min-w-0 truncate text-lg font-semibold">
-            {titleHref ? (
-              <Link href={titleHref} className="hover:underline">
-                {title}
-              </Link>
-            ) : (
-              title
+          <div className="min-w-0">
+            <h2 className="flex min-w-0 items-center gap-2 text-lg font-semibold">
+              {accent && (
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 rounded-[3px]"
+                  style={{ background: accent }}
+                />
+              )}
+              <span className="truncate">
+                {titleHref ? (
+                  <Link href={titleHref} className="hover:underline">
+                    {title}
+                  </Link>
+                ) : (
+                  title
+                )}
+              </span>
+            </h2>
+            {subtitle && (
+              <div className="mt-0.5 min-w-0 text-xs text-muted-foreground">
+                {subtitle}
+              </div>
             )}
-          </h2>
+          </div>
           {onRemove && (
             <button
               type="button"
@@ -294,7 +395,7 @@ function ColumnShell({
           )}
         </header>
 
-        <dl className="grid grid-cols-2 divide-x divide-border/60 border-y border-border/60 dark:divide-border/40 dark:border-border/40">
+        <dl className="grid grid-cols-3 divide-x divide-border/60 border-y border-border/60 dark:divide-border/40 dark:border-border/40">
           {stats}
         </dl>
 
@@ -323,15 +424,24 @@ function ColumnShell({
 function CompareColumn({
   source,
   skillId,
+  accent,
+  rank,
+  rankLoading,
   onRemove,
 }: {
   source: string;
   skillId: string;
+  /** Series color, matched to this skill's line in the chart above. */
+  accent: string;
+  /** All-time install rank from the batched insights query (null if unranked). */
+  rank: number | null;
+  rankLoading: boolean;
   onRemove?: () => void;
 }) {
   // One query per column — the skills row carries everything including the
   // SKILL.md content. React Query caches it for the session, so re-adding a
-  // column or revisiting the page in-session doesn't refetch.
+  // column or revisiting the page in-session doesn't refetch. (Rank + the trend
+  // come from the parent's single batched `getCompareInsights`, not per-column.)
   //
   // This hits Convex directly (one call per skill per visitor). If Convex
   // call volume or egress ever becomes a real cost, the escape hatch is a
@@ -356,13 +466,18 @@ function CompareColumn({
     return (
       <ColumnShell
         title={skillId}
+        subtitle={<span className="block truncate">{source}</span>}
+        accent={accent}
         stats={
           <>
             <StatCell label="Installs">
               <Skeleton className="h-4 w-12" />
             </StatCell>
-            <StatCell label="Source">
-              <Skeleton className="h-4 w-28 max-w-full" />
+            <StatCell label="Rank">
+              <Skeleton className="h-4 w-12" />
+            </StatCell>
+            <StatCell label="Audits">
+              <Skeleton className="h-4 w-10" />
             </StatCell>
           </>
         }
@@ -384,15 +499,18 @@ function CompareColumn({
     return (
       <ColumnShell
         title={skillId}
+        subtitle={<span className="block truncate">{source}</span>}
+        accent={accent}
         stats={
           <>
             <StatCell label="Installs">
-              <span aria-hidden="true" className="text-muted-foreground">
-                —
-              </span>
+              <StatDash />
             </StatCell>
-            <StatCell label="Source">
-              <span className="truncate text-muted-foreground">{source}</span>
+            <StatCell label="Rank">
+              <StatDash />
+            </StatCell>
+            <StatCell label="Audits">
+              <StatDash />
             </StatCell>
           </>
         }
@@ -408,10 +526,28 @@ function CompareColumn({
     );
   }
 
+  const auditStatus = skill.worstAuditStatus;
+
   return (
     <ColumnShell
       title={skill.name}
       titleHref={`/${skill.source}/${skill.skillId}`}
+      accent={accent}
+      subtitle={
+        <span className="flex min-w-0 items-center gap-1.5">
+          <a
+            href={`https://github.com/${skill.source}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="truncate transition-colors hover:text-foreground hover:underline"
+          >
+            {skill.source}
+          </a>
+          {skill.curatedOwner && (
+            <OfficialBadge owner={skill.curatedOwner} className="shrink-0" />
+          )}
+        </span>
+      }
       stats={
         <>
           <StatCell label="Installs">
@@ -419,16 +555,25 @@ function CompareColumn({
               {formatInstalls(skill.installs)}
             </span>
           </StatCell>
-          <StatCell label="Source">
-            <a
-              href={`https://github.com/${skill.source}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="truncate text-muted-foreground transition-colors hover:text-foreground hover:underline"
-            >
-              {skill.source}
-            </a>
-            {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
+          <StatCell label="Rank">
+            {rankLoading ? (
+              <Skeleton className="h-4 w-12" />
+            ) : rank != null ? (
+              <span className="tabular-nums">
+                #{rank.toLocaleString("en-US")}
+              </span>
+            ) : (
+              <StatDash />
+            )}
+          </StatCell>
+          <StatCell label="Audits">
+            {auditStatus === "pass" ||
+            auditStatus === "warn" ||
+            auditStatus === "fail" ? (
+              <AuditBadge status={auditStatus} />
+            ) : (
+              <StatDash />
+            )}
           </StatCell>
         </>
       }

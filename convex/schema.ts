@@ -136,6 +136,13 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     installs: v.number(),
+    // All-time install rank (1..N) captured from the order of the v1
+    // "all-time" leaderboard during syncSkills (the API returns rows already
+    // sorted by lifetime installs). Powers the skill page's "#142 · Top 3%"
+    // stat. Lives only on the summary (not the heavy skills row) so the daily
+    // rank refresh stays a cheap ~200B patch. The percentile denominator is
+    // syncStats.totalSkills.
+    installRank: v.optional(v.number()),
     syncHash: v.optional(v.string()),
     lastSeenInApi: v.optional(v.number()),
     isDelisted: v.optional(v.boolean()),
@@ -266,6 +273,23 @@ export default defineSchema({
   })
     .index("by_skillDocId", ["skillDocId"])
     .index("by_source_skillId", ["source", "skillId"]),
+
+  // Daily install snapshots — one row per skill per UTC day. skills.sh only
+  // exposes a point-in-time install count (no history, no backfill), so this
+  // table is how we build "installs over time": the daily syncSkills cron
+  // appends today's count here (idempotent on skillDocId+day). The same rows
+  // power the momentum stat (installs gained over the last 7/30 days =
+  // latest.installs − the snapshot ~N days ago). A daily prune
+  // (skills.pruneSnapshots) drops rows older than the retention window so the
+  // table stays flat instead of growing forever; `by_day` lets it range-scan
+  // the oldest rows across all skills.
+  skillSnapshots: defineTable({
+    skillDocId: v.id("skills"),
+    day: v.string(), // "YYYY-MM-DD" (UTC)
+    installs: v.number(),
+  })
+    .index("by_skill_day", ["skillDocId", "day"])
+    .index("by_day", ["day"]),
 
   // Denormalized owner-level rollup powering the /official directory page.
   // Computed by syncCurated from the same curated set that drives the

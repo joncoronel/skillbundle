@@ -83,7 +83,7 @@ export default async function RepoPage({ params }: { params: Params }) {
   const source = `${org}/${repo}`;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>

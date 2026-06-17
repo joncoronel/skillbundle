@@ -10,7 +10,7 @@ export default function ExplorePage() {
   // stays prefetchable. After hydration the live tree applies any URL params.
 
   return (
-    <main className="mx-auto max-w-5xl px-4 pt-12 pb-20">
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <header>
         <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero text-balance">
           Explore.

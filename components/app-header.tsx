@@ -9,8 +9,8 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 
 export function AppHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-sm">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+    <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm">
+      <div className="flex h-14 items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-6">
           <Suspense>
             <MobileNav />

@@ -28,6 +28,7 @@ import {
   fetchRepoTree,
   NOT_MODIFIED,
 } from "./lib/github";
+import { revalidateHomeTag } from "./lib/revalidate";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 
@@ -79,16 +80,21 @@ export const syncSkills = internalAction({
 
       // Filter the long tail (matches pre-v1 behavior). Map slug → skillId so
       // existing tables/indexes don't change name. `isDuplicate` is preserved
-      // so the upsert path can persist it for default-filtering.
+      // so the upsert path can persist it for default-filtering. `rank` is the
+      // global all-time install rank (1..N), derived from the row's position in
+      // this leaderboard-ordered response (computed BEFORE the filter so the
+      // dropped long tail doesn't shift positions). Powers the rank/percentile
+      // stat on the skill page.
       const normalized = data
-        .filter((s) => s.installs >= MIN_INSTALLS)
-        .map((s) => ({
+        .map((s, idx) => ({
           source: s.source,
           skillId: s.slug,
           name: s.name,
           installs: s.installs,
           isDuplicate: s.isDuplicate ?? false,
-        }));
+          rank: page * LIST_PER_PAGE + idx + 1,
+        }))
+        .filter((s) => s.installs >= MIN_INSTALLS);
 
       if (normalized.length === 0) {
         console.log(`Stopping sync: installs dropped below ${MIN_INSTALLS}`);
@@ -110,6 +116,12 @@ export const syncSkills = internalAction({
 
     console.log(`Synced ${totalSynced} skills (min ${MIN_INSTALLS} installs)`);
 
+    // Lifetime installs + installRank just changed, so refresh the home "Popular"
+    // tab (cached under this tag) in lockstep with the daily data instead of
+    // letting it drift on its own 24h time-based window. Best-effort no-op in dev
+    // (see revalidateHomeTag); trending/hot ping their own tags from their crons.
+    await revalidateHomeTag("home-popular");
+
     // Delist skills not seen for 30+ days.
     await ctx.scheduler.runAfter(5_000, internal.skills.markDelistedSkills, {});
 
@@ -129,6 +141,7 @@ async function upsertSkillSummary(
     name: string;
     description?: string;
     installs: number;
+    installRank?: number;
     syncHash?: string;
     lastSeenInApi?: number;
     isDelisted?: boolean;
@@ -169,6 +182,9 @@ async function upsertSkillSummary(
       name: fields.name,
       description: fields.description,
       installs: fields.installs,
+      ...(fields.installRank !== undefined && {
+        installRank: fields.installRank,
+      }),
       ...(fields.syncHash !== undefined && { syncHash: fields.syncHash }),
       ...(fields.lastSeenInApi !== undefined && {
         lastSeenInApi: fields.lastSeenInApi,
@@ -243,6 +259,7 @@ async function upsertSkillSummary(
       name: fields.name,
       description: fields.description,
       installs: fields.installs,
+      installRank: fields.installRank,
       syncHash: fields.syncHash,
       lastSeenInApi: fields.lastSeenInApi,
       // Default to false on insert so the by_isDelisted index is selective
@@ -275,6 +292,39 @@ async function upsertSkillSummary(
   }
 }
 
+// UTC calendar day ("YYYY-MM-DD") for snapshot keying. UTC (not local) so the
+// daily syncSkills cron always lands on a stable bucket regardless of where it
+// runs, and re-runs the same day hit the same row.
+function utcDay(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+// Append (or refresh) today's install count for a skill. Idempotent on
+// (skillDocId, day): the daily sync runs once, but rate-limit reschedules and
+// manual re-runs can replay it — so we patch an existing same-day row rather
+// than inserting a duplicate. Called for EVERY synced skill (including ones
+// whose installs didn't move) so the time series has a point per day.
+async function recordDailySnapshot(
+  ctx: MutationCtx,
+  skillDocId: Id<"skills">,
+  installs: number,
+  day: string,
+) {
+  const existing = await ctx.db
+    .query("skillSnapshots")
+    .withIndex("by_skill_day", (q) =>
+      q.eq("skillDocId", skillDocId).eq("day", day),
+    )
+    .unique();
+  if (existing) {
+    if (existing.installs !== installs) {
+      await ctx.db.patch(existing._id, { installs });
+    }
+  } else {
+    await ctx.db.insert("skillSnapshots", { skillDocId, day, installs });
+  }
+}
+
 export const upsertSkillsBatch = internalMutation({
   args: {
     skills: v.array(
@@ -284,6 +334,10 @@ export const upsertSkillsBatch = internalMutation({
         name: v.string(),
         installs: v.number(),
         isDuplicate: v.boolean(),
+        // All-time install rank from the leaderboard order. Only the all-time
+        // syncSkills path supplies it; curated/manual paths omit it (no
+        // meaningful rank there) and leave any existing installRank untouched.
+        rank: v.optional(v.number()),
       }),
     ),
     leaderboard: v.string(),
@@ -310,6 +364,7 @@ export const upsertSkillsBatch = internalMutation({
    */
   handler: async (ctx, { skills, leaderboard }) => {
     const now = Date.now();
+    const day = utcDay(now);
 
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
@@ -340,7 +395,18 @@ export const upsertSkillsBatch = internalMutation({
         // markDelistedSkills' 30-day window keeps moving. Skip the skill-row
         // patch entirely — its values are already correct.
         if (nothingChanged) {
-          await ctx.db.patch(summary._id, { lastSeenInApi: now });
+          await ctx.db.patch(summary._id, {
+            lastSeenInApi: now,
+            // Rank can shift even when this skill's own installs didn't, as
+            // other skills move around it. Cheap (~200B summary patch) and the
+            // heavy skills row is left untouched. Skipped when no rank was
+            // supplied (curated/manual paths).
+            ...(skill.rank !== undefined &&
+              summary.installRank !== skill.rank && {
+                installRank: skill.rank,
+              }),
+          });
+          await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
           continue;
         }
 
@@ -390,11 +456,13 @@ export const upsertSkillsBatch = internalMutation({
         await ctx.db.patch(summary._id, {
           name: skill.name,
           installs: skill.installs,
+          ...(skill.rank !== undefined && { installRank: skill.rank }),
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
           ...relistPatchSummary,
         });
+        await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
         continue;
       }
 
@@ -466,6 +534,7 @@ export const upsertSkillsBatch = internalMutation({
         name: skill.name,
         description: existing?.description,
         installs: skill.installs,
+        installRank: skill.rank,
         ...(existing?.syncHash !== undefined && { syncHash: existing.syncHash }),
         lastSeenInApi: now,
         isDuplicate: skill.isDuplicate,
@@ -494,6 +563,8 @@ export const upsertSkillsBatch = internalMutation({
           needsAudit: true,
         }),
       });
+
+      await recordDailySnapshot(ctx, skillDocId, skill.installs, day);
     }
   },
 });
@@ -2388,6 +2459,174 @@ export const getBySourceAndSkillId = query({
         q.eq("source", source).eq("skillId", skillId),
       )
       .unique();
+  },
+});
+
+// How many days of install history the charts show — a trailing quarter. Caps
+// both the skill-page dialog chart and the compare overlay (both read this), so
+// the daily bars stay wide enough to read instead of collapsing into a wall at
+// ~180 bars. The `skillSnapshots` table keeps the full history regardless; this
+// only bounds what's fetched, so the window can be widened — or a zoom/brush
+// strip added over the full series — later without losing data. The sidebar
+// sparkline slices its own last week from this series.
+const INSIGHTS_HISTORY_DAYS = 90;
+
+/**
+ * Analytics for one skill's detail page: the daily install time series plus the
+ * count and all-time rank. Reads entirely from the cheap `skillSummaries` +
+ * `skillSnapshots` tables — never the heavy `skills` row. The history is empty
+ * until daily snapshots accumulate (skills.sh has no backfill), so the client
+ * gates the chart on having enough points.
+ */
+export const getInsights = query({
+  args: { source: v.string(), skillId: v.string() },
+  handler: async (ctx, { source, skillId }) => {
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", source).eq("skillId", skillId),
+      )
+      .unique();
+
+    if (!summary) {
+      return { snapshots: [], installs: 0, installRank: null };
+    }
+
+    const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
+    const rows = await ctx.db
+      .query("skillSnapshots")
+      .withIndex("by_skill_day", (q) =>
+        q.eq("skillDocId", summary.skillDocId).gte("day", cutoffDay),
+      )
+      .collect();
+    // Index order is (skillDocId, day) ascending, and "YYYY-MM-DD" sorts
+    // lexicographically by date, so these are already chronological.
+    const snapshots = rows.map((r) => ({ day: r.day, installs: r.installs }));
+
+    // Only daily-cadence fields here (all written by the daily syncSkills): the
+    // skill page is ISR'd at 24h, so this stays internally consistent. The
+    // faster-moving momentum fields (trendingRank/hotChange) deliberately don't
+    // ride this cache — they live on the home rails, which their own crons keep
+    // fresh.
+    return {
+      snapshots,
+      installs: summary.installs,
+      installRank: summary.installRank ?? null,
+    };
+  },
+});
+
+// Hard cap on how many skills one compare request can pull series for. The
+// compare UI tops out at 3 columns; this is just a defensive bound so a
+// hand-crafted request can't fan out into an unbounded read.
+const COMPARE_MAX_REFS = 8;
+
+/**
+ * Batched insights for the compare page's single combined install chart: each
+ * skill's daily snapshot series plus its name and all-time rank, in one query
+ * so the overlay chart and the per-column rank stat share a single read. Like
+ * `getInsights`, this touches only the cheap `skillSummaries` + `skillSnapshots`
+ * tables. Missing skills (renamed/removed) come back with an empty series so the
+ * caller can still key results by `(source, skillId)` and render a column.
+ */
+export const getCompareInsights = query({
+  args: {
+    refs: v.array(v.object({ source: v.string(), skillId: v.string() })),
+  },
+  handler: async (ctx, { refs }) => {
+    const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
+    const skills = await Promise.all(
+      refs.slice(0, COMPARE_MAX_REFS).map(async ({ source, skillId }) => {
+        const summary = await ctx.db
+          .query("skillSummaries")
+          .withIndex("by_source_skillId", (q) =>
+            q.eq("source", source).eq("skillId", skillId),
+          )
+          .unique();
+
+        if (!summary) {
+          return {
+            source,
+            skillId,
+            name: skillId,
+            installs: 0,
+            installRank: null as number | null,
+            snapshots: [] as { day: string; installs: number }[],
+          };
+        }
+
+        const rows = await ctx.db
+          .query("skillSnapshots")
+          .withIndex("by_skill_day", (q) =>
+            q.eq("skillDocId", summary.skillDocId).gte("day", cutoffDay),
+          )
+          .collect();
+
+        return {
+          source,
+          skillId,
+          name: summary.name,
+          installs: summary.installs,
+          installRank: summary.installRank ?? null,
+          snapshots: rows.map((r) => ({ day: r.day, installs: r.installs })),
+        };
+      }),
+    );
+
+    return { skills };
+  },
+});
+
+// How many days of daily snapshots to keep. The charts only read the trailing
+// INSIGHTS_HISTORY_DAYS (90), so anything older isn't shown — but we retain a
+// wider window as a buffer (the prune never races the query at the 90-day edge)
+// and to bank history for a future zoom/brush without waiting to re-accumulate.
+// Storage holds flat at ~SNAPSHOT_RETENTION_DAYS × (#skills ≥ 50 installs) rows
+// instead of growing ~1 row/skill/day forever. One-line knob: drop to 90 to
+// match the display window if you'd rather stay lean.
+const SNAPSHOT_RETENTION_DAYS = 180;
+const PRUNE_BATCH_SIZE = 500;
+
+/**
+ * Daily retention prune for `skillSnapshots`. Action + batch mutation (mirrors
+ * `githubCache.cleanupExpiredCache`): keep deleting the oldest rows a batch at a
+ * time so a single mutation never hits its write limit, until nothing older than
+ * the cutoff remains. Scheduled from crons.ts.
+ */
+export const pruneSnapshots = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const cutoffDay = utcDay(
+      Date.now() - SNAPSHOT_RETENTION_DAYS * 86_400_000,
+    );
+    let total = 0;
+    while (true) {
+      const deleted: number = await ctx.runMutation(
+        internal.skills.pruneSnapshotsBatch,
+        { cutoffDay },
+      );
+      total += deleted;
+      if (deleted === 0) break;
+    }
+    console.log(
+      `Pruned ${total} skillSnapshots rows older than ${cutoffDay}`,
+    );
+  },
+});
+
+export const pruneSnapshotsBatch = internalMutation({
+  args: { cutoffDay: v.string() },
+  handler: async (ctx, { cutoffDay }) => {
+    // `by_day` is day-ascending, so this walks the oldest rows first across all
+    // skills; delete a batch and report the count so the action knows to loop.
+    const stale = await ctx.db
+      .query("skillSnapshots")
+      .withIndex("by_day", (q) => q.lt("day", cutoffDay))
+      .take(PRUNE_BATCH_SIZE);
+    for (const row of stale) {
+      await ctx.db.delete(row._id);
+    }
+    return stale.length;
   },
 });
 
