@@ -96,6 +96,11 @@ export const syncCurated = internalAction({
           isDuplicate: e.isDuplicate,
         })),
         leaderboard: "curated",
+        // The /skills/curated endpoint's `installs` is unreliable, so this pass
+        // only ensures presence (+ stamps curatedOwner in Pass 1). It must not
+        // overwrite installs or write snapshots on rows syncSkills already owns.
+        // New rows still seed from the curated installs (their only source).
+        ownsInstalls: false,
       });
       totalUpserted += chunk.length;
     }

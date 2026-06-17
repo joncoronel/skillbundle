@@ -147,7 +147,7 @@ test("Pass 0: inserts low-install curated skill that syncSkills would drop", asy
   });
 });
 
-test("Pass 0: existing all-time row keeps its leaderboard when installs change", async () => {
+test("Pass 0: curated does not overwrite installs or leaderboard on an existing all-time row", async () => {
   const t = makeTest();
 
   // Pre-seed: a row that originally came from syncSkills with leaderboard
@@ -184,9 +184,11 @@ test("Pass 0: existing all-time row keeps its leaderboard when installs change",
     return id;
   });
 
-  // syncCurated returns the same skill with a bumped install count — the
-  // realistic 06:30 case where installs ticked up since 06:00 syncSkills.
-  // Trips installsChanged → fast-path B in upsertSkillsBatch.
+  // syncCurated returns the same skill with a DIFFERENT install count — the
+  // realistic 06:30 case where the curated endpoint disagrees with what 06:00
+  // syncSkills wrote (its `installs` field is unreliable). With ownsInstalls=
+  // false the curated value is ignored: installsChanged stays false, so this
+  // takes sub-case A (touch lastSeenInApi only) and never patches the row.
   vi.mocked(getCurated).mockResolvedValue({
     data: [
       {
@@ -214,10 +216,11 @@ test("Pass 0: existing all-time row keeps its leaderboard when installs change",
 
   await t.run(async (ctx) => {
     const skill = await ctx.db.get(skillDocId);
-    // Install count moved (so fast-path B fired) but leaderboard MUST NOT
-    // be clobbered to "curated". This is the regression assertion for the
-    // code-review fix.
-    expect(skill!.installs).toBe(1100);
+    // Curated's install value (1100) MUST NOT overwrite the row's 1000 — this is
+    // the regression assertion for the ownsInstalls fix (curated's unreliable
+    // installs was clobbering what syncSkills wrote). Leaderboard MUST also stay
+    // "all-time", and curatedOwner is still stamped by Pass 1.
+    expect(skill!.installs).toBe(1000);
     expect(skill!.leaderboard).toBe("all-time");
     expect(skill!.curatedOwner).toBe("vercel-labs");
   });
