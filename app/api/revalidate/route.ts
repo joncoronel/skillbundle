@@ -10,13 +10,19 @@ function secretsMatch(provided: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-// On-demand cache invalidation for the home-page leaderboards. The Convex
-// leaderboard crons POST here right after they write new ranks, so the next
-// request rebuilds the `unstable_cache` snapshot from fresh data instead of
-// serving a stale (or empty) one. Gated by a shared secret, and only a fixed
-// allowlist of tags can be revalidated. Not a Clerk-private route, so the
-// secret is the only gate (see proxy.ts).
-const ALLOWED_TAGS = new Set(["home-hot", "home-trending", "home-popular"]);
+// On-demand cache invalidation for the home-page leaderboards and skill detail
+// pages. The Convex crons POST here right after they write new data, so the next
+// request rebuilds the `unstable_cache` entry from fresh data instead of serving
+// a stale (or empty) one. "skill-sync" is pinged by syncSkills to refresh every
+// skill page's install count + chart in lockstep with the daily sync. Gated by a
+// shared secret, and only a fixed allowlist of tags can be revalidated. Not a
+// Clerk-private route, so the secret is the only gate (see proxy.ts).
+const ALLOWED_TAGS = new Set([
+  "home-hot",
+  "home-trending",
+  "home-popular",
+  "skill-sync",
+]);
 
 export async function POST(request: Request) {
   const expected = process.env.REVALIDATE_SECRET;

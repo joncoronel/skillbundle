@@ -22,11 +22,20 @@ import { SkillSidebar } from "@/components/skill-sidebar";
 // Wrapping in `unstable_cache` isolates that fetch and caches the result by
 // (source, skillId) — the args are part of the cache key — so the route can be
 // statically generated and the `generateMetadata` pass + body share one entry.
+//
+// The two loaders carrying syncSkills-written data (install count + rank +
+// snapshots) share the "skill-sync" tag. The daily syncSkills cron pings that
+// tag (see convex/skills.ts), so every skill page's number and chart refresh in
+// lockstep with the sync instead of drifting up to 24h on the ISR window alone.
+// loadAudits/loadStars are updated by other processes, so they keep their own
+// independent 24h cadence and are deliberately untagged.
+const SKILL_SYNC_TAG = "skill-sync";
+
 export const loadSkill = unstable_cache(
   (source: string, skillId: string) =>
     fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
   ["skill-detail"],
-  { revalidate: 86400 },
+  { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
 );
 
 export const loadAudits = unstable_cache(
@@ -41,16 +50,16 @@ export const loadAudits = unstable_cache(
   { revalidate: 86400 },
 );
 
-// Cached 24h to match the page's ISR cadence. getInsights returns only daily-
-// cadence fields (install count, installRank, snapshots — all written by the
-// daily syncSkills cron), so this cache is never out of step with its source.
-// The faster-moving momentum fields (trending/hot) deliberately stay off this
-// page; they live on the home rails, kept fresh by their own crons.
+// getInsights returns only daily-cadence fields (install count, installRank,
+// snapshots — all written by the daily syncSkills cron). Tagged "skill-sync" so
+// the sync refreshes it on demand; the 24h revalidate is the fallback if a ping
+// is missed. The faster-moving momentum fields (trending/hot) deliberately stay
+// off this page; they live on the home rails, kept fresh by their own crons.
 export const loadInsights = unstable_cache(
   (source: string, skillId: string) =>
     fetchQuery(api.skills.getInsights, { source, skillId }),
   ["skill-insights"],
-  { revalidate: 86400 },
+  { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
 );
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for

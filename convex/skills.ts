@@ -129,6 +129,12 @@ export const syncSkills = internalAction({
     // (see revalidateHomeTag); trending/hot ping their own tags from their crons.
     await revalidateHomeTag("home-popular");
 
+    // Same idea for skill detail pages: their install count (loadSkill) and chart
+    // (loadInsights) are both tagged "skill-sync" and cached on a 24h ISR window.
+    // Ping the tag so every visited skill page refreshes its number and snapshot
+    // series in lockstep with this sync rather than drifting up to a day behind.
+    await revalidateHomeTag("skill-sync");
+
     // Delist skills not seen for 30+ days.
     await ctx.scheduler.runAfter(5_000, internal.skills.markDelistedSkills, {});
 
