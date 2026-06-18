@@ -50,10 +50,10 @@ export const syncSkills = internalAction({
     let totalSynced = 0;
 
     // Pin the snapshot day once, up front, so every batch this run writes lands
-    // in the same UTC day-bucket even if the run spans 00:00 UTC (see the `day`
-    // arg on upsertSkillsBatch). The cron fires at 06:00 UTC so this is belt-and-
-    // suspenders today, but it also makes manual/off-hours runs deterministic.
-    const day = utcDay(Date.now());
+    // in the same day-bucket even if the run crosses the day boundary (LA
+    // midnight, only ~1–2h after the 06:00 UTC cron — so this genuinely matters,
+    // not just belt-and-suspenders). See the `day` arg on upsertSkillsBatch.
+    const day = appDay(Date.now());
 
     while (hasMore) {
       let response;
@@ -305,11 +305,23 @@ async function upsertSkillSummary(
   }
 }
 
-// UTC calendar day ("YYYY-MM-DD") for snapshot keying. UTC (not local) so the
-// daily syncSkills cron always lands on a stable bucket regardless of where it
-// runs, and re-runs the same day hit the same row.
-function utcDay(ts: number): string {
-  return new Date(ts).toISOString().slice(0, 10);
+// The app's home timezone. Snapshot days are bucketed by THIS zone's calendar,
+// not UTC, so a point labeled "Jun 17" means Jun 17 for visitors here (the site
+// is LA-based). It's the analytics "reporting timezone", baked into storage:
+// because we sample a cumulative counter rather than raw events, we can't
+// re-bucket per viewer later, so the calendar day is chosen at write time. The
+// cron runs at 06:00 UTC (~11pm LA), so it samples near the END of the LA day it
+// labels — i.e. "Jun 17" carries Jun 17's installs. Tradeoff: every viewer sees
+// LA-calendar dates; other zones' local days won't line up (accepted).
+const APP_TIMEZONE = "America/Los_Angeles";
+
+// Calendar day ("YYYY-MM-DD") in APP_TIMEZONE, for snapshot keying and the
+// history/retention cutoffs. en-CA yields a YYYY-MM-DD string; the `timeZone`
+// option handles DST automatically. Same-day re-runs hit the same row, and
+// syncSkills pins this once per run (see the `day` arg on upsertSkillsBatch) so a
+// run crossing LA midnight — only ~1–2h after the 06:00 UTC start — can't split.
+function appDay(ts: number): string {
+  return new Date(ts).toLocaleDateString("en-CA", { timeZone: APP_TIMEZONE });
 }
 
 // Append (or refresh) today's install count for a skill. Idempotent on
@@ -372,12 +384,12 @@ export const upsertSkillsBatch = internalMutation({
     // minutes earlier. Curated still inserts genuinely-new rows (its only job
     // beyond stamping curatedOwner) using the curated installs as a seed.
     ownsInstalls: v.optional(v.boolean()),
-    // UTC snapshot day ("YYYY-MM-DD"), pinned by the caller. syncSkills computes
-    // it ONCE at the start of the run and passes it to every batch, so a long
-    // run that crosses 00:00 UTC still attributes all snapshots to the day it
-    // started — instead of splitting across two day-buckets as each batch reads
-    // its own clock. Omitted by single-skill callers (manual upserts), which
-    // fall back to the current day.
+    // Snapshot day ("YYYY-MM-DD" in the app timezone), pinned by the caller.
+    // syncSkills computes it ONCE at the start of the run and passes it to every
+    // batch, so a long run that crosses the day boundary (LA midnight) still
+    // attributes all snapshots to the day it started — instead of splitting
+    // across two buckets as each batch reads its own clock. Omitted by
+    // single-skill callers (manual upserts), which fall back to the current day.
     day: v.optional(v.string()),
   },
   /**
@@ -406,8 +418,8 @@ export const upsertSkillsBatch = internalMutation({
   ) => {
     const now = Date.now();
     // Prefer the caller's pinned day (see the `day` arg doc); fall back to the
-    // current UTC day for callers that don't pin.
-    const day = pinnedDay ?? utcDay(now);
+    // current app-timezone day for callers that don't pin.
+    const day = pinnedDay ?? appDay(now);
 
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
@@ -2557,7 +2569,7 @@ export const getInsights = query({
       return { snapshots: [], installs: 0, installRank: null };
     }
 
-    const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
+    const cutoffDay = appDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
     const rows = await ctx.db
       .query("skillSnapshots")
       .withIndex("by_skill_day", (q) =>
@@ -2599,7 +2611,7 @@ export const getCompareInsights = query({
     refs: v.array(v.object({ source: v.string(), skillId: v.string() })),
   },
   handler: async (ctx, { refs }) => {
-    const cutoffDay = utcDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
+    const cutoffDay = appDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
     const skills = await Promise.all(
       refs.slice(0, COMPARE_MAX_REFS).map(async ({ source, skillId }) => {
         const summary = await ctx.db
@@ -2661,7 +2673,7 @@ const PRUNE_BATCH_SIZE = 500;
 export const pruneSnapshots = internalAction({
   args: {},
   handler: async (ctx) => {
-    const cutoffDay = utcDay(
+    const cutoffDay = appDay(
       Date.now() - SNAPSHOT_RETENTION_DAYS * 86_400_000,
     );
     let total = 0;

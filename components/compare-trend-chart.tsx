@@ -12,6 +12,7 @@ import {
   CHART_VARS,
   MIN_POINTS,
   seriesSummary,
+  toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
 
@@ -70,7 +71,11 @@ function buildCompareRows(series: CompareSeries[]) {
   });
 
   return days.map((day, di) => {
-    const row: Record<string, string | number | null> = { date: day };
+    // Date pinned to UTC noon, not the raw "YYYY-MM-DD" — see toDate. The chart
+    // parses bare strings as UTC midnight, which labels a day early west of UTC.
+    const row: Record<string, string | number | Date | null> = {
+      date: toDate(day),
+    };
     series.forEach((s, si) => {
       row[s.key] = filled[si][di];
     });
@@ -159,7 +164,9 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
               fadeEdges={true}
             />
           ))}
-          <XAxis numTicks={6} />
+          {/* One label per data row at its x — steadier than "domain" mode when
+              the shared series is short or sparse. */}
+          <XAxis numTicks={6} tickMode="data" />
           <ChartTooltip
             panelStyle={TOOLTIP_PANEL_STYLE_INLINE}
             rows={(point) =>

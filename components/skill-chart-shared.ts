@@ -44,8 +44,16 @@ export const CHART_VARS = {
   "--chart-tooltip-muted": "var(--muted-foreground)",
 } as CSSProperties;
 
-function toDate(day: string) {
-  // "YYYY-MM-DD" is UTC; pin to UTC noon so the local label never slips a day.
+/**
+ * Parse a "YYYY-MM-DD" snapshot day into a Date pinned to UTC noon. Anchoring at
+ * noon (not midnight) means local-timezone formatters render the correct
+ * calendar day in any realistic zone — a bare `new Date("2026-06-17")` is UTC
+ * midnight, which a negative-offset zone (e.g. US Pacific) formats as the
+ * *previous* day. Used for the trailing-week math here AND as the chart x-values:
+ * the bklit axis/tooltip format these Dates with local-tz Intl formatters, so
+ * passing a Date (which the chart uses as-is) avoids that off-by-one.
+ */
+export function toDate(day: string) {
   return new Date(`${day}T12:00:00Z`);
 }
 
