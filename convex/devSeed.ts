@@ -76,13 +76,17 @@ export const seedExact = internalMutation({
       .unique();
     if (!summary) throw new Error(`No skill found for ${source}/${skillId}`);
 
+    // Sort chronologically so the inserts and the "latest" pick below don't
+    // depend on the caller passing the array in order.
+    const sorted = [...snapshots].sort((a, b) => a.day.localeCompare(b.day));
+
     const existing = await ctx.db
       .query("skillSnapshots")
       .withIndex("by_skill_day", (q) => q.eq("skillDocId", summary.skillDocId))
       .collect();
     for (const row of existing) await ctx.db.delete(row._id);
 
-    for (const s of snapshots) {
+    for (const s of sorted) {
       await ctx.db.insert("skillSnapshots", {
         skillDocId: summary.skillDocId,
         day: s.day,
@@ -92,7 +96,7 @@ export const seedExact = internalMutation({
 
     // Align the headline install count (skills row + summary) with the latest
     // snapshot so the page reads consistently.
-    const latest = snapshots.at(-1);
+    const latest = sorted.at(-1);
     if (latest) {
       await ctx.db.patch(summary._id, { installs: latest.installs });
       await ctx.db.patch(summary.skillDocId, { installs: latest.installs });
