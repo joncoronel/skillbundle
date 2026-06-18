@@ -234,7 +234,9 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
       />
       {content && (
         <LabeledSection label="Documentation">
-          <MarkdownContent baseUrl={baseUrl}>{content}</MarkdownContent>
+          <MarkdownContent baseUrl={baseUrl} surface="card">
+            {content}
+          </MarkdownContent>
         </LabeledSection>
       )}
       {!content && !skill.description && (
