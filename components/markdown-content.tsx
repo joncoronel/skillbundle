@@ -200,44 +200,62 @@ export function MarkdownContent({
   }, [baseUrl]);
 
   const components = useMemo<StreamdownComponents>(() => {
+    // Inline code only. Every fenced block (anything react-markdown wraps in a
+    // <pre>) is handled by PreOverride below — that's the one place a
+    // single-line, no-language fence can be told apart from inline code, since
+    // react-markdown v9 dropped the inline/block flag the `code` override used
+    // to receive.
     const CodeOverride: StreamdownComponents["code"] = ({
       children,
       className,
-    }) => {
-      const code = String(children ?? "").replace(/\n$/, "");
-      const fenceLanguage = className?.startsWith("language-")
-        ? className.replace("language-", "")
-        : null;
+    }) => (
+      <code
+        className={cn(
+          className,
+          // bg-foreground/N is a theme-adaptive ink tint: it darkens light
+          // surfaces and lightens dark ones, so the pill separates from the
+          // field, white cards, and the sheet in both modes (a flat bg-muted
+          // sat within ~0.02 L of those backgrounds). The hairline border adds
+          // a crisp edge regardless of fill contrast.
+          // wrap-break-word: long unbreakable tokens (file paths, URLs) have no
+          // break opportunities at `/` or `.`, so in narrow containers they'd
+          // overflow — and any overflow-y-auto ancestor (compare columns, the
+          // detail sheet) computes overflow-x:auto per spec, turning that
+          // overflow into a horizontal scrollbar.
+          "rounded-sm border border-border/50 bg-foreground/10 px-1.5 py-0.5 font-medium wrap-break-word dark:bg-foreground/10",
+        )}
+      >
+        {children}
+      </code>
+    );
 
-      // A code block is either a fenced block with a language or a multiline
-      // block fenced without one (file trees, shell sessions). Markdown inline
-      // code can't span lines, so a newline reliably marks a block. Plain
-      // blocks route through the same CodeBlock as language blocks — with a
-      // no-op "text" grammar — so every block shares one frame, scroll, and
-      // copy affordance instead of collapsing into wrapped inline-code pills.
-      const isBlock = fenceLanguage !== null || code.includes("\n");
-      if (!isBlock) {
-        return (
-          <code
-            className={cn(
-              className,
-              // bg-foreground/N is a theme-adaptive ink tint: it darkens light
-              // surfaces and lightens dark ones, so the pill separates from the
-              // field, white cards, and the sheet in both modes (a flat
-              // bg-muted sat within ~0.02 L of those backgrounds). The hairline
-              // border adds a crisp edge regardless of fill contrast.
-              // break-words: long unbreakable tokens (file paths, URLs) have
-              // no break opportunities at `/` or `.`, so in narrow containers
-              // they'd overflow — and any overflow-y-auto ancestor (compare
-              // columns, the detail sheet) computes overflow-x:auto per spec,
-              // turning that overflow into a horizontal scrollbar.
-              "rounded-sm border border-border/50 bg-foreground/10 px-1.5 py-0.5 font-medium wrap-break-word dark:bg-foreground/10",
-            )}
-          >
-            {children}
-          </code>
-        );
+    const PreOverride: StreamdownComponents["pre"] = ({ node, children }) => {
+      // react-markdown hands us the raw <pre> hast node; its <code> child
+      // carries the language (className) and the source text. Reading them here
+      // means EVERY fenced block routes through CodeBlock — including a
+      // single-line block with no language, which is indistinguishable from
+      // inline code at the `code` override. The `text` fallback is a no-op
+      // grammar for unlabeled blocks (file trees, plain output).
+      const codeNode = node?.children?.find(
+        (child) => child.type === "element" && child.tagName === "code",
+      );
+      if (!codeNode || codeNode.type !== "element") {
+        return <pre>{children}</pre>;
       }
+      const classList = codeNode.properties?.className;
+      const languageClass = Array.isArray(classList)
+        ? classList.find(
+            (c) => typeof c === "string" && c.startsWith("language-"),
+          )
+        : undefined;
+      const fenceLanguage =
+        typeof languageClass === "string"
+          ? languageClass.replace("language-", "")
+          : null;
+      const code = codeNode.children
+        .map((child) => (child.type === "text" ? child.value : ""))
+        .join("")
+        .replace(/\n$/, "");
       const language = (fenceLanguage ?? "text") as BundledLanguage;
       const initial = preHighlighted?.[codeKey(language, code)];
       const isCard = surface === "card";
@@ -269,6 +287,7 @@ export function MarkdownContent({
     };
     return {
       code: CodeOverride,
+      pre: PreOverride,
       blockquote: BlockquoteOverride,
       table: TableOverride,
       thead: TableHeadOverride,
