@@ -11,6 +11,7 @@ import {
   CHART_VARS,
   intFmt,
   seriesSummary,
+  toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
 
@@ -46,7 +47,10 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   const series = useMemo(
     () =>
       snapshots.map((s, i) => ({
-        date: s.day,
+        // A Date (pinned to UTC noon) rather than the raw "YYYY-MM-DD" string:
+        // the chart parses bare strings as UTC midnight, which formats a day
+        // early west of UTC. See toDate.
+        date: toDate(s.day),
         total: s.installs,
         daily:
           i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
@@ -86,7 +90,10 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
             strokeWidth={2}
             yAxisId="right"
           />
-          <XAxis numTicks={6} />
+          {/* "data" mode pins one label per data row at its x position. With a
+              short, sparse series the default "domain" mode spreads ticks across
+              the time range and they drift off the actual points/bars. */}
+          <XAxis tickMode="data" />
           <ChartTooltip
             panelStyle={TOOLTIP_PANEL_STYLE}
             rows={(point) => [

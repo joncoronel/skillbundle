@@ -285,7 +285,7 @@ export default defineSchema({
   // the oldest rows across all skills.
   skillSnapshots: defineTable({
     skillDocId: v.id("skills"),
-    day: v.string(), // "YYYY-MM-DD" (UTC)
+    day: v.string(), // "YYYY-MM-DD" in the app timezone (see appDay in skills.ts)
     installs: v.number(),
   })
     .index("by_skill_day", ["skillDocId", "day"])

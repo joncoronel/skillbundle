@@ -56,3 +56,52 @@ export const seedInsights = internalMutation({
     return { source, skillId, seeded: days, installRank: 142 };
   },
 });
+
+// Seed an EXACT snapshot series (rather than the fabricated curve above), so a
+// production data shape can be replicated locally to reproduce a chart bug.
+//
+//   npx convex run devSeed:seedExact '{"source":"vercel-labs/agent-skills","skillId":"vercel-react-best-practices","snapshots":[{"day":"2026-06-17","installs":482982},{"day":"2026-06-18","installs":484605}]}'
+export const seedExact = internalMutation({
+  args: {
+    source: v.string(),
+    skillId: v.string(),
+    snapshots: v.array(v.object({ day: v.string(), installs: v.number() })),
+  },
+  handler: async (ctx, { source, skillId, snapshots }) => {
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", source).eq("skillId", skillId),
+      )
+      .unique();
+    if (!summary) throw new Error(`No skill found for ${source}/${skillId}`);
+
+    // Sort chronologically so the inserts and the "latest" pick below don't
+    // depend on the caller passing the array in order.
+    const sorted = [...snapshots].sort((a, b) => a.day.localeCompare(b.day));
+
+    const existing = await ctx.db
+      .query("skillSnapshots")
+      .withIndex("by_skill_day", (q) => q.eq("skillDocId", summary.skillDocId))
+      .collect();
+    for (const row of existing) await ctx.db.delete(row._id);
+
+    for (const s of sorted) {
+      await ctx.db.insert("skillSnapshots", {
+        skillDocId: summary.skillDocId,
+        day: s.day,
+        installs: s.installs,
+      });
+    }
+
+    // Align the headline install count (skills row + summary) with the latest
+    // snapshot so the page reads consistently.
+    const latest = sorted.at(-1);
+    if (latest) {
+      await ctx.db.patch(summary._id, { installs: latest.installs });
+      await ctx.db.patch(summary.skillDocId, { installs: latest.installs });
+    }
+
+    return { source, skillId, seeded: snapshots.length };
+  },
+});
