@@ -30,6 +30,15 @@ interface MarkdownContentProps {
    * rewrite to github.com/…/blob/… and image links keep pointing at raw content.
    */
   baseUrl?: string | null;
+  /**
+   * The surface this content is painted on. `"field"` (default) is the page's
+   * recessed background, where the code block's canonical two-layer frame (a
+   * white card lifted off a gray tray) reads correctly. `"card"` is a raised
+   * white container (the compare columns, the detail sheet) where that white
+   * inner card would blend into the container — there the code block flattens
+   * to a single muted block so it doesn't become a nested card.
+   */
+  surface?: "field" | "card";
 }
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif)(?:\?|#|$)/i;
@@ -66,13 +75,70 @@ function transformUrl(url: string, key: string): string {
   return url;
 }
 
-const TableOverride: StreamdownComponents["table"] = ({
-  children,
-  className,
-}) => (
-  <div className="my-4 overflow-x-auto">
-    <table className={className}>{children}</table>
+// Render markdown tables as a self-contained data panel rather than a bare
+// prose table: a hairline-framed, rounded container with a mono-label header
+// strip, hairline row dividers, and a quiet row hover for scanning. `not-prose`
+// hands full styling control to these overrides (prose's table rules use
+// zero-specificity `:where()` and would otherwise leak in).
+const TableOverride: StreamdownComponents["table"] = ({ children }) => (
+  <div className="not-prose my-6 overflow-x-auto rounded-xl border border-border">
+    <table
+      className={cn(
+        "w-full border-collapse text-left text-sm",
+        // Hairline dividers between body rows; the header carries its own
+        // bottom border, so rows divide from each other, not from the header.
+        "[&_tbody]:divide-y [&_tbody]:divide-border",
+
+        // Stop a greedy prose column (long descriptions) from starving the
+        // last column below its longest token's width, which forces ugly
+        // mid-word link breaks. A floor lets that column break at slashes
+        // and hyphens instead.
+        "[&_td:last-child]:min-w-40",
+        // Keep code-identifier pills (skill names, tokens) on one line so they
+        // read as whole identifiers rather than breaking across rows.
+        "[&_td_code]:whitespace-nowrap",
+        // Links and inline code keep the document's vocabulary inside the panel.
+        "[&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary/40 [&_a]:underline-offset-2 [&_a:hover]:decoration-primary",
+      )}
+    >
+      {children}
+    </table>
   </div>
+);
+
+const TableHeadOverride: StreamdownComponents["thead"] = ({ children }) => (
+  <thead className="border-b border-border bg-muted">{children}</thead>
+);
+
+const TableThOverride: StreamdownComponents["th"] = ({ children, style }) => (
+  <th
+    className="px-4 py-2.5 align-middle font-mono text-eyebrow font-medium tracking-eyebrow text-muted-foreground uppercase whitespace-nowrap"
+    style={style}
+  >
+    {children}
+  </th>
+);
+
+const TableTdOverride: StreamdownComponents["td"] = ({ children, style }) => (
+  <td
+    className="px-4 py-3 align-top text-foreground wrap-break-word"
+    style={style}
+  >
+    {children}
+  </td>
+);
+
+// Render blockquotes as a neutral callout panel instead of prose's left-stripe
+// italic quote. In skill docs these are almost always notes/warnings (often
+// led by an emoji + bold label), so a full hairline border + faint tint reads
+// as an intentional callout, and dropping the forced italic + auto quote marks
+// keeps long copy readable. A colored left-stripe accent is an anti-pattern.
+const BlockquoteOverride: StreamdownComponents["blockquote"] = ({
+  children,
+}) => (
+  <blockquote className="my-5 rounded-xl border border-border  bg-[color-mix(in_oklch,var(--color-muted),transparent_51%)] px-4 py-3 text-foreground not-italic *:first:mt-0 *:last:mb-0 [&_p]:text-foreground [&_p]:before:content-none [&_p]:after:content-none">
+    {children}
+  </blockquote>
 );
 
 // Demote SKILL.md headings by one level so the source's leading H1 doesn't
@@ -108,6 +174,7 @@ export function MarkdownContent({
   children,
   preHighlighted,
   baseUrl,
+  surface = "field",
 }: MarkdownContentProps) {
   const rehypePlugins = useMemo<
     ComponentProps<typeof Streamdown>["rehypePlugins"]
@@ -133,34 +200,84 @@ export function MarkdownContent({
   }, [baseUrl]);
 
   const components = useMemo<StreamdownComponents>(() => {
+    // Inline code only. Every fenced block (anything react-markdown wraps in a
+    // <pre>) is handled by PreOverride below — that's the one place a
+    // single-line, no-language fence can be told apart from inline code, since
+    // react-markdown v9 dropped the inline/block flag the `code` override used
+    // to receive.
     const CodeOverride: StreamdownComponents["code"] = ({
       children,
       className,
-    }) => {
-      if (!className?.startsWith("language-")) {
-        return (
-          <code
-            className={cn(
-              className,
-              // break-words: long unbreakable tokens (file paths, URLs) have
-              // no break opportunities at `/` or `.`, so in narrow containers
-              // they'd overflow — and any overflow-y-auto ancestor (compare
-              // columns, the detail sheet) computes overflow-x:auto per spec,
-              // turning that overflow into a horizontal scrollbar.
-              "rounded-md bg-muted px-1.5 py-0.5 font-medium wrap-break-word",
-            )}
-          >
-            {children}
-          </code>
-        );
+    }) => (
+      <code
+        className={cn(
+          className,
+          // bg-foreground/N is a theme-adaptive ink tint: it darkens light
+          // surfaces and lightens dark ones, so the pill separates from the
+          // field, white cards, and the sheet in both modes (a flat bg-muted
+          // sat within ~0.02 L of those backgrounds). The hairline border adds
+          // a crisp edge regardless of fill contrast.
+          // wrap-break-word: long unbreakable tokens (file paths, URLs) have no
+          // break opportunities at `/` or `.`, so in narrow containers they'd
+          // overflow — and any overflow-y-auto ancestor (compare columns, the
+          // detail sheet) computes overflow-x:auto per spec, turning that
+          // overflow into a horizontal scrollbar.
+          "rounded-sm border border-border/50 bg-foreground/10 px-1.5 py-0.5 font-medium wrap-break-word dark:bg-foreground/10",
+        )}
+      >
+        {children}
+      </code>
+    );
+
+    const PreOverride: StreamdownComponents["pre"] = ({ node, children }) => {
+      // react-markdown hands us the raw <pre> hast node; its <code> child
+      // carries the language (className) and the source text. Reading them here
+      // means EVERY fenced block routes through CodeBlock — including a
+      // single-line block with no language, which is indistinguishable from
+      // inline code at the `code` override. The `text` fallback is a no-op
+      // grammar for unlabeled blocks (file trees, plain output).
+      const codeNode = node?.children?.find(
+        (child) => child.type === "element" && child.tagName === "code",
+      );
+      if (!codeNode || codeNode.type !== "element") {
+        return <pre>{children}</pre>;
       }
-      const language = className.replace("language-", "") as BundledLanguage;
-      const code = String(children ?? "").replace(/\n$/, "");
+      const classList = codeNode.properties?.className;
+      const languageClass = Array.isArray(classList)
+        ? classList.find(
+            (c) => typeof c === "string" && c.startsWith("language-"),
+          )
+        : undefined;
+      const fenceLanguage =
+        typeof languageClass === "string"
+          ? languageClass.replace("language-", "")
+          : null;
+      const code = codeNode.children
+        .map((child) => (child.type === "text" ? child.value : ""))
+        .join("")
+        .replace(/\n$/, "");
+      const language = (fenceLanguage ?? "text") as BundledLanguage;
       const initial = preHighlighted?.[codeKey(language, code)];
+      const isCard = surface === "card";
       return (
         <div className="not-prose my-4">
-          <CodeBlock code={code} language={language} initial={initial}>
-            <CodeBlockPre className="border-0 bg-transparent">
+          {/* The outer CodeBlock is always a structureless wrapper (no padding,
+              fill, or ring), so the code is a single container, never a
+              box-in-a-box. The inner Pre carries the surface: on the field it
+              keeps the elevated white (surface-3) card with its rim + shadow;
+              on a raised card container that white card would blend into the
+              container, so it flattens to a single muted fill. */}
+          <CodeBlock
+            code={code}
+            language={language}
+            initial={initial}
+            className="rounded-none bg-transparent p-0! shadow-none"
+          >
+            <CodeBlockPre
+              className={
+                isCard ? "rounded-xl border-0 bg-muted shadow-none" : undefined
+              }
+            >
               <CodeBlockCode />
             </CodeBlockPre>
             <CodeBlockFloatingCopy className="opacity-0 transition-opacity group-hover:opacity-100" />
@@ -170,19 +287,34 @@ export function MarkdownContent({
     };
     return {
       code: CodeOverride,
+      pre: PreOverride,
+      blockquote: BlockquoteOverride,
       table: TableOverride,
+      thead: TableHeadOverride,
+      th: TableThOverride,
+      td: TableTdOverride,
       h1: H1Demoted,
       h2: H2Demoted,
       h3: H3Demoted,
       h4: H4Demoted,
       h5: H5Demoted,
     };
-  }, [preHighlighted]);
+  }, [preHighlighted, surface]);
 
   return (
     <div
       className={cn(
-        "prose prose-sm dark:prose-invert max-w-none",
+        // Base (16px / 1.75) rather than prose-sm: this is a long-form reading
+        // surface, so it earns a larger measure than the app's dense 14px UI.
+        // Section headings land at 24/20px for a clear, scannable hierarchy.
+        "prose dark:prose-invert max-w-none",
+        // Headings: 600 weight + tight tracking (per the display/headline
+        // spec), and drop the first block's top margin so it sits flush under
+        // the "Documentation" label.
+        "prose-headings:font-semibold prose-headings:tracking-tight",
+        "*:first:mt-0",
+        // Links use the single signal accent, underlined for affordance.
+        "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
         // Align prose colors with the app's semantic tokens instead of
         // Tailwind Typography's default gray palette (which has a different
         // hue than our OKLCH neutrals and reads slightly blue).
@@ -207,7 +339,7 @@ export function MarkdownContent({
         controls={false}
         linkSafety={{ enabled: false }}
         urlTransform={transformUrl}
-        className="prose-code:before:content-none prose-code:after:content-none [&_thead]:border-b-border [&_th]:border-b-border prose-headings:text-balance prose-p:text-pretty"
+        className="prose-code:before:content-none prose-code:after:content-none prose-headings:text-balance prose-p:text-pretty"
         components={components}
       >
         {children}

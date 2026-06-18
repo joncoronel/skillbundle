@@ -594,7 +594,7 @@ function CompareColumn({
           )}
           {skill.content && (
             <LabeledSection label="Documentation">
-              <MarkdownContent baseUrl={skill.skillMdUrl ?? null}>
+              <MarkdownContent baseUrl={skill.skillMdUrl ?? null} surface="card">
                 {skill.content}
               </MarkdownContent>
             </LabeledSection>

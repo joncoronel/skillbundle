@@ -16,8 +16,10 @@ export async function highlightMarkdownCode(
   const fences: Array<{ language: string; code: string }> = [];
   let match: RegExpExecArray | null;
   while ((match = FENCE_REGEX.exec(markdown)) !== null) {
-    const language = match[1];
-    if (!language) continue;
+    // Fences with no language (file trees, plain output) are highlighted as
+    // "text" — a no-op grammar — so they're pre-rendered server-side too and
+    // don't flash or fall back to inline-code rendering on the client.
+    const language = match[1] ?? "text";
     fences.push({ language, code: match[2] });
   }
 
