@@ -21,7 +21,7 @@ export function DashboardSkeleton() {
       </div>
       <section className="space-y-5">
         <div className="flex items-center justify-between">
-          <Skeleton className="h-7 w-32 rounded" />
+          <Skeleton className="h-4 w-24 rounded" />
           <Skeleton className="h-7 w-36 rounded" />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

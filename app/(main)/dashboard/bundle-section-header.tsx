@@ -29,11 +29,8 @@ export function BundleSectionHeader({
 }: BundleSectionHeaderProps) {
   return (
     <div className="flex items-center justify-between">
-      <h2 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
-        Bundles
-        <span className="ml-2 font-normal text-muted-foreground tabular-nums">
-          · {count}
-        </span>
+      <h2 className="font-mono text-xs font-medium uppercase tracking-eyebrow text-muted-foreground tabular-nums">
+        {count} {count === 1 ? "bundle" : "bundles"}
       </h2>
       <div className="flex items-center gap-2">
         <label

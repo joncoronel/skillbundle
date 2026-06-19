@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
@@ -30,58 +31,60 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
   const bundlesValue = hasCap
     ? `${bundles.length}/${maxBundles}`
     : `${bundles.length}`;
+  const planLabel = hasCap
+    ? plan === "free"
+      ? "Free plan"
+      : undefined
+    : "Unlimited";
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <StatCell
-        label="Bundles"
-        value={bundlesValue}
-        sub={hasCap ? (plan === "free" ? "Free plan" : undefined) : "Unlimited"}
-        emphasize={atCap}
-      />
-      <StatCell label="Copies" value={formatNumber(totals.copies)} />
-      <StatCell label="Forks" value={formatNumber(totals.forks)} />
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+      <Metric value={bundlesValue} label="bundles" />
+      <Separator />
+      <Metric value={formatNumber(totals.copies)} label="copies" />
+      <Separator />
+      <Metric value={formatNumber(totals.forks)} label="forks" />
+      {planLabel ? (
+        <>
+          <Separator />
+          <span
+            className={cn(
+              atCap ? "font-medium text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {planLabel}
+            {atCap ? " · limit reached" : null}
+          </span>
+          {atCap ? (
+            <Link
+              href="/pricing"
+              className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
+            >
+              Upgrade
+            </Link>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 }
 
-function StatCell({
-  label,
-  value,
-  sub,
-  emphasize,
-  className,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  emphasize?: boolean;
-  className?: string;
-}) {
+function Metric({ value, label }: { value: string; label: string }) {
   return (
-    <div
-      className={cn(
-        "relative rounded-lg px-5 py-5",
-        emphasize ? "bg-accent/40" : "bg-muted/40",
-        className,
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        {emphasize && (
-          <span
-            aria-hidden
-            className="size-1.5 rounded-full bg-primary"
-          />
-        )}
-      </div>
-      <p className="mt-2 font-display text-3xl font-medium tabular-nums leading-none">
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className="font-semibold tabular-nums tracking-tight text-foreground">
         {value}
-      </p>
-      {sub && (
-        <p className="mt-1.5 text-xs text-muted-foreground/80">{sub}</p>
-      )}
-    </div>
+      </span>
+      <span className="text-muted-foreground">{label}</span>
+    </span>
+  );
+}
+
+function Separator() {
+  return (
+    <span aria-hidden className="text-muted-foreground/40">
+      ·
+    </span>
   );
 }
 

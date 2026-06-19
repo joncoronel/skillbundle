@@ -26,12 +26,12 @@ import {
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
-import {
-  BundleSectionHeader,
-  type SortBy,
-} from "./bundle-section-header";
+import { BundleSectionHeader, type SortBy } from "./bundle-section-header";
 
-const deleteBundleHandle = createAlertDialogHandle<Id<"bundles">>();
+const deleteBundleHandle = createAlertDialogHandle<{
+  id: Id<"bundles">;
+  name: string;
+}>();
 
 export function DashboardContent() {
   // Client-fetched over the root layout's Convex websocket — the route is
@@ -98,9 +98,7 @@ function DashboardLoaded({
     const list = [...bundles];
     switch (sortBy) {
       case "most-copied":
-        return list.sort(
-          (a, b) => (b.copyCount ?? 0) - (a.copyCount ?? 0),
-        );
+        return list.sort((a, b) => (b.copyCount ?? 0) - (a.copyCount ?? 0));
       case "alphabetical":
         return list.sort((a, b) => a.name.localeCompare(b.name));
       case "newest":
@@ -162,12 +160,12 @@ function DashboardLoaded({
                   createdAt={bundle.createdAt}
                   creatorName="You"
                   isPublic={bundle.isPublic}
-                  copyCount={bundle.copyCount}
                   actions={
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
                         size="xs"
+                        className="h-9 sm:h-7"
                         nativeButton={false}
                         render={<Link href={`/bundle/${bundle.urlId}`} />}
                         leftSection={
@@ -183,6 +181,7 @@ function DashboardLoaded({
                       <Button
                         variant="ghost"
                         size="xs"
+                        className="h-9 sm:h-7"
                         onClick={() => {
                           if (bundle.isPublic && !limits?.canMakePrivate) {
                             toast.info({
@@ -204,16 +203,24 @@ function DashboardLoaded({
                             className="size-3.5"
                           />
                         }
+                        rightSection={
+                          bundle.isPublic && !limits?.canMakePrivate ? (
+                            <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
+                              Pro
+                            </span>
+                          ) : undefined
+                        }
                       >
                         {bundle.isPublic ? "Make private" : "Make public"}
                       </Button>
                       <AlertDialogTrigger
                         handle={deleteBundleHandle}
-                        payload={bundle._id}
+                        payload={{ id: bundle._id, name: bundle.name }}
                         render={
                           <Button
                             variant="ghost"
                             size="xs"
+                            className="h-9 sm:h-7"
                             leftSection={
                               <HugeiconsIcon
                                 icon={Delete01Icon}
@@ -236,13 +243,16 @@ function DashboardLoaded({
       </div>
 
       <AlertDialog handle={deleteBundleHandle}>
-        {({ payload: bundleId }) => (
+        {({ payload }) => (
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete bundle</AlertDialogTitle>
               <AlertDialogDescription>
-                This will permanently delete this bundle and its shareable
-                link. This action cannot be undone.
+                <span className="font-medium text-foreground">
+                  {payload?.name}
+                </span>{" "}
+                and its shareable link will be permanently deleted. This action
+                cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -253,7 +263,7 @@ function DashboardLoaded({
                 render={
                   <Button
                     variant="destructive"
-                    onClick={() => bundleId && handleDelete(bundleId)}
+                    onClick={() => payload && handleDelete(payload.id)}
                   >
                     Delete
                   </Button>

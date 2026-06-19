@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
@@ -13,14 +13,11 @@ import {
   createSkillDetailHandle,
 } from "@/components/skill-detail-sheet";
 
-import { InstallCommands } from "@/components/install-commands";
-import { Button } from "@/components/ui/cubby-ui/button";
-import { Switch } from "@/components/ui/cubby-ui/switch";
 import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/cubby-ui/tooltip";
+  InstallCommands,
+  CopyAllCommandsButton,
+} from "@/components/install-commands";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import {
@@ -51,6 +48,7 @@ import {
   Cancel01Icon,
   StarIcon,
   PencilEdit02Icon,
+  LockIcon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
 import { timeAgo } from "@/lib/utils";
@@ -127,8 +125,7 @@ export function BundleView({
     <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
-          <div className="flex items-start justify-between gap-6">
-            <div className="min-w-0">
+          <div>
               <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
                 {/*
                  * Show the badge only when the bundle is *actually* surfaced
@@ -187,6 +184,13 @@ export function BundleView({
               )}
 
               <div className="mt-6 flex flex-wrap items-center gap-2 empty:hidden">
+                {/* Viewer actions grouped together, Fork leading. */}
+                {!bundle.isOwner ? (
+                  <ForkBundleButton
+                    bundleId={bundle._id}
+                    isAuthenticated={isAuthenticated}
+                  />
+                ) : null}
                 {/*
                  * Show on public bundles (anyone can star), AND on private
                  * bundles where the viewer has an existing star — so a user
@@ -247,16 +251,6 @@ export function BundleView({
                   />
                 ) : null}
               </div>
-            </div>
-
-            {!bundle.isOwner && (
-              <div className="shrink-0">
-                <ForkBundleButton
-                  bundleId={bundle._id}
-                  isAuthenticated={isAuthenticated}
-                />
-              </div>
-            )}
           </div>
         </header>
 
@@ -265,42 +259,55 @@ export function BundleView({
             <p className="text-sm font-medium">Updates available</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {updatedCount} skill{updatedCount !== 1 ? "s" : ""} updated since
-              this bundle was saved — re-run the install commands to get the
+              this bundle was saved. Re-run the install commands to get the
               latest versions.
             </p>
           </div>
         )}
 
-        <section>
-          <SectionHeader count={commandCount} title="Copy-paste & go." />
-          <InstallCommands skills={bundle.skills} bundleId={bundle._id} />
-        </section>
+        {commandCount > 0 && (
+          <section>
+            <SectionHeader
+              title="Install"
+              action={
+                <CopyAllCommandsButton
+                  skills={bundle.skills}
+                  bundleId={bundle._id}
+                />
+              }
+            />
+            <InstallCommands skills={bundle.skills} bundleId={bundle._id} />
+          </section>
+        )}
 
         <section>
           {/* Co-locate the Edit-skills affordance with the section it
-              modifies. The bundle-identity actions (Rename, Visibility,
-              Share) stay up in the header; "Edit skills" belongs next to
-              "What's inside" because that's the content it acts on. */}
-          <div className="flex items-center justify-between gap-3">
-            <SectionHeader count={skillCount} title="What's inside." />
-            {bundle.isOwner ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditingSkills(true)}
-                disabled={editingSkills}
-                leftSection={
-                  <HugeiconsIcon
-                    icon={PencilEdit02Icon}
-                    strokeWidth={2}
-                    className="size-3.5"
-                  />
-                }
-              >
-                Edit skills
-              </Button>
-            ) : null}
-          </div>
+              modifies: the bundle-identity actions (Rename, Visibility,
+              Share) stay in the header, while "Edit skills" sits with the
+              skills it acts on. */}
+          <SectionHeader
+            title="Skills"
+            count={skillCount}
+            action={
+              bundle.isOwner ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingSkills(true)}
+                  disabled={editingSkills}
+                  leftSection={
+                    <HugeiconsIcon
+                      icon={PencilEdit02Icon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  Edit skills
+                </Button>
+              ) : null
+            }
+          />
           {/* Read-only grid: visible whenever we're not in edit mode (or
               for non-owners who can never enter edit mode). */}
           {!(bundle.isOwner && editingSkills) ? (
@@ -404,15 +411,26 @@ function MetadataItems({
   );
 }
 
-function SectionHeader({ count, title }: { count: number; title: string }) {
+function SectionHeader({
+  count,
+  title,
+  action,
+}: {
+  count?: number;
+  title: string;
+  action?: ReactNode;
+}) {
   return (
-    <div className="mb-5">
-      <h2 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
+    <div className="mb-5 flex items-center justify-between gap-3">
+      <h2 className="text-xl font-semibold tracking-tight">
         {title}
-        <span className="ml-2 font-normal text-muted-foreground tabular-nums">
-          · {count}
-        </span>
+        {count !== undefined ? (
+          <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+            · {count}
+          </span>
+        ) : null}
       </h2>
+      {action}
     </div>
   );
 }
@@ -584,39 +602,38 @@ function VisibilityToggle({
     isPublic: boolean;
   }) => void;
 }) {
-  const disabled = isPublic && !canMakePrivate;
+  // Gate is surfaced inline (the "Pro" tag) rather than in a hover tooltip,
+  // so touch users see it too. Matches the dashboard's Make-private button.
+  const gated = isPublic && !canMakePrivate;
 
-  const toggle = (
-    <div className="flex items-center gap-2">
-      <Switch
-        id="bundle-visibility"
-        checked={isPublic}
-        disabled={disabled}
-        onCheckedChange={(checked) =>
-          updateVisibility({ bundleId, isPublic: checked })
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        if (gated) {
+          toast.info({
+            title: "Pro feature",
+            description: "Upgrade to Pro to make bundles private.",
+          });
+          return;
         }
-      />
-      <label
-        htmlFor="bundle-visibility"
-        className="text-sm text-muted-foreground"
-      >
-        {isPublic ? "Public" : "Private"}
-      </label>
-    </div>
+        updateVisibility({ bundleId, isPublic: !isPublic });
+      }}
+      leftSection={
+        <HugeiconsIcon icon={LockIcon} strokeWidth={2} className="size-3.5" />
+      }
+      rightSection={
+        gated ? (
+          <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
+            Pro
+          </span>
+        ) : undefined
+      }
+    >
+      {isPublic ? "Make private" : "Make public"}
+    </Button>
   );
-
-  if (disabled) {
-    return (
-      <Tooltip>
-        <TooltipTrigger render={<div />}>{toggle}</TooltipTrigger>
-        <TooltipContent sideOffset={8}>
-          Upgrade to Pro to make bundles private
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return toggle;
 }
 
 // ---------------------------------------------------------------------------

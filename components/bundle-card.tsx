@@ -56,7 +56,7 @@ export function BundleCard({
     starCount !== undefined;
 
   const content = (
-    <Card className="h-full gap-3 py-4 transition-colors hover:bg-surface-hover">
+    <Card className="h-full gap-3 py-4 ">
       <CardHeader className="gap-1">
         <CardTitle className="text-sm leading-snug">{name}</CardTitle>
         <CardAction>
@@ -84,11 +84,9 @@ export function BundleCard({
             by {creatorName} &middot; {timeAgo(createdAt)}
           </span>
         </CardDescription>
-        {description ? (
-          <p className="mt-2 text-xs text-muted-foreground line-clamp-2 wrap-break-word">
-            {description}
-          </p>
-        ) : null}
+        <p className="mt-2 min-h-[2lh] text-xs text-muted-foreground line-clamp-2 wrap-break-word">
+          {description}
+        </p>
       </CardHeader>
       {hasStats ? (
         <CardContent className="mt-auto pt-0">
@@ -123,7 +121,7 @@ export function BundleCard({
           </div>
         </CardContent>
       ) : null}
-      {actions ? <CardFooter>{actions}</CardFooter> : null}
+      {actions ? <CardFooter className="mt-auto">{actions}</CardFooter> : null}
     </Card>
   );
 
@@ -138,7 +136,11 @@ export function BundleCard({
   );
 }
 
-export function BundleCardSkeleton({ hasStats = false }: { hasStats?: boolean }) {
+export function BundleCardSkeleton({
+  hasStats = false,
+}: {
+  hasStats?: boolean;
+}) {
   return (
     <Card className="h-full gap-3 py-4">
       <CardHeader className="gap-1">
