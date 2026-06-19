@@ -4,6 +4,8 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
 
+import { OpenPanelComponent } from "@openpanel/nextjs";
+
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -41,6 +43,14 @@ export default function RootLayout({
         <div className="root">
           <Providers>{children}</Providers>
         </div>
+        {process.env.NODE_ENV === "production" && (
+          <OpenPanelComponent
+            clientId={process.env.NEXT_PUBLIC_OPENPANEL_CLIENT_ID!}
+            trackScreenViews={true}
+            apiUrl="/op/analytics"
+            scriptUrl="/op1.js"
+          />
+        )}
       </body>
     </html>
   );

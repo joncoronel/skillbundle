@@ -17,6 +17,21 @@ const nextConfig: NextConfig = {
     "/bundle/[id]/og/[v]": ["./assets/og/**"],
   },
   allowedDevOrigins: ["192.168.1.128"],
+  // Proxy OpenPanel through our own domain so requests aren't blocked by
+  // ad-blockers. The layout's OpenPanelComponent points at these paths via
+  // apiUrl/cdnUrl.
+  async rewrites() {
+    return [
+      {
+        source: "/op/analytics/:path*",
+        destination: "https://api.openpanel.dev/:path*",
+      },
+      {
+        source: "/op1.js",
+        destination: "https://openpanel.dev/op1.js",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
