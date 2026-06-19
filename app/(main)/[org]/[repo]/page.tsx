@@ -7,10 +7,6 @@ import { fetchQuery } from "convex/nextjs";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
-import {
-  deriveSkillStatus,
-  SkillStatusBadge,
-} from "@/components/skill-status-badge";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -22,8 +18,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
-import { skillHref } from "@/lib/skill-urls";
-import { LinkPending } from "@/components/link-pending";
+import { SourceSkillList } from "@/components/source-skill-list";
 
 type Params = Promise<{ org: string; repo: string }>;
 
@@ -167,58 +162,7 @@ async function RepoListContent({ source }: { source: string }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-        <span>Skill</span>
-        <span>Installs</span>
-      </div>
-
-      <div className="grid">
-        {skills.map((skill, i) => {
-          const isFirst = i === 0;
-          const isLast = i === skills.length - 1;
-          const isSolo = skills.length === 1;
-          return (
-            <div
-              key={`${skill.source}/${skill.skillId}`}
-              className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3",
-                isSolo
-                  ? undefined
-                  : isFirst
-                    ? "rounded-b-none"
-                    : isLast
-                      ? "rounded-t-none border-t-0"
-                      : "rounded-none border-t-0",
-              )}
-            >
-              <div className="flex items-center gap-3 px-4">
-                {/* Default prefetch on. The skill route is SSG (ISR), so a
-                    prefetch generates the page on demand the first time and
-                    caches it — a one-time cost that warms the cache, after which
-                    navigation is instant and Convex isn't hit again. */}
-                <Link
-                  href={skillHref(skill.source, skill.skillId)}
-                  className="text-sm font-semibold hover:underline min-w-0 flex items-center gap-1.5"
-                >
-                  <span className="truncate">{skill.name}</span>
-                  <LinkPending />
-                </Link>
-                <div className="ml-auto shrink-0 flex items-center gap-1.5">
-                  <SkillStatusBadge
-                    status={deriveSkillStatus({
-                      isDelisted: skill.isDelisted,
-                      hasContentFetchError: skill.hasContentFetchError,
-                    })}
-                  />
-                  <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                    {formatInstalls(skill.installs)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <SourceSkillList skills={skills} />
     </>
   );
 }

@@ -275,6 +275,8 @@ interface SkillViewProps {
    *  disable its checkbox — removal from the current bundle should go
    *  through Edit skills, not the popover. */
   currentBundleId?: string;
+  /** Hide the per-row source label. See SkillRowContent's `hideSource`. */
+  hideSource?: boolean;
 }
 
 const SkillEditControlButtons = memo(function SkillEditControlButtons({
@@ -362,12 +364,17 @@ const SkillRowContent = memo(function SkillRowContent({
   selectable,
   checkboxId,
   metric,
+  hideSource,
 }: {
   skill: SkillData;
   sheetHandle?: SkillDetailHandle;
   selectable?: boolean;
   checkboxId?: string;
   metric?: LeaderboardMetric;
+  /** Omit the source label next to the name. Set on single-source surfaces
+   *  (a source page) where every row shares the source already named in the
+   *  H1 and breadcrumb, so repeating it per row is pure noise. */
+  hideSource?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 px-4">
@@ -381,7 +388,9 @@ const SkillRowContent = memo(function SkillRowContent({
             <OfficialBadge owner={skill.curatedOwner} className="self-center" />
           )}
         </span>
-        <span className="text-sm text-muted-foreground">{skill.source}</span>
+        {!hideSource && (
+          <span className="text-sm text-muted-foreground">{skill.source}</span>
+        )}
       </div>
       <div className="ml-auto shrink-0">
         <SkillMeta skill={skill} metric={metric} />
@@ -405,6 +414,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
   sheetHandle,
   className,
   metric,
+  hideSource,
 }: SkillViewProps) {
   const id = useId();
   const checkboxId = `skill-${id}`;
@@ -423,6 +433,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
         metric={metric}
         selectable
         checkboxId={checkboxId}
+        hideSource={hideSource}
       />
     </SelectableWrapper>
   );

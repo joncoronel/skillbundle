@@ -61,6 +61,59 @@ const clearAllAtom = atom(null, (_get, set) => {
   set(selectedSkillsAtom, []);
 });
 
+// Bulk add — append every skill not already selected, in order, stopping at
+// the cap. Returns a summary so the caller can drive a toast ("Added N · M
+// skipped, bundle full"). Same single-write, cap-respecting discipline as
+// toggleSkillAtom; one set() means one render even for a whole source.
+export interface AddManyResult {
+  added: number;
+  alreadyPresent: number;
+  skippedForCap: number;
+}
+
+const addManyAtom = atom(
+  null,
+  (get, set, skills: SelectedSkill[]): AddManyResult => {
+    const current = get(selectedSkillsAtom);
+    const seen = new Set(current.map((s) => key(s.source, s.skillId)));
+    const additions: SelectedSkill[] = [];
+    let alreadyPresent = 0;
+    let skippedForCap = 0;
+    for (const skill of skills) {
+      const k = key(skill.source, skill.skillId);
+      if (seen.has(k)) {
+        alreadyPresent++;
+        continue;
+      }
+      if (current.length + additions.length >= MAX_BUNDLE_SKILLS) {
+        skippedForCap++;
+        continue;
+      }
+      seen.add(k);
+      additions.push(skill);
+    }
+    if (additions.length > 0) {
+      set(selectedSkillsAtom, [...current, ...additions]);
+    }
+    return { added: additions.length, alreadyPresent, skippedForCap };
+  },
+);
+
+// Bulk remove — drop every matching ref in a single write (not a loop of
+// removeSkill, which would be one render per item).
+const removeManyAtom = atom(
+  null,
+  (get, set, refs: { source: string; skillId: string }[]) => {
+    const targetKeys = new Set(refs.map((r) => key(r.source, r.skillId)));
+    set(
+      selectedSkillsAtom,
+      get(selectedSkillsAtom).filter(
+        (s) => !targetKeys.has(key(s.source, s.skillId)),
+      ),
+    );
+  },
+);
+
 // Wholesale replacement — used by Clear all's undo toast to restore the
 // snapshot taken before clearing. Capped as defense-in-depth, same as
 // toggleSkillAtom.
@@ -96,6 +149,8 @@ export function useBundleActions() {
   const removeSkillRaw = useSetAtom(removeSkillAtom);
   const clearAll = useSetAtom(clearAllAtom);
   const replaceSelection = useSetAtom(replaceSelectionAtom);
+  const addMany = useSetAtom(addManyAtom);
+  const removeMany = useSetAtom(removeManyAtom);
   return useMemo(
     () => ({
       toggleSkill,
@@ -103,8 +158,10 @@ export function useBundleActions() {
         removeSkillRaw({ source, skillId }),
       clearAll,
       replaceSelection,
+      addMany,
+      removeMany,
     }),
-    [toggleSkill, removeSkillRaw, clearAll, replaceSelection],
+    [toggleSkill, removeSkillRaw, clearAll, replaceSelection, addMany, removeMany],
   );
 }
 
