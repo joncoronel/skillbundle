@@ -135,7 +135,7 @@ function EmptyState({ sort, onSwitchSort }: EmptyStateProps) {
 
   return (
     <div className="flex flex-col items-center gap-3 py-20 text-center">
-      <h3 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
+      <h3 className="text-2xl font-semibold tracking-tight text-balance">
         {config.heading}
       </h3>
       <p className="max-w-sm text-sm text-muted-foreground">{config.body}</p>

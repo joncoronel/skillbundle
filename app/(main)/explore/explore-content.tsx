@@ -113,14 +113,19 @@ function SearchResults({
 
   return (
     <section>
-      <div className="mb-5">
-        <h2 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
-          &ldquo;{query}&rdquo;
-          <span className="ml-2 font-normal text-muted-foreground tabular-nums">
-            · {count}
-          </span>
-        </h2>
-      </div>
+      {/* On zero results the centered "No matches." block already names the
+          query, so the results header would just repeat it. Show the header
+          only when there's something to count. */}
+      {count > 0 ? (
+        <div className="mb-5">
+          <h2 className="text-xl font-semibold tracking-tight">
+            &ldquo;{query}&rdquo;
+            <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+              · {count}
+            </span>
+          </h2>
+        </div>
+      ) : null}
       {results.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-20 text-center">
           <HugeiconsIcon
@@ -128,7 +133,7 @@ function SearchResults({
             strokeWidth={1.5}
             className="size-8 text-muted-foreground/40"
           />
-          <h3 className="font-display text-4xl font-medium tracking-tight leading-tight text-balance">
+          <h3 className="text-2xl font-semibold tracking-tight text-balance">
             No matches.
           </h3>
           <p className="max-w-sm text-sm text-muted-foreground">

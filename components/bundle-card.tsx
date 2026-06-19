@@ -19,7 +19,7 @@ import {
   AvatarFallback,
 } from "@/components/ui/cubby-ui/avatar";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { timeAgo, getInitials } from "@/lib/utils";
+import { cn, timeAgo, getInitials } from "@/lib/utils";
 
 interface BundleCardProps {
   name: string;
@@ -56,7 +56,24 @@ export function BundleCard({
     starCount !== undefined;
 
   const content = (
-    <Card className="h-full gap-3 py-4 transition-colors hover:bg-surface-hover">
+    <Card
+      className={cn(
+        "h-full gap-3 py-4",
+        // Only the link-wrapped variant (explore/featured) needs hover
+        // feedback; the dashboard variant carries its own action buttons.
+        //
+        // Tint via an ::after overlay instead of swapping `bg`. surface-hover
+        // is a ~6% translucent token meant to layer on top of a surface;
+        // replacing the card's solid bg with it composites the 6% over the
+        // page background and erases the card's lift (especially in dark mode).
+        // The overlay keeps the solid surface and just lightens it on hover.
+        // Instant tint on hover-in, fade on hover-out: the base ::after holds
+        // the transition (used when reverting to it = leaving hover), and
+        // hover zeroes the duration so entering hover is immediate.
+        !actions &&
+          "relative after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0 after:transition-opacity after:duration-100 after:content-[''] hover:after:opacity-100 hover:after:duration-0 motion-reduce:after:transition-none",
+      )}
+    >
       <CardHeader className="gap-1">
         <CardTitle className="text-sm leading-snug">{name}</CardTitle>
         <CardAction>
@@ -84,11 +101,9 @@ export function BundleCard({
             by {creatorName} &middot; {timeAgo(createdAt)}
           </span>
         </CardDescription>
-        {description ? (
-          <p className="mt-2 text-xs text-muted-foreground line-clamp-2 wrap-break-word">
-            {description}
-          </p>
-        ) : null}
+        <p className="mt-2 min-h-[2lh] text-xs text-muted-foreground line-clamp-2 wrap-break-word">
+          {description}
+        </p>
       </CardHeader>
       {hasStats ? (
         <CardContent className="mt-auto pt-0">
@@ -123,7 +138,7 @@ export function BundleCard({
           </div>
         </CardContent>
       ) : null}
-      {actions ? <CardFooter>{actions}</CardFooter> : null}
+      {actions ? <CardFooter className="mt-auto">{actions}</CardFooter> : null}
     </Card>
   );
 
@@ -138,7 +153,13 @@ export function BundleCard({
   );
 }
 
-export function BundleCardSkeleton({ hasStats = false }: { hasStats?: boolean }) {
+export function BundleCardSkeleton({
+  hasStats = false,
+  hasActions = false,
+}: {
+  hasStats?: boolean;
+  hasActions?: boolean;
+}) {
   return (
     <Card className="h-full gap-3 py-4">
       <CardHeader className="gap-1">
@@ -154,11 +175,26 @@ export function BundleCardSkeleton({ hasStats = false }: { hasStats?: boolean })
           <Skeleton className="size-4 shrink-0 rounded-full" />
           <Skeleton className="h-lh w-28 rounded" />
         </CardDescription>
+        {/* Mirrors the real card's reserved two-line description slot so the
+            skeleton and loaded card are the same height. */}
+        <div className="mt-2 min-h-[2lh] space-y-1.5">
+          <Skeleton className="h-3 w-full rounded" />
+          <Skeleton className="h-3 w-1/2 rounded" />
+        </div>
       </CardHeader>
       {hasStats ? (
-        <CardContent className="pt-0">
+        <CardContent className="mt-auto pt-0">
           <Skeleton className="h-lh w-36 rounded text-xs" />
         </CardContent>
+      ) : null}
+      {hasActions ? (
+        <CardFooter className="mt-auto">
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-16 rounded-md sm:h-7" />
+            <Skeleton className="h-9 w-28 rounded-md sm:h-7" />
+            <Skeleton className="h-9 w-20 rounded-md sm:h-7" />
+          </div>
+        </CardFooter>
       ) : null}
     </Card>
   );

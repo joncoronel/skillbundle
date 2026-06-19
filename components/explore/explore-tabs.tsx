@@ -65,11 +65,7 @@ export function ExploreTabsView({
         onSortChange(value as ExploreSortValue);
       }}
     >
-      <TabsList
-        variant="underline"
-        aria-label="Sort bundles"
-        className="**:data-[slot=tab-indicator]:bg-primary mb-5"
-      >
+      <TabsList variant="underline" aria-label="Sort bundles" className="mb-5">
         {OPTIONS.map((opt) => (
           <TabsTrigger key={opt.value} value={opt.value}>
             {opt.label}
