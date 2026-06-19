@@ -5,16 +5,13 @@ import { atom, useAtomValue, useSetAtom } from "jotai";
 import { atomWithStorage, selectAtom } from "jotai/utils";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
+import {
+  planBulkAdd,
+  selectionKey as key,
+  type SelectedSkill,
+} from "@/lib/bundle-selection-core";
 
-export interface SelectedSkill {
-  source: string;
-  skillId: string;
-  name: string;
-}
-
-function key(source: string, skillId: string) {
-  return `${source}/${skillId}`;
-}
+export type { SelectedSkill } from "@/lib/bundle-selection-core";
 
 // getOnInit: false keeps SSR stable — the initial render returns [], then the
 // stored value pops in once the atom is subscribed on the client. That matches
@@ -75,27 +72,14 @@ const addManyAtom = atom(
   null,
   (get, set, skills: SelectedSkill[]): AddManyResult => {
     const current = get(selectedSkillsAtom);
-    const seen = new Set(current.map((s) => key(s.source, s.skillId)));
-    const additions: SelectedSkill[] = [];
-    let alreadyPresent = 0;
-    let skippedForCap = 0;
-    for (const skill of skills) {
-      const k = key(skill.source, skill.skillId);
-      if (seen.has(k)) {
-        alreadyPresent++;
-        continue;
-      }
-      if (current.length + additions.length >= MAX_BUNDLE_SKILLS) {
-        skippedForCap++;
-        continue;
-      }
-      seen.add(k);
-      additions.push(skill);
-    }
+    const { additions, added, alreadyPresent, skippedForCap } = planBulkAdd(
+      current,
+      skills,
+    );
     if (additions.length > 0) {
       set(selectedSkillsAtom, [...current, ...additions]);
     }
-    return { added: additions.length, alreadyPresent, skippedForCap };
+    return { added, alreadyPresent, skippedForCap };
   },
 );
 

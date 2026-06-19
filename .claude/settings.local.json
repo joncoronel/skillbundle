@@ -83,9 +83,7 @@
       "Bash(sed 's/:.*//')",
       "Skill(check)",
       "Skill(check:*)",
-      "Bash(npx vitest *)",
-      "Bash(node .claude/skills/impeccable/scripts/context.mjs)",
-      "Bash(node \"C:\\\\Users\\\\jonny\\\\.claude\\\\skills\\\\impeccable\\\\scripts\\\\context.mjs\")"
+      "Bash(npx vitest *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\jonny\\Documents\\Projects\\skillstack\\app\\api\\auth",

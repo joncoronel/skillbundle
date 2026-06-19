@@ -227,7 +227,7 @@ async function SkillDetailBody({
             command, where the eye and thumb already are. On desktop the same
             action lives at the top of the sidebar (below), so this is hidden
             there to avoid duplicating it. */}
-        <div className="mt-6 lg:hidden lg:col-start-1">
+        <div className="mt-6 lg:hidden">
           <BundleToggleButton
             source={source}
             skillId={skillId}

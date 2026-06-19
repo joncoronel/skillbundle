@@ -58,7 +58,16 @@ export function SourceSkillList({ skills }: { skills: SkillData[] }) {
   function handleAddAll() {
     const snapshot = selected;
     const { added, skippedForCap } = addMany(asSelected());
-    if (added === 0 && skippedForCap === 0) return; // everything already in
+    // Nothing was added: either everything is already in the bundle (no toast)
+    // or the bundle is full (inform, but there's nothing to undo).
+    if (added === 0) {
+      if (skippedForCap > 0) {
+        toast({
+          title: `Bundle is full — couldn't add ${skippedForCap} skill${plural(skippedForCap)}`,
+        });
+      }
+      return;
+    }
     const title =
       skippedForCap > 0
         ? `Added ${added} skill${plural(added)} · ${skippedForCap} skipped (bundle full)`
