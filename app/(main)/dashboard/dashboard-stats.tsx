@@ -53,9 +53,16 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
             )}
           >
             {planLabel}
-            {atCap ? " · limit reached" : null}
           </span>
-          {atCap ? (
+        </>
+      ) : null}
+      {/* At-cap indicator is independent of planLabel, so it still surfaces
+          if a future capped paid tier leaves planLabel undefined. */}
+      {atCap ? (
+        <>
+          <Separator />
+          <span className="font-medium text-foreground">limit reached</span>
+          {plan === "free" ? (
             <Link
               href="/pricing"
               className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"

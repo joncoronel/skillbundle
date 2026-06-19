@@ -19,7 +19,7 @@ import {
   AvatarFallback,
 } from "@/components/ui/cubby-ui/avatar";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { timeAgo, getInitials } from "@/lib/utils";
+import { cn, timeAgo, getInitials } from "@/lib/utils";
 
 interface BundleCardProps {
   name: string;
@@ -56,7 +56,24 @@ export function BundleCard({
     starCount !== undefined;
 
   const content = (
-    <Card className="h-full gap-3 py-4 ">
+    <Card
+      className={cn(
+        "h-full gap-3 py-4",
+        // Only the link-wrapped variant (explore/featured) needs hover
+        // feedback; the dashboard variant carries its own action buttons.
+        //
+        // Tint via an ::after overlay instead of swapping `bg`. surface-hover
+        // is a ~6% translucent token meant to layer on top of a surface;
+        // replacing the card's solid bg with it composites the 6% over the
+        // page background and erases the card's lift (especially in dark mode).
+        // The overlay keeps the solid surface and just lightens it on hover.
+        // Instant tint on hover-in, fade on hover-out: the base ::after holds
+        // the transition (used when reverting to it = leaving hover), and
+        // hover zeroes the duration so entering hover is immediate.
+        !actions &&
+          "relative after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0 after:transition-opacity after:duration-100 after:content-[''] hover:after:opacity-100 hover:after:duration-0 motion-reduce:after:transition-none",
+      )}
+    >
       <CardHeader className="gap-1">
         <CardTitle className="text-sm leading-snug">{name}</CardTitle>
         <CardAction>

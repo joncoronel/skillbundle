@@ -136,7 +136,7 @@ const TableTdOverride: StreamdownComponents["td"] = ({ children, style }) => (
 const BlockquoteOverride: StreamdownComponents["blockquote"] = ({
   children,
 }) => (
-  <blockquote className="my-5 rounded-xl border border-border  bg-[color-mix(in_oklch,var(--color-muted),transparent_51%)] px-4 py-3 text-foreground not-italic *:first:mt-0 *:last:mb-0 [&_p]:text-foreground [&_p]:before:content-none [&_p]:after:content-none">
+  <blockquote className="my-5 rounded-xl border border-border bg-[color-mix(in_oklch,var(--color-muted),transparent_51%)] px-4 py-3 text-foreground not-italic *:first:mt-0 *:last:mb-0 [&_p]:text-foreground [&_p]:before:content-none [&_p]:after:content-none">
     {children}
   </blockquote>
 );
