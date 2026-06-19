@@ -138,8 +138,10 @@ export function BundleCard({
 
 export function BundleCardSkeleton({
   hasStats = false,
+  hasActions = false,
 }: {
   hasStats?: boolean;
+  hasActions?: boolean;
 }) {
   return (
     <Card className="h-full gap-3 py-4">
@@ -156,11 +158,26 @@ export function BundleCardSkeleton({
           <Skeleton className="size-4 shrink-0 rounded-full" />
           <Skeleton className="h-lh w-28 rounded" />
         </CardDescription>
+        {/* Mirrors the real card's reserved two-line description slot so the
+            skeleton and loaded card are the same height. */}
+        <div className="mt-2 min-h-[2lh] space-y-1.5">
+          <Skeleton className="h-3 w-full rounded" />
+          <Skeleton className="h-3 w-1/2 rounded" />
+        </div>
       </CardHeader>
       {hasStats ? (
-        <CardContent className="pt-0">
+        <CardContent className="mt-auto pt-0">
           <Skeleton className="h-lh w-36 rounded text-xs" />
         </CardContent>
+      ) : null}
+      {hasActions ? (
+        <CardFooter className="mt-auto">
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-16 rounded-md sm:h-7" />
+            <Skeleton className="h-9 w-28 rounded-md sm:h-7" />
+            <Skeleton className="h-9 w-20 rounded-md sm:h-7" />
+          </div>
+        </CardFooter>
       ) : null}
     </Card>
   );
