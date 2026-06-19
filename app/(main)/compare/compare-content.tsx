@@ -36,7 +36,7 @@ import {
   refKey,
   type SkillRef,
 } from "@/lib/compare";
-import { BundleToggleButton } from "./bundle-toggle-button";
+import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import {
   ComparePickerEmptyTrigger,
   ComparePickerRailTrigger,

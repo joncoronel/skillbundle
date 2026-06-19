@@ -16,6 +16,7 @@ import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
 import { timeAgo } from "@/lib/utils";
 import { SkillSidebar } from "@/components/skill-sidebar";
+import { BundleToggleButton } from "@/components/bundle-toggle-button";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would mark the route dynamic and break static/ISR generation.
@@ -222,6 +223,18 @@ async function SkillDetailBody({
           </div>
         </LabeledSection>
 
+        {/* Mobile-only: the page's primary action sits right under the install
+            command, where the eye and thumb already are. On desktop the same
+            action lives at the top of the sidebar (below), so this is hidden
+            there to avoid duplicating it. */}
+        <div className="mt-6 lg:hidden">
+          <BundleToggleButton
+            source={source}
+            skillId={skillId}
+            name={skill.name}
+          />
+        </div>
+
         {skill.description && (
           <LabeledSection label="Overview" className="mt-10 lg:col-start-1">
             <p className="text-lg leading-relaxed text-pretty text-muted-foreground">
@@ -235,6 +248,15 @@ async function SkillDetailBody({
             would inflate the Install row to the sidebar's height. self-start +
             sticky keep it pinned at the top while the docs scroll. */}
         <aside className="mt-10 lg:col-start-2 lg:mt-0 lg:self-start lg:sticky lg:top-20 lg:row-[1/span_99]">
+          {/* Desktop sidebar primary action. On mobile this is hidden and the
+              same button renders under the install command instead. */}
+          <div className="mb-6 hidden lg:block">
+            <BundleToggleButton
+              source={source}
+              skillId={skillId}
+              name={skill.name}
+            />
+          </div>
           <SkillSidebar
             source={source}
             skillId={skillId}
