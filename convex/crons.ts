@@ -72,15 +72,20 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.recommendations.cleanupExpiredFingerprintCache,
   );
 
-  // Weekly Sunday 07:00 UTC: refresh manually-added skills. Only purpose is to
-  // keep their lastSeenInApi ahead of the 30-day delisting threshold for the
-  // case where installs never cross MIN_INSTALLS=50 (and so syncSkills never
-  // sees them). Manual skills above that threshold get picked up by syncSkills
-  // daily; this cron self-prunes via a 23h freshness filter so it doesn't
-  // duplicate work.
-  crons.weekly(
+  // Daily at 07:00 UTC (one hour after syncSkills at 06:00): refresh manually-
+  // added skills the leaderboard sync can't see. Updates their install count +
+  // daily snapshot and keeps lastSeenInApi ahead of the 30-day delisting
+  // threshold. Covers both skills below MIN_INSTALLS=50 and skills missing from
+  // the all-time leaderboard at any install count (skills.sh's listing feed is
+  // not exhaustive — e.g. bklit/bklit-ui at 234 installs). Self-prunes via a
+  // 23h freshness filter: skills syncSkills already touched today (on the
+  // leaderboard, >= 50 installs) are skipped, so the daily sync owns those and
+  // this cron never double-fetches. The set is tiny (single digits to low
+  // dozens), so a daily detail fetch per skill is negligible against the API
+  // rate limit.
+  crons.daily(
     "refresh manual skills",
-    { dayOfWeek: "sunday", hourUTC: 7, minuteUTC: 0 },
+    { hourUTC: 7, minuteUTC: 0 },
     internal.skills.refreshManualSkills,
   );
 }

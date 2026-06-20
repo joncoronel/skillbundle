@@ -3148,21 +3148,35 @@ export const getContent = query({
 });
 
 // ---------------------------------------------------------------------------
-// Manual skill add (admin-only) and weekly refresh
+// Manual skill add (admin-only) and daily refresh
 // ---------------------------------------------------------------------------
 //
-// Lets the dev/owner insert a skill that exists on skills.sh but sits below
-// syncSkills' MIN_INSTALLS=50 leaderboard threshold (and so would never reach
-// the catalog via the regular cron). The skill is verified against skills.sh
-// before insert, so audits, install commands, and security infra all work the
-// same as for any other skill — this just bypasses the popularity floor.
+// Lets the dev/owner insert a skill that exists on skills.sh but never reaches
+// the catalog via the regular cron. Two reasons a skill can be missing:
+//   1. It sits below syncSkills' MIN_INSTALLS=50 leaderboard threshold.
+//   2. It's absent from the all-time leaderboard ENTIRELY even though it has
+//      well over 50 installs — skills.sh's leaderboard feed is not exhaustive
+//      (e.g. bklit/bklit-ui/bklit-ui at 234 installs is reachable via the
+//      detail + search endpoints but never appears in the listing syncSkills
+//      pages through). These would otherwise never sync, at any install count.
+// The skill is verified against skills.sh before insert, so audits, install
+// commands, and security infra all work the same as for any other skill —
+// this just bypasses the popularity floor and the leaderboard's coverage gaps.
 //
-// Rows get `leaderboard: "manual"` as an origin tag. The weekly refresh cron
-// keeps their `lastSeenInApi` ahead of the 30-day delisting window for the
-// case where installs never cross 50 (so syncSkills never sees them).
-// Once installs DO cross 50, syncSkills picks them up and updates them
-// daily; the refresh self-prunes via a `lastSeenInApi < now - 23h` filter
-// so it doesn't duplicate the work.
+// Rows get `leaderboard: "manual"` as an origin tag. The DAILY refresh cron
+// (refreshManualSkills) re-fetches their install count from the v1 detail
+// endpoint and records a daily snapshot, AND keeps their `lastSeenInApi` ahead
+// of the 30-day delisting window. It owns installs for manual skills that
+// syncSkills can't see — both the sub-50 case and the not-on-leaderboard case.
+//
+// The refresh self-prunes via a `lastSeenInApi < now - 23h` filter: any manual
+// skill that syncSkills touched today (i.e. one that IS on the leaderboard with
+// >= 50 installs) was stamped `lastSeenInApi = now` at 06:00, so the 07:00
+// refresh skips it and the daily sync owns its installs/rank instead. If such a
+// skill later drops off the leaderboard, syncSkills stops touching it, its
+// `lastSeenInApi` ages past 23h, and the daily refresh picks it back up — so
+// the two paths hand off cleanly in both directions. (installRank only ever
+// comes from a leaderboard position, so not-on-leaderboard skills show no rank.)
 
 const MANUAL_LEADERBOARD = "manual";
 // Skip refresh for any manual skill the regular sync already touched today.
@@ -3360,6 +3374,16 @@ export const addSkillManually = action({
     // nothing flagged and exit.
     await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
 
+    // Bust the skill-page cache immediately. The skill detail page is ISR'd
+    // (revalidate: 86400) and its loadSkill data cache is tagged "skill-sync";
+    // a path visited BEFORE this add has a cached `notFound()` render that
+    // would otherwise persist for up to 24h (until the next daily syncSkills
+    // ping or the ISR window). Without this, the "Open on SkillBundle" link
+    // right after adding lands on a stale 404. The org/repo directory pages
+    // now carry the same tag, so they refresh too. Best-effort —
+    // revalidateHomeTag swallows errors and no-ops in dev.
+    await revalidateHomeTag("skill-sync");
+
     return {
       status: precheck?.isDelisted
         ? ("relisted" as const)
@@ -3408,13 +3432,22 @@ export const listManualSkills = internalQuery({
 });
 
 /**
- * Weekly cron: refresh manual skills so the 30-day delisting window in
- * markDelistedSkills doesn't auto-delist skills whose installs haven't
- * crossed MIN_INSTALLS=50 (and so never appear in syncSkills' listing).
+ * Daily cron (runs at 07:00 UTC, AFTER the 06:00 syncSkills): refresh manual
+ * skills that the leaderboard sync can't see. Two jobs:
+ *   - Update their install count + write a daily snapshot, so the count and the
+ *     install-history chart stay current for skills missing from the all-time
+ *     leaderboard (both the sub-50 case and the not-on-leaderboard-at-any-count
+ *     case like bklit/bklit-ui).
+ *   - Keep `lastSeenInApi` ahead of markDelistedSkills' 30-day delist window.
  *
- * Once a manual skill's installs cross 50, syncSkills starts touching its
- * `lastSeenInApi` daily and listManualSkills self-prunes via the 23h filter,
- * so this cron naturally narrows to just the below-threshold subset.
+ * Runs AFTER syncSkills so the 23h self-prune in listManualSkills is accurate:
+ * any manual skill syncSkills already handled today (on the leaderboard, >= 50
+ * installs) was stamped `lastSeenInApi = now` at 06:00 and is skipped here, so
+ * the daily sync owns its installs/rank and we don't double-fetch. This cron
+ * naturally narrows to exactly the skills syncSkills doesn't touch.
+ *
+ * Note: installRank is NOT refreshed here — it only comes from a leaderboard
+ * position, which these skills by definition don't have.
  */
 export const refreshManualSkills = internalAction({
   args: {},
@@ -3478,6 +3511,15 @@ export const refreshManualSkills = internalAction({
     console.log(
       `refreshManualSkills: refreshed ${refreshed}, not found ${notFound}, total ${manualSkills.length}`,
     );
+
+    // If we updated any install counts, bust the skill-page cache so the new
+    // numbers + chart points show same-day. syncSkills already pinged this tag
+    // at ~06:00, BEFORE this 07:00 run wrote fresh installs — so without our own
+    // ping these skills' updated counts would lag a full day. Skipped when
+    // nothing changed. Best-effort (no-ops in dev, swallows errors).
+    if (refreshed > 0) {
+      await revalidateHomeTag("skill-sync");
+    }
   },
 });
 

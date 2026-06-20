@@ -45,7 +45,10 @@ const loadRepo = unstable_cache(
     return { skills: visible, totalInstalls };
   },
   ["repo-skills"],
-  { revalidate: 86400 },
+  // Tagged "skill-sync" so it busts with the skill pages on the daily syncSkills
+  // ping and on addSkillManually — otherwise a newly-added repo 404s here for up
+  // to 24h even though its skill pages already render.
+  { revalidate: 86400, tags: ["skill-sync"] },
 );
 
 export async function generateMetadata({
