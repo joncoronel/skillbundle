@@ -87,6 +87,9 @@ if (process.env.CRONS_ENABLED === "true") {
     "refresh manual skills",
     { hourUTC: 7, minuteUTC: 0 },
     internal.skills.refreshManualSkills,
+    // `day` is omitted on the first invocation — the action computes it fresh and
+    // only threads it through its own rate-limit reschedule.
+    {},
   );
 }
 

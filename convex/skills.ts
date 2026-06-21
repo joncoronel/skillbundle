@@ -3456,11 +3456,16 @@ export const listManualSkills = internalQuery({
  * date line. See the inline note at the pin for the full reasoning.
  */
 export const refreshManualSkills = internalAction({
-  args: {},
+  args: {
+    // Pinned snapshot day, threaded through the rate-limit reschedule below so a
+    // retry reuses the original run's day instead of recomputing it. Omitted on
+    // the cron's first invocation (computed fresh there).
+    day: v.optional(v.string()),
+  },
   // Same explicit annotation as addSkillManually — the runQuery/runMutation
   // references into internal.skills.* otherwise pull the whole api type into
   // an inference cycle.
-  handler: async (ctx): Promise<void> => {
+  handler: async (ctx, args): Promise<void> => {
     const manualSkills: Array<{
       source: string;
       skillId: string;
@@ -3480,7 +3485,11 @@ export const refreshManualSkills = internalAction({
     // lands firmly mid-day-N in both regimes and matches syncSkills' own pinned
     // day. Pinning once up front also keeps a single run consistent if it spans
     // the boundary while iterating.
-    const day = appDay(Date.now() - 60 * 60 * 1000);
+    //
+    // On a rate-limit reschedule we thread this same value through (see below),
+    // so even a retry that fires after the LA-midnight boundary writes its
+    // snapshots into the original day bucket rather than recomputing into N+1.
+    const day = args.day ?? appDay(Date.now() - 60 * 60 * 1000);
 
     for (const skill of manualSkills) {
       try {
@@ -3515,7 +3524,7 @@ export const refreshManualSkills = internalAction({
           await ctx.scheduler.runAfter(
             err.retryAfterSeconds * 1000,
             internal.skills.refreshManualSkills,
-            {},
+            { day },
           );
           return;
         }
