@@ -3448,6 +3448,12 @@ export const listManualSkills = internalQuery({
  *
  * Note: installRank is NOT refreshed here — it only comes from a leaderboard
  * position, which these skills by definition don't have.
+ *
+ * Snapshot day is pinned to the all-time sync's bucket (appDay at now-1h, i.e.
+ * ~06:00 UTC) rather than read at write time. Because this cron fires at 07:00
+ * UTC — exactly LA midnight under PDT — a naive appDay(now) would date these
+ * skills' snapshots one day ahead of every all-time skill and jitter across the
+ * date line. See the inline note at the pin for the full reasoning.
  */
 export const refreshManualSkills = internalAction({
   args: {},
@@ -3465,6 +3471,17 @@ export const refreshManualSkills = internalAction({
     let refreshed = 0;
     let notFound = 0;
 
+    // Pin the snapshot day to the SAME LA-day bucket syncSkills used at 06:00,
+    // so manual skills' chart points line up with the rest of the catalog.
+    // We run at 07:00 UTC, which is exactly LA midnight during PDT — evaluating
+    // appDay(now) there would bucket us into day N+1 (off by one vs the all-time
+    // sync) and, sitting on the date line, would jitter across days run-to-run.
+    // Evaluating at now-1h (= ~06:00 UTC, ~23:00 LA in PDT / ~22:00 in PST)
+    // lands firmly mid-day-N in both regimes and matches syncSkills' own pinned
+    // day. Pinning once up front also keeps a single run consistent if it spans
+    // the boundary while iterating.
+    const day = appDay(Date.now() - 60 * 60 * 1000);
+
     for (const skill of manualSkills) {
       try {
         const detail = await withTransientRetry(() =>
@@ -3481,6 +3498,7 @@ export const refreshManualSkills = internalAction({
             },
           ],
           leaderboard: MANUAL_LEADERBOARD,
+          day,
         });
         refreshed++;
       } catch (err) {
