@@ -33,10 +33,14 @@ export function generateStaticParams() {
 // `unstable_cache` isolates `fetchQuery`'s no-store fetch (so the route can be
 // statically generated) and caches per `org` (args are part of the key). It
 // also dedupes the call between `generateMetadata` and the page body.
+// Tagged "skill-sync" so it busts in lockstep with the skill pages whenever the
+// catalog changes — the daily syncSkills ping and addSkillManually both hit this
+// tag. Without it a newly-added org would 404 here for up to 24h even though its
+// skill pages already render (e.g. a manual add of the first skill in a new org).
 const loadOrg = unstable_cache(
   (org: string) => fetchQuery(api.skills.listRepoAggregatesByOrg, { org }),
   ["org-aggregates"],
-  { revalidate: 86400 },
+  { revalidate: 86400, tags: ["skill-sync"] },
 );
 
 export async function generateMetadata({
