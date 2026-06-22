@@ -38,6 +38,7 @@
     "@visx/shape": "4.0.1-alpha.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cnfast": "^0.0.8",
     "convex": "^1.38.0",
     "d3-array": "^3.2.4",
     "dayjs": "^1.11.19",

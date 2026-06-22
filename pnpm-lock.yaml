@@ -83,6 +83,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      cnfast:
+        specifier: ^0.0.8
+        version: 0.0.8
       convex:
         specifier: ^1.38.0
         version: 1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@clerk/react@6.6.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
@@ -2585,6 +2588,10 @@ packages:
     peerDependencies:
       react: ^18 || ^19 || ^19.0.0-rc
       react-dom: ^18 || ^19 || ^19.0.0-rc
+
+  cnfast@0.0.8:
+    resolution: {integrity: sha512-EjXKMfGfdwtV4AcNSQ6AwQaVzpC1B7IxeiwA3FlhTXz+YFlMKVi4c1JX9tgD2QOlahQXjB8KUXrBaYG+3v871Q==}
+    hasBin: true
 
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
@@ -7422,6 +7429,8 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
       - '@types/react-dom'
+
+  cnfast@0.0.8: {}
 
   color-convert@2.0.1:
     dependencies:
