@@ -210,7 +210,12 @@ export const resolveRepoIdentities = internalAction({
 // Runs after resolveRepoIdentities (needs githubRepoId populated) and is also
 // chained from it. Counts are capped — the marker only needs "has copies (+N)".
 
-const COPYCOUNT_PAGE = 100;
+// Each row does two capped index reads below (≤ GROUP_CAP+1 aliases and
+// ≤ GROUP_CAP*2+1 fork-hash peers), so worst case is PAGE * (3*GROUP_CAP + 2)
+// document reads in ONE mutation. Keep PAGE small enough that a page landing on
+// many rows sharing a popular templated syncHash (large fork groups) stays well
+// under Convex's per-transaction read budget: 25 * 302 ≈ 7.5k reads.
+const COPYCOUNT_PAGE = 25;
 const COPYCOUNT_GROUP_CAP = 100;
 
 export const computeCopyCountBatch = internalMutation({
@@ -239,7 +244,13 @@ export const computeCopyCountBatch = internalMutation({
         aliasCount = rows.filter((r) => r.source !== s.source && !r.isDelisted).length;
       }
 
-      // Forks: same content hash, different real repo id.
+      // Forks: same content hash, different real repo id. NOTE: when `repoId` is
+      // undefined (this row not yet resolved, or a well-known/non-GitHub source),
+      // `r.githubRepoId !== repoId` is `!== undefined`, so every resolved hash
+      // peer counts as a fork. That's intended for well-known sources (a real
+      // cross-repo content match) and self-corrects for unresolved GitHub rows
+      // once resolveRepoIdentities stamps them. getSkillCopies applies the same
+      // rule, so list + detail never disagree.
       let forkCount = 0;
       if (s.syncHash) {
         const rows = await ctx.db
@@ -516,6 +527,11 @@ export const getSkillCopies = query({
         if (r.githubRepoId === undefined || r.githubRepoId === REPO_ID_NONE) {
           continue;
         }
+        // When THIS row's repoId is undefined (unresolved GitHub row, or a
+        // well-known source), `=== repoId` is false, so resolved hash peers are
+        // counted as forks. Intended for well-known sources; self-corrects for
+        // unresolved GitHub rows after resolveRepoIdentities. Mirrors the
+        // computeCopyCountBatch fork filter so the marker and detail agree.
         if (r.githubRepoId === repoId) continue; // same repo = alias (above)
         forks.push({
           source: r.source,

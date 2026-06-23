@@ -3530,6 +3530,11 @@ export const reconcileUnseenSkills = internalAction({
       stale.push(...page.entries);
       cursor = page.nextCursor;
       isDone = page.isDone;
+      // Short-circuit: if the stale set already blew past the cap, stop paging.
+      // An implausibly large stale set means syncSkills failed; the gate below
+      // bails without writes, so there's no point scanning all ~N pages and
+      // holding tens of thousands of rows in memory first.
+      if (stale.length > MAX_RECONCILE) break;
     }
 
     // Refresh a stale skill only if it's healthy AND not a dead renamed alias.
