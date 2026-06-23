@@ -65,11 +65,19 @@ The install count has exactly one trustworthy owner per skill state:
 - **Dead renamed aliases** → nobody refreshes them (detail returns a stale,
   inflated count for a renamed repo's old name — see [dead-alias skip](#dead-alias-skip)).
 
-Why not just use the **curated endpoint's** install number daily (cheap)? It's
-**unreliable** — historically off by orders of magnitude (it was clobbering real
-counts, which is why `syncCurated` runs `ownsInstalls:false`). The detail endpoint
-is accurate for live skills, so curated-only counts come from there, weekly, to
-bound the per-skill cost.
+Why not just use the **curated endpoint's** install number daily (cheap)? Because
+the curated feed is a **periodic snapshot**, not a live count. Its `generatedAt`
+lags weeks (measured **26 days stale** on 2026-06-23). The numbers are the right
+*magnitude* — never inflated — but frozen in the past, so they read low by however
+much a skill grew since the snapshot (sampled ratios **0.83-0.99** vs the live
+detail count, worst ~15% low for fast-growers like `nuxt/ui`). Two consequences:
+(1) writing them over `syncSkills`'s live leaderboard count would drag accurate
+counts backward and sawtooth the chart — hence `ownsInstalls:false`; (2) reading
+them *daily* buys nothing, since the snapshot only changes ~monthly (you'd get the
+same frozen number for weeks, then a step). The **detail** endpoint is live and
+exact, so curated-only counts come from there, weekly, to bound per-skill cost.
+Re-check `generatedAt` periodically: if skills.sh starts regenerating curated
+daily, using it directly could become viable.
 
 ## Content states (independent of delisting)
 

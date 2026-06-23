@@ -96,10 +96,18 @@ export const syncCurated = internalAction({
           isDuplicate: e.isDuplicate,
         })),
         leaderboard: "curated",
-        // The /skills/curated endpoint's `installs` is unreliable, so this pass
-        // only ensures presence (+ stamps curatedOwner in Pass 1). It must not
-        // overwrite installs or write snapshots on rows syncSkills already owns.
-        // New rows still seed from the curated installs (their only source).
+        // The /skills/curated endpoint serves a periodic SNAPSHOT (its
+        // `generatedAt` lags ~weeks; measured 26 days stale on 2026-06-23), so
+        // its `installs` are the right magnitude but frozen in the past — never
+        // inflated, just low by however much a skill grew since the snapshot
+        // (sampled ratios 0.83-0.99 vs the live detail count). Writing them over
+        // syncSkills' live leaderboard count would drag accurate counts backward
+        // and sawtooth the chart. So this pass only ensures presence (+ stamps
+        // curatedOwner in Pass 1) and must not overwrite installs or write
+        // snapshots on rows syncSkills already owns. New rows still seed from the
+        // curated installs (their only source until reconcile/refreshCuratedSkills
+        // hits the detail endpoint). Re-check generatedAt if skills.sh ever starts
+        // regenerating curated daily — then using it directly could become viable.
         ownsInstalls: false,
       });
       totalUpserted += chunk.length;
