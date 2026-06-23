@@ -205,9 +205,10 @@ otherwise be missed by `eq(false)` or wrongly swept in by an open `lt`).
 
 Tightening an optional field to required is a **two-phase** migration, because
 Convex validates the whole dataset on the deploy that tightens the schema:
-1. **Backfill first** (schema still optional): `backfillLastSeenInApi`,
-   `backfillIsDelisted` (idempotent; both reported 0 on prod — every row already
-   had a value, since the sole insert path sets them).
+1. **Backfill first** (schema still optional): `backfillLastSeenInApi` and the
+   pre-existing `backfillIsDelistedFalse` (which covers both skills and summaries).
+   Idempotent; both reported 0 on prod — every row already had a value, since the
+   sole insert path sets them.
 2. **Then tighten** the schema + add the index + switch the scans, in the next
    deploy. The required types now force every future insert to provide the
    fields, so the invariant can't regress (there's one insert path:

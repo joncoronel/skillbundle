@@ -151,7 +151,7 @@ export default defineSchema({
     lastSeenInApi: v.number(),
     // Required: defaulted to false on insert and set true on delist, never unset.
     // Non-optional so eq("isDelisted", false) index ranges are exhaustive (no
-    // undefined rows to miss). Backfilled before tightening (backfillIsDelisted).
+    // undefined rows to miss). Backfilled before tightening (backfillIsDelistedFalse).
     isDelisted: v.boolean(),
     // Denormalized from skills table to avoid reading full 30KB+ skill docs.
     // Required: every summary is created alongside its skill row.

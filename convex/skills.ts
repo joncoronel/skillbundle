@@ -3134,44 +3134,6 @@ export const backfillLastSeenInApi = internalAction({
   },
 });
 
-// One-time migration: ensure every summary has a concrete `isDelisted` before
-// the field is tightened to required in the schema. The sole insert path already
-// defaults it to false, so this only catches legacy rows that predate that
-// default. Idempotent — re-run reports 0 once the data is clean.
-export const backfillIsDelistedBatch = internalMutation({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
-    const result = await ctx.db
-      .query("skillSummaries")
-      .paginate(cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null });
-    let patched = 0;
-    for (const s of result.page) {
-      if (s.isDelisted === undefined) {
-        await ctx.db.patch(s._id, { isDelisted: false });
-        patched++;
-      }
-    }
-    return { nextCursor: result.continueCursor, isDone: result.isDone, patched };
-  },
-});
-
-export const backfillIsDelisted = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    let cursor: string | undefined;
-    let isDone = false;
-    let total = 0;
-    while (!isDone) {
-      const result: { nextCursor: string; isDone: boolean; patched: number } =
-        await ctx.runMutation(internal.skills.backfillIsDelistedBatch, { cursor });
-      total += result.patched;
-      cursor = result.nextCursor;
-      isDone = result.isDone;
-    }
-    console.log(`Backfilled isDelisted on ${total} skills`);
-  },
-});
-
 // ---------------------------------------------------------------------------
 // Public content query
 // ---------------------------------------------------------------------------
