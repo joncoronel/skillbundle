@@ -189,10 +189,103 @@ export const resolveRepoIdentities = internalAction({
       return { stamped: stamps.length, resolvedRepos, done: false };
     }
 
+    // Resolution finished — repo ids are populated, so refresh the denormalized
+    // copyCount that the list "shared content" marker reads.
+    await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+
     console.log(
       `resolveRepoIdentities: iteration ${iteration}, stamped ${stamps.length}, resolved ${resolvedRepos} new repos, done ${page.isDone}`,
     );
     return { stamped: stamps.length, resolvedRepos, done: page.isDone };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// copyCount pass — denormalize "# of copies" onto each summary
+// ---------------------------------------------------------------------------
+//
+// List/search rows show a "shared content" marker, but running the alias + fork
+// lookups per row would be far too many queries per page. So precompute the
+// count once and stamp it on the summary; the list query then has it for free.
+// Runs after resolveRepoIdentities (needs githubRepoId populated) and is also
+// chained from it. Counts are capped — the marker only needs "has copies (+N)".
+
+const COPYCOUNT_PAGE = 100;
+const COPYCOUNT_GROUP_CAP = 100;
+
+export const computeCopyCountBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted", (q) => q.lt("isDelisted", true))
+      .paginate(
+        cursor ? { numItems: COPYCOUNT_PAGE, cursor } : { numItems: COPYCOUNT_PAGE, cursor: null },
+      );
+
+    let updated = 0;
+    for (const s of result.page) {
+      const repoId = s.githubRepoId;
+
+      // Aliases: same repo id + slug, different source.
+      let aliasCount = 0;
+      if (repoId !== undefined && repoId !== REPO_ID_NONE) {
+        const rows = await ctx.db
+          .query("skillSummaries")
+          .withIndex("by_repo_skill", (q) =>
+            q.eq("githubRepoId", repoId).eq("skillId", s.skillId),
+          )
+          .take(COPYCOUNT_GROUP_CAP + 1);
+        aliasCount = rows.filter((r) => r.source !== s.source && !r.isDelisted).length;
+      }
+
+      // Forks: same content hash, different real repo id.
+      let forkCount = 0;
+      if (s.syncHash) {
+        const rows = await ctx.db
+          .query("skillSummaries")
+          .withIndex("by_syncHash", (q) => q.eq("syncHash", s.syncHash))
+          .take(COPYCOUNT_GROUP_CAP * 2 + 1);
+        forkCount = rows.filter(
+          (r) =>
+            r.source !== s.source &&
+            !r.isDelisted &&
+            r.githubRepoId !== undefined &&
+            r.githubRepoId !== REPO_ID_NONE &&
+            r.githubRepoId !== repoId,
+        ).length;
+      }
+
+      const copyCount = aliasCount + forkCount;
+      if ((s.copyCount ?? 0) !== copyCount) {
+        await ctx.db.patch(s._id, { copyCount });
+        updated++;
+      }
+    }
+
+    return { nextCursor: result.continueCursor, isDone: result.isDone, updated };
+  },
+});
+
+export const computeCopyCounts = internalAction({
+  args: { cursor: v.optional(v.string()), iteration: v.optional(v.number()) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ done: boolean; updatedThisBatch: number }> => {
+    const iteration = args.iteration ?? 0;
+    const res = await ctx.runMutation(internal.duplicates.computeCopyCountBatch, {
+      cursor: args.cursor,
+    });
+    if (!res.isDone && iteration < 500) {
+      await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {
+        cursor: res.nextCursor,
+        iteration: iteration + 1,
+      });
+      return { done: false, updatedThisBatch: res.updated };
+    }
+    console.log(`computeCopyCounts: done (iteration ${iteration})`);
+    return { done: res.isDone, updatedThisBatch: res.updated };
   },
 });
 
@@ -281,6 +374,9 @@ export const getSkillCopies = query({
       renamedTo,
       aliases: aliases.slice(0, COPIES_LIMIT),
       forks,
+      // The denormalized count the list marker reads (precomputed by
+      // computeCopyCounts); exposed here too for parity/verification.
+      copyCount: self.copyCount ?? 0,
     };
   },
 });
