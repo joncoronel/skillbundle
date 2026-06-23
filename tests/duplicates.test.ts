@@ -360,6 +360,86 @@ test("resolveRepoIdentities reuses a persisted resolution instead of re-hitting 
   expect(stamped.liveName).toBe("owner/repo");
 });
 
+test("delisting a copy decrements its peers' cached copyCount", async () => {
+  const t = makeTest();
+
+  await t.run(async (ctx) => {
+    // Two aliases of one repo (same repo id + slug): each counts the other.
+    await insertPair(ctx, {
+      source: "owner/old",
+      skillId: "s",
+      githubRepoId: 42,
+      repoLiveName: "owner/new",
+      copyCount: 1,
+    });
+    await insertPair(ctx, {
+      source: "owner/new",
+      skillId: "s",
+      githubRepoId: 42,
+      repoLiveName: "owner/new",
+      copyCount: 1,
+    });
+    // Two forks (same hash, different real repo ids): each counts the other.
+    await insertPair(ctx, {
+      source: "a/x",
+      skillId: "f",
+      githubRepoId: 1,
+      repoLiveName: "a/x",
+      syncHash: "h",
+      copyCount: 1,
+    });
+    await insertPair(ctx, {
+      source: "b/x",
+      skillId: "f",
+      githubRepoId: 2,
+      repoLiveName: "b/x",
+      syncHash: "h",
+      copyCount: 1,
+    });
+  });
+
+  const ids = await t.run(async (ctx) => {
+    const lookup = (source: string, skillId: string) =>
+      ctx.db
+        .query("skillSummaries")
+        .withIndex("by_source_skillId", (q) =>
+          q.eq("source", source).eq("skillId", skillId),
+        )
+        .unique();
+    const old = await lookup("owner/old", "s");
+    const ax = await lookup("a/x", "f");
+    return { old: old!._id, ax: ax!._id };
+  });
+
+  // Delist one alias and one fork.
+  await t.mutation(internal.skills.delistSkillsBatch, {
+    entries: [
+      { summaryId: ids.old, source: "owner/old", skillId: "s" },
+      { summaryId: ids.ax, source: "a/x", skillId: "f" },
+    ],
+  });
+
+  const counts = await t.run(async (ctx) => {
+    const lookup = (source: string, skillId: string) =>
+      ctx.db
+        .query("skillSummaries")
+        .withIndex("by_source_skillId", (q) =>
+          q.eq("source", source).eq("skillId", skillId),
+        )
+        .unique();
+    const surviving = await lookup("owner/new", "s");
+    const survivingFork = await lookup("b/x", "f");
+    return {
+      alias: surviving!.copyCount,
+      fork: survivingFork!.copyCount,
+    };
+  });
+
+  // Each surviving peer lost its one copy.
+  expect(counts.alias).toBe(0);
+  expect(counts.fork).toBe(0);
+});
+
 test("computeCopyCounts denormalizes copyCount = aliases + forks", async () => {
   const t = makeTest();
 

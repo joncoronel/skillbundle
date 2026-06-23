@@ -124,7 +124,14 @@ export const applyResolutions = internalMutation({
 });
 
 export const resolveRepoIdentities = internalAction({
-  args: { cursor: v.optional(v.string()), iteration: v.optional(v.number()) },
+  args: {
+    cursor: v.optional(v.string()),
+    iteration: v.optional(v.number()),
+    // Carried across continuations: have we stamped any summary with a real repo
+    // id this run? Only then does group membership change and copyCount need a
+    // recompute — so we skip the chained full scan on quiet weeks.
+    changedAny: v.optional(v.boolean()),
+  },
   // Explicit annotation — runQuery/runMutation into internal.* otherwise pulls
   // the whole api type into an inference cycle.
   handler: async (
@@ -169,6 +176,10 @@ export const resolveRepoIdentities = internalAction({
           await ctx.scheduler.runAfter(60_000, internal.duplicates.resolveRepoIdentities, {
             cursor: args.cursor,
             iteration: iteration + 1,
+            // The partial stamps just flushed count toward "changed".
+            changedAny:
+              (args.changedAny ?? false) ||
+              stamps.some((s) => s.githubRepoId !== REPO_ID_NONE),
           });
           return { stamped: stamps.length, resolvedRepos, done: false };
         }
@@ -197,20 +208,28 @@ export const resolveRepoIdentities = internalAction({
       await ctx.runMutation(internal.duplicates.applyResolutions, { cacheRows, stamps });
     }
 
+    const changedAny =
+      (args.changedAny ?? false) ||
+      stamps.some((s) => s.githubRepoId !== REPO_ID_NONE);
+
     if (!page.isDone && iteration < RESOLVE_MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.duplicates.resolveRepoIdentities, {
         cursor: page.nextCursor,
         iteration: iteration + 1,
+        changedAny,
       });
       return { stamped: stamps.length, resolvedRepos, done: false };
     }
 
-    // Resolution finished — repo ids are populated, so refresh the denormalized
-    // copyCount that the list "shared content" marker reads.
-    await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+    // Resolution finished. Only refresh the denormalized copyCount if at least
+    // one summary actually gained a real repo id this run (joined a group);
+    // otherwise nothing changed and the full scan would be wasted work.
+    if (changedAny) {
+      await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+    }
 
     console.log(
-      `resolveRepoIdentities: iteration ${iteration}, stamped ${stamps.length}, resolved ${resolvedRepos} new repos, done ${page.isDone}`,
+      `resolveRepoIdentities: iteration ${iteration}, stamped ${stamps.length}, resolved ${resolvedRepos} new repos, changed ${changedAny}, done ${page.isDone}`,
     );
     return { stamped: stamps.length, resolvedRepos, done: page.isDone };
   },
@@ -412,7 +431,15 @@ export const applyReresolutions = internalMutation({
 });
 
 export const reresolveStaleRepoIdentities = internalAction({
-  args: { cursor: v.optional(v.string()), iteration: v.optional(v.number()) },
+  args: {
+    cursor: v.optional(v.string()),
+    iteration: v.optional(v.number()),
+    // Carried across continuations: did any repo's id actually TRANSITION (404
+    // recovery / deletion)? A plain rename only moves repoLiveName, which doesn't
+    // change alias/fork group membership, so copyCount only needs a recompute on
+    // a real id change — rare, so most runs skip the chained full scan entirely.
+    idChangedAny: v.optional(v.boolean()),
+  },
   // Explicit annotation — see resolveRepoIdentities.
   handler: async (
     ctx,
@@ -432,6 +459,7 @@ export const reresolveStaleRepoIdentities = internalAction({
       changed: boolean;
     }[] = [];
     let changed = 0;
+    let idChanged = 0; // repoId transitions (not mere renames)
 
     for (const row of page.stale) {
       const r = await resolveRepoIdentity(row.repo);
@@ -444,6 +472,7 @@ export const reresolveStaleRepoIdentities = internalAction({
         await ctx.scheduler.runAfter(60_000, internal.duplicates.reresolveStaleRepoIdentities, {
           cursor: args.cursor,
           iteration: iteration + 1,
+          idChangedAny: (args.idChangedAny ?? false) || idChanged > 0,
         });
         return { reresolved: updates.length, changed, done: false };
       }
@@ -453,8 +482,10 @@ export const reresolveStaleRepoIdentities = internalAction({
       }
       const newRepoId = r.status === "ok" ? r.repoId : null;
       const newLiveName = r.status === "ok" ? r.liveName : null;
-      const didChange = newRepoId !== row.repoId || newLiveName !== row.liveName;
+      const idTransition = newRepoId !== row.repoId;
+      const didChange = idTransition || newLiveName !== row.liveName;
       if (didChange) changed++;
+      if (idTransition) idChanged++;
       updates.push({ repo: row.repo, repoId: newRepoId, liveName: newLiveName, changed: didChange });
     }
 
@@ -462,18 +493,25 @@ export const reresolveStaleRepoIdentities = internalAction({
       await ctx.runMutation(internal.duplicates.applyReresolutions, { updates });
     }
 
+    const idChangedAny = (args.idChangedAny ?? false) || idChanged > 0;
+
     if (!page.isDone && iteration < RERESOLVE_MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.duplicates.reresolveStaleRepoIdentities, {
         cursor: page.nextCursor,
         iteration: iteration + 1,
+        idChangedAny,
       });
       return { reresolved: updates.length, changed, done: false };
     }
 
-    // Identities may have moved — refresh the denormalized copyCount.
-    await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+    // Only repo-id transitions (404 recovery / deletion) change group membership;
+    // plain renames don't. So recompute copyCount only when an id actually moved
+    // — otherwise this weekly pass adds no second full scan.
+    if (idChangedAny) {
+      await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+    }
     console.log(
-      `reresolveStaleRepoIdentities: done (iteration ${iteration}, reresolved ${updates.length}, changed ${changed})`,
+      `reresolveStaleRepoIdentities: done (iteration ${iteration}, reresolved ${updates.length}, changed ${changed}, idChanged ${idChangedAny})`,
     );
     return { reresolved: updates.length, changed, done: true };
   },

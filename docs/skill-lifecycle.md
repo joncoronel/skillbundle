@@ -142,8 +142,10 @@ have the most installs):
 - **Forks** (different repos, same content): same `syncHash` across different
   `githubRepoId`.
 
-`computeCopyCounts` (chained after resolution) denormalizes `copyCount`
-(aliases + forks) onto each summary for the list "N copies" marker.
+`copyCount` (aliases + forks) is denormalized onto each summary for the list
+"N copies" marker. It's maintained incrementally (delist decrement) with a
+conditional `computeCopyCounts` full-scan backstop — see the `copyCount`
+maintenance edge case below.
 `getSkillCopies(source, skillId)` returns `{ renamedTo, aliases, forks, copyCount }`
 at request time via two indexed lookups (`by_repo_skill`, `by_syncHash`).
 
@@ -183,11 +185,17 @@ the live repo; off-board ones simply delist.
   skip prevents). Self-corrects at the next resolve; mitigated because an old
   name still *on* the leaderboard is owned by `syncSkills` (never stale), so the
   window only applies to already-off-board renames.
-- **`copyCount` list-chip staleness**: `copyCount` is recomputed only weekly. If a
-  peer delists between runs, the surviving row's "N copies" chip can over-count
-  until the next `computeCopyCounts`. The detail page stays correct —
-  `getSkillCopies` filters delisted rows at request time — so only the cached
-  list marker drifts. Acceptable for a low-stakes chip.
+- **`copyCount` maintenance**: `copyCount` is a denormalized counter, kept fresh
+  three ways: (1) `delistSkillsBatch` decrements a delisted row's peers
+  immediately (bounded by `COPYCOUNT_DECREMENT_BUDGET` / `COPYCOUNT_PEER_CAP`),
+  so the common drift (a peer delists) heals at once; (2) the full
+  `computeCopyCounts` pass runs as a backstop, but only when group membership
+  actually changed — `resolveRepoIdentities` chains it only if it stamped a real
+  repo id this run, and `reresolveStaleRepoIdentities` only on a repo-id
+  *transition* (a plain rename doesn't move group membership). So quiet weeks do
+  no recompute, and a normal re-resolve adds no second full scan. The detail page
+  is independent of all this — `getSkillCopies` filters delisted rows at request
+  time, so it's always correct; only the cached list chip relies on the counter.
 - **Rename after stamping** (handled by `reresolveStaleRepoIdentities`): a repo
   renamed *after* we first resolved it would otherwise keep a stale
   `repoLiveName == source` forever — never recognized as a dead alias, so its
@@ -210,6 +218,8 @@ the live repo; off-board ones simply delist.
 | `MAX_DISCOVERY_FAILURES` | 3 | `devStats.ts` |
 | `RERESOLVE_TTL_MS` | 14 days (re-check a resolved repo's identity at most this often) | `duplicates.ts` |
 | `RESTAMP_CAP` | 200 (max summaries re-stamped per repo) | `duplicates.ts` |
+| `COPYCOUNT_PEER_CAP` | 64 (max peers decremented per delisted row) | `skills.ts` |
+| `COPYCOUNT_DECREMENT_BUDGET` | 1500 (max peer copyCount writes per delist batch) | `skills.ts` |
 
 ## Migration notes
 

@@ -6,7 +6,7 @@ import {
   query,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -1811,6 +1811,70 @@ export const listStaleSummaries = internalQuery({
   },
 });
 
+// Mirrors REPO_ID_NONE in duplicates.ts: a GitHub repo that resolved to 404.
+const REPO_ID_NONE = -1;
+// Bound the copyCount maintenance a single delist batch does, so a delist that
+// lands on a large fork group (popular templated content) can't blow the
+// mutation's read/write budget. The weekly computeCopyCounts backstop corrects
+// any drift left by these caps.
+const COPYCOUNT_PEER_CAP = 64;
+const COPYCOUNT_DECREMENT_BUDGET = 1500;
+
+/**
+ * When a row is delisted, every peer that counted it as a copy loses exactly one
+ * (aliases share repo id + slug; forks share syncHash with a different real repo
+ * id). Decrement those peers' cached copyCount so the list "N copies" chip heals
+ * immediately instead of waiting for the weekly recompute. Returns the number of
+ * peer writes made (to spend against the batch budget). Only rows with a real
+ * repo id are counted by anyone, so undefined/sentinel rows decrement nothing.
+ */
+async function decrementCopyPeers(
+  ctx: MutationCtx,
+  summary: Doc<"skillSummaries">,
+  budget: number,
+): Promise<number> {
+  const repoId = summary.githubRepoId;
+  if (repoId === undefined || repoId === REPO_ID_NONE || budget <= 0) return 0;
+  let used = 0;
+
+  const aliasPeers = await ctx.db
+    .query("skillSummaries")
+    .withIndex("by_repo_skill", (q) =>
+      q.eq("githubRepoId", repoId).eq("skillId", summary.skillId),
+    )
+    .take(COPYCOUNT_PEER_CAP + 1);
+  for (const p of aliasPeers) {
+    if (used >= budget) return used;
+    if (p._id === summary._id || p.isDelisted) continue;
+    await ctx.db.patch(p._id, { copyCount: Math.max(0, (p.copyCount ?? 0) - 1) });
+    used++;
+  }
+
+  if (summary.syncHash) {
+    const forkPeers = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_syncHash", (q) => q.eq("syncHash", summary.syncHash))
+      .take(COPYCOUNT_PEER_CAP * 2 + 1);
+    for (const p of forkPeers) {
+      if (used >= budget) return used;
+      if (p._id === summary._id || p.isDelisted) continue;
+      // Forks are different real repos sharing the hash; skip same-repo (alias,
+      // already handled) and unresolved/sentinel rows (they never counted us).
+      if (
+        p.githubRepoId === undefined ||
+        p.githubRepoId === REPO_ID_NONE ||
+        p.githubRepoId === repoId
+      ) {
+        continue;
+      }
+      await ctx.db.patch(p._id, { copyCount: Math.max(0, (p.copyCount ?? 0) - 1) });
+      used++;
+    }
+  }
+
+  return used;
+}
+
 export const delistSkillsBatch = internalMutation({
   args: {
     entries: v.array(
@@ -1822,6 +1886,7 @@ export const delistSkillsBatch = internalMutation({
     ),
   },
   handler: async (ctx, { entries }) => {
+    let decrementBudget = COPYCOUNT_DECREMENT_BUDGET;
     for (const { summaryId, source, skillId } of entries) {
       // Soft-delete the summary. Keeping the row (~200 bytes) lets the
       // Delisted stat count correctly and enables the fast-path relist in
@@ -1848,6 +1913,8 @@ export const delistSkillsBatch = internalMutation({
           hotChange: undefined,
           hotInstallsYesterday: undefined,
         });
+        // This row's copies just lost a member — heal their cached chip now.
+        decrementBudget -= await decrementCopyPeers(ctx, summary, decrementBudget);
       }
 
       // Mark skill as delisted and clear its pipeline flags too.
