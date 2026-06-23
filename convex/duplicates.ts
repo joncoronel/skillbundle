@@ -364,11 +364,18 @@ export const getSkillCopies = query({
     }
 
     // renamedTo: this row is a dead alias when its repo's live name differs from
-    // its own source. Point at the live skill (same slug, the live name).
-    const renamedTo =
+    // its own source. Only surface it when the live skill actually exists in our
+    // DB — i.e. a non-delisted alias row at the live name (same repo id + slug).
+    // That row is already in `aliases` flagged isLive. Synthesizing the link from
+    // `repoLiveName` alone would 404 when the live repo was never synced, or when
+    // the slug changed on rename.
+    const liveAlias =
       liveName && liveName !== source
-        ? { source: liveName, skillId }
-        : null;
+        ? aliases.find((a) => a.isLive)
+        : undefined;
+    const renamedTo = liveAlias
+      ? { source: liveAlias.source, skillId: liveAlias.skillId }
+      : null;
 
     return {
       renamedTo,
