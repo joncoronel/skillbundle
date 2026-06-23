@@ -17,7 +17,12 @@ A skill row enters our DB one of three ways:
    skill against the detail endpoint and inserts it (`leaderboard: "manual"`).
 
 `leaderboard` is an **origin tag set on insert only** (never overwritten) — it
-records how the row first appeared, nothing more.
+records how the row first appeared, nothing more. Values: `all-time` (leaderboard),
+`curated`, `manual`. Note: `reconcileUnseenSkills` passes `leaderboard: "reconcile"`
+to `upsertSkillsBatch`, but reconcile only ever patches **existing** rows (its
+stale set is existing summaries), and the tag is set-on-insert only — so
+`"reconcile"` is never actually persisted as an origin. It's inert; there is no
+"reconcile" origin in the data.
 
 ## The jobs (production crons gated by `CRONS_ENABLED`)
 
@@ -171,6 +176,18 @@ the live repo; off-board ones simply delist.
 - **Weekly resolution lag**: a newly renamed/forked relationship isn't grouped
   until the weekly `resolveRepoIdentities` runs (it's GitHub-rate-limited; repos
   rarely rename). `copyCount` runs after resolution, so weekly is the right cadence.
+  Same lag has a re-inflation edge: a just-renamed repo whose old-name row is
+  **off the leaderboard and not yet resolved** has `repoLiveName === undefined`,
+  so the reconcile dead-alias skip doesn't fire yet and reconcile can re-fetch
+  its inflated detail count for up to a week (exactly the qu-skills inflation the
+  skip prevents). Self-corrects at the next resolve; mitigated because an old
+  name still *on* the leaderboard is owned by `syncSkills` (never stale), so the
+  window only applies to already-off-board renames.
+- **`copyCount` list-chip staleness**: `copyCount` is recomputed only weekly. If a
+  peer delists between runs, the surviving row's "N copies" chip can over-count
+  until the next `computeCopyCounts`. The detail page stays correct —
+  `getSkillCopies` filters delisted rows at request time — so only the cached
+  list marker drifts. Acceptable for a low-stakes chip.
 - **Rename after stamping** (handled by `reresolveStaleRepoIdentities`): a repo
   renamed *after* we first resolved it would otherwise keep a stale
   `repoLiveName == source` forever — never recognized as a dead alias, so its
