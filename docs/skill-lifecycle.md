@@ -186,16 +186,18 @@ the live repo; off-board ones simply delist.
   name still *on* the leaderboard is owned by `syncSkills` (never stale), so the
   window only applies to already-off-board renames.
 - **`copyCount` maintenance**: `copyCount` is a denormalized counter, kept fresh
-  three ways: (1) `delistSkillsBatch` decrements a delisted row's peers
-  immediately (bounded by `COPYCOUNT_DECREMENT_BUDGET` / `COPYCOUNT_PEER_CAP`),
-  so the common drift (a peer delists) heals at once; (2) the full
-  `computeCopyCounts` pass runs as a backstop, but only when group membership
-  actually changed — `resolveRepoIdentities` chains it only if it stamped a real
-  repo id this run, and `reresolveStaleRepoIdentities` only on a repo-id
-  *transition* (a plain rename doesn't move group membership). So quiet weeks do
-  no recompute, and a normal re-resolve adds no second full scan. The detail page
-  is independent of all this — `getSkillCopies` filters delisted rows at request
-  time, so it's always correct; only the cached list chip relies on the counter.
+  two ways: (1) `delistSkillsBatch` decrements a delisted row's peers immediately
+  (bounded by `COPYCOUNT_DECREMENT_BUDGET` / `COPYCOUNT_PEER_CAP`), so the common
+  drift (a peer delists) heals at once; (2) `resolveRepoIdentities` chains a full
+  `computeCopyCounts` pass **unconditionally** at the end of its weekly run — the
+  guaranteed backstop that corrects any residual drift within ~7 days (a relist
+  rejoining a group, capped-budget overflow on a large fork-group delist, a
+  syncHash change on content re-fetch). `reresolveStaleRepoIdentities` chains the
+  recompute only on an actual repo-id *transition* (a plain rename doesn't move
+  group membership), so a normal re-resolve adds **no second full scan** — that
+  was the only duplicate-work concern. The detail page is independent of the
+  counter entirely — `getSkillCopies` filters delisted rows at request time, so
+  it's always correct; only the cached list chip relies on `copyCount`.
 - **Rename after stamping** (handled by `reresolveStaleRepoIdentities`): a repo
   renamed *after* we first resolved it would otherwise keep a stale
   `repoLiveName == source` forever — never recognized as a dead alias, so its

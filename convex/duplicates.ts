@@ -124,14 +124,7 @@ export const applyResolutions = internalMutation({
 });
 
 export const resolveRepoIdentities = internalAction({
-  args: {
-    cursor: v.optional(v.string()),
-    iteration: v.optional(v.number()),
-    // Carried across continuations: have we stamped any summary with a real repo
-    // id this run? Only then does group membership change and copyCount need a
-    // recompute — so we skip the chained full scan on quiet weeks.
-    changedAny: v.optional(v.boolean()),
-  },
+  args: { cursor: v.optional(v.string()), iteration: v.optional(v.number()) },
   // Explicit annotation — runQuery/runMutation into internal.* otherwise pulls
   // the whole api type into an inference cycle.
   handler: async (
@@ -176,10 +169,6 @@ export const resolveRepoIdentities = internalAction({
           await ctx.scheduler.runAfter(60_000, internal.duplicates.resolveRepoIdentities, {
             cursor: args.cursor,
             iteration: iteration + 1,
-            // The partial stamps just flushed count toward "changed".
-            changedAny:
-              (args.changedAny ?? false) ||
-              stamps.some((s) => s.githubRepoId !== REPO_ID_NONE),
           });
           return { stamped: stamps.length, resolvedRepos, done: false };
         }
@@ -208,28 +197,23 @@ export const resolveRepoIdentities = internalAction({
       await ctx.runMutation(internal.duplicates.applyResolutions, { cacheRows, stamps });
     }
 
-    const changedAny =
-      (args.changedAny ?? false) ||
-      stamps.some((s) => s.githubRepoId !== REPO_ID_NONE);
-
     if (!page.isDone && iteration < RESOLVE_MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.duplicates.resolveRepoIdentities, {
         cursor: page.nextCursor,
         iteration: iteration + 1,
-        changedAny,
       });
       return { stamped: stamps.length, resolvedRepos, done: false };
     }
 
-    // Resolution finished. Only refresh the denormalized copyCount if at least
-    // one summary actually gained a real repo id this run (joined a group);
-    // otherwise nothing changed and the full scan would be wasted work.
-    if (changedAny) {
-      await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
-    }
+    // Resolution finished — unconditionally refresh the denormalized copyCount.
+    // This weekly full pass is the GUARANTEED backstop that corrects any drift
+    // from the incremental paths (delist decrement, capped-budget overflow, a
+    // relist rejoining a group). reresolveStaleRepoIdentities only chains this on
+    // an actual id transition, so this is the single recompute that always runs.
+    await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
 
     console.log(
-      `resolveRepoIdentities: iteration ${iteration}, stamped ${stamps.length}, resolved ${resolvedRepos} new repos, changed ${changedAny}, done ${page.isDone}`,
+      `resolveRepoIdentities: iteration ${iteration}, stamped ${stamps.length}, resolved ${resolvedRepos} new repos, done ${page.isDone}`,
     );
     return { stamped: stamps.length, resolvedRepos, done: page.isDone };
   },
