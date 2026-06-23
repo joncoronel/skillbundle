@@ -81,6 +81,10 @@ export interface SkillData {
   /** Installs over the trending window (~24h). Set only for Trending-rail
    *  rows; rendered there in place of lifetime installs. */
   trendingInstalls?: number;
+  /** How many other skills share this one's content — aliases (same repo,
+   *  renamed) + forks (different repos, same SKILL.md). Drives the "shared
+   *  content" marker. Precomputed by computeCopyCounts. */
+  copyCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +188,26 @@ function SkillMeta({
         {formatInstalls(installCount)}
         {showLabel && (windowed !== undefined ? display?.suffix : " installs")}
       </span>
+      {skill.copyCount ? <CopiesBadge count={skill.copyCount} /> : null}
     </div>
+  );
+}
+
+/**
+ * Quiet marker shown when a skill's content also lives under other repos
+ * (renamed aliases and/or genuine forks). Signals the row is one of several
+ * copies; the skill page lists them and lets the user pick. Count is capped
+ * upstream, so render "9+" past the cap rather than an exact large number.
+ */
+function CopiesBadge({ count }: { count: number }) {
+  const label = count > 9 ? "9+ copies" : count === 1 ? "1 copy" : `${count} copies`;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+      title="The same skill content is published under other repos — open the skill to compare them."
+    >
+      {label}
+    </span>
   );
 }
 
