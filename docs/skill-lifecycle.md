@@ -28,8 +28,9 @@ records how the row first appeared, nothing more.
 | `reconcileUnseenSkills` | daily 07:00 | Keep alive + refresh **healthy off-board** skills via the detail endpoint (installs + snapshot + stamp). Skips broke + dead aliases. |
 | `markDelistedSkills` | (chained off syncSkills) | Delist skills unseen for 30 days. |
 | `markStaleContent` | (chained off syncSkills) | Re-flag content >7 days old for re-fetch; drives the discovery/content/audit pipeline. |
-| `resolveRepoIdentities` | weekly Sun 08:00 | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto summaries, cached per repo. |
+| `resolveRepoIdentities` | weekly Sun 08:00 | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto **never-resolved** summaries, cached per repo. |
 | `refreshCuratedSkills` | weekly Sun 09:00 | Detail-refresh **curated-only** skills (never on the leaderboard) so their count + chart aren't frozen. |
+| `reresolveStaleRepoIdentities` | weekly Sun 10:00 | Re-check **already-resolved** repos past their TTL against GitHub; re-stamp summaries when a repo renamed after it was first stamped. |
 
 ## "Seen" and delisting
 
@@ -126,6 +127,9 @@ have the most installs):
   source to its stable `githubRepoId` + current `repoLiveName` (a renamed repo
   301-redirects to its live name, same id). Same `repoId` + slug under different
   `source` = aliases; the live one is the `source` matching `repoLiveName`.
+  `resolveRepoIdentities` only stamps **never-resolved** rows, so
+  `reresolveStaleRepoIdentities` re-checks aged repos (TTL `RERESOLVE_TTL_MS`) to
+  catch a repo that renames *after* it was first stamped (see edge cases).
 - **Forks** (different repos, same content): same `syncHash` across different
   `githubRepoId`.
 
@@ -163,6 +167,15 @@ the live repo; off-board ones simply delist.
 - **Weekly resolution lag**: a newly renamed/forked relationship isn't grouped
   until the weekly `resolveRepoIdentities` runs (it's GitHub-rate-limited; repos
   rarely rename). `copyCount` runs after resolution, so weekly is the right cadence.
+- **Rename after stamping** (handled by `reresolveStaleRepoIdentities`): a repo
+  renamed *after* we first resolved it would otherwise keep a stale
+  `repoLiveName == source` forever — never recognized as a dead alias, so its
+  off-board old-name row would never delist (reconcile keeps it alive) and could
+  be re-inflated from the detail endpoint. The weekly re-resolution re-checks
+  aged repos and re-stamps their summaries; once the old name's `repoLiveName`
+  flips to the live name, reconcile skips it and it delists on the 30-day track.
+  Detection cadence is ~2-3 weeks (TTL paired with the weekly cron), acceptable
+  for a rare event whose only symptom is a single dead-alias page.
 
 ## Tuning constants
 
@@ -174,7 +187,8 @@ the live repo; off-board ones simply delist.
 | `RECONCILE_BATCH` | 150 | `skills.ts` |
 | `DELIST_THRESHOLD_MS` | 30 days | `skills.ts` |
 | `MAX_DISCOVERY_FAILURES` | 3 | `devStats.ts` |
-| repo-resolution cache TTL | re-resolve on demand; weekly job | `duplicates.ts` |
+| `RERESOLVE_TTL_MS` | 14 days (re-check a resolved repo's identity at most this often) | `duplicates.ts` |
+| `RESTAMP_CAP` | 200 (max summaries re-stamped per repo) | `duplicates.ts` |
 
 <a id="removed-min_installs"></a>
 ### Removed: MIN_INSTALLS

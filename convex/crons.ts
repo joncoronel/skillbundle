@@ -111,6 +111,20 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.skills.refreshCuratedSkills,
     {},
   );
+
+  // Weekly Sunday 10:00 UTC: re-resolve repo identities that have gone stale
+  // (resolvedAt older than RERESOLVE_TTL_MS). resolveRepoIdentities only stamps
+  // never-resolved repos, so a repo that renames AFTER being stamped would keep a
+  // stale repoLiveName forever — its old name never recognized as a dead alias,
+  // never delisting, possibly re-inflated by reconcile. This re-checks aged repos
+  // against GitHub and re-stamps their summaries when the identity moved. Cheap
+  // in steady state (only repos past the TTL); self-scheduling + rate-limit aware.
+  crons.weekly(
+    "re-resolve stale repo identities",
+    { dayOfWeek: "sunday", hourUTC: 10, minuteUTC: 0 },
+    internal.duplicates.reresolveStaleRepoIdentities,
+    {},
+  );
 }
 
 export default crons;

@@ -10,9 +10,21 @@
  *     refuses to classify unresolved / no-id rows as forks
  *   - computeCopyCounts denormalizes copyCount = aliases + forks
  */
-import { test, expect } from "vitest";
+import { vi, test, expect } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import { makeTest } from "./_setup";
+
+// resolveRepoIdentity hits the GitHub API; stub it so the re-resolution test is
+// deterministic. Only that one export is overridden (the rest of github.ts is
+// used by skills.ts and must stay real). No other test in this file invokes it.
+// vi.hoisted so the mock fn exists when the hoisted vi.mock factory runs.
+const { mockResolveRepoIdentity } = vi.hoisted(() => ({
+  mockResolveRepoIdentity: vi.fn(),
+}));
+vi.mock("../convex/lib/github", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../convex/lib/github")>();
+  return { ...actual, resolveRepoIdentity: mockResolveRepoIdentity };
+});
 
 // Minimal skill + summary pair. Only the duplicate-detection fields vary
 // between cases; everything else is boilerplate the schema requires.
@@ -191,6 +203,110 @@ test("forks: groups same content hash across different repo ids", async () => {
   expect(copies.forks[0]).toMatchObject({ source: "bob/skills", skillId: "shared" });
   expect(copies.aliases).toEqual([]); // different repo ids, so not aliases
   expect(copies.renamedTo).toBeNull();
+});
+
+test("re-resolution: a repo renamed after stamping flips its old name to a dead alias", async () => {
+  const t = makeTest();
+
+  // State BEFORE the rename: owner/old was resolved while still live, so its
+  // resolution row + summary both say repoLiveName = owner/old (looks live).
+  // resolvedAt is 0 (ancient) so it's past the TTL and due for re-resolution.
+  await t.run(async (ctx) => {
+    await ctx.db.insert("githubRepoResolution", {
+      repo: "owner/old",
+      repoId: 42,
+      liveName: "owner/old",
+      resolvedAt: 0,
+    });
+    await insertPair(ctx, {
+      source: "owner/old",
+      skillId: "do-thing",
+      githubRepoId: 42,
+      repoLiveName: "owner/old",
+    });
+  });
+
+  // GitHub now reports the repo renamed: same id, new full_name.
+  mockResolveRepoIdentity.mockResolvedValue({
+    status: "ok",
+    repoId: 42,
+    liveName: "owner/new",
+  });
+
+  // Fake timers swallow the chained computeCopyCounts schedule (same trade-off
+  // as curated-sync.test.ts) — the re-stamp it would recompute over is already
+  // asserted directly below.
+  vi.useFakeTimers();
+  try {
+    const res = await t.action(internal.duplicates.reresolveStaleRepoIdentities, {});
+    expect(res.changed).toBe(1);
+  } finally {
+    vi.useRealTimers();
+  }
+
+  await t.run(async (ctx) => {
+    // The summary's repoLiveName now differs from its source -> reconcile will
+    // recognize it as a dead alias and stop keeping it alive.
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", "owner/old").eq("skillId", "do-thing"),
+      )
+      .unique();
+    expect(summary!.repoLiveName).toBe("owner/new");
+
+    // The resolution cache row is updated + its resolvedAt bumped past the TTL.
+    const resolution = await ctx.db
+      .query("githubRepoResolution")
+      .withIndex("by_repo", (q) => q.eq("repo", "owner/old"))
+      .unique();
+    expect(resolution!.liveName).toBe("owner/new");
+    expect(resolution!.resolvedAt).toBeGreaterThan(0);
+  });
+});
+
+test("re-resolution: an unchanged repo bumps resolvedAt without re-stamping", async () => {
+  const t = makeTest();
+
+  await t.run(async (ctx) => {
+    await ctx.db.insert("githubRepoResolution", {
+      repo: "owner/live",
+      repoId: 7,
+      liveName: "owner/live",
+      resolvedAt: 0,
+    });
+    await insertPair(ctx, {
+      source: "owner/live",
+      skillId: "do-thing",
+      githubRepoId: 7,
+      repoLiveName: "owner/live",
+    });
+  });
+
+  // Still live, no rename.
+  mockResolveRepoIdentity.mockResolvedValue({
+    status: "ok",
+    repoId: 7,
+    liveName: "owner/live",
+  });
+
+  vi.useFakeTimers();
+  try {
+    const res = await t.action(internal.duplicates.reresolveStaleRepoIdentities, {});
+    expect(res.changed).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+
+  await t.run(async (ctx) => {
+    const resolution = await ctx.db
+      .query("githubRepoResolution")
+      .withIndex("by_repo", (q) => q.eq("repo", "owner/live"))
+      .unique();
+    // resolvedAt advanced so it won't be re-checked until the next TTL window.
+    expect(resolution!.resolvedAt).toBeGreaterThan(0);
+    expect(resolution!.liveName).toBe("owner/live");
+  });
 });
 
 test("computeCopyCounts denormalizes copyCount = aliases + forks", async () => {

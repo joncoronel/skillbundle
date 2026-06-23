@@ -290,6 +290,169 @@ export const computeCopyCounts = internalAction({
 });
 
 // ---------------------------------------------------------------------------
+// Re-resolution — catch repos that rename AFTER they were first stamped
+// ---------------------------------------------------------------------------
+//
+// resolveRepoIdentities only resolves rows with githubRepoId === undefined, so a
+// repo that renames *after* it's been stamped keeps a stale repoLiveName forever:
+// its old-name row is never recognized as a dead alias, never shows the rename
+// banner, and (off-board) never delists, because reconcile keeps "keeping it
+// alive" and may re-inflate it from the detail endpoint. This pass periodically
+// re-checks already-resolved repos against GitHub and re-stamps their summaries
+// when the identity moved. Once an old name's repoLiveName flips to the new live
+// name, reconcile recognizes it as a dead alias and skips it, so it delists on
+// the normal 30-day track.
+
+// Re-check each repo at most this often. Renames are rare, so a ~2 week floor
+// keeps GitHub traffic low; with a token (5000/hr) re-checking the whole set is
+// still trivial. Paired with the weekly cron, effective cadence is ~2-3 weeks.
+const RERESOLVE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const RERESOLVE_PAGE = 100;
+const RERESOLVE_MAX_ITER = 400;
+// Cap summaries re-stamped per repo so a repo with very many skills can't blow
+// the mutation read budget.
+const RESTAMP_CAP = 200;
+
+export const listResolutionsPage = internalQuery({
+  args: { cutoff: v.number(), cursor: v.optional(v.string()) },
+  handler: async (ctx, { cutoff, cursor }) => {
+    const result = await ctx.db
+      .query("githubRepoResolution")
+      .paginate(
+        cursor
+          ? { numItems: RERESOLVE_PAGE, cursor }
+          : { numItems: RERESOLVE_PAGE, cursor: null },
+      );
+    // Only the stale rows are work; fresh ones in the page are skipped. (Paging
+    // by _creationTime, which is stable under the resolvedAt patches we make, so
+    // no row is skipped or seen twice across pages.)
+    const stale = result.page
+      .filter((r) => r.resolvedAt < cutoff)
+      .map((r) => ({ repo: r.repo, repoId: r.repoId, liveName: r.liveName }));
+    return { stale, nextCursor: result.continueCursor, isDone: result.isDone };
+  },
+});
+
+export const applyReresolutions = internalMutation({
+  args: {
+    updates: v.array(
+      v.object({
+        repo: v.string(),
+        repoId: v.union(v.number(), v.null()),
+        liveName: v.union(v.string(), v.null()),
+        changed: v.boolean(),
+      }),
+    ),
+  },
+  handler: async (ctx, { updates }) => {
+    const now = Date.now();
+    let restamped = 0;
+    for (const u of updates) {
+      const existing = await ctx.db
+        .query("githubRepoResolution")
+        .withIndex("by_repo", (q) => q.eq("repo", u.repo))
+        .unique();
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          repoId: u.repoId,
+          liveName: u.liveName,
+          resolvedAt: now,
+        });
+      }
+      if (!u.changed) continue;
+      // Re-stamp every summary for this repo. The repo's `source` string is the
+      // key we resolved, so by_source_skillId(eq source) gathers its skills.
+      // repoId is stable across a rename; only repoLiveName moves — but handle
+      // id transitions (404 recovery / deletion) via the sentinel too.
+      const newRepoId = u.repoId ?? REPO_ID_NONE;
+      const newLiveName = u.liveName ?? "";
+      const summaries = await ctx.db
+        .query("skillSummaries")
+        .withIndex("by_source_skillId", (q) => q.eq("source", u.repo))
+        .take(RESTAMP_CAP);
+      for (const s of summaries) {
+        if (s.githubRepoId !== newRepoId || s.repoLiveName !== newLiveName) {
+          await ctx.db.patch(s._id, {
+            githubRepoId: newRepoId,
+            repoLiveName: newLiveName,
+          });
+          restamped++;
+        }
+      }
+    }
+    return { restamped };
+  },
+});
+
+export const reresolveStaleRepoIdentities = internalAction({
+  args: { cursor: v.optional(v.string()), iteration: v.optional(v.number()) },
+  // Explicit annotation — see resolveRepoIdentities.
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ reresolved: number; changed: number; done: boolean }> => {
+    const iteration = args.iteration ?? 0;
+    const cutoff = Date.now() - RERESOLVE_TTL_MS;
+    const page = await ctx.runQuery(internal.duplicates.listResolutionsPage, {
+      cutoff,
+      cursor: args.cursor,
+    });
+
+    const updates: {
+      repo: string;
+      repoId: number | null;
+      liveName: string | null;
+      changed: boolean;
+    }[] = [];
+    let changed = 0;
+
+    for (const row of page.stale) {
+      const r = await resolveRepoIdentity(row.repo);
+      if (r.status === "rate_limited") {
+        if (updates.length > 0) {
+          await ctx.runMutation(internal.duplicates.applyReresolutions, { updates });
+        }
+        // Resume the SAME page in 60s: rows we just stamped have resolvedAt=now
+        // and fall out of the stale filter, so they aren't re-processed.
+        await ctx.scheduler.runAfter(60_000, internal.duplicates.reresolveStaleRepoIdentities, {
+          cursor: args.cursor,
+          iteration: iteration + 1,
+        });
+        return { reresolved: updates.length, changed, done: false };
+      }
+      if (r.status === "error") {
+        // Transient — leave resolvedAt untouched so it's retried next cycle.
+        continue;
+      }
+      const newRepoId = r.status === "ok" ? r.repoId : null;
+      const newLiveName = r.status === "ok" ? r.liveName : null;
+      const didChange = newRepoId !== row.repoId || newLiveName !== row.liveName;
+      if (didChange) changed++;
+      updates.push({ repo: row.repo, repoId: newRepoId, liveName: newLiveName, changed: didChange });
+    }
+
+    if (updates.length > 0) {
+      await ctx.runMutation(internal.duplicates.applyReresolutions, { updates });
+    }
+
+    if (!page.isDone && iteration < RERESOLVE_MAX_ITER) {
+      await ctx.scheduler.runAfter(0, internal.duplicates.reresolveStaleRepoIdentities, {
+        cursor: page.nextCursor,
+        iteration: iteration + 1,
+      });
+      return { reresolved: updates.length, changed, done: false };
+    }
+
+    // Identities may have moved — refresh the denormalized copyCount.
+    await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+    console.log(
+      `reresolveStaleRepoIdentities: done (iteration ${iteration}, reresolved ${updates.length}, changed ${changed})`,
+    );
+    return { reresolved: updates.length, changed, done: true };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Read query — relationships for the skill detail page
 // ---------------------------------------------------------------------------
 
