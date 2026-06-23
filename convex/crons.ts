@@ -99,6 +99,18 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.duplicates.resolveRepoIdentities,
     {},
   );
+
+  // Weekly Sunday 09:00 UTC (after repo-identity resolution at 08:00, so the
+  // dead-alias skip has fresh repoLiveName): refresh curated-only skills — the
+  // ones never on the leaderboard, whose install count + snapshots syncCurated
+  // can't supply. Detail-refreshes the healthy ones so their count stays current
+  // and their install chart fills in. Self-scheduling; tiny incremental load.
+  crons.weekly(
+    "refresh curated skills",
+    { dayOfWeek: "sunday", hourUTC: 9, minuteUTC: 0 },
+    internal.skills.refreshCuratedSkills,
+    {},
+  );
 }
 
 export default crons;
