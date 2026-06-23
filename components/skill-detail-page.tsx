@@ -67,13 +67,14 @@ export const loadInsights = unstable_cache(
 
 // Duplicate/rename relationships (Phase 2): the live skill a renamed alias
 // points to, plus aliases (same repo, other names) and forks (different repos,
-// same content). Populated by resolveRepoIdentities; changes infrequently, so
-// the 24h ISR window is the only refresh it needs.
+// same content). Populated by resolveRepoIdentities. Tagged "skill-sync" so it
+// busts alongside the install data when a sync pings the revalidate route,
+// rather than lagging the full 24h ISR window after relationships change.
 export const loadCopies = unstable_cache(
   (source: string, skillId: string) =>
     fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
   ["skill-copies"],
-  { revalidate: 86400 },
+  { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
 );
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
