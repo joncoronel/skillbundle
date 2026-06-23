@@ -10,10 +10,18 @@
  *     refuses to classify unresolved / no-id rows as forks
  *   - computeCopyCounts denormalizes copyCount = aliases + forks
  */
-import { vi, test, expect } from "vitest";
+import { vi, test, expect, beforeEach } from "vitest";
 import { api, internal } from "../convex/_generated/api";
 import type { MutationCtx } from "../convex/_generated/server";
 import { makeTest } from "./_setup";
+
+// Isolate shared state between tests: clear the github mock's call history (so
+// not.toHaveBeenCalled is reliable) and ensure timers start real (the tests that
+// need fake timers opt in explicitly). Prevents cross-test leakage.
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useRealTimers();
+});
 
 // resolveRepoIdentity hits the GitHub API; stub it so the re-resolution test is
 // deterministic. Only that one export is overridden (the rest of github.ts is
@@ -308,6 +316,48 @@ test("re-resolution: an unchanged repo bumps resolvedAt without re-stamping", as
     expect(resolution!.resolvedAt).toBeGreaterThan(0);
     expect(resolution!.liveName).toBe("owner/live");
   });
+});
+
+test("resolveRepoIdentities reuses a persisted resolution instead of re-hitting GitHub", async () => {
+  const t = makeTest();
+
+  await t.run(async (ctx) => {
+    // A repo already in the resolution cache (e.g. resolved on an earlier page
+    // of a prior iteration).
+    await ctx.db.insert("githubRepoResolution", {
+      repo: "owner/repo",
+      repoId: 5,
+      liveName: "owner/repo",
+      resolvedAt: 0,
+    });
+    // A still-unresolved summary for that same repo (githubRepoId undefined).
+    await insertPair(ctx, { source: "owner/repo", skillId: "s" });
+  });
+
+  // Fake timers swallow the chained computeCopyCounts schedule.
+  vi.useFakeTimers();
+  try {
+    await t.action(internal.duplicates.resolveRepoIdentities, {});
+  } finally {
+    vi.useRealTimers();
+  }
+
+  // Cross-iteration dedup: the persisted resolution was loaded for this page, so
+  // GitHub was never hit for this repo...
+  expect(mockResolveRepoIdentity).not.toHaveBeenCalled();
+
+  // ...and the summary was stamped from the cached resolution.
+  const stamped = await t.run(async (ctx) => {
+    const row = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", "owner/repo").eq("skillId", "s"),
+      )
+      .unique();
+    return { repoId: row!.githubRepoId, liveName: row!.repoLiveName };
+  });
+  expect(stamped.repoId).toBe(5);
+  expect(stamped.liveName).toBe("owner/repo");
 });
 
 test("computeCopyCounts denormalizes copyCount = aliases + forks", async () => {

@@ -43,15 +43,23 @@ const COPIES_LIMIT = 25;
 // Resolution job
 // ---------------------------------------------------------------------------
 
-export const listResolutionCache = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query("githubRepoResolution").collect();
-    return rows.map((r) => ({
-      repo: r.repo,
-      repoId: r.repoId,
-      liveName: r.liveName,
-    }));
+// Load cached resolutions for a specific set of repos (the current page's
+// distinct sources), not the whole table. Bounds each resolve iteration's cache
+// read to O(page) instead of O(table) while preserving cross-iteration dedup: a
+// repo resolved on an earlier page is persisted, so its by_repo lookup hits here
+// on a later page and we don't re-hit GitHub for it.
+export const getResolutionsForRepos = internalQuery({
+  args: { repos: v.array(v.string()) },
+  handler: async (ctx, { repos }) => {
+    const out: { repo: string; repoId: number | null; liveName: string | null }[] = [];
+    for (const repo of repos) {
+      const row = await ctx.db
+        .query("githubRepoResolution")
+        .withIndex("by_repo", (q) => q.eq("repo", repo))
+        .unique();
+      if (row) out.push({ repo: row.repo, repoId: row.repoId, liveName: row.liveName });
+    }
+    return out;
   },
 });
 
@@ -125,15 +133,23 @@ export const resolveRepoIdentities = internalAction({
   ): Promise<{ stamped: number; resolvedRepos: number; done: boolean }> => {
     const iteration = args.iteration ?? 0;
 
-    // Per-invocation in-memory cache: seed from the persisted resolution table,
-    // then add repos we resolve this run. Keyed by "owner/repo".
-    const cache = new Map<string, { repoId: number | null; liveName: string | null }>();
-    const persisted = await ctx.runQuery(internal.duplicates.listResolutionCache, {});
-    for (const r of persisted) cache.set(r.repo, { repoId: r.repoId, liveName: r.liveName });
-
     const page = await ctx.runQuery(internal.duplicates.listSummariesToResolve, {
       cursor: args.cursor,
     });
+
+    // Per-invocation in-memory cache, keyed by "owner/repo". Seed it with only
+    // THIS page's distinct repos (not the whole resolution table): a repo
+    // resolved on an earlier page is persisted, so its lookup here hits and we
+    // skip a redundant GitHub call. Repos resolved within this page are added as
+    // we go. Keeps the per-iteration cache read O(page), not O(table).
+    const cache = new Map<string, { repoId: number | null; liveName: string | null }>();
+    const distinctRepos = [...new Set(page.items.map((i) => i.source))];
+    if (distinctRepos.length > 0) {
+      const persisted = await ctx.runQuery(internal.duplicates.getResolutionsForRepos, {
+        repos: distinctRepos,
+      });
+      for (const r of persisted) cache.set(r.repo, { repoId: r.repoId, liveName: r.liveName });
+    }
 
     const cacheRows: { repo: string; repoId: number | null; liveName: string | null }[] = [];
     const stamps: { summaryId: typeof page.items[number]["summaryId"]; githubRepoId: number; repoLiveName: string }[] = [];
