@@ -78,9 +78,9 @@ export const syncCurated = internalAction({
     );
 
     // Pass 0: ensure every curated skill exists in our DB. The regular sync
-    // (syncSkills) drops anything below MIN_INSTALLS=50 before upserting, so
-    // curated publishers with only low-install skills (e.g. Bitwarden) would
-    // otherwise have zero rows here and 404 on /<owner>. Reuses the canonical
+    // (syncSkills) only ingests skills present on the all-time leaderboard, which
+    // isn't exhaustive — curated publishers whose skills are absent from it (e.g.
+    // Bitwarden) would otherwise have zero rows here and 404 on /<owner>. Reuses the canonical
     // insert path so new rows get the full pipeline (discovery, content fetch,
     // embedding, audit) just like leaderboard rows. Idempotent for existing
     // rows — fast-path A in upsertSkillsBatch just touches lastSeenInApi.

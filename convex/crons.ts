@@ -72,23 +72,19 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.recommendations.cleanupExpiredFingerprintCache,
   );
 
-  // Daily at 07:00 UTC (one hour after syncSkills at 06:00): refresh manually-
-  // added skills the leaderboard sync can't see. Updates their install count +
-  // daily snapshot and keeps lastSeenInApi ahead of the 30-day delisting
-  // threshold. Covers both skills below MIN_INSTALLS=50 and skills missing from
-  // the all-time leaderboard at any install count (skills.sh's listing feed is
-  // not exhaustive — e.g. bklit/bklit-ui at 234 installs). Self-prunes via a
-  // 23h freshness filter: skills syncSkills already touched today (on the
-  // leaderboard, >= 50 installs) are skipped, so the daily sync owns those and
-  // this cron never double-fetches. The set is tiny (single digits to low
-  // dozens), so a daily detail fetch per skill is negligible against the API
-  // rate limit.
+  // Daily at 07:00 UTC (one hour after syncSkills at 06:00, after syncCurated at
+  // 06:30): reconcile skills the leaderboard sync doesn't maintain. Refreshes
+  // the install count of every HEALTHY skill no sync touched in ~26h (coverage-
+  // gap and manually-added skills) and stamps lastSeenInApi so they aren't
+  // wrongly delisted; leaves broke/dead skills to the 30-day delist. Self-
+  // schedules in batches until the stale set drains, and bails if the stale set
+  // is implausibly large (a sign syncSkills itself failed).
   crons.daily(
-    "refresh manual skills",
+    "reconcile unseen skills",
     { hourUTC: 7, minuteUTC: 0 },
-    internal.skills.refreshManualSkills,
-    // `day` is omitted on the first invocation — the action computes it fresh and
-    // only threads it through its own rate-limit reschedule.
+    internal.skills.reconcileUnseenSkills,
+    // `day`/`iteration` omitted on the first invocation — computed fresh and
+    // only threaded through the action's own reschedules.
     {},
   );
 }
