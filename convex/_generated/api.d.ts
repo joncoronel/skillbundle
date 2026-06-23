@@ -16,6 +16,7 @@ import type * as crons from "../crons.js";
 import type * as curated from "../curated.js";
 import type * as devSeed from "../devSeed.js";
 import type * as devStats from "../devStats.js";
+import type * as duplicates from "../duplicates.js";
 import type * as github from "../github.js";
 import type * as githubCache from "../githubCache.js";
 import type * as http from "../http.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   curated: typeof curated;
   devSeed: typeof devSeed;
   devStats: typeof devStats;
+  duplicates: typeof duplicates;
   github: typeof github;
   githubCache: typeof githubCache;
   http: typeof http;

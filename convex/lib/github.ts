@@ -62,6 +62,41 @@ export async function fetchRepoMetadata(
   }
 }
 
+export type RepoIdentityResult =
+  | { status: "ok"; repoId: number; liveName: string }
+  | { status: "not_found" } // 404 — deleted/private; cache as unresolvable
+  | { status: "rate_limited" } // 403/429 — don't cache, retry later
+  | { status: "error" }; // transient — don't cache, retry later
+
+/**
+ * Resolve a repo's stable GitHub id + current canonical "owner/repo".
+ *
+ * `fetch` follows the 301 a renamed repo returns, so `full_name` is always the
+ * LIVE name even when `repo` is an old alias (e.g. resolving "qu-skills/skills"
+ * yields id 1146509126, full_name "inference-sh/skills"). The stable id is what
+ * lets us tell aliases of one repo (same id) from genuine forks (same content,
+ * different id).
+ */
+export async function resolveRepoIdentity(
+  repo: string,
+): Promise<RepoIdentityResult> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: githubHeaders(),
+    });
+    if (res.status === 404) return { status: "not_found" };
+    if (res.status === 403 || res.status === 429) return { status: "rate_limited" };
+    if (!res.ok) return { status: "error" };
+    const data = (await res.json()) as { id?: unknown; full_name?: unknown };
+    if (typeof data.id !== "number" || typeof data.full_name !== "string") {
+      return { status: "error" };
+    }
+    return { status: "ok", repoId: data.id, liveName: data.full_name };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 export interface TreeEntry {
   path: string;
   type: string; // "blob" | "tree"

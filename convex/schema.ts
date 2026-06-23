@@ -196,8 +196,21 @@ export default defineSchema({
     // Mirrored audit-fetch pipeline state.
     needsAudit: v.optional(v.boolean()),
     auditFetchedAt: v.optional(v.number()),
+    // Duplicate/rename detection (Phase 2). Resolved by resolveRepoIdentities.
+    // `githubRepoId` is GitHub's stable numeric repo id (survives renames), so
+    // skills sharing it under different `source` names are aliases of one repo.
+    // `repoLiveName` is the repo's current "owner/repo"; when it differs from
+    // `source`, this row is a dead renamed alias. `copyCount` (aliases + forks)
+    // is denormalized so list rows can show the "shared content" marker cheaply.
+    githubRepoId: v.optional(v.number()),
+    repoLiveName: v.optional(v.string()),
+    copyCount: v.optional(v.number()),
   })
     .index("by_source_skillId", ["source", "skillId"])
+    // Alias grouping: same repo id + same slug, different source = renamed alias.
+    .index("by_repo_skill", ["githubRepoId", "skillId"])
+    // Fork grouping: same content hash across different repo ids = genuine fork.
+    .index("by_syncHash", ["syncHash"])
     .index("by_skillEmbeddingId", ["skillEmbeddingId"])
     .index("by_isDelisted", ["isDelisted"])
     // Powers the home page's default "popular skills" list. Queried with
@@ -311,6 +324,19 @@ export default defineSchema({
     etag: v.string(),
     dependencyFilePaths: v.array(v.string()),
     cachedAt: v.number(),
+  }).index("by_repo", ["repo"]),
+
+  // Per-repo cache for duplicate/rename detection (Phase 2). One row per
+  // "owner/repo" we've resolved against the GitHub API: `repoId` is GitHub's
+  // stable numeric id and `liveName` is the repo's current "owner/repo" (a 301
+  // redirect means the queried name is a dead rename → liveName differs). Lets
+  // resolveRepoIdentities resolve once per repo instead of once per skill.
+  // `repoId`/`liveName` are null when the repo 404s (deleted/unreachable).
+  githubRepoResolution: defineTable({
+    repo: v.string(),
+    repoId: v.union(v.number(), v.null()),
+    liveName: v.union(v.string(), v.null()),
+    resolvedAt: v.number(),
   }).index("by_repo", ["repo"]),
 
   // Cache of GitHub repo fingerprints + their embeddings, keyed by owner/repo

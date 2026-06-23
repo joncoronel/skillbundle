@@ -87,6 +87,18 @@ if (process.env.CRONS_ENABLED === "true") {
     // only threaded through the action's own reschedules.
     {},
   );
+
+  // Weekly Sunday 08:00 UTC: resolve GitHub repo identities for duplicate/rename
+  // detection (Phase 2). Stamps githubRepoId + repoLiveName onto summaries so
+  // getSkillCopies can group aliases (same repo id) and forks (same content,
+  // different id). Per-repo cached + self-scheduling; weekly is plenty since
+  // repos rarely rename and new skills are few.
+  crons.weekly(
+    "resolve repo identities",
+    { dayOfWeek: "sunday", hourUTC: 8, minuteUTC: 0 },
+    internal.duplicates.resolveRepoIdentities,
+    {},
+  );
 }
 
 export default crons;
