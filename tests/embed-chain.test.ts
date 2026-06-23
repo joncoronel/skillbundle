@@ -66,6 +66,7 @@ test("embedSkillsBatch writes embeddings + flips needsEmbedding=false", async ()
         installs: 100,
         skillDocId: id,
         isDelisted: false,
+        lastSeenInApi: Date.now(),
         needsEmbedding: true,
       });
       ids.push(id);
@@ -130,6 +131,7 @@ test("embedSkillsBatch is a no-op when no skills are flagged", async () => {
       installs: 100,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: Date.now(),
       needsEmbedding: false,
       hasEmbedding: true,
     });

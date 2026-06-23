@@ -144,8 +144,15 @@ export default defineSchema({
     // syncStats.totalSkills.
     installRank: v.optional(v.number()),
     syncHash: v.optional(v.string()),
-    lastSeenInApi: v.optional(v.number()),
-    isDelisted: v.optional(v.boolean()),
+    // Required: every summary is created from an API feed, so it always has a
+    // "last seen" timestamp. Kept non-optional so the by_isDelisted_lastSeenInApi
+    // range (staleness scans) has no undefined edge case. Backfilled before the
+    // tightening (see skills.ts:backfillLastSeenInApi).
+    lastSeenInApi: v.number(),
+    // Required: defaulted to false on insert and set true on delist, never unset.
+    // Non-optional so eq("isDelisted", false) index ranges are exhaustive (no
+    // undefined rows to miss). Backfilled before tightening (backfillIsDelisted).
+    isDelisted: v.boolean(),
     // Denormalized from skills table to avoid reading full 30KB+ skill docs.
     // Required: every summary is created alongside its skill row.
     skillDocId: v.id("skills"),
@@ -218,6 +225,12 @@ export default defineSchema({
     // highest installs to lowest. Every insert path sets isDelisted explicitly
     // to false, so undefined rows (should be none) are silently excluded.
     .index("by_isDelisted_installs", ["isDelisted", "installs"])
+    // Powers the staleness scans (markDelistedSkills' 30-day delist, reconcile's
+    // 23h refresh): q.eq("isDelisted", false).lt("lastSeenInApi", cutoff) reads
+    // only the stale non-delisted rows instead of scanning the whole catalog and
+    // filtering in memory. Both index fields are required (see schema), so the
+    // range has no undefined edge cases.
+    .index("by_isDelisted_lastSeenInApi", ["isDelisted", "lastSeenInApi"])
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])

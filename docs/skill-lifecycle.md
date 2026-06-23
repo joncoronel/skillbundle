@@ -104,8 +104,12 @@ into one consistent bucket.
 ## Reconcile = keep-alive for off-board skills
 
 `reconcileUnseenSkills` (daily 07:00):
-1. Scan non-delisted summaries; keep those with `lastSeenInApi` older than
-   **`RECONCILE_FRESHNESS_MS` (23h)**.
+1. Scan stale rows via the `by_isDelisted_lastSeenInApi` index range
+   (`eq("isDelisted", false).lt("lastSeenInApi", cutoff)`, cutoff =
+   **`RECONCILE_FRESHNESS_MS` (23h)** pinned once per run) — reads only the stale
+   set, not the whole catalog. The same index backs `markDelistedSkills`' 30-day
+   scan. Both `isDelisted` and `lastSeenInApi` are **required** fields, so the
+   range has no `undefined` edge case (see Migration notes).
 2. Keep only **healthy** (`hasSkillMdUrl && !hasContentFetchError &&
    discoveryFailCount < 3`) **and not a dead alias** (`repoLiveName === source`).
 3. Detail-refresh each (installs + snapshot + stamp), batched (`RECONCILE_BATCH`),
@@ -189,6 +193,28 @@ the live repo; off-board ones simply delist.
 | `MAX_DISCOVERY_FAILURES` | 3 | `devStats.ts` |
 | `RERESOLVE_TTL_MS` | 14 days (re-check a resolved repo's identity at most this often) | `duplicates.ts` |
 | `RESTAMP_CAP` | 200 (max summaries re-stamped per repo) | `duplicates.ts` |
+
+## Migration notes
+
+**`lastSeenInApi` + `isDelisted` are required** (not optional) on `skillSummaries`,
+and `by_isDelisted_lastSeenInApi` indexes them together. This lets the staleness
+scans read only the stale set (`eq("isDelisted", false).lt("lastSeenInApi", cutoff)`)
+instead of scanning the whole catalog and filtering in memory — and removes the
+`undefined` edge cases that made an indexed range risky (an `undefined` would
+otherwise be missed by `eq(false)` or wrongly swept in by an open `lt`).
+
+Tightening an optional field to required is a **two-phase** migration, because
+Convex validates the whole dataset on the deploy that tightens the schema:
+1. **Backfill first** (schema still optional): `backfillLastSeenInApi`,
+   `backfillIsDelisted` (idempotent; both reported 0 on prod — every row already
+   had a value, since the sole insert path sets them).
+2. **Then tighten** the schema + add the index + switch the scans, in the next
+   deploy. The required types now force every future insert to provide the
+   fields, so the invariant can't regress (there's one insert path:
+   `upsertSkillSummary`, which defaults `lastSeenInApi` to now and `isDelisted`
+   to false). Re-run order matters: never tighten before the backfill has run.
+
+When adding the next required field, follow the same backfill-then-tighten order.
 
 <a id="removed-min_installs"></a>
 ### Removed: MIN_INSTALLS

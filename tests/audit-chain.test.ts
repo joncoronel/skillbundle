@@ -93,6 +93,7 @@ test("fetchAuditBatch stores audits + denormalizes worst status", async () => {
       installs: 1000,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: Date.now(),
       needsAudit: true,
     });
     return id;
@@ -165,6 +166,7 @@ test("fetchAuditBatch records 404 as worstStatus=unknown", async () => {
       installs: 1000,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: Date.now(),
       needsAudit: true,
     });
     return id;

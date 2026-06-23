@@ -276,7 +276,9 @@ async function upsertSkillSummary(
       installs: fields.installs,
       installRank: fields.installRank,
       syncHash: fields.syncHash,
-      lastSeenInApi: fields.lastSeenInApi,
+      // Required field: a new row is always being upserted from a feed, so
+      // default to now if a caller didn't pass an explicit timestamp.
+      lastSeenInApi: fields.lastSeenInApi ?? Date.now(),
       // Default to false on insert so the by_isDelisted index is selective
       // and indexed equality filters (`q.eq("isDelisted", false)`) match.
       isDelisted: fields.isDelisted ?? false,
@@ -1781,21 +1783,25 @@ export const fetchSkillDetailBatch = internalAction({
 const DELIST_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 export const listStaleSummaries = internalQuery({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
+  args: { cursor: v.optional(v.string()), cutoff: v.number() },
+  handler: async (ctx, { cursor, cutoff }) => {
     const paginationOpts = cursor
       ? { numItems: 100, cursor }
       : { numItems: 100, cursor: null };
-    // Convex orders: undefined < false < true — lt(true) skips already-delisted summaries
+    // Indexed range: only non-delisted rows last seen before the cutoff. The
+    // caller pins cutoff so the range boundary is identical across all pages.
     const result = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted", (q) => q.lt("isDelisted", true))
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false).lt("lastSeenInApi", cutoff),
+      )
       .paginate(paginationOpts);
 
-    const cutoff = Date.now() - DELIST_THRESHOLD_MS;
-    const staleEntries = result.page
-      .filter((s) => s.lastSeenInApi !== undefined && s.lastSeenInApi < cutoff)
-      .map((s) => ({ summaryId: s._id, source: s.source, skillId: s.skillId }));
+    const staleEntries = result.page.map((s) => ({
+      summaryId: s._id,
+      source: s.source,
+      skillId: s.skillId,
+    }));
 
     return {
       entries: staleEntries,
@@ -1885,10 +1891,13 @@ export const markDelistedSkills = internalAction({
     let cursor: string | undefined;
     let isDone = false;
     let totalDelisted = 0;
+    // Pin the cutoff once so every page queries the same range boundary.
+    const cutoff = Date.now() - DELIST_THRESHOLD_MS;
 
     while (!isDone) {
       const result = await ctx.runQuery(internal.skills.listStaleSummaries, {
         cursor,
+        cutoff,
       });
 
       if (result.entries.length > 0) {
@@ -3125,6 +3134,44 @@ export const backfillLastSeenInApi = internalAction({
   },
 });
 
+// One-time migration: ensure every summary has a concrete `isDelisted` before
+// the field is tightened to required in the schema. The sole insert path already
+// defaults it to false, so this only catches legacy rows that predate that
+// default. Idempotent — re-run reports 0 once the data is clean.
+export const backfillIsDelistedBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .paginate(cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null });
+    let patched = 0;
+    for (const s of result.page) {
+      if (s.isDelisted === undefined) {
+        await ctx.db.patch(s._id, { isDelisted: false });
+        patched++;
+      }
+    }
+    return { nextCursor: result.continueCursor, isDone: result.isDone, patched };
+  },
+});
+
+export const backfillIsDelisted = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(internal.skills.backfillIsDelistedBatch, { cursor });
+      total += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Backfilled isDelisted on ${total} skills`);
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Public content query
 // ---------------------------------------------------------------------------
@@ -3432,21 +3479,21 @@ function isReconcileHealthy(s: {
 }
 
 export const listUnseenSummaries = internalQuery({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
-    // Cheap: ~200B summary rows. Same paginated pattern as listStaleSummaries,
-    // just a ~26h cutoff instead of 30 days. Convex orders undefined < false <
-    // true, so lt(true) walks non-delisted rows.
+  args: { cursor: v.optional(v.string()), cutoff: v.number() },
+  handler: async (ctx, { cursor, cutoff }) => {
+    // Indexed range: only non-delisted rows last seen before the cutoff (caller
+    // pins it so the boundary is identical across pages). Same shape as
+    // listStaleSummaries, just a ~23h cutoff instead of 30 days.
     const result = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted", (q) => q.lt("isDelisted", true))
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false).lt("lastSeenInApi", cutoff),
+      )
       .paginate(
         cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null },
       );
 
-    const cutoff = Date.now() - RECONCILE_FRESHNESS_MS;
     const entries = result.page
-      .filter((s) => s.lastSeenInApi !== undefined && s.lastSeenInApi < cutoff)
       .map((s) => ({
         source: s.source,
         skillId: s.skillId,
@@ -3497,8 +3544,10 @@ export const reconcileUnseenSkills = internalAction({
     const dryRun = args.dryRun ?? false;
     const day = args.day ?? appDay(Date.now() - 60 * 60 * 1000);
     const iteration = args.iteration ?? 0;
+    // Pin the cutoff once so every page of the scan queries the same boundary.
+    const cutoff = Date.now() - RECONCILE_FRESHNESS_MS;
 
-    // 1. Collect the stale set (cheap paginated summary scan).
+    // 1. Collect the stale set (indexed scan over non-delisted rows < cutoff).
     const stale: Array<{
       source: string;
       skillId: string;
@@ -3514,6 +3563,7 @@ export const reconcileUnseenSkills = internalAction({
     while (!isDone) {
       const page = await ctx.runQuery(internal.skills.listUnseenSummaries, {
         cursor,
+        cutoff,
       });
       stale.push(...page.entries);
       cursor = page.nextCursor;

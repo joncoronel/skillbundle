@@ -12,6 +12,7 @@
  */
 import { vi, test, expect } from "vitest";
 import { api, internal } from "../convex/_generated/api";
+import type { MutationCtx } from "../convex/_generated/server";
 import { makeTest } from "./_setup";
 
 // resolveRepoIdentity hits the GitHub API; stub it so the re-resolution test is
@@ -29,7 +30,7 @@ vi.mock("../convex/lib/github", async (importOriginal) => {
 // Minimal skill + summary pair. Only the duplicate-detection fields vary
 // between cases; everything else is boilerplate the schema requires.
 async function insertPair(
-  ctx: any,
+  ctx: MutationCtx,
   fields: {
     source: string;
     skillId: string;

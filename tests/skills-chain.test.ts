@@ -125,6 +125,7 @@ test("markStaleContent leaves freshly-fetched rows alone", async () => {
       installs: 500,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: now,
       contentFetchedAt: now,
       syncHash: "b".repeat(64),
       needsContentFetch: false,
@@ -172,6 +173,7 @@ test("markStaleContent re-flags a row whose content is >7 days old", async () =>
       installs: 500,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: now,
       contentFetchedAt: eightDaysAgo,
       syncHash: "c".repeat(64),
       needsContentFetch: false,
@@ -219,6 +221,7 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
       installs: 500,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: now,
       needsContentFetch: true,
       needsDiscovery: false,
     });
