@@ -3401,9 +3401,13 @@ export const addSkillManually = action({
 // Run with { dryRun: true } to see the classification (healthy vs broke) with no
 // detail calls or writes — it's derived purely from our own DB fields.
 
-// Anything no sync (leaderboard 06:00, curated 06:30) touched in the last day.
-// Wider than 24h so a slightly-late sync doesn't look stale.
-const RECONCILE_FRESHNESS_MS = 26 * 60 * 60 * 1000;
+// A skill is stale if no sync touched it in this window. MUST be under the 24h
+// cron interval: the reconcile both refreshes its skills AND runs daily, so a
+// skill it stamped yesterday (24h ago) has to read as stale today, or it'd only
+// refresh every other day and its chart would skip days. 23h leaves a buffer
+// for cron jitter while staying under 24h (a skill the 06:00 sync just stamped,
+// ~1h old at 07:00, is still well within the window and correctly skipped).
+const RECONCILE_FRESHNESS_MS = 23 * 60 * 60 * 1000;
 // If more than this many rows look stale, syncSkills itself almost certainly
 // failed/was incomplete — bail rather than hammer the detail endpoint.
 const MAX_RECONCILE = 3000;
