@@ -17,6 +17,8 @@ import { compareHref } from "@/lib/compare";
 import { timeAgo } from "@/lib/utils";
 import { SkillSidebar } from "@/components/skill-sidebar";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
+import { SkillCopies } from "@/components/skill-copies";
+import { skillHref } from "@/lib/skill-urls";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would mark the route dynamic and break static/ISR generation.
@@ -61,6 +63,17 @@ export const loadInsights = unstable_cache(
     fetchQuery(api.skills.getInsights, { source, skillId }),
   ["skill-insights"],
   { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
+);
+
+// Duplicate/rename relationships (Phase 2): the live skill a renamed alias
+// points to, plus aliases (same repo, other names) and forks (different repos,
+// same content). Populated by resolveRepoIdentities; changes infrequently, so
+// the 24h ISR window is the only refresh it needs.
+export const loadCopies = unstable_cache(
+  (source: string, skillId: string) =>
+    fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
+  ["skill-copies"],
+  { revalidate: 86400 },
 );
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
@@ -170,11 +183,12 @@ async function SkillDetailBody({
   externalIcon: IconSvgElement;
   externalLabel: string;
 }) {
-  const [skill, audits, insights, stars] = await Promise.all([
+  const [skill, audits, insights, stars, copies] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
     loadInsights(source, skillId),
     loadStars(source),
+    loadCopies(source, skillId),
   ]);
 
   if (!skill) {
@@ -200,6 +214,18 @@ async function SkillDetailBody({
         <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
           This skill&apos;s source file could not be loaded. The install command
           may not work.
+        </div>
+      )}
+
+      {copies.renamedTo && (
+        <div className="mb-4 rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
+          This repository was renamed. Live version:{" "}
+          <Link
+            href={skillHref(copies.renamedTo.source, copies.renamedTo.skillId)}
+            className="font-medium underline underline-offset-2 hover:no-underline"
+          >
+            {copies.renamedTo.source}/{copies.renamedTo.skillId}
+          </Link>
         </div>
       )}
 
@@ -242,6 +268,12 @@ async function SkillDetailBody({
             </p>
           </LabeledSection>
         )}
+
+        <SkillCopies
+          aliases={copies.aliases}
+          forks={copies.forks}
+          className="mt-10 lg:col-start-1"
+        />
 
         {/* Spans all rows of column 2 (`grid-row: 1 / span 99`) so it never
             forces a column-1 row to its own height — placing it in just row 1
