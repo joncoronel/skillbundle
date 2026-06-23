@@ -3455,6 +3455,10 @@ export const listUnseenSummaries = internalQuery({
         hasContentFetchError: s.hasContentFetchError ?? false,
         hasSkillMdUrl: s.hasSkillMdUrl ?? false,
         discoveryFailCount: s.discoveryFailCount ?? 0,
+        // Live "owner/repo" from rename resolution; differs from `source` when
+        // this row is a dead renamed alias (the detail endpoint serves a stale
+        // inflated count for those, so reconcile must not refresh from it).
+        repoLiveName: s.repoLiveName,
       }));
 
     return {
@@ -3503,6 +3507,7 @@ export const reconcileUnseenSkills = internalAction({
       hasContentFetchError: boolean;
       hasSkillMdUrl: boolean;
       discoveryFailCount: number;
+      repoLiveName?: string;
     }> = [];
     let cursor: string | undefined;
     let isDone = false;
@@ -3515,7 +3520,16 @@ export const reconcileUnseenSkills = internalAction({
       isDone = page.isDone;
     }
 
-    const healthyRows = stale.filter(isReconcileHealthy);
+    // Refresh a stale skill only if it's healthy AND not a dead renamed alias.
+    // Dead aliases (repoLiveName set and != source) are excluded because the
+    // detail endpoint serves a stale, inflated count for a renamed repo's old
+    // name — refreshing from it would re-introduce the qu-skills-style inflation.
+    // They're duplicates of the live repo anyway; if off-board they delist.
+    const healthyRows = stale.filter(
+      (s) =>
+        isReconcileHealthy(s) &&
+        !(s.repoLiveName !== undefined && s.repoLiveName !== s.source),
+    );
     const broke = stale.length - healthyRows.length;
 
     // 2. Safety gate: an implausibly large stale set means syncSkills broke —
