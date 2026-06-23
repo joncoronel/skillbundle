@@ -289,42 +289,6 @@ export const computeCopyCounts = internalAction({
   },
 });
 
-// One-off measurement: how many curated skills are "curated-only" (never on the
-// leaderboard, so installRank was never set) and how many of those are healthy.
-// Sizes the curated-only refresh question. by_curatedOwner skips the non-curated
-// majority, so this is cheap.
-export const measureCuratedOnly = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db
-      .query("skillSummaries")
-      .withIndex("by_curatedOwner", (q) => q.gt("curatedOwner", ""))
-      .take(20000);
-    const live = rows.filter((r) => !r.isDelisted);
-    let curatedOnly = 0;
-    let curatedOnlyHealthy = 0;
-    const samples: string[] = [];
-    for (const r of live) {
-      if (r.installRank !== undefined) continue; // had a leaderboard rank → not curated-only
-      curatedOnly++;
-      const healthy =
-        (r.hasSkillMdUrl ?? false) &&
-        !(r.hasContentFetchError ?? false) &&
-        (r.discoveryFailCount ?? 0) < 3;
-      if (healthy) {
-        curatedOnlyHealthy++;
-        if (samples.length < 5) samples.push(`${r.source}|${r.skillId}`);
-      }
-    }
-    return {
-      curatedTotal: live.length,
-      curatedOnly,
-      curatedOnlyHealthy,
-      samples,
-    };
-  },
-});
-
 // ---------------------------------------------------------------------------
 // Read query — relationships for the skill detail page
 // ---------------------------------------------------------------------------
