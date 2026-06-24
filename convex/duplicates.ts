@@ -28,25 +28,20 @@ import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { isGitHubSource } from "./lib/source";
 import { resolveRepoIdentity } from "./lib/github";
+import { maxIterForRows, CATALOG_MAX_ROWS } from "./lib/pagination";
 
 // Sentinel stamped on a GitHub summary whose repo couldn't be resolved (404 /
 // deleted / private). Marks it "resolved, no id" so the scan doesn't keep
 // retrying it, and getSkillCopies treats it as having no aliases.
 const REPO_ID_NONE = -1;
 
-// Headroom for the non-delisted catalog. computeCopyCounts must visit EVERY
-// non-delisted row (a row's copy group changes when peers change, not itself),
-// so its continuation cap is derived from this so it can't silently truncate the
-// tail. resolveRepoIdentities now reads only the unresolved work-set
-// (by_needsRepoResolution), so its own cap is just a drain backstop, not catalog
-// coverage. Bump this if the catalog ever approaches it (the passes warn when
-// they hit their cap, so truncation is never silent).
-const FULL_SCAN_MAX_ROWS = 60_000;
-
 // Summaries scanned per invocation. Small so the GitHub calls for cache-misses
 // in one batch stay well under the rate limit; the job self-schedules the rest.
+// resolveRepoIdentities now reads only the unresolved work-set
+// (by_needsRepoResolution), so its cap is just a drain backstop, not catalog
+// coverage — CATALOG_MAX_ROWS is a safe generous ceiling.
 const RESOLVE_PAGE = 100;
-const RESOLVE_MAX_ITER = Math.ceil(FULL_SCAN_MAX_ROWS / RESOLVE_PAGE);
+const RESOLVE_MAX_ITER = maxIterForRows(CATALOG_MAX_ROWS, RESOLVE_PAGE);
 // Cap how many rows getSkillCopies returns per group — copies are few, but a
 // shared hash could in theory match many; bound the read.
 const COPIES_LIMIT = 25;
@@ -144,15 +139,23 @@ export async function forkPeers(
 export const getResolutionsForRepos = internalQuery({
   args: { repos: v.array(v.string()) },
   handler: async (ctx, { repos }) => {
-    const out: { repo: string; repoId: number | null; liveName: string | null }[] = [];
-    for (const repo of repos) {
-      const row = await ctx.db
-        .query("githubRepoResolution")
-        .withIndex("by_repo", (q) => q.eq("repo", repo))
-        .unique();
-      if (row) out.push({ repo: row.repo, repoId: row.repoId, liveName: row.liveName });
-    }
-    return out;
+    // The lookups are independent indexed reads, so resolve them concurrently
+    // rather than awaiting one repo at a time.
+    const rows = await Promise.all(
+      repos.map((repo) =>
+        ctx.db
+          .query("githubRepoResolution")
+          .withIndex("by_repo", (q) => q.eq("repo", repo))
+          .unique(),
+      ),
+    );
+    return rows
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .map((row) => ({
+        repo: row.repo,
+        repoId: row.repoId,
+        liveName: row.liveName,
+      }));
   },
 });
 
@@ -347,7 +350,7 @@ const COPYCOUNT_PAGE = 25;
 // Continuation cap, derived from the shared catalog budget so this full-catalog
 // pass covers every non-delisted row (not a "feels like plenty" number). The
 // action warns if it ever trips, so a truncated run is never logged as "done".
-const COPYCOUNT_MAX_ITER = Math.ceil(FULL_SCAN_MAX_ROWS / COPYCOUNT_PAGE);
+const COPYCOUNT_MAX_ITER = maxIterForRows(CATALOG_MAX_ROWS, COPYCOUNT_PAGE);
 
 export const computeCopyCountBatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
@@ -363,7 +366,10 @@ export const computeCopyCountBatch = internalMutation({
     for (const s of result.page) {
       const aliasCount = (await aliasPeers(ctx, s, COPYCOUNT_GROUP_CAP)).length;
       const forkCount = (await forkPeers(ctx, s, COPYCOUNT_GROUP_CAP)).length;
-      const copyCount = aliasCount + forkCount;
+      // Both peer helpers over-fetch past the cap (cap+1 / cap*2+1) to stay
+      // accurate up to it, so clamp the stored sum to the named ceiling — the
+      // chip renders "9+" past ~10, so the exact magnitude above the cap is moot.
+      const copyCount = Math.min(aliasCount + forkCount, COPYCOUNT_GROUP_CAP);
       if ((s.copyCount ?? 0) !== copyCount) {
         await ctx.db.patch(s._id, { copyCount });
         updated++;
@@ -393,10 +399,10 @@ export const computeCopyCounts = internalAction({
     }
     if (!res.isDone) {
       // Hit the iteration cap before finishing: the catalog outgrew
-      // FULL_SCAN_MAX_ROWS, so the tail (newest rows) didn't get copyCount this
+      // CATALOG_MAX_ROWS, so the tail (newest rows) didn't get copyCount this
       // run. Announce it — a bounded pass must not log "done" when it bailed.
       console.warn(
-        `computeCopyCounts: TRUNCATED at iteration ${iteration} (~${iteration * COPYCOUNT_PAGE} rows) — catalog exceeds FULL_SCAN_MAX_ROWS; bump it.`,
+        `computeCopyCounts: TRUNCATED at iteration ${iteration} (~${iteration * COPYCOUNT_PAGE} rows) — catalog exceeds CATALOG_MAX_ROWS; bump it.`,
       );
     } else {
       console.log(`computeCopyCounts: done (iteration ${iteration})`);
@@ -424,7 +430,8 @@ export const computeCopyCounts = internalAction({
 // still trivial. Paired with the weekly cron, effective cadence is ~2-3 weeks.
 const RERESOLVE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const RERESOLVE_PAGE = 100;
-const RERESOLVE_MAX_ITER = 400;
+// Drain backstop: this pass walks aged resolutions, bounded by the catalog.
+const RERESOLVE_MAX_ITER = maxIterForRows(CATALOG_MAX_ROWS, RERESOLVE_PAGE);
 // Cap summaries re-stamped per repo so a repo with very many skills can't blow
 // the mutation read budget.
 const RESTAMP_CAP = 200;

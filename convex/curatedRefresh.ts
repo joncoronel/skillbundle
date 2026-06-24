@@ -14,6 +14,20 @@
 // repo's old name). Uses installRank===undefined as the "never on the
 // leaderboard" signal, so it targets exactly the frozen curated-only set and
 // skips skills syncSkills already owns.
+//
+// Why a separate job and not folded into reconcile (it's tempting — both find
+// healthy off-board skills and refresh them through the same drainRefreshBatch):
+// the two are driven by *different triggers that must stay distinct*. reconcile
+// discovers work by staleness (lastSeenInApi < cutoff). syncCurated stamps
+// lastSeenInApi daily as a PRESENCE signal — "still in the official curated feed"
+// — which is what protects a curated row from the 30-day delist even when its
+// detail endpoint is momentarily 404/broke. That stamp is exactly what hides
+// these rows from reconcile's staleness scan. We can't drop it to let reconcile
+// own them: reconcile only stamps rows it successfully detail-refreshes, so a
+// curated skill with a broken detail endpoint would wrongly delist despite still
+// being officially curated. Decoupling the refresh trigger from the presence
+// stamp requires a separate discovery (this job) — folding it in would either
+// change that delist semantics or move this query into reconcile, not delete it.
 
 import { internalAction, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
@@ -23,8 +37,12 @@ import { appDay } from "./lib/appDay";
 import { drainRefreshBatch } from "./lib/detailRefresh";
 import { isDeadRenamedAlias } from "./lib/source";
 import { isRefreshHealthy } from "./lib/skillHealth";
+import { maxIterForRows, CATALOG_MAX_ROWS } from "./lib/pagination";
 
 const CURATED_REFRESH_PAGE = 100;
+// Drain backstop. The curated-only set is small (~hundreds), so the job exits on
+// isDone far below this; bounded by the catalog as a safe generous ceiling.
+const CURATED_MAX_ITER = maxIterForRows(CATALOG_MAX_ROWS, CURATED_REFRESH_PAGE);
 
 export const listCuratedToRefresh = internalQuery({
   args: { cursor: v.optional(v.string()) },
@@ -93,7 +111,7 @@ export const refreshCuratedSkills = internalAction({
       return { refreshed, gone, done: false };
     }
 
-    if (!page.isDone && iteration < 200) {
+    if (!page.isDone && iteration < CURATED_MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.curatedRefresh.refreshCuratedSkills, {
         cursor: page.nextCursor,
         iteration: iteration + 1,

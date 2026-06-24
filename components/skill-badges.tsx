@@ -16,7 +16,7 @@ import { cn, formatInstalls } from "@/lib/utils";
 // Signal chip — shared icon-chip vocabulary for row-level skill signals
 // ---------------------------------------------------------------------------
 
-type SignalChipTone = "warning" | "info" | "muted";
+export type SignalChipTone = "warning" | "info" | "muted";
 
 const SIGNAL_CHIP_TONE: Record<SignalChipTone, string> = {
   warning: "bg-warning/10 text-warning-foreground border-warning/25",

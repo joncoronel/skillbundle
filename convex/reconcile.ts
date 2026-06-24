@@ -33,6 +33,7 @@ import { appDay } from "./lib/appDay";
 import { drainRefreshBatch } from "./lib/detailRefresh";
 import { isDeadRenamedAlias } from "./lib/source";
 import { isRefreshHealthy } from "./lib/skillHealth";
+import { maxIterForRows } from "./lib/pagination";
 
 // A skill is stale if no sync touched it in this window. MUST be under the 24h
 // cron interval: the reconcile both refreshes its skills AND runs daily, so a
@@ -242,7 +243,9 @@ export const reconcileUnseenSkills = internalAction({
     // cursor into the < cutoff range would be invalidated by those same stamps
     // and silently skip unrefreshed rows. The iteration guard backstops an
     // unexpected non-draining loop.
-    const MAX_ITER = Math.ceil(MAX_RECONCILE / RECONCILE_BATCH) + 5;
+    // +5 slack over the bare page count for cron jitter / re-scan churn (this job
+    // re-scans from the top, so a few iterations can reprocess unstamped rows).
+    const MAX_ITER = maxIterForRows(MAX_RECONCILE, RECONCILE_BATCH) + 5;
     let rescheduled = false;
     if (healthyRows.length > batch.length && iteration < MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.reconcile.reconcileUnseenSkills, {

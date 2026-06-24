@@ -4,7 +4,7 @@ import {
   RefreshIcon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
-import { SignalChip } from "@/components/skill-badges";
+import { SignalChip, type SignalChipTone } from "@/components/skill-badges";
 
 export type SkillStatus = "delisted" | "fetch-error" | "updated" | null;
 
@@ -24,7 +24,8 @@ const STATUS_CHIP_CONFIG: Record<
   {
     icon: IconSvgElement;
     label: string;
-    tone: "warning" | "info";
+    // Status chips only ever use these two of SignalChip's tones (never "muted").
+    tone: Extract<SignalChipTone, "warning" | "info">;
     tooltip: string;
   }
 > = {

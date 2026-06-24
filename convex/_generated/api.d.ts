@@ -26,6 +26,7 @@ import type * as lib_appDay from "../lib/appDay.js";
 import type * as lib_detailRefresh from "../lib/detailRefresh.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_github from "../lib/github.js";
+import type * as lib_pagination from "../lib/pagination.js";
 import type * as lib_plans from "../lib/plans.js";
 import type * as lib_revalidate from "../lib/revalidate.js";
 import type * as lib_skillHealth from "../lib/skillHealth.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   "lib/detailRefresh": typeof lib_detailRefresh;
   "lib/embeddings": typeof lib_embeddings;
   "lib/github": typeof lib_github;
+  "lib/pagination": typeof lib_pagination;
   "lib/plans": typeof lib_plans;
   "lib/revalidate": typeof lib_revalidate;
   "lib/skillHealth": typeof lib_skillHealth;
