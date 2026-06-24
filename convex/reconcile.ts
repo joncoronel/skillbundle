@@ -49,6 +49,14 @@ const MAX_RECONCILE = 3000;
 // until the stale set drains (refreshed skills are stamped fresh and drop out of
 // the next scan). Keeps any single action well under Convex's time/log limits.
 const RECONCILE_BATCH = 150;
+// Tripwire for the dead-but-installable population (see docs/skill-lifecycle.md,
+// "Dead-but-installable skills & the Fix 2 decision"). `gone` is ~0 in steady
+// state, so a run with this many 404s means skills.sh dropped a batch of skills
+// whose repos are still alive — the signal to revisit the fast-delist decision
+// (and, at ~150, the head-of-line starvation risk documented at the batch slice).
+// Self-firing so nobody has to remember to check; run devStats:countDeadButInstallable
+// to quantify the standing population.
+const RECONCILE_GONE_WARN = 50;
 
 // The per-row projection listUnseenSummaries returns and the action accumulates.
 // Named once so the query's .map() and the stale[] accumulator can't drift apart
@@ -282,6 +290,14 @@ export const reconcileUnseenSkills = internalAction({
     console.log(
       `reconcileUnseenSkills: ${stale.length} stale, ${healthyRows.length} healthy; refreshed ${refreshed}, gone ${gone}, broke(skipped) ${broke}${rescheduled ? "; rescheduled for remainder" : ""}`,
     );
+    if (gone >= RECONCILE_GONE_WARN) {
+      console.warn(
+        `reconcileUnseenSkills: elevated gone=${gone} (>=${RECONCILE_GONE_WARN}). ` +
+          `Possible dead-but-installable buildup (skills.sh dropped repos still alive). ` +
+          `See docs/skill-lifecycle.md "Dead-but-installable skills & the Fix 2 decision"; ` +
+          `run devStats:countDeadButInstallable to quantify.`,
+      );
+    }
 
     return {
       dryRun,

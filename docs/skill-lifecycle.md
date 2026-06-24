@@ -58,6 +58,37 @@ stale set is existing summaries), and the tag is set-on-insert only — so
   fast relist. If the skill reappears in a feed, `upsertSkillsBatch` relists it
   (`isDelisted = false`, re-fetch content).
 
+## Dead-but-installable skills & the "Fix 2" decision
+
+**The case.** A skill can be **gone from skills.sh** (detail endpoint 404s, off the
+leaderboard) while its **GitHub repo still serves SKILL.md**. Our content fetch keeps
+succeeding, so it stays `isRefreshHealthy = true`, but `reconcile` can never stamp it
+(detail 404s). It just ages out and `markDelistedSkills` removes it at **30 days**.
+
+**Decision (2026-06): the 30-day timer handles this; do NOT add a faster delete.**
+A read-only diagnostic (`devStats.countDeadButInstallable`) measured the standing
+population on prod at **0** (at 3, 7, and 14 days unseen-but-healthy). The idea we
+considered ("Fix 2": treat N consecutive detail-404s as a fast-delete signal) would
+only ever shorten the grace period — the same removal already happens at 30 days —
+so it trades robustness (against skills.sh outages, and against our own reconcile
+stalling) for a fresher catalog, to solve a population that doesn't exist. It's
+deferred, not rejected.
+
+**Trigger to revisit (self-firing — you don't have to remember).** `reconcile` logs a
+`console.warn` when a run's `gone` count crosses `RECONCILE_GONE_WARN` (50) — `gone`
+is ~0 in steady state, so that means skills.sh dropped a batch of skills whose repos
+are still alive. The same buildup is also the **head-of-line starvation** risk noted
+at reconcile's batch slice (≥150 such rows clog the oldest-first scan and starve live
+rows behind them). If the warning fires, run `countDeadButInstallable` to quantify.
+
+**Pre-decided design IF it ever becomes real** (so this isn't re-litigated):
+
+- A **consecutive-confirmed-404 counter at ~7 days** — NOT lowering `DELIST_THRESHOLD_MS`.
+  The counter acts on positive evidence (skills.sh actually returned 404 N times); a
+  shorter blanket timer would also fire when *our* pipeline (reconcile) merely stalls.
+- **Exempt `leaderboard: "manual"` skills** — they're deliberate admin curation, the one
+  place a fast auto-delete is most likely to be wrong.
+
 ## Install-count ownership (who writes `installs`)
 
 The install count has exactly one trustworthy owner per skill state:
