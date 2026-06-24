@@ -7,6 +7,7 @@ import {
   ArrowDown01Icon,
   ArrowUp01Icon,
   Cancel01Icon,
+  Copy01Icon,
   Download04Icon,
 } from "@hugeicons/core-free-icons";
 import {
@@ -31,7 +32,11 @@ import {
   deriveSkillStatus,
   SkillStatusBadge,
 } from "@/components/skill-status-badge";
-import { HotMomentumChip, OfficialBadge } from "@/components/skill-badges";
+import {
+  HotMomentumChip,
+  OfficialBadge,
+  SignalChip,
+} from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { QuickAddPopover } from "@/components/quick-add-popover";
 
@@ -164,6 +169,9 @@ function SkillMeta({
   const display = metric ? METRIC_DISPLAY[metric] : undefined;
   const windowed = display?.value(skill);
   const installCount = windowed ?? skill.installs;
+  // Signal chips sit to the left; the install count is always the last (right-
+  // most) element so it reads as a stable anchor down the list. The Hot momentum
+  // chip stays adjacent to the count it annotates.
   return (
     <div className="flex items-center gap-1.5">
       <SkillStatusBadge
@@ -173,6 +181,7 @@ function SkillMeta({
           updatedSinceAdded: skill.updatedSinceAdded,
         })}
       />
+      {skill.copyCount ? <CopiesBadge count={skill.copyCount} /> : null}
       {metric === "hot" && skill.hotChange !== undefined && skill.hotChange !== 0 && (
         <HotMomentumChip change={skill.hotChange} />
       )}
@@ -188,7 +197,6 @@ function SkillMeta({
         {formatInstalls(installCount)}
         {showLabel && (windowed !== undefined ? display?.suffix : " installs")}
       </span>
-      {skill.copyCount ? <CopiesBadge count={skill.copyCount} /> : null}
     </div>
   );
 }
@@ -200,14 +208,15 @@ function SkillMeta({
  * upstream, so render "9+" past the cap rather than an exact large number.
  */
 function CopiesBadge({ count }: { count: number }) {
-  const label = count > 9 ? "9+ copies" : count === 1 ? "1 copy" : `${count} copies`;
+  // Icon-only chip; the count lives in the accessible label + tooltip, not the
+  // visible glyph (kept consistent with the status chips).
+  const label = count === 1 ? "1 copy" : `${count > 9 ? "9+" : count} copies`;
   return (
-    <span
-      className="inline-flex shrink-0 items-center rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-      title="The same skill content is published under other repos — open the skill to compare them."
-    >
-      {label}
-    </span>
+    <SignalChip
+      icon={Copy01Icon}
+      label={label}
+      tooltip="The same content is published under other names or forks. Open the skill to compare them."
+    />
   );
 }
 

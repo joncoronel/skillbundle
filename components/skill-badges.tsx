@@ -1,10 +1,82 @@
-import { HugeiconsIcon } from "@hugeicons/react";
+import type { ReactNode } from "react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   ArrowDown02Icon,
   ArrowUp02Icon,
   CheckmarkBadge02Icon,
 } from "@hugeicons/core-free-icons";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/cubby-ui/tooltip";
 import { cn, formatInstalls } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Signal chip — shared icon-chip vocabulary for row-level skill signals
+// ---------------------------------------------------------------------------
+
+type SignalChipTone = "warning" | "info" | "muted";
+
+const SIGNAL_CHIP_TONE: Record<SignalChipTone, string> = {
+  warning: "bg-warning/10 text-warning-foreground border-warning/25",
+  info: "bg-info/10 text-info-foreground border-info/25",
+  muted: "bg-muted text-muted-foreground border-transparent",
+};
+
+/**
+ * Compact icon chip for a row-level skill signal (status, copies). The icon
+ * carries the meaning — never color alone — and `label` is the accessible name,
+ * announced as part of the row. A styled tooltip adds the fuller explanation on
+ * hover/pointer.
+ *
+ * Deliberately NOT focusable: in a 60-row list, making every chip a tab stop
+ * would wreck keyboard navigation, and the row itself is the interactive element
+ * that links to the detail page carrying the full text. This mirrors the prior
+ * native-`title` behavior (hover-only), just styled and consistent.
+ */
+export function SignalChip({
+  icon,
+  label,
+  tone = "muted",
+  count,
+  tooltip,
+  className,
+}: {
+  icon: IconSvgElement;
+  label: string;
+  tone?: SignalChipTone;
+  /** Optional trailing count (e.g. number of copies). Capped to "9+". */
+  count?: number;
+  tooltip: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            aria-label={label}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1 py-0.5 text-[10px] font-medium tabular-nums",
+              SIGNAL_CHIP_TONE[tone],
+              className,
+            )}
+          />
+        }
+      >
+        <HugeiconsIcon
+          icon={icon}
+          strokeWidth={2}
+          className="size-3"
+          aria-hidden="true"
+        />
+        {count !== undefined && <span>{count > 9 ? "9+" : count}</span>}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-56 leading-snug">{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Individual badges

@@ -1,4 +1,10 @@
-import { Badge } from "@/components/ui/cubby-ui/badge";
+import type { IconSvgElement } from "@hugeicons/react";
+import {
+  Alert02Icon,
+  RefreshIcon,
+  ViewOffSlashIcon,
+} from "@hugeicons/core-free-icons";
+import { SignalChip } from "@/components/skill-badges";
 
 export type SkillStatus = "delisted" | "fetch-error" | "updated" | null;
 
@@ -13,21 +19,38 @@ export function deriveSkillStatus(props: {
   return null;
 }
 
-const STATUS_BADGE_CONFIG: Record<
+const STATUS_CHIP_CONFIG: Record<
   Exclude<SkillStatus, null>,
-  { label: string; variant: "warning" | "info" }
+  {
+    icon: IconSvgElement;
+    label: string;
+    tone: "warning" | "info";
+    tooltip: string;
+  }
 > = {
-  delisted: { label: "No longer listed", variant: "warning" },
-  "fetch-error": { label: "Install may fail", variant: "warning" },
-  updated: { label: "Updated", variant: "info" },
+  delisted: {
+    icon: ViewOffSlashIcon,
+    label: "No longer listed",
+    tone: "warning",
+    tooltip: "This skill is no longer listed on skills.sh.",
+  },
+  "fetch-error": {
+    icon: Alert02Icon,
+    label: "Install may fail",
+    tone: "warning",
+    tooltip:
+      "This skill's source file couldn't be loaded, so the install command may not work.",
+  },
+  updated: {
+    icon: RefreshIcon,
+    label: "Updated",
+    tone: "info",
+    tooltip: "This skill was updated after you added it.",
+  },
 };
 
 export function SkillStatusBadge({ status }: { status: SkillStatus }) {
   if (!status) return null;
-  const { label, variant } = STATUS_BADGE_CONFIG[status];
-  return (
-    <Badge variant={variant} className="text-[10px] px-1.5 py-0.5">
-      {label}
-    </Badge>
-  );
+  const { icon, label, tone, tooltip } = STATUS_CHIP_CONFIG[status];
+  return <SignalChip icon={icon} label={label} tone={tone} tooltip={tooltip} />;
 }
