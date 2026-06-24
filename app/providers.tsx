@@ -40,7 +40,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
                   bar) feel snappy. `delay` is the first-open wait; tuned a touch
                   below Base UI's 600ms default for a sharper feel.
                 */}
-                <TooltipProvider delay={400} closeDelay={0}>
+                <TooltipProvider delay={250} closeDelay={250}>
                   {children}
                 </TooltipProvider>
               </AnchoredToastProvider>
