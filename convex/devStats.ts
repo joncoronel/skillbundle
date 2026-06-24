@@ -9,6 +9,8 @@ import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { revalidateHomeTag } from "./lib/revalidate";
+import { isRefreshHealthy } from "./lib/skillHealth";
+import { isDeadRenamedAlias } from "./lib/source";
 
 // Number of discovery attempts before a skill is considered exhausted
 // and stops being retried automatically.
@@ -259,6 +261,42 @@ export const upsertStats = internalMutation({
     } else {
       await ctx.db.insert("syncStats", stats);
     }
+  },
+});
+
+// Diagnostic (read-only): size the "dead but installable" population — non-
+// delisted rows that stay HEALTHY (repo still serves SKILL.md) yet haven't been
+// stamped lastSeenInApi in `days` days. A live off-board skill is re-stamped by
+// reconcile within ~23h, so anything healthy and unseen for several days is one
+// reconcile keeps failing to refresh = dropped from skills.sh but repo-alive.
+// No external calls; the indexed range scans only the stale tail, not the catalog.
+// `healthyNonAlias` excludes dead renamed aliases (reconcile skips those too), so
+// it's the closest proxy to the head-of-line population in reconcile.ts.
+export const countDeadButInstallable = internalQuery({
+  args: { days: v.number() },
+  handler: async (ctx, { days }) => {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const stale = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false).lt("lastSeenInApi", cutoff),
+      )
+      .collect();
+    let healthy = 0;
+    let healthyNonAlias = 0;
+    for (const s of stale) {
+      if (
+        !isRefreshHealthy({
+          hasSkillMdUrl: s.hasSkillMdUrl ?? false,
+          hasContentFetchError: s.hasContentFetchError ?? false,
+          discoveryFailCount: s.discoveryFailCount ?? 0,
+        })
+      )
+        continue;
+      healthy++;
+      if (!isDeadRenamedAlias(s)) healthyNonAlias++;
+    }
+    return { days, staleNonDelisted: stale.length, healthy, healthyNonAlias };
   },
 });
 
