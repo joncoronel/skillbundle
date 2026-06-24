@@ -74,12 +74,16 @@ so it trades robustness (against skills.sh outages, and against our own reconcil
 stalling) for a fresher catalog, to solve a population that doesn't exist. It's
 deferred, not rejected.
 
-**Trigger to revisit (self-firing — you don't have to remember).** `reconcile` logs a
-`console.warn` when a run's `gone` count crosses `RECONCILE_GONE_WARN` (50) — `gone`
-is ~0 in steady state, so that means skills.sh dropped a batch of skills whose repos
-are still alive. The same buildup is also the **head-of-line starvation** risk noted
-at reconcile's batch slice (≥150 such rows clog the oldest-first scan and starve live
-rows behind them). If the warning fires, run `countDeadButInstallable` to quantify.
+**Trigger to revisit (surfaced where you actually look — not buried in logs).** The
+daily stats recalc counts this population (`syncStats.deadButInstallable`: healthy +
+unseen >7 days) and the **`/dev` dashboard shows it as a stat card** that flips to a
+warning badge when it climbs (>20). That's the primary signal — it's ~0 in steady
+state, so a non-zero card means skills.sh dropped a batch of skills whose repos are
+still alive. (Secondary breadcrumb: `reconcile` also `console.warn`s when a run's
+`gone` crosses `RECONCILE_GONE_WARN` (50), for anyone streaming logs to alerting.)
+The same buildup is also the **head-of-line starvation** risk noted at reconcile's
+batch slice (≥150 such rows clog the oldest-first scan and starve live rows behind
+them). To quantify on demand, run `devStats.countDeadButInstallable`.
 
 **Pre-decided design IF it ever becomes real** (so this isn't re-litigated):
 

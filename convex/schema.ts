@@ -465,6 +465,11 @@ export default defineSchema({
     noSkillMdUrl: v.number(),
     noUrlExhausted: v.number(),
     delisted: v.number(),
+    // Healthy (repo still serves SKILL.md) but unseen by any sync for >7 days =
+    // dropped from skills.sh while the repo stays alive. ~0 in steady state; a
+    // non-zero value is the detection signal for the deferred fast-delete
+    // ("Fix 2", see docs/skill-lifecycle.md). Optional: backfilled on next recalc.
+    deadButInstallable: v.optional(v.number()),
     recalculatedAt: v.number(),
   }),
 });

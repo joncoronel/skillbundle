@@ -112,6 +112,7 @@ export function DevDashboardContent() {
     noSkillMdUrl: syncStats?.noSkillMdUrl ?? 0,
     noUrlExhausted: syncStats?.noUrlExhausted ?? 0,
     delisted: syncStats?.delisted ?? 0,
+    deadButInstallable: syncStats?.deadButInstallable ?? 0,
   };
 
   const loading = syncStats === undefined;
@@ -148,6 +149,7 @@ function StatsCards({
     noSkillMdUrl: number;
     noUrlExhausted: number;
     delisted: number;
+    deadButInstallable: number;
   };
   loading?: boolean;
 }) {
@@ -193,10 +195,17 @@ function StatsCards({
       tooltip:
         "Skills not seen in the skills.sh API for 30+ days. Excluded from search results.",
     },
+    {
+      label: "Dead but installable",
+      value: stats.deadButInstallable,
+      warn: stats.deadButInstallable > 20,
+      tooltip:
+        "Healthy skills (repo still serves SKILL.md) that skills.sh dropped — unseen by any sync for 7+ days, so reconcile keeps failing to refresh them. ~0 normally; if this climbs, it's the signal to revisit the deferred fast-delete (see the 'Fix 2' section in docs/skill-lifecycle.md).",
+    },
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
       {cards.map((card) => (
         <Card key={card.label} className="gap-0 py-0">
           <div className="px-5 py-4">

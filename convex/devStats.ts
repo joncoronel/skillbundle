@@ -77,6 +77,7 @@ export const getSyncStats = query({
         noSkillMdUrl: 0,
         noUrlExhausted: 0,
         delisted: 0,
+        deadButInstallable: 0,
         recalculatedAt: 0,
       }
     );
@@ -156,6 +157,11 @@ export const recalculateStatsBatch = internalMutation({
     let noSkillMdUrl = 0;
     let noUrlExhausted = 0;
     let delisted = 0;
+    let deadButInstallable = 0;
+    // "Dead but installable": healthy (repo still serves SKILL.md) but unseen by
+    // any sync for >7 days, i.e. reconcile keeps failing to refresh it = dropped
+    // from skills.sh while the repo stays alive. See docs/skill-lifecycle.md.
+    const deadCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     for (const s of result.page) {
       totalSkills++;
@@ -168,6 +174,17 @@ export const recalculateStatsBatch = internalMutation({
           noUrlExhausted++;
       }
       if (s.isDelisted) delisted++;
+      else if (
+        s.lastSeenInApi < deadCutoff &&
+        !isDeadRenamedAlias(s) &&
+        isRefreshHealthy({
+          hasSkillMdUrl: s.hasSkillMdUrl ?? false,
+          hasContentFetchError: s.hasContentFetchError ?? false,
+          discoveryFailCount: s.discoveryFailCount ?? 0,
+        })
+      ) {
+        deadButInstallable++;
+      }
     }
 
     return {
@@ -178,6 +195,7 @@ export const recalculateStatsBatch = internalMutation({
       noSkillMdUrl,
       noUrlExhausted,
       delisted,
+      deadButInstallable,
       nextCursor: result.continueCursor,
       isDone: result.isDone,
     };
@@ -197,6 +215,7 @@ export const recalculateStats = internalAction({
       noSkillMdUrl: 0,
       noUrlExhausted: 0,
       delisted: 0,
+      deadButInstallable: 0,
     };
 
     while (!isDone) {
@@ -208,6 +227,7 @@ export const recalculateStats = internalAction({
         noSkillMdUrl: number;
         noUrlExhausted: number;
         delisted: number;
+        deadButInstallable: number;
         nextCursor: string;
         isDone: boolean;
       } = await ctx.runMutation(internal.devStats.recalculateStatsBatch, {
@@ -221,6 +241,7 @@ export const recalculateStats = internalAction({
       totals.noSkillMdUrl += result.noSkillMdUrl;
       totals.noUrlExhausted += result.noUrlExhausted;
       totals.delisted += result.delisted;
+      totals.deadButInstallable += result.deadButInstallable;
 
       cursor = result.nextCursor;
       isDone = result.isDone;
@@ -252,6 +273,7 @@ export const upsertStats = internalMutation({
     noSkillMdUrl: v.number(),
     noUrlExhausted: v.number(),
     delisted: v.number(),
+    deadButInstallable: v.number(),
     recalculatedAt: v.number(),
   },
   handler: async (ctx, stats) => {
