@@ -203,9 +203,15 @@ export const reconcileUnseenSkills = internalAction({
     // 3. Refresh up to RECONCILE_BATCH healthy skills via the detail endpoint
     // (reliable for live skills). Each gets its install count updated, a day-
     // pinned snapshot, and a lastSeenInApi stamp (which spares it from delisting).
-    // Gone rows looked healthy in our DB but are gone upstream now — leave them
-    // unstamped so the 30-day delist removes them (markStaleContent reclassifies
-    // them as broke meanwhile, so we stop retrying).
+    // Gone rows (looked healthy in our DB but 404 on detail) are left unstamped so
+    // the 30-day delist removes them. How fast they stop being retried depends on
+    // why detail 404s: a deleted repo also fails the SKILL.md re-fetch, so
+    // markStaleContent exhausts its discovery and it flunks the health filter in
+    // ~days; but a skill merely dropped from skills.sh whose repo still serves
+    // SKILL.md keeps fetching fine, so it stays "healthy" and gets re-attempted
+    // daily until the 30-day delist. The volume is tiny (rate-limit-trivial) and
+    // the progress guard below stops a within-run spin; faster removal would be a
+    // delist-policy change, not handled here.
     const batch = healthyRows.slice(0, RECONCILE_BATCH);
     const { refreshed, gone, rateLimitedAfter } = await drainRefreshBatch(
       ctx,
