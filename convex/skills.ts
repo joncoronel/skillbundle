@@ -490,9 +490,12 @@ export const upsertSkillsBatch = internalMutation({
               needsEmbedding: true as const,
               hasEmbedding: false as const,
               needsAudit: true as const,
-              // Re-resolve identity on relist: a GitHub repo gone 30+ days may
-              // have renamed while away, and a never-resolved row that delisted
-              // (its flag was cleared) needs to rejoin the work-set.
+              // Put GitHub rows back in the resolve work-set on relist. Essential
+              // for a never-resolved row that delisted (its flag was cleared): it
+              // must rejoin or it'd stay unresolved forever. For an already-
+              // resolved repo it's a cheap no-op re-stamp from the resolution
+              // cache — a rename during the absence is caught by
+              // reresolveStaleRepoIdentities' TTL pass, not here.
               needsRepoResolution: isGitHub,
               ...(isGitHub
                 ? { needsDiscovery: true as const, needsContentFetch: false as const }

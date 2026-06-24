@@ -320,6 +320,53 @@ test("re-resolution: an unchanged repo bumps resolvedAt without re-stamping", as
   });
 });
 
+test("delist clears needsRepoResolution; relist re-sets it for a GitHub row", async () => {
+  const t = makeTest();
+
+  // A never-resolved GitHub row (in the resolve work-set).
+  await t.run(async (ctx) => {
+    await insertPair(ctx, {
+      source: "owner/repo",
+      skillId: "s",
+      needsRepoResolution: true,
+    });
+  });
+  const summaryId = await t.run(async (ctx) => {
+    const row = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", "owner/repo").eq("skillId", "s"),
+      )
+      .unique();
+    return row!._id;
+  });
+
+  // Delist → drops out of the work-set.
+  await t.mutation(internal.skills.delistSkillsBatch, {
+    entries: [{ summaryId, source: "owner/repo", skillId: "s" }],
+  });
+  const afterDelist = await t.run(async (ctx) => {
+    const row = await ctx.db.get(summaryId);
+    return { isDelisted: row!.isDelisted, needs: row!.needsRepoResolution };
+  });
+  expect(afterDelist.isDelisted).toBe(true);
+  expect(afterDelist.needs).toBe(false);
+
+  // Relist (reappears in a feed) → rejoins the work-set, or it'd stay unresolved.
+  await t.mutation(internal.skills.upsertSkillsBatch, {
+    skills: [
+      { source: "owner/repo", skillId: "s", name: "s", installs: 100, isDuplicate: false },
+    ],
+    leaderboard: "all-time",
+  });
+  const afterRelist = await t.run(async (ctx) => {
+    const row = await ctx.db.get(summaryId);
+    return { isDelisted: row!.isDelisted, needs: row!.needsRepoResolution };
+  });
+  expect(afterRelist.isDelisted).toBe(false);
+  expect(afterRelist.needs).toBe(true);
+});
+
 test("resolveRepoIdentities reuses a persisted resolution instead of re-hitting GitHub", async () => {
   const t = makeTest();
 
