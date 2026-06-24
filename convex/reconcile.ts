@@ -212,6 +212,17 @@ export const reconcileUnseenSkills = internalAction({
     // daily until the 30-day delist. The volume is tiny (rate-limit-trivial) and
     // the progress guard below stops a within-run spin; faster removal would be a
     // delist-policy change, not handled here.
+    // Always the oldest RECONCILE_BATCH healthy rows (the scan is lastSeenInApi-
+    // ascending and we re-scan from the top each continuation). Latent head-of-
+    // line property to be aware of before "optimizing" this slice or the re-scan:
+    // gone rows are never stamped, so they stay at the front. If 150+ persistent
+    // gone-but-healthy rows ever pile up at once (a mass skills.sh off-board event
+    // where the repos stay alive, so they hold "healthy" for the full 30 days),
+    // they'd fill every batch and starve live rows behind them — which would then
+    // freeze and wrongly delist. Pre-existing and unlikely (needs 150+ at once),
+    // so not mitigated here; the fix would be giving gone rows a "tried recently"
+    // sort key, which isn't worth the complexity speculatively. Tell-tale in the
+    // logs: `refreshed 0, gone >=150` on repeat while live skills go stale.
     const batch = healthyRows.slice(0, RECONCILE_BATCH);
     const { refreshed, gone, rateLimitedAfter } = await drainRefreshBatch(
       ctx,
