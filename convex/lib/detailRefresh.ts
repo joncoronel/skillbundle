@@ -21,9 +21,17 @@ export type RefreshOutcome =
   | { kind: "rateLimited"; retryAfterSeconds: number }
   | { kind: "error" }; // transient/unexpected — logged, skip this one
 
+/** The fields a detail-refresh needs from a skill (both jobs project to this). */
+export type RefreshableSkill = {
+  source: string;
+  skillId: string;
+  name: string;
+  isDuplicate: boolean;
+};
+
 export async function refreshSkillFromDetail(
   ctx: ActionCtx,
-  skill: { source: string; skillId: string; name: string; isDuplicate: boolean },
+  skill: RefreshableSkill,
   opts: { day: string; leaderboard: string },
 ): Promise<RefreshOutcome> {
   try {
@@ -68,12 +76,7 @@ export async function refreshSkillFromDetail(
  */
 export async function drainRefreshBatch(
   ctx: ActionCtx,
-  items: {
-    source: string;
-    skillId: string;
-    name: string;
-    isDuplicate: boolean;
-  }[],
+  items: RefreshableSkill[],
   opts: { day: string; leaderboard: string },
 ): Promise<{ refreshed: number; gone: number; rateLimitedAfter?: number }> {
   let refreshed = 0;
