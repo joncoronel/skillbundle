@@ -74,7 +74,7 @@ if (process.env.CRONS_ENABLED === "true") {
 
   // Daily at 07:00 UTC (one hour after syncSkills at 06:00, after syncCurated at
   // 06:30): reconcile skills the leaderboard sync doesn't maintain. Refreshes
-  // the install count of every HEALTHY skill no sync touched in ~26h (coverage-
+  // the install count of every HEALTHY skill no sync touched in ~23h (coverage-
   // gap and manually-added skills) and stamps lastSeenInApi so they aren't
   // wrongly delisted; leaves broke/dead skills to the 30-day delist. Self-
   // schedules in batches until the stale set drains, and bails if the stale set

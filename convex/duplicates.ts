@@ -594,13 +594,6 @@ export const getSkillCopies = query({
       ? { source: liveAlias.source, skillId: liveAlias.skillId }
       : null;
 
-    return {
-      renamedTo,
-      aliases,
-      forks,
-      // The denormalized count the list marker reads (precomputed by
-      // computeCopyCounts); exposed here too for parity/verification.
-      copyCount: self.copyCount ?? 0,
-    };
+    return { renamedTo, aliases, forks };
   },
 });
