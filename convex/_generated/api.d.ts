@@ -29,7 +29,6 @@ import type * as lib_plans from "../lib/plans.js";
 import type * as lib_revalidate from "../lib/revalidate.js";
 import type * as lib_skillsApi from "../lib/skillsApi.js";
 import type * as lib_source from "../lib/source.js";
-import type * as migrations_inflatedSnapshots from "../migrations/inflatedSnapshots.js";
 import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
 import type * as recommendations from "../recommendations.js";
@@ -66,7 +65,6 @@ declare const fullApi: ApiFromModules<{
   "lib/revalidate": typeof lib_revalidate;
   "lib/skillsApi": typeof lib_skillsApi;
   "lib/source": typeof lib_source;
-  "migrations/inflatedSnapshots": typeof migrations_inflatedSnapshots;
   plans: typeof plans;
   polar: typeof polar;
   recommendations: typeof recommendations;
