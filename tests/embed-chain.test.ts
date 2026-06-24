@@ -19,6 +19,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 import { internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
 
 vi.mock("../convex/lib/embeddings", async (importOriginal) => {
@@ -45,7 +46,7 @@ test("embedSkillsBatch writes embeddings + flips needsEmbedding=false", async ()
 
   // Two skills flagged for embedding.
   const skillIds = await t.run(async (ctx) => {
-    const ids: string[] = [];
+    const ids: Id<"skills">[] = [];
     for (let i = 0; i < 2; i++) {
       const skillId = `skill-${i}`;
       const id = await ctx.db.insert("skills", {
