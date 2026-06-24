@@ -490,6 +490,10 @@ export const upsertSkillsBatch = internalMutation({
               needsEmbedding: true as const,
               hasEmbedding: false as const,
               needsAudit: true as const,
+              // Re-resolve identity on relist: a GitHub repo gone 30+ days may
+              // have renamed while away, and a never-resolved row that delisted
+              // (its flag was cleared) needs to rejoin the work-set.
+              needsRepoResolution: isGitHub,
               ...(isGitHub
                 ? { needsDiscovery: true as const, needsContentFetch: false as const }
                 : { needsContentFetch: true as const, needsDiscovery: false as const }),
@@ -1812,6 +1816,11 @@ export const delistSkillsBatch = internalMutation({
           needsContentFetch: false,
           needsDiscovery: false,
           needsEmbedding: false,
+          // Drop out of the resolve work-set too — a row delisted before it was
+          // ever resolved shouldn't burn a GitHub call resolving a dead repo. (If
+          // it relists, upsertSkillsBatch re-flags it.) Same reason as the other
+          // needs* clears above.
+          needsRepoResolution: false,
           hasEmbedding: false,
           skillEmbeddingId: undefined,
           // Clear leaderboard denormalizations on delist. Listing/search
