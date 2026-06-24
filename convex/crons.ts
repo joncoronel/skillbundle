@@ -72,23 +72,64 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.recommendations.cleanupExpiredFingerprintCache,
   );
 
-  // Daily at 07:00 UTC (one hour after syncSkills at 06:00): refresh manually-
-  // added skills the leaderboard sync can't see. Updates their install count +
-  // daily snapshot and keeps lastSeenInApi ahead of the 30-day delisting
-  // threshold. Covers both skills below MIN_INSTALLS=50 and skills missing from
-  // the all-time leaderboard at any install count (skills.sh's listing feed is
-  // not exhaustive — e.g. bklit/bklit-ui at 234 installs). Self-prunes via a
-  // 23h freshness filter: skills syncSkills already touched today (on the
-  // leaderboard, >= 50 installs) are skipped, so the daily sync owns those and
-  // this cron never double-fetches. The set is tiny (single digits to low
-  // dozens), so a daily detail fetch per skill is negligible against the API
-  // rate limit.
+  // Daily at 07:00 UTC (one hour after syncSkills at 06:00, after syncCurated at
+  // 06:30): reconcile skills the leaderboard sync doesn't maintain. Refreshes
+  // the install count of every HEALTHY skill no sync touched in ~23h (coverage-
+  // gap and manually-added skills) and stamps lastSeenInApi so they aren't
+  // wrongly delisted; leaves broke/dead skills to the 30-day delist. Self-
+  // schedules in batches until the stale set drains, and bails if the stale set
+  // is implausibly large (a sign syncSkills itself failed).
   crons.daily(
-    "refresh manual skills",
+    "reconcile unseen skills",
     { hourUTC: 7, minuteUTC: 0 },
-    internal.skills.refreshManualSkills,
-    // `day` is omitted on the first invocation — the action computes it fresh and
-    // only threads it through its own rate-limit reschedule.
+    internal.reconcile.reconcileUnseenSkills,
+    // `day`/`iteration` omitted on the first invocation — computed fresh and
+    // only threaded through the action's own reschedules.
+    {},
+  );
+
+  // Weekly Sunday 08:00 UTC: resolve GitHub repo identities for duplicate/rename
+  // detection (Phase 2). Stamps githubRepoId + repoLiveName onto summaries so
+  // getSkillCopies can group aliases (same repo id) and forks (same content,
+  // different id). Per-repo cached + self-scheduling; weekly is plenty since
+  // repos rarely rename and new skills are few.
+  crons.weekly(
+    "resolve repo identities",
+    { dayOfWeek: "sunday", hourUTC: 8, minuteUTC: 0 },
+    internal.duplicates.resolveRepoIdentities,
+    {},
+  );
+
+  // Weekly Sunday 09:00 UTC (after repo-identity resolution at 08:00, so the
+  // dead-alias skip has fresh repoLiveName): refresh curated-only skills — the
+  // ones never on the leaderboard, whose install count + snapshots syncCurated
+  // can't supply. Detail-refreshes the healthy ones so their count stays current
+  // and their install chart fills in. Self-scheduling; tiny incremental load.
+  crons.weekly(
+    "refresh curated skills",
+    { dayOfWeek: "sunday", hourUTC: 9, minuteUTC: 0 },
+    internal.curatedRefresh.refreshCuratedSkills,
+    {},
+  );
+
+  // Weekly Sunday 10:00 UTC: re-resolve repo identities that have gone stale
+  // (resolvedAt older than RERESOLVE_TTL_MS). resolveRepoIdentities only stamps
+  // never-resolved repos, so a repo that renames AFTER being stamped would keep a
+  // stale repoLiveName forever — its old name never recognized as a dead alias,
+  // never delisting, possibly re-inflated by reconcile. This re-checks aged repos
+  // against GitHub and re-stamps their summaries when the identity moved. Cheap
+  // in steady state (only repos past the TTL); self-scheduling + rate-limit aware.
+  //
+  // Timing note: the 2h gap after resolve (08:00) is load-bearing. Both jobs can
+  // chain a full computeCopyCounts (resolve always; this one only when a repo id
+  // actually moved). If resolve's pass were still draining when this fires AND an
+  // id changed, two full-catalog recomputes would overlap — wasted, not wrong
+  // (computeCopyCounts is idempotent). The ~12.5k-row pass drains in minutes, so
+  // a 2h gap is ample; if the catalog grows enough that it doesn't, widen the gap.
+  crons.weekly(
+    "re-resolve stale repo identities",
+    { dayOfWeek: "sunday", hourUTC: 10, minuteUTC: 0 },
+    internal.duplicates.reresolveStaleRepoIdentities,
     {},
   );
 }

@@ -97,13 +97,11 @@ export default defineSchema({
     // truncation/chunking strategy.
     embeddingSkipReason: v.optional(v.string()),
   })
-    .index("by_leaderboard", ["leaderboard"])
     .index("by_source_skillId", ["source", "skillId"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_isDelisted", ["isDelisted"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
-    .index("by_leaderboard_active", ["leaderboard", "isDelisted"])
     .index("by_needsEmbedding", ["needsEmbedding"]),
 
   // Embedding vectors live in their own table to keep `skills` row reads
@@ -144,8 +142,15 @@ export default defineSchema({
     // syncStats.totalSkills.
     installRank: v.optional(v.number()),
     syncHash: v.optional(v.string()),
-    lastSeenInApi: v.optional(v.number()),
-    isDelisted: v.optional(v.boolean()),
+    // Required: every summary is created from an API feed, so it always has a
+    // "last seen" timestamp. Kept non-optional so the by_isDelisted_lastSeenInApi
+    // range (staleness scans) has no undefined edge case. Backfilled before the
+    // tightening (see skills.ts:backfillLastSeenInApi).
+    lastSeenInApi: v.number(),
+    // Required: defaulted to false on insert and set true on delist, never unset.
+    // Non-optional so eq("isDelisted", false) index ranges are exhaustive (no
+    // undefined rows to miss). Backfilled before tightening (backfillIsDelistedFalse).
+    isDelisted: v.boolean(),
     // Denormalized from skills table to avoid reading full 30KB+ skill docs.
     // Required: every summary is created alongside its skill row.
     skillDocId: v.id("skills"),
@@ -196,8 +201,31 @@ export default defineSchema({
     // Mirrored audit-fetch pipeline state.
     needsAudit: v.optional(v.boolean()),
     auditFetchedAt: v.optional(v.number()),
+    // Duplicate/rename detection (Phase 2). Resolved by resolveRepoIdentities.
+    // `githubRepoId` is GitHub's stable numeric repo id (survives renames), so
+    // skills sharing it under different `source` names are aliases of one repo.
+    // `repoLiveName` is the repo's current "owner/repo"; when it differs from
+    // `source`, this row is a dead renamed alias. `copyCount` (aliases + forks)
+    // is denormalized so list rows can show the "shared content" marker cheaply.
+    githubRepoId: v.optional(v.number()),
+    repoLiveName: v.optional(v.string()),
+    copyCount: v.optional(v.number()),
+    // Work-set flag for resolveRepoIdentities (mirrors the needs* pipeline
+    // pattern). True on a GitHub row that hasn't been resolved to a repo id yet;
+    // cleared when resolveRepoIdentities stamps it (real id or no-id sentinel).
+    // Well-known sources are false (never resolved). Lets the resolve pass read
+    // only the unresolved work-set via by_needsRepoResolution instead of scanning
+    // the whole catalog.
+    needsRepoResolution: v.optional(v.boolean()),
   })
     .index("by_source_skillId", ["source", "skillId"])
+    // Alias grouping: same repo id + same slug, different source = renamed alias.
+    .index("by_repo_skill", ["githubRepoId", "skillId"])
+    // Fork grouping: same content hash across different repo ids = genuine fork.
+    .index("by_syncHash", ["syncHash"])
+    // Work-set for resolveRepoIdentities: q.eq("needsRepoResolution", true) reads
+    // only unresolved GitHub rows (mirrors by_needsDiscovery et al.).
+    .index("by_needsRepoResolution", ["needsRepoResolution"])
     .index("by_skillEmbeddingId", ["skillEmbeddingId"])
     .index("by_isDelisted", ["isDelisted"])
     // Powers the home page's default "popular skills" list. Queried with
@@ -205,6 +233,12 @@ export default defineSchema({
     // highest installs to lowest. Every insert path sets isDelisted explicitly
     // to false, so undefined rows (should be none) are silently excluded.
     .index("by_isDelisted_installs", ["isDelisted", "installs"])
+    // Powers the staleness scans (markDelistedSkills' 30-day delist, reconcile's
+    // 23h refresh): q.eq("isDelisted", false).lt("lastSeenInApi", cutoff) reads
+    // only the stale non-delisted rows instead of scanning the whole catalog and
+    // filtering in memory. Both index fields are required (see schema), so the
+    // range has no undefined edge cases.
+    .index("by_isDelisted_lastSeenInApi", ["isDelisted", "lastSeenInApi"])
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
@@ -313,6 +347,19 @@ export default defineSchema({
     cachedAt: v.number(),
   }).index("by_repo", ["repo"]),
 
+  // Per-repo cache for duplicate/rename detection (Phase 2). One row per
+  // "owner/repo" we've resolved against the GitHub API: `repoId` is GitHub's
+  // stable numeric id and `liveName` is the repo's current "owner/repo" (a 301
+  // redirect means the queried name is a dead rename → liveName differs). Lets
+  // resolveRepoIdentities resolve once per repo instead of once per skill.
+  // `repoId`/`liveName` are null when the repo 404s (deleted/unreachable).
+  githubRepoResolution: defineTable({
+    repo: v.string(),
+    repoId: v.union(v.number(), v.null()),
+    liveName: v.union(v.string(), v.null()),
+    resolvedAt: v.number(),
+  }).index("by_repo", ["repo"]),
+
   // Cache of GitHub repo fingerprints + their embeddings, keyed by owner/repo
   // (with optional commit SHA suffix). Lets repeat analyses skip re-fetching
   // repo metadata and re-embedding the fingerprint.
@@ -418,6 +465,11 @@ export default defineSchema({
     noSkillMdUrl: v.number(),
     noUrlExhausted: v.number(),
     delisted: v.number(),
+    // Healthy (repo still serves SKILL.md) but unseen by any sync for >7 days =
+    // dropped from skills.sh while the repo stays alive. ~0 in steady state; a
+    // non-zero value is the detection signal for the deferred fast-delete
+    // ("Fix 2", see docs/skill-lifecycle.md). Optional: backfilled on next recalc.
+    deadButInstallable: v.optional(v.number()),
     recalculatedAt: v.number(),
   }),
 });

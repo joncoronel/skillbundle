@@ -65,6 +65,7 @@ export function SkillSearchResults({
         curatedOwner: r.curatedOwner,
         worstAuditStatus: r.worstAuditStatus,
         worstAuditRiskLevel: r.worstAuditRiskLevel,
+        copyCount: r.copyCount,
         trendingRank: r.trendingRank,
         hotChange: r.hotChange,
       })),

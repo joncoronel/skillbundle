@@ -29,6 +29,8 @@ import {
   NOT_MODIFIED,
 } from "./lib/github";
 import { revalidateHomeTag } from "./lib/revalidate";
+import { appDay } from "./lib/appDay";
+import { isGitHubSource } from "./lib/source";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 
@@ -37,7 +39,6 @@ import { parseSkillInput } from "../lib/parse-skill-input";
 // ---------------------------------------------------------------------------
 
 const BATCH_SIZE = 20;
-const MIN_INSTALLS = 50;
 // Largest perPage the v1 listing endpoint supports. Picking the max cuts our
 // listing-call count by 5x compared to the previous 100/page default.
 const LIST_PER_PAGE = 500;
@@ -91,20 +92,23 @@ export const syncSkills = internalAction({
       // this leaderboard-ordered response (computed BEFORE the filter so the
       // dropped long tail doesn't shift positions). Powers the rank/percentile
       // stat on the skill page.
-      const normalized = data
-        .map((s, idx) => ({
-          source: s.source,
-          skillId: s.slug,
-          name: s.name,
-          installs: s.installs,
-          isDuplicate: s.isDuplicate ?? false,
-          rank: page * LIST_PER_PAGE + idx + 1,
-        }))
-        .filter((s) => s.installs >= MIN_INSTALLS);
+      // No install-floor filter: we ingest the full leaderboard. The old
+      // MIN_INSTALLS=50 cutoff barely filtered anything (9,536 of 9,589 rows are
+      // 500+) and it stranded existing rows that dropped below it — e.g. a
+      // renamed repo whose installs collapsed to ~12 would freeze at its old
+      // inflated count because the sync skipped it. Walking to the end keeps
+      // every listed skill's count current and lets such rows sink correctly.
+      const normalized = data.map((s, idx) => ({
+        source: s.source,
+        skillId: s.slug,
+        name: s.name,
+        installs: s.installs,
+        isDuplicate: s.isDuplicate ?? false,
+        rank: page * LIST_PER_PAGE + idx + 1,
+      }));
 
       if (normalized.length === 0) {
-        console.log(`Stopping sync: installs dropped below ${MIN_INSTALLS}`);
-        break;
+        break; // empty page — end of the leaderboard
       }
 
       for (let i = 0; i < normalized.length; i += BATCH_SIZE) {
@@ -121,7 +125,7 @@ export const syncSkills = internalAction({
       page++;
     }
 
-    console.log(`Synced ${totalSynced} skills (min ${MIN_INSTALLS} installs)`);
+    console.log(`Synced ${totalSynced} skills (full leaderboard)`);
 
     // Lifetime installs + installRank just changed, so refresh the home "Popular"
     // tab (cached under this tag) in lockstep with the daily data instead of
@@ -274,7 +278,9 @@ async function upsertSkillSummary(
       installs: fields.installs,
       installRank: fields.installRank,
       syncHash: fields.syncHash,
-      lastSeenInApi: fields.lastSeenInApi,
+      // Required field: a new row is always being upserted from a feed, so
+      // default to now if a caller didn't pass an explicit timestamp.
+      lastSeenInApi: fields.lastSeenInApi ?? Date.now(),
       // Default to false on insert so the by_isDelisted index is selective
       // and indexed equality filters (`q.eq("isDelisted", false)`) match.
       isDelisted: fields.isDelisted ?? false,
@@ -301,28 +307,13 @@ async function upsertSkillSummary(
       embeddingMode: fields.embeddingMode,
       embeddingSkipReason: fields.embeddingSkipReason,
       needsEmbedding: fields.needsEmbedding,
+      // GitHub rows enter the duplicate-resolution work-set; well-known sources
+      // never resolve. resolveRepoIdentities clears this when it stamps the row.
+      needsRepoResolution: isGitHubSource(fields.source),
     });
   }
 }
 
-// The app's home timezone. Snapshot days are bucketed by THIS zone's calendar,
-// not UTC, so a point labeled "Jun 17" means Jun 17 for visitors here (the site
-// is LA-based). It's the analytics "reporting timezone", baked into storage:
-// because we sample a cumulative counter rather than raw events, we can't
-// re-bucket per viewer later, so the calendar day is chosen at write time. The
-// cron runs at 06:00 UTC (~11pm LA), so it samples near the END of the LA day it
-// labels — i.e. "Jun 17" carries Jun 17's installs. Tradeoff: every viewer sees
-// LA-calendar dates; other zones' local days won't line up (accepted).
-const APP_TIMEZONE = "America/Los_Angeles";
-
-// Calendar day ("YYYY-MM-DD") in APP_TIMEZONE, for snapshot keying and the
-// history/retention cutoffs. en-CA yields a YYYY-MM-DD string; the `timeZone`
-// option handles DST automatically. Same-day re-runs hit the same row, and
-// syncSkills pins this once per run (see the `day` arg on upsertSkillsBatch) so a
-// run crossing LA midnight — only ~1–2h after the 06:00 UTC start — can't split.
-function appDay(ts: number): string {
-  return new Date(ts).toLocaleDateString("en-CA", { timeZone: APP_TIMEZONE });
-}
 
 // Append (or refresh) today's install count for a skill. Idempotent on
 // (skillDocId, day): the daily sync runs once, but rate-limit reschedules and
@@ -333,11 +324,11 @@ function appDay(ts: number): string {
 //
 // Deliberately NOT called by syncCurated (ownsInstalls=false): the curated
 // endpoint's `installs` is unreliable (it's what was clobbering real counts), so
-// curated-only skills — sub-MIN_INSTALLS rows syncSkills never lists — get no
-// snapshots and won't appear in the install charts. That's the intended
-// trade-off: the time series is owned exclusively by the trustworthy all-time
-// source. If such a skill ever crosses MIN_INSTALLS, syncSkills picks it up and
-// starts snapshotting it from reliable data.
+// curated-only skills — ones on the curated feed but absent from the all-time
+// leaderboard — get no snapshots and won't appear in the install charts. That's
+// the intended trade-off: the time series is owned by the trustworthy all-time
+// source. If such a skill ever appears on the leaderboard, syncSkills picks it
+// up and starts snapshotting it from reliable data.
 async function recordDailySnapshot(
   ctx: MutationCtx,
   skillDocId: Id<"skills">,
@@ -499,6 +490,13 @@ export const upsertSkillsBatch = internalMutation({
               needsEmbedding: true as const,
               hasEmbedding: false as const,
               needsAudit: true as const,
+              // Put GitHub rows back in the resolve work-set on relist. Essential
+              // for a never-resolved row that delisted (its flag was cleared): it
+              // must rejoin or it'd stay unresolved forever. For an already-
+              // resolved repo it's a cheap no-op re-stamp from the resolution
+              // cache — a rename during the absence is caught by
+              // reresolveStaleRepoIdentities' TTL pass, not here.
+              needsRepoResolution: isGitHub,
               ...(isGitHub
                 ? { needsDiscovery: true as const, needsContentFetch: false as const }
                 : { needsContentFetch: true as const, needsDiscovery: false as const }),
@@ -590,8 +588,8 @@ export const upsertSkillsBatch = internalMutation({
           isDelisted: false,
           isDuplicate: skill.isDuplicate,
           needsEmbedding: true,
-          // By the time we sync (>= MIN_INSTALLS), skills.sh's audit
-          // pipeline has almost certainly run for this skill.
+          // By the time we sync a leaderboard skill, skills.sh's audit
+          // pipeline has almost certainly run for it.
           needsAudit: true,
         });
       }
@@ -648,16 +646,6 @@ export const upsertSkillsBatch = internalMutation({
 
 // ---------------------------------------------------------------------------
 // Source-type helper
-// ---------------------------------------------------------------------------
-
-/** "owner/repo" (GitHub) vs "domain.com" (well-known). Dots in the org segment
- *  flag well-known. Used to route content fetching: GitHub goes through the
- *  Tree-API + raw-fetch path, well-known goes through v1 detail. */
-function isGitHubSource(source: string): boolean {
-  const parts = source.split("/");
-  return parts.length === 2 && !parts[0].includes(".");
-}
-
 // ---------------------------------------------------------------------------
 // Content helpers
 // ---------------------------------------------------------------------------
@@ -1779,21 +1767,25 @@ export const fetchSkillDetailBatch = internalAction({
 const DELIST_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 export const listStaleSummaries = internalQuery({
-  args: { cursor: v.optional(v.string()) },
-  handler: async (ctx, { cursor }) => {
+  args: { cursor: v.optional(v.string()), cutoff: v.number() },
+  handler: async (ctx, { cursor, cutoff }) => {
     const paginationOpts = cursor
       ? { numItems: 100, cursor }
       : { numItems: 100, cursor: null };
-    // Convex orders: undefined < false < true — lt(true) skips already-delisted summaries
+    // Indexed range: only non-delisted rows last seen before the cutoff. The
+    // caller pins cutoff so the range boundary is identical across all pages.
     const result = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted", (q) => q.lt("isDelisted", true))
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false).lt("lastSeenInApi", cutoff),
+      )
       .paginate(paginationOpts);
 
-    const cutoff = Date.now() - DELIST_THRESHOLD_MS;
-    const staleEntries = result.page
-      .filter((s) => s.lastSeenInApi !== undefined && s.lastSeenInApi < cutoff)
-      .map((s) => ({ summaryId: s._id, source: s.source, skillId: s.skillId }));
+    const staleEntries = result.page.map((s) => ({
+      summaryId: s._id,
+      source: s.source,
+      skillId: s.skillId,
+    }));
 
     return {
       entries: staleEntries,
@@ -1802,6 +1794,7 @@ export const listStaleSummaries = internalQuery({
     };
   },
 });
+
 
 export const delistSkillsBatch = internalMutation({
   args: {
@@ -1826,6 +1819,11 @@ export const delistSkillsBatch = internalMutation({
           needsContentFetch: false,
           needsDiscovery: false,
           needsEmbedding: false,
+          // Drop out of the resolve work-set too — a row delisted before it was
+          // ever resolved shouldn't burn a GitHub call resolving a dead repo. (If
+          // it relists, upsertSkillsBatch re-flags it.) Same reason as the other
+          // needs* clears above.
+          needsRepoResolution: false,
           hasEmbedding: false,
           skillEmbeddingId: undefined,
           // Clear leaderboard denormalizations on delist. Listing/search
@@ -1840,6 +1838,9 @@ export const delistSkillsBatch = internalMutation({
           hotChange: undefined,
           hotInstallsYesterday: undefined,
         });
+        // Note: a copy's delist leaves peers' cached copyCount one high until the
+        // weekly computeCopyCounts recompute heals it (both directions). The
+        // detail page is always correct — getSkillCopies filters delisted live.
       }
 
       // Mark skill as delisted and clear its pipeline flags too.
@@ -1883,10 +1884,13 @@ export const markDelistedSkills = internalAction({
     let cursor: string | undefined;
     let isDone = false;
     let totalDelisted = 0;
+    // Pin the cutoff once so every page queries the same range boundary.
+    const cutoff = Date.now() - DELIST_THRESHOLD_MS;
 
     while (!isDone) {
       const result = await ctx.runQuery(internal.skills.listStaleSummaries, {
         cursor,
+        cutoff,
       });
 
       if (result.entries.length > 0) {
@@ -3123,6 +3127,48 @@ export const backfillLastSeenInApi = internalAction({
   },
 });
 
+// One-time backfill for the needsRepoResolution work-set (added when resolution
+// switched from full-scan to a by_needsRepoResolution index). Marks existing
+// unresolved GitHub rows (githubRepoId still undefined) so the resolve pass can
+// find them via the index. New rows get the flag on insert; this only covers
+// rows that predate the field. Idempotent — re-run reports 0 once done.
+export const backfillNeedsRepoResolutionBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .paginate(cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null });
+    let patched = 0;
+    for (const s of result.page) {
+      const needs = s.githubRepoId === undefined && isGitHubSource(s.source);
+      if (needs && s.needsRepoResolution !== true) {
+        await ctx.db.patch(s._id, { needsRepoResolution: true });
+        patched++;
+      }
+    }
+    return { nextCursor: result.continueCursor, isDone: result.isDone, patched };
+  },
+});
+
+export const backfillNeedsRepoResolution = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(internal.skills.backfillNeedsRepoResolutionBatch, {
+          cursor,
+        });
+      total += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Backfilled needsRepoResolution on ${total} skills`);
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Public content query
 // ---------------------------------------------------------------------------
@@ -3148,42 +3194,22 @@ export const getContent = query({
 });
 
 // ---------------------------------------------------------------------------
-// Manual skill add (admin-only) and daily refresh
+// Manual skill add (admin-only)
 // ---------------------------------------------------------------------------
 //
-// Lets the dev/owner insert a skill that exists on skills.sh but never reaches
-// the catalog via the regular cron. Two reasons a skill can be missing:
-//   1. It sits below syncSkills' MIN_INSTALLS=50 leaderboard threshold.
-//   2. It's absent from the all-time leaderboard ENTIRELY even though it has
-//      well over 50 installs — skills.sh's leaderboard feed is not exhaustive
-//      (e.g. bklit/bklit-ui/bklit-ui at 234 installs is reachable via the
-//      detail + search endpoints but never appears in the listing syncSkills
-//      pages through). These would otherwise never sync, at any install count.
-// The skill is verified against skills.sh before insert, so audits, install
-// commands, and security infra all work the same as for any other skill —
-// this just bypasses the popularity floor and the leaderboard's coverage gaps.
+// Lets the dev/owner insert a skill that exists on skills.sh but isn't reachable
+// via the leaderboard sync — i.e. absent from the all-time feed even though it
+// has real installs (e.g. bklit/bklit-ui/bklit-ui at 234 installs, which the
+// listing endpoint just never returns). The skill is verified against skills.sh
+// before insert, so audits, install commands, and security infra all work the
+// same as for any other skill — this just bypasses the leaderboard's coverage gap.
 //
-// Rows get `leaderboard: "manual"` as an origin tag. The DAILY refresh cron
-// (refreshManualSkills) re-fetches their install count from the v1 detail
-// endpoint and records a daily snapshot, AND keeps their `lastSeenInApi` ahead
-// of the 30-day delisting window. It owns installs for manual skills that
-// syncSkills can't see — both the sub-50 case and the not-on-leaderboard case.
-//
-// The refresh self-prunes via a `lastSeenInApi < now - 23h` filter: any manual
-// skill that syncSkills touched today (i.e. one that IS on the leaderboard with
-// >= 50 installs) was stamped `lastSeenInApi = now` at 06:00, so the 07:00
-// refresh skips it and the daily sync owns its installs/rank instead. If such a
-// skill later drops off the leaderboard, syncSkills stops touching it, its
-// `lastSeenInApi` ages past 23h, and the daily refresh picks it back up — so
-// the two paths hand off cleanly in both directions. (installRank only ever
-// comes from a leaderboard position, so not-on-leaderboard skills show no rank.)
+// Rows get `leaderboard: "manual"` as an origin tag. Keeping them fresh and
+// protected from the 30-day delist is handled generically by
+// reconcileUnseenSkills (which refreshes ANY healthy skill the leaderboard sync
+// doesn't touch, regardless of origin tag) — there is no manual-specific cron.
 
 const MANUAL_LEADERBOARD = "manual";
-// Skip refresh for any manual skill the regular sync already touched today.
-// 23h (not 24h) leaves a small buffer for cron drift between the daily
-// syncSkills run and our weekly refresh, so we never accidentally re-fetch
-// a skill the main sync just handled.
-const MANUAL_REFRESH_FRESHNESS_MS = 23 * 60 * 60 * 1000;
 
 // parseSkillInput lives at lib/parse-skill-input.ts so the /dev/add-skill form
 // can import it and validate input client-side. Validating before calling the
@@ -3240,14 +3266,11 @@ export const getManualAddPrecheck = internalQuery({
 });
 
 /**
- * Promote a skill's `leaderboard` origin tag to "manual". Used by
- * addSkillManually when relisting a previously-delisted skill whose row was
- * originally inserted under a different leaderboard (e.g., "all-time" before
- * the skill dropped below MIN_INSTALLS). Without this, upsertSkillsBatch's
- * "never patch leaderboard" invariant would leave the row tagged under its
- * original origin — and refreshManualSkills (which filters on
- * leaderboard === "manual") would skip it, so the 30-day delist window would
- * close on it again. Patching here ensures the weekly refresh cron owns it.
+ * Normalize a skill's `leaderboard` origin tag to "manual" when relisting via
+ * addSkillManually (upsertSkillsBatch never patches `leaderboard` itself — it's
+ * set-on-insert only). Purely provenance now: reconcileUnseenSkills keeps skills
+ * fresh by health + staleness, not by origin tag, so nothing depends on this tag
+ * functionally — it just records that the admin re-added the row by hand.
  */
 export const promoteSkillToManual = internalMutation({
   args: { source: v.string(), skillId: v.string() },
@@ -3350,7 +3373,7 @@ export const addSkillManually = action({
           installs: detail.installs,
           // detail endpoint doesn't expose isDuplicate; default to false. If
           // the skill is later flagged as a duplicate upstream, syncSkills
-          // will mirror that into our row once it crosses MIN_INSTALLS.
+          // mirrors that into our row next time it appears on the leaderboard.
           isDuplicate: false,
         },
       ],
@@ -3358,9 +3381,9 @@ export const addSkillManually = action({
     });
 
     // On relist: upsertSkillsBatch deliberately doesn't patch `leaderboard`
-    // (origin tag, set on insert only). If the existing row's origin tag isn't
-    // already "manual", promote it so refreshManualSkills owns it going forward
-    // — otherwise the row falls back through the delisting window.
+    // (origin tag, set on insert only), so normalize it to "manual" for
+    // provenance. Keeping the relisted skill fresh + undeleted is handled
+    // generically by reconcileUnseenSkills (by health + staleness, not by tag).
     if (precheck?.isDelisted) {
       await ctx.runMutation(internal.skills.promoteSkillToManual, {
         source: detail.source,
@@ -3392,161 +3415,6 @@ export const addSkillManually = action({
       skillId: detail.slug,
       name,
     };
-  },
-});
-
-/**
- * Manual skills that haven't been touched by any sync in the last 23h. Set is
- * tiny in practice (single digits to low dozens), so collecting is safe.
- * Anything refreshed within 23h was almost certainly handled by the daily
- * syncSkills (which means its installs have crossed MIN_INSTALLS and the
- * regular path is now keeping it current).
- */
-export const listManualSkills = internalQuery({
-  args: {},
-  returns: v.array(
-    v.object({
-      source: v.string(),
-      skillId: v.string(),
-      name: v.string(),
-      isDuplicate: v.boolean(),
-    }),
-  ),
-  handler: async (ctx) => {
-    const cutoff = Date.now() - MANUAL_REFRESH_FRESHNESS_MS;
-    const rows = await ctx.db
-      .query("skills")
-      .withIndex("by_leaderboard_active", (q) =>
-        q.eq("leaderboard", MANUAL_LEADERBOARD).eq("isDelisted", false),
-      )
-      .collect();
-    return rows
-      .filter((s) => (s.lastSeenInApi ?? 0) < cutoff)
-      .map((s) => ({
-        source: s.source,
-        skillId: s.skillId,
-        name: s.name,
-        isDuplicate: s.isDuplicate ?? false,
-      }));
-  },
-});
-
-/**
- * Daily cron (runs at 07:00 UTC, AFTER the 06:00 syncSkills): refresh manual
- * skills that the leaderboard sync can't see. Two jobs:
- *   - Update their install count + write a daily snapshot, so the count and the
- *     install-history chart stay current for skills missing from the all-time
- *     leaderboard (both the sub-50 case and the not-on-leaderboard-at-any-count
- *     case like bklit/bklit-ui).
- *   - Keep `lastSeenInApi` ahead of markDelistedSkills' 30-day delist window.
- *
- * Runs AFTER syncSkills so the 23h self-prune in listManualSkills is accurate:
- * any manual skill syncSkills already handled today (on the leaderboard, >= 50
- * installs) was stamped `lastSeenInApi = now` at 06:00 and is skipped here, so
- * the daily sync owns its installs/rank and we don't double-fetch. This cron
- * naturally narrows to exactly the skills syncSkills doesn't touch.
- *
- * Note: installRank is NOT refreshed here — it only comes from a leaderboard
- * position, which these skills by definition don't have.
- *
- * Snapshot day is pinned to the all-time sync's bucket (appDay at now-1h, i.e.
- * ~06:00 UTC) rather than read at write time. Because this cron fires at 07:00
- * UTC — exactly LA midnight under PDT — a naive appDay(now) would date these
- * skills' snapshots one day ahead of every all-time skill and jitter across the
- * date line. See the inline note at the pin for the full reasoning.
- */
-export const refreshManualSkills = internalAction({
-  args: {
-    // Pinned snapshot day, threaded through the rate-limit reschedule below so a
-    // retry reuses the original run's day instead of recomputing it. Omitted on
-    // the cron's first invocation (computed fresh there).
-    day: v.optional(v.string()),
-  },
-  // Same explicit annotation as addSkillManually — the runQuery/runMutation
-  // references into internal.skills.* otherwise pull the whole api type into
-  // an inference cycle.
-  handler: async (ctx, args): Promise<void> => {
-    const manualSkills: Array<{
-      source: string;
-      skillId: string;
-      name: string;
-      isDuplicate: boolean;
-    }> = await ctx.runQuery(internal.skills.listManualSkills, {});
-
-    let refreshed = 0;
-    let notFound = 0;
-
-    // Pin the snapshot day to the SAME LA-day bucket syncSkills used at 06:00,
-    // so manual skills' chart points line up with the rest of the catalog.
-    // We run at 07:00 UTC, which is exactly LA midnight during PDT — evaluating
-    // appDay(now) there would bucket us into day N+1 (off by one vs the all-time
-    // sync) and, sitting on the date line, would jitter across days run-to-run.
-    // Evaluating at now-1h (= ~06:00 UTC, ~23:00 LA in PDT / ~22:00 in PST)
-    // lands firmly mid-day-N in both regimes and matches syncSkills' own pinned
-    // day. Pinning once up front also keeps a single run consistent if it spans
-    // the boundary while iterating.
-    //
-    // On a rate-limit reschedule we thread this same value through (see below),
-    // so even a retry that fires after the LA-midnight boundary writes its
-    // snapshots into the original day bucket rather than recomputing into N+1.
-    const day = args.day ?? appDay(Date.now() - 60 * 60 * 1000);
-
-    for (const skill of manualSkills) {
-      try {
-        const detail = await withTransientRetry(() =>
-          v1GetSkillDetail(skill.source, skill.skillId),
-        );
-        await ctx.runMutation(internal.skills.upsertSkillsBatch, {
-          skills: [
-            {
-              source: skill.source,
-              skillId: skill.skillId,
-              name: skill.name,
-              installs: detail.installs,
-              isDuplicate: skill.isDuplicate,
-            },
-          ],
-          leaderboard: MANUAL_LEADERBOARD,
-          day,
-        });
-        refreshed++;
-      } catch (err) {
-        if (err instanceof SkillsApiNotFoundError) {
-          // skills.sh has dropped this skill. Don't force-delist — let the
-          // natural 30-day window expire so the admin notices it disappear.
-          notFound++;
-          continue;
-        }
-        if (err instanceof SkillsApiRateLimitError) {
-          console.warn(
-            `Rate-limited during refreshManualSkills; rescheduling in ${err.retryAfterSeconds}s`,
-          );
-          await ctx.scheduler.runAfter(
-            err.retryAfterSeconds * 1000,
-            internal.skills.refreshManualSkills,
-            { day },
-          );
-          return;
-        }
-        console.error(
-          `refreshManualSkills failed for ${skill.source}/${skill.skillId}:`,
-          err,
-        );
-      }
-    }
-
-    console.log(
-      `refreshManualSkills: refreshed ${refreshed}, not found ${notFound}, total ${manualSkills.length}`,
-    );
-
-    // If we updated any install counts, bust the skill-page cache so the new
-    // numbers + chart points show same-day. syncSkills already pinged this tag
-    // at ~06:00, BEFORE this 07:00 run wrote fresh installs — so without our own
-    // ping these skills' updated counts would lag a full day. Skipped when
-    // nothing changed. Best-effort (no-ops in dev, swallows errors).
-    if (refreshed > 0) {
-      await revalidateHomeTag("skill-sync");
-    }
   },
 });
 

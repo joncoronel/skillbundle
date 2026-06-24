@@ -14,6 +14,23 @@ export function githubHeaders(): Record<string, string> {
   return headers;
 }
 
+// GitHub owner/repo names are limited to [A-Za-z0-9._-]. Validate any
+// source-derived "owner/repo" before interpolating it into an api.github.com
+// URL: reject "."/".." segments (which would traverse the API path) and any
+// out-of-charset character (?, #, %, …). The host is hardcoded so this can't
+// reach a different host, but a malformed skills.sh `source` shouldn't be able
+// to alter the request path either. Defense in depth — `isGitHubSource` only
+// checks slash count + a dot-free owner, so it lets `owner/..` etc. through.
+const REPO_SEGMENT = /^[A-Za-z0-9._-]+$/;
+function isSafeRepoSegment(segment: string): boolean {
+  return segment !== "." && segment !== ".." && REPO_SEGMENT.test(segment);
+}
+/** True when `path` is a safe "owner/repo": two clean GitHub path segments. */
+export function isSafeRepoPath(path: string): boolean {
+  const parts = path.split("/");
+  return parts.length === 2 && parts.every(isSafeRepoSegment);
+}
+
 /** Resolve the default branch for a GitHub repo, falling back to "main". */
 export async function resolveDefaultBranch(
   owner: string,
@@ -37,6 +54,7 @@ export async function fetchRepoMetadata(
   owner: string,
   repo: string,
 ): Promise<RepoMetadata | null> {
+  if (!isSafeRepoPath(`${owner}/${repo}`)) return null;
   const headers = githubHeaders();
   // Topics require the mercy preview header on older APIs, but the v3 endpoint
   // returns them by default now. Belt-and-suspenders.
@@ -59,6 +77,44 @@ export async function fetchRepoMetadata(
     };
   } catch {
     return null;
+  }
+}
+
+export type RepoIdentityResult =
+  | { status: "ok"; repoId: number; liveName: string }
+  | { status: "not_found" } // 404 — deleted/private; cache as unresolvable
+  | { status: "rate_limited" } // 403/429 — don't cache, retry later
+  | { status: "error" }; // transient — don't cache, retry later
+
+/**
+ * Resolve a repo's stable GitHub id + current canonical "owner/repo".
+ *
+ * `fetch` follows the 301 a renamed repo returns, so `full_name` is always the
+ * LIVE name even when `repo` is an old alias (e.g. resolving "qu-skills/skills"
+ * yields id 1146509126, full_name "inference-sh/skills"). The stable id is what
+ * lets us tell aliases of one repo (same id) from genuine forks (same content,
+ * different id).
+ */
+export async function resolveRepoIdentity(
+  repo: string,
+): Promise<RepoIdentityResult> {
+  // Malformed/unsafe path: treat as unresolvable so it caches as the no-id
+  // sentinel and isn't retried (rather than hitting a traversed API path).
+  if (!isSafeRepoPath(repo)) return { status: "not_found" };
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: githubHeaders(),
+    });
+    if (res.status === 404) return { status: "not_found" };
+    if (res.status === 403 || res.status === 429) return { status: "rate_limited" };
+    if (!res.ok) return { status: "error" };
+    const data = (await res.json()) as { id?: unknown; full_name?: unknown };
+    if (typeof data.id !== "number" || typeof data.full_name !== "string") {
+      return { status: "error" };
+    }
+    return { status: "ok", repoId: data.id, liveName: data.full_name };
+  } catch {
+    return { status: "error" };
   }
 }
 
@@ -92,6 +148,7 @@ export async function fetchRepoTree(
   branches: string[],
   options?: { etag?: string },
 ): Promise<TreeResult | NotModified | null> {
+  if (!isSafeRepoPath(`${owner}/${repo}`)) return null;
   const baseHeaders = githubHeaders();
 
   for (const branch of branches) {

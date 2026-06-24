@@ -57,7 +57,7 @@ test("syncSkills + upsertSkillsBatch: well-known skill inserted with needsConten
         slug: "below-min",
         name: "Below Min",
         source: "example.com",
-        installs: 10, // < MIN_INSTALLS, must be filtered out
+        installs: 10, // low install count — still ingested (no install floor)
         sourceType: "well-known",
         installUrl: "https://example.com/skills/below-min",
         url: "https://skills.sh/example.com/below-min",
@@ -83,14 +83,16 @@ test("syncSkills + upsertSkillsBatch: well-known skill inserted with needsConten
     expect(skill!.needsContentFetch).toBe(true);
     expect(skill!.needsDiscovery).toBe(false);
 
-    // Below-threshold row was filtered out before insert.
-    const filtered = await ctx.db
+    // Low-install row is now ingested too — we sync the full leaderboard with
+    // no install floor (the old MIN_INSTALLS=50 filter was removed).
+    const lowInstall = await ctx.db
       .query("skills")
       .withIndex("by_source_skillId", (q) =>
         q.eq("source", "example.com").eq("skillId", "below-min"),
       )
       .unique();
-    expect(filtered).toBeNull();
+    expect(lowInstall).not.toBeNull();
+    expect(lowInstall!.installs).toBe(10);
   });
 });
 
@@ -123,6 +125,7 @@ test("markStaleContent leaves freshly-fetched rows alone", async () => {
       installs: 500,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: now,
       contentFetchedAt: now,
       syncHash: "b".repeat(64),
       needsContentFetch: false,
@@ -170,6 +173,7 @@ test("markStaleContent re-flags a row whose content is >7 days old", async () =>
       installs: 500,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: now,
       contentFetchedAt: eightDaysAgo,
       syncHash: "c".repeat(64),
       needsContentFetch: false,
@@ -217,6 +221,7 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
       installs: 500,
       skillDocId: id,
       isDelisted: false,
+      lastSeenInApi: now,
       needsContentFetch: true,
       needsDiscovery: false,
     });

@@ -341,6 +341,7 @@ function rowToSkill(r: {
   trendingInstalls?: number;
   hotChange?: number;
   hotInstallsYesterday?: number;
+  copyCount?: number;
 }): SkillData {
   return {
     source: r.source,
@@ -353,6 +354,7 @@ function rowToSkill(r: {
     curatedOwner: r.curatedOwner,
     worstAuditStatus: r.worstAuditStatus,
     worstAuditRiskLevel: r.worstAuditRiskLevel,
+    copyCount: r.copyCount,
     trendingRank: r.trendingRank,
     trendingInstalls: r.trendingInstalls,
     hotChange: r.hotChange,

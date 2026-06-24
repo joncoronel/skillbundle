@@ -75,11 +75,11 @@ function makeCuratedSkill(overrides: {
   };
 }
 
-test("Pass 0: inserts low-install curated skill that syncSkills would drop", async () => {
+test("Pass 0: inserts curated skill that isn't on the leaderboard", async () => {
   const t = makeTest();
 
-  // Bitwarden-shaped fixture: a curated publisher whose only skill has way
-  // fewer than MIN_INSTALLS (50). syncSkills wouldn't touch this — Pass 0 is
+  // Bitwarden-shaped fixture: a curated publisher whose only skill is absent
+  // from the all-time leaderboard, so syncSkills never ingests it — Pass 0 is
   // the only way it reaches the DB.
   vi.mocked(getCurated).mockResolvedValue({
     data: [
@@ -152,7 +152,7 @@ test("Pass 0: curated does not overwrite installs or leaderboard on an existing 
 
   // Pre-seed: a row that originally came from syncSkills with leaderboard
   // "all-time" and installs 1000. Mirrors the 06:00 state of an active
-  // curated skill that also has >MIN_INSTALLS, so it lives in both the
+  // curated skill that's also on the leaderboard, so it lives in both the
   // leaderboard and the curated set.
   const now = Date.now();
   const skillDocId = await t.run(async (ctx) => {

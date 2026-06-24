@@ -9,6 +9,8 @@ import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { revalidateHomeTag } from "./lib/revalidate";
+import { summaryRefreshHealthy } from "./lib/skillHealth";
+import { isDeadRenamedAlias } from "./lib/source";
 
 // Number of discovery attempts before a skill is considered exhausted
 // and stops being retried automatically.
@@ -75,6 +77,7 @@ export const getSyncStats = query({
         noSkillMdUrl: 0,
         noUrlExhausted: 0,
         delisted: 0,
+        deadButInstallable: 0,
         recalculatedAt: 0,
       }
     );
@@ -154,6 +157,11 @@ export const recalculateStatsBatch = internalMutation({
     let noSkillMdUrl = 0;
     let noUrlExhausted = 0;
     let delisted = 0;
+    let deadButInstallable = 0;
+    // "Dead but installable": healthy (repo still serves SKILL.md) but unseen by
+    // any sync for >7 days, i.e. reconcile keeps failing to refresh it = dropped
+    // from skills.sh while the repo stays alive. See docs/skill-lifecycle.md.
+    const deadCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
     for (const s of result.page) {
       totalSkills++;
@@ -166,6 +174,13 @@ export const recalculateStatsBatch = internalMutation({
           noUrlExhausted++;
       }
       if (s.isDelisted) delisted++;
+      else if (
+        s.lastSeenInApi < deadCutoff &&
+        !isDeadRenamedAlias(s) &&
+        summaryRefreshHealthy(s)
+      ) {
+        deadButInstallable++;
+      }
     }
 
     return {
@@ -176,6 +191,7 @@ export const recalculateStatsBatch = internalMutation({
       noSkillMdUrl,
       noUrlExhausted,
       delisted,
+      deadButInstallable,
       nextCursor: result.continueCursor,
       isDone: result.isDone,
     };
@@ -195,6 +211,7 @@ export const recalculateStats = internalAction({
       noSkillMdUrl: 0,
       noUrlExhausted: 0,
       delisted: 0,
+      deadButInstallable: 0,
     };
 
     while (!isDone) {
@@ -206,6 +223,7 @@ export const recalculateStats = internalAction({
         noSkillMdUrl: number;
         noUrlExhausted: number;
         delisted: number;
+        deadButInstallable: number;
         nextCursor: string;
         isDone: boolean;
       } = await ctx.runMutation(internal.devStats.recalculateStatsBatch, {
@@ -219,6 +237,7 @@ export const recalculateStats = internalAction({
       totals.noSkillMdUrl += result.noSkillMdUrl;
       totals.noUrlExhausted += result.noUrlExhausted;
       totals.delisted += result.delisted;
+      totals.deadButInstallable += result.deadButInstallable;
 
       cursor = result.nextCursor;
       isDone = result.isDone;
@@ -250,6 +269,7 @@ export const upsertStats = internalMutation({
     noSkillMdUrl: v.number(),
     noUrlExhausted: v.number(),
     delisted: v.number(),
+    deadButInstallable: v.number(),
     recalculatedAt: v.number(),
   },
   handler: async (ctx, stats) => {
@@ -259,6 +279,48 @@ export const upsertStats = internalMutation({
     } else {
       await ctx.db.insert("syncStats", stats);
     }
+  },
+});
+
+// Diagnostic (read-only): size the "dead but installable" population — non-
+// delisted rows that stay HEALTHY (repo still serves SKILL.md) yet haven't been
+// stamped lastSeenInApi in `days` days. A live off-board skill is re-stamped by
+// reconcile within ~23h, so anything healthy and unseen for several days is one
+// reconcile keeps failing to refresh = dropped from skills.sh but repo-alive.
+// No external calls; the indexed range scans only the stale tail, not the catalog.
+// `healthyNonAlias` excludes dead renamed aliases (reconcile skips those too), so
+// it's the closest proxy to the head-of-line population in reconcile.ts.
+// Cap the scan so this can't throw on the per-query read budget during the exact
+// incident it exists to diagnose — a mass off-board event is when the stale tail
+// is largest. `.take` instead of `.collect`; a hit cap reports `truncated: true`
+// (the counts are then a floor — the daily syncStats.deadButInstallable has the
+// true full count via its batched scan). Well under Convex's ~16k-doc limit.
+const COUNT_SCAN_CAP = 10_000;
+
+export const countDeadButInstallable = internalQuery({
+  args: { days: v.number() },
+  handler: async (ctx, { days }) => {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const stale = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false).lt("lastSeenInApi", cutoff),
+      )
+      .take(COUNT_SCAN_CAP);
+    let healthy = 0;
+    let healthyNonAlias = 0;
+    for (const s of stale) {
+      if (!summaryRefreshHealthy(s)) continue;
+      healthy++;
+      if (!isDeadRenamedAlias(s)) healthyNonAlias++;
+    }
+    return {
+      days,
+      staleNonDelisted: stale.length,
+      healthy,
+      healthyNonAlias,
+      truncated: stale.length === COUNT_SCAN_CAP,
+    };
   },
 });
 

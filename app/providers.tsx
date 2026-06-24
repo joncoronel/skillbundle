@@ -9,6 +9,7 @@ import {
   ToastProvider,
   AnchoredToastProvider,
 } from "@/components/ui/cubby-ui/toast/toast";
+import { TooltipProvider } from "@/components/ui/cubby-ui/tooltip";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -29,7 +30,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
             disableTransitionOnChange
           >
             <ToastProvider position="bottom-right">
-              <AnchoredToastProvider>{children}</AnchoredToastProvider>
+              <AnchoredToastProvider>
+                {/*
+                  Shared tooltip delay group. Without it each tooltip waits the
+                  full open delay every time; inside the provider, once one
+                  tooltip has opened, moving the cursor to an adjacent trigger
+                  opens the next instantly (within `timeout`, default 400ms).
+                  Makes dense clusters (a row's status + copies chips, the bundle
+                  bar) feel snappy. `delay` is the first-open wait; tuned a touch
+                  below Base UI's 600ms default for a sharper feel.
+                */}
+                <TooltipProvider delay={250} closeDelay={250}>
+                  {children}
+                </TooltipProvider>
+              </AnchoredToastProvider>
             </ToastProvider>
           </ThemeProvider>
         </ConvexClientProvider>
