@@ -97,13 +97,11 @@ export default defineSchema({
     // truncation/chunking strategy.
     embeddingSkipReason: v.optional(v.string()),
   })
-    .index("by_leaderboard", ["leaderboard"])
     .index("by_source_skillId", ["source", "skillId"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_isDelisted", ["isDelisted"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
-    .index("by_leaderboard_active", ["leaderboard", "isDelisted"])
     .index("by_needsEmbedding", ["needsEmbedding"]),
 
   // Embedding vectors live in their own table to keep `skills` row reads

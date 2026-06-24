@@ -49,6 +49,20 @@ const MAX_RECONCILE = 3000;
 // the next scan). Keeps any single action well under Convex's time/log limits.
 const RECONCILE_BATCH = 150;
 
+// The per-row projection listUnseenSummaries returns and the action accumulates.
+// Named once so the query's .map() and the stale[] accumulator can't drift apart
+// (mirrors RefreshableSkill in lib/detailRefresh).
+type UnseenSummary = {
+  source: string;
+  skillId: string;
+  name: string;
+  isDuplicate: boolean;
+  hasContentFetchError: boolean;
+  hasSkillMdUrl: boolean;
+  discoveryFailCount: number;
+  repoLiveName?: string;
+};
+
 export const listUnseenSummaries = internalQuery({
   args: { cursor: v.optional(v.string()), cutoff: v.number() },
   handler: async (ctx, { cursor, cutoff }) => {
@@ -64,7 +78,7 @@ export const listUnseenSummaries = internalQuery({
         cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null },
       );
 
-    const entries = result.page.map((s) => ({
+    const entries = result.page.map((s): UnseenSummary => ({
       source: s.source,
       skillId: s.skillId,
       name: s.name,
@@ -118,16 +132,7 @@ export const reconcileUnseenSkills = internalAction({
     const cutoff = Date.now() - RECONCILE_FRESHNESS_MS;
 
     // 1. Collect the stale set (indexed scan over non-delisted rows < cutoff).
-    const stale: Array<{
-      source: string;
-      skillId: string;
-      name: string;
-      isDuplicate: boolean;
-      hasContentFetchError: boolean;
-      hasSkillMdUrl: boolean;
-      discoveryFailCount: number;
-      repoLiveName?: string;
-    }> = [];
+    const stale: UnseenSummary[] = [];
     let cursor: string | undefined;
     let isDone = false;
     while (!isDone) {

@@ -119,6 +119,13 @@ if (process.env.CRONS_ENABLED === "true") {
   // never delisting, possibly re-inflated by reconcile. This re-checks aged repos
   // against GitHub and re-stamps their summaries when the identity moved. Cheap
   // in steady state (only repos past the TTL); self-scheduling + rate-limit aware.
+  //
+  // Timing note: the 2h gap after resolve (08:00) is load-bearing. Both jobs can
+  // chain a full computeCopyCounts (resolve always; this one only when a repo id
+  // actually moved). If resolve's pass were still draining when this fires AND an
+  // id changed, two full-catalog recomputes would overlap — wasted, not wrong
+  // (computeCopyCounts is idempotent). The ~12.5k-row pass drains in minutes, so
+  // a 2h gap is ample; if the catalog grows enough that it doesn't, widen the gap.
   crons.weekly(
     "re-resolve stale repo identities",
     { dayOfWeek: "sunday", hourUTC: 10, minuteUTC: 0 },

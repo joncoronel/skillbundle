@@ -354,7 +354,7 @@ export const computeCopyCountBatch = internalMutation({
   handler: async (ctx, { cursor }) => {
     const result = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted", (q) => q.lt("isDelisted", true))
+      .withIndex("by_isDelisted", (q) => q.eq("isDelisted", false))
       .paginate(
         cursor ? { numItems: COPYCOUNT_PAGE, cursor } : { numItems: COPYCOUNT_PAGE, cursor: null },
       );
