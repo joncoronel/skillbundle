@@ -23,6 +23,7 @@ import type * as githubCache from "../githubCache.js";
 import type * as http from "../http.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_appDay from "../lib/appDay.js";
+import type * as lib_detailRefresh from "../lib/detailRefresh.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_github from "../lib/github.js";
 import type * as lib_plans from "../lib/plans.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   leaderboards: typeof leaderboards;
   "lib/appDay": typeof lib_appDay;
+  "lib/detailRefresh": typeof lib_detailRefresh;
   "lib/embeddings": typeof lib_embeddings;
   "lib/github": typeof lib_github;
   "lib/plans": typeof lib_plans;

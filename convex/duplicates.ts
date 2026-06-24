@@ -22,7 +22,6 @@ import {
   internalQuery,
   query,
   type QueryCtx,
-  type MutationCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -44,11 +43,6 @@ const COPIES_LIMIT = 25;
 // Counting cap for the denormalized copyCount (computeCopyCountBatch). The chip
 // renders "9+" past ~10, so this only needs a safe ceiling.
 const COPYCOUNT_GROUP_CAP = 100;
-// Delist decrement caps (decrementCopyPeers): per-row peer cap, and a per-batch
-// write budget so a delist landing on a large fork group can't blow the
-// mutation budget. The weekly computeCopyCounts backstop corrects any residual.
-const COPYCOUNT_PEER_CAP = 64;
-export const COPYCOUNT_DECREMENT_BUDGET = 1500;
 
 // ---------------------------------------------------------------------------
 // Copy grouping — the single source of truth for "who shares this content"
@@ -88,13 +82,16 @@ export async function aliasPeers(
 
 /**
  * Forks: the same content hash under a different REAL repo id — separate repos
- * with identical SKILL.md. THE fork-fallback lives here: when the subject's
- * repoId is undefined (an unresolved GitHub row, or a well-known/non-GitHub
- * source), `r.githubRepoId !== repoId` is `!== undefined`, so every resolved
- * hash peer counts as a fork. Intended for well-known sources (a genuine
- * cross-repo content match); self-corrects for unresolved GitHub rows once
- * resolveRepoIdentities stamps them. Because list / detail / decrement all call
- * this, they apply the fallback identically and never disagree.
+ * with identical SKILL.md.
+ *
+ * `githubRepoId === undefined` means two different things, so we disambiguate up
+ * front rather than letting `!== repoId` paper over it:
+ *   - a well-known / non-GitHub source has NO repo id, ever — fork-matching by
+ *     hash is correct (a genuine cross-repo content match);
+ *   - an unresolved GitHub row has no repo id *yet* — fork-matching would falsely
+ *     count every resolved hash peer as a fork, so we return nothing and wait for
+ *     resolveRepoIdentities to stamp it.
+ * Because list / detail all call this, they agree by construction.
  */
 export async function forkPeers(
   ctx: QueryCtx,
@@ -104,6 +101,8 @@ export async function forkPeers(
   const hash = subject.syncHash;
   if (!hash) return [];
   const repoId = subject.githubRepoId;
+  // Unresolved GitHub row: can't be fork-classified until it has a repo id.
+  if (repoId === undefined && isGitHubSource(subject.source)) return [];
   const rows = await ctx.db
     .query("skillSummaries")
     .withIndex("by_syncHash", (q) => q.eq("syncHash", hash))
@@ -116,36 +115,6 @@ export async function forkPeers(
       r.githubRepoId !== REPO_ID_NONE &&
       r.githubRepoId !== repoId,
   );
-}
-
-/**
- * When a row is delisted, every peer that counted it as a copy loses exactly one
- * (alias and fork peer sets are disjoint — same-repo rows are excluded from
- * forks). Decrement those peers' cached copyCount so the list chip heals at once
- * instead of waiting for the weekly recompute. Bounded by `budget` (peer writes
- * remaining in this batch); returns the number used. Lives here, with the
- * grouping rule, rather than in the delist orchestration.
- */
-export async function decrementCopyPeers(
-  ctx: MutationCtx,
-  summary: Doc<"skillSummaries">,
-  budget: number,
-): Promise<number> {
-  if (budget <= 0) return 0;
-  let used = 0;
-  for (const p of await aliasPeers(ctx, summary, COPYCOUNT_PEER_CAP)) {
-    if (used >= budget) return used;
-    await ctx.db.patch(p._id, { copyCount: Math.max(0, (p.copyCount ?? 0) - 1) });
-    used++;
-  }
-  if (used < budget) {
-    for (const p of await forkPeers(ctx, summary, COPYCOUNT_PEER_CAP)) {
-      if (used >= budget) return used;
-      await ctx.db.patch(p._id, { copyCount: Math.max(0, (p.copyCount ?? 0) - 1) });
-      used++;
-    }
-  }
-  return used;
 }
 
 // ---------------------------------------------------------------------------

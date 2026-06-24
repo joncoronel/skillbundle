@@ -30,8 +30,8 @@ export function SkillCopies({
 }) {
   if (aliases.length === 0 && forks.length === 0) return null;
 
-  const sortedAliases = [...aliases].sort((a, b) => b.installs - a.installs);
-  const sortedForks = [...forks].sort((a, b) => b.installs - a.installs);
+  const sortedAliases = aliases.toSorted((a, b) => b.installs - a.installs);
+  const sortedForks = forks.toSorted((a, b) => b.installs - a.installs);
 
   return (
     <LabeledSection label="Also available at" className={className}>

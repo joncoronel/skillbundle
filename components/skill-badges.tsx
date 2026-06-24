@@ -39,15 +39,12 @@ export function SignalChip({
   icon,
   label,
   tone = "muted",
-  count,
   tooltip,
   className,
 }: {
   icon: IconSvgElement;
   label: string;
   tone?: SignalChipTone;
-  /** Optional trailing count (e.g. number of copies). Capped to "9+". */
-  count?: number;
   tooltip: ReactNode;
   className?: string;
 }) {
@@ -58,7 +55,7 @@ export function SignalChip({
           <span
             aria-label={label}
             className={cn(
-              "inline-flex shrink-0 items-center gap-0.5 rounded-md border px-1 py-0.5 text-[10px] font-medium tabular-nums",
+              "inline-flex shrink-0 items-center rounded-md border px-1 py-0.5 text-[10px] font-medium",
               SIGNAL_CHIP_TONE[tone],
               className,
             )}
@@ -71,7 +68,6 @@ export function SignalChip({
           className="size-3"
           aria-hidden="true"
         />
-        {count !== undefined && <span>{count > 9 ? "9+" : count}</span>}
       </TooltipTrigger>
       <TooltipContent className="max-w-56 leading-snug">{tooltip}</TooltipContent>
     </Tooltip>

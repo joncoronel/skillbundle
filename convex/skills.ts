@@ -31,10 +31,6 @@ import {
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
-import {
-  decrementCopyPeers,
-  COPYCOUNT_DECREMENT_BUDGET,
-} from "./duplicates";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 
@@ -1801,7 +1797,6 @@ export const delistSkillsBatch = internalMutation({
     ),
   },
   handler: async (ctx, { entries }) => {
-    let decrementBudget = COPYCOUNT_DECREMENT_BUDGET;
     for (const { summaryId, source, skillId } of entries) {
       // Soft-delete the summary. Keeping the row (~200 bytes) lets the
       // Delisted stat count correctly and enables the fast-path relist in
@@ -1828,8 +1823,9 @@ export const delistSkillsBatch = internalMutation({
           hotChange: undefined,
           hotInstallsYesterday: undefined,
         });
-        // This row's copies just lost a member — heal their cached chip now.
-        decrementBudget -= await decrementCopyPeers(ctx, summary, decrementBudget);
+        // Note: a copy's delist leaves peers' cached copyCount one high until the
+        // weekly computeCopyCounts recompute heals it (both directions). The
+        // detail page is always correct — getSkillCopies filters delisted live.
       }
 
       // Mark skill as delisted and clear its pipeline flags too.

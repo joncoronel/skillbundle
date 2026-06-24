@@ -12,3 +12,17 @@ export function isGitHubSource(source: string): boolean {
   const parts = source.split("/");
   return parts.length === 2 && !parts[0].includes(".");
 }
+
+/**
+ * A row whose repo resolved to a different live name — a dead renamed alias.
+ * `repoLiveName` is stamped by resolveRepoIdentities (duplicate detection); when
+ * it's set and differs from the row's own `source`, this row is an old name of a
+ * repo that now lives elsewhere. Detail-refresh jobs skip these: the v1 detail
+ * endpoint serves a stale, inflated count for a renamed repo's old name.
+ */
+export function isDeadRenamedAlias(s: {
+  repoLiveName?: string;
+  source: string;
+}): boolean {
+  return s.repoLiveName !== undefined && s.repoLiveName !== s.source;
+}
