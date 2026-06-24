@@ -246,8 +246,15 @@ export const reconcileUnseenSkills = internalAction({
     // +5 slack over the bare page count for cron jitter / re-scan churn (this job
     // re-scans from the top, so a few iterations can reprocess unstamped rows).
     const MAX_ITER = maxIterForRows(MAX_RECONCILE, RECONCILE_BATCH) + 5;
+    // Only continue if this batch made progress. A batch that refreshed nothing
+    // means its rows were all "gone" (404) or transient errors — none got stamped,
+    // so a re-scan from the top would just hand back the same oldest rows and spin
+    // to MAX_ITER re-hitting dead endpoints. Bail instead; the next daily run
+    // retries them (and gone repos drain out via the discovery-failure path). This
+    // is coverage-neutral: when real rows are present they refresh (refreshed > 0)
+    // and we continue exactly as before.
     let rescheduled = false;
-    if (healthyRows.length > batch.length && iteration < MAX_ITER) {
+    if (refreshed > 0 && healthyRows.length > batch.length && iteration < MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.reconcile.reconcileUnseenSkills, {
         day,
         iteration: iteration + 1,
