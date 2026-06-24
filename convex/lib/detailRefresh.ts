@@ -59,3 +59,35 @@ export async function refreshSkillFromDetail(
     return { kind: "error" };
   }
 }
+
+/**
+ * Refresh a batch of skills, accumulating counts and stopping early on the first
+ * rate-limit. Owns the per-item outcome switch shared by both refresh jobs; each
+ * job keeps its own scan + continuation (the divergent part) and, after this
+ * returns, handles `rateLimitedAfter` (reschedule itself) and the revalidate.
+ */
+export async function drainRefreshBatch(
+  ctx: ActionCtx,
+  items: {
+    source: string;
+    skillId: string;
+    name: string;
+    isDuplicate: boolean;
+  }[],
+  opts: { day: string; leaderboard: string },
+): Promise<{ refreshed: number; gone: number; rateLimitedAfter?: number }> {
+  let refreshed = 0;
+  let gone = 0;
+  for (const skill of items) {
+    const outcome = await refreshSkillFromDetail(ctx, skill, opts);
+    if (outcome.kind === "refreshed") {
+      refreshed++;
+    } else if (outcome.kind === "gone") {
+      gone++;
+    } else if (outcome.kind === "rateLimited") {
+      return { refreshed, gone, rateLimitedAfter: outcome.retryAfterSeconds };
+    }
+    // "error" is already logged inside refreshSkillFromDetail; skip and continue.
+  }
+  return { refreshed, gone };
+}

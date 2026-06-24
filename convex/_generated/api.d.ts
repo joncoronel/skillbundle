@@ -28,6 +28,7 @@ import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_github from "../lib/github.js";
 import type * as lib_plans from "../lib/plans.js";
 import type * as lib_revalidate from "../lib/revalidate.js";
+import type * as lib_skillHealth from "../lib/skillHealth.js";
 import type * as lib_skillsApi from "../lib/skillsApi.js";
 import type * as lib_source from "../lib/source.js";
 import type * as plans from "../plans.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   "lib/github": typeof lib_github;
   "lib/plans": typeof lib_plans;
   "lib/revalidate": typeof lib_revalidate;
+  "lib/skillHealth": typeof lib_skillHealth;
   "lib/skillsApi": typeof lib_skillsApi;
   "lib/source": typeof lib_source;
   plans: typeof plans;

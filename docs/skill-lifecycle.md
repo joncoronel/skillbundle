@@ -129,6 +129,17 @@ and leaving chart gaps. 23h leaves buffer for cron jitter while staying under 24
 
 ## Duplicate / rename detection (Phase 2)
 
+**Two unrelated notions of "duplicate" — don't conflate them:**
+- **`isDuplicate`** is skills.sh's *own upstream fork flag*, mirrored onto the row.
+  It only default-filters a row out of list/search/recommendations. We don't
+  compute it.
+- **Phase 2 (`copyCount` / `getSkillCopies`)** is *our* content/rename detection
+  below. It powers the "N copies" chip and the detail-page "Also available at".
+
+They're independent: a row can be `isDuplicate: false` yet have `copyCount > 0`
+(it has aliases/forks but skills.sh didn't flag it), or vice versa. The rest of
+this section is only about the Phase 2 notion.
+
 Two relationships, two signals (install count is **not** used — a dead alias can
 have the most installs):
 

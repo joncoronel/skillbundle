@@ -20,9 +20,9 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
-import { refreshSkillFromDetail } from "./lib/detailRefresh";
+import { drainRefreshBatch } from "./lib/detailRefresh";
 import { isDeadRenamedAlias } from "./lib/source";
-import { isReconcileHealthy } from "./reconcile";
+import { isRefreshHealthy } from "./lib/skillHealth";
 
 const CURATED_REFRESH_PAGE = 100;
 
@@ -41,7 +41,7 @@ export const listCuratedToRefresh = internalQuery({
       .filter((s) => !s.isDelisted)
       .filter((s) => s.installRank === undefined) // never on the leaderboard
       .filter((s) =>
-        isReconcileHealthy({
+        isRefreshHealthy({
           hasSkillMdUrl: s.hasSkillMdUrl ?? false,
           hasContentFetchError: s.hasContentFetchError ?? false,
           discoveryFailCount: s.discoveryFailCount ?? 0,
@@ -76,30 +76,22 @@ export const refreshCuratedSkills = internalAction({
       { cursor: args.cursor },
     );
 
-    let refreshed = 0;
-    let gone = 0;
-    for (const s of page.items) {
-      const outcome = await refreshSkillFromDetail(ctx, s, {
-        day,
-        leaderboard: "curated",
-      });
-      if (outcome.kind === "refreshed") {
-        refreshed++;
-      } else if (outcome.kind === "gone") {
-        gone++;
-      } else if (outcome.kind === "rateLimited") {
-        if (refreshed > 0) await revalidateHomeTag("skill-sync");
-        await ctx.scheduler.runAfter(
-          outcome.retryAfterSeconds * 1000,
-          internal.curatedRefresh.refreshCuratedSkills,
-          { cursor: args.cursor, iteration: iteration + 1, day },
-        );
-        return { refreshed, gone, done: false };
-      }
-      // "error" is already logged inside the helper; skip and continue.
-    }
+    const { refreshed, gone, rateLimitedAfter } = await drainRefreshBatch(
+      ctx,
+      page.items,
+      { day, leaderboard: "curated" },
+    );
 
     if (refreshed > 0) await revalidateHomeTag("skill-sync");
+
+    if (rateLimitedAfter !== undefined) {
+      await ctx.scheduler.runAfter(
+        rateLimitedAfter * 1000,
+        internal.curatedRefresh.refreshCuratedSkills,
+        { cursor: args.cursor, iteration: iteration + 1, day },
+      );
+      return { refreshed, gone, done: false };
+    }
 
     if (!page.isDone && iteration < 200) {
       await ctx.scheduler.runAfter(0, internal.curatedRefresh.refreshCuratedSkills, {

@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { LabeledSection } from "@/components/labeled-section";
 import { skillHref } from "@/lib/skill-urls";
-import { formatInstalls } from "@/lib/utils";
+import { cn, formatInstalls } from "@/lib/utils";
 
 type AliasCopy = {
   source: string;
@@ -124,6 +124,11 @@ function CopyRow({
   );
 }
 
+const COPY_TAG_TONE: Record<"live" | "renamed", string> = {
+  live: "bg-primary/10 text-primary",
+  renamed: "bg-muted text-muted-foreground",
+};
+
 function CopyTag({
   variant,
   children,
@@ -133,11 +138,10 @@ function CopyTag({
 }) {
   return (
     <span
-      className={
-        variant === "live"
-          ? "shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary"
-          : "shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-      }
+      className={cn(
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        COPY_TAG_TONE[variant],
+      )}
     >
       {children}
     </span>

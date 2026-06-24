@@ -30,9 +30,9 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
-import { refreshSkillFromDetail } from "./lib/detailRefresh";
+import { drainRefreshBatch } from "./lib/detailRefresh";
 import { isDeadRenamedAlias } from "./lib/source";
-import { MAX_DISCOVERY_FAILURES } from "./devStats";
+import { isRefreshHealthy } from "./lib/skillHealth";
 
 // A skill is stale if no sync touched it in this window. MUST be under the 24h
 // cron interval: the reconcile both refreshes its skills AND runs daily, so a
@@ -48,24 +48,6 @@ const MAX_RECONCILE = 3000;
 // until the stale set drains (refreshed skills are stamped fresh and drop out of
 // the next scan). Keeps any single action well under Convex's time/log limits.
 const RECONCILE_BATCH = 150;
-
-/**
- * A stale skill is "healthy" (a live, installable skill we should keep alive) if
- * our pipeline currently has a working SKILL.md URL, no content-fetch error, and
- * discovery isn't exhausted. Broke skills fail this and are left to delist.
- * Exported because the curated-only refresh applies the same predicate.
- */
-export function isReconcileHealthy(s: {
-  hasSkillMdUrl: boolean;
-  hasContentFetchError: boolean;
-  discoveryFailCount: number;
-}): boolean {
-  return (
-    s.hasSkillMdUrl &&
-    !s.hasContentFetchError &&
-    s.discoveryFailCount < MAX_DISCOVERY_FAILURES
-  );
-}
 
 export const listUnseenSummaries = internalQuery({
   args: { cursor: v.optional(v.string()), cutoff: v.number() },
@@ -169,7 +151,7 @@ export const reconcileUnseenSkills = internalAction({
     // name — refreshing from it would re-introduce the qu-skills-style inflation.
     // They're duplicates of the live repo anyway; if off-board they delist.
     const healthyRows = stale.filter(
-      (s) => isReconcileHealthy(s) && !isDeadRenamedAlias(s),
+      (s) => isRefreshHealthy(s) && !isDeadRenamedAlias(s),
     );
     const broke = stale.length - healthyRows.length;
 
@@ -215,46 +197,38 @@ export const reconcileUnseenSkills = internalAction({
     // 3. Refresh up to RECONCILE_BATCH healthy skills via the detail endpoint
     // (reliable for live skills). Each gets its install count updated, a day-
     // pinned snapshot, and a lastSeenInApi stamp (which spares it from delisting).
+    // Gone rows looked healthy in our DB but are gone upstream now — leave them
+    // unstamped so the 30-day delist removes them (markStaleContent reclassifies
+    // them as broke meanwhile, so we stop retrying).
     const batch = healthyRows.slice(0, RECONCILE_BATCH);
-    let refreshed = 0;
-    let gone = 0;
-    for (const s of batch) {
-      const outcome = await refreshSkillFromDetail(ctx, s, {
-        day,
-        leaderboard: "reconcile",
-      });
-      if (outcome.kind === "refreshed") {
-        refreshed++;
-      } else if (outcome.kind === "gone") {
-        // Looked healthy in our DB but is gone upstream now. Don't stamp —
-        // the 30-day delist removes it (markStaleContent reclassifies it as
-        // broke meanwhile, so we stop retrying it).
-        gone++;
-      } else if (outcome.kind === "rateLimited") {
-        console.warn(
-          `reconcileUnseenSkills rate-limited; rescheduling in ${outcome.retryAfterSeconds}s (refreshed ${refreshed} this batch)`,
-        );
-        if (refreshed > 0) await revalidateHomeTag("skill-sync");
-        await ctx.scheduler.runAfter(
-          outcome.retryAfterSeconds * 1000,
-          internal.reconcile.reconcileUnseenSkills,
-          { day, iteration: iteration + 1 },
-        );
-        return {
-          dryRun,
-          bailed: false,
-          staleTotal: stale.length,
-          healthy: healthyRows.length,
-          broke,
-          refreshed,
-          gone,
-          rescheduled: true,
-        };
-      }
-      // "error" is already logged inside the helper; skip and continue.
-    }
+    const { refreshed, gone, rateLimitedAfter } = await drainRefreshBatch(
+      ctx,
+      batch,
+      { day, leaderboard: "reconcile" },
+    );
 
     if (refreshed > 0) await revalidateHomeTag("skill-sync");
+
+    if (rateLimitedAfter !== undefined) {
+      console.warn(
+        `reconcileUnseenSkills rate-limited; rescheduling in ${rateLimitedAfter}s (refreshed ${refreshed} this batch)`,
+      );
+      await ctx.scheduler.runAfter(
+        rateLimitedAfter * 1000,
+        internal.reconcile.reconcileUnseenSkills,
+        { day, iteration: iteration + 1 },
+      );
+      return {
+        dryRun,
+        bailed: false,
+        staleTotal: stale.length,
+        healthy: healthyRows.length,
+        broke,
+        refreshed,
+        gone,
+        rescheduled: true,
+      };
+    }
 
     // 4. More healthy skills than one batch? Self-schedule a fresh continuation
     // that RE-SCANS from the top (no cursor). The rows we just refreshed are
