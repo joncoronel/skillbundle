@@ -307,6 +307,9 @@ async function upsertSkillSummary(
       embeddingMode: fields.embeddingMode,
       embeddingSkipReason: fields.embeddingSkipReason,
       needsEmbedding: fields.needsEmbedding,
+      // GitHub rows enter the duplicate-resolution work-set; well-known sources
+      // never resolve. resolveRepoIdentities clears this when it stamps the row.
+      needsRepoResolution: isGitHubSource(fields.source),
     });
   }
 }
@@ -3109,6 +3112,48 @@ export const backfillLastSeenInApi = internalAction({
     }
 
     console.log(`Backfilled lastSeenInApi on ${total} skills`);
+  },
+});
+
+// One-time backfill for the needsRepoResolution work-set (added when resolution
+// switched from full-scan to a by_needsRepoResolution index). Marks existing
+// unresolved GitHub rows (githubRepoId still undefined) so the resolve pass can
+// find them via the index. New rows get the flag on insert; this only covers
+// rows that predate the field. Idempotent — re-run reports 0 once done.
+export const backfillNeedsRepoResolutionBatch = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .paginate(cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null });
+    let patched = 0;
+    for (const s of result.page) {
+      const needs = s.githubRepoId === undefined && isGitHubSource(s.source);
+      if (needs && s.needsRepoResolution !== true) {
+        await ctx.db.patch(s._id, { needsRepoResolution: true });
+        patched++;
+      }
+    }
+    return { nextCursor: result.continueCursor, isDone: result.isDone, patched };
+  },
+});
+
+export const backfillNeedsRepoResolution = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let total = 0;
+    while (!isDone) {
+      const result: { nextCursor: string; isDone: boolean; patched: number } =
+        await ctx.runMutation(internal.skills.backfillNeedsRepoResolutionBatch, {
+          cursor,
+        });
+      total += result.patched;
+      cursor = result.nextCursor;
+      isDone = result.isDone;
+    }
+    console.log(`Backfilled needsRepoResolution on ${total} skills`);
   },
 });
 

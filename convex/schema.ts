@@ -212,12 +212,22 @@ export default defineSchema({
     githubRepoId: v.optional(v.number()),
     repoLiveName: v.optional(v.string()),
     copyCount: v.optional(v.number()),
+    // Work-set flag for resolveRepoIdentities (mirrors the needs* pipeline
+    // pattern). True on a GitHub row that hasn't been resolved to a repo id yet;
+    // cleared when resolveRepoIdentities stamps it (real id or no-id sentinel).
+    // Well-known sources are false (never resolved). Lets the resolve pass read
+    // only the unresolved work-set via by_needsRepoResolution instead of scanning
+    // the whole catalog.
+    needsRepoResolution: v.optional(v.boolean()),
   })
     .index("by_source_skillId", ["source", "skillId"])
     // Alias grouping: same repo id + same slug, different source = renamed alias.
     .index("by_repo_skill", ["githubRepoId", "skillId"])
     // Fork grouping: same content hash across different repo ids = genuine fork.
     .index("by_syncHash", ["syncHash"])
+    // Work-set for resolveRepoIdentities: q.eq("needsRepoResolution", true) reads
+    // only unresolved GitHub rows (mirrors by_needsDiscovery et al.).
+    .index("by_needsRepoResolution", ["needsRepoResolution"])
     .index("by_skillEmbeddingId", ["skillEmbeddingId"])
     .index("by_isDelisted", ["isDelisted"])
     // Powers the home page's default "popular skills" list. Queried with

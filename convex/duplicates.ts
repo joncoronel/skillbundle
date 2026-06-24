@@ -22,6 +22,7 @@ import {
   internalQuery,
   query,
   type QueryCtx,
+  type MutationCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -33,10 +34,19 @@ import { resolveRepoIdentity } from "./lib/github";
 // retrying it, and getSkillCopies treats it as having no aliases.
 const REPO_ID_NONE = -1;
 
+// Headroom for the non-delisted catalog. computeCopyCounts must visit EVERY
+// non-delisted row (a row's copy group changes when peers change, not itself),
+// so its continuation cap is derived from this so it can't silently truncate the
+// tail. resolveRepoIdentities now reads only the unresolved work-set
+// (by_needsRepoResolution), so its own cap is just a drain backstop, not catalog
+// coverage. Bump this if the catalog ever approaches it (the passes warn when
+// they hit their cap, so truncation is never silent).
+const FULL_SCAN_MAX_ROWS = 60_000;
+
 // Summaries scanned per invocation. Small so the GitHub calls for cache-misses
 // in one batch stay well under the rate limit; the job self-schedules the rest.
 const RESOLVE_PAGE = 100;
-const RESOLVE_MAX_ITER = 400; // backstop (≈ full non-delisted set / page)
+const RESOLVE_MAX_ITER = Math.ceil(FULL_SCAN_MAX_ROWS / RESOLVE_PAGE);
 // Cap how many rows getSkillCopies returns per group — copies are few, but a
 // shared hash could in theory match many; bound the read.
 const COPIES_LIMIT = 25;
@@ -48,11 +58,11 @@ const COPYCOUNT_GROUP_CAP = 100;
 // Copy grouping — the single source of truth for "who shares this content"
 // ---------------------------------------------------------------------------
 //
-// Aliases and forks get consumed three ways (the list copyCount, the detail
-// read, the delist decrement). These two helpers are the ONE place the rule
-// lives, so those call sites can't drift apart. Each returns the live
-// (non-delisted) peer rows; callers count / project / patch them, and pass their
-// own `cap` (UI list limit vs. count ceiling vs. decrement cap).
+// Aliases and forks get consumed two ways (the list copyCount pass and the
+// detail read). These two helpers are the ONE place the rule lives, so those
+// call sites can't drift apart. Each returns the live (non-delisted) peer rows;
+// callers count or project them, and pass their own `cap` (UI list limit vs.
+// count ceiling).
 
 /** Fields the grouping rule needs from a summary (a Doc satisfies this). */
 type CopyGroupSubject = Pick<
@@ -92,6 +102,11 @@ export async function aliasPeers(
  *     count every resolved hash peer as a fork, so we return nothing and wait for
  *     resolveRepoIdentities to stamp it.
  * Because list / detail all call this, they agree by construction.
+ *
+ * Known gap: two well-known sources with identical content won't match each other
+ * — the filter requires a peer's `githubRepoId` to be a real id, and well-known
+ * rows never get one. Forks across well-known domains are a non-scenario today;
+ * if that changes, relax the peer filter to also accept well-known hash peers.
  */
 export async function forkPeers(
   ctx: QueryCtx,
@@ -144,16 +159,20 @@ export const getResolutionsForRepos = internalQuery({
 export const listSummariesToResolve = internalQuery({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
-    // Non-delisted only; the unstamped GitHub ones are the work.
+    // Work-set only: by_needsRepoResolution holds exactly the unresolved GitHub
+    // rows (set true on insert, cleared on stamp), so we read O(unstamped)
+    // instead of scanning the whole catalog and filtering. Stamping clears the
+    // flag for processed rows; the cursor advances past them, so the walk stays
+    // stable (same as markDelistedSkills clearing isDelisted mid-pagination).
     const result = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted", (q) => q.lt("isDelisted", true))
+      .withIndex("by_needsRepoResolution", (q) =>
+        q.eq("needsRepoResolution", true),
+      )
       .paginate(
         cursor ? { numItems: RESOLVE_PAGE, cursor } : { numItems: RESOLVE_PAGE, cursor: null },
       );
-    const items = result.page
-      .filter((s) => s.githubRepoId === undefined && isGitHubSource(s.source))
-      .map((s) => ({ summaryId: s._id, source: s.source }));
+    const items = result.page.map((s) => ({ summaryId: s._id, source: s.source }));
     return { items, nextCursor: result.continueCursor, isDone: result.isDone };
   },
 });
@@ -176,30 +195,41 @@ export const applyResolutions = internalMutation({
     ),
   },
   handler: async (ctx, { cacheRows, stamps }) => {
-    const now = Date.now();
     for (const row of cacheRows) {
-      const existing = await ctx.db
-        .query("githubRepoResolution")
-        .withIndex("by_repo", (q) => q.eq("repo", row.repo))
-        .unique();
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          repoId: row.repoId,
-          liveName: row.liveName,
-          resolvedAt: now,
-        });
-      } else {
-        await ctx.db.insert("githubRepoResolution", { ...row, resolvedAt: now });
-      }
+      await upsertResolutionRow(ctx, row);
     }
     for (const s of stamps) {
+      // Clear needsRepoResolution: this row is now resolved (real id or the
+      // no-id sentinel), so it leaves the resolve work-set.
       await ctx.db.patch(s.summaryId, {
         githubRepoId: s.githubRepoId,
         repoLiveName: s.repoLiveName,
+        needsRepoResolution: false,
       });
     }
   },
 });
+
+/** Upsert a cached repo-identity row (patch if present, else insert). Shared by
+ *  the resolve + re-resolve passes so the write can't drift between them. */
+async function upsertResolutionRow(
+  ctx: MutationCtx,
+  row: { repo: string; repoId: number | null; liveName: string | null },
+): Promise<void> {
+  const existing = await ctx.db
+    .query("githubRepoResolution")
+    .withIndex("by_repo", (q) => q.eq("repo", row.repo))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      repoId: row.repoId,
+      liveName: row.liveName,
+      resolvedAt: Date.now(),
+    });
+  } else {
+    await ctx.db.insert("githubRepoResolution", { ...row, resolvedAt: Date.now() });
+  }
+}
 
 export const resolveRepoIdentities = internalAction({
   args: { cursor: v.optional(v.string()), iteration: v.optional(v.number()) },
@@ -284,10 +314,11 @@ export const resolveRepoIdentities = internalAction({
     }
 
     // Resolution finished — unconditionally refresh the denormalized copyCount.
-    // This weekly full pass is the GUARANTEED backstop that corrects any drift
-    // from the incremental paths (delist decrement, capped-budget overflow, a
-    // relist rejoining a group). reresolveStaleRepoIdentities only chains this on
-    // an actual id transition, so this is the single recompute that always runs.
+    // This weekly full pass is the SOLE maintainer of copyCount: it recomputes
+    // every non-delisted row, so any drift (a delist or relist changing a peer's
+    // group) is corrected within the week. reresolveStaleRepoIdentities only
+    // chains this on an actual id transition, so this is the recompute that
+    // always runs.
     await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
 
     console.log(
@@ -313,6 +344,10 @@ export const resolveRepoIdentities = internalAction({
 // popular templated syncHash (large fork groups) stays well under Convex's
 // per-transaction read budget: 25 * 302 ≈ 7.5k reads.
 const COPYCOUNT_PAGE = 25;
+// Continuation cap, derived from the shared catalog budget so this full-catalog
+// pass covers every non-delisted row (not a "feels like plenty" number). The
+// action warns if it ever trips, so a truncated run is never logged as "done".
+const COPYCOUNT_MAX_ITER = Math.ceil(FULL_SCAN_MAX_ROWS / COPYCOUNT_PAGE);
 
 export const computeCopyCountBatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
@@ -349,14 +384,23 @@ export const computeCopyCounts = internalAction({
     const res = await ctx.runMutation(internal.duplicates.computeCopyCountBatch, {
       cursor: args.cursor,
     });
-    if (!res.isDone && iteration < 500) {
+    if (!res.isDone && iteration < COPYCOUNT_MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {
         cursor: res.nextCursor,
         iteration: iteration + 1,
       });
       return { done: false, updatedThisBatch: res.updated };
     }
-    console.log(`computeCopyCounts: done (iteration ${iteration})`);
+    if (!res.isDone) {
+      // Hit the iteration cap before finishing: the catalog outgrew
+      // FULL_SCAN_MAX_ROWS, so the tail (newest rows) didn't get copyCount this
+      // run. Announce it — a bounded pass must not log "done" when it bailed.
+      console.warn(
+        `computeCopyCounts: TRUNCATED at iteration ${iteration} (~${iteration * COPYCOUNT_PAGE} rows) — catalog exceeds FULL_SCAN_MAX_ROWS; bump it.`,
+      );
+    } else {
+      console.log(`computeCopyCounts: done (iteration ${iteration})`);
+    }
     return { done: res.isDone, updatedThisBatch: res.updated };
   },
 });
@@ -417,20 +461,15 @@ export const applyReresolutions = internalMutation({
     ),
   },
   handler: async (ctx, { updates }) => {
-    const now = Date.now();
     let restamped = 0;
     for (const u of updates) {
-      const existing = await ctx.db
-        .query("githubRepoResolution")
-        .withIndex("by_repo", (q) => q.eq("repo", u.repo))
-        .unique();
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          repoId: u.repoId,
-          liveName: u.liveName,
-          resolvedAt: now,
-        });
-      }
+      // re-resolve only re-checks rows already in the cache, so this always hits
+      // the patch branch; the shared helper just keeps the write identical.
+      await upsertResolutionRow(ctx, {
+        repo: u.repo,
+        repoId: u.repoId,
+        liveName: u.liveName,
+      });
       if (!u.changed) continue;
       // Re-stamp every summary for this repo. The repo's `source` string is the
       // key we resolved, so by_source_skillId(eq source) gathers its skills.

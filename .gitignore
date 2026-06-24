@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 # next-agents-md
 .next-docs/
+
+# Local, per-machine Claude Code permissions (not for the repo)
+.claude/settings.local.json

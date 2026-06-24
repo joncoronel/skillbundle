@@ -48,6 +48,7 @@ async function insertPair(
     repoLiveName?: string;
     syncHash?: string;
     copyCount?: number;
+    needsRepoResolution?: boolean;
   },
 ) {
   const now = Date.now();
@@ -73,6 +74,7 @@ async function insertPair(
     repoLiveName: fields.repoLiveName,
     syncHash: fields.syncHash,
     copyCount: fields.copyCount,
+    needsRepoResolution: fields.needsRepoResolution,
   });
   return skillDocId;
 }
@@ -331,7 +333,11 @@ test("resolveRepoIdentities reuses a persisted resolution instead of re-hitting 
       resolvedAt: 0,
     });
     // A still-unresolved summary for that same repo (githubRepoId undefined).
-    await insertPair(ctx, { source: "owner/repo", skillId: "s" });
+    await insertPair(ctx, {
+      source: "owner/repo",
+      skillId: "s",
+      needsRepoResolution: true,
+    });
   });
 
   // Fake timers swallow the chained computeCopyCounts schedule.
