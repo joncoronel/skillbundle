@@ -65,7 +65,7 @@ test("listUnseenSummaries returns only non-delisted rows older than the cutoff",
     });
   });
 
-  const page = await t.query(internal.skills.listUnseenSummaries, {
+  const page = await t.query(internal.reconcile.listUnseenSummaries, {
     cutoff: now - DAY,
   });
   expect(page.entries.map((e: { source: string }) => e.source)).toEqual(["a/stale"]);

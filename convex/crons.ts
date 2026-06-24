@@ -82,7 +82,7 @@ if (process.env.CRONS_ENABLED === "true") {
   crons.daily(
     "reconcile unseen skills",
     { hourUTC: 7, minuteUTC: 0 },
-    internal.skills.reconcileUnseenSkills,
+    internal.reconcile.reconcileUnseenSkills,
     // `day`/`iteration` omitted on the first invocation — computed fresh and
     // only threaded through the action's own reschedules.
     {},
@@ -108,7 +108,7 @@ if (process.env.CRONS_ENABLED === "true") {
   crons.weekly(
     "refresh curated skills",
     { dayOfWeek: "sunday", hourUTC: 9, minuteUTC: 0 },
-    internal.skills.refreshCuratedSkills,
+    internal.curatedRefresh.refreshCuratedSkills,
     {},
   );
 

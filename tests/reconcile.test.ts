@@ -1,5 +1,5 @@
 /**
- * Tests for reconcileUnseenSkills classification (convex/skills.ts).
+ * Tests for reconcileUnseenSkills classification (convex/reconcile.ts).
  *
  * The dead-alias skip is the qu-skills inflation guard: a stale, content-healthy
  * row whose repo was renamed (repoLiveName != source) must NOT be refreshed from
@@ -63,7 +63,7 @@ test("reconcile dryRun excludes dead aliases from the healthy refresh set", asyn
     });
   });
 
-  const res = await t.action(internal.skills.reconcileUnseenSkills, {
+  const res = await t.action(internal.reconcile.reconcileUnseenSkills, {
     dryRun: true,
   });
 

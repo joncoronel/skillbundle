@@ -21,9 +21,12 @@ import {
   internalMutation,
   internalQuery,
   query,
+  type QueryCtx,
+  type MutationCtx,
 } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { isGitHubSource } from "./skills";
+import { isGitHubSource } from "./lib/source";
 import { resolveRepoIdentity } from "./lib/github";
 
 // Sentinel stamped on a GitHub summary whose repo couldn't be resolved (404 /
@@ -38,6 +41,112 @@ const RESOLVE_MAX_ITER = 400; // backstop (≈ full non-delisted set / page)
 // Cap how many rows getSkillCopies returns per group — copies are few, but a
 // shared hash could in theory match many; bound the read.
 const COPIES_LIMIT = 25;
+// Counting cap for the denormalized copyCount (computeCopyCountBatch). The chip
+// renders "9+" past ~10, so this only needs a safe ceiling.
+const COPYCOUNT_GROUP_CAP = 100;
+// Delist decrement caps (decrementCopyPeers): per-row peer cap, and a per-batch
+// write budget so a delist landing on a large fork group can't blow the
+// mutation budget. The weekly computeCopyCounts backstop corrects any residual.
+const COPYCOUNT_PEER_CAP = 64;
+export const COPYCOUNT_DECREMENT_BUDGET = 1500;
+
+// ---------------------------------------------------------------------------
+// Copy grouping — the single source of truth for "who shares this content"
+// ---------------------------------------------------------------------------
+//
+// Aliases and forks get consumed three ways (the list copyCount, the detail
+// read, the delist decrement). These two helpers are the ONE place the rule
+// lives, so those call sites can't drift apart. Each returns the live
+// (non-delisted) peer rows; callers count / project / patch them, and pass their
+// own `cap` (UI list limit vs. count ceiling vs. decrement cap).
+
+/** Fields the grouping rule needs from a summary (a Doc satisfies this). */
+type CopyGroupSubject = Pick<
+  Doc<"skillSummaries">,
+  "source" | "skillId" | "githubRepoId" | "syncHash"
+>;
+
+/**
+ * Aliases: the same GitHub repo (stable id) + slug under a different source — a
+ * rename. No real repo id (undefined / sentinel) → no aliases.
+ */
+export async function aliasPeers(
+  ctx: QueryCtx,
+  subject: CopyGroupSubject,
+  cap: number,
+): Promise<Doc<"skillSummaries">[]> {
+  const repoId = subject.githubRepoId;
+  if (repoId === undefined || repoId === REPO_ID_NONE) return [];
+  const rows = await ctx.db
+    .query("skillSummaries")
+    .withIndex("by_repo_skill", (q) =>
+      q.eq("githubRepoId", repoId).eq("skillId", subject.skillId),
+    )
+    .take(cap + 1);
+  return rows.filter((r) => r.source !== subject.source && !r.isDelisted);
+}
+
+/**
+ * Forks: the same content hash under a different REAL repo id — separate repos
+ * with identical SKILL.md. THE fork-fallback lives here: when the subject's
+ * repoId is undefined (an unresolved GitHub row, or a well-known/non-GitHub
+ * source), `r.githubRepoId !== repoId` is `!== undefined`, so every resolved
+ * hash peer counts as a fork. Intended for well-known sources (a genuine
+ * cross-repo content match); self-corrects for unresolved GitHub rows once
+ * resolveRepoIdentities stamps them. Because list / detail / decrement all call
+ * this, they apply the fallback identically and never disagree.
+ */
+export async function forkPeers(
+  ctx: QueryCtx,
+  subject: CopyGroupSubject,
+  cap: number,
+): Promise<Doc<"skillSummaries">[]> {
+  const hash = subject.syncHash;
+  if (!hash) return [];
+  const repoId = subject.githubRepoId;
+  const rows = await ctx.db
+    .query("skillSummaries")
+    .withIndex("by_syncHash", (q) => q.eq("syncHash", hash))
+    .take(cap * 2 + 1);
+  return rows.filter(
+    (r) =>
+      r.source !== subject.source &&
+      !r.isDelisted &&
+      r.githubRepoId !== undefined &&
+      r.githubRepoId !== REPO_ID_NONE &&
+      r.githubRepoId !== repoId,
+  );
+}
+
+/**
+ * When a row is delisted, every peer that counted it as a copy loses exactly one
+ * (alias and fork peer sets are disjoint — same-repo rows are excluded from
+ * forks). Decrement those peers' cached copyCount so the list chip heals at once
+ * instead of waiting for the weekly recompute. Bounded by `budget` (peer writes
+ * remaining in this batch); returns the number used. Lives here, with the
+ * grouping rule, rather than in the delist orchestration.
+ */
+export async function decrementCopyPeers(
+  ctx: MutationCtx,
+  summary: Doc<"skillSummaries">,
+  budget: number,
+): Promise<number> {
+  if (budget <= 0) return 0;
+  let used = 0;
+  for (const p of await aliasPeers(ctx, summary, COPYCOUNT_PEER_CAP)) {
+    if (used >= budget) return used;
+    await ctx.db.patch(p._id, { copyCount: Math.max(0, (p.copyCount ?? 0) - 1) });
+    used++;
+  }
+  if (used < budget) {
+    for (const p of await forkPeers(ctx, summary, COPYCOUNT_PEER_CAP)) {
+      if (used >= budget) return used;
+      await ctx.db.patch(p._id, { copyCount: Math.max(0, (p.copyCount ?? 0) - 1) });
+      used++;
+    }
+  }
+  return used;
+}
 
 // ---------------------------------------------------------------------------
 // Resolution job
@@ -229,13 +338,12 @@ export const resolveRepoIdentities = internalAction({
 // Runs after resolveRepoIdentities (needs githubRepoId populated) and is also
 // chained from it. Counts are capped — the marker only needs "has copies (+N)".
 
-// Each row does two capped index reads below (≤ GROUP_CAP+1 aliases and
-// ≤ GROUP_CAP*2+1 fork-hash peers), so worst case is PAGE * (3*GROUP_CAP + 2)
-// document reads in ONE mutation. Keep PAGE small enough that a page landing on
-// many rows sharing a popular templated syncHash (large fork groups) stays well
-// under Convex's per-transaction read budget: 25 * 302 ≈ 7.5k reads.
+// Each row does two capped index reads (aliasPeers ≤ GROUP_CAP+1, forkPeers ≤
+// GROUP_CAP*2+1), so worst case is PAGE * (3*GROUP_CAP + 2) document reads in ONE
+// mutation. Keep PAGE small enough that a page landing on many rows sharing a
+// popular templated syncHash (large fork groups) stays well under Convex's
+// per-transaction read budget: 25 * 302 ≈ 7.5k reads.
 const COPYCOUNT_PAGE = 25;
-const COPYCOUNT_GROUP_CAP = 100;
 
 export const computeCopyCountBatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
@@ -249,43 +357,8 @@ export const computeCopyCountBatch = internalMutation({
 
     let updated = 0;
     for (const s of result.page) {
-      const repoId = s.githubRepoId;
-
-      // Aliases: same repo id + slug, different source.
-      let aliasCount = 0;
-      if (repoId !== undefined && repoId !== REPO_ID_NONE) {
-        const rows = await ctx.db
-          .query("skillSummaries")
-          .withIndex("by_repo_skill", (q) =>
-            q.eq("githubRepoId", repoId).eq("skillId", s.skillId),
-          )
-          .take(COPYCOUNT_GROUP_CAP + 1);
-        aliasCount = rows.filter((r) => r.source !== s.source && !r.isDelisted).length;
-      }
-
-      // Forks: same content hash, different real repo id. NOTE: when `repoId` is
-      // undefined (this row not yet resolved, or a well-known/non-GitHub source),
-      // `r.githubRepoId !== repoId` is `!== undefined`, so every resolved hash
-      // peer counts as a fork. That's intended for well-known sources (a real
-      // cross-repo content match) and self-corrects for unresolved GitHub rows
-      // once resolveRepoIdentities stamps them. getSkillCopies applies the same
-      // rule, so list + detail never disagree.
-      let forkCount = 0;
-      if (s.syncHash) {
-        const rows = await ctx.db
-          .query("skillSummaries")
-          .withIndex("by_syncHash", (q) => q.eq("syncHash", s.syncHash))
-          .take(COPYCOUNT_GROUP_CAP * 2 + 1);
-        forkCount = rows.filter(
-          (r) =>
-            r.source !== s.source &&
-            !r.isDelisted &&
-            r.githubRepoId !== undefined &&
-            r.githubRepoId !== REPO_ID_NONE &&
-            r.githubRepoId !== repoId,
-        ).length;
-      }
-
+      const aliasCount = (await aliasPeers(ctx, s, COPYCOUNT_GROUP_CAP)).length;
+      const forkCount = (await forkPeers(ctx, s, COPYCOUNT_GROUP_CAP)).length;
       const copyCount = aliasCount + forkCount;
       if ((s.copyCount ?? 0) !== copyCount) {
         await ctx.db.patch(s._id, { copyCount });
@@ -518,67 +591,25 @@ export const getSkillCopies = query({
       return { renamedTo: null, aliases: [], forks: [] };
     }
 
-    const repoId = self.githubRepoId;
     const liveName = self.repoLiveName;
-    const hash = self.syncHash;
 
-    // Aliases: same repo id + same slug, different source. (Skip the no-id
-    // sentinel and well-known sources, which have no repo id.)
-    const aliases: {
-      source: string;
-      skillId: string;
-      installs: number;
-      isLive: boolean;
-    }[] = [];
-    if (repoId !== undefined && repoId !== REPO_ID_NONE) {
-      const rows = await ctx.db
-        .query("skillSummaries")
-        .withIndex("by_repo_skill", (q) =>
-          q.eq("githubRepoId", repoId).eq("skillId", skillId),
-        )
-        .take(COPIES_LIMIT + 1);
-      for (const r of rows) {
-        if (r.source === source) continue;
-        if (r.isDelisted) continue;
-        aliases.push({
-          source: r.source,
-          skillId: r.skillId,
-          installs: r.installs,
-          isLive: r.source === r.repoLiveName,
-        });
-      }
-    }
-
-    // Forks: same content hash, different repo id (genuine separate repos).
-    const forks: { source: string; skillId: string; installs: number }[] = [];
-    if (hash) {
-      const rows = await ctx.db
-        .query("skillSummaries")
-        .withIndex("by_syncHash", (q) => q.eq("syncHash", hash))
-        .take(COPIES_LIMIT * 2 + 1);
-      for (const r of rows) {
-        if (r.source === source) continue;
-        if (r.isDelisted) continue;
-        // Only classify as a fork when the other row is resolved to a real,
-        // DIFFERENT repo id. Unresolved (undefined) or no-id (sentinel) rows
-        // can't be classified yet — skip them rather than mislabel an alias.
-        if (r.githubRepoId === undefined || r.githubRepoId === REPO_ID_NONE) {
-          continue;
-        }
-        // When THIS row's repoId is undefined (unresolved GitHub row, or a
-        // well-known source), `=== repoId` is false, so resolved hash peers are
-        // counted as forks. Intended for well-known sources; self-corrects for
-        // unresolved GitHub rows after resolveRepoIdentities. Mirrors the
-        // computeCopyCountBatch fork filter so the marker and detail agree.
-        if (r.githubRepoId === repoId) continue; // same repo = alias (above)
-        forks.push({
-          source: r.source,
-          skillId: r.skillId,
-          installs: r.installs,
-        });
-        if (forks.length >= COPIES_LIMIT) break;
-      }
-    }
+    // Aliases (same repo, renamed) and forks (same content, different repo) both
+    // come from the canonical grouping helpers, so list + detail can't disagree.
+    const aliases = (await aliasPeers(ctx, self, COPIES_LIMIT))
+      .slice(0, COPIES_LIMIT)
+      .map((r) => ({
+        source: r.source,
+        skillId: r.skillId,
+        installs: r.installs,
+        isLive: r.source === r.repoLiveName,
+      }));
+    const forks = (await forkPeers(ctx, self, COPIES_LIMIT))
+      .slice(0, COPIES_LIMIT)
+      .map((r) => ({
+        source: r.source,
+        skillId: r.skillId,
+        installs: r.installs,
+      }));
 
     // renamedTo: this row is a dead alias when its repo's live name differs from
     // its own source. Only surface it when the live skill actually exists in our
@@ -596,7 +627,7 @@ export const getSkillCopies = query({
 
     return {
       renamedTo,
-      aliases: aliases.slice(0, COPIES_LIMIT),
+      aliases,
       forks,
       // The denormalized count the list marker reads (precomputed by
       // computeCopyCounts); exposed here too for parity/verification.
