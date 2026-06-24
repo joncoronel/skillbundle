@@ -36,7 +36,7 @@ import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { drainRefreshBatch } from "./lib/detailRefresh";
 import { isDeadRenamedAlias } from "./lib/source";
-import { isRefreshHealthy } from "./lib/skillHealth";
+import { summaryRefreshHealthy } from "./lib/skillHealth";
 import { maxIterForRows, CATALOG_MAX_ROWS } from "./lib/pagination";
 
 const CURATED_REFRESH_PAGE = 100;
@@ -58,13 +58,7 @@ export const listCuratedToRefresh = internalQuery({
     const items = result.page
       .filter((s) => !s.isDelisted)
       .filter((s) => s.installRank === undefined) // never on the leaderboard
-      .filter((s) =>
-        isRefreshHealthy({
-          hasSkillMdUrl: s.hasSkillMdUrl ?? false,
-          hasContentFetchError: s.hasContentFetchError ?? false,
-          discoveryFailCount: s.discoveryFailCount ?? 0,
-        }),
-      )
+      .filter((s) => summaryRefreshHealthy(s))
       .filter((s) => !isDeadRenamedAlias(s))
       .map((s) => ({
         source: s.source,

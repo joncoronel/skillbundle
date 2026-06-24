@@ -9,7 +9,7 @@ import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { revalidateHomeTag } from "./lib/revalidate";
-import { isRefreshHealthy } from "./lib/skillHealth";
+import { summaryRefreshHealthy } from "./lib/skillHealth";
 import { isDeadRenamedAlias } from "./lib/source";
 
 // Number of discovery attempts before a skill is considered exhausted
@@ -177,11 +177,7 @@ export const recalculateStatsBatch = internalMutation({
       else if (
         s.lastSeenInApi < deadCutoff &&
         !isDeadRenamedAlias(s) &&
-        isRefreshHealthy({
-          hasSkillMdUrl: s.hasSkillMdUrl ?? false,
-          hasContentFetchError: s.hasContentFetchError ?? false,
-          discoveryFailCount: s.discoveryFailCount ?? 0,
-        })
+        summaryRefreshHealthy(s)
       ) {
         deadButInstallable++;
       }
@@ -294,6 +290,13 @@ export const upsertStats = internalMutation({
 // No external calls; the indexed range scans only the stale tail, not the catalog.
 // `healthyNonAlias` excludes dead renamed aliases (reconcile skips those too), so
 // it's the closest proxy to the head-of-line population in reconcile.ts.
+// Cap the scan so this can't throw on the per-query read budget during the exact
+// incident it exists to diagnose — a mass off-board event is when the stale tail
+// is largest. `.take` instead of `.collect`; a hit cap reports `truncated: true`
+// (the counts are then a floor — the daily syncStats.deadButInstallable has the
+// true full count via its batched scan). Well under Convex's ~16k-doc limit.
+const COUNT_SCAN_CAP = 10_000;
+
 export const countDeadButInstallable = internalQuery({
   args: { days: v.number() },
   handler: async (ctx, { days }) => {
@@ -303,22 +306,21 @@ export const countDeadButInstallable = internalQuery({
       .withIndex("by_isDelisted_lastSeenInApi", (q) =>
         q.eq("isDelisted", false).lt("lastSeenInApi", cutoff),
       )
-      .collect();
+      .take(COUNT_SCAN_CAP);
     let healthy = 0;
     let healthyNonAlias = 0;
     for (const s of stale) {
-      if (
-        !isRefreshHealthy({
-          hasSkillMdUrl: s.hasSkillMdUrl ?? false,
-          hasContentFetchError: s.hasContentFetchError ?? false,
-          discoveryFailCount: s.discoveryFailCount ?? 0,
-        })
-      )
-        continue;
+      if (!summaryRefreshHealthy(s)) continue;
       healthy++;
       if (!isDeadRenamedAlias(s)) healthyNonAlias++;
     }
-    return { days, staleNonDelisted: stale.length, healthy, healthyNonAlias };
+    return {
+      days,
+      staleNonDelisted: stale.length,
+      healthy,
+      healthyNonAlias,
+      truncated: stale.length === COUNT_SCAN_CAP,
+    };
   },
 });
 
