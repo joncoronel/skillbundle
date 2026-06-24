@@ -6,7 +6,7 @@ import {
   query,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
