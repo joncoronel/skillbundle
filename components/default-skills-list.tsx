@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -42,7 +48,7 @@ type LeaderboardTab = LeaderboardTabValue;
 
 /**
  * Tabbed leaderboard shown on the home page when no search is active.
- * All three tabs are server-prefetched + cached (`unstable_cache`, ~1h) and
+ * All three tabs are server-prefetched + cached (`'use cache'`) and
  * seeded as initialData here, so tab switches render instantly with no
  * client-side fetch on first visit.
  */
@@ -152,7 +158,45 @@ export function DefaultSkillsListView({
 // Tab: Popular (paginated, infinite scroll)
 // ---------------------------------------------------------------------------
 
+// SSR-safe "are we on the client yet" flag. Returns false during the prerender
+// and the hydration render, then true — without a setState-in-effect.
+const subscribeNoop = () => () => {};
+function useIsClient() {
+  return useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
+}
+
+// `useInfiniteQuery`'s observer reads `Date.now()` during render, which can't be
+// baked into a prerender. Render the server-cached first page statically for SSR
+// and first paint (real content in the static shell), then activate infinite
+// scroll once the client takes over.
 function PopularList({
+  initialPage,
+  sheetHandle,
+}: {
+  initialPage: Page;
+  sheetHandle: SkillDetailHandle;
+}) {
+  const isClient = useIsClient();
+
+  if (!isClient) {
+    const skills = initialPage.page.map(rowToSkill);
+    return skills.length === 0 ? (
+      <EmptyState message="No skills available yet." />
+    ) : (
+      <SkillRowGrid skills={skills} sheetHandle={sheetHandle} />
+    );
+  }
+
+  return (
+    <PopularInfiniteList initialPage={initialPage} sheetHandle={sheetHandle} />
+  );
+}
+
+function PopularInfiniteList({
   initialPage,
   sheetHandle,
 }: {

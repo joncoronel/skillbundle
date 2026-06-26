@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { unstable_cache } from "next/cache";
+import { cacheLife } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
@@ -15,13 +15,11 @@ export const metadata: Metadata = {
     "First-party skills curated by the makers — companies and orgs publishing skills for the technology they build.",
 };
 
-export const revalidate = 86400; // 1 day
-
-const loadCuratedOwners = unstable_cache(
-  () => fetchQuery(api.curated.listCuratedOwners, {}),
-  ["curated-owners"],
-  { revalidate: 86400 },
-);
+async function loadCuratedOwners() {
+  "use cache";
+  cacheLife("days");
+  return fetchQuery(api.curated.listCuratedOwners, {});
+}
 
 export default async function OfficialPage() {
   return (

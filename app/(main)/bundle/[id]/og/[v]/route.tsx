@@ -9,16 +9,6 @@ import { bundleOgImage } from "@/lib/og/images";
 //
 // Versioning the URL (rather than busting a stable URL) is what makes SOCIAL
 // platforms re-fetch too — they cache the unfurl image by URL for days.
-//
-// revalidate is a slow backstop for the skills' install counts (which drift via
-// the daily sync without changing the bundle's updatedAt); the version handles
-// real edits instantly.
-export const revalidate = 86400;
-export const dynamicParams = true;
-
-export function generateStaticParams() {
-  return [];
-}
 
 export async function GET(
   _request: Request,

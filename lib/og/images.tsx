@@ -210,6 +210,7 @@ export async function skillOgImage(source: string, skillId: string) {
         </div>
       </div>
     </Frame>,
+    { cache: true },
   );
 }
 
@@ -249,6 +250,7 @@ export async function bundleOgImage(urlId: string, version: string) {
       />
       <PixelStatStrip stats={stats} />
     </Frame>,
+    { cache: true },
   );
 }
 
@@ -275,6 +277,7 @@ export async function sourceOgImage(source: string, category = "Source") {
         ]}
       />
     </Frame>,
+    { cache: true },
   );
 }
 
@@ -308,6 +311,7 @@ export async function orgOgImage(org: string) {
         ]}
       />
     </Frame>,
+    { cache: true },
   );
 }
 
