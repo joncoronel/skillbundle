@@ -1,10 +1,18 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the primary guidance for AI coding agents (Claude Code, Codex, etc.)
+working in this repository. It is the single source of truth — `CLAUDE.md` just
+imports this file.
 
 ## Project Overview
 
 SkillBundle is a web app that helps developers discover, compare, and bundle AI coding assistant skills for their tech stack. Users select technologies, get matched with relevant skills from the skills.sh ecosystem, and save/share curated bundles with install commands. See SPEC.md for the full product specification.
+
+## Roadmap & ideas
+
+Things we want to build, ideas, and parked decisions live in [TODO.md](TODO.md).
+Check it for planned work and deferred decisions, and add to it rather than letting
+ideas get lost in chat.
 
 ## Commands
 
@@ -29,32 +37,38 @@ Both `pnpm dev` and `npx convex dev` must be running during local development.
 
 ## Architecture
 
-### Frontend → Backend Connection
+This is a high-level map. The detailed, authoritative guides are:
 
-ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`). Components use Convex's `useQuery`/`useMutation` hooks with the generated `api` object for real-time data.
+- **[docs/architecture.md](docs/architecture.md)** — frontend & platform: Next.js 16 static-first rendering + caching, the route inventory (static / ISR / dynamic), the Suspense-default-state pattern, Clerk auth wiring, the provider tree, data-fetching patterns, nuqs URL state, and Polar billing. **Read this before any frontend / rendering / caching / auth work.**
+- **[docs/skill-lifecycle.md](docs/skill-lifecycle.md)** — backend skill pipeline: how skills enter the catalog, the sync / reconcile / curated / duplicate-detection jobs, "seen" + delisting rules, snapshots, and the `needs*` work-set patterns. **Read this before touching the sync or skill-lifecycle code.**
 
-### Convex Backend (`convex/`)
+### Frontend → backend
 
-- **schema.ts** — Three tables: `users`, `skills`, `bundles`
-- **skills.ts** — Skill sync pipeline (fetches from skills.sh API), technology auto-tagging via `tagSkill()`, and query functions (`listByTechnologies`, `list`, `getBySourceAndSkillId`)
-- **users.ts** — User CRUD synced from Clerk. Helpers: `getCurrentUser()`, `getCurrentUserOrThrow()`
-- **crons.ts** — Daily skill sync at 06:00 UTC
-- **http.ts** — Clerk webhook handler (user create/update/delete) validated with Svix
-- **auth.config.ts** — Clerk JWT issuer configuration
+ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`). Static-first: route shells prerender (CDN), and per-user/interactive data arrives over the authenticated Convex websocket via `useQuery`/`useMutation` (or `useQuery(convexQuery(...))` through TanStack Query). Auth is Clerk, bridged to Convex by JWT; the `proxy.ts` middleware uses an **inverted private-route list** (`/dashboard`, `/settings`, `/dev`) because the catch-all org routes shadow everything — see docs/architecture.md §3.
 
-### Auth Flow
+### Convex backend (`convex/`) at a glance
 
-Clerk handles authentication. The middleware (`proxy.ts`) protects non-public routes. Public routes: `/`, `/sign-in`, `/sign-up`, `/bundle/*`, `/explore`. Clerk webhooks sync user data to the Convex `users` table.
+Tables (`schema.ts`), grouped by concern:
 
-### Technology Tagging
+- **Skills catalog:** `skills` (full ~25 KB rows), `skillSummaries` (slim ~200 B denormalized rows that lists/search/cards read), `skillEmbeddings` (vector search), `skillAudits` + `skillSnapshots` (security verdicts + install-count history), `syncStats`.
+- **Sync / dedup support:** `curatedOwnerSummaries`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`.
+- **Users & bundles:** `users`, `bundles`, `bundleStats`, `bundleStars`.
 
-Two-tier system: `convex/skills.ts` has `tagSkill()` for backend auto-tagging during sync, and `lib/technologies.ts` defines the 25 frontend display technologies with IDs and names.
+Modules, grouped by concern:
 
-### Key Data Flow
+- **Skill sync & lifecycle:** `skills.ts` (sync pipeline + catalog queries), `reconcile.ts`, `curated.ts` / `curatedRefresh.ts`, `duplicates.ts`, `audits.ts`, `crons.ts`, plus `lib/*` helpers (`detailRefresh`, `skillHealth`, `source`, `appDay`, `pagination`, `github`, `skillsApi`, `embeddings`). Documented in docs/skill-lifecycle.md.
+- **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
+- **Bundles & social:** `bundles.ts`, `bundleStars.ts`, `bundleEvents.ts`.
+- **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts` (+ `convex.config.ts` registers the `@convex-dev/polar` component).
+- **Admin / dev:** `devStats.ts` (the `/dev` dashboard stats), `devSeed.ts`.
 
-1. Skills sync: Cron → `syncSkills` action → skills.sh API → batch upsert with auto-tagging
-2. Discovery: User selects technologies → `useQuery(api.skills.listByTechnologies)` → filtered/sorted results
-3. User sync: Clerk event → HTTP webhook → Svix validation → Convex user upsert/delete
+### Crons (`crons.ts`)
+
+Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06:45 → `reconcileUnseenSkills` 07:00, with the discovery/content/audit/embedding pipeline chained off the sync), hourly + 30-min leaderboard refreshes (trending / hot), daily cache cleanups, and a weekly Sunday duplicate chain (resolve repo identities 08:00 → curated refresh 09:00 → re-resolve stale identities 10:00). Production-only (gated by `CRONS_ENABLED`).
+
+### Technology tagging
+
+Two-tier: `convex/skills.ts` `tagSkill()` auto-tags during sync; `lib/technologies.ts` defines the frontend display technologies with IDs and names.
 
 ## Conventions
 
