@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { cacheLife } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { representativeWellKnownSkill } from "@/lib/representative-params";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -34,10 +34,15 @@ export async function generateStaticParams() {
 
 // `'use cache'` isolates `fetchQuery`'s no-store fetch behind a cache boundary
 // and keys the result by `source`, so the route prerenders and the
-// `generateMetadata` pass + page body share one entry.
+// `generateMetadata` pass + page body share one entry. Tagged "skill-sync" so it
+// busts with the skill pages on the daily syncSkills ping and on addSkillManually
+// — otherwise a newly-added skill is missing from this directory (or the whole
+// source 404s) for up to a day even though its detail page already renders.
+// Mirrors loadRepo in [org]/[repo]/page.tsx.
 async function loadSource(source: string) {
   "use cache";
   cacheLife("days");
+  cacheTag("skill-sync");
   const skills = await fetchQuery(api.skills.listBySource, { source });
   const visible = skills
     .filter((s) => !s.isDelisted)

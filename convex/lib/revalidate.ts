@@ -1,7 +1,7 @@
 /**
  * Ping the Next.js site to invalidate a cached home-page leaderboard tag, so
  * the next request rebuilds from fresh Convex data instead of serving the
- * `unstable_cache` snapshot. Called from a leaderboard sync action right after
+ * `'use cache'` snapshot. Called from a leaderboard sync action right after
  * it writes new ranks.
  *
  * No-ops unless both env vars are set — they're configured on the PRODUCTION
