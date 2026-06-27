@@ -1,5 +1,5 @@
 import "server-only";
-import { unstable_cache } from "next/cache";
+import { cacheLife } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
@@ -22,8 +22,11 @@ import {
 
 /**
  * High-level OG image builders, one per surface. Data-backed builders fetch
- * through `unstable_cache` so the underlying `fetchQuery` (which forces
- * `no-store`) doesn't make the image route render dynamically on every crawl.
+ * through `'use cache'` loaders so the underlying `fetchQuery` (which forces
+ * `no-store`) is cached rather than re-hitting Convex on every crawl. The
+ * rendered PNG itself is cached at the CDN via the Cache-Control header in
+ * `renderOg` (lib/og/templates.tsx) — that's what keeps images from
+ * regenerating on every link, independent of these data loaders.
  *
  * Identity rule: the Geist Pixel face appears big — section words, the
  * wordmark, every figure — so the brand reads at a glance. Variable-length
@@ -32,46 +35,41 @@ import {
 
 // ── Cached loaders ──────────────────────────────────────────────────────────
 
-const loadSkill = unstable_cache(
-  (source: string, skillId: string) =>
-    fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
-  ["og-skill"],
-  { revalidate: 86400 },
-);
+async function loadSkill(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
+}
 
 // Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only
-// so it becomes part of the cache key (unstable_cache keys on the args). A new
+// so it becomes part of the cache key (`'use cache'` keys on the args). A new
 // version → a fresh entry → the next render reflects the edit; an unchanged
-// version is served from cache. The 1-day revalidate is a backstop for install
+// version is served from cache. The 1-day cacheLife is a backstop for install
 // counts that drift via the daily sync without bumping updatedAt. Public
 // bundles only (no auth token) — private ones return null → brand fallback.
-const loadBundle = unstable_cache(
-  (urlId: string, version: string) => {
-    void version;
-    return fetchQuery(api.bundles.getByUrlId, { urlId });
-  },
-  ["og-bundle"],
-  { revalidate: 86400 },
-);
+async function loadBundle(urlId: string, version: string) {
+  "use cache";
+  cacheLife("days");
+  void version;
+  return fetchQuery(api.bundles.getByUrlId, { urlId });
+}
 
-const loadSourceSkills = unstable_cache(
-  async (source: string) => {
-    const skills = await fetchQuery(api.skills.listBySource, { source });
-    const visible = skills.filter((s) => !s.isDelisted);
-    return {
-      count: visible.length,
-      totalInstalls: visible.reduce((sum, s) => sum + s.installs, 0),
-    };
-  },
-  ["og-source-skills"],
-  { revalidate: 86400 },
-);
+async function loadSourceSkills(source: string) {
+  "use cache";
+  cacheLife("days");
+  const skills = await fetchQuery(api.skills.listBySource, { source });
+  const visible = skills.filter((s) => !s.isDelisted);
+  return {
+    count: visible.length,
+    totalInstalls: visible.reduce((sum, s) => sum + s.installs, 0),
+  };
+}
 
-const loadOrg = unstable_cache(
-  (org: string) => fetchQuery(api.skills.listRepoAggregatesByOrg, { org }),
-  ["og-org"],
-  { revalidate: 86400 },
-);
+async function loadOrg(org: string) {
+  "use cache";
+  cacheLife("days");
+  return fetchQuery(api.skills.listRepoAggregatesByOrg, { org });
+}
 
 // ── Shared bits ───────────────────────────────────────────────────────────
 

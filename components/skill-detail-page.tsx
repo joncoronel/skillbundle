@@ -14,7 +14,7 @@ import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
-import { timeAgo } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { SkillSidebar } from "@/components/skill-sidebar";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
@@ -101,16 +101,6 @@ export async function loadStars(source: string): Promise<number | null> {
   } catch {
     return null;
   }
-}
-
-// `timeAgo` reads `Date.now()`, which can't be baked into the prerender. The
-// "updated X ago" label is coarse and rides this page's daily snapshot, so
-// caching the formatted value on the same daily cadence as the rest of the page
-// keeps the route prerenderable without shortening its revalidate window.
-async function updatedAgoLabel(timestamp: number) {
-  "use cache";
-  cacheLife("days");
-  return timeAgo(timestamp);
 }
 
 // shiki reads `Date.now()` internally, which can't be baked into a prerender.
@@ -216,9 +206,7 @@ async function SkillDetailBody({
     : undefined;
 
   const updatedKind = skill.contentUpdatedAt ? "Updated" : "Added";
-  const updatedAgo = await updatedAgoLabel(
-    skill.contentUpdatedAt ?? skill._creationTime,
-  );
+  const updatedDate = formatDate(skill.contentUpdatedAt ?? skill._creationTime);
 
   return (
     <>
@@ -317,7 +305,7 @@ async function SkillDetailBody({
             installs={skill.installs}
             insights={insights}
             updatedKind={updatedKind}
-            updatedAgo={updatedAgo}
+            updatedDate={updatedDate}
             audits={audits}
             stars={stars}
           />

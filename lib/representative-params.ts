@@ -15,16 +15,21 @@ type PopularPage = FunctionReturnType<typeof api.skills.listPopularSkills>;
 // well-known dotted domain) and fall back to a known-good slug if Convex is
 // unreachable at build time, so the build never depends on a live backend.
 
-const GITHUB_FALLBACK = { source: "vercel-labs/skills", skillId: "find-skills" };
-const WELL_KNOWN_FALLBACK = {
+type Representative = { source: string; skillId: string };
+
+const GITHUB_FALLBACK: Representative = {
+  source: "vercel-labs/skills",
+  skillId: "find-skills",
+};
+const WELL_KNOWN_FALLBACK: Representative = {
   source: "open.feishu.cn",
   skillId: "lark-approval",
 };
 
 async function topSkillOfType(
   wantGitHub: boolean,
-  fallback: { source: string; skillId: string },
-): Promise<{ source: string; skillId: string }> {
+  fallback: Representative,
+): Promise<Representative> {
   try {
     let cursor: string | null = null;
     for (let i = 0; i < 4; i++) {
@@ -44,10 +49,17 @@ async function topSkillOfType(
   return fallback;
 }
 
-export async function representativeGitHubSkill() {
-  return topSkillOfType(true, GITHUB_FALLBACK);
+// Memoized at module scope so the build resolves each lookup once, not once per
+// catalog route that calls it — the same pattern used for the OG fonts in
+// lib/og/fonts.ts. (5 catalog routes call these; without the memo the build
+// re-runs the scan for each.)
+let cachedGitHub: Promise<Representative> | undefined;
+let cachedWellKnown: Promise<Representative> | undefined;
+
+export function representativeGitHubSkill(): Promise<Representative> {
+  return (cachedGitHub ??= topSkillOfType(true, GITHUB_FALLBACK));
 }
 
-export async function representativeWellKnownSkill() {
-  return topSkillOfType(false, WELL_KNOWN_FALLBACK);
+export function representativeWellKnownSkill(): Promise<Representative> {
+  return (cachedWellKnown ??= topSkillOfType(false, WELL_KNOWN_FALLBACK));
 }
