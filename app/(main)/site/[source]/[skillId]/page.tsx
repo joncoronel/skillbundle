@@ -5,18 +5,16 @@ import {
   loadSkill,
   SkillDetailPage,
 } from "@/components/skill-detail-page";
+import { representativeWellKnownSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ source: string; skillId: string }>;
 
-// Classic ISR. We prebuild nothing at build time; each skill is generated on
-// its first request and cached (dynamicParams defaults to true). The route's
-// `loading.tsx` shows a skeleton during that first generation, and repeat
-// visits serve the cached page until `revalidate` elapses.
-export const revalidate = 86400; // 1 day
-export const dynamicParams = true;
-
-export function generateStaticParams() {
-  return [];
+// One representative skill is prerendered so Next can extract this route's App
+// Shell; every other skill is served that shell instantly (via loading.tsx) and
+// upgraded in the background on its first visit.
+export async function generateStaticParams() {
+  const { source, skillId } = await representativeWellKnownSkill();
+  return [{ source, skillId }];
 }
 
 export async function generateMetadata({

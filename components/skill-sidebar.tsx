@@ -44,7 +44,7 @@ export function SkillSidebar({
   installs,
   insights,
   updatedKind,
-  updatedAgo,
+  updatedDate,
   audits,
   stars,
 }: {
@@ -57,7 +57,7 @@ export function SkillSidebar({
   installs: number;
   insights: SkillInsights;
   updatedKind: string;
-  updatedAgo: string;
+  updatedDate: string;
   audits: SkillAuditEntry[] | null;
   stars: number | null;
 }) {
@@ -195,7 +195,7 @@ export function SkillSidebar({
       )}
 
       <SideSection label={updatedKind}>
-        <span className="text-sm text-foreground">{updatedAgo}</span>
+        <span className="text-sm text-foreground">{updatedDate}</span>
       </SideSection>
 
       {audits && audits.length > 0 && (

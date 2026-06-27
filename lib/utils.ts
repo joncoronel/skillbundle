@@ -45,3 +45,18 @@ export function timeAgo(timestamp: number): string {
   const years = Math.floor(days / 365);
   return `${years}y ago`;
 }
+
+/**
+ * Absolute date like "May 30, 2026", formatted in UTC. Deterministic (no
+ * `Date.now()`, no client/server timezone drift), so it prerenders into the
+ * static shell without a `'use cache'` wrapper or a hydration mismatch — unlike
+ * a relative "X ago" string, which is inherently a function of the current time.
+ */
+export function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}

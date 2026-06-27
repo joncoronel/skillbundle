@@ -2,11 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { unstable_cache } from "next/cache";
-import { fetchQuery } from "convex/nextjs";
+import { representativeGitHubSkill } from "@/lib/representative-params";
+import { loadSourceSkills } from "@/lib/source-skills";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -22,34 +21,15 @@ import { SourceSkillList } from "@/components/source-skill-list";
 
 type Params = Promise<{ org: string; repo: string }>;
 
-// Classic ISR: generate each repo page on first request and cache it.
-export const revalidate = 86400; // 1 day
-export const dynamicParams = true;
-
-export function generateStaticParams() {
-  return [];
+// One representative repo is prerendered so Next can extract this route's App
+// Shell; every other repo is served that shell instantly and upgraded in the
+// background on its first visit (the default dynamicParams behaviour under
+// Cache Components).
+export async function generateStaticParams() {
+  const { source } = await representativeGitHubSkill();
+  const [org, repo] = source.split("/");
+  return [{ org, repo }];
 }
-
-// `unstable_cache` isolates `fetchQuery`'s no-store fetch (so the route can be
-// statically generated) and caches per `source` (args are part of the key). It
-// also dedupes the call between `generateMetadata` and the page body.
-const loadRepo = unstable_cache(
-  async (source: string) => {
-    const skills = await fetchQuery(api.skills.listBySource, { source });
-    const visible = skills
-      .filter((s) => !s.isDelisted)
-      .sort((a, b) => b.installs - a.installs);
-
-    const totalInstalls = visible.reduce((sum, s) => sum + s.installs, 0);
-
-    return { skills: visible, totalInstalls };
-  },
-  ["repo-skills"],
-  // Tagged "skill-sync" so it busts with the skill pages on the daily syncSkills
-  // ping and on addSkillManually — otherwise a newly-added repo 404s here for up
-  // to 24h even though its skill pages already render.
-  { revalidate: 86400, tags: ["skill-sync"] },
-);
 
 export async function generateMetadata({
   params,
@@ -58,7 +38,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { org, repo } = await params;
   const source = `${org}/${repo}`;
-  const { skills } = await loadRepo(source);
+  const { skills } = await loadSourceSkills(source);
 
   if (skills.length === 0) {
     return { title: "Repository not found | SkillBundle" };
@@ -124,7 +104,7 @@ export default async function RepoPage({ params }: { params: Params }) {
 }
 
 async function RepoListContent({ source }: { source: string }) {
-  const { skills, totalInstalls } = await loadRepo(source);
+  const { skills, totalInstalls } = await loadSourceSkills(source);
 
   if (skills.length === 0) {
     notFound();

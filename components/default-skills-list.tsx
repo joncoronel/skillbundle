@@ -12,6 +12,7 @@ import {
   type LeaderboardMetric,
 } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 import {
   Tabs,
@@ -42,7 +43,7 @@ type LeaderboardTab = LeaderboardTabValue;
 
 /**
  * Tabbed leaderboard shown on the home page when no search is active.
- * All three tabs are server-prefetched + cached (`unstable_cache`, ~1h) and
+ * All three tabs are server-prefetched + cached (`'use cache'`) and
  * seeded as initialData here, so tab switches render instantly with no
  * client-side fetch on first visit.
  */
@@ -152,7 +153,36 @@ export function DefaultSkillsListView({
 // Tab: Popular (paginated, infinite scroll)
 // ---------------------------------------------------------------------------
 
+// `useInfiniteQuery`'s observer reads `Date.now()` during render, which can't be
+// baked into a prerender. Render the server-cached first page statically for SSR
+// and first paint (real content in the static shell), then activate infinite
+// scroll once the client takes over.
 function PopularList({
+  initialPage,
+  sheetHandle,
+}: {
+  initialPage: Page;
+  sheetHandle: SkillDetailHandle;
+}) {
+  // useHydrated: false during the prerender and hydration render, then true —
+  // so the Date.now()-reading observer below only mounts on the client.
+  const isClient = useHydrated();
+
+  if (!isClient) {
+    const skills = initialPage.page.map(rowToSkill);
+    return skills.length === 0 ? (
+      <EmptyState message="No skills available yet." />
+    ) : (
+      <SkillRowGrid skills={skills} sheetHandle={sheetHandle} />
+    );
+  }
+
+  return (
+    <PopularInfiniteList initialPage={initialPage} sheetHandle={sheetHandle} />
+  );
+}
+
+function PopularInfiniteList({
   initialPage,
   sheetHandle,
 }: {

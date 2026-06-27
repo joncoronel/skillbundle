@@ -107,12 +107,31 @@ export function BrandHero() {
 }
 
 /** Build the final PNG with the brand fonts attached. */
-export async function renderOg(node: ReactElement): Promise<ImageResponse> {
+export async function renderOg(
+  node: ReactElement,
+  // `cache: true` adds a daily CDN cache header. Use it for the data-backed,
+  // dynamic (`ƒ`) OG routes (skill/org/repo/source/bundle), which carry
+  // `await params` and so can't be statically optimized at build — Cache
+  // Components forbids the route-level `revalidate` they used to carry, so we
+  // cache the rendered PNG at the CDN instead (render once, serve for a day,
+  // revalidate in the background; the data loaders are daily too). The static
+  // section cards (`/explore`, `/compare`, etc.) omit it and keep Next's
+  // build-time static optimization.
+  opts?: { cache?: boolean },
+): Promise<ImageResponse> {
   const fonts = await loadOgFonts();
   return new ImageResponse(node, {
     ...OG_SIZE,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ttf Buffer is a valid font source at runtime; the typed signature expects ArrayBuffer
     fonts: fonts as any,
+    ...(opts?.cache
+      ? {
+          headers: {
+            "Cache-Control":
+              "public, max-age=0, s-maxage=86400, stale-while-revalidate=86400",
+          },
+        }
+      : {}),
   });
 }
 

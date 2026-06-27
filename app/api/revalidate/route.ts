@@ -12,7 +12,7 @@ function secretsMatch(provided: string, expected: string): boolean {
 
 // On-demand cache invalidation for the home-page leaderboards and skill detail
 // pages. The Convex crons POST here right after they write new data, so the next
-// request rebuilds the `unstable_cache` entry from fresh data instead of serving
+// request rebuilds the `'use cache'` entry from fresh data instead of serving
 // a stale (or empty) one. "skill-sync" is pinged by syncSkills to refresh every
 // skill page's install count + chart in lockstep with the daily sync. Gated by a
 // shared secret, and only a fixed allowlist of tags can be revalidated. Not a

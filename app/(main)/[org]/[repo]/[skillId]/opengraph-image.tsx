@@ -5,10 +5,6 @@ export const alt = "Skill on SkillBundle";
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 
-// Mirror the page: each skill image is generated on first request and cached
-// for a day (the loader inside skillOgImage is unstable_cache'd).
-export const revalidate = 86400;
-
 export default async function Image({
   params,
 }: {

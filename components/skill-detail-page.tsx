@@ -2,7 +2,7 @@ import "server-only";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { unstable_cache } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { GitCompareIcon } from "@hugeicons/core-free-icons";
@@ -14,98 +14,103 @@ import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
-import { timeAgo } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { SkillSidebar } from "@/components/skill-sidebar";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
 import { skillHref } from "@/lib/skill-urls";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
-// fetch, which would mark the route dynamic and break static/ISR generation.
-// Wrapping in `unstable_cache` isolates that fetch and caches the result by
-// (source, skillId) — the args are part of the cache key — so the route can be
-// statically generated and the `generateMetadata` pass + body share one entry.
+// fetch, which would block prerendering. Each loader is a `'use cache'`
+// function: that isolates the no-store fetch behind a cache boundary and keys
+// the result by its args (source, skillId), so the route prerenders a static
+// shell and the `generateMetadata` pass + body share one entry.
 //
-// The two loaders carrying syncSkills-written data (install count + rank +
-// snapshots) share the "skill-sync" tag. The daily syncSkills cron pings that
-// tag (see convex/skills.ts), so every skill page's number and chart refresh in
-// lockstep with the sync instead of drifting up to 24h on the ISR window alone.
-// loadAudits/loadStars are updated by other processes, so they keep their own
-// independent 24h cadence and are deliberately untagged.
+// The loaders carrying syncSkills-written data (install count + rank +
+// snapshots) share the "skill-sync" `cacheTag`. The daily syncSkills cron pings
+// that tag via /api/revalidate (see convex/skills.ts), so every skill page's
+// number and chart refresh in lockstep with the sync instead of drifting up to
+// a day on the cacheLife window alone. loadAudits/loadStars are updated by other
+// processes, so they keep their own independent daily cadence and are untagged.
 const SKILL_SYNC_TAG = "skill-sync";
 
-export const loadSkill = unstable_cache(
-  (source: string, skillId: string) =>
-    fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId }),
-  ["skill-detail"],
-  { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
-);
+export async function loadSkill(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  cacheTag(SKILL_SYNC_TAG);
+  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
+}
 
-export const loadAudits = unstable_cache(
-  async (source: string, skillId: string) => {
-    const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
-      source,
-      skillId,
-    });
-    return row?.audits ?? null;
-  },
-  ["skill-audits"],
-  { revalidate: 86400 },
-);
+export async function loadAudits(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
+    source,
+    skillId,
+  });
+  return row?.audits ?? null;
+}
 
 // getInsights returns only daily-cadence fields (install count, installRank,
 // snapshots — all written by the daily syncSkills cron). Tagged "skill-sync" so
 // the sync refreshes it on demand; the 24h revalidate is the fallback if a ping
 // is missed. The faster-moving momentum fields (trending/hot) deliberately stay
 // off this page; they live on the home rails, kept fresh by their own crons.
-export const loadInsights = unstable_cache(
-  (source: string, skillId: string) =>
-    fetchQuery(api.skills.getInsights, { source, skillId }),
-  ["skill-insights"],
-  { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
-);
+export async function loadInsights(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  cacheTag(SKILL_SYNC_TAG);
+  return fetchQuery(api.skills.getInsights, { source, skillId });
+}
 
 // Duplicate/rename relationships (Phase 2): the live skill a renamed alias
 // points to, plus aliases (same repo, other names) and forks (different repos,
 // same content). Populated by resolveRepoIdentities. Tagged "skill-sync" so it
 // busts alongside the install data when a sync pings the revalidate route,
 // rather than lagging the full 24h ISR window after relationships change.
-export const loadCopies = unstable_cache(
-  (source: string, skillId: string) =>
-    fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
-  ["skill-copies"],
-  { revalidate: 86400, tags: [SKILL_SYNC_TAG] },
-);
+export async function loadCopies(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  cacheTag(SKILL_SYNC_TAG);
+  return fetchQuery(api.duplicates.getSkillCopies, { source, skillId });
+}
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
 // viewed skills) and cached 24h, so it piggybacks on the page's existing ISR
 // regeneration rather than adding a daily sync over thousands of repos.
 // GitHub sources only (source is "owner/repo"); well-known sources have no repo.
 // Set GITHUB_TOKEN to lift GitHub's 60/hr unauthenticated limit to 5000/hr.
-export const loadStars = unstable_cache(
-  async (source: string): Promise<number | null> => {
-    if (!source.includes("/")) return null;
-    try {
-      const res = await fetch(`https://api.github.com/repos/${source}`, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          ...(process.env.GITHUB_TOKEN
-            ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
-            : {}),
-        },
-      });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { stargazers_count?: unknown };
-      return typeof data.stargazers_count === "number"
-        ? data.stargazers_count
-        : null;
-    } catch {
-      return null;
-    }
-  },
-  ["skill-stars"],
-  { revalidate: 86400 },
-);
+export async function loadStars(source: string): Promise<number | null> {
+  "use cache";
+  cacheLife("days");
+  if (!source.includes("/")) return null;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${source}`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        ...(process.env.GITHUB_TOKEN
+          ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+          : {}),
+      },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { stargazers_count?: unknown };
+    return typeof data.stargazers_count === "number"
+      ? data.stargazers_count
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// shiki reads `Date.now()` internally, which can't be baked into a prerender.
+// The highlight is deterministic and expensive, so caching it (keyed by content)
+// freezes that read and keeps the skill body in the static shell.
+async function highlightSkillContent(content: string) {
+  "use cache";
+  cacheLife("days");
+  return highlightMarkdownCode(content);
+}
 
 type SkillDetailPageProps = {
   source: string;
@@ -197,11 +202,11 @@ async function SkillDetailBody({
   }
 
   const preHighlighted = skill.content
-    ? await highlightMarkdownCode(skill.content)
+    ? await highlightSkillContent(skill.content)
     : undefined;
 
   const updatedKind = skill.contentUpdatedAt ? "Updated" : "Added";
-  const updatedAgo = timeAgo(skill.contentUpdatedAt ?? skill._creationTime);
+  const updatedDate = formatDate(skill.contentUpdatedAt ?? skill._creationTime);
 
   return (
     <>
@@ -300,7 +305,7 @@ async function SkillDetailBody({
             installs={skill.installs}
             insights={insights}
             updatedKind={updatedKind}
-            updatedAgo={updatedAgo}
+            updatedDate={updatedDate}
             audits={audits}
             stars={stars}
           />
