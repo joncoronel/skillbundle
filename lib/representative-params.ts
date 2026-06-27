@@ -12,8 +12,12 @@ type PopularPage = FunctionReturnType<typeof api.skills.listPopularSkills>;
 // first visit, so one real, non-delisted value per route is all we need here.
 //
 // We read the most popular skill of each source type (GitHub `owner/repo` vs
-// well-known dotted domain) and fall back to a known-good slug if Convex is
-// unreachable at build time, so the build never depends on a live backend.
+// well-known dotted domain) and fall back to a known-good slug if the
+// popular-skills query fails, so param *selection* always yields a valid,
+// non-delisted page with no hardcoded slug to rot. (Rendering that one prebuilt
+// page still queries Convex like any catalog page — the fallback hardens which
+// param we pick, not the whole build. Convex being down at build fails the
+// render regardless.)
 
 type Representative = { source: string; skillId: string };
 

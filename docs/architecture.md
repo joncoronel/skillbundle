@@ -57,7 +57,7 @@ svix
 
 **Static + client data (most routes).** The whole page shell — including a meaningful default state, see §8 — prerenders at build. Navigation between these routes is instant (full prefetch). Per-user or interactive data arrives via the client Convex connection, which the root provider keeps open and authenticated across the whole session, so in-app navigations pay no handshake.
 
-**Partial Prerender for the catalog routes.** Skill/org/repo pages are public, high-cardinality, and shared. `generateStaticParams` returns one representative param (`lib/representative-params.ts` reads the top popular skill of each source type — memoized at module scope so the build resolves each lookup once, not once per route — with a known-good fallback) so Next can prerender the route's App Shell. `dynamicParams: true` is the default: a visitor to an unknown path gets the App Shell instantly (the route's `loading.tsx` skeleton), the param-specific content streams in, and Next upgrades the path in the background so later visitors get the cached render. The data layer (`loadSkill`, `loadAudits`, etc. in `components/skill-detail-page.tsx`, plus per-page `loadOrg`/`loadRepo`/`loadSource`) uses `'use cache'` keyed by args, so `generateMetadata` and the page body share one Convex call, and the `skill-sync`-tagged loaders bust on the daily sync (see §1 caching).
+**Partial Prerender for the catalog routes.** Skill/org/repo pages are public, high-cardinality, and shared. `generateStaticParams` returns one representative param (`lib/representative-params.ts` picks the most popular skill of each source type at build — memoized at module scope so the scan runs once, not once per route — with a known-good fallback) so Next can prerender the route's App Shell. It only needs one real path because an unknown or even invalid param still extracts a working shell; the representative just gives Next one concrete page to fully prebuild. `dynamicParams: true` is the default: a visitor to an unknown path gets the App Shell instantly (the route's `loading.tsx` skeleton), the param-specific content streams in, and Next upgrades the path in the background so later visitors get the cached render. The data layer (`loadSkill`, `loadAudits`, etc. in `components/skill-detail-page.tsx`, plus per-page `loadOrg`/`loadRepo`/`loadSource`) uses `'use cache'` keyed by args, so `generateMetadata` and the page body share one Convex call, and the `skill-sync`-tagged loaders bust on the daily sync (see §1 caching).
 
 > `fetchQuery` forces `cache: "no-store"` on its underlying fetch, which would block prerendering. Wrapping it in a `'use cache'` function isolates that behind a cache boundary and lets the route prerender. This is the standard pattern for any server-side Convex read.
 
@@ -516,15 +516,14 @@ app/
 components/
   app-header.tsx            # server shell; client islands in Suspense
   header-auth-client.tsx    # fully client auth UI (keeps routes static)
-  global-bundle-bar.tsx     # layout-mounted, pathname ALLOW-list
+  global-bundle-bar.tsx     # layout-mounted, pathname ALLOW-list, <Suspense fallback={null}>
   bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style
   skill-detail-page.tsx     # loadSkill/loadAudits ('use cache' + cacheTag loaders)
   skill-picker.tsx          # shared picker pieces (bundle edit + compare)
   header-nav.tsx            # DesktopNav — usePathname read behind <Suspense>
-  global-bundle-bar.tsx     # layout-mounted, pathname allow-list, <Suspense fallback={null}>
 
 lib/
-  representative-params.ts  # 1 representative param per catalog route for generateStaticParams
+  representative-params.ts  # picks 1 representative param per catalog route (popular skill + fallback)
 
 proxy.ts                    # Clerk middleware — PRIVATE-route list (inverted)
 next.config.ts              # cacheComponents + partialPrefetching; optimizePackageImports

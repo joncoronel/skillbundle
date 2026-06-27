@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -18,6 +12,7 @@ import {
   type LeaderboardMetric,
 } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 import {
   Tabs,
@@ -158,17 +153,6 @@ export function DefaultSkillsListView({
 // Tab: Popular (paginated, infinite scroll)
 // ---------------------------------------------------------------------------
 
-// SSR-safe "are we on the client yet" flag. Returns false during the prerender
-// and the hydration render, then true — without a setState-in-effect.
-const subscribeNoop = () => () => {};
-function useIsClient() {
-  return useSyncExternalStore(
-    subscribeNoop,
-    () => true,
-    () => false,
-  );
-}
-
 // `useInfiniteQuery`'s observer reads `Date.now()` during render, which can't be
 // baked into a prerender. Render the server-cached first page statically for SSR
 // and first paint (real content in the static shell), then activate infinite
@@ -180,7 +164,9 @@ function PopularList({
   initialPage: Page;
   sheetHandle: SkillDetailHandle;
 }) {
-  const isClient = useIsClient();
+  // useHydrated: false during the prerender and hydration render, then true —
+  // so the Date.now()-reading observer below only mounts on the client.
+  const isClient = useHydrated();
 
   if (!isClient) {
     const skills = initialPage.page.map(rowToSkill);
