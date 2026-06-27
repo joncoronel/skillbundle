@@ -54,7 +54,7 @@ async function loadBundle(urlId: string, version: string) {
   return fetchQuery(api.bundles.getByUrlId, { urlId });
 }
 
-async function loadSourceSkills(source: string) {
+async function loadSourceCounts(source: string) {
   "use cache";
   cacheLife("days");
   const skills = await fetchQuery(api.skills.listBySource, { source });
@@ -254,7 +254,7 @@ export async function bundleOgImage(urlId: string, version: string) {
 
 /** Source / repo collection card. */
 export async function sourceOgImage(source: string, category = "Source") {
-  const { count, totalInstalls } = await loadSourceSkills(source);
+  const { count, totalInstalls } = await loadSourceCounts(source);
 
   if (count === 0) {
     return sectionOgImage({

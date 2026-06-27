@@ -2,12 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { cacheLife, cacheTag } from "next/cache";
-import { fetchQuery } from "convex/nextjs";
 import { representativeWellKnownSkill } from "@/lib/representative-params";
+import { loadSourceSkills } from "@/lib/source-skills";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -32,32 +30,13 @@ export async function generateStaticParams() {
   return [{ source }];
 }
 
-// `'use cache'` isolates `fetchQuery`'s no-store fetch behind a cache boundary
-// and keys the result by `source`, so the route prerenders and the
-// `generateMetadata` pass + page body share one entry. Tagged "skill-sync" so it
-// busts with the skill pages on the daily syncSkills ping and on addSkillManually
-// — otherwise a newly-added skill is missing from this directory (or the whole
-// source 404s) for up to a day even though its detail page already renders.
-// Mirrors loadRepo in [org]/[repo]/page.tsx.
-async function loadSource(source: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag("skill-sync");
-  const skills = await fetchQuery(api.skills.listBySource, { source });
-  const visible = skills
-    .filter((s) => !s.isDelisted)
-    .sort((a, b) => b.installs - a.installs);
-  const totalInstalls = visible.reduce((sum, s) => sum + s.installs, 0);
-  return { skills: visible, totalInstalls };
-}
-
 export async function generateMetadata({
   params,
 }: {
   params: Params;
 }): Promise<Metadata> {
   const { source } = await params;
-  const { skills } = await loadSource(source);
+  const { skills } = await loadSourceSkills(source);
 
   if (skills.length === 0) {
     return { title: "Source not found | SkillBundle" };
@@ -116,7 +95,7 @@ export default async function WellKnownSourcePage({
 }
 
 async function SourceListContent({ source }: { source: string }) {
-  const { skills, totalInstalls } = await loadSource(source);
+  const { skills, totalInstalls } = await loadSourceSkills(source);
 
   if (skills.length === 0) {
     notFound();

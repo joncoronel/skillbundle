@@ -100,7 +100,7 @@ Each route wraps its params-reading client island in a `<Suspense>` whose fallba
 - On the client, `useSearchParams` resolves synchronously, so at hydration React swaps the fallback DOM for the live tree. With no params set, they're identical — invisible. With params (`/?q=x`), the default state paints first and the param state applies after hydration. That trade-off is accepted (and matches in-session behavior).
 - **Fallbacks must not call `useSearchParams`/`useQueryState`** (they'd re-suspend). To avoid duplicating markup, components are split into a presentational `*View` (state via props) + a thin nuqs-backed wrapper — e.g. `DefaultSkillsListView`/`DefaultSkillsList`, `ExploreFiltersView`, `ExploreTabsView`, `CustomSettingsPageView`. The fallback renders the View with default values.
 - Where the default state is unknowable (compare: column count lives in the URL), the fallback is a state-neutral skeleton instead.
-- **A prerendered client component must also avoid unstable reads during render** — `Date.now()`, `Math.random()`, or a library that reads them. The home Popular list uses `useInfiniteQuery`, whose observer reads `Date.now()` during render; `PopularList` therefore renders its server-cached first page statically and only mounts the query-backed infinite list once the client takes over (`useSyncExternalStore`-based `useIsClient`), keeping the prerender clean while the real leaderboard data still lands in the shell.
+- **A prerendered client component must also avoid unstable reads during render** — `Date.now()`, `Math.random()`, or a library that reads them. The home Popular list uses `useInfiniteQuery`, whose observer reads `Date.now()` during render; `PopularList` therefore renders its server-cached first page statically and only mounts the query-backed infinite list once the client takes over (gated on the `useHydrated` hook — a `useSyncExternalStore` flag), keeping the prerender clean while the real leaderboard data still lands in the shell.
 
 Per-route fallbacks: `app/(main)/home-fallback.tsx`, `components/explore/explore-fallback.tsx`, `CustomSettingsPageView` (settings), `CompareFallback` (in compare's page.tsx).
 
@@ -208,7 +208,7 @@ const isPrivateRoute = createRouteMatcher([
 ]);
 ```
 
-This inversion matters anywhere route lists exist in this app (see also `GlobalBundleBar`'s allow-list): because the catch-all org routes shadow everything, **always allow-list, never exclude-list.**
+This inversion matters anywhere route lists exist in this app: because the catch-all org routes shadow everything, enumerate the finite, knowable side rather than trusting exclusion. For auth that means **allow-list the private routes, never exclude-list** — a missed exclusion would silently make a route public. `GlobalBundleBar` (§5) is the deliberate inverse: it *block*-lists a few reserved non-browse segments, which is safe only because an over-broad match there is cosmetic (the bar self-hides on an empty selection), not a security hole.
 
 ---
 
@@ -516,7 +516,7 @@ app/
 components/
   app-header.tsx            # server shell; client islands in Suspense
   header-auth-client.tsx    # fully client auth UI (keeps routes static)
-  global-bundle-bar.tsx     # layout-mounted, pathname ALLOW-list, <Suspense fallback={null}>
+  global-bundle-bar.tsx     # layout-mounted, pathname reserved-segment BLOCK-list, <Suspense fallback={null}>
   bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style
   skill-detail-page.tsx     # loadSkill/loadAudits ('use cache' + cacheTag loaders)
   skill-picker.tsx          # shared picker pieces (bundle edit + compare)
