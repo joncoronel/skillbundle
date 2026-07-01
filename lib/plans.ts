@@ -23,7 +23,7 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
     priceMonthly: 0,
     priceYearly: 0,
     features: [
-      "Manual stack selection",
+      "Browse, search & compare skills",
       "3 saved bundles",
       "Public bundles only",
       "Basic install commands",
@@ -73,7 +73,7 @@ export const COMPARISON: ComparisonGroup[] = [
     title: "Discovery",
     rows: [
       { label: "Browse all skills", free: true, pro: true },
-      { label: "Manual stack selection", free: true, pro: true },
+      { label: "Search & compare skills", free: true, pro: true },
       { label: "GitHub repo auto-detection", free: false, pro: true },
     ],
   },

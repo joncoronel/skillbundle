@@ -2,215 +2,240 @@
 
 ## Overview
 
-A web app that helps developers discover, compare, and bundle AI coding assistant skills for their tech stack. Users connect a GitHub repo or manually select their technologies, get matched with relevant skills from the skills.sh ecosystem, compare similar options, and save/share curated bundles with install commands.
+SkillBundle is a catalog and discovery app for AI coding-assistant skills. It
+syncs the public skills.sh ecosystem into its own database, then lets developers
+**browse** (leaderboards, per-owner/per-repo catalog pages, a curated "official"
+directory), **discover** (full-text search, or paste a GitHub repo to get skills
+matched to that codebase), **compare** similar skills side by side, and **bundle**
+the ones they want into a shareable set with a single install command.
+
+It is a mostly-signed-out public directory: browsing, searching, and viewing
+shared bundles need no account. Auth is only required to save and manage your own
+bundles.
+
+> This is the product spec. For the *how*, the two authoritative engineering
+> guides are [docs/architecture.md](docs/architecture.md) (frontend, rendering,
+> caching, auth, billing) and [docs/skill-lifecycle.md](docs/skill-lifecycle.md)
+> (the sync/reconcile/audit/embedding pipeline). See also [AGENTS.md](AGENTS.md)
+> for the repo map and [TODO.md](TODO.md) for parked ideas.
 
 ## Tech Stack
 
-- Next.js (App Router)
-- Convex (database, backend functions, cron jobs)
-- Better Auth (GitHub OAuth)
-- Polar (billing — wired up but free at launch)
-- Tailwind CSS
+- **Framework:** Next.js 16 (App Router, React 19) with Cache Components + Partial Prefetching
+- **Backend / DB:** Convex (database, serverless functions, cron jobs, vector search)
+- **Auth:** Clerk (JWT, bridged to Convex; users synced via Svix-validated webhooks)
+- **Billing:** Polar (Merchant of Record) via `@convex-dev/polar` — gating is behind a master switch, free at launch
+- **Data layer:** TanStack Query + `@convex-dev/react-query` over the authed Convex websocket
+- **URL state:** nuqs
+- **Styling:** Tailwind CSS v4 (OKLch); UI components in `components/ui/cubby-ui/` (Radix + Base UI)
+- **Package manager:** pnpm
 
 ## Core Features
 
-### 1. Skills Data Pipeline
+### 1. Skills data pipeline
 
-Sync skills from the skills.sh public API into Convex.
+Skills are synced daily from the skills.sh public API into Convex and enriched.
+Full state machine in [docs/skill-lifecycle.md](docs/skill-lifecycle.md); the
+product-relevant summary:
 
-**Data source:**
-- `https://skills.sh/api/skills/all-time/{page}` — paginated, returns skills with install counts
-- `https://skills.sh/api/skills/trending/{page}` — trending skills
-- `https://skills.sh/api/skills/hot/{page}` — hot skills
-- Paginate until `hasMore` is false
+**Entry points** — a skill enters the catalog three ways:
 
-**For each skill:**
-- Store: source (GitHub repo), skillId, name, installs, leaderboard type
-- Fetch the SKILL.md from GitHub raw content to extract description from YAML frontmatter
-- Add technology tags based on skill name and source repo matching
+- **All-time leaderboard** (`syncSkills` walks the v1 all-time view; owns lifetime installs + rank)
+- **Curated/official set** (`syncCurated` ensures curated skills exist and stamps `curatedOwner`)
+- **Manual add** (admin-only `/dev/add-skill`, verified against the detail endpoint)
 
-**Fetching SKILL.md files:**
+**Enrichment per skill:**
 
-Given a skill with `source` and `skillId`, the SKILL.md is typically at:
+- **Content** — the SKILL.md is discovered (GitHub Tree walk for arbitrary repos, or the v1 detail endpoint for well-known sources) and downloaded; description comes from its YAML frontmatter. A content-hash skip path avoids re-parsing unchanged files.
+- **Install history** — skills.sh only exposes a point-in-time install count, so a daily snapshot per skill (`skillSnapshots`) is what powers "installs over time" charts and 7/30-day momentum.
+- **Leaderboard ranks** — all-time install rank, plus Trending (~24h window) and Hot (current-hour volume) ranks, refreshed on their own cadences.
+- **Security audits** — third-party audit verdicts (`skillAudits`) per provider, with a denormalized worst-status badge (`pass` / `warn` / `fail` / `unknown`) on cards.
+- **Embeddings** — each skill is embedded (512-dim vector in `skillEmbeddings`) to power repo-based recommendations via vector search.
+- **Duplicate / rename detection** — GitHub repo-identity resolution flags forks and renamed aliases (`isDuplicate`, `copyCount`) so the catalog can collapse or hide copies.
 
-```
-https://raw.githubusercontent.com/{source}/main/skills/{skillId}/SKILL.md
-```
+**Health & delisting** — skills unseen by any sync for 30 days are soft-delisted
+(hidden from all listing/search/recommendation queries, row retained for fast
+relist). A row that fails content fetch shows an "install may fail" warning.
 
-Example: For source `supabase/agent-skills` and skillId `supabase-postgres-best-practices`:
-```
-https://raw.githubusercontent.com/supabase/agent-skills/main/skills/supabase-postgres-best-practices/SKILL.md
-```
+**Schedule** — a daily Convex cron chain (sync → curated → snapshot prune →
+reconcile, with discovery/content/audit/embedding pipelines chained off it), plus
+hourly/30-min leaderboard refreshes and a weekly duplicate-resolution chain.
+Production-gated by `CRONS_ENABLED`.
 
-Some repos use different structures. Common fallback paths to try:
-- `skills/{skillId}/SKILL.md` (most common)
-- `{skillId}/SKILL.md` (root level)
-- `.claude/skills/{skillId}/SKILL.md`
-- `.cursor/skills/{skillId}/SKILL.md`
+### 2. Discovery & browse
 
-If a SKILL.md can't be fetched, store the skill without a description.
+The home page (`/`) is the primary surface. It combines browse and search:
 
-**Schedule:** Run daily via Convex cron job.
+**Leaderboards** (browse) — three tabs rendered from server-cached snapshots
+(revalidated by the sync crons, no per-request Convex hit):
 
-### 2. Stack Selection
+- **Popular** — ranked by lifetime installs (infinite scroll)
+- **Trending** — ranked by ~24h install window
+- **Hot** — ranked by current-hour install volume, with momentum chips
 
-Two input methods:
+**Search** — full-text search over skill names (Convex search index on the slim
+`skillSummaries` table), with an "Official only" filter. Typing crossfades the
+results pane in place; the hero stays put.
 
-**Manual selection:**
-- Multi-select UI with common technologies (Next.js, React, Vue, Svelte, Tailwind, Supabase, Convex, Prisma, etc.)
-- As user selects, matching skills populate below
+> Search is currently single-field Convex full-text (prefix, no typo tolerance).
+> Moving to a faceted engine (filters + sorting + typo tolerance across both
+> search and browse) is under consideration — see [TODO.md](TODO.md).
 
-**GitHub repo URL:**
-- User pastes a GitHub repo URL
-- Fetch package.json via GitHub API
-- Extract dependencies
-- Auto-match to technologies
-- Show matching skills
+**GitHub repo analysis** — paste a repo URL and get skills matched to that
+codebase. The repo is fingerprinted (packages, config files, languages, topics,
+README excerpt), embedded, and vector-searched against the skill embeddings;
+results are grouped by skill with their variants. Cached per repo. This is a
+**Pro-gated** feature (`canAutoDetect`).
 
-### 3. Skill Discovery & Display
+**Catalog pages** (deep browse, public, shareable, SEO-oriented):
 
-- Display matching skills grouped by technology
-- Each skill card shows: name, source repo, description, install count
-- Expandable to show full SKILL.md content
-- Checkbox to add skill to bundle
-- When multiple skills match the same technology, indicate they're alternatives
+- `/[org]` — all skills published by one owner
+- `/[org]/[repo]` — all skills in one repo
+- `/[org]/[repo]/[skillId]` and `/site/[source]/[skillId]` — individual skill detail
+- `/official` — the curated/official directory, grouped by owner
 
-### 4. Skill Comparison
+### 3. Skill detail page
 
-- When comparing similar skills, show them side by side
-- Render the full SKILL.md content for each
-- Let user pick which one to add to their bundle
+For a single skill:
+
+- Name, source repo, description, rendered SKILL.md content
+- Install count + rank ("#142 · Top 3%") and an installs-over-time chart with 7/30-day momentum
+- Security audit panel — per-provider verdicts with risk level and summary
+- Install command (copyable)
+- Variants — when the same skill exists across forks/aliases, they're surfaced as alternatives
+- Add-to-bundle control (persists to a client-side selection)
+
+### 4. Skill comparison
+
+`/compare` — compare skills side by side (columns driven by a `?skills=` nuqs
+param, one Convex query per column). Renders each skill's content and stats so a
+user can pick which to add to their bundle. Add/remove column is an instant
+shallow URL update.
 
 ### 5. Bundles
 
-**Save:**
-- Requires authentication (GitHub OAuth)
-- User names their bundle
-- Saves selected skills to Convex
-- Generates a unique shareable slug
+A bundle is a named, shareable set of skills.
 
-**Share:**
-- Public URL: `/bundle/{slug}`
-- Shows all skills in the bundle with descriptions
-- No auth required to view
+**Create / manage** (requires auth):
 
-**Install commands:**
-- Generate install commands for all skills in the bundle
-- Support both `npx skills add` and `npx ctx7 skills install` formats
-- Copy all button
+- Name + optional description; skills stored as `{source, skillId}`
+- Unique `urlId` for the public URL
+- Public or private; private bundles use a `shareToken` for link-only access
+- Owner dashboard at `/dashboard` (optimistic create/delete)
+
+**Share** (`/bundle/[id]`):
+
+- Public URL, no auth to view; private bundles open via `?share=<token>`
+- OG tags (name/description/image) so links unfurl in chat apps
+- One-tap copy of the combined install command
+
+**Social / stats:**
+
+- **Stars**, **forks** (copy someone's bundle into your own), and **copy count**
+- Public bundles can be ranked by star count and surfaced on explore
+- Featured bundles (`featuredAt`) for editorial placement
+
+**Install commands** — skills are grouped by source repo to minimize commands
+(`npx skills add owner/repo --skill a --skill b`); multiple repos are joined with
+`&&`. A per-skill warning flags any skill whose content fetch failed.
 
 ### 6. Explore
 
-- Browse public bundles from the community
-- Sort by recent or popular
+`/explore` — browse public community bundles, sorted by recent or popularity
+(stars/copies). All data client-fetched.
+
+### 7. Accounts & settings
+
+- Clerk-hosted sign-in/up (`/(auth)/...`) with SSO callback routes
+- `/settings` — profile (via Clerk) and active-session management (server action)
+- User records mirrored into Convex (denormalized name/email/image) via webhook
+
+### 8. Billing
+
+Polar subscriptions via `@convex-dev/polar`. Two-layer enforcement: Convex
+mutations check plan limits server-side; the UI disables controls / shows upgrade
+prompts. A master `FEATURE_GATING_ENABLED` switch keeps everything free until
+turned on. See architecture.md §11.
+
+### 9. Admin / dev
+
+`/dev` (admin-only) — sync/pipeline stats, embedding-coverage monitoring, a
+"dead but installable" health card, and `/dev/add-skill` for manual inserts.
 
 ## Data Model
 
-**skills**
-- source (string) — GitHub repo path, e.g., "supabase/agent-skills"
-- skillId (string) — skill identifier
-- name (string)
-- description (string) — from SKILL.md frontmatter
-- installs (number)
-- technologies (array of strings) — for matching
-- leaderboard (string) — "all-time" | "trending" | "hot"
+Authoritative schema: [`convex/schema.ts`](convex/schema.ts). Key tables:
 
-**bundles**
-- userId (reference to users)
-- name (string)
-- slug (string) — unique, for shareable URL
-- skills (array of {source, skillId})
-- isPublic (boolean)
-- createdAt (number)
+- **`skills`** — full skill rows (~25 KB): content, install/leaderboard state, pipeline flags (discovery/content/audit/embedding), duplicate + curated markers, denormalized worst-audit status.
+- **`skillSummaries`** — slim (~200 B) denormalized rows that all listing / search / card / leaderboard queries read, so hot paths never touch the heavy rows. Holds the full-text search index.
+- **`skillEmbeddings`** — 512-dim vectors + vector index for repo recommendations.
+- **`skillAudits`** — per-provider security verdicts.
+- **`skillSnapshots`** — daily install counts per skill (history + momentum).
+- **`curatedOwnerSummaries`** — owner-level rollup for `/official`.
+- **`bundles` / `bundleStats` / `bundleStars`** — bundles + denormalized social counts + stars.
+- **`users`** — Clerk-synced, keyed by `externalId`.
+- **Sync/dedup support** — `syncStats`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`.
 
-**users**
-- Managed by Better Auth with GitHub OAuth
+## Pages / routes
 
-## Pages
+Full route inventory with rendering strategy in
+[docs/architecture.md §1](docs/architecture.md). At a glance:
 
-- `/` — Home with stack selection and skill discovery
-- `/compare` — Side-by-side skill comparison (could also be a modal)
-- `/bundle/[slug]` — Public bundle view
-- `/explore` — Browse community bundles
-- `/dashboard` — User's saved bundles (authenticated)
+| Route | Purpose |
+| --- | --- |
+| `/` | Home: leaderboards + search + repo analysis |
+| `/explore` | Community bundles |
+| `/compare` | Side-by-side skill comparison |
+| `/official` | Curated/official directory |
+| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/[source]/...` | Catalog browse + skill detail |
+| `/bundle/[id]` | Public/shared bundle view |
+| `/dashboard` | User's saved bundles (auth) |
+| `/settings` | Profile + sessions (auth) |
+| `/pricing` | Plans |
+| `/dev`, `/dev/add-skill` | Admin (auth + admin) |
+| `/(auth)/sign-in`, `/sign-up` | Clerk auth |
 
-## User Flows
-
-**Discovery flow:**
-1. User lands on home page
-2. Either selects technologies manually OR pastes GitHub repo URL
-3. Matching skills appear grouped by technology
-4. User checks skills to add to bundle
-5. User compares similar skills if needed
-6. User saves bundle (requires auth) or copies install commands directly
-
-**Sharing flow:**
-1. User saves a bundle
-2. Gets a shareable URL
-3. Anyone can view the bundle and copy install commands
-
-## Pricing Tiers
+## Pricing tiers
 
 **Free:**
-- Manual stack selection only
-- 3 saved bundles max
-- All bundles are public
+- Browse all skills, leaderboards, and catalog
+- Text search
+- Up to 3 saved bundles, public only
 - Basic install commands
 
-**Pro ($8-12/month):**
-- GitHub repo URL auto-detection
+**Pro ($8/month, $72/year):**
+- GitHub repo auto-detection (repo analysis)
 - Unlimited saved bundles
-- Private bundles (not visible on explore page)
+- Private bundles
 - Bundle analytics (views, copies)
-- Export as shell script or config file
 
-**Team ($15-20/seat/month):**
-- Everything in Pro
-- Shared team workspace
-- Team bundles that sync across members
-- Onboarding bundle link for new hires
+Gating is behind a master switch (`FEATURE_GATING_ENABLED`) — everything is free
+until there's traction.
 
-For MVP launch, keep everything free to get users. Gate features behind Polar once there's traction.
-
-## Out of Scope for MVP
-
-- Skill generation or editing
-- Automatic compatibility detection between skills
-- GitHub PR integration
-- Team workspace features
-- Mobile-first design
-- Search within skills
-
-## Install Command Formats
+## Install command format
 
 **skills.sh CLI:**
 ```bash
-# Single skill
+# One skill
 npx skills add owner/repo --skill skill-name
 
-# Multiple skills from same repo
+# Multiple skills from the same repo (grouped into one command)
 npx skills add owner/repo --skill skill-one --skill skill-two
-
-# All skills from a repo
-npx skills add owner/repo --all
 ```
 
-**Context7 CLI:**
-```bash
-# Single skill
-npx ctx7 skills install /owner/repo skill-name
+When generating commands for a bundle, group skills by source repo to minimize
+commands; join commands for different repos with `&&`.
 
-# Multiple skills
-npx ctx7 skills install /owner/repo skill-one skill-two
-```
+## Out of scope
 
-**Updating skills:**
-```bash
-# Check for updates
-npx skills check
+- Skill generation or editing
+- Automatic compatibility detection between skills
+- Team workspaces / shared team bundles
+- Native mobile app
 
-# Update all to latest
-npx skills update
-```
+## Under consideration
 
-When generating commands for a bundle, group skills by source repo to minimize commands. For skills from different repos, generate separate commands.
+Tracked in [TODO.md](TODO.md). Notably: a faceted search engine
+(Typesense / Meilisearch / Algolia) to add typo tolerance, filters, and sorting
+across both search and browse — weighed against the added sync-pipeline and
+hosting cost on the current Vercel Hobby + Convex Pro setup.
