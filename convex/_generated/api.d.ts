@@ -32,12 +32,14 @@ import type * as lib_revalidate from "../lib/revalidate.js";
 import type * as lib_skillHealth from "../lib/skillHealth.js";
 import type * as lib_skillsApi from "../lib/skillsApi.js";
 import type * as lib_source from "../lib/source.js";
+import type * as lib_typesense from "../lib/typesense.js";
 import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
 import type * as recommendations from "../recommendations.js";
 import type * as reconcile from "../reconcile.js";
 import type * as skills from "../skills.js";
 import type * as subscriptions from "../subscriptions.js";
+import type * as typesense from "../typesense.js";
 import type * as users from "../users.js";
 
 import type {
@@ -71,12 +73,14 @@ declare const fullApi: ApiFromModules<{
   "lib/skillHealth": typeof lib_skillHealth;
   "lib/skillsApi": typeof lib_skillsApi;
   "lib/source": typeof lib_source;
+  "lib/typesense": typeof lib_typesense;
   plans: typeof plans;
   polar: typeof polar;
   recommendations: typeof recommendations;
   reconcile: typeof reconcile;
   skills: typeof skills;
   subscriptions: typeof subscriptions;
+  typesense: typeof typesense;
   users: typeof users;
 }>;
 
