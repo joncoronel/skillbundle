@@ -25,7 +25,7 @@ import {
   officialFilterParser,
   auditFilterParser,
   minInstallsParser,
-  forksFilterParser,
+  searchDescriptionsParser,
   brokenFilterParser,
   leaderboardTabParser,
   type ModeValue,
@@ -103,9 +103,9 @@ export function SkillExplorer({
     "min",
     minInstallsParser.withOptions({ startTransition }),
   );
-  const [forks, setForks] = useQueryState(
-    "forks",
-    forksFilterParser.withOptions({ startTransition }),
+  const [searchDescriptions, setSearchDescriptions] = useQueryState(
+    "desc",
+    searchDescriptionsParser.withOptions({ startTransition }),
   );
   const [broken, setBroken] = useQueryState(
     "broken",
@@ -134,8 +134,8 @@ export function SkillExplorer({
       onAuditChange={setAudit}
       minInstalls={minInstalls}
       onMinInstallsChange={setMinInstalls}
-      forks={forks}
-      onForksChange={setForks}
+      searchDescriptions={searchDescriptions}
+      onSearchDescriptionsChange={setSearchDescriptions}
       broken={broken}
       onBrokenChange={setBroken}
       canAutoDetect={canAutoDetect}
@@ -163,8 +163,8 @@ interface SkillExplorerViewProps extends SkillExplorerProps {
   onAuditChange: (v: AuditFilterValue | null) => void;
   minInstalls: number | null;
   onMinInstallsChange: (v: number | null) => void;
-  forks: boolean;
-  onForksChange: (v: boolean) => void;
+  searchDescriptions: boolean;
+  onSearchDescriptionsChange: (v: boolean) => void;
   broken: boolean;
   onBrokenChange: (v: boolean) => void;
 }
@@ -198,8 +198,8 @@ export const ENTRY_STATE_DEFAULTS: Omit<
   onAuditChange: noop,
   minInstalls: null,
   onMinInstallsChange: noop,
-  forks: false,
-  onForksChange: noop,
+  searchDescriptions: false,
+  onSearchDescriptionsChange: noop,
   broken: false,
   onBrokenChange: noop,
 };
@@ -248,8 +248,8 @@ export function SkillExplorerView({
   onAuditChange,
   minInstalls,
   onMinInstallsChange,
-  forks,
-  onForksChange,
+  searchDescriptions,
+  onSearchDescriptionsChange,
   broken,
   onBrokenChange,
   canAutoDetect,
@@ -297,7 +297,6 @@ export function SkillExplorerView({
     official ||
     audit !== null ||
     minInstalls !== null ||
-    forks ||
     broken ||
     sortParam !== null;
   const isRepo = mode === "repo";
@@ -315,9 +314,11 @@ export function SkillExplorerView({
     officialOnly: official || undefined,
     audit: audit ?? undefined,
     minInstalls: minInstalls ?? undefined,
-    // The catalog hides forks/copies by default (parity with the old Convex
-    // queries); the `forks` param records the opt-in to showing them.
-    hideForks: !forks,
+    // Always hide skills.sh-flagged forks/copies (parity with the cached
+    // Popular query's `!isDuplicate`). No user toggle: the flag is unset across
+    // the whole catalog today, so a control would do nothing — see
+    // docs/search-overhaul.md. Kept here so it auto-applies if it ever populates.
+    hideForks: true,
     excludeBroken: broken || undefined,
   };
 
@@ -328,7 +329,6 @@ export function SkillExplorerView({
     onOfficialChange(false);
     onAuditChange(null);
     onMinInstallsChange(null);
-    onForksChange(false);
     onBrokenChange(false);
   }
 
@@ -396,8 +396,8 @@ export function SkillExplorerView({
       onAuditChange={onAuditChange}
       minInstalls={minInstalls}
       onMinInstallsChange={onMinInstallsChange}
-      forks={forks}
-      onForksChange={onForksChange}
+      searchDescriptions={searchDescriptions}
+      onSearchDescriptionsChange={onSearchDescriptionsChange}
       broken={broken}
       onBrokenChange={onBrokenChange}
       onClearFilters={handleClearFilters}
@@ -589,6 +589,7 @@ export function SkillExplorerView({
                     rawQuery={textQuery}
                     sort={effectiveSort}
                     filters={filters}
+                    searchDescriptions={searchDescriptions}
                     anyFilterActive={anyFilter}
                     sheetHandle={skillDetailHandle}
                     onSettledChange={setSearchSettled}

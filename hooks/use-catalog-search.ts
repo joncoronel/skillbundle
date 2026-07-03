@@ -21,6 +21,8 @@ interface UseCatalogSearchOptions {
   rawQuery: string;
   sort: SkillSort;
   filters: SkillFilters;
+  /** Also match on description (default: names only). */
+  searchDescriptions: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function useCatalogSearch({
   rawQuery,
   sort,
   filters,
+  searchDescriptions,
 }: UseCatalogSearchOptions) {
   const trimmed = rawQuery.trim();
 
@@ -56,12 +59,19 @@ export function useCatalogSearch({
   }|${filters.excludeBroken ? 1 : 0}|${filters.minInstalls ?? ""}|${filters.source ?? ""}`;
 
   const query = useInfiniteQuery({
-    queryKey: ["typesense-catalog", debounced, sort, filtersKey] as const,
+    queryKey: [
+      "typesense-catalog",
+      debounced,
+      sort,
+      filtersKey,
+      searchDescriptions,
+    ] as const,
     queryFn: ({ pageParam }) =>
       searchSkills({
         query: debounced,
         sort,
         filters,
+        searchDescriptions,
         page: pageParam,
         perPage: PER_PAGE,
         // Facet counts only change with query/filters, not page — fetch once.

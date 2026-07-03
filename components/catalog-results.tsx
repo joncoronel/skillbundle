@@ -38,6 +38,8 @@ interface ActiveCatalogResultsProps {
   rawQuery: string;
   sort: SkillSort;
   filters: SkillFilters;
+  /** Also match on description (default: names only). */
+  searchDescriptions: boolean;
   anyFilterActive: boolean;
   sheetHandle: SkillDetailHandle;
   /** Reports "search work pending" up so the shared search input (which lives
@@ -65,6 +67,7 @@ export function ActiveCatalogResults({
   rawQuery,
   sort,
   filters,
+  searchDescriptions,
   anyFilterActive,
   sheetHandle,
   onLoadingChange,
@@ -83,7 +86,7 @@ export function ActiveCatalogResults({
     hasNextPage,
     isFetchingNextPage,
     debouncedQuery,
-  } = useCatalogSearch({ rawQuery, sort, filters });
+  } = useCatalogSearch({ rawQuery, sort, filters, searchDescriptions });
 
   // Mirror the query's pending state up to the input spinner. Reset to false
   // on unmount (leaving the active state) so the icon doesn't stick as a

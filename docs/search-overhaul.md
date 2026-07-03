@@ -87,9 +87,12 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 
 ### 1. Search quality (the core upgrade)
 
-- [x] **Search `description`, not just `name`.** · `query_by: name,description`
-      in `lib/search/typesense.ts`
-- [x] **Weighted multi-field ranking** (name > description). · `query_by_weights: 3,1`
+- [x] **Search `description`, not just `name`** — now an **opt-in** ("Search
+      descriptions" in More; default is names-only for tighter matches). Names
+      only ≈ 15× fewer hits than +descriptions (e.g. "database": 21 vs 313), so
+      it's a precision-vs-recall toggle. · `query_by: name` / `name,description`
+- [x] **Weighted multi-field ranking** (name > description, when descriptions
+      are on). · `query_by_weights: 3,1`
 - [x] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS default (`num_typos`);
       verified: "postgress" → 117 results
 - [x] **Prefix / search-as-you-type** · TS default
@@ -116,8 +119,11 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
       `?min=<n>`). Demoted from a top-level select: popularity is already the
       default sort, so a hard threshold is secondary. Presets (not a slider —
       unusable over a 0–1.5M exponential range).
-- [x] **Hide forks / copies** — hidden by default (parity with the Convex
-      queries); "Show forks & copies" opt-in under More (`?forks=true`)
+- [~] **Hide forks / copies** — kept as a hardcoded default (`isDuplicate:false`)
+      but the **user toggle was removed**: `isDuplicate` is `false` on 100% of
+      the catalog (skills.sh doesn't set it), so a control did nothing. A real
+      "hide duplicates" would wire to our own `copyCount`/repo-identity detection
+      (the signal that's actually populated) — deferred.
 - [x] **Exclude broken installs** — "Hide broken installs" under More
       (`?broken=true` → `hasContentFetchError:false`)
 - [x] **Clear (n)** — one-tap reset of all filters to their broad defaults

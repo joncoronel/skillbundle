@@ -42,9 +42,9 @@ export interface CatalogControlsProps {
   onAuditChange: (v: AuditFilterValue | null) => void;
   minInstalls: number | null;
   onMinInstallsChange: (v: number | null) => void;
-  /** true = forks/copies are INCLUDED (catalog hides them by default). */
-  forks: boolean;
-  onForksChange: (v: boolean) => void;
+  /** true = search names AND descriptions; default (false) searches names only. */
+  searchDescriptions: boolean;
+  onSearchDescriptionsChange: (v: boolean) => void;
   /** true = skills with failing SKILL.md fetches are hidden. */
   broken: boolean;
   onBrokenChange: (v: boolean) => void;
@@ -88,8 +88,9 @@ function ItemCount({ count }: { count: number | undefined }) {
  * The catalog's sort + filter bar. The two differentiator filters — Official
  * and Audit — stay visible as scoped selects (each defaulting to its broadest
  * value, so active narrowing is always readable in the closed trigger).
- * Secondary hygiene filters (minimum installs, forks, broken) live behind
- * "More" so the bar doesn't sprawl; its badge shows how many are active.
+ * Secondary options (minimum installs, description search, hide-broken) live
+ * behind "More" so the bar doesn't sprawl; its badge shows how many filters
+ * are active.
  * "Clear (n)" resets every filter (the sort is a view preference, kept).
  *
  * Rendered in both home states (Popular-tab header + active-state bar).
@@ -106,8 +107,8 @@ export function CatalogControls({
   onAuditChange,
   minInstalls,
   onMinInstallsChange,
-  forks,
-  onForksChange,
+  searchDescriptions,
+  onSearchDescriptionsChange,
   broken,
   onBrokenChange,
   onClearFilters,
@@ -116,8 +117,10 @@ export function CatalogControls({
   const officialCount = facetCount(facets, "isOfficial", "true");
   const passCount = facetCount(facets, "worstAuditStatus", "pass");
 
-  const moreCount =
-    (minInstalls !== null ? 1 : 0) + (forks ? 1 : 0) + (broken ? 1 : 0);
+  // "Search descriptions" is a search-scope preference, not a filter, so it's
+  // deliberately NOT counted here (or reset by Clear) — only the hygiene
+  // filters drive the badge.
+  const moreCount = (minInstalls !== null ? 1 : 0) + (broken ? 1 : 0);
   const activeFilterCount =
     (official ? 1 : 0) + (audit ? 1 : 0) + moreCount;
 
@@ -230,11 +233,11 @@ export function CatalogControls({
           <DropdownMenuSeparator />
 
           <DropdownMenuCheckboxItem
-            checked={forks}
-            onCheckedChange={(checked) => onForksChange(!!checked)}
+            checked={searchDescriptions}
+            onCheckedChange={(checked) => onSearchDescriptionsChange(!!checked)}
             closeOnClick={false}
           >
-            Show forks & copies
+            Search descriptions
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
             checked={broken}

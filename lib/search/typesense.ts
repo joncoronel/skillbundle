@@ -84,6 +84,8 @@ export interface SkillSearchArgs {
   query?: string;
   sort?: SkillSort;
   filters?: SkillFilters;
+  /** Also match on `description` (default: names only). */
+  searchDescriptions?: boolean;
   page?: number;
   perPage?: number;
   /** Request facet counts for the filter fields (for sidebar counts). */
@@ -155,9 +157,14 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
 
   const params = new URLSearchParams();
   params.set("q", hasQuery ? query : "*"); // "*" = match-all for browse
-  params.set("query_by", "name,description");
-  // Name matches outrank description matches (see docs/search-overhaul.md).
-  params.set("query_by_weights", "3,1");
+  if (args.searchDescriptions) {
+    params.set("query_by", "name,description");
+    // Name matches outrank description matches (see docs/search-overhaul.md).
+    params.set("query_by_weights", "3,1");
+  } else {
+    // Default: names only — tighter, more precise matches.
+    params.set("query_by", "name");
+  }
   params.set("page", String(args.page ?? 1));
   params.set("per_page", String(args.perPage ?? 30));
 

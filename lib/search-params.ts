@@ -42,9 +42,6 @@ export const catalogSortParser = parseAsStringLiteral(catalogSortValues);
 
 // Catalog filters. Every filter's broadest value is the default and stays
 // absent from the URL — the URL only records explicit narrowing.
-// `forks` is inverted intentionally — the catalog hides forks/copies by
-// default (matching the old Convex queries' isDuplicate filter), so the param
-// records the opt-IN to showing them.
 export const officialFilterParser = parseAsBoolean.withDefault(false);
 // "pass" = passed audits only; "nofail" = anything except a failed verdict.
 const auditFilterValues = ["pass", "nofail"] as const;
@@ -52,7 +49,10 @@ export type AuditFilterValue = (typeof auditFilterValues)[number];
 export const auditFilterParser = parseAsStringLiteral(auditFilterValues);
 // Minimum lifetime installs (preset buckets in the UI; any integer accepted).
 export const minInstallsParser = parseAsInteger;
-export const forksFilterParser = parseAsBoolean.withDefault(false);
+// Search scope. Default (false) searches skill names only; opt in to also
+// search descriptions. A preference, not a filter — not part of "active
+// filters" / Clear.
+export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
 // true = hide skills whose SKILL.md fetch failed (install command may break).
 export const brokenFilterParser = parseAsBoolean.withDefault(false);
 
