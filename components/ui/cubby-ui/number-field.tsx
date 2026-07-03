@@ -2,6 +2,8 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import { NumberField as BaseNumberField } from "@base-ui/react/number-field";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowDown01Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 
 import { cn } from "@/lib/utils";
 
@@ -12,6 +14,9 @@ const numberFieldGroupVariants = cva(
     "outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color] duration-100 ease-out outline-solid",
     "has-[[data-slot=number-field-input]:focus-visible]:outline-ring/50 has-[[data-slot=number-field-input]:focus-visible]:outline-2 has-[[data-slot=number-field-input]:focus-visible]:outline-offset-2",
     "has-[[data-slot=number-field-input][aria-invalid=true]]:outline-destructive/50 has-[[data-slot=number-field-input][aria-invalid=true]]:outline-2 has-[[data-slot=number-field-input][aria-invalid=true]]:outline-offset-2",
+    // With a stacked stepper (no decrement capping the left edge), the input
+    // rounds and borders its own left side automatically.
+    "has-[[data-slot=number-field-stepper]]:[&>[data-slot=number-field-input]]:rounded-l-lg has-[[data-slot=number-field-stepper]]:[&>[data-slot=number-field-input]]:border-l",
   ],
   {
     variants: {
@@ -119,6 +124,55 @@ function NumberFieldDecrement({
   );
 }
 
+// Vertically-stacked increment (top) / decrement (bottom) cluster for the
+// right edge of the group — the styled equivalent of a native number spinner.
+// The group detects it and rounds/borders the input's left edge automatically.
+function NumberFieldStepper({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
+  const stepClassName = cn(
+    "hover:bg-(--number-field-hover) flex flex-1 items-center justify-center px-2 select-none",
+    "focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2",
+    "disabled:pointer-events-none disabled:opacity-60",
+  );
+
+  return (
+    <div
+      data-slot="number-field-stepper"
+      className={cn(
+        // `border` (all four sides): the left edge is the divider against the input.
+        "flex flex-col self-stretch overflow-hidden rounded-r-lg border bg-(--number-field-bg) bg-clip-padding",
+        className,
+      )}
+      {...props}
+    >
+      <BaseNumberField.Increment
+        data-slot="number-field-increment"
+        className={cn(stepClassName, "border-b")}
+        aria-label="Increase"
+      >
+        <HugeiconsIcon
+          icon={ArrowUp01Icon}
+          className="size-3.5"
+          strokeWidth={2}
+        />
+      </BaseNumberField.Increment>
+      <BaseNumberField.Decrement
+        data-slot="number-field-decrement"
+        className={stepClassName}
+        aria-label="Decrease"
+      >
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          className="size-3.5"
+          strokeWidth={2}
+        />
+      </BaseNumberField.Decrement>
+    </div>
+  );
+}
+
 function NumberFieldScrubArea({
   className,
   ...props
@@ -154,6 +208,7 @@ export {
   NumberFieldInput,
   NumberFieldIncrement,
   NumberFieldDecrement,
+  NumberFieldStepper,
   NumberFieldScrubArea,
   NumberFieldScrubAreaCursor,
 };

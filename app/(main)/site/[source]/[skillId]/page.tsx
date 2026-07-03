@@ -5,6 +5,14 @@ import {
   loadSkill,
   SkillDetailPage,
 } from "@/components/skill-detail-page";
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/cubby-ui/breadcrumbs";
 import { representativeWellKnownSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ source: string; skillId: string }>;
@@ -57,20 +65,23 @@ export default async function WellKnownSkillPage({
       externalIcon={GlobalSearchIcon}
       externalLabel={source}
       breadcrumb={
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
-          <Link href="/" className="hover:text-foreground transition-colors">
-            Home
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/site/${source}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {source}
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">{skillId}</span>
-        </nav>
+        <Breadcrumb size="sm" className="mb-6">
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/" />}>Home</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/site/${source}`} />}>
+                {source}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{skillId}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     />
   );
