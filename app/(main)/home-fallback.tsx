@@ -17,12 +17,13 @@ import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { DefaultSkillsListView } from "@/components/default-skills-list";
 import { createSkillDetailHandle } from "@/components/skill-detail-sheet";
 import type { api } from "@/convex/_generated/api";
+import Hero from "@/components/hero/hero"
 
 type HomeFallbackProps = {
   hero: ReactNode;
-  initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
-  initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
-  initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
+  // initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
+  // initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
+  // initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
 };
 
 const noop = () => {};
@@ -43,15 +44,10 @@ const fallbackSheetHandle = createSkillDetailHandle();
  * hidden null slot), and the wrappers in sync with
  * app/(main)/home-content.tsx.
  */
-export function HomeFallback({
-  hero,
-  initialPopularSkills,
-  initialTrending,
-  initialHot,
-}: HomeFallbackProps) {
+export function HomeFallback() {
   return (
     <>
-      {hero}
+      <Hero/>
       <main className="mx-auto max-w-6xl px-4 pt-6 pb-20">
         <Tabs value="text" onValueChange={noop}>
           <TabsList variant="underline" className="mb-3">
@@ -105,14 +101,14 @@ export function HomeFallback({
                   matches the hydrated tree and the swap doesn't flash. */}
               <Crossfade active={false}>
                 <div className="transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none">
-                  <DefaultSkillsListView
+                  {/* <DefaultSkillsListView
                     tab="popular"
                     onTabChange={noop}
                     initialPage={initialPopularSkills}
                     initialTrending={initialTrending}
                     initialHot={initialHot}
                     sheetHandle={fallbackSheetHandle}
-                  />
+                  /> */}
                 </div>
                 <div className="transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none">
                   {null}

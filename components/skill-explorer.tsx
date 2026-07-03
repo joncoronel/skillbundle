@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState ,use} from "react";
 import { useQueryState } from "nuqs";
 import type { FunctionReturnType } from "convex/server";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -38,25 +38,35 @@ import {
 } from "@/components/skill-detail-sheet";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
+import { useUserPlan } from "@/hooks/use-user-plan";
 
 interface SkillExplorerProps {
-  canAutoDetect: boolean;
-  initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
-  initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
-  initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
+  
+  initialPopularSkillsPromise: Promise<FunctionReturnType<
+    typeof api.skills.listPopularSkills
+  >>;
+  initialTrendingPromise: Promise<FunctionReturnType<
+    typeof api.leaderboards.listTrending
+  >>;
+  initialHotPromise:Promise< FunctionReturnType<typeof api.leaderboards.listHot>>;
 }
 
 const skillDetailHandle = createSkillDetailHandle();
 
 export function SkillExplorer({
-  canAutoDetect,
-  initialPopularSkills,
-  initialTrending,
-  initialHot,
+  initialPopularSkillsPromise,
+  initialTrendingPromise,
+  initialHotPromise,
 }: SkillExplorerProps) {
+  const { limits } = useUserPlan();
+  const canAutoDetect = limits?.canAutoDetect ?? true
   const [mode, setMode] = useQueryState("mode", modeParser);
   const [textQuery, setTextQuery] = useQueryState("q", searchQueryParser);
   const [repoUrl, setRepoUrl] = useQueryState("repo", repoUrlParser);
+
+  const initialPopularSkills = use(initialPopularSkillsPromise)
+  const initialTrending = use(initialTrendingPromise)
+  const initialHot = use(initialHotPromise)
 
   // Search machinery (debounce + cache bypass + spinner state) lives in the
   // shared hook. We *do* read `queryResult.data`/`isPlaceholderData` here —
