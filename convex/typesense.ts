@@ -186,13 +186,17 @@ export const pageSummariesForSync = internalQuery({
         isOfficial: Boolean(s.curatedOwner),
         isDuplicate: Boolean(s.isDuplicate),
         hasContentFetchError: Boolean(s.hasContentFetchError),
+        // Defaulted (not omitted) so audit filters behave on unaudited rows:
+        // Typesense skips docs MISSING a filtered field, which would wrongly
+        // drop unaudited skills from "no failed audits" (:!=fail). "unknown"
+        // matches skillAudits' no-audits-yet verdict.
+        worstAuditStatus: s.worstAuditStatus ?? "unknown",
         syncedAt,
       };
       // Optional fields — omit when absent so JSON.stringify drops them.
       if (s.description) doc.description = s.description;
       if (s.installRank !== undefined) doc.installRank = s.installRank;
       if (s.curatedOwner) doc.curatedOwner = s.curatedOwner;
-      if (s.worstAuditStatus) doc.worstAuditStatus = s.worstAuditStatus;
       if (s.worstAuditRiskLevel) doc.worstAuditRiskLevel = s.worstAuditRiskLevel;
       if (s.copyCount !== undefined) doc.copyCount = s.copyCount;
       return doc;

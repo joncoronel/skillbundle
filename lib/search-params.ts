@@ -1,4 +1,10 @@
-import { createParser, parseAsString, parseAsStringLiteral } from "nuqs";
+import {
+  createParser,
+  parseAsBoolean,
+  parseAsInteger,
+  parseAsString,
+  parseAsStringLiteral,
+} from "nuqs";
 import {
   parseSkillsParam,
   serializeSkillsParam,
@@ -23,6 +29,32 @@ const leaderboardTabValues = ["popular", "trending", "hot"] as const;
 export type LeaderboardTabValue = (typeof leaderboardTabValues)[number];
 export const leaderboardTabParser =
   parseAsStringLiteral(leaderboardTabValues).withDefault("popular");
+
+// Catalog sort. Deliberately NO .withDefault(): null means "auto" — the UI
+// resolves it to "relevance" when a query is present, "installs" otherwise,
+// and only an explicit user choice is reflected in the URL. Trending/Hot are
+// NOT sorts (they're subset ranks on ~60/~30 rows) — they live in the
+// zeitgeist rail, not here. "recent"/"rising" join once the Typesense sync
+// populates contentUpdatedAt/momentum7d (see docs/search-overhaul.md).
+const catalogSortValues = ["relevance", "installs"] as const;
+export type CatalogSortValue = (typeof catalogSortValues)[number];
+export const catalogSortParser = parseAsStringLiteral(catalogSortValues);
+
+// Catalog filters. Every filter's broadest value is the default and stays
+// absent from the URL — the URL only records explicit narrowing.
+// `forks` is inverted intentionally — the catalog hides forks/copies by
+// default (matching the old Convex queries' isDuplicate filter), so the param
+// records the opt-IN to showing them.
+export const officialFilterParser = parseAsBoolean.withDefault(false);
+// "pass" = passed audits only; "nofail" = anything except a failed verdict.
+const auditFilterValues = ["pass", "nofail"] as const;
+export type AuditFilterValue = (typeof auditFilterValues)[number];
+export const auditFilterParser = parseAsStringLiteral(auditFilterValues);
+// Minimum lifetime installs (preset buckets in the UI; any integer accepted).
+export const minInstallsParser = parseAsInteger;
+export const forksFilterParser = parseAsBoolean.withDefault(false);
+// true = hide skills whose SKILL.md fetch failed (install command may break).
+export const brokenFilterParser = parseAsBoolean.withDefault(false);
 
 // -- Explore page (/explore) parsers --
 

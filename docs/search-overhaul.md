@@ -13,11 +13,18 @@ Related: [TODO.md](../TODO.md) (the original "Search & discovery overhaul" note)
 
 ## Status
 
-- **Phase:** deciding. No engine committed yet.
-- **Leaning:** Typesense, queried **browser-direct with scoped search-only keys**
-  (query + results bypass Vercel functions — fits the Hobby constraint), hosted on
-  Railway (persistent volume, ~$5–10/mo) or Typesense Cloud. Sync `skillSummaries`
-  → Typesense off the existing daily cron chain.
+- **Phase:** SHIPPED (v1, dev). Engine committed: **Typesense v29 self-hosted on
+  Railway** (persistent volume), queried **browser-direct with a search-only key**.
+- **Backend:** `convex/lib/typesense.ts` + `convex/typesense.ts` — daily
+  mark-and-sweep `syncCatalog` cron (07:30 UTC, after the catalog settles), full
+  catalog mirrored (~15.5k non-delisted docs). Dev collection `skills_dev`; prod
+  uses `skills` (prod deploy checklist still pending: prod Convex env vars +
+  `setupCollection` + initial sync + Vercel `NEXT_PUBLIC_TYPESENSE_*`).
+- **Frontend:** `lib/search/typesense.ts` (browser client) +
+  `hooks/use-catalog-search.ts` + the two-state home surface
+  (`components/skill-explorer.tsx`). **Hybrid wiring chosen** (option 1 below):
+  default entry state stays on the cached Convex Popular page; any
+  query/filter/sort activates Typesense.
 
 ---
 
@@ -80,41 +87,58 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 
 ### 1. Search quality (the core upgrade)
 
-- [ ] **Search `description`, not just `name`.** Today the index is
-      `searchField: "name"` only — searching "postgres" misses a skill named
-      "Supabase best practices". *Biggest silent gap.* · field: `name`,
-      `description` · TS: `query_by: name,description`
-- [ ] **Weighted multi-field ranking** (name > description). · TS: `query_by_weights`
-- [ ] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS: built-in (`num_typos`)
-- [ ] **Prefix / search-as-you-type** (already have prefix; TS does it natively). · TS: `prefix`
+- [x] **Search `description`, not just `name`.** · `query_by: name,description`
+      in `lib/search/typesense.ts`
+- [x] **Weighted multi-field ranking** (name > description). · `query_by_weights: 3,1`
+- [x] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS default (`num_typos`);
+      verified: "postgress" → 117 results
+- [x] **Prefix / search-as-you-type** · TS default
 - [ ] **Highlighting** matched terms in results. · TS: `highlight_full_fields`
+      (rows don't render highlights yet)
 - [ ] **Hybrid / semantic search** — reuse the existing 512-dim `skillEmbeddings`
       so "auth" surfaces Clerk / better-auth without a literal match. Already doing
       vector search for repo analysis; this reuses it for the search box. · field:
       `skillEmbeddings` (separate table) · TS: `vector_query` + rank fusion (`alpha`)
+      (vectors are NOT in the Typesense collection yet)
 
 ### 2. Filters — every one maps to a field we already denormalize
 
-- [ ] **Official / curated only** · field: `curatedOwner` · TS: `filter_by: curatedOwner:!=null`
-      *(already a filter field on the Convex index)*
-- [ ] **Verified safe (audit status)** — filter to `pass` / exclude `fail`. **Our
-      differentiator** — most skill directories don't expose audit verdicts. · field:
-      `worstAuditStatus` (`pass`/`warn`/`fail`/`unknown`), `worstAuditRiskLevel` · TS: `filter_by`
-- [ ] **Hide forks / copies** (make the existing default-hide a visible toggle). ·
-      field: `isDuplicate`, `copyCount` · TS: `filter_by: isDuplicate:false`
-- [ ] **Exclude broken installs** (skills whose SKILL.md fetch failed). · field:
-      `hasContentFetchError` · TS: `filter_by`
-- [ ] **Minimum installs** (cut the near-zero long tail). · field: `installs` · TS: numeric `filter_by`
-- [ ] **By owner** (filter the catalog to one publisher). · field: `source` /
-      `curatedOwner` · TS: `filter_by`
+- [x] **Official / curated only** · "All skills / Official only" select
+      (`?official=true`), facet count in the item
+- [x] **Audit status** — "Any audit / Passed audit" select (`?audit=pass`).
+      **Our differentiator.** Deliberately a single opt-in: `worstAuditStatus`
+      is `pass|warn|fail|unknown` (unknown = unaudited, the majority), and a
+      "no failed audits" option (`!=fail`) barely filtered anything, so it was
+      dropped as confusing. The lib still accepts `nofail` via URL. `pass`
+      works because the sync defaults missing `worstAuditStatus` to `"unknown"`
+      (Typesense skips docs missing a filtered field).
+- [x] **Minimum installs** — radio under "More" (Any / 100+ / 1k+ / 10k+,
+      `?min=<n>`). Demoted from a top-level select: popularity is already the
+      default sort, so a hard threshold is secondary. Presets (not a slider —
+      unusable over a 0–1.5M exponential range).
+- [x] **Hide forks / copies** — hidden by default (parity with the Convex
+      queries); "Show forks & copies" opt-in under More (`?forks=true`)
+- [x] **Exclude broken installs** — "Hide broken installs" under More
+      (`?broken=true` → `hasContentFetchError:false`)
+- [x] **Clear (n)** — one-tap reset of all filters to their broad defaults
+- [ ] **By owner** (filter the catalog to one publisher). · supported by
+      `lib/search/typesense.ts` (`source`) — no UI yet
+
+**Control pattern:** only the two differentiators (Official, Audit) are visible
+as scoped selects defaulting to their broadest value, so active narrowing shows
+in the closed trigger. Secondary hygiene filters (min installs, forks, broken)
+live under "More" (+n badge in the button's `rightSection`) to keep the bar
+from sprawling. Chosen over a single checkbox menu (checked state invisible when
+closed) and over a full row of selects (too many, mostly reading "Any X").
 
 > Note: there is **no** `technologies`/tags field anymore (tech-stack filtering was
 > dropped). So no "filter by technology" facet unless we reintroduce tagging.
 
 ### 3. Sorts — must be per-skill values (exist on every row)
 
-- [ ] **Relevance** (default when a query is present). · TS: `_text_match`
-- [ ] **Most installed** (all-time — today's "Popular"). · field: `installs` · TS: `sort_by: installs:desc`
+- [x] **Relevance** (default when a query is present). · TS: `_text_match`
+- [x] **Most installed** (all-time — today's "Popular"; default with no query). ·
+      field: `installs` · TS: `sort_by: installs:desc`
 - [ ] **Recently updated** · field: `contentUpdatedAt` (on `skills`; mirror to summary if needed) · TS: `sort_by`
 - [ ] **Rising / momentum** — install *gain* over 7/30 days, computed from
       `skillSnapshots`. A real whole-catalog sort (every skill has it), so it
@@ -128,8 +152,8 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 
 ### 4. Facet counts (the thing Convex structurally can't do cheaply)
 
-- [ ] **Counts next to filters** — "Official (4,400) · Passed audit (12,301) ·
-      Warnings (240)". Returned in the same query. · TS: `facet_by` + counts
+- [x] **Counts next to filters** — live counts on the Filters dropdown items
+      (Official / Audit passed), from the same query. · TS: `facet_by` + counts
 - [ ] **Numeric range facets / buckets** — e.g. install-count buckets. · TS:
       `facet_by: installs(0:[0,100], ...)`
 - [ ] **Per-owner counts** on `/official`. · field: `curatedOwner` · TS: `facet_by`
@@ -146,9 +170,10 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
       top. · TS: `facet_sample` / MMR diversify (v30.2)
 - [ ] **Federated / multi-search** — one query box returning skills *and* bundles,
       ranked together. · field: separate `bundles` collection · TS: `multi_search` / JOINs
-- [ ] **Scoped search keys** — browser-direct queries with a server-enforced
-      `filter_by` baked into the key (e.g. always `isDelisted:false`). Keeps search
-      traffic off Vercel functions. · TS: scoped API keys
+- [~] **Scoped search keys** — a plain **search-only** key is live
+      (browser-direct, off Vercel functions). Not yet *scoped* with an embedded
+      `filter_by` — delisted rows are excluded by the sync instead (never
+      indexed), so nothing sensitive is exposed. · TS: scoped API keys
 
 ---
 

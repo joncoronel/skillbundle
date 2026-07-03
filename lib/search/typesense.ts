@@ -64,8 +64,11 @@ export type SkillSort = "relevance" | "installs" | "recent" | "rising";
 export interface SkillFilters {
   /** Only curated/official skills. */
   officialOnly?: boolean;
-  /** Restrict to a single audit verdict (e.g. "pass" for "verified safe"). */
-  auditStatus?: "pass" | "warn" | "fail" | "unknown";
+  /**
+   * Audit narrowing: "pass" = passed audits only; "nofail" = anything except
+   * a failed verdict (pass/warn/unknown all allowed).
+   */
+  audit?: "pass" | "nofail";
   /** Hide forks/copies (defaults handled by the caller). */
   hideForks?: boolean;
   /** Drop skills whose SKILL.md fetch failed (install command may break). */
@@ -96,7 +99,8 @@ const FACET_FIELDS = ["isOfficial", "worstAuditStatus", "isDuplicate"] as const;
 function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   const clauses: string[] = [];
   if (filters.officialOnly) clauses.push("isOfficial:true");
-  if (filters.auditStatus) clauses.push(`worstAuditStatus:=${filters.auditStatus}`);
+  if (filters.audit === "pass") clauses.push("worstAuditStatus:=pass");
+  if (filters.audit === "nofail") clauses.push("worstAuditStatus:!=fail");
   if (filters.hideForks) clauses.push("isDuplicate:false");
   if (filters.excludeBroken) clauses.push("hasContentFetchError:false");
   if (filters.minInstalls !== undefined) clauses.push(`installs:>=${filters.minInstalls}`);
@@ -152,6 +156,8 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
   const params = new URLSearchParams();
   params.set("q", hasQuery ? query : "*"); // "*" = match-all for browse
   params.set("query_by", "name,description");
+  // Name matches outrank description matches (see docs/search-overhaul.md).
+  params.set("query_by_weights", "3,1");
   params.set("page", String(args.page ?? 1));
   params.set("per_page", String(args.perPage ?? 30));
 
