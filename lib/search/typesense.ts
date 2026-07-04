@@ -29,12 +29,16 @@ export function isTypesenseConfigured(): boolean {
 
 /** A search hit document. Mirrors the fields synced from `skillSummaries`. */
 export interface SkillHit {
-  /** The `name` with matched terms wrapped in `<mark>` (Typesense highlight;
-   *  content is HTML-escaped, only the tag is injected). Present only when a
-   *  text query matched the name. */
-  nameSnippet?: string;
   id: string;
   name: string;
+  /**
+   * Typesense's highlight of `name`: the field value with matched tokens wrapped
+   * in `<mark>…</mark>`. Present only on query searches (not browse). It's
+   * fuzzy-aware — a typo'd query still marks the corrected token — so we render
+   * this rather than re-marking the query client-side. Parse via
+   * `renderHighlight` (never innerHTML). Undefined = show the plain name.
+   */
+  nameHighlight?: string;
   description?: string;
   source: string;
   skillId: string;
@@ -162,17 +166,35 @@ function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string | u
 // Search
 // ---------------------------------------------------------------------------
 
+interface RawHighlight {
+  field: string;
+  value?: string;
+}
+
 interface RawSearchResponse {
   found: number;
   page: number;
   hits?: Array<{
     document: SkillHit;
-    highlight?: { name?: { snippet?: string } };
+    // Newer Typesense returns `highlight` (keyed by field); older, `highlights`
+    // (an array). We read whichever is present.
+    highlight?: Record<string, { value?: string }>;
+    highlights?: RawHighlight[];
   }>;
   facet_counts?: Array<{
     field_name: string;
     counts: Array<{ value: string; count: number }>;
   }>;
+}
+
+function readNameHighlight(h: {
+  highlight?: Record<string, { value?: string }>;
+  highlights?: RawHighlight[];
+}): string | undefined {
+  return (
+    h.highlight?.name?.value ??
+    h.highlights?.find((x) => x.field === "name")?.value
+  );
 }
 
 /**
@@ -197,6 +219,12 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
     // Default: names only — tighter, more precise matches.
     params.set("query_by", "name");
   }
+  if (hasQuery) {
+    // Highlight the full `name` (it's short, so no snippet windowing) so the UI
+    // can mark matched tokens — fuzzy-aware, straight from the engine. Browse
+    // (`*`) needs no highlight; omitting it there avoids a whole-name mark.
+    params.set("highlight_full_fields", "name");
+  }
   params.set("page", String(args.page ?? 1));
   params.set("per_page", String(args.perPage ?? 30));
 
@@ -207,11 +235,6 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
   if (sortBy) params.set("sort_by", sortBy);
 
   if (args.facets) params.set("facet_by", FACET_FIELDS.join(","));
-
-  // Highlight the matched terms in the name (the one field rows render). Full
-  // field, not a truncated snippet, since names are short. Only meaningful with
-  // a real query; the browse match-all (`*`) returns none.
-  if (hasQuery) params.set("highlight_full_fields", "name");
 
   const url =
     `https://${HOST}/collections/${encodeURIComponent(COLLECTION)}` +
@@ -232,7 +255,7 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
     page: raw.page,
     hits: (raw.hits ?? []).map((h) => ({
       ...h.document,
-      nameSnippet: h.highlight?.name?.snippet,
+      nameHighlight: readNameHighlight(h),
     })),
     facets,
   };

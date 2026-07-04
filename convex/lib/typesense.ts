@@ -101,7 +101,15 @@ interface TypesenseField {
   optional?: boolean;
   index?: boolean;
   sort?: boolean;
+  /** Extra characters (besides space/newline) that split text into tokens. */
+  token_separators?: string[];
 }
+
+// Split hyphenated / underscored / dotted identifiers into their component
+// words so a search for "foundry" matches "microsoft-foundry" (not just
+// tokens that START with "foundry"). Typesense only splits on whitespace by
+// default, which is wrong for skill names, which are almost all identifiers.
+const NAME_TOKEN_SEPARATORS = ["-", "_", ".", "/"];
 
 /**
  * The `skills` collection schema. Mirrors the queryable subset of
@@ -149,6 +157,11 @@ export function skillsCollectionSchema(name: string) {
   return {
     name,
     fields,
+    // Collection-level (NOT field-level): this way the separators apply to both
+    // indexing AND query tokenization, so a query like "vercel-compo" splits
+    // into ["vercel", "compo"] and matches the split index tokens. Field-level
+    // only splits the index, leaving the hyphenated query as one dead token.
+    token_separators: NAME_TOKEN_SEPARATORS,
     // Used when a search specifies no sort_by. installs is required + numeric.
     default_sorting_field: "installs",
   };

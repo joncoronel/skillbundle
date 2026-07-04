@@ -38,6 +38,7 @@ import {
   SignalChip,
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
+import { renderHighlight } from "@/lib/search/highlight";
 import { QuickAddPopover } from "@/components/quick-add-popover";
 
 export interface SkillEditControls {
@@ -62,10 +63,10 @@ export interface SkillEditControls {
 
 export interface SkillData {
   name: string;
-  /** `name` with matched terms wrapped in `<mark>` (search results only;
-   *  Typesense highlight, content pre-escaped). Rendered in place of `name`
-   *  when present so a hit shows *why* it matched. */
-  nameHtml?: string;
+  /** Typesense's highlight of `name` (matched tokens wrapped in `<mark>`), set
+   *  only on live search hits. When present it's rendered in place of the plain
+   *  name so matches are marked — fuzzy-aware, straight from the engine. */
+  nameHighlight?: string;
   source: string;
   skillId: string;
   description?: string;
@@ -109,17 +110,11 @@ function SkillName({
   sheetHandle?: SkillDetailHandle;
   className?: string;
 }) {
-  // Highlighted name (search hits) renders as pre-escaped HTML with <mark>
-  // spans; plain name otherwise. The `[&_mark]` classes theme the marks to the
-  // accent instead of the browser's yellow default.
-  const nameContent = skill.nameHtml ? (
-    <span
-      className="[&_mark]:bg-transparent [&_mark]:text-primary [&_mark]:font-semibold"
-      dangerouslySetInnerHTML={{ __html: skill.nameHtml }}
-    />
-  ) : (
-    skill.name
-  );
+  // On a live search hit, highlight the matched substring of the name;
+  // otherwise render it plain.
+  const nameContent = skill.nameHighlight
+    ? renderHighlight(skill.nameHighlight)
+    : skill.name;
 
   if (sheetHandle) {
     return (
