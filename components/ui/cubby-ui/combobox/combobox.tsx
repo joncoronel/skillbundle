@@ -22,18 +22,34 @@ import {
 const useComboboxFilter = BaseCombobox.useFilter;
 const useComboboxFilteredItems = BaseCombobox.useFilteredItems;
 
+// Shared styling for the start/end addon containers. `pointer-events-none` lets
+// clicks on decorative content (icons, spinners) fall through to the InputGroup,
+// whose Base UI mousedown handler focuses the input; interactive children opt
+// back in so buttons/links inside an addon still receive their own clicks.
+const comboboxAddonClassName = cn(
+  "text-muted-foreground pointer-events-none flex shrink-0 items-center",
+  "[&_svg:not([class*='size-'])]:size-4",
+  "[&_:is(button,a,input,select,textarea,label,[role=button])]:pointer-events-auto",
+);
+
 const ComboboxContext = React.createContext<{
   id: string;
-  chipsRef: React.RefObject<HTMLDivElement | null>;
+  /** The mounted ComboboxChips element, if any, used to anchor the popup. */
+  chipsElement: HTMLDivElement | null;
+  setChipsElement: (element: HTMLDivElement | null) => void;
 } | null>(null);
 
 function Combobox<Value, Multiple extends boolean | undefined = false>(
   props: BaseCombobox.Root.Props<Value, Multiple>,
 ): React.JSX.Element {
   const id = React.useId();
-  const chipsRef = React.useRef<HTMLDivElement | null>(null);
+  const [chipsElement, setChipsElement] =
+    React.useState<HTMLDivElement | null>(null);
 
-  const contextValue = React.useMemo(() => ({ id, chipsRef }), [id]);
+  const contextValue = React.useMemo(
+    () => ({ id, chipsElement, setChipsElement }),
+    [id, chipsElement],
+  );
 
   return (
     <ComboboxContext.Provider value={contextValue}>
@@ -45,42 +61,65 @@ function Combobox<Value, Multiple extends boolean | undefined = false>(
 function ComboboxInput({
   id: idProp,
   className,
+  inputClassName,
   showTrigger = true,
   showClear = true,
   variant = "default",
+  start,
+  end,
   ...props
 }: BaseCombobox.Input.Props & {
   showTrigger?: boolean;
   showClear?: boolean;
   variant?: "default" | "elevated";
+  /** Content pinned to the start (leading edge) of the field, e.g. a search icon. */
+  start?: React.ReactNode;
+  /** Content pinned to the end of the field, before Clear and Trigger, e.g. a loading spinner. */
+  end?: React.ReactNode;
+  /** Class applied to the inner `<input>`. `className` styles the field wrapper. */
+  inputClassName?: string;
 }) {
   const context = React.useContext(ComboboxContext);
   const id = idProp ?? context?.id;
 
   return (
+    // The wrapper carries the field chrome (border, bg, height, focus ring) so
+    // start/end/clear/trigger lay out as flex siblings instead of overlapping
+    // the input via absolute positioning + hand-tuned padding.
     <BaseCombobox.InputGroup
       data-slot="combobox-input-group"
       className={cn(
-        "relative",
-        "has-data-[slot=combobox-clear]:**:data-[slot=combobox-input]:pr-7",
-        "has-data-[slot=combobox-trigger]:**:data-[slot=combobox-input]:pr-7",
-        "has-data-[slot=combobox-clear]:has-data-[slot=combobox-trigger]:**:data-[slot=combobox-input]:pr-13",
+        "flex h-10 w-full min-w-0 cursor-text items-center gap-2 rounded-lg border bg-clip-padding px-3 sm:h-9",
+        variant === "default" ? "bg-input" : "bg-input-elevated",
+        // Focus ring follows the input via focus-within (same pattern as ComboboxChips).
+        "focus-within:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color] duration-100 ease-out outline-solid focus-within:outline-2 focus-within:outline-offset-2",
+        // Disabled state (input or field-level) dims and locks the whole field.
+        "has-[input:disabled]:cursor-not-allowed has-[input:disabled]:pointer-events-none has-[input:disabled]:opacity-60",
+        className,
       )}
     >
+      {start != null && (
+        <div data-slot="combobox-input-start" className={comboboxAddonClassName}>
+          {start}
+        </div>
+      )}
       <BaseCombobox.Input
         id={id}
         data-slot="combobox-input"
         className={cn(
-          "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex h-10 w-full min-w-0 rounded-lg border bg-clip-padding px-3 text-base font-normal disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-60 sm:h-9 md:text-sm",
-          variant === "default" ? "bg-input" : "bg-input-elevated",
+          "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground h-full min-w-0 flex-1 border-none bg-transparent p-0 text-base font-normal shadow-none outline-none disabled:cursor-not-allowed md:text-sm",
           "file:text-foreground file:inline-flex file:h-7 file:rounded-md file:border-0 file:bg-transparent file:text-sm file:font-medium",
-          "focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2",
-          className,
+          inputClassName,
         )}
         {...props}
       />
+      {end != null && (
+        <div data-slot="combobox-input-end" className={comboboxAddonClassName}>
+          {end}
+        </div>
+      )}
       {(showClear || showTrigger) && (
-        <div className="absolute inset-y-0 right-3 flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {showClear && <ComboboxClear />}
           {showTrigger && <ComboboxTrigger />}
         </div>
@@ -472,7 +511,7 @@ function ComboboxChips({
 
   return (
     <BaseCombobox.Chips
-      ref={context?.chipsRef}
+      ref={context?.setChipsElement}
       data-slot="combobox-chips"
       className={cn(
         "flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-lg border bg-clip-padding px-1.5 py-1.5",
@@ -540,7 +579,17 @@ function ComboboxPopup({
   return (
     <ComboboxPortal>
       {backdrop && <ComboboxBackdrop />}
-      <ComboboxPositioner anchor={context?.chipsRef} sideOffset={sideOffset}>
+      {/*
+       * Only anchor to the chips wrapper when chips are actually mounted.
+       * Otherwise pass no anchor so Base UI uses its default: the InputGroup
+       * (full field width) for a standard input, or the trigger for the
+       * input-inside-popup pattern. Forcing an anchor here would pin the popup
+       * to the narrower inner <input>.
+       */}
+      <ComboboxPositioner
+        anchor={context?.chipsElement ?? undefined}
+        sideOffset={sideOffset}
+      >
         <ComboboxPopupPrimitive
           className={className}
           level={level}

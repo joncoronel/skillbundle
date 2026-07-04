@@ -62,6 +62,10 @@ export interface SkillEditControls {
 
 export interface SkillData {
   name: string;
+  /** `name` with matched terms wrapped in `<mark>` (search results only;
+   *  Typesense highlight, content pre-escaped). Rendered in place of `name`
+   *  when present so a hit shows *why* it matched. */
+  nameHtml?: string;
   source: string;
   skillId: string;
   description?: string;
@@ -105,6 +109,18 @@ function SkillName({
   sheetHandle?: SkillDetailHandle;
   className?: string;
 }) {
+  // Highlighted name (search hits) renders as pre-escaped HTML with <mark>
+  // spans; plain name otherwise. The `[&_mark]` classes theme the marks to the
+  // accent instead of the browser's yellow default.
+  const nameContent = skill.nameHtml ? (
+    <span
+      className="[&_mark]:bg-transparent [&_mark]:text-primary [&_mark]:font-semibold"
+      dangerouslySetInnerHTML={{ __html: skill.nameHtml }}
+    />
+  ) : (
+    skill.name
+  );
+
   if (sheetHandle) {
     return (
       <SheetTrigger
@@ -112,7 +128,7 @@ function SkillName({
         payload={skill}
         className={cn("hover:underline text-left", className)}
       >
-        {skill.name}
+        {nameContent}
       </SheetTrigger>
     );
   }
@@ -121,7 +137,7 @@ function SkillName({
       href={skillHref(skill.source, skill.skillId)}
       className={cn("hover:underline text-left", className)}
     >
-      {skill.name}
+      {nameContent}
     </Link>
   );
 }

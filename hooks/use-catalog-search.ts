@@ -56,7 +56,9 @@ export function useCatalogSearch({
   // Stable key for the filters object (fixed key order via explicit fields).
   const filtersKey = `${filters.officialOnly ? 1 : 0}|${filters.audit ?? ""}|${
     filters.hideForks ? 1 : 0
-  }|${filters.excludeBroken ? 1 : 0}|${filters.minInstalls ?? ""}|${filters.source ?? ""}`;
+  }|${filters.excludeBroken ? 1 : 0}|${filters.minInstalls ?? ""}|${
+    filters.source ?? ""
+  }|${(filters.owners ?? []).join(",")}`;
 
   const query = useInfiniteQuery({
     queryKey: [

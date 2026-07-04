@@ -24,6 +24,7 @@ function hitToSkill(h: SkillHit): SkillData {
     source: h.source,
     skillId: h.skillId,
     name: h.name,
+    nameHtml: h.nameSnippet,
     description: h.description,
     installs: h.installs,
     hasContentFetchError: h.hasContentFetchError,

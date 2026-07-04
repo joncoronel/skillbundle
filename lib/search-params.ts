@@ -1,5 +1,6 @@
 import {
   createParser,
+  parseAsArrayOf,
   parseAsBoolean,
   parseAsInteger,
   parseAsString,
@@ -49,6 +50,11 @@ export type AuditFilterValue = (typeof auditFilterValues)[number];
 export const auditFilterParser = parseAsStringLiteral(auditFilterValues);
 // Minimum lifetime installs (preset buckets in the UI; any integer accepted).
 export const minInstallsParser = parseAsInteger;
+// Publisher (owner) narrowing — any-of a set of owner slugs (e.g.
+// ["vercel-labs","anthropics"]). Comma-separated in the URL (?pub=a,b); [] = any.
+export const publisherParser = parseAsArrayOf(parseAsString)
+  .withDefault([])
+  .withOptions({ clearOnDefault: true });
 // Search scope. Default (false) searches skill names only; opt in to also
 // search descriptions. A preference, not a filter — not part of "active
 // filters" / Clear.

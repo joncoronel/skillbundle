@@ -24,6 +24,7 @@ import {
   repoUrlParser,
   catalogSortParser,
   officialFilterParser,
+  publisherParser,
   auditFilterParser,
   minInstallsParser,
   searchDescriptionsParser,
@@ -104,6 +105,10 @@ export function SkillExplorer({
     "official",
     officialFilterParser.withOptions({ startTransition }),
   );
+  const [publisher, setPublisher] = useQueryState(
+    "pub",
+    publisherParser.withOptions({ startTransition }),
+  );
   const [audit, setAudit] = useQueryState(
     "audit",
     auditFilterParser.withOptions({ startTransition }),
@@ -139,6 +144,8 @@ export function SkillExplorer({
       onSortParamChange={setSortParam}
       official={official}
       onOfficialChange={setOfficial}
+      publisher={publisher}
+      onPublisherChange={setPublisher}
       audit={audit}
       onAuditChange={setAudit}
       minInstalls={minInstalls}
@@ -168,6 +175,8 @@ interface SkillExplorerViewProps extends SkillExplorerProps {
   onSortParamChange: (sort: CatalogSortValue | null) => void;
   official: boolean;
   onOfficialChange: (v: boolean) => void;
+  publisher: string[];
+  onPublisherChange: (v: string[]) => void;
   audit: AuditFilterValue | null;
   onAuditChange: (v: AuditFilterValue | null) => void;
   minInstalls: number | null;
@@ -203,6 +212,8 @@ export const ENTRY_STATE_DEFAULTS: Omit<
   onSortParamChange: noop,
   official: false,
   onOfficialChange: noop,
+  publisher: [],
+  onPublisherChange: noop,
   audit: null,
   onAuditChange: noop,
   minInstalls: null,
@@ -253,6 +264,8 @@ export function SkillExplorerView({
   onSortParamChange,
   official,
   onOfficialChange,
+  publisher,
+  onPublisherChange,
   audit,
   onAuditChange,
   minInstalls,
@@ -304,6 +317,7 @@ export function SkillExplorerView({
 
   const anyFilter =
     official ||
+    publisher.length > 0 ||
     audit !== null ||
     minInstalls !== null ||
     broken ||
@@ -321,6 +335,7 @@ export function SkillExplorerView({
     sortParam ?? (hasQuery ? "relevance" : "installs");
   const filters: SkillFilters = {
     officialOnly: official || undefined,
+    owners: publisher.length > 0 ? publisher : undefined,
     audit: audit ?? undefined,
     minInstalls: minInstalls ?? undefined,
     // Always hide skills.sh-flagged forks/copies (parity with the cached
@@ -336,6 +351,7 @@ export function SkillExplorerView({
   // URL, which also drops the page back to the entry state.
   function handleClearFilters() {
     onOfficialChange(false);
+    onPublisherChange([]);
     onAuditChange(null);
     onMinInstallsChange(null);
     onBrokenChange(false);
@@ -404,6 +420,8 @@ export function SkillExplorerView({
       onSortChange={handleSortChange}
       official={official}
       onOfficialChange={onOfficialChange}
+      publisher={publisher}
+      onPublisherChange={onPublisherChange}
       audit={audit}
       onAuditChange={onAuditChange}
       minInstalls={minInstalls}
@@ -420,6 +438,7 @@ export function SkillExplorerView({
 
   const filterCount =
     (official ? 1 : 0) +
+    (publisher.length > 0 ? 1 : 0) +
     (audit ? 1 : 0) +
     (minInstalls !== null ? 1 : 0) +
     (broken ? 1 : 0);

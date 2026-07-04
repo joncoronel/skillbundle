@@ -28,6 +28,62 @@ Related: [TODO.md](../TODO.md) (the original "Search & discovery overhaul" note)
 
 ---
 
+## Committed plan (2026-07)
+
+Prioritized after a Typesense v29 feature review (Context7). Tiers by value/effort.
+
+**Tier 1 — building now**
+
+1. **`_eval` trust tie-breaker** (ranking quality, zero backfill). Append a
+   weighted `_eval` to the *query* sort chain so equally-relevant matches order
+   by trust: `sort_by = _text_match:desc,
+   _eval([(isOfficial:true):2,(worstAuditStatus:pass):1]):desc, installs:desc`.
+   Non-destructive (only breaks ties that were already arbitrary), encodes the
+   product's trust story, no UI. Query path only (browse `installs:desc` rarely
+   ties). · TS: `_eval` weighted sort
+2. **Match highlighting** (perceived quality, zero backfill). Render the spans
+   Typesense already returns. · TS: `highlight_full_fields`
+3. **Publisher / repo filter** (the missing high-value filter). Add a derived
+   **`owner`** field (`source.split("/")[0]`) to the collection + sync mapping,
+   facet on it, and add a **searchable combobox** pill ("Publisher") with
+   typeahead + counts. Owner-level (`owner:=vercel-labs`) plus exact repo via
+   `source`. Needs a collection schema bump + resync (derived field only, no new
+   data source). · field: `owner` (new, derived) · TS: `facet_by` + filter
+
+**Tier 1b — next pass (needs new denormalized fields on `skillSummaries` +
+the daily cron), then the sort options light up:**
+
+4. **Recently updated** sort — mirror `contentUpdatedAt` (on the heavy `skills`
+   row) onto the summary via the content-fetch path + a backfill, then sync it.
+5. **Rising / momentum** sort — a daily job computing 7d install gain from
+   `skillSnapshots` onto the summary, then sync `momentum7d`. The standout sort:
+   per-skill, so it composes with search unlike Trending/Hot.
+   > Decided: default = **absolute** 7d gain; a `%`-growth "breakout" variant
+   > (with an install floor) is a later flavor, not v1.
+
+**Tier 2 — after Tier 1**
+
+6. **Hybrid / semantic search** via a **built-in embedding model**
+   (`ts/all-MiniLM-L12-v2`, auto-embed from `name,description`), so the query is
+   embedded *inside* Typesense and search stays browser-direct (no Convex
+   round-trip). Chosen over reusing our 512-dim `skillEmbeddings`, which would
+   force a server call to embed the query text. · TS: rank fusion (`query_by`
+   incl. embedding)
+7. **Synonyms** — small curated list (`nextjs`↔`next.js`, `k8s`↔`kubernetes`,
+   `postgres`↔`postgresql`, `ai`↔`artificial intelligence`). · TS: global synonyms
+
+**Tier 3 — later:** grouping (collapse dupes), install-range facet buckets,
+curation/pinning, federated skills+bundles (`multi_search`), and search
+analytics (`popular_queries` / no-hits → "popular searches" + gap reports).
+
+**On the cubby `Filters` component:** evaluated, **not adopting wholesale.** Its
+operator machinery (`is`/`is not`/`contains`/`between`) is dead weight for a
+catalog of quick toggles, and it changes the composer aesthetic. Keep the lean
+scoped-select bar; add Publisher as one searchable combobox. Revisit only if the
+filter set goes broad (publisher + tech tags + buckets + date ranges).
+
+---
+
 ## The model we're designing around
 
 Two **different kinds** of surface — don't conflate them:

@@ -139,6 +139,7 @@ const typesenseDocValidator = v.object({
   name: v.string(),
   description: v.optional(v.string()),
   source: v.string(),
+  owner: v.string(),
   skillId: v.string(),
   installs: v.number(),
   installRank: v.optional(v.number()),
@@ -181,6 +182,9 @@ export const pageSummariesForSync = internalQuery({
         id: `${s.source}::${s.skillId}`,
         name: s.name,
         source: s.source,
+        // Publisher = the "owner" segment of "owner/repo" (whole string when
+        // there's no "/", e.g. a well-known single-token source).
+        owner: s.source.split("/")[0],
         skillId: s.skillId,
         installs: s.installs,
         isOfficial: Boolean(s.curatedOwner),

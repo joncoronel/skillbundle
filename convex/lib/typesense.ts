@@ -122,6 +122,11 @@ export function skillsCollectionSchema(name: string) {
     { name: "name", type: "string" },
     { name: "description", type: "string", optional: true },
     { name: "source", type: "string", facet: true },
+    // Publisher (the "owner" of "owner/repo"), derived from source at sync.
+    // Faceted so the Publisher picker can typeahead + count. optional so the
+    // field can be added to an existing collection without a destructive reset;
+    // the sync always populates it, so filtering/faceting never skips a doc.
+    { name: "owner", type: "string", facet: true, optional: true },
     { name: "skillId", type: "string", index: false, optional: true },
     { name: "installs", type: "int32", facet: true },
     { name: "installRank", type: "int32", index: false, optional: true },
@@ -155,6 +160,8 @@ export interface TypesenseSkillDoc {
   name: string;
   description?: string;
   source: string;
+  /** Publisher slug — the part before "/" in source. Derived at sync. */
+  owner: string;
   skillId: string;
   installs: number;
   installRank?: number;

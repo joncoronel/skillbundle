@@ -29,6 +29,10 @@ export function isTypesenseConfigured(): boolean {
 
 /** A search hit document. Mirrors the fields synced from `skillSummaries`. */
 export interface SkillHit {
+  /** The `name` with matched terms wrapped in `<mark>` (Typesense highlight;
+   *  content is HTML-escaped, only the tag is injected). Present only when a
+   *  text query matched the name. */
+  nameSnippet?: string;
   id: string;
   name: string;
   description?: string;
@@ -77,6 +81,14 @@ export interface SkillFilters {
   minInstalls?: number;
   /** Restrict to one publisher ("owner/repo" or "owner"). Exact match. */
   source?: string;
+  /** Restrict to any of these publisher owners (slug before "/" in source). */
+  owners?: string[];
+}
+
+/** A publisher (owner) and how many skills it has, for the Publisher picker. */
+export interface OwnerCount {
+  value: string;
+  count: number;
 }
 
 export interface SkillSearchArgs {
@@ -107,13 +119,30 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   if (filters.excludeBroken) clauses.push("hasContentFetchError:false");
   if (filters.minInstalls !== undefined) clauses.push(`installs:>=${filters.minInstalls}`);
   if (filters.source) clauses.push(`source:=${filters.source}`);
+  if (filters.owners && filters.owners.length > 0) {
+    // Any-of: `owner:=[`a`,`b`]`. Backtick-quote each value (owner slugs are
+    // simple, but this is robust to any that aren't).
+    const list = filters.owners.map((o) => `\`${o}\``).join(",");
+    clauses.push(`owner:=[${list}]`);
+  }
   return clauses.length > 0 ? clauses.join(" && ") : undefined;
 }
 
+// Trust tie-breaker for the relevance ranking: among equally-relevant matches
+// (`_text_match` ties constantly), float official + audit-passed skills up, then
+// by installs. Weighted `_eval` — official worth 2, passed audit worth 1, summed
+// — so it only orders ties that were already arbitrary; it never reorders across
+// relevance bands. Query path only (browsing is installs:desc, which rarely
+// ties). Kept to Typesense's 3-sort-field limit: text_match, _eval, installs.
+const RELEVANCE_SORT_BY =
+  "_text_match:desc," +
+  "_eval([(isOfficial:true):2,(worstAuditStatus:=pass):1]):desc," +
+  "installs:desc";
+
 /**
- * Map a catalog sort to a Typesense sort_by. `relevance` uses the default text
- * ranking when a query is present, but falls back to installs when browsing
- * (relevance is meaningless with no query / a match-all `*`).
+ * Map a catalog sort to a Typesense sort_by. `relevance` uses text ranking with
+ * a trust tie-breaker when a query is present, but falls back to installs when
+ * browsing (relevance is meaningless with no query / a match-all `*`).
  */
 function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string | undefined {
   switch (sort) {
@@ -125,7 +154,7 @@ function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string | u
       return "momentum7d:desc";
     case "relevance":
     case undefined:
-      return hasQuery ? undefined : "installs:desc";
+      return hasQuery ? RELEVANCE_SORT_BY : "installs:desc";
   }
 }
 
@@ -136,7 +165,10 @@ function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string | u
 interface RawSearchResponse {
   found: number;
   page: number;
-  hits?: Array<{ document: SkillHit }>;
+  hits?: Array<{
+    document: SkillHit;
+    highlight?: { name?: { snippet?: string } };
+  }>;
   facet_counts?: Array<{
     field_name: string;
     counts: Array<{ value: string; count: number }>;
@@ -176,6 +208,11 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
 
   if (args.facets) params.set("facet_by", FACET_FIELDS.join(","));
 
+  // Highlight the matched terms in the name (the one field rows render). Full
+  // field, not a truncated snippet, since names are short. Only meaningful with
+  // a real query; the browse match-all (`*`) returns none.
+  if (hasQuery) params.set("highlight_full_fields", "name");
+
   const url =
     `https://${HOST}/collections/${encodeURIComponent(COLLECTION)}` +
     `/documents/search?${params.toString()}`;
@@ -193,7 +230,53 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
   return {
     found: raw.found,
     page: raw.page,
-    hits: (raw.hits ?? []).map((h) => h.document),
+    hits: (raw.hits ?? []).map((h) => ({
+      ...h.document,
+      nameSnippet: h.highlight?.name?.snippet,
+    })),
     facets,
   };
+}
+
+/**
+ * Publishers (owners) for the Publisher picker, as a facet-only request
+ * (`per_page=0`), ordered by skill count. With no `query` this returns the top
+ * owners (browse-on-open); with a `query` it runs a `facet_query` so *any*
+ * owner is reachable by typing, not just the top slice. `signal` lets the caller
+ * cancel a stale in-flight lookup.
+ */
+export async function listOwners(opts: {
+  query?: string;
+  limit?: number;
+  signal?: AbortSignal;
+} = {}): Promise<OwnerCount[]> {
+  if (!HOST || !SEARCH_KEY) {
+    throw new Error("Typesense is not configured (NEXT_PUBLIC_TYPESENSE_* missing).");
+  }
+  const query = opts.query?.trim();
+  const params = new URLSearchParams();
+  params.set("q", "*");
+  params.set("query_by", "name"); // required, but per_page=0 returns no hits
+  params.set("per_page", "0");
+  params.set("facet_by", "owner");
+  params.set("max_facet_values", String(opts.limit ?? 250));
+  params.set("filter_by", "isDuplicate:false"); // parity with the catalog default
+  // Typeahead: narrow the returned facet values to those matching the input.
+  if (query) params.set("facet_query", `owner:${query}`);
+
+  const url =
+    `https://${HOST}/collections/${encodeURIComponent(COLLECTION)}` +
+    `/documents/search?${params.toString()}`;
+  const res = await fetch(url, {
+    headers: { "X-TYPESENSE-API-KEY": SEARCH_KEY },
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Typesense facet ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const raw = (await res.json()) as RawSearchResponse;
+  const counts =
+    raw.facet_counts?.find((f) => f.field_name === "owner")?.counts ?? [];
+  return counts.map((c) => ({ value: c.value, count: c.count }));
 }
