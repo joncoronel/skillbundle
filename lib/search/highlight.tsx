@@ -24,9 +24,15 @@ function decodeEntities(s: string): string {
  * matched span ("<mark>vercel</mark>-<mark>compo</mark>sition-patterns").
  */
 export function renderHighlight(value: string): React.ReactNode {
+  // Bridge marks separated by only separator chars: Typesense marks tokens but
+  // not the `-`/`_`/`.`/`/` between them, so "vercel-react-best" comes back as
+  // three marks with bare hyphens between. Absorb those separators into a single
+  // run so a contiguous match highlights as one span, not blue-white-blue.
+  const bridged = value.replace(/<\/mark>([-_./]+)<mark>/g, "$1");
+
   // Typesense injects only balanced, non-nested <mark>/</mark>. Splitting on
   // both tags yields alternating segments: even index = unmarked, odd = marked.
-  const segments = value.split(/<\/?mark>/);
+  const segments = bridged.split(/<\/?mark>/);
   return segments.map((segment, i) => {
     const text = decodeEntities(segment);
     if (!text) return null;
