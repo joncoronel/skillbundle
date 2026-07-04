@@ -27,7 +27,7 @@ export function HomeContent({
   const { limits } = useUserPlan();
 
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-20">
+    <main className="mx-auto max-w-6xl px-4">
       <SkillExplorer
         canAutoDetect={limits?.canAutoDetect ?? true}
         initialPopularSkills={initialPopularSkills}
@@ -54,7 +54,7 @@ export function HomeFallback({
   initialHot,
 }: HomeContentProps) {
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-20">
+    <main className="mx-auto max-w-6xl px-4">
       <SkillExplorerView
         {...ENTRY_STATE_DEFAULTS}
         canAutoDetect

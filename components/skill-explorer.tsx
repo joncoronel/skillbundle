@@ -496,7 +496,7 @@ export function SkillExplorerView({
           at a small crosshair — a restrained technical frame that gives the page
           structure. Mobile drops the rails; only the horizontal separator under
           the search remains. */}
-      <div className="relative sm:border-x sm:border-border sm:px-8 lg:px-10">
+      <div className="relative pb-20 sm:min-h-[calc(100dvh-3.5rem)] sm:border-x sm:border-rail sm:px-8 lg:px-10">
         {/* Hero — constant, scrolls away (never collapses). */}
         <section className="pt-10 pb-6 sm:pt-12">
           <h1 className="font-display text-3xl font-medium tracking-tight text-balance sm:text-4xl">
@@ -514,8 +514,8 @@ export function SkillExplorerView({
             {/* Search bar — repo mode. Flat sticky toolbar (no card): bordered
                 input + primary Analyze + a way back to search, over one full-bleed
                 border-b that meets the desktop rails. */}
-            <div className="sticky top-14 z-30 -mx-4 border-b border-border bg-background/85 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-              <RailJoints />
+            <div className="sticky top-14 z-30 -mx-4 border-b border-rail bg-background/80 px-4 py-3 backdrop-blur-sm sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+              <RailDots />
               <div className="flex items-center gap-2">
                 {searchField()}
                 <Button
@@ -569,8 +569,8 @@ export function SkillExplorerView({
             {/* Search bar — text mode. Flat sticky toolbar (no card): bordered
                 input + Match repo on top, sort/filter controls + browse tabs
                 below, over one full-bleed border-b that meets the desktop rails. */}
-            <div className="sticky top-14 z-30 -mx-4 border-b border-border bg-background/85 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-              <RailJoints />
+            <div className="sticky top-14 z-30 -mx-4 border-b border-rail bg-background/80 px-4 py-3 backdrop-blur-sm sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+              <RailDots />
               {/* Search row */}
               <div className="flex items-center gap-2">
                 {searchField()}
@@ -733,33 +733,25 @@ export function SkillExplorerView({
 }
 
 /**
- * Small crosshairs where the sticky search bar's border-b crosses the desktop
- * rails — makes the horizontal separator read as *connected* to the frame
- * rather than floating over it. Desktop-only, decorative, and part of the
- * sticky bar so they track its position on scroll. The bar bleeds to the rails
- * (`-mx`), so its bottom corners sit exactly on them.
+ * A small dot at each junction where the sticky bar's border-b meets a desktop
+ * rail — a quiet node tying the horizontal separator to the vertical frame.
+ * The `-0.5px` insets push the dot's center off the bar's *padding-box* corner
+ * onto the border *centerlines* (the corner sits half a 1px border inside both
+ * the rail and the separator, which otherwise biases the dot inward + up).
+ * Part of the sticky bar, so it tracks the bar on scroll. Desktop-only.
  */
-function RailJoints() {
+function RailDots() {
   return (
     <>
-      <RailJoint className="left-0 -translate-x-1/2" />
-      <RailJoint className="right-0 translate-x-1/2" />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-[0.5px] -left-[0.5px] hidden size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-[0.5px] -right-[0.5px] hidden size-1.5 translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
+      />
     </>
-  );
-}
-
-function RailJoint({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "pointer-events-none absolute -bottom-px hidden size-1.5 translate-y-1/2 sm:block",
-        className,
-      )}
-    >
-      <span className="absolute top-0 left-1/2 h-full w-px -translate-x-1/2 bg-border" />
-      <span className="absolute top-1/2 left-0 h-px w-full -translate-y-1/2 bg-border" />
-    </span>
   );
 }
 
