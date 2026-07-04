@@ -745,11 +745,11 @@ function RailDots() {
     <>
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -bottom-[0.5px] -left-[0.5px] hidden size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
+        className="pointer-events-none absolute -bottom-[0.5px] -left-[0.5px] hidden size-2 -translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
       />
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute -bottom-[0.5px] -right-[0.5px] hidden size-1.5 translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
+        className="pointer-events-none absolute -bottom-[0.5px] -right-[0.5px] hidden size-2 translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
       />
     </>
   );
