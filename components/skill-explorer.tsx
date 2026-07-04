@@ -63,7 +63,6 @@ import {
 } from "@/components/skill-detail-sheet";
 import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
-import { solidSurface } from "@/lib/cubby-ui/elevated";
 
 interface SkillExplorerProps {
   canAutoDetect: boolean;
@@ -425,9 +424,8 @@ export function SkillExplorerView({
     (minInstalls !== null ? 1 : 0) +
     (broken ? 1 : 0);
 
-  // The search input — shared by text + repo mode. `inputClassName` lets the
-  // composer strip the input's chrome so it reads as one seamless field inside
-  // the card (repo mode keeps the default bordered input).
+  // The search input — shared by text + repo mode. `inputClassName` is an
+  // optional restyle hook; both modes use the default bordered input.
   const searchField = (inputClassName?: string) => (
     <div className="relative flex-1">
       {showInputSpinner ? (
@@ -493,89 +491,93 @@ export function SkillExplorerView({
 
   return (
     <>
-      {/* Hero — constant, scrolls away (never collapses). */}
-      <section className="pt-10 pb-6 sm:pt-12">
-        <h1 className="font-display text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-          Pick skills.{" "}
-          <span className="text-primary">Ship one install command.</span>
-        </h1>
-        <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-          Search and compare skills for Cursor, Claude Code, and other coding
-          agents. Bundle the ones you want and share the whole set with a link.
-        </p>
-      </section>
+      {/* Framed discovery column. On desktop faint vertical rails flank the
+          hero + search + list, and the search's full-bleed border-b meets them
+          at a small crosshair — a restrained technical frame that gives the page
+          structure. Mobile drops the rails; only the horizontal separator under
+          the search remains. */}
+      <div className="relative sm:border-x sm:border-border sm:px-8 lg:px-10">
+        {/* Hero — constant, scrolls away (never collapses). */}
+        <section className="pt-10 pb-6 sm:pt-12">
+          <h1 className="font-display text-3xl font-medium tracking-tight text-balance sm:text-4xl">
+            Pick skills.{" "}
+            <span className="text-primary">Ship one install command.</span>
+          </h1>
+          <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
+            Search and compare skills for Cursor, Claude Code, and other coding
+            agents. Bundle the ones you want and share the whole set with a link.
+          </p>
+        </section>
 
-      {isRepo ? (
-        <>
-          {/* Sticky search bar — repo mode (URL + Analyze + back). */}
-          <div className="sticky top-14 z-30 -mx-4 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur">
-            <div className="flex items-center gap-2">
-              {searchField()}
-              <Button
-                variant="outline"
-                onClick={handleRepoSubmit}
-                disabled={!repoInput.trim() || !canAutoDetect}
-                leftSection={
-                  <HugeiconsIcon
-                    icon={FlashIcon}
-                    strokeWidth={2}
-                    className="size-3.5"
-                  />
-                }
-              >
-                Analyze
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => onModeChange("text")}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-          <div className="pt-4">
-            <RepoAnalysisResults
-              repoUrl={repoUrl}
-              canAutoDetect={canAutoDetect}
-              sheetHandle={skillDetailHandle}
-              onTryExample={(url) => {
-                setRepoInput(url);
-                onRepoUrlChange(url);
-              }}
-            />
-          </div>
-        </>
-      ) : (
-        <Tabs
-          value={effectiveTab}
-          onValueChange={(v) => handleTabChange(v as LeaderboardTabValue)}
-        >
-          {/* Composer — a single rounded container holding the search field and,
-              at its foot, the sort/filter controls + browse-lens tabs. Sticky so
-              it stays reachable through a long list; it never relocates on
-              interaction (only the list below changes). It's an elevated surface
-              (level 3) that floats over the page — its own opaque bg + rim mask
-              the list scrolling under it, so no background band is needed. */}
-          <div
-            className={cn(
-              // top-16 (not top-14) leaves an 8px gap below the h-14 nav so the
-              // card floats clear of it when stuck instead of butting against it.
-              "sticky top-16 z-30 mb-4 rounded-3xl px-3 pt-2.5 pb-2.5",
-              solidSurface(3),
-            )}
-          >
-            <div>
-              {/* Search row */}
-              <div className="flex items-center gap-1">
-                {searchField(
-                  "h-11 border-0 bg-transparent shadow-none sm:text-base focus-visible:outline-0 focus-visible:ring-0",
-                )}
+        {isRepo ? (
+          <>
+            {/* Search bar — repo mode. Flat sticky toolbar (no card): bordered
+                input + primary Analyze + a way back to search, over one full-bleed
+                border-b that meets the desktop rails. */}
+            <div className="sticky top-14 z-30 -mx-4 border-b border-border bg-background/85 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+              <RailJoints />
+              <div className="flex items-center gap-2">
+                {searchField()}
+                <Button
+                  onClick={handleRepoSubmit}
+                  disabled={!repoInput.trim() || !canAutoDetect}
+                  className="shrink-0 max-sm:px-3"
+                  leftSection={
+                    <HugeiconsIcon
+                      icon={FlashIcon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  Analyze
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-muted-foreground shrink-0 max-sm:px-2"
+                  className="shrink-0 text-muted-foreground max-sm:px-2"
+                  onClick={() => onModeChange("text")}
+                  leftSection={
+                    <HugeiconsIcon
+                      icon={Search01Icon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  <span className="max-sm:sr-only">Search skills</span>
+                </Button>
+              </div>
+            </div>
+            <div>
+              <RepoAnalysisResults
+                repoUrl={repoUrl}
+                canAutoDetect={canAutoDetect}
+                sheetHandle={skillDetailHandle}
+                onTryExample={(url) => {
+                  setRepoInput(url);
+                  onRepoUrlChange(url);
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <Tabs
+            value={effectiveTab}
+            onValueChange={(v) => handleTabChange(v as LeaderboardTabValue)}
+          >
+            {/* Search bar — text mode. Flat sticky toolbar (no card): bordered
+                input + Match repo on top, sort/filter controls + browse tabs
+                below, over one full-bleed border-b that meets the desktop rails. */}
+            <div className="sticky top-14 z-30 -mx-4 border-b border-border bg-background/85 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+              <RailJoints />
+              {/* Search row */}
+              <div className="flex items-center gap-2">
+                {searchField()}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-muted-foreground max-sm:px-2"
                   onClick={() => onModeChange("repo")}
                   leftSection={
                     <HugeiconsIcon
@@ -589,11 +591,10 @@ export function SkillExplorerView({
                 </Button>
               </div>
 
-              {/* Foot: controls (Popular tab only) + browse-lens tabs. Tabs are
-                  anchored right so they don't shift when controls appear. On
-                  mobile the inline controls collapse to a "Sort & filter"
-                  trigger that opens a bottom sheet. */}
-              <div className="mt-2 flex items-center justify-between gap-x-3 gap-y-2 border-t border-border/50 pt-2.5">
+              {/* Controls + browse-lens tabs. Tabs anchored right so they don't
+                  shift when controls appear; on mobile the controls collapse to a
+                  "Sort & filter" trigger that opens a bottom sheet. */}
+              <div className="mt-2.5 flex items-center justify-between gap-x-3 gap-y-2">
                 {effectiveTab === "popular" ? (
                   <>
                     {/* Desktop: inline controls */}
@@ -646,88 +647,119 @@ export function SkillExplorerView({
                 </TabsList>
               </div>
             </div>
-          </div>
 
-          {/* List region — the ONLY thing that changes on interaction. */}
-          <div className="pt-4">
-            {effectiveTab === "popular" && (
-              <>
-                {/* Popular list stays mounted (preserves scroll + pagination).
-                    While a search is settling it dims as filler; once results
-                    are ready it's hidden and hands off to them. */}
-                <div
-                  className={cn(
-                    "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
-                    searchActive && searchSettled && "hidden",
-                    searchActive && !searchSettled && "opacity-55",
+            {/* List region — the ONLY thing that changes on interaction. */}
+            <div className="pt-4">
+              {effectiveTab === "popular" && (
+                <>
+                  {/* Popular list stays mounted (preserves scroll + pagination).
+                      While a search is settling it dims as filler; once results
+                      are ready it's hidden and hands off to them. */}
+                  <div
+                    className={cn(
+                      "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
+                      searchActive && searchSettled && "hidden",
+                      searchActive && !searchSettled && "opacity-55",
+                    )}
+                  >
+                    <CatalogNote>
+                      The full catalog, sorted by all-time installs from{" "}
+                      <SkillsShLink />
+                    </CatalogNote>
+                    <PopularList
+                      initialPage={initialPopularSkills}
+                      sheetHandle={skillDetailHandle}
+                    />
+                  </div>
+                  {searchActive && (
+                    <ActiveCatalogResults
+                      rawQuery={textQuery}
+                      sort={effectiveSort}
+                      filters={filters}
+                      searchDescriptions={searchDescriptions}
+                      anyFilterActive={anyFilter}
+                      sheetHandle={skillDetailHandle}
+                      onSettledChange={setSearchSettled}
+                      onLoadingChange={setSearchQueryPending}
+                      onFacetsChange={setFacets}
+                    />
                   )}
-                >
+                </>
+              )}
+
+              {effectiveTab === "trending" && (
+                <>
                   <CatalogNote>
-                    The full catalog, sorted by all-time installs from{" "}
-                    <SkillsShLink />
+                    Most installed in the last 24 hours on <SkillsShLink />
                   </CatalogNote>
-                  <PopularList
-                    initialPage={initialPopularSkills}
-                    sheetHandle={skillDetailHandle}
-                  />
-                </div>
-                {searchActive && (
-                  <ActiveCatalogResults
-                    rawQuery={textQuery}
-                    sort={effectiveSort}
-                    filters={filters}
-                    searchDescriptions={searchDescriptions}
-                    anyFilterActive={anyFilter}
-                    sheetHandle={skillDetailHandle}
-                    onSettledChange={setSearchSettled}
-                    onLoadingChange={setSearchQueryPending}
-                    onFacetsChange={setFacets}
-                  />
-                )}
-              </>
-            )}
+                  {trendingSkills.length === 0 ? (
+                    <EmptyState message="No trending data yet — check back after the next sync." />
+                  ) : (
+                    <SkillRowGrid
+                      skills={trendingSkills}
+                      sheetHandle={skillDetailHandle}
+                      metric="trending"
+                    />
+                  )}
+                </>
+              )}
 
-            {effectiveTab === "trending" && (
-              <>
-                <CatalogNote>
-                  Most installed in the last 24 hours on <SkillsShLink />
-                </CatalogNote>
-                {trendingSkills.length === 0 ? (
-                  <EmptyState message="No trending data yet — check back after the next sync." />
-                ) : (
-                  <SkillRowGrid
-                    skills={trendingSkills}
-                    sheetHandle={skillDetailHandle}
-                    metric="trending"
-                  />
-                )}
-              </>
-            )}
-
-            {effectiveTab === "hot" && (
-              <>
-                <CatalogNote>
-                  Most installed in the last hour on <SkillsShLink />
-                </CatalogNote>
-                {hotSkills.length === 0 ? (
-                  <EmptyState message="No hot skills right now — check back after the next sync." />
-                ) : (
-                  <SkillRowGrid
-                    skills={hotSkills}
-                    sheetHandle={skillDetailHandle}
-                    metric="hot"
-                  />
-                )}
-              </>
-            )}
-          </div>
-        </Tabs>
-      )}
+              {effectiveTab === "hot" && (
+                <>
+                  <CatalogNote>
+                    Most installed in the last hour on <SkillsShLink />
+                  </CatalogNote>
+                  {hotSkills.length === 0 ? (
+                    <EmptyState message="No hot skills right now — check back after the next sync." />
+                  ) : (
+                    <SkillRowGrid
+                      skills={hotSkills}
+                      sheetHandle={skillDetailHandle}
+                      metric="hot"
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          </Tabs>
+        )}
+      </div>
 
       {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
           state persists across navigation to /compare. */}
       <SkillDetailSheet handle={skillDetailHandle} />
     </>
+  );
+}
+
+/**
+ * Small crosshairs where the sticky search bar's border-b crosses the desktop
+ * rails — makes the horizontal separator read as *connected* to the frame
+ * rather than floating over it. Desktop-only, decorative, and part of the
+ * sticky bar so they track its position on scroll. The bar bleeds to the rails
+ * (`-mx`), so its bottom corners sit exactly on them.
+ */
+function RailJoints() {
+  return (
+    <>
+      <RailJoint className="left-0 -translate-x-1/2" />
+      <RailJoint className="right-0 translate-x-1/2" />
+    </>
+  );
+}
+
+function RailJoint({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute -bottom-px hidden size-1.5 translate-y-1/2 sm:block",
+        className,
+      )}
+    >
+      <span className="absolute top-0 left-1/2 h-full w-px -translate-x-1/2 bg-border" />
+      <span className="absolute top-1/2 left-0 h-px w-full -translate-y-1/2 bg-border" />
+    </span>
   );
 }
 
