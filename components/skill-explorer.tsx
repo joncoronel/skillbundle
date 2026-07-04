@@ -16,6 +16,7 @@ import {
   Cancel01Icon,
   GithubIcon,
   FlashIcon,
+  FilterHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import {
   modeParser,
@@ -45,6 +46,14 @@ import {
   rowToSkill,
 } from "@/components/default-skills-list";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetBody,
+} from "@/components/ui/cubby-ui/sheet";
 import { CatalogControls } from "@/components/catalog-controls";
 import { ActiveCatalogResults } from "@/components/catalog-results";
 import { RepoAnalysisResults } from "@/components/repo-url-input";
@@ -54,6 +63,7 @@ import {
 } from "@/components/skill-detail-sheet";
 import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
+import { solidSurface } from "@/lib/cubby-ui/elevated";
 
 interface SkillExplorerProps {
   canAutoDetect: boolean;
@@ -385,7 +395,10 @@ export function SkillExplorerView({
     ? "https://github.com/owner/repo"
     : "Search skills…";
 
-  const controls = (facets?: Record<string, FacetCount[]>) => (
+  const controls = (
+    facets?: Record<string, FacetCount[]>,
+    layout: "bar" | "sheet" = "bar",
+  ) => (
     <CatalogControls
       sort={effectiveSort}
       hasQuery={hasQuery}
@@ -402,11 +415,20 @@ export function SkillExplorerView({
       onBrokenChange={onBrokenChange}
       onClearFilters={handleClearFilters}
       facets={facets}
+      layout={layout}
     />
   );
 
-  // The search input — shared by text + repo mode, same position always.
-  const searchField = (
+  const filterCount =
+    (official ? 1 : 0) +
+    (audit ? 1 : 0) +
+    (minInstalls !== null ? 1 : 0) +
+    (broken ? 1 : 0);
+
+  // The search input — shared by text + repo mode. `inputClassName` lets the
+  // composer strip the input's chrome so it reads as one seamless field inside
+  // the card (repo mode keeps the default bordered input).
+  const searchField = (inputClassName?: string) => (
     <div className="relative flex-1">
       {showInputSpinner ? (
         <span className="absolute left-3 top-1/2 -translate-y-1/2 flex size-4 items-center justify-center text-muted-foreground pointer-events-none">
@@ -433,7 +455,7 @@ export function SkillExplorerView({
         onKeyDown={(e) => {
           if (isRepo && e.key === "Enter") handleRepoSubmit();
         }}
-        className="pl-9 pr-9"
+        className={cn("pl-9 pr-9", inputClassName)}
       />
       {!inputValue && (
         <Kbd
@@ -459,7 +481,11 @@ export function SkillExplorerView({
           }}
           className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
         >
-          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
+          <HugeiconsIcon
+            icon={Cancel01Icon}
+            strokeWidth={2}
+            className="size-4"
+          />
         </button>
       )}
     </div>
@@ -484,7 +510,7 @@ export function SkillExplorerView({
           {/* Sticky search bar — repo mode (URL + Analyze + back). */}
           <div className="sticky top-14 z-30 -mx-4 border-b border-border/60 bg-background/85 px-4 py-3 backdrop-blur">
             <div className="flex items-center gap-2">
-              {searchField}
+              {searchField()}
               <Button
                 variant="outline"
                 onClick={handleRepoSubmit}
@@ -522,42 +548,103 @@ export function SkillExplorerView({
           </div>
         </>
       ) : (
-        <Tabs value={effectiveTab} onValueChange={(v) => handleTabChange(v as LeaderboardTabValue)}>
-          {/* Sticky control cluster: search row + controls/tabs row. Fixed
-              position — interacting never relocates it; it only sticks on
-              scroll so it stays reachable through a long list. */}
-          <div className="sticky top-14 z-30 -mx-4 border-b border-border/60 bg-background/85 px-4 pt-3 pb-2.5 backdrop-blur">
-            <div className="flex items-center gap-2">
-              {searchField}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground shrink-0 max-sm:px-2"
-                onClick={() => onModeChange("repo")}
-                leftSection={
-                  <HugeiconsIcon
-                    icon={FlashIcon}
-                    strokeWidth={2}
-                    className="size-3.5"
-                  />
-                }
-              >
-                <span className="max-sm:sr-only">Match repo</span>
-              </Button>
-            </div>
-
-            {/* Controls (left, Popular tab only) + lens tabs (right, always).
-                Anchoring tabs to the right keeps them from shifting when the
-                controls appear/disappear between lenses. */}
-            <div className="mt-2.5 flex items-center justify-between gap-x-4 gap-y-2 flex-wrap">
-              <div className="flex items-center gap-2 flex-wrap">
-                {effectiveTab === "popular" && controls(facets)}
+        <Tabs
+          value={effectiveTab}
+          onValueChange={(v) => handleTabChange(v as LeaderboardTabValue)}
+        >
+          {/* Composer — a single rounded container holding the search field and,
+              at its foot, the sort/filter controls + browse-lens tabs. Sticky so
+              it stays reachable through a long list; it never relocates on
+              interaction (only the list below changes). It's an elevated surface
+              (level 3) that floats over the page — its own opaque bg + rim mask
+              the list scrolling under it, so no background band is needed. */}
+          <div
+            className={cn(
+              // top-16 (not top-14) leaves an 8px gap below the h-14 nav so the
+              // card floats clear of it when stuck instead of butting against it.
+              "sticky top-16 z-30 mb-4 rounded-3xl px-3 pt-2.5 pb-2.5",
+              solidSurface(3),
+            )}
+          >
+            <div>
+              {/* Search row */}
+              <div className="flex items-center gap-1">
+                {searchField(
+                  "h-11 border-0 bg-transparent shadow-none sm:text-base focus-visible:outline-0 focus-visible:ring-0",
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground shrink-0 max-sm:px-2"
+                  onClick={() => onModeChange("repo")}
+                  leftSection={
+                    <HugeiconsIcon
+                      icon={FlashIcon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  <span className="max-sm:sr-only">Match repo</span>
+                </Button>
               </div>
-              <TabsList variant="capsule" size="small" aria-label="Browse">
-                <TabsTrigger value="popular">Popular</TabsTrigger>
-                <TabsTrigger value="trending">Trending</TabsTrigger>
-                <TabsTrigger value="hot">Hot</TabsTrigger>
-              </TabsList>
+
+              {/* Foot: controls (Popular tab only) + browse-lens tabs. Tabs are
+                  anchored right so they don't shift when controls appear. On
+                  mobile the inline controls collapse to a "Sort & filter"
+                  trigger that opens a bottom sheet. */}
+              <div className="mt-2 flex items-center justify-between gap-x-3 gap-y-2 border-t border-border/50 pt-2.5">
+                {effectiveTab === "popular" ? (
+                  <>
+                    {/* Desktop: inline controls */}
+                    <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
+                      {controls(facets)}
+                    </div>
+                    {/* Mobile: single trigger → bottom sheet */}
+                    <div className="sm:hidden">
+                      <Sheet>
+                        <SheetTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              leftSection={
+                                <HugeiconsIcon
+                                  icon={FilterHorizontalIcon}
+                                  strokeWidth={2}
+                                  className="size-3.5"
+                                />
+                              }
+                              rightSection={
+                                filterCount > 0 ? (
+                                  <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground tabular-nums">
+                                    {filterCount}
+                                  </span>
+                                ) : undefined
+                              }
+                            />
+                          }
+                        >
+                          Sort & filter
+                        </SheetTrigger>
+                        <SheetContent side="bottom">
+                          <SheetHeader>
+                            <SheetTitle>Sort &amp; filter</SheetTitle>
+                          </SheetHeader>
+                          <SheetBody>{controls(facets, "sheet")}</SheetBody>
+                        </SheetContent>
+                      </Sheet>
+                    </div>
+                  </>
+                ) : (
+                  <span />
+                )}
+                <TabsList variant="capsule" size="small" aria-label="Browse">
+                  <TabsTrigger value="popular">Popular</TabsTrigger>
+                  <TabsTrigger value="trending">Trending</TabsTrigger>
+                  <TabsTrigger value="hot">Hot</TabsTrigger>
+                </TabsList>
+              </div>
             </div>
           </div>
 

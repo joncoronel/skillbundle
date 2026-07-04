@@ -108,13 +108,12 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 
 - [x] **Official / curated only** · "All skills / Official only" select
       (`?official=true`), facet count in the item
-- [x] **Audit status** — "Any audit / Passed audit" select (`?audit=pass`).
-      **Our differentiator.** Deliberately a single opt-in: `worstAuditStatus`
-      is `pass|warn|fail|unknown` (unknown = unaudited, the majority), and a
-      "no failed audits" option (`!=fail`) barely filtered anything, so it was
-      dropped as confusing. The lib still accepts `nofail` via URL. `pass`
-      works because the sync defaults missing `worstAuditStatus` to `"unknown"`
-      (Typesense skips docs missing a filtered field).
+- [x] **Audit status** — "Any audit / Passed audit / No failed audits" select
+      (`?audit=pass|nofail`). **Our differentiator.** `pass` = only clean audits;
+      `nofail` = `worstAuditStatus:!=fail` (keeps warns + unaudited, drops the
+      ~1,900 failures). Works because the sync defaults missing
+      `worstAuditStatus` to `"unknown"` (Typesense skips docs missing a filtered
+      field).
 - [x] **Minimum installs** — radio under "More" (Any / 100+ / 1k+ / 10k+,
       `?min=<n>`). Demoted from a top-level select: popularity is already the
       default sort, so a hard threshold is secondary. Presets (not a slider —
