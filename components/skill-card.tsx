@@ -414,14 +414,23 @@ const SkillRowContent = memo(function SkillRowContent({
         <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
       ) : null}
       <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
-        <span className="text-sm font-semibold inline-flex items-center gap-1">
-          <SkillName skill={skill} sheetHandle={sheetHandle} />
+        <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-sm font-semibold">
+          <SkillName
+            skill={skill}
+            sheetHandle={sheetHandle}
+            className="min-w-0 truncate"
+          />
           {skill.curatedOwner && (
-            <OfficialBadge owner={skill.curatedOwner} className="self-center" />
+            <OfficialBadge
+              owner={skill.curatedOwner}
+              className="shrink-0 self-center"
+            />
           )}
         </span>
         {!hideSource && (
-          <span className="text-sm text-muted-foreground">{skill.source}</span>
+          <span className="min-w-0 max-w-full truncate text-sm text-muted-foreground">
+            {skill.source}
+          </span>
         )}
       </div>
       <div className="ml-auto shrink-0">

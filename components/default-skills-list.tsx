@@ -145,7 +145,7 @@ export function SkillRowGrid({
   metric?: LeaderboardMetric;
 }) {
   return (
-    <div className="grid">
+    <div className="grid grid-cols-1">
       {skills.map((skill, i) => {
         const isFirst = i === 0;
         const isLast = i === skills.length - 1;
