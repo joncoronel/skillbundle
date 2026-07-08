@@ -1,44 +1,58 @@
 "use client";
 
 import * as React from "react";
-import { Toggle as BaseToggle } from "@base-ui/react/toggle";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Toggle as BaseToggle } from "@base-ui/react/toggle";
 
 import { cn } from "@/lib/utils";
 
 const toggleVariants = cva(
-  "inline-flex bg-transparent items-center justify-center gap-2.5 rounded-lg text-sm font-medium hover:bg-surface-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-60 data-[pressed]:bg-surface-selected data-[pressed]:text-accent-foreground [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color,background-color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid whitespace-nowrap",
+  // Label + icon stay full-contrast (text-foreground) in every state; the
+  // background carries the state, not the text — so resting toggles read as
+  // legible options, not dimmed ones. Off: transparent. Hover: a surface overlay.
+  // Selection is terminal — three states only (rest / hover / selected); hover
+  // does not alter a pressed toggle. Each variant sets its own pressed fill below.
+  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg bg-transparent text-sm font-medium whitespace-nowrap text-foreground select-none hover:not-data-pressed:bg-surface-hover active:scale-[0.97] data-disabled:pointer-events-none data-disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 transition-[background-color,color,border-color,box-shadow,outline-width,outline-offset,outline-color,scale] duration-100 ease-out focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid",
   {
     variants: {
       variant: {
-        default: "",
+        // Borderless: transparent when off, a neutral selected overlay when on.
+        ghost: "data-pressed:bg-surface-selected",
+        // Filled: an opaque muted plate. Hover/selected are the shared surface-hover /
+        // surface-selected overlays composited on an ::after layer (the plate stays put
+        // underneath — the base's hover overlay is pinned back to bg-muted), so a
+        // standalone/detached solid cell matches the group track exactly.
+        solid:
+          "relative bg-muted hover:not-data-pressed:bg-muted after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:content-[''] after:bg-surface-hover after:opacity-0 after:transition-opacity after:duration-100 after:ease-out hover:not-data-pressed:after:opacity-100 data-pressed:after:bg-surface-selected data-pressed:after:opacity-100",
+        // Framed card. Border stays through press (only the fill changes), so the
+        // frame never drops out — and in a group the collapsed outline stays
+        // continuous when a cell is selected.
         outline:
-          "border border-border/60 shadow-[0_1px_3px_0_oklch(0.18_0_0_/_0.06)] ring-1 ring-border/15 dark:ring-0",
+          "border bg-card bg-clip-padding hover:not-data-pressed:bg-(--outline-hover) data-pressed:bg-secondary",
       },
       size: {
-        default: "h-10 px-3 min-w-10",
-        sm: "h-9 px-2.5 min-w-9",
-        lg: "h-11 px-4 min-w-11",
+        sm: "h-9 min-w-9 gap-1.5 px-2 sm:h-8 sm:min-w-8",
+        default: "h-10 min-w-10 px-2.5 sm:h-9 sm:min-w-9",
+        lg: "h-11 min-w-11 px-3 sm:h-10 sm:min-w-10",
       },
     },
     defaultVariants: {
-      variant: "default",
+      variant: "ghost",
       size: "default",
     },
   },
 );
 
-function Toggle({
-  className,
-  variant,
-  size,
-  ...props
-}: React.ComponentProps<typeof BaseToggle> &
-  VariantProps<typeof toggleVariants>) {
+export type ToggleProps = BaseToggle.Props &
+  VariantProps<typeof toggleVariants>;
+
+function Toggle({ className, variant, size, ...props }: ToggleProps) {
   return (
     <BaseToggle
       data-slot="toggle"
-      className={cn(toggleVariants({ variant, size, className }))}
+      data-variant={variant}
+      data-size={size}
+      className={cn(toggleVariants({ variant, size }), className)}
       {...props}
     />
   );
