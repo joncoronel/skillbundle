@@ -6,6 +6,29 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Match repo popover (deferred from the composer redesign, Jul 2026)
+
+The home composer's "Match repo" button currently switches to the old repo mode
+(separate input + Analyze toolbar). The designed end state (mocked in Paper,
+artboard "F — Claude-style two-layer composer") is a **Popover on the button**,
+modeled on the Claude app's "Project or folder" picker:
+
+- Popover contents: a repo URL input (`github.com/owner/repo`), a **RECENT**
+  section listing previously analyzed repos with their match counts
+  (e.g. `joncoronel/skillbundle · 42 matches`), and a
+  **"Connect GitHub for private repos"** action row.
+- Picking/submitting a repo turns the button into an **active chip**
+  (`⚡ skillbundle ✕`) and swaps the catalog to repo-matched recommendations;
+  ✕ clears back to browse. Scope tabs + sort keep applying (it's still a
+  catalog query mode).
+- Free users see the recents area replaced by the Pro upsell.
+
+Why deferred: needs backend that doesn't exist yet — per-user history of
+analyzed repos (recents), stored match counts per repo, and GitHub OAuth for
+private repos. A v1 without backend is possible (URL input + example repos,
+submitting into the existing `?mode=repo&repo=` flow) if we want the UX win
+before the plumbing.
+
 ### Search & discovery overhaul
 
 - **Move search to a faceted engine (Typesense / Meilisearch / Algolia).** The current

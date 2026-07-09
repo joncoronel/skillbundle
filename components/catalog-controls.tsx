@@ -40,7 +40,11 @@ import { Button } from "@/components/ui/cubby-ui/button";
 import { Switch } from "@/components/ui/cubby-ui/switch";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 import { formatInstalls, cn } from "@/lib/utils";
-import { listOwners, type FacetCount, type OwnerCount } from "@/lib/search/typesense";
+import {
+  listOwners,
+  type FacetCount,
+  type OwnerCount,
+} from "@/lib/search/typesense";
 import type { AuditFilterValue, CatalogSortValue } from "@/lib/search-params";
 
 export interface CatalogControlsProps {
@@ -49,8 +53,17 @@ export interface CatalogControlsProps {
   /** Whether a text query is active — gates the Relevance option. */
   hasQuery: boolean;
   onSortChange: (sort: CatalogSortValue) => void;
+  /** Official filter. On desktop its control is the icon toggle in the
+   *  composer's input row (so the chin's Clear/count ignore it); in the mobile
+   *  sheet it's a labeled switch here, and the sheet's count includes it —
+   *  Clear covers the controls that share its surface. */
   official: boolean;
   onOfficialChange: (v: boolean) => void;
+  /** Search scope (names vs names+descriptions). Sheet-only switch here; on
+   *  desktop it's the composer's icon toggle. Scope, not a filter — never
+   *  counted in Clear. */
+  searchDescriptions: boolean;
+  onSearchDescriptionsChange: (v: boolean) => void;
   /** Publisher owner slugs to narrow to (any-of); [] = any publisher. */
   publisher: string[];
   onPublisherChange: (v: string[]) => void;
@@ -58,9 +71,6 @@ export interface CatalogControlsProps {
   onAuditChange: (v: AuditFilterValue | null) => void;
   minInstalls: number | null;
   onMinInstallsChange: (v: number | null) => void;
-  /** true = search names AND descriptions; default (false) searches names only. */
-  searchDescriptions: boolean;
-  onSearchDescriptionsChange: (v: boolean) => void;
   /** true = skills with failing SKILL.md fetches are hidden. */
   broken: boolean;
   onBrokenChange: (v: boolean) => void;
@@ -86,7 +96,6 @@ const ANY = "any";
 
 const MIN_INSTALL_PRESETS = [100, 1_000, 10_000] as const;
 
-const OFFICIAL_ITEMS = { [ANY]: "All skills", official: "Official only" };
 const AUDIT_ITEMS = {
   [ANY]: "Any audit",
   pass: "Passed audit",
@@ -101,6 +110,56 @@ const MIN_INSTALL_ITEMS = {
     ]),
   ),
 };
+
+/**
+ * The catalog sort picker, standalone so the composer can mount it in the
+ * input's control row (next to the search scope tabs) while the mobile filter
+ * sheet keeps its own full-width copy. Relevance is only offered while a text
+ * query exists — with no query every hit ties at zero relevance.
+ */
+export function SortSelect({
+  sort,
+  hasQuery,
+  onSortChange,
+  className,
+  inSheet = false,
+  ghost = false,
+}: {
+  sort: CatalogSortValue;
+  hasQuery: boolean;
+  onSortChange: (sort: CatalogSortValue) => void;
+  className?: string;
+  /** Inside the mobile drawer: elevated trigger, no scroll lock, no align. */
+  inSheet?: boolean;
+  /** Borderless trigger — for the composer's input control row. */
+  ghost?: boolean;
+}) {
+  return (
+    <Select
+      value={sort}
+      onValueChange={(v) => {
+        if (v) onSortChange(v as CatalogSortValue);
+      }}
+      items={SORT_LABELS}
+      modal={inSheet ? false : undefined}
+    >
+      <SelectTrigger
+        size="sm"
+        variant={inSheet ? "elevated" : ghost ? "ghost" : "default"}
+        aria-label="Sort catalog"
+        className={className}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={!inSheet} level={inSheet ? 7 : 5}>
+        <SelectItem value="relevance" disabled={!hasQuery}>
+          Relevance
+        </SelectItem>
+        <SelectItem value="installs">Most installed</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
 
 function facetCount(
   facets: Record<string, FacetCount[]> | undefined,
@@ -140,21 +199,20 @@ export function CatalogControls({
   onSortChange,
   official,
   onOfficialChange,
+  searchDescriptions,
+  onSearchDescriptionsChange,
   publisher,
   onPublisherChange,
   audit,
   onAuditChange,
   minInstalls,
   onMinInstallsChange,
-  searchDescriptions,
-  onSearchDescriptionsChange,
   broken,
   onBrokenChange,
   onClearFilters,
   facets,
   layout = "bar",
 }: CatalogControlsProps) {
-  const officialCount = facetCount(facets, "isOfficial", "true");
   const passCount = facetCount(facets, "worstAuditStatus", "pass");
 
   // Inside the mobile sheet the selects must NOT lock body scroll (the sheet
@@ -167,12 +225,17 @@ export function CatalogControls({
   // Popups sit one clear tier above their substrate: above the sheet (level 5)
   // on mobile, above the composer card (level 3) on desktop.
   const popupLevel = inSheet ? 7 : 5;
-  // Elevated (translucent overlay) triggers only in the sheet, which sits on an
-  // elevated surface; the desktop bar keeps the default opaque triggers.
-  const triggerVariant = inSheet ? "elevated" : "default";
+  // Elevated (translucent overlay) triggers in the sheet; ghost in the chin —
+  // the composer's inner surface is the loud instrument, the chin stays quiet
+  // (borderless until hover), with the selected value carrying the state.
+  const triggerVariant = inSheet ? ("elevated" as const) : ("ghost" as const);
 
+  // Clear covers the controls that share its surface: the chin's Clear counts
+  // only chin filters (Official lives up in the input row there, with its own
+  // visible pressed state); the sheet's count includes Official since the
+  // sheet is its mobile home. Search scope is never a filter.
   const activeFilterCount =
-    (official ? 1 : 0) +
+    (inSheet && official ? 1 : 0) +
     (publisher.length > 0 ? 1 : 0) +
     (audit ? 1 : 0) +
     (minInstalls !== null ? 1 : 0) +
@@ -188,56 +251,13 @@ export function CatalogControls({
   );
 
   const sortSelect = (className?: string) => (
-    <Select
-      value={sort}
-      onValueChange={(v) => {
-        if (v) onSortChange(v as CatalogSortValue);
-      }}
-      items={SORT_LABELS}
-      modal={selectModal}
-    >
-      <SelectTrigger
-        size="sm"
-        variant={triggerVariant}
-        aria-label="Sort catalog"
-        className={className}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent alignItemWithTrigger={selectAlign} level={popupLevel}>
-        <SelectItem value="relevance" disabled={!hasQuery}>
-          Relevance
-        </SelectItem>
-        <SelectItem value="installs">Most installed</SelectItem>
-      </SelectContent>
-    </Select>
-  );
-
-  const officialSelect = (className?: string) => (
-    <Select
-      value={official ? "official" : ANY}
-      onValueChange={(v) => {
-        if (v) onOfficialChange(v === "official");
-      }}
-      items={OFFICIAL_ITEMS}
-      modal={selectModal}
-    >
-      <SelectTrigger
-        size="sm"
-        variant={triggerVariant}
-        aria-label="Filter by publisher type"
-        className={className}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent alignItemWithTrigger={selectAlign} level={popupLevel}>
-        <SelectItem value={ANY}>All skills</SelectItem>
-        <SelectItem value="official">
-          Official only
-          <ItemCount count={officialCount} />
-        </SelectItem>
-      </SelectContent>
-    </Select>
+    <SortSelect
+      sort={sort}
+      hasQuery={hasQuery}
+      onSortChange={onSortChange}
+      className={className}
+      inSheet={inSheet}
+    />
   );
 
   const auditSelect = (className?: string) => (
@@ -253,7 +273,12 @@ export function CatalogControls({
         size="sm"
         variant={triggerVariant}
         aria-label="Filter by security audit"
-        className={className}
+        className={cn(
+          // The ghost variant rests muted; keep full foreground once a
+          // narrowing value is set (state lives in the value text).
+          !inSheet && audit && "text-foreground",
+          className,
+        )}
       >
         <SelectValue />
       </SelectTrigger>
@@ -316,15 +341,22 @@ export function CatalogControls({
     ) : null;
 
   // ---- Sheet layout: full-width, stacked (mobile drawer) --------------------
+  // No Clear here — it lives in the sheet's header (skill-explorer), so its
+  // appearance never shifts this content.
   if (layout === "sheet") {
     return (
       <div className="flex flex-col gap-4">
         <Field label="Sort by">{sortSelect("w-full")}</Field>
         <Field label="Publisher">{publisherSelect("w-full")}</Field>
-        <Field label="Official">{officialSelect("w-full")}</Field>
         <Field label="Security">{auditSelect("w-full")}</Field>
         <Field label="Minimum installs">{minInstallsSelect("w-full")}</Field>
 
+        <SwitchRow
+          label="Official skills only"
+          hint="Only skills from verified publishers"
+          checked={official}
+          onCheckedChange={onOfficialChange}
+        />
         <SwitchRow
           label="Search descriptions"
           hint="Match on description text, not just names"
@@ -337,26 +369,26 @@ export function CatalogControls({
           checked={broken}
           onCheckedChange={onBrokenChange}
         />
-
-        {activeFilterCount > 0 && <div className="pt-1">{clearButton()}</div>}
       </div>
     );
   }
 
-  // ---- Bar layout: inline pills + "More" dropdown (desktop composer) --------
+  // ---- Bar layout: the composer chin (desktop) -------------------------------
+  // Result-narrowing filters only — the sort and the Official/descriptions
+  // toggles live up in the input's control row (they're the high-frequency
+  // one-click controls; the chin keeps the heavier pickers).
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {sortSelect()}
       {publisherSelect()}
-      {officialSelect()}
       {auditSelect()}
 
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
+              className="text-muted-foreground"
               aria-label="More filters"
               leftSection={
                 <HugeiconsIcon
@@ -407,13 +439,6 @@ export function CatalogControls({
           <DropdownMenuSeparator />
 
           <DropdownMenuCheckboxItem
-            checked={searchDescriptions}
-            onCheckedChange={(checked) => onSearchDescriptionsChange(!!checked)}
-            closeOnClick={false}
-          >
-            Search descriptions
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
             checked={broken}
             onCheckedChange={(checked) => onBrokenChange(!!checked)}
             closeOnClick={false}
@@ -441,7 +466,8 @@ const MIN_VISIBLE_MS = 350;
 /** Abortable delay — rejects with AbortError when the signal fires. */
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal.aborted) return reject(new DOMException("Aborted", "AbortError"));
+    if (signal.aborted)
+      return reject(new DOMException("Aborted", "AbortError"));
     const t = setTimeout(resolve, ms);
     signal.addEventListener(
       "abort",
@@ -545,7 +571,8 @@ function PublisherSelect({
     if (query === "") {
       return value.length === 0 ? "Type to find a publisher…" : null;
     }
-    if (!isPending && items.length === 0) return `No publishers match “${query}”.`;
+    if (!isPending && items.length === 0)
+      return `No publishers match “${query}”.`;
     return null;
   };
 
@@ -565,17 +592,17 @@ function PublisherSelect({
           <Button
             {...triggerProps}
             size="sm"
-            variant="outline"
+            variant={inSheet ? "outline" : "ghost"}
             aria-label="Filter by publisher"
             className={cn(
               // No active-state border — the label ("2 publishers") is the
               // indicator, matching the other filter pills (which don't tint).
-              "justify-between gap-2 px-2.5 font-normal",
-              // Match the Select triggers' surface: opaque on the page bar,
+              "justify-between gap-2 px-2.5",
+              // Match the Select triggers' surface: ghost in the composer chin,
               // translucent-elevated in the mobile sheet.
               inSheet
                 ? "bg-input-elevated hover:bg-surface-hover hover:text-foreground"
-                : "bg-input hover:bg-(--outline-hover) hover:text-foreground",
+                : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
               value.length > 0 && "text-foreground",
               className,
             )}

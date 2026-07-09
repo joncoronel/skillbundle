@@ -17,6 +17,10 @@ import {
   GithubIcon,
   FlashIcon,
   FilterHorizontalIcon,
+  FireIcon,
+  ArrowRight02Icon,
+  CheckmarkBadge01Icon,
+  TextAlignLeftIcon,
 } from "@hugeicons/core-free-icons";
 import {
   modeParser,
@@ -29,24 +33,35 @@ import {
   minInstallsParser,
   searchDescriptionsParser,
   brokenFilterParser,
-  leaderboardTabParser,
+  leaderboardViewParser,
   type ModeValue,
   type CatalogSortValue,
   type AuditFilterValue,
-  type LeaderboardTabValue,
+  type LeaderboardViewValue,
 } from "@/lib/search-params";
 import type { FacetCount, SkillFilters } from "@/lib/search/typesense";
 import { Input } from "@/components/ui/cubby-ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/cubby-ui/input-group";
+import { Separator } from "@/components/ui/cubby-ui/separator";
+import { Card } from "@/components/ui/cubby-ui/card";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { PopularList, rowToSkill } from "@/components/default-skills-list";
 import {
-  PopularList,
-  SkillRowGrid,
-  EmptyState,
-  rowToSkill,
-} from "@/components/default-skills-list";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/cubby-ui/toggle-group";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/cubby-ui/tooltip";
 import {
   Sheet,
   SheetTrigger,
@@ -55,8 +70,9 @@ import {
   SheetTitle,
   SheetBody,
 } from "@/components/ui/cubby-ui/sheet";
-import { CatalogControls } from "@/components/catalog-controls";
+import { CatalogControls, SortSelect } from "@/components/catalog-controls";
 import { ActiveCatalogResults } from "@/components/catalog-results";
+import { LeaderboardSheet } from "@/components/leaderboard-sheet";
 import { RepoAnalysisResults } from "@/components/repo-url-input";
 import {
   SkillDetailSheet,
@@ -125,15 +141,14 @@ export function SkillExplorer({
     "broken",
     brokenFilterParser.withOptions({ startTransition }),
   );
-  // Which leaderboard view the entry-state catalog shows. URL-backed so the
-  // active tab is shareable and survives back/forward ("popular" stays
-  // unrepresented in the URL — only trending/hot emit `?tab=`).
-  const [tab, setTab] = useQueryState("tab", leaderboardTabParser);
+  // Leaderboard sheet: null = closed, "hot"/"trending" = open on that tab.
+  // URL-backed (?view=) so a leaderboard is shareable and back closes it.
+  const [view, setView] = useQueryState("view", leaderboardViewParser);
 
   return (
     <SkillExplorerView
-      tab={tab}
-      onTabChange={setTab}
+      view={view}
+      onViewChange={setView}
       mode={mode}
       onModeChange={setMode}
       textQuery={textQuery}
@@ -163,8 +178,8 @@ export function SkillExplorer({
 }
 
 interface SkillExplorerViewProps extends SkillExplorerProps {
-  tab: LeaderboardTabValue;
-  onTabChange: (tab: LeaderboardTabValue) => void;
+  view: LeaderboardViewValue | null;
+  onViewChange: (view: LeaderboardViewValue | null) => void;
   mode: ModeValue;
   onModeChange: (mode: ModeValue) => void;
   textQuery: string;
@@ -200,8 +215,8 @@ export const ENTRY_STATE_DEFAULTS: Omit<
   SkillExplorerViewProps,
   "canAutoDetect" | "initialPopularSkills" | "initialTrending" | "initialHot"
 > = {
-  tab: "popular",
-  onTabChange: noop,
+  view: null,
+  onViewChange: noop,
   mode: "text",
   onModeChange: noop,
   textQuery: "",
@@ -252,8 +267,8 @@ export const ENTRY_STATE_DEFAULTS: Omit<
  * mounts only when a search is active — never in the prerendered idle state.
  */
 export function SkillExplorerView({
-  tab,
-  onTabChange,
+  view,
+  onViewChange,
   mode,
   onModeChange,
   textQuery,
@@ -325,12 +340,6 @@ export function SkillExplorerView({
   const isRepo = mode === "repo";
   const searchActive = !isRepo && (hasQuery || anyFilter);
 
-  // When a search/filter is active you're implicitly in the catalog, so the
-  // Popular tab is the one that's "on" — Trending/Hot are fixed lenses that
-  // don't compose with a query. This is display-only; the URL keeps `tab` so
-  // clearing the search returns you to whichever lens you were browsing.
-  const effectiveTab: LeaderboardTabValue = searchActive ? "popular" : tab;
-
   const effectiveSort: CatalogSortValue =
     sortParam ?? (hasQuery ? "relevance" : "installs");
   const filters: SkillFilters = {
@@ -346,15 +355,24 @@ export function SkillExplorerView({
     excludeBroken: broken || undefined,
   };
 
-  // One-tap reset of every filter (sort stays — it's a view preference, not a
-  // narrowing). Setting each param to its parser default removes it from the
+  // One-tap reset of the chin filters (sort stays — it's a view preference,
+  // not a narrowing; Official stays too — its desktop control lives in the
+  // input row with its own visible pressed state, so the chin's Clear doesn't
+  // reach it). Setting each param to its parser default removes it from the
   // URL, which also drops the page back to the entry state.
   function handleClearFilters() {
-    onOfficialChange(false);
     onPublisherChange([]);
     onAuditChange(null);
     onMinInstallsChange(null);
     onBrokenChange(false);
+  }
+
+  // The mobile sheet's Clear: Official's mobile home IS the sheet, so the
+  // sheet-level reset includes it (Clear covers the controls that share its
+  // surface). Search scope is a preference, never cleared.
+  function handleClearSheetFilters() {
+    handleClearFilters();
+    onOfficialChange(false);
   }
 
   // Choosing the sort the UI would auto-resolve to anyway clears the param, so
@@ -363,18 +381,6 @@ export function SkillExplorerView({
   function handleSortChange(next: CatalogSortValue) {
     const autoDefault: CatalogSortValue = hasQuery ? "relevance" : "installs";
     onSortParamChange(next === autoDefault ? null : next);
-  }
-
-  // Switching to Trending/Hot leaves any active search behind — they're clean
-  // browse lenses that ignore query/sort/filters, so clearing lets the lens
-  // actually show (otherwise `searchActive` would keep pinning Popular).
-  function handleTabChange(next: LeaderboardTabValue) {
-    if (next !== "popular" && searchActive) {
-      onTextQueryChange("");
-      onSortParamChange(null);
-      handleClearFilters();
-    }
-    onTabChange(next);
   }
 
   // Local input state for the repo field — only pushed to the URL on submit.
@@ -420,14 +426,14 @@ export function SkillExplorerView({
       onSortChange={handleSortChange}
       official={official}
       onOfficialChange={onOfficialChange}
+      searchDescriptions={searchDescriptions}
+      onSearchDescriptionsChange={onSearchDescriptionsChange}
       publisher={publisher}
       onPublisherChange={onPublisherChange}
       audit={audit}
       onAuditChange={onAuditChange}
       minInstalls={minInstalls}
       onMinInstallsChange={onMinInstallsChange}
-      searchDescriptions={searchDescriptions}
-      onSearchDescriptionsChange={onSearchDescriptionsChange}
       broken={broken}
       onBrokenChange={onBrokenChange}
       onClearFilters={handleClearFilters}
@@ -436,6 +442,8 @@ export function SkillExplorerView({
     />
   );
 
+  // Mobile "Sort & filter" badge + the sheet header's Clear — counts what the
+  // sheet contains, so Official is included here (unlike the desktop chin).
   const filterCount =
     (official ? 1 : 0) +
     (publisher.length > 0 ? 1 : 0) +
@@ -443,70 +451,75 @@ export function SkillExplorerView({
     (minInstalls !== null ? 1 : 0) +
     (broken ? 1 : 0);
 
-  // The search input — shared by text + repo mode. `inputClassName` is an
-  // optional restyle hook; both modes use the default bordered input.
-  const searchField = (inputClassName?: string) => (
-    <div className="relative flex-1">
-      {showInputSpinner ? (
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 flex size-4 items-center justify-center text-muted-foreground pointer-events-none">
-          <DotMatrixRipple size="xs" ariaLabel="Searching" />
-        </span>
-      ) : (
-        <HugeiconsIcon
-          icon={isRepo ? GithubIcon : Search01Icon}
-          strokeWidth={2}
-          className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
-        />
-      )}
-      <Input
-        ref={inputRef}
-        placeholder={placeholder}
-        value={inputValue}
-        onChange={(e) => {
-          if (isRepo) {
-            setRepoInput(e.target.value);
-          } else {
-            onTextQueryChange(e.target.value);
-          }
-        }}
-        onKeyDown={(e) => {
-          if (isRepo && e.key === "Enter") handleRepoSubmit();
-        }}
-        className={cn("pl-9 pr-9", inputClassName)}
-      />
-      {!inputValue && (
-        <Kbd
-          size="sm"
-          variant="ghost"
-          className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none max-sm:hidden"
-          aria-hidden="true"
-        >
-          /
-        </Kbd>
-      )}
-      {inputValue && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => {
+  // The search input — shared by text + repo mode. `inGroup` renders the
+  // InputGroup flavor of the input (transparent, borderless — the group
+  // supplies the chrome + focus ring); repo mode keeps the standalone
+  // bordered Input.
+  const searchField = (inputClassName?: string, inGroup = false) => {
+    const InputComponent = inGroup ? InputGroupInput : Input;
+    return (
+      <div className={cn("relative", inGroup ? "w-full" : "flex-1")}>
+        {showInputSpinner ? (
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 flex size-4 items-center justify-center text-muted-foreground pointer-events-none">
+            <DotMatrixRipple size="xs" ariaLabel="Searching" />
+          </span>
+        ) : (
+          <HugeiconsIcon
+            icon={isRepo ? GithubIcon : Search01Icon}
+            strokeWidth={2}
+            className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
+          />
+        )}
+        <InputComponent
+          ref={inputRef}
+          placeholder={placeholder}
+          value={inputValue}
+          onChange={(e) => {
             if (isRepo) {
-              setRepoInput("");
-              onRepoUrlChange("");
+              setRepoInput(e.target.value);
             } else {
-              onTextQueryChange("");
+              onTextQueryChange(e.target.value);
             }
           }}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
-        >
-          <HugeiconsIcon
-            icon={Cancel01Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        </button>
-      )}
-    </div>
-  );
+          onKeyDown={(e) => {
+            if (isRepo && e.key === "Enter") handleRepoSubmit();
+          }}
+          className={cn("pl-9 pr-9", inputClassName)}
+        />
+        {!inputValue && (
+          <Kbd
+            size="sm"
+            variant="ghost"
+            className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none max-sm:hidden"
+            aria-hidden="true"
+          >
+            /
+          </Kbd>
+        )}
+        {inputValue && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            onClick={() => {
+              if (isRepo) {
+                setRepoInput("");
+                onRepoUrlChange("");
+              } else {
+                onTextQueryChange("");
+              }
+            }}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+          >
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              strokeWidth={2}
+              className="size-4"
+            />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -524,7 +537,8 @@ export function SkillExplorerView({
           </h1>
           <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
             Search and compare skills for Cursor, Claude Code, and other coding
-            agents. Bundle the ones you want and share the whole set with a link.
+            agents. Bundle the ones you want and share the whole set with a
+            link.
           </p>
         </section>
 
@@ -581,172 +595,275 @@ export function SkillExplorerView({
             </div>
           </>
         ) : (
-          <Tabs
-            value={effectiveTab}
-            onValueChange={(v) => handleTabChange(v as LeaderboardTabValue)}
-          >
-            {/* Search bar — text mode. Flat sticky toolbar (no card): bordered
-                input + Match repo on top, sort/filter controls + browse tabs
-                below, over one full-bleed border-b that meets the desktop rails. */}
+          <>
+            {/* Search bar — text mode. A two-layer "composer" card: the inner
+                surface holds the input + how-you-search controls (scope tabs,
+                Match repo, sort); the chin below holds the result-narrowing
+                filters + the leaderboards entry. Everything inside it
+                parametrizes the ONE list below — Trending/Hot live in their own
+                sheet, so no control here ever points at a list it doesn't
+                affect. */}
             <div className="sticky top-14 z-30 -mx-4 border-b border-rail bg-background/80 px-4 py-3 backdrop-blur-sm sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
               <RailDots />
-              {/* Search row */}
-              <div className="flex items-center gap-2">
-                {searchField()}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground max-sm:px-2"
-                  onClick={() => onModeChange("repo")}
-                  leftSection={
-                    <HugeiconsIcon
-                      icon={FlashIcon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  <span className="max-sm:sr-only">Match repo</span>
-                </Button>
-              </div>
-
-              {/* Controls + browse-lens tabs. Tabs anchored right so they don't
-                  shift when controls appear; on mobile the controls collapse to a
-                  "Sort & filter" trigger that opens a bottom sheet. */}
-              <div className="mt-2.5 flex items-center justify-between gap-x-3 gap-y-2">
-                {effectiveTab === "popular" ? (
-                  <>
-                    {/* Desktop: inline controls */}
-                    <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
-                      {controls(facets)}
-                    </div>
-                    {/* Mobile: single trigger → bottom sheet */}
-                    <div className="sm:hidden">
-                      <Sheet>
-                        <SheetTrigger
+              <Card variant="inset" className="p-1 pb-0">
+                {/* Inner surface — the search instrument. The InputGroup owns
+                    the input behavior + focus ring; its chrome matches the
+                    inset Card's inner panel (borderless — elevation shadow +
+                    rim instead of a 1px line), and --popup-surface is set so
+                    elevated components nested inside composite against the
+                    right substrate. The block-end addon is its control row:
+                    search scope left, repo-match + sort right. */}
+                <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
+                  {searchField("h-11", true)}
+                  <InputGroupAddon
+                    align="block-end"
+                    className="justify-between gap-2 px-2 pb-2"
+                  >
+                    {/* Icon toggle group — the two high-frequency booleans, on
+                        the instrument itself (independent multiple-selection,
+                        one collapsed frame). Icon-only, so tooltips + a loud
+                        pressed state are load-bearing, not decoration. */}
+                    {/* Desktop-only: icon toggles need hover for their
+                        tooltips; on mobile these live in the Sort & filter
+                        sheet as labeled switches. */}
+                    <ToggleGroup
+                      multiple
+                      detached
+                      size="sm"
+                      variant="outline"
+                      aria-label="Search options"
+                      className="max-sm:hidden"
+                      value={[
+                        ...(official ? ["official"] : []),
+                        ...(searchDescriptions ? ["desc"] : []),
+                      ]}
+                      onValueChange={(vals: string[]) => {
+                        onOfficialChange(vals.includes("official"));
+                        onSearchDescriptionsChange(vals.includes("desc"));
+                      }}
+                    >
+                      <Tooltip>
+                        <TooltipTrigger
                           render={
+                            <ToggleGroupItem
+                              value="official"
+                              aria-label="Official skills only"
+                              // Re-assert the slot the TooltipTrigger merge
+                              // overwrites — the group's cell styling targets
+                              // [data-slot=toggle].
+                              data-slot="toggle"
+                            />
+                          }
+                        >
+                          <HugeiconsIcon
+                            icon={CheckmarkBadge01Icon}
+                            strokeWidth={2}
+                            className={cn(
+                              "size-4",
+                              official
+                                ? "text-info-foreground"
+                                : "text-muted-foreground",
+                            )}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent sideOffset={8}>
+                          Official skills only
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <ToggleGroupItem
+                              value="desc"
+                              aria-label="Also search descriptions"
+                              data-slot="toggle"
+                            />
+                          }
+                        >
+                          <HugeiconsIcon
+                            icon={TextAlignLeftIcon}
+                            strokeWidth={2}
+                            className={cn(
+                              "size-4",
+                              searchDescriptions
+                                ? "text-foreground"
+                                : "text-muted-foreground",
+                            )}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent sideOffset={8}>
+                          Also search descriptions
+                        </TooltipContent>
+                      </Tooltip>
+                    </ToggleGroup>
+                    {/* ms-auto keeps this pinned right on mobile, where the
+                        (hidden) toggle group stops participating in the row. */}
+                    <div className="ms-auto flex items-center gap-1">
+                      <InputGroupButton
+                        size="sm"
+                        className="shrink-0 text-muted-foreground max-sm:px-2"
+                        onClick={() => onModeChange("repo")}
+                        leftSection={
+                          <HugeiconsIcon
+                            icon={FlashIcon}
+                            strokeWidth={2}
+                            className="size-3.5"
+                          />
+                        }
+                      >
+                        <span className="max-sm:sr-only">Match repo</span>
+                      </InputGroupButton>
+                      <Separator
+                        orientation="vertical"
+                        className="h-4! max-sm:hidden"
+                      />
+                      <SortSelect
+                        sort={effectiveSort}
+                        hasQuery={hasQuery}
+                        onSortChange={handleSortChange}
+                        ghost
+                        className="max-sm:hidden"
+                      />
+                    </div>
+                  </InputGroupAddon>
+                </InputGroup>
+
+                {/* Chin: filters left, leaderboards entry right. On mobile the
+                    filters collapse to one trigger → bottom sheet (sort lives
+                    inside the sheet there, since the control row hides it). */}
+                <div className="flex items-center justify-between gap-x-3 gap-y-2 py-1 px-2 ">
+                  <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
+                    {controls(facets)}
+                  </div>
+                  <div className="sm:hidden">
+                    <Sheet>
+                      <SheetTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground"
+                            leftSection={
+                              <HugeiconsIcon
+                                icon={FilterHorizontalIcon}
+                                strokeWidth={2}
+                                className="size-3.5"
+                              />
+                            }
+                            rightSection={
+                              filterCount > 0 ? (
+                                <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground tabular-nums">
+                                  {filterCount}
+                                </span>
+                              ) : undefined
+                            }
+                          />
+                        }
+                      >
+                        Sort & filter
+                      </SheetTrigger>
+                      <SheetContent side="bottom">
+                        {/* Clear lives in the header (stable slot) so its
+                            appearance never shifts the sheet's content. */}
+                        <SheetHeader className="flex-row items-center justify-between">
+                          <SheetTitle>Sort &amp; filter</SheetTitle>
+                          {filterCount > 0 && (
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
+                              className="text-muted-foreground"
+                              onClick={handleClearSheetFilters}
                               leftSection={
                                 <HugeiconsIcon
-                                  icon={FilterHorizontalIcon}
+                                  icon={Cancel01Icon}
                                   strokeWidth={2}
                                   className="size-3.5"
                                 />
                               }
-                              rightSection={
-                                filterCount > 0 ? (
-                                  <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground tabular-nums">
-                                    {filterCount}
-                                  </span>
-                                ) : undefined
-                              }
-                            />
-                          }
-                        >
-                          Sort & filter
-                        </SheetTrigger>
-                        <SheetContent side="bottom">
-                          <SheetHeader>
-                            <SheetTitle>Sort &amp; filter</SheetTitle>
-                          </SheetHeader>
-                          <SheetBody>{controls(facets, "sheet")}</SheetBody>
-                        </SheetContent>
-                      </Sheet>
-                    </div>
-                  </>
-                ) : (
-                  <span />
-                )}
-                <TabsList variant="capsule" size="small" aria-label="Browse">
-                  <TabsTrigger value="popular">Popular</TabsTrigger>
-                  <TabsTrigger value="trending">Trending</TabsTrigger>
-                  <TabsTrigger value="hot">Hot</TabsTrigger>
-                </TabsList>
-              </div>
+                            >
+                              Clear ({filterCount})
+                            </Button>
+                          )}
+                        </SheetHeader>
+                        <SheetBody>{controls(facets, "sheet")}</SheetBody>
+                      </SheetContent>
+                    </Sheet>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-muted-foreground"
+                    onClick={() => onViewChange("hot")}
+                    leftSection={
+                      <HugeiconsIcon
+                        icon={FireIcon}
+                        strokeWidth={2}
+                        className="size-3.5 text-warning-foreground"
+                      />
+                    }
+                    rightSection={
+                      <HugeiconsIcon
+                        icon={ArrowRight02Icon}
+                        strokeWidth={2}
+                        className="size-3.5 max-sm:hidden"
+                      />
+                    }
+                  >
+                    Hot + Trending
+                  </Button>
+                </div>
+              </Card>
             </div>
 
             {/* List region — the ONLY thing that changes on interaction. */}
             <div className="pt-4">
-              {effectiveTab === "popular" && (
-                <>
-                  {/* Popular list stays mounted (preserves scroll + pagination).
-                      While a search is settling it dims as filler; once results
-                      are ready it's hidden and hands off to them. */}
-                  <div
-                    className={cn(
-                      "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
-                      searchActive && searchSettled && "hidden",
-                      searchActive && !searchSettled && "opacity-55",
-                    )}
-                  >
-                    <CatalogNote>
-                      The full catalog, sorted by all-time installs from{" "}
-                      <SkillsShLink />
-                    </CatalogNote>
-                    <PopularList
-                      initialPage={initialPopularSkills}
-                      sheetHandle={skillDetailHandle}
-                    />
-                  </div>
-                  {searchActive && (
-                    <ActiveCatalogResults
-                      rawQuery={textQuery}
-                      sort={effectiveSort}
-                      filters={filters}
-                      searchDescriptions={searchDescriptions}
-                      anyFilterActive={anyFilter}
-                      sheetHandle={skillDetailHandle}
-                      onSettledChange={setSearchSettled}
-                      onLoadingChange={setSearchQueryPending}
-                      onFacetsChange={setFacets}
-                    />
-                  )}
-                </>
-              )}
-
-              {effectiveTab === "trending" && (
-                <>
-                  <CatalogNote>
-                    Most installed in the last 24 hours on <SkillsShLink />
-                  </CatalogNote>
-                  {trendingSkills.length === 0 ? (
-                    <EmptyState message="No trending data yet — check back after the next sync." />
-                  ) : (
-                    <SkillRowGrid
-                      skills={trendingSkills}
-                      sheetHandle={skillDetailHandle}
-                      metric="trending"
-                    />
-                  )}
-                </>
-              )}
-
-              {effectiveTab === "hot" && (
-                <>
-                  <CatalogNote>
-                    Most installed in the last hour on <SkillsShLink />
-                  </CatalogNote>
-                  {hotSkills.length === 0 ? (
-                    <EmptyState message="No hot skills right now — check back after the next sync." />
-                  ) : (
-                    <SkillRowGrid
-                      skills={hotSkills}
-                      sheetHandle={skillDetailHandle}
-                      metric="hot"
-                    />
-                  )}
-                </>
+              {/* Popular list stays mounted (preserves scroll + pagination).
+                  While a search is settling it dims as filler; once results
+                  are ready it's hidden and hands off to them. */}
+              <div
+                className={cn(
+                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
+                  searchActive && searchSettled && "hidden",
+                  searchActive && !searchSettled && "opacity-55",
+                )}
+              >
+                <CatalogNote>
+                  The full catalog, sorted by all-time installs from{" "}
+                  <SkillsShLink />
+                </CatalogNote>
+                <PopularList
+                  initialPage={initialPopularSkills}
+                  sheetHandle={skillDetailHandle}
+                />
+              </div>
+              {searchActive && (
+                <ActiveCatalogResults
+                  rawQuery={textQuery}
+                  sort={effectiveSort}
+                  filters={filters}
+                  searchDescriptions={searchDescriptions}
+                  anyFilterActive={anyFilter}
+                  sheetHandle={skillDetailHandle}
+                  onSettledChange={setSearchSettled}
+                  onLoadingChange={setSearchQueryPending}
+                  onFacetsChange={setFacets}
+                />
               )}
             </div>
-          </Tabs>
+          </>
         )}
       </div>
 
       {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
           state persists across navigation to /compare. */}
       <SkillDetailSheet handle={skillDetailHandle} />
+      <LeaderboardSheet
+        view={view}
+        onViewChange={onViewChange}
+        hotSkills={hotSkills}
+        trendingSkills={trendingSkills}
+        sheetHandle={skillDetailHandle}
+      />
     </>
   );
 }

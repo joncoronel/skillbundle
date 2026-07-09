@@ -26,10 +26,14 @@ export const modeParser = parseAsStringLiteral(modeValues).withDefault("text");
 export const searchQueryParser = parseAsString.withDefault("");
 export const repoUrlParser = parseAsString.withDefault("");
 
-const leaderboardTabValues = ["popular", "trending", "hot"] as const;
-export type LeaderboardTabValue = (typeof leaderboardTabValues)[number];
-export const leaderboardTabParser =
-  parseAsStringLiteral(leaderboardTabValues).withDefault("popular");
+// Leaderboard sheet. null = closed; "hot"/"trending" open the sheet on that
+// tab. URL-backed so leaderboard views are shareable and back closes the sheet.
+// (Replaces the old ?tab= browse lens — Trending/Hot no longer swap the
+// catalog; they live in their own sheet so the composer's search/sort/filters
+// never point at a list they don't control.)
+const leaderboardViewValues = ["hot", "trending"] as const;
+export type LeaderboardViewValue = (typeof leaderboardViewValues)[number];
+export const leaderboardViewParser = parseAsStringLiteral(leaderboardViewValues);
 
 // Catalog sort. Deliberately NO .withDefault(): null means "auto" — the UI
 // resolves it to "relevance" when a query is present, "installs" otherwise,

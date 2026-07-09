@@ -102,13 +102,17 @@ function InputGroupAddon({
   );
 }
 
+// Sizes here are deliberately smaller than the standalone Button's — the button
+// must fit inside the input's border and track the input's height, not the
+// viewport. Note the name collision: `xs` here is 24px vs the Button's 32px.
+// Intentional; don't "reconcile" them with the Button scale.
 const inputGroupButtonVariants = cva(
   "text-sm shadow-none flex gap-2 items-center min-h-0",
   {
     variants: {
       size: {
         xs: "h-6 sm:h-6 gap-1 px-2 rounded-[calc(var(--radius)-5px)] [&>svg:not([class*='size-'])]:size-3.5 has-[>svg]:px-2",
-        sm: "h-8 sm:h-8 px-2.5 gap-1.5 rounded-lg has-[>svg]:px-2.5",
+        sm: "h-8 sm:h-8 px-2 gap-1.5 rounded-lg has-[>svg]:px-2",
         icon_xs:
           "size-6 sm:size-6 rounded-[calc(var(--radius)-5px)] p-0 has-[>svg]:p-0",
         icon_sm: "size-8 sm:size-8 p-0 has-[>svg]:p-0",
