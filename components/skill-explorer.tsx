@@ -617,7 +617,7 @@ export function SkillExplorerView({
                   {searchField("h-11", true)}
                   <InputGroupAddon
                     align="block-end"
-                    className="justify-between gap-2 px-2 pb-2"
+                    className="justify-between gap-2 px-2 pb-2 max-sm:hidden"
                   >
                     {/* Icon toggle group — the two high-frequency booleans, on
                         the instrument itself (independent multiple-selection,
@@ -735,7 +735,10 @@ export function SkillExplorerView({
                   <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
                     {controls(facets)}
                   </div>
-                  <div className="sm:hidden">
+                  {/* Mobile: the whole control row above is hidden, so its two
+                      homes here are the sheet (sort/filters/switches) and a
+                      chin-level Match my repo. */}
+                  <div className="flex items-center gap-0.5 sm:hidden">
                     <Sheet>
                       <SheetTrigger
                         render={
@@ -789,28 +792,61 @@ export function SkillExplorerView({
                       </SheetContent>
                     </Sheet>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0 text-muted-foreground"
-                    onClick={() => onViewChange("hot")}
-                    leftSection={
+                  {/* Right pair: repo matching + leaderboards. Mobile gets
+                      dedicated square icon buttons (flame/GitHub are safe bare
+                      glyphs, and both open surfaces that explain themselves);
+                      desktop gets the labeled Trending button — Match my repo
+                      lives in the control row there. */}
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon_sm"
+                      className="text-muted-foreground sm:hidden"
+                      onClick={() => onModeChange("repo")}
+                      aria-label="Match my repo"
+                    >
+                      <HugeiconsIcon
+                        icon={GithubIcon}
+                        strokeWidth={2}
+                        className="size-4"
+                      />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon_sm"
+                      className="sm:hidden"
+                      onClick={() => onViewChange("hot")}
+                      aria-label="Hot + Trending leaderboards"
+                    >
                       <HugeiconsIcon
                         icon={FireIcon}
                         strokeWidth={2}
-                        className="size-3.5 text-warning-foreground"
+                        className="size-4 text-warning-foreground"
                       />
-                    }
-                    rightSection={
-                      <HugeiconsIcon
-                        icon={ArrowRight02Icon}
-                        strokeWidth={2}
-                        className="size-3.5 max-sm:hidden"
-                      />
-                    }
-                  >
-                    Hot + Trending
-                  </Button>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-muted-foreground max-sm:hidden"
+                      onClick={() => onViewChange("hot")}
+                      leftSection={
+                        <HugeiconsIcon
+                          icon={FireIcon}
+                          strokeWidth={2}
+                          className="size-3.5 text-warning-foreground"
+                        />
+                      }
+                      rightSection={
+                        <HugeiconsIcon
+                          icon={ArrowRight02Icon}
+                          strokeWidth={2}
+                          className="size-3.5"
+                        />
+                      }
+                    >
+                      Hot + Trending
+                    </Button>
+                  </div>
                 </div>
               </Card>
             </div>
