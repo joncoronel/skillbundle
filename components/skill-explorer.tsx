@@ -701,17 +701,17 @@ export function SkillExplorerView({
                     <div className="ms-auto flex items-center gap-1">
                       <InputGroupButton
                         size="sm"
-                        className="shrink-0 text-muted-foreground max-sm:px-2"
+                        className="shrink-0 text-muted-foreground"
                         onClick={() => onModeChange("repo")}
                         leftSection={
                           <HugeiconsIcon
-                            icon={FlashIcon}
+                            icon={GithubIcon}
                             strokeWidth={2}
                             className="size-3.5"
                           />
                         }
                       >
-                        <span className="max-sm:sr-only">Match repo</span>
+                        Match my repo
                       </InputGroupButton>
                       <Separator
                         orientation="vertical"
