@@ -4,7 +4,6 @@ import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
   Sheet,
@@ -22,7 +21,7 @@ import {
   type PickerSkill,
   type SkillPickerCopy,
 } from "@/components/skill-picker";
-import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
+import { useSkillPickerSearch } from "@/hooks/use-skill-picker-search";
 import { MAX_COMPARE_SKILLS, type SkillRef } from "@/lib/compare";
 
 const compareCopy: SkillPickerCopy = {
@@ -88,10 +87,7 @@ export function ComparePickerSheet({
 }) {
   const [rawQuery, setRawQuery] = useState("");
 
-  const { effectiveQuery, isInputLoading } = useDebouncedCachedSearch({
-    rawQuery,
-    fn: api.skills.searchSkills,
-  });
+  const { effectiveQuery, isInputLoading } = useSkillPickerSearch(rawQuery);
 
   const existingKeys = new Set(refs.map((r) => skillKey(r.source, r.skillId)));
   const atCap = refs.length >= MAX_COMPARE_SKILLS;

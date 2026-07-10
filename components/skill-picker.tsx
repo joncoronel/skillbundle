@@ -13,9 +13,16 @@ import {
 
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Input } from "@/components/ui/cubby-ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/cubby-ui/input-group";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { skillPickerSearchOptions } from "@/hooks/use-skill-picker-search";
+import { renderHighlight } from "@/lib/search/highlight";
 import { formatInstalls } from "@/lib/utils";
 
 // Shared skill-picker building blocks: a search field plus a result list with
@@ -26,6 +33,8 @@ export interface PickerSkill {
   source: string;
   skillId: string;
   name: string;
+  /** Typesense `<mark>`-wrapped name for search rows; render via renderHighlight. */
+  nameHighlight?: string;
   description?: string;
   installs: number;
   curatedOwner?: string;
@@ -59,40 +68,35 @@ export function SkillSearchField({
   placeholder?: string;
 }) {
   return (
-    <div className="relative">
-      {loading ? (
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 size-4 flex items-center justify-center text-muted-foreground pointer-events-none">
+    <InputGroup variant="elevated">
+      <InputGroupAddon>
+        {loading ? (
           <DotMatrixRipple size="xs" ariaLabel="Searching" />
-        </span>
-      ) : (
-        <HugeiconsIcon
-          icon={Search01Icon}
-          strokeWidth={2}
-          className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
-        />
-      )}
-      <Input
-        variant="elevated"
+        ) : (
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
+        )}
+      </InputGroupAddon>
+      <InputGroupInput
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="pl-9 pr-9"
       />
       {value && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onChange("")}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
-        >
-          <HugeiconsIcon
-            icon={Cancel01Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        </button>
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton
+            size="icon_xs"
+            aria-label="Clear search"
+            onClick={() => onChange("")}
+          >
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              strokeWidth={2}
+              className="size-4"
+            />
+          </InputGroupButton>
+        </InputGroupAddon>
       )}
-    </div>
+    </InputGroup>
   );
 }
 
@@ -112,18 +116,26 @@ export function PickerSearchResults({
   onAdd,
   onRemove,
 }: PickerResultsProps & { query: string }) {
-  const { data, isPending } = useQuery({
-    ...convexQuery(api.skills.searchSkills, { query }),
+  // Same query (key + fn) as useSkillPickerSearch in the parent sheet, so the
+  // spinner and this list share one cache entry and one network request.
+  const { data, isPending, isError } = useQuery({
+    ...skillPickerSearchOptions(query),
     placeholderData: keepPreviousData,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
   });
 
   if (isPending) {
     return <PickerListSkeleton />;
   }
 
-  const results = data ?? [];
+  if (isError) {
+    return (
+      <p className="text-sm text-muted-foreground py-8 text-center">
+        Search is unavailable right now. Try again in a moment.
+      </p>
+    );
+  }
+
+  const results = data?.hits ?? [];
   if (results.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
@@ -141,6 +153,7 @@ export function PickerSearchResults({
             source: s.source,
             skillId: s.skillId,
             name: s.name,
+            nameHighlight: s.nameHighlight,
             description: s.description,
             installs: s.installs,
             curatedOwner: s.curatedOwner,
@@ -278,7 +291,9 @@ export function PickerRow({
             />
           ) : null}
           <span className="text-sm font-semibold leading-tight">
-            {skill.name}
+            {skill.nameHighlight
+              ? renderHighlight(skill.nameHighlight)
+              : skill.name}
           </span>
           <span className="text-xs text-muted-foreground">{skill.source}</span>
         </div>

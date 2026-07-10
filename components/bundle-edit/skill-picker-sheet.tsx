@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { api } from "@/convex/_generated/api";
 import {
   Sheet,
   SheetBody,
@@ -18,7 +17,7 @@ import {
   type PickerSkill,
   type SkillPickerCopy,
 } from "@/components/skill-picker";
-import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
+import { useSkillPickerSearch } from "@/hooks/use-skill-picker-search";
 import { cn } from "@/lib/utils";
 import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
 
@@ -65,10 +64,7 @@ export function BundleEditSkillPicker({
     if (!open) setRawQuery("");
   }
 
-  const { effectiveQuery, isInputLoading } = useDebouncedCachedSearch({
-    rawQuery,
-    fn: api.skills.searchSkills,
-  });
+  const { effectiveQuery, isInputLoading } = useSkillPickerSearch(rawQuery);
 
   // Staged count drives the cap preempt. `existingKeys` already represents
   // "current bundle + staged adds − staged removes," so its size is the

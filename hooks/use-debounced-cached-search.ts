@@ -42,7 +42,9 @@ interface UseDebouncedCachedSearchResult<Fn extends SearchQueryFn> {
 }
 
 /**
- * Shared search-input machinery for the home page and /explore:
+ * Debounced Convex search-input machinery — used by /explore's bundle search
+ * (bundles aren't in the Typesense index; skill searches use
+ * `useSkillPickerSearch` / `useCatalogSearch` instead):
  *
  * - **Debounce** the raw input so the backend isn't hit on every keystroke.
  * - **Synchronous cache bypass:** if the trimmed input is already cached,
@@ -56,9 +58,8 @@ interface UseDebouncedCachedSearchResult<Fn extends SearchQueryFn> {
  *
  * The underlying TanStack Query result is passed through unchanged so
  * callers control their own re-render contract: a parent that only needs
- * spinner state (e.g. `<SkillExplorer>` — its child owns data rendering)
- * won't subscribe to data changes, while a data consumer (e.g.
- * `<ExploreContent>`) destructures `query.data` and tracks it normally.
+ * spinner state won't subscribe to data changes, while a data consumer
+ * (e.g. `<ExploreContent>`) destructures `query.data` and tracks it normally.
  */
 export function useDebouncedCachedSearch<Fn extends SearchQueryFn>({
   rawQuery,
@@ -73,7 +74,7 @@ export function useDebouncedCachedSearch<Fn extends SearchQueryFn>({
   // *extra required args* (e.g. `{ query: string; cursor: string }`) would
   // still satisfy `Fn extends SearchQueryFn` and pass this cast — but would
   // runtime-error inside convexQuery because we only ever pass
-  // `{ query: ... }`. Both current callers are exactly `{ query: string }`;
+  // `{ query: ... }`. The current caller is exactly `{ query: string }`;
   // if that changes, swap the cast for an `argsFor: (q: string) =>
   // FunctionArgs<Fn>` callback prop so TS enforces the args shape per call.
   const fnBase = fn as SearchQueryFn;
