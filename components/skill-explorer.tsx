@@ -455,10 +455,78 @@ export function SkillExplorerView({
   // InputGroup flavor of the input (transparent, borderless — the group
   // supplies the chrome + focus ring); repo mode keeps the standalone
   // bordered Input.
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isRepo) {
+      setRepoInput(e.target.value);
+    } else {
+      onTextQueryChange(e.target.value);
+    }
+  };
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isRepo && e.key === "Enter") handleRepoSubmit();
+  };
+  const handleClearInput = () => {
+    if (isRepo) {
+      setRepoInput("");
+      onRepoUrlChange("");
+    } else {
+      onTextQueryChange("");
+    }
+  };
+
   const searchField = (inputClassName?: string, inGroup = false) => {
-    const InputComponent = inGroup ? InputGroupInput : Input;
+    if (inGroup) {
+      // The docs' addon anatomy (icon addon + input + trailing addon), with
+      // one deviation: the group also has a block-end addon (the control
+      // row), which flips the group itself to a column — so this row gets
+      // its own flex wrapper instead of being direct group children.
+      return (
+        <div className="flex w-full items-center">
+          <InputGroupAddon>
+            {showInputSpinner ? (
+              <DotMatrixRipple size="xs" ariaLabel="Searching" />
+            ) : (
+              <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
+            )}
+          </InputGroupAddon>
+          <InputGroupInput
+            ref={inputRef}
+            placeholder={placeholder}
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
+            className={cn("pl-2", inputClassName)}
+          />
+          <InputGroupAddon align="inline-end">
+            {inputValue ? (
+              <InputGroupButton
+                size="icon_xs"
+                aria-label="Clear search"
+                onClick={handleClearInput}
+              >
+                <HugeiconsIcon
+                  icon={Cancel01Icon}
+                  strokeWidth={2}
+                  className="size-4"
+                />
+              </InputGroupButton>
+            ) : (
+              <Kbd
+                size="sm"
+                variant="ghost"
+                className="max-sm:hidden"
+                aria-hidden="true"
+              >
+                /
+              </Kbd>
+            )}
+          </InputGroupAddon>
+        </div>
+      );
+    }
+
     return (
-      <div className={cn("relative", inGroup ? "w-full" : "flex-1")}>
+      <div className="relative flex-1">
         {showInputSpinner ? (
           <span className="absolute left-3 top-1/2 -translate-y-1/2 flex size-4 items-center justify-center text-muted-foreground pointer-events-none">
             <DotMatrixRipple size="xs" ariaLabel="Searching" />
@@ -470,20 +538,12 @@ export function SkillExplorerView({
             className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
           />
         )}
-        <InputComponent
+        <Input
           ref={inputRef}
           placeholder={placeholder}
           value={inputValue}
-          onChange={(e) => {
-            if (isRepo) {
-              setRepoInput(e.target.value);
-            } else {
-              onTextQueryChange(e.target.value);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (isRepo && e.key === "Enter") handleRepoSubmit();
-          }}
+          onChange={handleInputChange}
+          onKeyDown={handleInputKeyDown}
           className={cn("pl-9 pr-9", inputClassName)}
         />
         {!inputValue && (
@@ -500,14 +560,7 @@ export function SkillExplorerView({
           <button
             type="button"
             aria-label="Clear search"
-            onClick={() => {
-              if (isRepo) {
-                setRepoInput("");
-                onRepoUrlChange("");
-              } else {
-                onTextQueryChange("");
-              }
-            }}
+            onClick={handleClearInput}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
           >
             <HugeiconsIcon
