@@ -629,6 +629,7 @@ function PublisherSelect({
       />
       <ComboboxPopup
         level={inSheet ? 7 : 5}
+        align="start"
         className="flex min-w-60 flex-col p-0"
       >
         <div className="border-b border-border p-2">

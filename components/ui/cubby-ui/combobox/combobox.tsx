@@ -562,12 +562,19 @@ function ComboboxPopup({
   className,
   children,
   sideOffset = 6,
+  align,
+  alignOffset,
+  side,
   backdrop = false,
   level,
   shadowLevel,
   ...props
 }: BaseCombobox.Popup.Props & {
   sideOffset?: number;
+  /** Alignment of the popup relative to its anchor. Defaults to Base UI's "center". */
+  align?: BaseCombobox.Positioner.Props["align"];
+  alignOffset?: BaseCombobox.Positioner.Props["alignOffset"];
+  side?: BaseCombobox.Positioner.Props["side"];
   backdrop?: boolean;
   /** Surface elevation level for the popup bg (1-8). Defaults to 3. */
   level?: SurfaceLevel;
@@ -589,6 +596,9 @@ function ComboboxPopup({
       <ComboboxPositioner
         anchor={context?.chipsElement ?? undefined}
         sideOffset={sideOffset}
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
       >
         <ComboboxPopupPrimitive
           className={className}
