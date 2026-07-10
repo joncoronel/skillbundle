@@ -586,7 +586,7 @@ export function SkillExplorerView({
           at a small crosshair — a restrained technical frame that gives the page
           structure. Mobile drops the rails; only the horizontal separator under
           the search remains. */}
-      <div className="relative pb-20 sm:min-h-[calc(100dvh-3.5rem)] sm:border-x sm:border-rail sm:px-8 lg:px-10">
+      <div className="relative pb-20 sm:min-h-[calc(100dvh-3.5rem)] sm:px-8 lg:px-10">
         {/* Hero — constant, scrolls away (never collapses). */}
         <section className="pt-10 pb-6 sm:pt-12">
           <h1 className="font-display text-3xl font-medium tracking-tight text-balance sm:text-4xl">
@@ -605,8 +605,7 @@ export function SkillExplorerView({
             {/* Search bar — repo mode. Flat sticky toolbar (no card): bordered
                 input + primary Analyze + a way back to search, over one full-bleed
                 border-b that meets the desktop rails. */}
-            <div className="sticky top-14 z-30 -mx-4 border-b border-rail bg-background/80 px-4 py-3 backdrop-blur-sm sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-              <RailDots />
+            <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
               <div className="flex items-center gap-2">
                 {searchField()}
                 <Button
@@ -661,8 +660,7 @@ export function SkillExplorerView({
                 parametrizes the ONE list below — Trending/Hot live in their own
                 sheet, so no control here ever points at a list it doesn't
                 affect. */}
-            <div className="sticky top-14 z-30 -mx-4 border-b border-rail bg-background/80 px-4 py-3 backdrop-blur-sm sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-              <RailDots />
+            <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
               <Card variant="inset" className="p-1 pb-0">
                 {/* Inner surface — the search instrument. The InputGroup owns
                     the input behavior + focus ring; its chrome matches the
@@ -964,29 +962,6 @@ export function SkillExplorerView({
         hotSkills={hotSkills}
         trendingSkills={trendingSkills}
         sheetHandle={skillDetailHandle}
-      />
-    </>
-  );
-}
-
-/**
- * A small dot at each junction where the sticky bar's border-b meets a desktop
- * rail — a quiet node tying the horizontal separator to the vertical frame.
- * The `-0.5px` insets push the dot's center off the bar's *padding-box* corner
- * onto the border *centerlines* (the corner sits half a 1px border inside both
- * the rail and the separator, which otherwise biases the dot inward + up).
- * Part of the sticky bar, so it tracks the bar on scroll. Desktop-only.
- */
-function RailDots() {
-  return (
-    <>
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-[0.5px] -left-[0.5px] hidden size-2 -translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
-      />
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-[0.5px] -right-[0.5px] hidden size-2 translate-x-1/2 translate-y-1/2 rounded-full bg-rail sm:block"
       />
     </>
   );
