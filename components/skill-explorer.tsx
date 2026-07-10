@@ -497,12 +497,17 @@ export function SkillExplorerView({
             onKeyDown={handleInputKeyDown}
             className={cn("pl-2", inputClassName)}
           />
+          {/* Margins re-tune the addon's built-in pulls to the composer's
+              12px optical line: the kbd is a bordered chip (box on the line →
+              cancel the pull), the clear button is ghost (glyph on the line →
+              keep 4px of pull). */}
           <InputGroupAddon align="inline-end">
             {inputValue ? (
               <InputGroupButton
                 size="icon_xs"
                 aria-label="Clear search"
                 onClick={handleClearInput}
+                className="me-[0.2rem]"
               >
                 <HugeiconsIcon
                   icon={Cancel01Icon}
@@ -514,7 +519,7 @@ export function SkillExplorerView({
               <Kbd
                 size="sm"
                 variant="ghost"
-                className="max-sm:hidden"
+                className="max-sm:hidden me-[0.35rem]"
                 aria-hidden="true"
               >
                 /
@@ -668,9 +673,13 @@ export function SkillExplorerView({
                     search scope left, repo-match + sort right. */}
                 <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
                   {searchField("h-11", true)}
+                  {/* px-3 puts the bordered toggles' boxes on the composer's
+                      12px line (visible-edge alignment with the search glyph
+                      above); the ghost sort trigger pulls its chevron back to
+                      the line with a negative margin instead. */}
                   <InputGroupAddon
                     align="block-end"
-                    className="justify-between gap-2 px-2 pb-2 max-sm:hidden"
+                    className="justify-between gap-2 px-3 pb-2 max-sm:hidden"
                   >
                     {/* Icon toggle group — the two high-frequency booleans, on
                         the instrument itself (independent multiple-selection,
@@ -775,7 +784,7 @@ export function SkillExplorerView({
                         hasQuery={hasQuery}
                         onSortChange={handleSortChange}
                         ghost
-                        className="max-sm:hidden"
+                        className="max-sm:hidden -me-2"
                       />
                     </div>
                   </InputGroupAddon>
@@ -784,7 +793,10 @@ export function SkillExplorerView({
                 {/* Chin: filters left, leaderboards entry right. On mobile the
                     filters collapse to one trigger → bottom sheet (sort lives
                     inside the sheet there, since the control row hides it). */}
-                <div className="flex items-center justify-between gap-x-3 gap-y-2 py-1 px-2 ">
+                {/* px-3 sets the chin on the same 12px line; its edge controls
+                    are all ghost, so each pulls its glyph/text onto the line
+                    with a negative margin (the addon idiom). */}
+                <div className="flex items-center justify-between gap-x-3 gap-y-2 py-1 px-3">
                   <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
                     {controls(facets)}
                   </div>
@@ -798,7 +810,7 @@ export function SkillExplorerView({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-muted-foreground"
+                            className="text-muted-foreground -ms-2"
                             leftSection={
                               <HugeiconsIcon
                                 icon={FilterHorizontalIcon}
@@ -867,7 +879,7 @@ export function SkillExplorerView({
                     <Button
                       variant="ghost"
                       size="icon_sm"
-                      className="sm:hidden"
+                      className="sm:hidden -me-2.5"
                       onClick={() => onViewChange("hot")}
                       aria-label="Hot + Trending leaderboards"
                     >
@@ -880,7 +892,7 @@ export function SkillExplorerView({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="shrink-0 text-muted-foreground max-sm:hidden"
+                      className="shrink-0 text-muted-foreground max-sm:hidden -me-2"
                       onClick={() => onViewChange("hot")}
                       leftSection={
                         <HugeiconsIcon

@@ -602,7 +602,9 @@ function PublisherSelect({
               // translucent-elevated in the mobile sheet.
               inSheet
                 ? "bg-input-elevated hover:bg-surface-hover hover:text-foreground"
-                : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                : // -ms pulls the ghost trigger's TEXT onto the chin's 12px
+                  // optical line (its invisible box overhangs the gutter).
+                  "-ms-2.5 text-muted-foreground hover:bg-surface-hover hover:text-foreground",
               value.length > 0 && "text-foreground",
               className,
             )}
