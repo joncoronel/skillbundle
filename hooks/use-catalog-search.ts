@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   keepPreviousData,
   useInfiniteQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import {
   searchSkills,
@@ -60,17 +61,33 @@ export function useCatalogSearch({
     filters.source ?? ""
   }|${(filters.owners ?? []).join(",")}`;
 
+  // Synchronous cache bypass (same contract as use-skill-picker-search): if
+  // the current trimmed input's results are already cached, skip the debounce
+  // and query it directly. Retyping a recent query then swaps instantly — no
+  // pending dim — matching how filter toggles (which never debounce) behave.
+  const queryClient = useQueryClient();
+  const isCached =
+    trimmed !== debounced &&
+    queryClient.getQueryData([
+      "typesense-catalog",
+      trimmed,
+      sort,
+      filtersKey,
+      searchDescriptions,
+    ]) !== undefined;
+  const effectiveQuery = isCached ? trimmed : debounced;
+
   const query = useInfiniteQuery({
     queryKey: [
       "typesense-catalog",
-      debounced,
+      effectiveQuery,
       sort,
       filtersKey,
       searchDescriptions,
     ] as const,
     queryFn: ({ pageParam }) =>
       searchSkills({
-        query: debounced,
+        query: effectiveQuery,
         sort,
         filters,
         searchDescriptions,
@@ -104,7 +121,7 @@ export function useCatalogSearch({
     /** Waiting on the debounce, the fetch, or placeholder data — the "search
      *  work pending" signal that drives the loading dim. */
     isPending:
-      (trimmed.length > 0 && trimmed !== debounced) ||
+      (trimmed.length > 0 && trimmed !== effectiveQuery) ||
       query.isPlaceholderData ||
       (query.isFetching && !query.isFetchingNextPage),
     /** No data at all yet (first ever fetch for this state). */
@@ -114,6 +131,6 @@ export function useCatalogSearch({
     fetchNextPage: query.fetchNextPage,
     hasNextPage: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
-    debouncedQuery: debounced,
+    debouncedQuery: effectiveQuery,
   };
 }
