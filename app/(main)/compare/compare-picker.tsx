@@ -26,10 +26,10 @@ import { MAX_COMPARE_SKILLS, type SkillRef } from "@/lib/compare";
 
 const compareCopy: SkillPickerCopy = {
   added: "In comparison",
-  add: (name) => `Add ${name} to the comparison`,
-  addDisabled: (name) =>
-    `Add ${name} (comparison is at the ${MAX_COMPARE_SKILLS}-skill maximum)`,
-  remove: (name) => `Remove ${name} from the comparison`,
+  add: (name, source) => `Add ${name} (${source}) to the comparison`,
+  addDisabled: (name, source) =>
+    `Add ${name} (${source}). Comparison is at the ${MAX_COMPARE_SKILLS}-skill maximum.`,
+  remove: (name, source) => `Remove ${name} (${source}) from the comparison`,
 };
 
 /** The slim add-column strip at the grid's edge. */

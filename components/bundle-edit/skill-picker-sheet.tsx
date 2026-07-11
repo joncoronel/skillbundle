@@ -30,10 +30,10 @@ export type { PickerSkill };
 
 const bundleCopy: SkillPickerCopy = {
   added: "In bundle",
-  add: (name) => `Add ${name} to bundle`,
-  addDisabled: (name) =>
-    `Add ${name} (bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum)`,
-  remove: (name) => `Remove ${name} from bundle`,
+  add: (name, source) => `Add ${name} (${source}) to bundle`,
+  addDisabled: (name, source) =>
+    `Add ${name} (${source}). Bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum.`,
+  remove: (name, source) => `Remove ${name} (${source}) from bundle`,
 };
 
 export interface BundleEditSkillPickerProps {

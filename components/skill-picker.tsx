@@ -46,14 +46,19 @@ export function skillKey(source: string, skillId: string) {
   return `${source}::${skillId}`;
 }
 
-/** Per-row labels naming what skills are added to ("bundle", "comparison"). */
+/**
+ * Per-row labels naming what skills are added to ("bundle", "comparison").
+ * The dynamic labels take the skill's source too: names collide across repos
+ * (the same skill republished from several sources), so a name-only label
+ * gives screen readers three identical "Add X" buttons.
+ */
 export interface SkillPickerCopy {
   /** aria-label of the ✓ shown beside already-added skills. */
   added: string;
-  add: (name: string) => string;
+  add: (name: string, source: string) => string;
   /** Add aria-label while the cap blocks adding; should say why. */
-  addDisabled: (name: string) => string;
-  remove: (name: string) => string;
+  addDisabled: (name: string, source: string) => string;
+  remove: (name: string, source: string) => string;
 }
 
 export function SkillSearchField({
@@ -316,7 +321,7 @@ export function PickerRow({
           variant="outline"
           size="xs"
           onClick={() => onRemove(skill.source, skill.skillId)}
-          aria-label={copy.remove(skill.name)}
+          aria-label={copy.remove(skill.name, skill.source)}
           className="shrink-0 text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
           leftSection={
             <HugeiconsIcon
@@ -340,7 +345,9 @@ export function PickerRow({
           onClick={() => onAdd(skill)}
           disabled={addDisabled}
           aria-label={
-            addDisabled ? copy.addDisabled(skill.name) : copy.add(skill.name)
+            addDisabled
+              ? copy.addDisabled(skill.name, skill.source)
+              : copy.add(skill.name, skill.source)
           }
           className="shrink-0"
           leftSection={
