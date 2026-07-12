@@ -40,6 +40,8 @@ import {
   type LeaderboardViewValue,
 } from "@/lib/search-params";
 import type { FacetCount, SkillFilters } from "@/lib/search/typesense";
+import { useQueryClient } from "@tanstack/react-query";
+import { catalogSearchQueryKey } from "@/hooks/use-catalog-search";
 import { Input } from "@/components/ui/cubby-ui/input";
 import {
   InputGroup,
@@ -298,16 +300,10 @@ export function SkillExplorerView({
   const deferredTrimmed = useDeferredValue(trimmed);
   const hasQuery = trimmed.length > 0;
 
-  // In-input search spinner. `searchQueryPending` is reported up from
-  // ActiveCatalogResults (debounce + Typesense fetch); the `trimmed !==
-  // deferredTrimmed` term covers the gap between a keystroke and that
-  // component mounting, so the spinner appears on the very first character.
-  // Gated on a non-empty query so a filter-only load doesn't spin an empty box.
+  // Reported up from ActiveCatalogResults (debounce + Typesense fetch). Feeds
+  // showInputSpinner, which is derived below the filters (it needs them for
+  // the cache check).
   const [searchQueryPending, setSearchQueryPending] = useState(false);
-  const showInputSpinner =
-    mode !== "repo" &&
-    trimmed.length > 0 &&
-    (searchQueryPending || trimmed !== deferredTrimmed);
 
   // Live facet counts for the filter controls. Reported up from
   // ActiveCatalogResults (which owns the Typesense query); empty when no search
@@ -354,6 +350,26 @@ export function SkillExplorerView({
     hideForks: true,
     excludeBroken: broken || undefined,
   };
+
+  // In-input search spinner, fully derived (same pattern as explore's
+  // isInputLoading): `!inputQueryCached` makes it cache-aware — a retype of a
+  // cached query shows no spinner at all (the results swap synchronously via
+  // useCatalogSearch's cache bypass, so a spinner would be a lie) — while the
+  // `trimmed !== deferredTrimmed` term lights it on the SAME render as an
+  // uncached keystroke, covering the gap until ActiveCatalogResults mounts and
+  // starts reporting `searchQueryPending`. Gated on a non-empty query so a
+  // filter-only load doesn't spin an empty box.
+  const queryClient = useQueryClient();
+  const inputQueryCached =
+    hasQuery &&
+    queryClient.getQueryData(
+      catalogSearchQueryKey(trimmed, effectiveSort, filters, searchDescriptions),
+    ) !== undefined;
+  const showInputSpinner =
+    mode !== "repo" &&
+    hasQuery &&
+    !inputQueryCached &&
+    (searchQueryPending || trimmed !== deferredTrimmed);
 
   // One-tap reset of the chin filters (sort stays — it's a view preference,
   // not a narrowing; Official stays too — its desktop control lives in the

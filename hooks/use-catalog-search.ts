@@ -17,6 +17,33 @@ import { SEARCH_DEBOUNCE_MS } from "@/lib/search-params";
 
 const PER_PAGE = 30;
 
+/**
+ * The React Query key for one catalog search state. Exported so components
+ * above the hook (e.g. the search input's spinner in SkillExplorer) can make
+ * the same synchronous "is this state already cached?" check the hook makes,
+ * without duplicating the key/filters encoding.
+ */
+export function catalogSearchQueryKey(
+  query: string,
+  sort: SkillSort,
+  filters: SkillFilters,
+  searchDescriptions: boolean,
+) {
+  // Stable key for the filters object (fixed key order via explicit fields).
+  const filtersKey = `${filters.officialOnly ? 1 : 0}|${filters.audit ?? ""}|${
+    filters.hideForks ? 1 : 0
+  }|${filters.excludeBroken ? 1 : 0}|${filters.minInstalls ?? ""}|${
+    filters.source ?? ""
+  }|${(filters.owners ?? []).join(",")}`;
+  return [
+    "typesense-catalog",
+    query,
+    sort,
+    filtersKey,
+    searchDescriptions,
+  ] as const;
+}
+
 interface UseCatalogSearchOptions {
   /** Raw (untrimmed) query. Debounced internally; "" = browse the catalog. */
   rawQuery: string;
@@ -54,13 +81,6 @@ export function useCatalogSearch({
     return () => clearTimeout(timer);
   }, [trimmed]);
 
-  // Stable key for the filters object (fixed key order via explicit fields).
-  const filtersKey = `${filters.officialOnly ? 1 : 0}|${filters.audit ?? ""}|${
-    filters.hideForks ? 1 : 0
-  }|${filters.excludeBroken ? 1 : 0}|${filters.minInstalls ?? ""}|${
-    filters.source ?? ""
-  }|${(filters.owners ?? []).join(",")}`;
-
   // Synchronous cache bypass (same contract as use-skill-picker-search): if
   // the current trimmed input's results are already cached, skip the debounce
   // and query it directly. Retyping a recent query then swaps instantly — no
@@ -68,23 +88,18 @@ export function useCatalogSearch({
   const queryClient = useQueryClient();
   const isCached =
     trimmed !== debounced &&
-    queryClient.getQueryData([
-      "typesense-catalog",
-      trimmed,
-      sort,
-      filtersKey,
-      searchDescriptions,
-    ]) !== undefined;
+    queryClient.getQueryData(
+      catalogSearchQueryKey(trimmed, sort, filters, searchDescriptions),
+    ) !== undefined;
   const effectiveQuery = isCached ? trimmed : debounced;
 
   const query = useInfiniteQuery({
-    queryKey: [
-      "typesense-catalog",
+    queryKey: catalogSearchQueryKey(
       effectiveQuery,
       sort,
-      filtersKey,
+      filters,
       searchDescriptions,
-    ] as const,
+    ),
     queryFn: ({ pageParam }) =>
       searchSkills({
         query: effectiveQuery,
