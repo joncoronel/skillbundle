@@ -8,10 +8,14 @@ delete them when shipped. Newest thinking near the top.
 
 ### Match repo popover (deferred from the composer redesign, Jul 2026)
 
-The home composer's "Match repo" button currently switches to the old repo mode
-(separate input + Analyze toolbar). The designed end state (mocked in Paper,
-artboard "F — Claude-style two-layer composer") is a **Popover on the button**,
-modeled on the Claude app's "Project or folder" picker:
+Shipped (Jul 2026): repo mode now morphs the composer card in place instead of
+swapping to a separate toolbar — the control row collapses via animated height,
+Analyze sits inline in the input row (URL-bar pattern), the chin persists with
+"Search skills" + a helper line, input swaps to a GitHub icon + repo
+placeholder, with repo-shaped query carry-over and Esc-to-exit (Paper artboard
+"H — Match repo morph", STATE 2B). Still deferred from the original vision
+(artboard "F"): the **Popover on the button**, modeled on the Claude app's
+"Project or folder" picker:
 
 - Popover contents: a repo URL input (`github.com/owner/repo`), a **RECENT**
   section listing previously analyzed repos with their match counts

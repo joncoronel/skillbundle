@@ -101,7 +101,7 @@ export function RepoAnalysisResults({
           </div>
         </div>
         <Skeleton className="mb-3 h-3 w-32 rounded-sm" aria-hidden="true" />
-        <div className="grid" aria-hidden="true">
+        <div className="grid grid-cols-1" aria-hidden="true">
           {Array.from({ length: rowCount }).map((_, i) => (
             <div
               key={i}
@@ -213,7 +213,11 @@ export function RepoAnalysisResults({
       <p className="text-xs text-muted-foreground mb-3">
         {recs.length} recommended skill{recs.length !== 1 && "s"}
       </p>
-      <div className="grid">
+      {/* grid-cols-1 (minmax(0,1fr)) keeps the track shrinkable — a bare
+          `grid` sizes its implicit track to the widest row's intrinsic width,
+          overflowing the viewport on mobile instead of letting the rows'
+          internal truncation kick in. Same pattern as SkillRowGrid. */}
+      <div className="grid grid-cols-1">
         {recs.map((group, i) => {
           const isFirst = i === 0;
           const isLast = i === recs.length - 1;

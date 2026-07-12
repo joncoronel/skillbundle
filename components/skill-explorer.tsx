@@ -19,6 +19,7 @@ import {
   FilterHorizontalIcon,
   FireIcon,
   ArrowRight02Icon,
+  ArrowLeft02Icon,
   CheckmarkBadge01Icon,
   TextAlignLeftIcon,
 } from "@hugeicons/core-free-icons";
@@ -42,7 +43,7 @@ import {
 import type { FacetCount, SkillFilters } from "@/lib/search/typesense";
 import { useQueryClient } from "@tanstack/react-query";
 import { catalogSearchQueryKey } from "@/hooks/use-catalog-search";
-import { Input } from "@/components/ui/cubby-ui/input";
+import { useCollapsibleHeight } from "@/hooks/cubby-ui/use-collapsible-height";
 import {
   InputGroup,
   InputGroupAddon,
@@ -363,7 +364,12 @@ export function SkillExplorerView({
   const inputQueryCached =
     hasQuery &&
     queryClient.getQueryData(
-      catalogSearchQueryKey(trimmed, effectiveSort, filters, searchDescriptions),
+      catalogSearchQueryKey(
+        trimmed,
+        effectiveSort,
+        filters,
+        searchDescriptions,
+      ),
     ) !== undefined;
   const showInputSpinner =
     mode !== "repo" &&
@@ -402,6 +408,30 @@ export function SkillExplorerView({
   // Local input state for the repo field — only pushed to the URL on submit.
   const [repoInput, setRepoInput] = useState(repoUrl);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Control-row collapse: the composer's second row (toggles + sort) stays
+  // mounted in both modes; repo mode animates its measured height to 0 (and
+  // fades it) instead of unmounting, so the mode switch is one height morph
+  // on the shared card rather than a layout jump. The chin persists in both
+  // modes (its contents swap), so only this row changes the card's height.
+  // `inert` keeps the hidden controls out of tab order.
+  const { ref: controlRowRef, height: controlRowHeight } =
+    useCollapsibleHeight();
+
+  // Entering repo mode keeps the composer card; only the contents morph. If
+  // what's typed already looks like a repo (URL or owner/repo), carry it into
+  // the repo input so the click doesn't discard it.
+  function enterRepoMode() {
+    const t = textQuery.trim();
+    if (
+      /^(https?:\/\/)?(www\.)?github\.com\/[\w.-]+\/[\w.-]+/i.test(t) ||
+      /^[\w.-]+\/[\w.-]+$/.test(t)
+    ) {
+      setRepoInput(t);
+    }
+    onModeChange("repo");
+    inputRef.current?.focus();
+  }
 
   // Keyboard shortcut: focus on /
   useEffect(() => {
@@ -479,7 +509,10 @@ export function SkillExplorerView({
     }
   };
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isRepo && e.key === "Enter") handleRepoSubmit();
+    if (!isRepo) return;
+    if (e.key === "Enter") handleRepoSubmit();
+    // Esc on an empty repo input backs out to search (same as "Search skills").
+    if (e.key === "Escape" && !repoInput.trim()) onModeChange("text");
   };
   const handleClearInput = () => {
     if (isRepo) {
@@ -490,110 +523,89 @@ export function SkillExplorerView({
     }
   };
 
-  const searchField = (inputClassName?: string, inGroup = false) => {
-    if (inGroup) {
-      // The docs' addon anatomy (icon addon + input + trailing addon), with
-      // one deviation: the group also has a block-end addon (the control
-      // row), which flips the group itself to a column — so this row gets
-      // its own flex wrapper instead of being direct group children.
-      return (
-        <div className="flex w-full items-center">
-          <InputGroupAddon>
-            {showInputSpinner ? (
-              <DotMatrixRipple size="xs" ariaLabel="Searching" />
-            ) : (
-              <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
-            )}
-          </InputGroupAddon>
-          <InputGroupInput
-            ref={inputRef}
-            placeholder={placeholder}
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleInputKeyDown}
-            className={cn("pl-2", inputClassName)}
-          />
-          {/* Margins re-tune the addon's built-in pulls to the composer's
-              12px optical line: the kbd is a bordered chip (box on the line →
-              cancel the pull), the clear button is ghost (glyph on the line →
-              keep 4px of pull). */}
-          <InputGroupAddon align="inline-end">
-            {inputValue ? (
-              <InputGroupButton
-                size="icon_xs"
-                aria-label="Clear search"
-                onClick={handleClearInput}
-                className="me-[0.2rem]"
-              >
-                <HugeiconsIcon
-                  icon={Cancel01Icon}
-                  strokeWidth={2}
-                  className="size-4"
-                />
-              </InputGroupButton>
-            ) : (
-              <Kbd
-                size="sm"
-                variant="ghost"
-                className="max-sm:hidden me-[0.35rem]"
-                aria-hidden="true"
-              >
-                /
-              </Kbd>
-            )}
-          </InputGroupAddon>
-        </div>
-      );
-    }
-
-    return (
-      <div className="relative flex-1">
+  // The composer's input row, shared by both modes — the docs' addon anatomy
+  // (icon addon + input + trailing addon), with one deviation: the group also
+  // has a block-end addon (the control row), which flips the group itself to
+  // a column — so this row gets its own flex wrapper instead of being direct
+  // group children. Mode only changes the icon and placeholder; the input
+  // element itself is identical in both modes, so focus survives the switch.
+  const searchField = (inputClassName?: string) => (
+    <div className="flex w-full items-center">
+      <InputGroupAddon>
         {showInputSpinner ? (
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 flex size-4 items-center justify-center text-muted-foreground pointer-events-none">
-            <DotMatrixRipple size="xs" ariaLabel="Searching" />
-          </span>
+          <DotMatrixRipple size="xs" ariaLabel="Searching" />
         ) : (
           <HugeiconsIcon
             icon={isRepo ? GithubIcon : Search01Icon}
             strokeWidth={2}
-            className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
           />
         )}
-        <Input
-          ref={inputRef}
-          placeholder={placeholder}
-          value={inputValue}
-          onChange={handleInputChange}
-          onKeyDown={handleInputKeyDown}
-          className={cn("pl-9 pr-9", inputClassName)}
-        />
-        {!inputValue && (
-          <Kbd
-            size="sm"
-            variant="ghost"
-            className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none max-sm:hidden"
-            aria-hidden="true"
-          >
-            /
-          </Kbd>
-        )}
-        {inputValue && (
-          <button
-            type="button"
+      </InputGroupAddon>
+      <InputGroupInput
+        ref={inputRef}
+        placeholder={placeholder}
+        value={inputValue}
+        onChange={handleInputChange}
+        onKeyDown={handleInputKeyDown}
+        className={cn("pl-2", inputClassName)}
+      />
+      {/* Margins re-tune the addon's built-in pulls to the composer's
+          12px optical line: the kbd is a bordered chip (box on the line →
+          cancel the pull), the clear button is ghost (glyph on the line →
+          keep 4px of pull). */}
+      {/* py-1 (repo) keeps the row at the field's own height: the addon's
+          base py-1.5 plus the 28px Analyze would otherwise outgrow the 36px
+          input and bump the row 8px taller than text mode's. */}
+      <InputGroupAddon align="inline-end" className={cn(isRepo && "py-1")}>
+        {inputValue ? (
+          <InputGroupButton
+            size="icon_xs"
             aria-label="Clear search"
             onClick={handleClearInput}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+            className="me-[0.2rem]"
           >
             <HugeiconsIcon
               icon={Cancel01Icon}
               strokeWidth={2}
               className="size-4"
             />
-          </button>
+          </InputGroupButton>
+        ) : !isRepo ? (
+          <Kbd
+            size="sm"
+            variant="ghost"
+            className="max-sm:hidden me-[0.35rem]"
+            aria-hidden="true"
+          >
+            /
+          </Kbd>
+        ) : null}
+        {/* Repo mode's submit lives inline in the field (URL-bar pattern) —
+            the one-field form doesn't need a second row for it. h-7 caps the
+            box at 28px so, with the addon's py-1, the row holds the input's
+            own height instead of outgrowing it; me-0.5 lands it ~7px from
+            the group edge. starting: fades it in on the morph. */}
+        {isRepo && (
+          <InputGroupButton
+            variant="primary"
+            size="sm"
+            className=" h-7 sm:h-7 shrink-0 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+            onClick={handleRepoSubmit}
+            disabled={!repoInput.trim() || !canAutoDetect}
+            leftSection={
+              <HugeiconsIcon
+                icon={FlashIcon}
+                strokeWidth={2}
+                className="size-3.5"
+              />
+            }
+          >
+            Analyze
+          </InputGroupButton>
         )}
-      </div>
-    );
-  };
+      </InputGroupAddon>
+    </div>
+  );
 
   return (
     <>
@@ -616,201 +628,201 @@ export function SkillExplorerView({
           </p>
         </section>
 
-        {isRepo ? (
-          <>
-            {/* Search bar — repo mode. Flat sticky toolbar (no card): bordered
-                input + primary Analyze + a way back to search, over one full-bleed
-                border-b that meets the desktop rails. */}
-            <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-              <div className="flex items-center gap-2">
-                {searchField()}
-                <Button
-                  onClick={handleRepoSubmit}
-                  disabled={!repoInput.trim() || !canAutoDetect}
-                  className="shrink-0 max-sm:px-3"
-                  leftSection={
-                    <HugeiconsIcon
-                      icon={FlashIcon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  Analyze
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground max-sm:px-2"
-                  onClick={() => onModeChange("text")}
-                  leftSection={
-                    <HugeiconsIcon
-                      icon={Search01Icon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  <span className="max-sm:sr-only">Search skills</span>
-                </Button>
-              </div>
-            </div>
-            <div>
-              <RepoAnalysisResults
-                repoUrl={repoUrl}
-                canAutoDetect={canAutoDetect}
-                sheetHandle={skillDetailHandle}
-                onTryExample={(url) => {
-                  setRepoInput(url);
-                  onRepoUrlChange(url);
-                }}
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Search bar — text mode. A two-layer "composer" card: the inner
-                surface holds the input + how-you-search controls (scope tabs,
-                Match repo, sort); the chin below holds the result-narrowing
-                filters + the leaderboards entry. Everything inside it
-                parametrizes the ONE list below — Trending/Hot live in their own
-                sheet, so no control here ever points at a list it doesn't
-                affect. */}
-            <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-              <Card variant="inset" className="p-1 pb-0">
-                {/* Inner surface — the search instrument. The InputGroup owns
+        {/* Search bar — one two-layer "composer" card shared by BOTH modes:
+            the inner surface holds the input + how-you-search controls; the
+            chin below holds the result-narrowing filters + the leaderboards
+            entry. Repo mode morphs the same card in place: the control row's
+            corners swap roles (toggles+sort → back + Analyze), the chin
+            collapses to 0 height, and the input swaps icon + placeholder.
+            Everything inside it parametrizes the ONE region below — search
+            mode gets the catalog list, repo mode gets match results. */}
+        <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+          <Card variant="inset" className="p-1 pb-0">
+            {/* Inner surface — the search instrument. The InputGroup owns
                     the input behavior + focus ring; its chrome matches the
                     inset Card's inner panel (borderless — elevation shadow +
                     rim instead of a 1px line), and --popup-surface is set so
                     elevated components nested inside composite against the
                     right substrate. The block-end addon is its control row:
                     search scope left, repo-match + sort right. */}
-                <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
-                  {searchField("h-11", true)}
-                  {/* px-3 puts the bordered toggles' boxes on the composer's
+            <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
+              {searchField("h-11")}
+              {/* px-3 puts the bordered toggles' boxes on the composer's
                       12px line (visible-edge alignment with the search glyph
                       above); the ghost sort trigger pulls its chevron back to
                       the line with a negative margin instead. */}
-                  <InputGroupAddon
-                    align="block-end"
-                    className="justify-between gap-2 px-3 pb-2 max-sm:hidden"
-                  >
-                    {/* Icon toggle group — the two high-frequency booleans, on
+              <InputGroupAddon
+                align="block-end"
+                // Text-mode only: repo mode collapses this row (Analyze
+                // lives inline in the input row, back lives in the chin,
+                // and nothing else here applies to repo matching). It
+                // stays mounted and animates its measured height to 0;
+                // `inert` drops the hidden controls from tab order. p-0
+                // zeroes the addon's own padding so the collapsed row
+                // leaves no residue — the inner wrapper carries it.
+                inert={isRepo}
+                style={{ height: isRepo ? 0 : controlRowHeight }}
+                className={cn(
+                  // items-start pins the row's content to the container's top
+                  // while it collapses — the addon's base items-center would
+                  // keep re-centering it in the shrinking box, making the
+                  // content drift upward instead of being clipped in place.
+                  "max-sm:hidden items-start overflow-hidden p-0 transition-[height] duration-250 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+                )}
+              >
+                <div
+                  ref={controlRowRef}
+                  // pt-1.5 restores the addon's base py-1.5 top padding
+                  // (zeroed on the addon itself so the collapse leaves no
+                  // residue); pb-2 was always the row's override.
+                  className="flex w-full items-center justify-between gap-2 px-3 pt-1.5 pb-2"
+                >
+                  {/* Icon toggle group — the two high-frequency booleans, on
                         the instrument itself (independent multiple-selection,
                         one collapsed frame). Icon-only, so tooltips + a loud
                         pressed state are load-bearing, not decoration. */}
-                    {/* Desktop-only: icon toggles need hover for their
+                  {/* Desktop-only: icon toggles need hover for their
                         tooltips; on mobile these live in the Sort & filter
                         sheet as labeled switches. */}
-                    <ToggleGroup
-                      multiple
-                      detached
-                      size="sm"
-                      variant="outline"
-                      aria-label="Search options"
-                      className="max-sm:hidden"
-                      value={[
-                        ...(official ? ["official"] : []),
-                        ...(searchDescriptions ? ["desc"] : []),
-                      ]}
-                      onValueChange={(vals: string[]) => {
-                        onOfficialChange(vals.includes("official"));
-                        onSearchDescriptionsChange(vals.includes("desc"));
-                      }}
-                    >
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <ToggleGroupItem
-                              value="official"
-                              aria-label="Official skills only"
-                              // Re-assert the slot the TooltipTrigger merge
-                              // overwrites — the group's cell styling targets
-                              // [data-slot=toggle].
-                              data-slot="toggle"
-                            />
-                          }
-                        >
-                          <HugeiconsIcon
-                            icon={CheckmarkBadge01Icon}
-                            strokeWidth={2}
-                            className={cn(
-                              "size-4",
-                              official
-                                ? "text-info-foreground"
-                                : "text-muted-foreground",
-                            )}
-                          />
-                        </TooltipTrigger>
-                        <TooltipContent sideOffset={8}>
-                          Official skills only
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <ToggleGroupItem
-                              value="desc"
-                              aria-label="Also search descriptions"
-                              data-slot="toggle"
-                            />
-                          }
-                        >
-                          <HugeiconsIcon
-                            icon={TextAlignLeftIcon}
-                            strokeWidth={2}
-                            className={cn(
-                              "size-4",
-                              searchDescriptions
-                                ? "text-foreground"
-                                : "text-muted-foreground",
-                            )}
-                          />
-                        </TooltipTrigger>
-                        <TooltipContent sideOffset={8}>
-                          Also search descriptions
-                        </TooltipContent>
-                      </Tooltip>
-                    </ToggleGroup>
-                    {/* ms-auto keeps this pinned right on mobile, where the
-                        (hidden) toggle group stops participating in the row. */}
-                    <div className="ms-auto flex items-center gap-1">
-                      <InputGroupButton
-                        size="sm"
-                        className="shrink-0 text-muted-foreground"
-                        onClick={() => onModeChange("repo")}
-                        leftSection={
-                          <HugeiconsIcon
-                            icon={GithubIcon}
-                            strokeWidth={2}
-                            className="size-3.5"
+                  <ToggleGroup
+                    multiple
+                    detached
+                    size="sm"
+                    variant="outline"
+                    aria-label="Search options"
+                    className="max-sm:hidden"
+                    value={[
+                      ...(official ? ["official"] : []),
+                      ...(searchDescriptions ? ["desc"] : []),
+                    ]}
+                    onValueChange={(vals: string[]) => {
+                      onOfficialChange(vals.includes("official"));
+                      onSearchDescriptionsChange(vals.includes("desc"));
+                    }}
+                  >
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <ToggleGroupItem
+                            value="official"
+                            aria-label="Official skills only"
+                            // Re-assert the slot the TooltipTrigger merge
+                            // overwrites — the group's cell styling targets
+                            // [data-slot=toggle].
+                            data-slot="toggle"
                           />
                         }
                       >
-                        Match my repo
-                      </InputGroupButton>
-                      <Separator
-                        orientation="vertical"
-                        className="h-4! max-sm:hidden"
-                      />
-                      <SortSelect
-                        sort={effectiveSort}
-                        hasQuery={hasQuery}
-                        onSortChange={handleSortChange}
-                        ghost
-                        className="max-sm:hidden -me-2"
-                      />
-                    </div>
-                  </InputGroupAddon>
-                </InputGroup>
+                        <HugeiconsIcon
+                          icon={CheckmarkBadge01Icon}
+                          strokeWidth={2}
+                          className={cn(
+                            "size-4",
+                            official
+                              ? "text-info-foreground"
+                              : "text-muted-foreground",
+                          )}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent sideOffset={8}>
+                        Official skills only
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <ToggleGroupItem
+                            value="desc"
+                            aria-label="Also search descriptions"
+                            data-slot="toggle"
+                          />
+                        }
+                      >
+                        <HugeiconsIcon
+                          icon={TextAlignLeftIcon}
+                          strokeWidth={2}
+                          className={cn(
+                            "size-4",
+                            searchDescriptions
+                              ? "text-foreground"
+                              : "text-muted-foreground",
+                          )}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent sideOffset={8}>
+                        Also search descriptions
+                      </TooltipContent>
+                    </Tooltip>
+                  </ToggleGroup>
+                  {/* ms-auto keeps this pinned right on mobile, where the
+                        (hidden) toggle group stops participating in the row. */}
+                  <div className="ms-auto flex items-center gap-1">
+                    <InputGroupButton
+                      size="sm"
+                      className="shrink-0 text-muted-foreground"
+                      onClick={enterRepoMode}
+                      leftSection={
+                        <HugeiconsIcon
+                          icon={GithubIcon}
+                          strokeWidth={2}
+                          className="size-3.5"
+                        />
+                      }
+                    >
+                      Match my repo
+                    </InputGroupButton>
+                    <Separator
+                      orientation="vertical"
+                      className="h-4! max-sm:hidden"
+                    />
+                    <SortSelect
+                      sort={effectiveSort}
+                      hasQuery={hasQuery}
+                      onSortChange={handleSortChange}
+                      ghost
+                      className="max-sm:hidden -me-2"
+                    />
+                  </div>
+                </div>
+              </InputGroupAddon>
+            </InputGroup>
 
-                {/* Chin: filters left, leaderboards entry right. On mobile the
+            {/* Chin: filters left, leaderboards entry right. On mobile the
                     filters collapse to one trigger → bottom sheet (sort lives
                     inside the sheet there, since the control row hides it). */}
-                {/* px-3 sets the chin on the same 12px line; its edge controls
+            {/* px-3 sets the chin on the same 12px line; its edge controls
                     are all ghost, so each pulls its glyph/text onto the line
                     with a negative margin (the addon idiom). */}
-                <div className="flex items-center justify-between gap-x-3 gap-y-2 py-1 px-3">
+            {/* The chin persists in BOTH modes — the card's two-layer
+                    silhouette is its identity. Repo mode swaps its contents:
+                    back to search (navigation belongs at chin level, like the
+                    Hot + Trending link) plus a helper line explaining what
+                    Analyze reads. Same height either way, so only the control
+                    row above changes the card's height. */}
+            <div className="flex items-center justify-between gap-x-3 gap-y-2 py-1 px-3">
+              {isRepo ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-ms-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+                    onClick={() => onModeChange("text")}
+                    leftSection={
+                      <HugeiconsIcon
+                        icon={ArrowLeft02Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
+                      />
+                    }
+                  >
+                    Search skills
+                  </Button>
+                  <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+                    Reads languages and packages from public repos
+                  </p>
+                </>
+              ) : (
+                <>
                   <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
                     {controls(facets)}
                   </div>
@@ -881,7 +893,7 @@ export function SkillExplorerView({
                       variant="ghost"
                       size="icon_sm"
                       className="text-muted-foreground sm:hidden"
-                      onClick={() => onModeChange("repo")}
+                      onClick={enterRepoMode}
                       aria-label="Match my repo"
                     >
                       <HugeiconsIcon
@@ -926,10 +938,29 @@ export function SkillExplorerView({
                       Hot + Trending
                     </Button>
                   </div>
-                </div>
-              </Card>
+                </>
+              )}
             </div>
+          </Card>
+        </div>
 
+        {isRepo ? (
+          /* Repo mode's region: match results (or the paste-a-repo empty
+             state). starting: fades it in on the mode morph — it only mounts
+             on entry, so the static shell never sees the fade. */
+          <div className="pt-4 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+            <RepoAnalysisResults
+              repoUrl={repoUrl}
+              canAutoDetect={canAutoDetect}
+              sheetHandle={skillDetailHandle}
+              onTryExample={(url) => {
+                setRepoInput(url);
+                onRepoUrlChange(url);
+              }}
+            />
+          </div>
+        ) : (
+          <>
             {/* List region — the ONLY thing that changes on interaction. */}
             <div className="pt-4">
               {/* Popular list stays mounted (preserves scroll + pagination).
