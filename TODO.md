@@ -6,32 +6,33 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
-### Match repo popover (deferred from the composer redesign, Jul 2026)
+### Match repo: deferred features (recents, match counts, GitHub OAuth)
 
-Shipped (Jul 2026): repo mode now morphs the composer card in place instead of
-swapping to a separate toolbar — the control row collapses via animated height,
-Analyze sits inline in the input row (URL-bar pattern), the chin persists with
-"Search skills" + a helper line, input swaps to a GitHub icon + repo
-placeholder, with repo-shaped query carry-over and Esc-to-exit (Paper artboard
-"H — Match repo morph", STATE 2B). Still deferred from the original vision
-(artboard "F"): the **Popover on the button**, modeled on the Claude app's
-"Project or folder" picker:
+Shipped (Jul 2026): repo mode morphs the composer card in place — control row
+collapses via animated height, Analyze inline in the input row (URL-bar
+pattern), chin persists with the mode switch in its right corner ("Match my
+repo →" enters, "← Search skills" exits), repo-shaped query carry-over,
+Esc-to-exit (Paper artboard "H — Match repo morph", STATE 2B + follow-ups).
 
-- Popover contents: a repo URL input (`github.com/owner/repo`), a **RECENT**
-  section listing previously analyzed repos with their match counts
-  (e.g. `joncoronel/skillbundle · 42 matches`), and a
-  **"Connect GitHub for private repos"** action row.
-- Picking/submitting a repo turns the button into an **active chip**
-  (`⚡ skillbundle ✕`) and swaps the catalog to repo-matched recommendations;
-  ✕ clears back to browse. Scope tabs + sort keep applying (it's still a
-  catalog query mode).
+Still to build, independent of container:
+
+- **RECENT** list of previously analyzed repos with match counts
+  (e.g. `joncoronel/skillbundle · 42 matches`).
+- **"Connect GitHub for private repos"** (OAuth).
 - Free users see the recents area replaced by the Pro upsell.
 
+Container decision, updated Jul 2026: the original vision (Paper artboard "F")
+put these in a **popover on the button** — but that was designed when repo mode
+was a clunky separate toolbar worth avoiding. Now that the mode is a pleasant
+in-place morph, the current lean is to build them **inside repo mode**: the
+repo empty state under the input is the natural home for RECENT + Connect
+GitHub (replacing the single example button). The popover only earns its keep
+if we ever want repo-as-chip **composing with** search (filters/sort applying
+to repo matches at the same time, `⚡ skillbundle ✕` chip) — treat that as a
+separate product question, not the default plan.
+
 Why deferred: needs backend that doesn't exist yet — per-user history of
-analyzed repos (recents), stored match counts per repo, and GitHub OAuth for
-private repos. A v1 without backend is possible (URL input + example repos,
-submitting into the existing `?mode=repo&repo=` flow) if we want the UX win
-before the plumbing.
+analyzed repos, stored match counts per repo, and GitHub OAuth.
 
 ### Search & discovery overhaul
 

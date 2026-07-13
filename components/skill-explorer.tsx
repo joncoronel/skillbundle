@@ -50,7 +50,6 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/cubby-ui/input-group";
-import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Card } from "@/components/ui/cubby-ui/card";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -754,35 +753,16 @@ export function SkillExplorerView({
                       </TooltipContent>
                     </Tooltip>
                   </ToggleGroup>
-                  {/* ms-auto keeps this pinned right on mobile, where the
-                        (hidden) toggle group stops participating in the row. */}
-                  <div className="ms-auto flex items-center gap-1">
-                    <InputGroupButton
-                      size="sm"
-                      className="shrink-0 text-muted-foreground"
-                      onClick={enterRepoMode}
-                      leftSection={
-                        <HugeiconsIcon
-                          icon={GithubIcon}
-                          strokeWidth={2}
-                          className="size-3.5"
-                        />
-                      }
-                    >
-                      Match my repo
-                    </InputGroupButton>
-                    <Separator
-                      orientation="vertical"
-                      className="h-4! max-sm:hidden"
-                    />
-                    <SortSelect
-                      sort={effectiveSort}
-                      hasQuery={hasQuery}
-                      onSortChange={handleSortChange}
-                      ghost
-                      className="max-sm:hidden -me-2"
-                    />
-                  </div>
+                  {/* Sort is the row's only right-side control — everything
+                      on the instrument parametrizes the query; navigation
+                      (Match my repo, Hot + Trending) lives in the chin. */}
+                  <SortSelect
+                    sort={effectiveSort}
+                    hasQuery={hasQuery}
+                    onSortChange={handleSortChange}
+                    ghost
+                    className="ms-auto max-sm:hidden -me-2"
+                  />
                 </div>
               </InputGroupAddon>
             </InputGroup>
@@ -799,13 +779,22 @@ export function SkillExplorerView({
                     Hot + Trending link) plus a helper line explaining what
                     Analyze reads. Same height either way, so only the control
                     row above changes the card's height. */}
-            <div className="flex items-center justify-between gap-x-3 gap-y-2 py-1 px-3">
+            {/* flex-wrap here (and nowhere inside): at tight widths the whole
+                right pair drops to its own row instead of the filters wrapping
+                internally while the right pair floats between their lines. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 px-3">
               {isRepo ? (
                 <>
+                  <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+                    Reads languages and packages from public repos
+                  </p>
+                  {/* Same corner as "Match my repo" in search mode — the mode
+                      switch lives in one stable spot. ms-auto keeps it pinned
+                      right on mobile, where the helper text is hidden. */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="-ms-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+                    className="ms-auto -me-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
                     onClick={() => onModeChange("text")}
                     leftSection={
                       <HugeiconsIcon
@@ -817,13 +806,10 @@ export function SkillExplorerView({
                   >
                     Search skills
                   </Button>
-                  <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
-                    Reads languages and packages from public repos
-                  </p>
                 </>
               ) : (
                 <>
-                  <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5 sm:flex-wrap">
+                  <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5">
                     {controls(facets)}
                   </div>
                   {/* Mobile: the whole control row above is hidden, so its two
@@ -883,29 +869,25 @@ export function SkillExplorerView({
                       </SheetContent>
                     </Sheet>
                   </div>
-                  {/* Right pair: repo matching + leaderboards. Mobile gets
-                      dedicated square icon buttons (flame/GitHub are safe bare
-                      glyphs, and both open surfaces that explain themselves);
-                      desktop gets the labeled Trending button — Match my repo
-                      lives in the control row there. */}
-                  <div className="flex items-center gap-0.5">
+                  {/* Right pair: leaderboards + repo matching — the chin's
+                      "go places" corner on every breakpoint. Match my repo is
+                      outermost with a → : the arrows are the mode-switch
+                      grammar ("Match my repo →" enters the flow, "← Search
+                      skills" exits it, both in this same corner). Mobile gets
+                      dedicated square icon buttons (flame/GitHub are safe
+                      bare glyphs, and both open surfaces that explain
+                      themselves) in the same order. ms-auto keeps the pair
+                      right-aligned when it wraps to its own row (justify-
+                      between only spaces items sharing a line). */}
+                  <div className="ms-auto flex items-center gap-0.5">
+                    {/* The icon squares cover BOTH the mobile layout and the
+                        640-700px desktop band where even the short labels
+                        don't fit next to the filters — icons instead of a
+                        wrapped second chin row. */}
                     <Button
                       variant="ghost"
                       size="icon_sm"
-                      className="text-muted-foreground sm:hidden"
-                      onClick={enterRepoMode}
-                      aria-label="Match my repo"
-                    >
-                      <HugeiconsIcon
-                        icon={GithubIcon}
-                        strokeWidth={2}
-                        className="size-4"
-                      />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon_sm"
-                      className="sm:hidden -me-2.5"
+                      className="min-[700px]:hidden"
                       onClick={() => onViewChange("hot")}
                       aria-label="Hot + Trending leaderboards"
                     >
@@ -918,13 +900,41 @@ export function SkillExplorerView({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="shrink-0 text-muted-foreground max-sm:hidden -me-2"
+                      className="shrink-0 text-muted-foreground max-[700px]:hidden"
                       onClick={() => onViewChange("hot")}
                       leftSection={
                         <HugeiconsIcon
                           icon={FireIcon}
                           strokeWidth={2}
                           className="size-3.5 text-warning-foreground"
+                        />
+                      }
+                    >
+                      Hot/Trending
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon_sm"
+                      className="text-muted-foreground min-[700px]:hidden -me-2.5"
+                      onClick={enterRepoMode}
+                      aria-label="Match repo"
+                    >
+                      <HugeiconsIcon
+                        icon={GithubIcon}
+                        strokeWidth={2}
+                        className="size-4"
+                      />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-muted-foreground max-[700px]:hidden -me-2"
+                      onClick={enterRepoMode}
+                      leftSection={
+                        <HugeiconsIcon
+                          icon={GithubIcon}
+                          strokeWidth={2}
+                          className="size-3.5"
                         />
                       }
                       rightSection={
@@ -935,7 +945,7 @@ export function SkillExplorerView({
                         />
                       }
                     >
-                      Hot + Trending
+                      Match repo
                     </Button>
                   </div>
                 </>
