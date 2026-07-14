@@ -1,17 +1,29 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, GithubIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  CheckmarkBadge01Icon,
+  GithubIcon,
+} from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { Toggle } from "@/components/ui/cubby-ui/toggle";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/cubby-ui/select";
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
 import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { Badge } from "@/components/ui/cubby-ui/badge";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -24,6 +36,33 @@ type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
 // fingerprint reliably produces recommendations.
 const EXAMPLE_REPO_NAME = "shadcn-ui/ui";
 const EXAMPLE_REPO_URL = `https://github.com/${EXAMPLE_REPO_NAME}`;
+
+// Fingerprint languages arrive lowercased from the GitHub API mapping;
+// display-case the common ones (fallback: capitalize the first letter).
+const LANGUAGE_DISPLAY: Record<string, string> = {
+  javascript: "JavaScript",
+  typescript: "TypeScript",
+  css: "CSS",
+  html: "HTML",
+  php: "PHP",
+  "c#": "C#",
+  "c++": "C++",
+};
+function displayLanguage(lang: string) {
+  return (
+    LANGUAGE_DISPLAY[lang.toLowerCase()] ??
+    lang.charAt(0).toUpperCase() + lang.slice(1)
+  );
+}
+
+/** Best install count in a group — the sort key for "Most installed". */
+function groupInstalls(group: GroupedRecommendation) {
+  return Math.max(...group.variants.map((v) => v.installs));
+}
+
+function groupIsOfficial(group: GroupedRecommendation) {
+  return group.variants.some((v) => v.curatedOwner);
+}
 
 
 interface RepoAnalysisResultsProps {
@@ -49,6 +88,12 @@ export function RepoAnalysisResults({
   onTryExample,
 }: RepoAnalysisResultsProps) {
   const convex = useConvex();
+
+  // Result narrowing — local state, not URL state: it scopes one analysis
+  // view, resets naturally with the component, and repo links shared without
+  // it still show the full picture.
+  const [officialOnly, setOfficialOnly] = useState(false);
+  const [resultSort, setResultSort] = useState<"match" | "installs">("match");
 
   const trimmedUrl = repoUrl.trim();
 
@@ -82,25 +127,17 @@ export function RepoAnalysisResults({
 
   if (loading) {
     const rowCount = 6;
-    // Skeleton mirrors the three regions analysis renders — detected-stack
-    // header, count line, joined recommendation rows — so nothing shifts when
-    // results land. Repo analysis hits GitHub and can take a few seconds, and
-    // repo mode has no input spinner, so the header carries a visible
-    // "Analyzing…" status for the wait rather than leaving it silent.
-    const chipWidths = ["w-14", "w-20", "w-10", "w-16", "w-24", "w-12", "w-16"];
+    // Skeleton mirrors the three regions analysis renders — detected-in
+    // line, results header, joined recommendation rows — so nothing shifts
+    // when results land. Repo analysis hits GitHub and can take a few
+    // seconds, and repo mode has no input spinner, so the header carries a
+    // visible "Analyzing…" status for the wait rather than leaving it silent.
     return (
       <div className="mt-4" aria-busy="true">
-        <div className="mb-4">
-          <p role="status" className="mb-2.5 text-xs text-muted-foreground">
-            Analyzing repository…
-          </p>
-          <div className="flex flex-wrap gap-1" aria-hidden="true">
-            {chipWidths.map((w, i) => (
-              <Skeleton key={i} className={cn("h-4.5 rounded-md", w)} />
-            ))}
-          </div>
-        </div>
-        <Skeleton className="mb-3 h-3 w-32 rounded-sm" aria-hidden="true" />
+        <p role="status" className="mb-4 text-xs text-muted-foreground">
+          Analyzing repository…
+        </p>
+        <Skeleton className="mb-3 h-3 w-48 rounded-sm" aria-hidden="true" />
         <div className="grid grid-cols-1" aria-hidden="true">
           {Array.from({ length: rowCount }).map((_, i) => (
             <div
@@ -129,7 +166,21 @@ export function RepoAnalysisResults({
   }
 
   if (actionError) {
-    return <p className="mt-4 text-sm text-destructive">{actionError}</p>;
+    // Same card treatment as the empty state, so the failure doesn't float in
+    // a void — and it says what to try, not just what broke. role=alert gets
+    // it announced when it lands.
+    return (
+      <div
+        role="alert"
+        className="mt-4 rounded-xl border border-dashed border-border px-6 py-10 text-center"
+      >
+        <p className="text-sm font-medium text-destructive">{actionError}</p>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+          Double-check the URL — public GitHub repos only, like
+          github.com/vercel/next.js.
+        </p>
+      </div>
+    );
   }
 
   const result = data;
@@ -176,90 +227,147 @@ export function RepoAnalysisResults({
     );
   }
 
-  const chipPackages = fingerprint?.packages.slice(0, 12) ?? [];
-
-
+  // Narrow + reorder client-side: the analysis already returned everything,
+  // so these are instant. "Best match" preserves the server's composite
+  // ranking; "Most installed" reorders by each group's best variant.
+  const officialGroups = recs.filter(groupIsOfficial);
+  let shownGroups = officialOnly ? officialGroups : recs;
+  if (resultSort === "installs") {
+    shownGroups = [...shownGroups].sort(
+      (a, b) => groupInstalls(b) - groupInstalls(a),
+    );
+  }
 
   return (
     <div className="mt-4">
+      {/* One quiet line confirming WHAT got analyzed (matters when the typed
+          URL resolves to a different canonical name, or the analysis came
+          from a shared ?repo= link). No chip dump and no per-row package
+          notes — the matching is semantic, and the results header names that
+          honestly; matchedPackages stays in the payload for a future home in
+          the skill detail sheet. */}
       {fingerprint && (
-        <div className="mb-4">
-          <p className="text-xs text-muted-foreground mb-2">
-            Detected in {result.repoName}
-            {fingerprint.languages.length > 0 &&
-              ` · ${fingerprint.languages.join(", ")}`}
-          </p>
-          {chipPackages.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {chipPackages.map((pkg) => (
-                <Badge
-                  key={pkg}
-                  variant="secondary"
-                  className="text-[10px] px-1.5 py-0.5"
-                >
-                  {pkg}
-                </Badge>
-              ))}
-              {fingerprint.packages.length > chipPackages.length && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
-                  +{fingerprint.packages.length - chipPackages.length}
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
+        <p className="mb-4 text-xs text-muted-foreground">
+          Detected in {result.repoName}
+          {fingerprint.languages.length > 0 &&
+            ` · ${fingerprint.languages.map(displayLanguage).join(", ")}`}
+          {fingerprint.packages.length > 0 &&
+            ` · ${fingerprint.packages.length} packages read`}
+        </p>
       )}
 
-      <p className="text-xs text-muted-foreground mb-3">
-        {recs.length} recommended skill{recs.length !== 1 && "s"}
-      </p>
-      {/* grid-cols-1 (minmax(0,1fr)) keeps the track shrinkable — a bare
-          `grid` sizes its implicit track to the widest row's intrinsic width,
-          overflowing the viewport on mobile instead of letting the rows'
-          internal truncation kick in. Same pattern as SkillRowGrid. */}
-      <div className="grid grid-cols-1">
-        {recs.map((group, i) => {
-          const isFirst = i === 0;
-          const isLast = i === recs.length - 1;
-          const isSolo = recs.length === 1;
-          const positionClassName = isSolo
-            ? undefined
-            : isFirst
-              ? "rounded-b-none"
-              : isLast
-                ? "rounded-t-none border-t-0"
-                : cn("rounded-none border-t-0");
-
-          if (group.variantCount === 1) {
-            const variant = group.variants[0];
-            const skill: SkillData = {
-              source: variant.source,
-              skillId: variant.skillId,
-              name: group.name,
-              description: variant.description,
-              installs: variant.installs,
-            };
-            return (
-              <SelectableSkillRow
-                key={`singleton:${variant.source}/${variant.skillId}`}
-                skill={skill}
-                sheetHandle={sheetHandle}
-                className={positionClassName}
-              />
-            );
-          }
-
-          return (
-            <SkillGroupRow
-              key={`group:${group.name}`}
-              group={group}
-              className={positionClassName}
-              sheetHandle={sheetHandle}
+      {/* Results header: the count doubles as a live region so narrowing is
+          announced, and the microcopy names HOW these were picked — matches
+          are semantic (stack similarity), not keyword hits. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <p
+          className="text-xs text-muted-foreground tabular-nums"
+          role="status"
+          aria-live="polite"
+        >
+          {officialOnly || resultSort !== "match"
+            ? `${shownGroups.length} of ${recs.length} recommended skills`
+            : `${recs.length} recommended skill${recs.length !== 1 ? "s" : ""}`}{" "}
+          · ranked by similarity to this stack
+        </p>
+        <div className="flex items-center gap-1">
+          <Toggle
+            variant="outline"
+            size="sm"
+            pressed={officialOnly}
+            onPressedChange={setOfficialOnly}
+            aria-label="Official skills only"
+            className="text-sm"
+          >
+            <HugeiconsIcon
+              icon={CheckmarkBadge01Icon}
+              strokeWidth={2}
+              className={cn(
+                "size-3.5",
+                officialOnly ? "text-info-foreground" : "text-muted-foreground",
+              )}
             />
-          );
-        })}
+            Official
+          </Toggle>
+          <Select
+            value={resultSort}
+            onValueChange={(v) => {
+              if (v) setResultSort(v as "match" | "installs");
+            }}
+            items={{ match: "Best match", installs: "Most installed" }}
+          >
+            <SelectTrigger
+              size="sm"
+              variant="ghost"
+              aria-label="Sort matches"
+              className="-me-2"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger>
+              <SelectItem value="match">Best match</SelectItem>
+              <SelectItem value="installs">Most installed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
+      {shownGroups.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+          None of these matches are official skills. Turn off the Official
+          filter to see all {recs.length}.
+        </p>
+      ) : (
+        /* grid-cols-1 (minmax(0,1fr)) keeps the track shrinkable — a bare
+           `grid` sizes its implicit track to the widest row's intrinsic width,
+           overflowing the viewport on mobile instead of letting the rows'
+           internal truncation kick in. Same pattern as SkillRowGrid. */
+        <div className="grid grid-cols-1">
+          {shownGroups.map((group, i) => {
+            const isFirst = i === 0;
+            const isLast = i === shownGroups.length - 1;
+            const isSolo = shownGroups.length === 1;
+            const positionClassName = isSolo
+              ? undefined
+              : isFirst
+                ? "rounded-b-none"
+                : isLast
+                  ? "rounded-t-none border-t-0"
+                  : cn("rounded-none border-t-0");
+
+            if (group.variantCount === 1) {
+              const variant = group.variants[0];
+              const skill: SkillData = {
+                source: variant.source,
+                skillId: variant.skillId,
+                name: group.name,
+                description: variant.description,
+                installs: variant.installs,
+                curatedOwner: variant.curatedOwner,
+                worstAuditStatus: variant.worstAuditStatus,
+                worstAuditRiskLevel: variant.worstAuditRiskLevel,
+              };
+              return (
+                <SelectableSkillRow
+                  key={`singleton:${variant.source}/${variant.skillId}`}
+                  skill={skill}
+                  sheetHandle={sheetHandle}
+                  className={positionClassName}
+                />
+              );
+            }
+
+            return (
+              <SkillGroupRow
+                key={`group:${group.name}`}
+                group={group}
+                className={positionClassName}
+                sheetHandle={sheetHandle}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -313,8 +421,10 @@ function SkillGroupRow({
         )}
       >
         <div className="flex items-center gap-3 w-full">
-          <span className="text-sm font-semibold text-left">{group.name}</span>
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+          <span className="min-w-0 truncate text-sm font-semibold text-left">
+            {group.name}
+          </span>
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
             {group.variantCount} versions
           </span>
           <HugeiconsIcon
@@ -342,6 +452,9 @@ function SkillGroupRow({
               name: group.name,
               description: variant.description,
               installs: variant.installs,
+              curatedOwner: variant.curatedOwner,
+              worstAuditStatus: variant.worstAuditStatus,
+              worstAuditRiskLevel: variant.worstAuditRiskLevel,
             };
             const isLast = i === group.variants.length - 1;
             return (

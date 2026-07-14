@@ -194,7 +194,13 @@ export function ActiveCatalogResults({
           </div>
         ) : (
           <>
-            <p className="text-xs text-muted-foreground mb-3 tabular-nums">
+            {/* role=status: count changes announce as the query/filters
+                narrow, so screen readers hear the search working. */}
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-xs text-muted-foreground mb-3 tabular-nums"
+            >
               {found.toLocaleString()} result{found !== 1 && "s"}
             </p>
             <SkillRowGrid skills={skills} sheetHandle={sheetHandle} />

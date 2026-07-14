@@ -34,6 +34,12 @@ separate product question, not the default plan.
 Why deferred: needs backend that doesn't exist yet — per-user history of
 analyzed repos, stored match counts per repo, and GitHub OAuth.
 
+Small parked idea (Jul 2026): analyzeRepo already returns `matchedPackages`
+per recommendation group (lexical package overlaps) but nothing renders it —
+per-row "matches react" notes were tried and cut as noise. Its natural home
+is the skill detail sheet, where a clicked row has room to explain "why this
+matched your repo" properly.
+
 ### Search & discovery overhaul
 
 - **Move search to a faceted engine (Typesense / Meilisearch / Algolia).** The current

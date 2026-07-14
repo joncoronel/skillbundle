@@ -389,8 +389,13 @@ export default defineSchema({
               skillId: v.string(),
               description: v.optional(v.string()),
               installs: v.number(),
+              curatedOwner: v.optional(v.string()),
+              worstAuditStatus: v.optional(v.string()),
+              worstAuditRiskLevel: v.optional(v.string()),
             }),
           ),
+          // Lexical package overlaps surfaced as the row's match reason.
+          matchedPackages: v.optional(v.array(v.string())),
         }),
       ),
     ),

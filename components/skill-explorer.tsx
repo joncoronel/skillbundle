@@ -43,13 +43,13 @@ import {
 import type { FacetCount, SkillFilters } from "@/lib/search/typesense";
 import { useQueryClient } from "@tanstack/react-query";
 import { catalogSearchQueryKey } from "@/hooks/use-catalog-search";
-import { useCollapsibleHeight } from "@/hooks/cubby-ui/use-collapsible-height";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/cubby-ui/input-group";
+import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Card } from "@/components/ui/cubby-ui/card";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -406,26 +406,27 @@ export function SkillExplorerView({
 
   // Local input state for the repo field — only pushed to the URL on submit.
   const [repoInput, setRepoInput] = useState(repoUrl);
+  // Pre-submit validation feedback: true after an Analyze attempt on a value
+  // that isn't repo-shaped. Rendered in the chin's helper slot (role=alert);
+  // cleared on the next keystroke.
+  const [repoInputInvalid, setRepoInputInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Control-row collapse: the composer's second row (toggles + sort) stays
-  // mounted in both modes; repo mode animates its measured height to 0 (and
-  // fades it) instead of unmounting, so the mode switch is one height morph
-  // on the shared card rather than a layout jump. The chin persists in both
-  // modes (its contents swap), so only this row changes the card's height.
-  // `inert` keeps the hidden controls out of tab order.
-  const { ref: controlRowRef, height: controlRowHeight } =
-    useCollapsibleHeight();
+  // One repo-shape test for carry-over AND pre-submit validation: a GitHub
+  // URL or a bare owner/repo slug.
+  function looksLikeRepo(value: string) {
+    return (
+      /^(https?:\/\/)?(www\.)?github\.com\/[\w.-]+\/[\w.-]+/i.test(value) ||
+      /^[\w.-]+\/[\w.-]+$/.test(value)
+    );
+  }
 
   // Entering repo mode keeps the composer card; only the contents morph. If
   // what's typed already looks like a repo (URL or owner/repo), carry it into
   // the repo input so the click doesn't discard it.
   function enterRepoMode() {
     const t = textQuery.trim();
-    if (
-      /^(https?:\/\/)?(www\.)?github\.com\/[\w.-]+\/[\w.-]+/i.test(t) ||
-      /^[\w.-]+\/[\w.-]+$/.test(t)
-    ) {
+    if (looksLikeRepo(t)) {
       setRepoInput(t);
     }
     onModeChange("repo");
@@ -453,6 +454,13 @@ export function SkillExplorerView({
   function handleRepoSubmit() {
     const submitted = repoInput.trim();
     if (!submitted) return;
+    // Validate BEFORE submitting: junk never enters the shareable URL or
+    // burns an analysis round-trip. The chin explains with a format example.
+    if (!looksLikeRepo(submitted)) {
+      setRepoInputInvalid(true);
+      return;
+    }
+    setRepoInputInvalid(false);
     onRepoUrlChange(submitted);
   }
 
@@ -503,6 +511,8 @@ export function SkillExplorerView({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isRepo) {
       setRepoInput(e.target.value);
+      // A new keystroke is a new attempt — drop the stale validation error.
+      if (repoInputInvalid) setRepoInputInvalid(false);
     } else {
       onTextQueryChange(e.target.value);
     }
@@ -523,11 +533,10 @@ export function SkillExplorerView({
   };
 
   // The composer's input row, shared by both modes — the docs' addon anatomy
-  // (icon addon + input + trailing addon), with one deviation: the group also
-  // has a block-end addon (the control row), which flips the group itself to
-  // a column — so this row gets its own flex wrapper instead of being direct
-  // group children. Mode only changes the icon and placeholder; the input
-  // element itself is identical in both modes, so focus survives the switch.
+  // (icon addon + input + trailing addon). Mode changes the icon, the
+  // placeholder, and the trailing addon's 32px control (toggles vs Analyze);
+  // the input element itself is identical in both modes, so focus survives
+  // the switch.
   const searchField = (inputClassName?: string) => (
     <div className="flex w-full items-center">
       <InputGroupAddon>
@@ -548,47 +557,133 @@ export function SkillExplorerView({
         onKeyDown={handleInputKeyDown}
         className={cn("pl-2", inputClassName)}
       />
-      {/* Margins re-tune the addon's built-in pulls to the composer's
-          12px optical line: the kbd is a bordered chip (box on the line →
-          cancel the pull), the clear button is ghost (glyph on the line →
-          keep 4px of pull). */}
-      {/* py-1 (repo) keeps the row at the field's own height: the addon's
-          base py-1.5 plus the 28px Analyze would otherwise outgrow the 36px
-          input and bump the row 8px taller than text mode's. */}
-      <InputGroupAddon align="inline-end" className={cn(isRepo && "py-1")}>
-        {inputValue ? (
-          <InputGroupButton
-            size="icon_xs"
-            aria-label="Clear search"
-            onClick={handleClearInput}
-            className="me-[0.2rem]"
-          >
-            <HugeiconsIcon
-              icon={Cancel01Icon}
-              strokeWidth={2}
-              className="size-4"
-            />
-          </InputGroupButton>
-        ) : !isRepo ? (
-          <Kbd
+      {/* The field is deliberately 44px (hero scale), so the 32px controls
+          here sit INSIDE the input's own height with the addon's standard
+          padding — nothing inflates the row. Clear/kbd come first (they
+          relate to the text); the toggles / Analyze own the corner. */}
+      <InputGroupAddon align="inline-end">
+        {/* Clear matches the toggles' 32px control scale (it IS a button);
+            the kbd sits one step under it at 28px — keyboard chips read
+            naturally a touch smaller than buttons, but not toy-sized. The
+            fixed 32px slot keeps the kbd⇄clear swap from nudging the
+            toggles sideways (their widths differ by ~4px). */}
+        {(inputValue || !isRepo) && (
+          // This wrapper is the load-bearing part, not its size: with kbd /
+          // clear nested (not direct addon children), the addon's
+          // has-[>kbd] / has-[>button] conditional pulls never match, so the
+          // addon's right margin stays constant and the toggles don't shift
+          // when the two swap. The width difference between them is absorbed
+          // by the flexible input on the left.
+          <div className="flex shrink-0 items-center">
+            {inputValue ? (
+              <InputGroupButton
+                size="icon_sm"
+                aria-label="Clear search"
+                onClick={handleClearInput}
+              >
+                <HugeiconsIcon
+                  icon={Cancel01Icon}
+                  strokeWidth={2}
+                  className="size-4"
+                />
+              </InputGroupButton>
+            ) : (
+              <Kbd
+                size="lg"
+                variant="ghost"
+                // rounded-md! — the ! is load-bearing: the addon's own
+                // [&>kbd]:rounded-[calc(var(--radius)-5px)] rule out-specifies
+                // a bare utility. One radius step under the 32px rounded-lg
+                // controls beside it, proportional to its one size step under
+                // them.
+                className="max-sm:hidden rounded-md!"
+                aria-hidden="true"
+              >
+                /
+              </Kbd>
+            )}
+          </div>
+        )}
+        {/* The two high-frequency search booleans, on the instrument itself
+            (independent multiple-selection, detached cells at the standard
+            32px control size — default radius, no overrides). Desktop-only:
+            the desc toggle needs hover for its tooltip; on mobile both live
+            in the Sort & filter sheet as labeled switches. Hidden in repo
+            mode — they don't apply to repo matching. */}
+        {!isRepo && (
+          <ToggleGroup
+            multiple
+            detached
             size="sm"
-            variant="ghost"
-            className="max-sm:hidden me-[0.35rem]"
-            aria-hidden="true"
+            variant="outline"
+            aria-label="Search options"
+            className="max-sm:hidden"
+            value={[
+              ...(official ? ["official"] : []),
+              ...(searchDescriptions ? ["desc"] : []),
+            ]}
+            onValueChange={(vals: string[]) => {
+              onOfficialChange(vals.includes("official"));
+              onSearchDescriptionsChange(vals.includes("desc"));
+            }}
           >
-            /
-          </Kbd>
-        ) : null}
+            {/* Official carries a visible label — it's the product's flagship
+                filter (a nav item and a per-row badge share the word), so its
+                control shouldn't be recall-dependent iconography. */}
+            <ToggleGroupItem
+              value="official"
+              aria-label="Official skills only"
+              className="gap-1.5 px-2 text-sm"
+            >
+              <HugeiconsIcon
+                icon={CheckmarkBadge01Icon}
+                strokeWidth={2}
+                className={cn(
+                  "size-4",
+                  official ? "text-info-foreground" : "text-muted-foreground",
+                )}
+              />
+              Official
+            </ToggleGroupItem>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <ToggleGroupItem
+                    value="desc"
+                    aria-label="Also search descriptions"
+                    // Re-assert the slot the TooltipTrigger merge overwrites —
+                    // the group's cell styling targets [data-slot=toggle].
+                    data-slot="toggle"
+                  />
+                }
+              >
+                <HugeiconsIcon
+                  icon={TextAlignLeftIcon}
+                  strokeWidth={2}
+                  className={cn(
+                    "size-4",
+                    searchDescriptions
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                />
+              </TooltipTrigger>
+              <TooltipContent sideOffset={8}>
+                Also search descriptions
+              </TooltipContent>
+            </Tooltip>
+          </ToggleGroup>
+        )}
         {/* Repo mode's submit lives inline in the field (URL-bar pattern) —
-            the one-field form doesn't need a second row for it. h-7 caps the
-            box at 28px so, with the addon's py-1, the row holds the input's
-            own height instead of outgrowing it; me-0.5 lands it ~7px from
-            the group edge. starting: fades it in on the morph. */}
+            the one-field form doesn't need a second row for it. Standard sm
+            (32px) control, same as the toggles it replaces: a real click
+            target that still sits inside the 44px field. starting: fades it
+            in on the morph. */}
         {isRepo && (
           <InputGroupButton
             variant="primary"
             size="sm"
-            className=" h-7 sm:h-7 shrink-0 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+            className="shrink-0 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
             onClick={handleRepoSubmit}
             disabled={!repoInput.trim() || !canAutoDetect}
             leftSection={
@@ -628,11 +723,13 @@ export function SkillExplorerView({
         </section>
 
         {/* Search bar — one two-layer "composer" card shared by BOTH modes:
-            the inner surface holds the input + how-you-search controls; the
-            chin below holds the result-narrowing filters + the leaderboards
-            entry. Repo mode morphs the same card in place: the control row's
-            corners swap roles (toggles+sort → back + Analyze), the chin
-            collapses to 0 height, and the input swaps icon + placeholder.
+            the inner surface is a single input row (icon, field, and inline
+            trailing controls at the group's 24px inner scale: scope toggles
+            in search mode, Analyze in repo mode); the chin holds the list
+            controls (filters + sort) and the
+            navigation corner (Hot/Trending, the mode switch). The mode morph
+            is pure content swaps — icon, placeholder, trailing control, chin
+            contents — with NO height change, so the card never jumps.
             Everything inside it parametrizes the ONE region below — search
             mode gets the catalog list, repo mode gets match results. */}
         <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
@@ -645,126 +742,12 @@ export function SkillExplorerView({
                     right substrate. The block-end addon is its control row:
                     search scope left, repo-match + sort right. */}
             <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
-              {searchField("h-11")}
-              {/* px-3 puts the bordered toggles' boxes on the composer's
-                      12px line (visible-edge alignment with the search glyph
-                      above); the ghost sort trigger pulls its chevron back to
-                      the line with a negative margin instead. */}
-              <InputGroupAddon
-                align="block-end"
-                // Text-mode only: repo mode collapses this row (Analyze
-                // lives inline in the input row, back lives in the chin,
-                // and nothing else here applies to repo matching). It
-                // stays mounted and animates its measured height to 0;
-                // `inert` drops the hidden controls from tab order. p-0
-                // zeroes the addon's own padding so the collapsed row
-                // leaves no residue — the inner wrapper carries it.
-                inert={isRepo}
-                style={{ height: isRepo ? 0 : controlRowHeight }}
-                className={cn(
-                  // items-start pins the row's content to the container's top
-                  // while it collapses — the addon's base items-center would
-                  // keep re-centering it in the shrinking box, making the
-                  // content drift upward instead of being clipped in place.
-                  "max-sm:hidden items-start overflow-hidden p-0 transition-[height] duration-250 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
-                )}
-              >
-                <div
-                  ref={controlRowRef}
-                  // pt-1.5 restores the addon's base py-1.5 top padding
-                  // (zeroed on the addon itself so the collapse leaves no
-                  // residue); pb-2 was always the row's override.
-                  className="flex w-full items-center justify-between gap-2 px-3 pt-1.5 pb-2"
-                >
-                  {/* Icon toggle group — the two high-frequency booleans, on
-                        the instrument itself (independent multiple-selection,
-                        one collapsed frame). Icon-only, so tooltips + a loud
-                        pressed state are load-bearing, not decoration. */}
-                  {/* Desktop-only: icon toggles need hover for their
-                        tooltips; on mobile these live in the Sort & filter
-                        sheet as labeled switches. */}
-                  <ToggleGroup
-                    multiple
-                    detached
-                    size="sm"
-                    variant="outline"
-                    aria-label="Search options"
-                    className="max-sm:hidden"
-                    value={[
-                      ...(official ? ["official"] : []),
-                      ...(searchDescriptions ? ["desc"] : []),
-                    ]}
-                    onValueChange={(vals: string[]) => {
-                      onOfficialChange(vals.includes("official"));
-                      onSearchDescriptionsChange(vals.includes("desc"));
-                    }}
-                  >
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <ToggleGroupItem
-                            value="official"
-                            aria-label="Official skills only"
-                            // Re-assert the slot the TooltipTrigger merge
-                            // overwrites — the group's cell styling targets
-                            // [data-slot=toggle].
-                            data-slot="toggle"
-                          />
-                        }
-                      >
-                        <HugeiconsIcon
-                          icon={CheckmarkBadge01Icon}
-                          strokeWidth={2}
-                          className={cn(
-                            "size-4",
-                            official
-                              ? "text-info-foreground"
-                              : "text-muted-foreground",
-                          )}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent sideOffset={8}>
-                        Official skills only
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <ToggleGroupItem
-                            value="desc"
-                            aria-label="Also search descriptions"
-                            data-slot="toggle"
-                          />
-                        }
-                      >
-                        <HugeiconsIcon
-                          icon={TextAlignLeftIcon}
-                          strokeWidth={2}
-                          className={cn(
-                            "size-4",
-                            searchDescriptions
-                              ? "text-foreground"
-                              : "text-muted-foreground",
-                          )}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent sideOffset={8}>
-                        Also search descriptions
-                      </TooltipContent>
-                    </Tooltip>
-                  </ToggleGroup>
-                  {/* Sort is the row's only right-side control — everything
-                      on the instrument parametrizes the query; navigation
-                      (Match my repo, Hot + Trending) lives in the chin. */}
-                  <SortSelect
-                    sort={effectiveSort}
-                    hasQuery={hasQuery}
-                    onSortChange={handleSortChange}
-                    ghost
-                    className="ms-auto max-sm:hidden -me-2"
-                  />
-                </div>
-              </InputGroupAddon>
+              {/* h-11 at BOTH breakpoints: the Input's own sm:h-9 would win
+                  the merge over a bare h-11 (the field silently rendered
+                  36px for months because of this trap). 44px is the hero
+                  scale on purpose — the 32px trailing controls sit inside
+                  the field's height instead of inflating the row. */}
+              {searchField("h-11 sm:h-11")}
             </InputGroup>
 
             {/* Chin: filters left, leaderboards entry right. On mobile the
@@ -785,9 +768,22 @@ export function SkillExplorerView({
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 px-3">
               {isRepo ? (
                 <>
-                  <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
-                    Reads languages and packages from public repos
-                  </p>
+                  {/* Helper slot doubles as the validation slot: an invalid
+                      Analyze attempt swaps the hint for an error with a format
+                      example (role=alert announces it). The error shows on
+                      mobile too — it's actionable, unlike the ambient hint. */}
+                  {repoInputInvalid ? (
+                    <p
+                      role="alert"
+                      className="min-w-0 text-xs text-destructive"
+                    >
+                      Enter a GitHub repo URL, like github.com/vercel/next.js
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+                      Reads languages and packages from public repos
+                    </p>
+                  )}
                   {/* Same corner as "Match my repo" in search mode — the mode
                       switch lives in one stable spot. ms-auto keeps it pinned
                       right on mobile, where the helper text is hidden. */}
@@ -880,16 +876,31 @@ export function SkillExplorerView({
                       right-aligned when it wraps to its own row (justify-
                       between only spaces items sharing a line). */}
                   <div className="ms-auto flex items-center gap-0.5">
+                    {/* Sort — a result-view preference, so it lives with the
+                        chin's other list controls, right-aligned above the
+                        list it orders (and next to the results its Relevance
+                        auto-swap concerns). Mobile keeps sort in the sheet. */}
+                    <SortSelect
+                      sort={effectiveSort}
+                      hasQuery={hasQuery}
+                      onSortChange={handleSortChange}
+                      ghost
+                      className="max-sm:hidden"
+                    />
+                    <Separator
+                      orientation="vertical"
+                      className="h-4! mx-1 max-[860px]:hidden"
+                    />
                     {/* The icon squares cover BOTH the mobile layout and the
-                        640-700px desktop band where even the short labels
+                        640-860px desktop band (wider now that sort shares the chin) where even the short labels
                         don't fit next to the filters — icons instead of a
                         wrapped second chin row. */}
                     <Button
                       variant="ghost"
                       size="icon_sm"
-                      className="min-[700px]:hidden"
+                      className="min-[860px]:hidden"
                       onClick={() => onViewChange("hot")}
-                      aria-label="Hot + Trending leaderboards"
+                      aria-label="Hot/Trending leaderboards"
                     >
                       <HugeiconsIcon
                         icon={FireIcon}
@@ -900,7 +911,7 @@ export function SkillExplorerView({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="shrink-0 text-muted-foreground max-[700px]:hidden"
+                      className="shrink-0 text-muted-foreground max-[860px]:hidden"
                       onClick={() => onViewChange("hot")}
                       leftSection={
                         <HugeiconsIcon
@@ -915,7 +926,7 @@ export function SkillExplorerView({
                     <Button
                       variant="ghost"
                       size="icon_sm"
-                      className="text-muted-foreground min-[700px]:hidden -me-2.5"
+                      className="text-muted-foreground min-[860px]:hidden -me-2.5"
                       onClick={enterRepoMode}
                       aria-label="Match repo"
                     >
@@ -928,7 +939,7 @@ export function SkillExplorerView({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="shrink-0 text-muted-foreground max-[700px]:hidden -me-2"
+                      className="shrink-0 text-muted-foreground max-[860px]:hidden -me-2"
                       onClick={enterRepoMode}
                       leftSection={
                         <HugeiconsIcon

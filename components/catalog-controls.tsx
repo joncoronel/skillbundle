@@ -98,8 +98,8 @@ const MIN_INSTALL_PRESETS = [100, 1_000, 10_000] as const;
 
 const AUDIT_ITEMS = {
   [ANY]: "Any audit",
-  pass: "Passed audit",
-  nofail: "No failed audits",
+  pass: "Passed audits only",
+  nofail: "Hide failed audits",
 };
 const MIN_INSTALL_ITEMS = {
   [ANY]: "Any installs",
@@ -285,10 +285,10 @@ export function CatalogControls({
       <SelectContent alignItemWithTrigger={selectAlign} level={popupLevel}>
         <SelectItem value={ANY}>Any audit</SelectItem>
         <SelectItem value="pass">
-          Passed audit
+          Passed audits only
           <ItemCount count={passCount} />
         </SelectItem>
-        <SelectItem value="nofail">No failed audits</SelectItem>
+        <SelectItem value="nofail">Hide failed audits</SelectItem>
       </SelectContent>
     </Select>
   );
