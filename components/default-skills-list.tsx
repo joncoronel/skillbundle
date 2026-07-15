@@ -13,6 +13,7 @@ import {
 import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
+import { cn } from "@/lib/utils";
 
 type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
 
@@ -156,15 +157,20 @@ export function SkillRowGrid({
             skill={skill}
             sheetHandle={sheetHandle}
             metric={metric}
-            className={
+            className={cn(
+              // These lists are unbounded (infinite scroll): content-visibility
+              // skips layout/paint for off-screen rows. The intrinsic-size
+              // `auto` keyword remembers each row's real height once rendered
+              // — 76px is only the pre-render estimate for scrollbar math.
+              "[content-visibility:auto] [contain-intrinsic-size:auto_76px]",
               isSolo
                 ? undefined
                 : isFirst
                   ? "rounded-b-none"
                   : isLast
                     ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0"
-            }
+                    : "rounded-none border-t-0",
+            )}
           />
         );
       })}

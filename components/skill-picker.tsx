@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { createContext, use, useMemo } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -105,7 +105,7 @@ export function SkillSearchField({
   );
 }
 
-interface PickerResultsProps {
+interface PickerContextValue {
   existingKeys: Set<string>;
   atCap: boolean;
   copy: SkillPickerCopy;
@@ -113,14 +113,34 @@ interface PickerResultsProps {
   onRemove: (source: string, skillId: string) => void;
 }
 
-export function PickerSearchResults({
-  query,
-  existingKeys,
-  atCap,
-  copy,
-  onAdd,
-  onRemove,
-}: PickerResultsProps & { query: string }) {
+const PickerContext = createContext<PickerContextValue | null>(null);
+
+/**
+ * Owns the picker's shared selection contract (what's added, the cap, the
+ * copy, the add/remove handlers) so the list components stay pure structure —
+ * rows read it via context instead of a 5-prop bundle drilled through them.
+ */
+export function PickerProvider({
+  children,
+  ...value
+}: PickerContextValue & { children: React.ReactNode }) {
+  const { existingKeys, atCap, copy, onAdd, onRemove } = value;
+  const memoized = useMemo(
+    () => ({ existingKeys, atCap, copy, onAdd, onRemove }),
+    [existingKeys, atCap, copy, onAdd, onRemove],
+  );
+  return <PickerContext value={memoized}>{children}</PickerContext>;
+}
+
+function usePicker(): PickerContextValue {
+  const context = use(PickerContext);
+  if (!context) {
+    throw new Error("Picker components must be used within a PickerProvider.");
+  }
+  return context;
+}
+
+export function PickerSearchResults({ query }: { query: string }) {
   // Same query (key + fn) as useSkillPickerSearch in the parent sheet, so the
   // spinner and this list share one cache entry and one network request.
   const { data, isPending, isError } = useQuery({
@@ -165,24 +185,13 @@ export function PickerSearchResults({
             worstAuditStatus: s.worstAuditStatus,
             worstAuditRiskLevel: s.worstAuditRiskLevel,
           }}
-          existingKeys={existingKeys}
-          atCap={atCap}
-          copy={copy}
-          onAdd={onAdd}
-          onRemove={onRemove}
         />
       ))}
     </PickerList>
   );
 }
 
-export function PickerPopularResults({
-  existingKeys,
-  atCap,
-  copy,
-  onAdd,
-  onRemove,
-}: PickerResultsProps) {
+export function PickerPopularResults() {
   const { data, isPending } = useQuery({
     ...convexQuery(api.skills.listPopularSkills, {
       paginationOpts: { numItems: 30, cursor: null },
@@ -221,11 +230,6 @@ export function PickerPopularResults({
               worstAuditStatus: s.worstAuditStatus,
               worstAuditRiskLevel: s.worstAuditRiskLevel,
             }}
-            existingKeys={existingKeys}
-            atCap={atCap}
-            copy={copy}
-            onAdd={onAdd}
-            onRemove={onRemove}
           />
         ))}
       </PickerList>
@@ -263,14 +267,8 @@ export function PickerListSkeleton() {
   );
 }
 
-export function PickerRow({
-  skill,
-  existingKeys,
-  atCap,
-  copy,
-  onAdd,
-  onRemove,
-}: PickerResultsProps & { skill: PickerSkill }) {
+export function PickerRow({ skill }: { skill: PickerSkill }) {
+  const { existingKeys, atCap, copy, onAdd, onRemove } = usePicker();
   const key = useMemo(
     () => skillKey(skill.source, skill.skillId),
     [skill.source, skill.skillId],

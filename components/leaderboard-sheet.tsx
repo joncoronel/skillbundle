@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FireIcon } from "@hugeicons/core-free-icons";
 import {
@@ -46,9 +47,12 @@ export function LeaderboardSheet({
   trendingSkills,
   sheetHandle,
 }: LeaderboardSheetProps) {
-  // Hold the last real view while closing so the content doesn't blank out
-  // mid-exit-animation (view flips to null the moment close starts).
-  const active: LeaderboardViewValue = view ?? "hot";
+  // Hold the last real view while closing so the content doesn't flip
+  // mid-exit-animation (view goes null the moment close starts — a bare
+  // `?? "hot"` would swap Trending's content to Hot during the slide-out).
+  const [lastView, setLastView] = useState<LeaderboardViewValue>("hot");
+  if (view !== null && view !== lastView) setLastView(view);
+  const active: LeaderboardViewValue = view ?? lastView;
   const skills = active === "hot" ? hotSkills : trendingSkills;
 
   return (

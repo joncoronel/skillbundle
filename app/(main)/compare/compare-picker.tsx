@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import {
   PickerPopularResults,
+  PickerProvider,
   PickerSearchResults,
   SkillSearchField,
   skillKey,
@@ -113,24 +114,19 @@ export function ComparePickerSheet({
             {refs.length} / {MAX_COMPARE_SKILLS} in comparison
           </p>
 
-          {effectiveQuery ? (
-            <PickerSearchResults
-              query={effectiveQuery}
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={compareCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          ) : (
-            <PickerPopularResults
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={compareCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          )}
+          <PickerProvider
+            existingKeys={existingKeys}
+            atCap={atCap}
+            copy={compareCopy}
+            onAdd={onAdd}
+            onRemove={onRemove}
+          >
+            {effectiveQuery ? (
+              <PickerSearchResults query={effectiveQuery} />
+            ) : (
+              <PickerPopularResults />
+            )}
+          </PickerProvider>
         </SheetBody>
       </SheetContent>
     </Sheet>

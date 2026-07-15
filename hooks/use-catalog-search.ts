@@ -1,27 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
   keepPreviousData,
   useInfiniteQuery,
   useQueryClient,
+  type InfiniteData,
 } from "@tanstack/react-query";
 import {
   searchSkills,
   type FacetCount,
   type SkillFilters,
   type SkillHit,
+  type SkillSearchResult,
   type SkillSort,
 } from "@/lib/search/typesense";
-import { SEARCH_DEBOUNCE_MS } from "@/lib/search-params";
 
 const PER_PAGE = 30;
 
 /**
  * The React Query key for one catalog search state. Exported so components
- * above the hook (e.g. the search input's spinner in SkillExplorer) can make
- * the same synchronous "is this state already cached?" check the hook makes,
- * without duplicating the key/filters encoding.
+ * above the hook (SkillExplorer's status derivation, the input spinner) can
+ * make the same synchronous cache checks the hook makes, without duplicating
+ * the key/filters encoding.
  */
 export function catalogSearchQueryKey(
   query: string,
@@ -45,8 +46,11 @@ export function catalogSearchQueryKey(
 }
 
 interface UseCatalogSearchOptions {
-  /** Raw (untrimmed) query. Debounced internally; "" = browse the catalog. */
-  rawQuery: string;
+  /**
+   * The EFFECTIVE query — already trimmed, debounced, and cache-bypassed by
+   * the caller (useDebouncedQueryValue in SkillExplorer). "" = browse.
+   */
+  query: string;
   sort: SkillSort;
   filters: SkillFilters;
   /** Also match on description (default: names only). */
@@ -54,45 +58,24 @@ interface UseCatalogSearchOptions {
 }
 
 /**
- * The active-state catalog query: debounced text search + filters + sort
- * against Typesense (browser-direct), with page-based infinite scroll and
- * facet counts from the first page.
+ * The active-state catalog query: text search + filters + sort against
+ * Typesense (browser-direct), with page-based infinite scroll and facet
+ * counts from the first page.
  *
  * IMPORTANT: useInfiniteQuery's observer reads Date.now() during render, so
  * this hook must only run in components mounted AFTER hydration — i.e. inside
  * the active state, never in the statically-prerendered entry state (same
  * constraint as PopularList's useHydrated gate in default-skills-list.tsx).
+ * The debounce lives with the caller (useDebouncedQueryValue) so the parent
+ * can derive spinner/settled state from the same cache keys — see
+ * useCatalogSearchStatus below.
  */
 export function useCatalogSearch({
-  rawQuery,
+  query: effectiveQuery,
   sort,
   filters,
   searchDescriptions,
 }: UseCatalogSearchOptions) {
-  const trimmed = rawQuery.trim();
-
-  // Same debounce contract as use-debounced-cached-search: reset synchronously
-  // on clear so a fast retype never sees the previous query leak through.
-  const [debounced, setDebounced] = useState(trimmed);
-  if (!trimmed && debounced) setDebounced("");
-  useEffect(() => {
-    if (!trimmed) return;
-    const timer = setTimeout(() => setDebounced(trimmed), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [trimmed]);
-
-  // Synchronous cache bypass (same contract as use-skill-picker-search): if
-  // the current trimmed input's results are already cached, skip the debounce
-  // and query it directly. Retyping a recent query then swaps instantly — no
-  // pending dim — matching how filter toggles (which never debounce) behave.
-  const queryClient = useQueryClient();
-  const isCached =
-    trimmed !== debounced &&
-    queryClient.getQueryData(
-      catalogSearchQueryKey(trimmed, sort, filters, searchDescriptions),
-    ) !== undefined;
-  const effectiveQuery = isCached ? trimmed : debounced;
-
   const query = useInfiniteQuery({
     queryKey: catalogSearchQueryKey(
       effectiveQuery,
@@ -100,7 +83,7 @@ export function useCatalogSearch({
       filters,
       searchDescriptions,
     ),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       searchSkills({
         query: effectiveQuery,
         sort,
@@ -110,6 +93,7 @@ export function useCatalogSearch({
         perPage: PER_PAGE,
         // Facet counts only change with query/filters, not page — fetch once.
         facets: pageParam === 1,
+        signal,
       }),
     initialPageParam: 1,
     getNextPageParam: (last) =>
@@ -127,18 +111,14 @@ export function useCatalogSearch({
   );
 
   const firstPage = query.data?.pages[0];
-  const facets: Record<string, FacetCount[]> = firstPage?.facets ?? {};
 
   return {
     hits,
     found: firstPage?.found ?? 0,
-    facets,
-    /** Waiting on the debounce, the fetch, or placeholder data — the "search
-     *  work pending" signal that drives the loading dim. */
+    /** Fetching or showing a previous state's rows — drives the loading dim.
+     *  (The debounce gap is the caller's to add: `trimmed !== effectiveQuery`.) */
     isPending:
-      (trimmed.length > 0 && trimmed !== effectiveQuery) ||
-      query.isPlaceholderData ||
-      (query.isFetching && !query.isFetchingNextPage),
+      query.isPlaceholderData || (query.isFetching && !query.isFetchingNextPage),
     /** No data at all yet (first ever fetch for this state). */
     isInitialLoading: query.isPending,
     error: query.error,
@@ -146,6 +126,125 @@ export function useCatalogSearch({
     fetchNextPage: query.fetchNextPage,
     hasNextPage: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
-    debouncedQuery: effectiveQuery,
+  };
+}
+
+const EMPTY_FACETS: Record<string, FacetCount[]> = {};
+
+interface UseCatalogSearchStatusOptions {
+  /** The current trimmed input — the search's DESTINATION state. */
+  trimmedQuery: string;
+  /** The effective (debounced / cache-bypassed) query actually being fetched. */
+  effectiveQuery: string;
+  sort: SkillSort;
+  filters: SkillFilters;
+  searchDescriptions: boolean;
+  /** Whether the Typesense results view is mounted at all. */
+  active: boolean;
+}
+
+type CatalogData = InfiniteData<SkillSearchResult>;
+
+/**
+ * Parent-side search status, DERIVED from the shared React Query cache — no
+ * report-up callbacks, no effect mirrors. ActiveCatalogResults fetches under
+ * `catalogSearchQueryKey(effectiveQuery, ...)`; this hook subscribes to the
+ * query cache (useSyncExternalStore) and reads the same entries:
+ *
+ * - `pending` — search work is outstanding for what the user typed: the
+ *   destination entry doesn't exist yet (debounce running) or has no data
+ *   (fetch in flight). Cached retypes are never pending. Drives the input
+ *   spinner.
+ * - `settled` — the results view has something to render (data for the
+ *   effective key, or — via keepPreviousData — anything earlier in this
+ *   active session). Until then the parent keeps the Popular list up, dimmed,
+ *   as filler. Session-scoped state, adjusted during render (the React
+ *   "adjusting state when props change" pattern — no effects).
+ * - `facets` — the effective entry's first-page facet counts, held across
+ *   refinements (matching the rows, which keepPreviousData also holds).
+ */
+export function useCatalogSearchStatus({
+  trimmedQuery,
+  effectiveQuery,
+  sort,
+  filters,
+  searchDescriptions,
+  active,
+}: UseCatalogSearchStatusOptions) {
+  const queryClient = useQueryClient();
+  const cache = queryClient.getQueryCache();
+  // queueMicrotask is load-bearing: TanStack builds cache entries DURING other
+  // components' renders (a cold useQuery adds its entry at render and the
+  // cache notifies synchronously), so a raw subscribe would setState here
+  // while another component renders — React's "cannot update a component
+  // while rendering a different component" error. Deferring the notification
+  // a microtask loses nothing: useSyncExternalStore re-reads the snapshot
+  // when it lands, so it always sees the final cache state.
+  const subscribe = useCallback(
+    (onStoreChange: () => void) =>
+      cache.subscribe(() => queueMicrotask(onStoreChange)),
+    [cache],
+  );
+
+  const trimmedKey = catalogSearchQueryKey(
+    trimmedQuery,
+    sort,
+    filters,
+    searchDescriptions,
+  );
+  const effectiveKey = catalogSearchQueryKey(
+    effectiveQuery,
+    sort,
+    filters,
+    searchDescriptions,
+  );
+
+  // Is work outstanding for the destination (trimmed) state? No entry =
+  // debounce hasn't fired the fetch yet; entry without data = in flight.
+  // An errored entry is NOT pending — the error card owns that state.
+  const pending = useSyncExternalStore(
+    subscribe,
+    () => {
+      if (!active || trimmedQuery.length === 0) return false;
+      const state = queryClient.getQueryState(trimmedKey);
+      if (!state) return true;
+      if (state.data !== undefined) return false;
+      return state.status === "pending";
+    },
+    () => false,
+  );
+
+  // First-page facets for the effective entry. The snapshot returns the cached
+  // object itself (structurally shared by React Query), so the reference is
+  // stable until the entry's data actually changes.
+  const effectiveFacets = useSyncExternalStore(
+    subscribe,
+    () =>
+      active
+        ? queryClient.getQueryData<CatalogData>(effectiveKey)?.pages[0]?.facets
+        : undefined,
+    () => undefined,
+  );
+  const hasEffectiveData = effectiveFacets !== undefined;
+
+  // Session-scoped "has rendered results at least once": keepPreviousData
+  // means the results view keeps earlier rows through refinements, so once
+  // settled it stays settled until search deactivates (view unmounts).
+  const [sessionSettled, setSessionSettled] = useState(false);
+  if (active && hasEffectiveData && !sessionSettled) setSessionSettled(true);
+  if (!active && sessionSettled) setSessionSettled(false);
+
+  // Hold the last real facets across refinements (the entry for a new
+  // effective key has none until its fetch lands).
+  const [heldFacets, setHeldFacets] = useState(EMPTY_FACETS);
+  if (active && effectiveFacets && effectiveFacets !== heldFacets) {
+    setHeldFacets(effectiveFacets);
+  }
+  if (!active && heldFacets !== EMPTY_FACETS) setHeldFacets(EMPTY_FACETS);
+
+  return {
+    pending,
+    settled: active && (sessionSettled || hasEffectiveData),
+    facets: heldFacets,
   };
 }

@@ -9,8 +9,9 @@ import { HomeContent, HomeFallback } from "./home-content";
 // The page is static. <HomeContent> reads search params via nuqs' Next
 // adapter, which suspends during prerendering — the Suspense fallback below
 // renders the identical default no-params state (hero + search shell + popular
-// leaderboard) from ENTRY_STATE_DEFAULTS, so the prerendered HTML is the full
-// page and the route stays prefetchable. After hydration the live tree applies
+// leaderboard) under ExplorerStaticProvider (defaults derived from the URL
+// parsers), so the prerendered HTML is the full page and the route stays
+// prefetchable. After hydration the live tree applies
 // any actual URL params — and stays in sync with Next's client-side router, so
 // a <Link> into `/?q=…` (or `/compare?skills=…`) updates the params reactively.
 // The three leaderboards are cached with `'use cache'` and tagged via

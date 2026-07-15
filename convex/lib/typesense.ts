@@ -1,9 +1,10 @@
 /**
  * Minimal REST client for our self-hosted Typesense (Railway).
  *
- * Transport only — no Convex imports here, so it stays a plain module the sync
- * actions can call. Uses `fetch` (Convex default runtime), mirroring the
- * skills.sh client in skillsApi.ts.
+ * Transport only — no generated-Convex imports here (only the plain
+ * `convex/values` library, for the document validator), so it stays a module
+ * the sync actions can call. Uses `fetch` (Convex default runtime), mirroring
+ * the skills.sh client in skillsApi.ts.
  *
  * Env (set on the Convex deployment, NOT Vercel — the admin key is secret):
  *   TYPESENSE_HOST           e.g. "typesense-production-0c4a.up.railway.app"
@@ -14,6 +15,8 @@
  *
  * Railway fronts Typesense with HTTPS on 443, so host + https is all we need.
  */
+
+import { v, type Infer } from "convex/values";
 
 export interface TypesenseConfig {
   host: string;
@@ -151,7 +154,12 @@ export function skillsCollectionSchema(name: string) {
     { name: "contentUpdatedAt", type: "int64", optional: true },
     // Mark-and-sweep stamp: every sync run sets this to its start time on each
     // upserted doc; the sweep then deletes docs left with an older stamp (rows
-    // that dropped out of the non-delisted set since the last run).
+    // that dropped out of the non-delisted set since the last run). Typesense
+    // SKIPS docs missing a filtered field, so a doc without the stamp would be
+    // permanently unsweepable — the sync stamps every doc unconditionally, and
+    // any legacy doc indexed before this field existed self-heals on the next
+    // full sync (upserts replace whole docs) as long as it's still live; a
+    // dead unstamped doc would need a resetCollection to clear.
     { name: "syncedAt", type: "int64", optional: true },
   ];
   return {
@@ -167,76 +175,44 @@ export function skillsCollectionSchema(name: string) {
   };
 }
 
-/** The document shape we push. Keep in sync with the schema above. */
-export interface TypesenseSkillDoc {
-  id: string; // `${source}::${skillId}`
-  name: string;
-  description?: string;
-  source: string;
+/**
+ * The document shape we push — SINGLE SOURCE for the doc type. The sync query's
+ * `returns` validates against this validator, `TypesenseSkillDoc` derives from
+ * it via `Infer`, and the frontend's `SkillHit` (lib/search/typesense.ts)
+ * derives from the type — so the three can't drift. Keep the field list in
+ * sync with `skillsCollectionSchema` above (the one remaining manual mirror;
+ * Typesense's schema language can't be derived from a Convex validator).
+ */
+export const typesenseSkillDocValidator = v.object({
+  /** `${source}::${skillId}` */
+  id: v.string(),
+  name: v.string(),
+  description: v.optional(v.string()),
+  source: v.string(),
   /** Publisher slug — the part before "/" in source. Derived at sync. */
-  owner: string;
-  skillId: string;
-  installs: number;
-  installRank?: number;
-  curatedOwner?: string;
-  isOfficial: boolean;
-  isDuplicate: boolean;
-  hasContentFetchError: boolean;
-  worstAuditStatus?: string;
-  worstAuditRiskLevel?: string;
-  copyCount?: number;
-  momentum7d?: number;
-  momentum30d?: number;
-  contentUpdatedAt?: number;
-  syncedAt?: number;
-}
+  owner: v.string(),
+  skillId: v.string(),
+  installs: v.number(),
+  installRank: v.optional(v.number()),
+  curatedOwner: v.optional(v.string()),
+  isOfficial: v.boolean(),
+  isDuplicate: v.boolean(),
+  hasContentFetchError: v.boolean(),
+  worstAuditStatus: v.optional(v.string()),
+  worstAuditRiskLevel: v.optional(v.string()),
+  copyCount: v.optional(v.number()),
+  // Forward-declared sorts, populated in a later sync pass.
+  momentum7d: v.optional(v.number()),
+  momentum30d: v.optional(v.number()),
+  contentUpdatedAt: v.optional(v.number()),
+  syncedAt: v.optional(v.number()),
+});
+
+export type TypesenseSkillDoc = Infer<typeof typesenseSkillDocValidator>;
 
 // ---------------------------------------------------------------------------
 // Operations
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Search
-// ---------------------------------------------------------------------------
-
-export interface SearchParams {
-  q: string;
-  queryBy?: string; // default: "name,description"
-  filterBy?: string;
-  sortBy?: string; // e.g. "installs:desc"; omit to use default_sorting_field
-  facetBy?: string; // e.g. "isOfficial,worstAuditStatus"
-  page?: number;
-  perPage?: number;
-}
-
-export interface SearchResponse {
-  found: number;
-  page: number;
-  hits: Array<{ document: TypesenseSkillDoc }>;
-  facet_counts?: Array<{
-    field_name: string;
-    counts: Array<{ value: string; count: number }>;
-  }>;
-}
-
-/** Run a search against the collection. Used server-side; the browser will use
- * a scoped search-only key against the same endpoint (see step 5). */
-export async function search(params: SearchParams): Promise<SearchResponse> {
-  const { collection } = getTypesenseConfig();
-  const qp = new URLSearchParams();
-  qp.set("q", params.q);
-  qp.set("query_by", params.queryBy ?? "name,description");
-  if (params.filterBy) qp.set("filter_by", params.filterBy);
-  if (params.sortBy) qp.set("sort_by", params.sortBy);
-  if (params.facetBy) qp.set("facet_by", params.facetBy);
-  qp.set("page", String(params.page ?? 1));
-  qp.set("per_page", String(params.perPage ?? 10));
-  const { json } = await tsRequest(
-    `/collections/${encodeURIComponent(collection)}/documents/search`,
-    { query: qp.toString() },
-  );
-  return json<SearchResponse>();
-}
 
 /**
  * Create a search-only API key. Safe to expose to the browser: it can only

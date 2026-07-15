@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import {
   PickerPopularResults,
+  PickerProvider,
   PickerSearchResults,
   SkillSearchField,
   type PickerSkill,
@@ -105,24 +106,19 @@ export function BundleEditSkillPicker({
             </p>
           ) : null}
 
-          {effectiveQuery ? (
-            <PickerSearchResults
-              query={effectiveQuery}
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={bundleCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          ) : (
-            <PickerPopularResults
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={bundleCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          )}
+          <PickerProvider
+            existingKeys={existingKeys}
+            atCap={atCap}
+            copy={bundleCopy}
+            onAdd={onAdd}
+            onRemove={onRemove}
+          >
+            {effectiveQuery ? (
+              <PickerSearchResults query={effectiveQuery} />
+            ) : (
+              <PickerPopularResults />
+            )}
+          </PickerProvider>
         </SheetBody>
       </SheetContent>
     </Sheet>

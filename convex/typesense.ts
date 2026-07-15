@@ -12,6 +12,7 @@
 import { v } from "convex/values";
 import { internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { maxIterForRows, CATALOG_MAX_ROWS } from "./lib/pagination";
 import {
   ping,
   ensureCollection,
@@ -20,8 +21,8 @@ import {
   deleteByFilter,
   getCollectionInfo,
   createSearchOnlyKey,
-  search,
   getTypesenseConfig,
+  typesenseSkillDocValidator,
   type TypesenseSkillDoc,
 } from "./lib/typesense";
 
@@ -32,6 +33,13 @@ import {
  */
 export const setupCollection = internalAction({
   args: {},
+  returns: v.object({
+    host: v.string(),
+    collection: v.string(),
+    reachable: v.boolean(),
+    collectionCreated: v.boolean(),
+    message: v.string(),
+  }),
   handler: async () => {
     const { host, collection } = getTypesenseConfig();
     const reachable = await ping();
@@ -52,42 +60,6 @@ export const setupCollection = internalAction({
 });
 
 /**
- * One-off search probe for validating the index from the CLI, e.g.:
- *   npx convex run typesense:testSearch '{"q":"postgress"}'
- * Demonstrates typo tolerance + multi-field (name,description) + facet counts.
- */
-export const testSearch = internalAction({
-  args: {
-    q: v.string(),
-    filterBy: v.optional(v.string()),
-    sortBy: v.optional(v.string()),
-  },
-  handler: async (_ctx, { q, filterBy, sortBy }) => {
-    const res = await search({
-      q,
-      queryBy: "name,description",
-      filterBy,
-      sortBy,
-      facetBy: "isOfficial,worstAuditStatus,isDuplicate",
-      perPage: 5,
-    });
-    return {
-      query: q,
-      found: res.found,
-      topHits: res.hits.map((h) => ({
-        name: h.document.name,
-        source: h.document.source,
-        installs: h.document.installs,
-      })),
-      facets: res.facet_counts?.map((f) => ({
-        field: f.field_name,
-        counts: f.counts.map((c) => `${c.value}: ${c.count}`),
-      })),
-    };
-  },
-});
-
-/**
  * Create the browser-facing search-only key. Run once per environment:
  *   npx convex run typesense:createSearchKey
  * Copy the returned `value` into NEXT_PUBLIC_TYPESENSE_SEARCH_KEY. It's
@@ -95,6 +67,11 @@ export const testSearch = internalAction({
  */
 export const createSearchKey = internalAction({
   args: { description: v.optional(v.string()) },
+  returns: v.object({
+    id: v.number(),
+    value: v.string(),
+    note: v.string(),
+  }),
   handler: async (_ctx, { description }) => {
     const key = await createSearchOnlyKey(
       description ?? "browser search-only key",
@@ -110,6 +87,7 @@ export const createSearchKey = internalAction({
 /** Report the live indexed document count. Handy for watching the backfill. */
 export const stats = internalAction({
   args: {},
+  returns: v.object({ collection: v.string(), numDocuments: v.number() }),
   handler: async () => {
     const { name, numDocuments } = await getCollectionInfo();
     return { collection: name, numDocuments };
@@ -122,6 +100,11 @@ export const stats = internalAction({
  */
 export const resetCollection = internalAction({
   args: {},
+  returns: v.object({
+    collection: v.string(),
+    dropped: v.boolean(),
+    recreated: v.boolean(),
+  }),
   handler: async () => {
     const { collection } = getTypesenseConfig();
     await dropCollection();
@@ -133,25 +116,6 @@ export const resetCollection = internalAction({
 // ---------------------------------------------------------------------------
 // Sync: skillSummaries → Typesense
 // ---------------------------------------------------------------------------
-
-const typesenseDocValidator = v.object({
-  id: v.string(),
-  name: v.string(),
-  description: v.optional(v.string()),
-  source: v.string(),
-  owner: v.string(),
-  skillId: v.string(),
-  installs: v.number(),
-  installRank: v.optional(v.number()),
-  curatedOwner: v.optional(v.string()),
-  isOfficial: v.boolean(),
-  isDuplicate: v.boolean(),
-  hasContentFetchError: v.boolean(),
-  worstAuditStatus: v.optional(v.string()),
-  worstAuditRiskLevel: v.optional(v.string()),
-  copyCount: v.optional(v.number()),
-  syncedAt: v.optional(v.number()),
-});
 
 /**
  * Read one page of non-delisted summaries and shape them into Typesense
@@ -167,7 +131,7 @@ export const pageSummariesForSync = internalQuery({
     syncedAt: v.number(),
   },
   returns: v.object({
-    docs: v.array(typesenseDocValidator),
+    docs: v.array(typesenseSkillDocValidator),
     continueCursor: v.string(),
     isDone: v.boolean(),
   }),
@@ -210,6 +174,15 @@ export const pageSummariesForSync = internalQuery({
   },
 });
 
+const SYNC_PAGE_SIZE = 250;
+const SYNC_MAX_PAGES_PER_RUN = 20; // ~5k docs/invocation before rescheduling
+// Continuation cap (in pages), derived from the shared catalog budget like the
+// other self-scheduling jobs — a backstop against a cursor that never advances.
+// The cap is only checked between SYNC_MAX_PAGES_PER_RUN-page chunks, so keep
+// it a multiple of that (240 % 20 === 0) or the backstop overshoots by up to
+// one chunk — harmless for a backstop, but why be sloppy.
+const SYNC_MAX_PAGES = maxIterForRows(CATALOG_MAX_ROWS, SYNC_PAGE_SIZE);
+
 /**
  * Full catalog sync into Typesense — the daily job (and the manual full
  * reindex). Mark-and-sweep: every doc is upserted with `syncedAt` set to this
@@ -219,9 +192,16 @@ export const pageSummariesForSync = internalQuery({
  * Typesense an exact mirror of the live catalog without tracking a changed-set,
  * and self-heals any drift each day.
  *
- * Self-reschedules to stay under the action time limit: up to MAX_PAGES_PER_RUN
- * pages per invocation, threading the cursor + running totals + the shared
- * `syncedAt` stamp forward. Run manually with: npx convex run typesense:syncCatalog
+ * The sweep only runs on a fully clean walk: a doc whose import FAILED this run
+ * still carries last run's older stamp, so sweeping after a partial import
+ * would delete live-but-erroring skills from search. On failures we skip the
+ * sweep (stale leftovers survive one extra day; the next clean run sweeps them)
+ * and log loudly so the cron failure is visible in the Convex dashboard.
+ *
+ * Self-reschedules to stay under the action time limit: up to
+ * SYNC_MAX_PAGES_PER_RUN pages per invocation, threading the cursor + running
+ * totals + the shared `syncedAt` stamp forward.
+ * Run manually with: npx convex run typesense:syncCatalog
  */
 export const syncCatalog = internalAction({
   args: {
@@ -232,22 +212,39 @@ export const syncCatalog = internalAction({
     imported: v.optional(v.number()),
     failed: v.optional(v.number()),
     pagesDone: v.optional(v.number()),
+    sampleErrors: v.optional(v.array(v.string())),
   },
+  returns: v.union(
+    v.object({
+      done: v.literal(true),
+      imported: v.number(),
+      failed: v.number(),
+      swept: v.number(),
+      sweepSkipped: v.boolean(),
+      pagesDone: v.number(),
+      sampleErrors: v.array(v.string()),
+    }),
+    v.object({
+      done: v.literal(false),
+      scheduledMore: v.literal(true),
+      imported: v.number(),
+      failed: v.number(),
+      pagesDone: v.number(),
+      sampleErrors: v.array(v.string()),
+    }),
+  ),
   handler: async (ctx, args) => {
-    const PAGE_SIZE = 250;
-    const MAX_PAGES_PER_RUN = 20; // ~5k docs/invocation before rescheduling
-
     const syncedAt = args.syncedAt ?? Date.now();
     let cursor = args.cursor ?? null;
     let imported = args.imported ?? 0;
     let failed = args.failed ?? 0;
     let pagesDone = args.pagesDone ?? 0;
-    const sampleErrors: string[] = [];
+    const sampleErrors: string[] = args.sampleErrors ?? [];
 
-    for (let i = 0; i < MAX_PAGES_PER_RUN; i++) {
+    for (let i = 0; i < SYNC_MAX_PAGES_PER_RUN; i++) {
       const page = await ctx.runQuery(internal.typesense.pageSummariesForSync, {
         cursor,
-        numItems: PAGE_SIZE,
+        numItems: SYNC_PAGE_SIZE,
         syncedAt,
       });
       if (page.docs.length > 0) {
@@ -259,10 +256,30 @@ export const syncCatalog = internalAction({
       pagesDone++;
       cursor = page.continueCursor;
       if (page.isDone) {
+        if (failed > 0) {
+          // Partial import — sweeping now would delete the failed (but live)
+          // docs, which still carry the previous run's stamp. Skip it.
+          console.error(
+            `typesense syncCatalog: ${failed} of ${imported + failed} docs failed to import; ` +
+              `sweep skipped so failed docs aren't dropped from search. ` +
+              `Sample errors: ${JSON.stringify(sampleErrors)}`,
+          );
+          return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
+        }
         // Sweep: everything not touched this run left the catalog — remove it.
         const swept = await deleteByFilter(`syncedAt:<${syncedAt}`);
-        return { done: true, imported, failed, swept, pagesDone, sampleErrors };
+        return { done: true as const, imported, failed, swept, sweepSkipped: false, pagesDone, sampleErrors };
       }
+    }
+
+    if (pagesDone >= SYNC_MAX_PAGES) {
+      // Backstop against a non-draining cursor. No sweep (the walk never
+      // completed, so unvisited docs still carry old stamps) — just stop loudly.
+      console.error(
+        `typesense syncCatalog: hit continuation cap (${pagesDone} pages, ~${pagesDone * SYNC_PAGE_SIZE} rows) ` +
+          `without draining — cursor bug or catalog exceeds CATALOG_MAX_ROWS. Sweep skipped.`,
+      );
+      return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
     }
 
     // More to go — continue in a fresh action so we never hit the time limit.
@@ -272,7 +289,8 @@ export const syncCatalog = internalAction({
       imported,
       failed,
       pagesDone,
+      sampleErrors,
     });
-    return { done: false, scheduledMore: true, imported, failed, pagesDone, sampleErrors };
+    return { done: false as const, scheduledMore: true as const, imported, failed, pagesDone, sampleErrors };
   },
 });

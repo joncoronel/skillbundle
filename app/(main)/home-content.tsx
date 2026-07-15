@@ -1,11 +1,8 @@
 "use client";
 
 import type { FunctionReturnType } from "convex/server";
-import {
-  SkillExplorer,
-  SkillExplorerView,
-  ENTRY_STATE_DEFAULTS,
-} from "@/components/skill-explorer";
+import { SkillExplorer, SkillExplorerView } from "@/components/skill-explorer";
+import { ExplorerStaticProvider } from "@/components/explorer-state";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import type { api } from "@/convex/_generated/api";
 
@@ -41,10 +38,11 @@ export function HomeContent({
 /**
  * Static-shell stand-in for <HomeContent>. HomeContent's SkillExplorer reads
  * search params (nuqs/useSearchParams), which suspends during prerendering —
- * this fallback renders the identical default no-params entry state from
- * ENTRY_STATE_DEFAULTS (real leaderboard data, noop setters) so the prerendered
- * HTML is the full page. After hydration React swaps in the live tree —
- * identical when no params are set, so the common load has no visible flash.
+ * this fallback renders the identical view under ExplorerStaticProvider (the
+ * no-params entry state, derived mechanically from the URL parsers, with noop
+ * setters) so the prerendered HTML is the full page. After hydration React
+ * swaps in the live tree — identical when no params are set, so the common
+ * load has no visible flash.
  *
  * The <main> wrapper mirrors HomeContent above — keep them in sync.
  */
@@ -55,13 +53,14 @@ export function HomeFallback({
 }: HomeContentProps) {
   return (
     <main className="mx-auto max-w-6xl px-4">
-      <SkillExplorerView
-        {...ENTRY_STATE_DEFAULTS}
-        canAutoDetect
-        initialPopularSkills={initialPopularSkills}
-        initialTrending={initialTrending}
-        initialHot={initialHot}
-      />
+      <ExplorerStaticProvider>
+        <SkillExplorerView
+          canAutoDetect
+          initialPopularSkills={initialPopularSkills}
+          initialTrending={initialTrending}
+          initialHot={initialHot}
+        />
+      </ExplorerStaticProvider>
     </main>
   );
 }

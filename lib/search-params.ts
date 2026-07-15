@@ -1,3 +1,4 @@
+import { startTransition } from "react";
 import {
   createParser,
   parseAsArrayOf,
@@ -5,6 +6,8 @@ import {
   parseAsInteger,
   parseAsString,
   parseAsStringLiteral,
+  type inferParserType,
+  type UrlKeys,
 } from "nuqs";
 import {
   parseSkillsParam,
@@ -65,6 +68,58 @@ export const publisherParser = parseAsArrayOf(parseAsString)
 export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
 // true = hide skills whose SKILL.md fetch failed (install command may break).
 export const brokenFilterParser = parseAsBoolean.withDefault(false);
+
+// The home page's full URL-state surface as ONE useQueryStates map. Writes
+// that trigger list re-renders go through startTransition (non-urgent) so the
+// controls stay responsive; textQuery/repoUrl stay urgent — they drive
+// controlled inputs — and view (the leaderboard sheet) is a plain open/close.
+export const homeParamParsers = {
+  mode: modeParser.withOptions({ startTransition }),
+  textQuery: searchQueryParser,
+  repoUrl: repoUrlParser,
+  sortParam: catalogSortParser.withOptions({ startTransition }),
+  official: officialFilterParser.withOptions({ startTransition }),
+  publisher: publisherParser.withOptions({
+    startTransition,
+    clearOnDefault: true,
+  }),
+  audit: auditFilterParser.withOptions({ startTransition }),
+  minInstalls: minInstallsParser.withOptions({ startTransition }),
+  searchDescriptions: searchDescriptionsParser.withOptions({ startTransition }),
+  broken: brokenFilterParser.withOptions({ startTransition }),
+  view: leaderboardViewParser,
+} as const;
+
+// Short URL keys, so state names can be readable while URLs stay terse.
+export const homeParamUrlKeys = {
+  mode: "mode",
+  textQuery: "q",
+  repoUrl: "repo",
+  sortParam: "sort",
+  official: "official",
+  publisher: "pub",
+  audit: "audit",
+  minInstalls: "min",
+  searchDescriptions: "desc",
+  broken: "broken",
+  view: "view",
+} as const satisfies UrlKeys<typeof homeParamParsers>;
+
+export type HomeParams = inferParserType<typeof homeParamParsers>;
+
+// The no-params entry state, derived MECHANICALLY from the parsers (a parser
+// without .withDefault() defaults to null) — the static home shell renders
+// from this, and it can't drift from what useQueryStates resolves.
+// `defaultValue` is what .withDefault() sets but isn't part of nuqs's public
+// type surface (hence the cast) — if a nuqs major bump renames it, every
+// default here silently becomes null and the static shell renders the wrong
+// entry state, so re-verify this read on nuqs upgrades.
+export const HOME_PARAM_DEFAULTS: HomeParams = Object.fromEntries(
+  Object.entries(homeParamParsers).map(([key, parser]) => [
+    key,
+    (parser as { defaultValue?: unknown }).defaultValue ?? null,
+  ]),
+) as HomeParams;
 
 // -- Explore page (/explore) parsers --
 

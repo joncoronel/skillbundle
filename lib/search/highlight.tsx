@@ -3,14 +3,23 @@ import * as React from "react";
 // Minimal HTML-entity decode for the text between/around Typesense's <mark>
 // tags. Typesense escapes these five in field values; we render the parts as
 // React text (never innerHTML), so we decode them back to their characters.
+// One pass over the string (this runs per result row per keystroke).
+const ENTITY_RE = /&(?:amp|lt|gt|#39|quot);/g;
+const ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&#39;": "'",
+  "&quot;": '"',
+};
 function decodeEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"');
+  return s.replace(ENTITY_RE, (entity) => ENTITIES[entity]);
 }
+
+// Hoisted — see renderHighlight below. (`split` never uses lastIndex, and
+// `replace` with /g resets it, so sharing these across calls is safe.)
+const BRIDGE_SEPARATORS_RE = /<\/mark>([-_./]+)<mark>/g;
+const MARK_TAG_RE = /<\/?mark>/;
 
 /**
  * Render Typesense's highlight `value` — the field text with matched tokens
@@ -28,11 +37,11 @@ export function renderHighlight(value: string): React.ReactNode {
   // not the `-`/`_`/`.`/`/` between them, so "vercel-react-best" comes back as
   // three marks with bare hyphens between. Absorb those separators into a single
   // run so a contiguous match highlights as one span, not blue-white-blue.
-  const bridged = value.replace(/<\/mark>([-_./]+)<mark>/g, "$1");
+  const bridged = value.replace(BRIDGE_SEPARATORS_RE, "$1");
 
   // Typesense injects only balanced, non-nested <mark>/</mark>. Splitting on
   // both tags yields alternating segments: even index = unmarked, odd = marked.
-  const segments = bridged.split(/<\/?mark>/);
+  const segments = bridged.split(MARK_TAG_RE);
   return segments.map((segment, i) => {
     const text = decodeEntities(segment);
     if (!text) return null;

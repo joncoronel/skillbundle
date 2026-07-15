@@ -229,13 +229,14 @@ export function RepoAnalysisResults({
 
   // Narrow + reorder client-side: the analysis already returned everything,
   // so these are instant. "Best match" preserves the server's composite
-  // ranking; "Most installed" reorders by each group's best variant.
-  const officialGroups = recs.filter(groupIsOfficial);
-  let shownGroups = officialOnly ? officialGroups : recs;
+  // ranking; "Most installed" reorders by each group's best variant
+  // (decorate-sort so groupInstalls runs once per group, not per comparison).
+  let shownGroups = officialOnly ? recs.filter(groupIsOfficial) : recs;
   if (resultSort === "installs") {
-    shownGroups = [...shownGroups].sort(
-      (a, b) => groupInstalls(b) - groupInstalls(a),
-    );
+    shownGroups = shownGroups
+      .map((group) => [groupInstalls(group), group] as const)
+      .sort((a, b) => b[0] - a[0])
+      .map(([, group]) => group);
   }
 
   return (

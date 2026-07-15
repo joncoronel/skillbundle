@@ -11,26 +11,45 @@
  * here so the rest of the app stays engine-agnostic.
  */
 
+import type { TypesenseSkillDoc } from "@/convex/lib/typesense";
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
 const HOST = process.env.NEXT_PUBLIC_TYPESENSE_HOST;
 const SEARCH_KEY = process.env.NEXT_PUBLIC_TYPESENSE_SEARCH_KEY;
-const COLLECTION = process.env.NEXT_PUBLIC_TYPESENSE_COLLECTION ?? "skills";
+// The "skills" default only applies in production builds. Dev must set
+// NEXT_PUBLIC_TYPESENSE_COLLECTION explicitly (e.g. "skills_dev") — a silent
+// fallback here would point a misconfigured dev browser at the prod index.
+// Vercel PREVIEW builds also run NODE_ENV=production and thus inherit the
+// prod default — deliberate: previews should search the real (public,
+// read-only) catalog rather than an empty index. Only local dev, where
+// writes to a dev collection happen, needs the isolation.
+const COLLECTION =
+  process.env.NEXT_PUBLIC_TYPESENSE_COLLECTION ??
+  (process.env.NODE_ENV === "production" ? "skills" : undefined);
 
-export function isTypesenseConfigured(): boolean {
-  return Boolean(HOST && SEARCH_KEY);
+function requireConfig(): { host: string; searchKey: string; collection: string } {
+  if (!HOST || !SEARCH_KEY || !COLLECTION) {
+    throw new Error(
+      "Typesense is not configured (NEXT_PUBLIC_TYPESENSE_HOST / _SEARCH_KEY " +
+        "/ _COLLECTION — the collection default applies only in production).",
+    );
+  }
+  return { host: HOST, searchKey: SEARCH_KEY, collection: COLLECTION };
 }
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** A search hit document. Mirrors the fields synced from `skillSummaries`. */
-export interface SkillHit {
-  id: string;
-  name: string;
+/**
+ * A search hit: the synced document (type derived from the sync pipeline's own
+ * validator, so this can't drift from what's actually indexed) minus the
+ * mark-and-sweep bookkeeping stamp, plus the search-time highlight.
+ */
+export interface SkillHit extends Omit<TypesenseSkillDoc, "syncedAt"> {
   /**
    * Typesense's highlight of `name`: the field value with matched tokens wrapped
    * in `<mark>…</mark>`. Present only on query searches (not browse). It's
@@ -39,18 +58,6 @@ export interface SkillHit {
    * `renderHighlight` (never innerHTML). Undefined = show the plain name.
    */
   nameHighlight?: string;
-  description?: string;
-  source: string;
-  skillId: string;
-  installs: number;
-  installRank?: number;
-  curatedOwner?: string;
-  isOfficial: boolean;
-  isDuplicate: boolean;
-  hasContentFetchError: boolean;
-  worstAuditStatus?: string;
-  worstAuditRiskLevel?: string;
-  copyCount?: number;
 }
 
 export interface FacetCount {
@@ -66,8 +73,13 @@ export interface SkillSearchResult {
   facets: Record<string, FacetCount[]>;
 }
 
-/** Catalog sorts. All map to per-skill fields so they compose with any query. */
-export type SkillSort = "relevance" | "installs" | "recent" | "rising";
+/**
+ * Catalog sorts. All map to per-skill fields so they compose with any query.
+ * "recent" (contentUpdatedAt) and "rising" (momentum7d) join once the sync
+ * populates those fields — adding them earlier would sort on data no document
+ * has yet.
+ */
+export type SkillSort = "relevance" | "installs";
 
 export interface SkillFilters {
   /** Only curated/official skills. */
@@ -106,6 +118,9 @@ export interface SkillSearchArgs {
   perPage?: number;
   /** Request facet counts for the filter fields (for sidebar counts). */
   facets?: boolean;
+  /** Cancels a stale in-flight request (React Query passes its queryFn signal
+   *  through here, so superseded keystrokes abort instead of racing). */
+  signal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,10 +137,11 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   if (filters.hideForks) clauses.push("isDuplicate:false");
   if (filters.excludeBroken) clauses.push("hasContentFetchError:false");
   if (filters.minInstalls !== undefined) clauses.push(`installs:>=${filters.minInstalls}`);
-  if (filters.source) clauses.push(`source:=${filters.source}`);
+  // Backtick-quote string values (sources/owners are simple slugs, but this is
+  // robust to any that aren't — and keeps the two clauses' escaping consistent).
+  if (filters.source) clauses.push(`source:=\`${filters.source}\``);
   if (filters.owners && filters.owners.length > 0) {
-    // Any-of: `owner:=[`a`,`b`]`. Backtick-quote each value (owner slugs are
-    // simple, but this is robust to any that aren't).
+    // Any-of: `owner:=[`a`,`b`]`.
     const list = filters.owners.map((o) => `\`${o}\``).join(",");
     clauses.push(`owner:=[${list}]`);
   }
@@ -152,10 +168,6 @@ function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string | u
   switch (sort) {
     case "installs":
       return "installs:desc";
-    case "recent":
-      return "contentUpdatedAt:desc";
-    case "rising":
-      return "momentum7d:desc";
     case "relevance":
     case undefined:
       return hasQuery ? RELEVANCE_SORT_BY : "installs:desc";
@@ -202,9 +214,7 @@ function readNameHighlight(h: {
  * configured or the request fails — callers (a React Query queryFn) surface it.
  */
 export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchResult> {
-  if (!HOST || !SEARCH_KEY) {
-    throw new Error("Typesense is not configured (NEXT_PUBLIC_TYPESENSE_* missing).");
-  }
+  const { host, searchKey, collection } = requireConfig();
 
   const query = args.query?.trim() ?? "";
   const hasQuery = query.length > 0;
@@ -237,10 +247,13 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
   if (args.facets) params.set("facet_by", FACET_FIELDS.join(","));
 
   const url =
-    `https://${HOST}/collections/${encodeURIComponent(COLLECTION)}` +
+    `https://${host}/collections/${encodeURIComponent(collection)}` +
     `/documents/search?${params.toString()}`;
 
-  const res = await fetch(url, { headers: { "X-TYPESENSE-API-KEY": SEARCH_KEY } });
+  const res = await fetch(url, {
+    headers: { "X-TYPESENSE-API-KEY": searchKey },
+    signal: args.signal,
+  });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`Typesense search ${res.status}: ${body.slice(0, 200)}`);
@@ -273,9 +286,7 @@ export async function listOwners(opts: {
   limit?: number;
   signal?: AbortSignal;
 } = {}): Promise<OwnerCount[]> {
-  if (!HOST || !SEARCH_KEY) {
-    throw new Error("Typesense is not configured (NEXT_PUBLIC_TYPESENSE_* missing).");
-  }
+  const { host, searchKey, collection } = requireConfig();
   const query = opts.query?.trim();
   const params = new URLSearchParams();
   params.set("q", "*");
@@ -288,10 +299,10 @@ export async function listOwners(opts: {
   if (query) params.set("facet_query", `owner:${query}`);
 
   const url =
-    `https://${HOST}/collections/${encodeURIComponent(COLLECTION)}` +
+    `https://${host}/collections/${encodeURIComponent(collection)}` +
     `/documents/search?${params.toString()}`;
   const res = await fetch(url, {
-    headers: { "X-TYPESENSE-API-KEY": SEARCH_KEY },
+    headers: { "X-TYPESENSE-API-KEY": searchKey },
     signal: opts.signal,
   });
   if (!res.ok) {
