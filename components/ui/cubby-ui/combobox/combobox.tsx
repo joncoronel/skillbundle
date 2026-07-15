@@ -240,7 +240,10 @@ function ComboboxPositioner({
     <BaseCombobox.Positioner
       data-slot="combobox-positioner"
       sideOffset={6}
-      className={cn("", className)}
+      // z-50 (matching Select's positioner) keeps the portaled popup above
+      // overlay surfaces it's opened from — e.g. the mobile Drawer, whose
+      // viewport is z-50. Without it the popup renders behind the drawer.
+      className={cn("z-50", className)}
       {...props}
     />
   );

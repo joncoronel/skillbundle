@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/cubby-ui/dropdown-menu";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Switch } from "@/components/ui/cubby-ui/switch";
+import { LabeledSection } from "@/components/labeled-section";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 import { formatInstalls, cn } from "@/lib/utils";
 import {
@@ -343,32 +344,47 @@ export function CatalogControls({
   // ---- Sheet layout: full-width, stacked (mobile drawer) --------------------
   // No Clear here — it lives in the sheet's header (skill-explorer), so its
   // appearance never shifts this content.
+  //
+  // Two groups, so the header's Clear has a legible scope (desktop gets this for
+  // free — filters sit in the chin next to Clear, while Sort + Search
+  // descriptions live in the input row). Sort (reorders) and Search descriptions
+  // (widens matching) don't narrow results, so Clear leaves them alone; grouping
+  // them apart from the "Filters" section is what makes that non-obvious rule
+  // obvious. The filters below — Official included — all narrow, so Clear resets
+  // them together.
   if (layout === "sheet") {
     return (
-      <div className="flex flex-col gap-4">
-        <Field label="Sort by">{sortSelect("w-full")}</Field>
-        <Field label="Publisher">{publisherSelect("w-full")}</Field>
-        <Field label="Security">{auditSelect("w-full")}</Field>
-        <Field label="Minimum installs">{minInstallsSelect("w-full")}</Field>
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-4">
+          <Field label="Sort by">{sortSelect("w-full")}</Field>
+          <SwitchRow
+            label="Search descriptions"
+            hint="Match on description text, not just names"
+            checked={searchDescriptions}
+            onCheckedChange={onSearchDescriptionsChange}
+          />
+        </div>
 
-        <SwitchRow
-          label="Official skills only"
-          hint="Only skills from verified publishers"
-          checked={official}
-          onCheckedChange={onOfficialChange}
-        />
-        <SwitchRow
-          label="Search descriptions"
-          hint="Match on description text, not just names"
-          checked={searchDescriptions}
-          onCheckedChange={onSearchDescriptionsChange}
-        />
-        <SwitchRow
-          label="Hide broken installs"
-          hint="Skip skills whose install command may fail"
-          checked={broken}
-          onCheckedChange={onBrokenChange}
-        />
+        <LabeledSection label="Filters">
+          <div className="flex flex-col gap-4">
+            <Field label="Publisher">{publisherSelect("w-full")}</Field>
+            <Field label="Security">{auditSelect("w-full")}</Field>
+            <Field label="Minimum installs">{minInstallsSelect("w-full")}</Field>
+
+            <SwitchRow
+              label="Official skills only"
+              hint="Only skills from verified publishers"
+              checked={official}
+              onCheckedChange={onOfficialChange}
+            />
+            <SwitchRow
+              label="Hide broken installs"
+              hint="Skip skills whose install command may fail"
+              checked={broken}
+              onCheckedChange={onBrokenChange}
+            />
+          </div>
+        </LabeledSection>
       </div>
     );
   }

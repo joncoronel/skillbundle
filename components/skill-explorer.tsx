@@ -65,13 +65,14 @@ import {
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
 import {
-  Sheet,
-  SheetTrigger,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetBody,
-} from "@/components/ui/cubby-ui/sheet";
+  Drawer,
+  DrawerTrigger,
+  DrawerContent,
+  DrawerHandle,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerBody,
+} from "@/components/ui/cubby-ui/drawer/drawer";
 import { CatalogControls, SortSelect } from "@/components/catalog-controls";
 import { ActiveCatalogResults } from "@/components/catalog-results";
 import { LeaderboardSheet } from "@/components/leaderboard-sheet";
@@ -812,8 +813,8 @@ export function SkillExplorerView({
                       homes here are the sheet (sort/filters/switches) and a
                       chin-level Match my repo. */}
                   <div className="flex items-center gap-0.5 sm:hidden">
-                    <Sheet>
-                      <SheetTrigger
+                    <Drawer direction="bottom">
+                      <DrawerTrigger
                         render={
                           <Button
                             variant="ghost"
@@ -837,33 +838,37 @@ export function SkillExplorerView({
                         }
                       >
                         Sort & filter
-                      </SheetTrigger>
-                      <SheetContent side="bottom">
-                        {/* Clear lives in the header (stable slot) so its
-                            appearance never shifts the sheet's content. */}
-                        <SheetHeader className="flex-row items-center justify-between">
-                          <SheetTitle>Sort &amp; filter</SheetTitle>
-                          {filterCount > 0 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-muted-foreground"
-                              onClick={handleClearSheetFilters}
-                              leftSection={
-                                <HugeiconsIcon
-                                  icon={Cancel01Icon}
-                                  strokeWidth={2}
-                                  className="size-3.5"
-                                />
-                              }
-                            >
-                              Clear ({filterCount})
-                            </Button>
-                          )}
-                        </SheetHeader>
-                        <SheetBody>{controls(facets, "sheet")}</SheetBody>
-                      </SheetContent>
-                    </Sheet>
+                      </DrawerTrigger>
+                      <DrawerContent>
+                        <DrawerHandle />
+                        <DrawerHeader>
+                          {/* Fixed-height title row: min-h-9 reserves the Clear
+                              button's height (size="sm" = h-9 on mobile) so it can
+                              appear/disappear without shifting the sheet's content. */}
+                          <div className="flex min-h-9 items-center justify-between gap-2">
+                            <DrawerTitle>Sort &amp; filter</DrawerTitle>
+                            {filterCount > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="-me-2 text-muted-foreground"
+                                onClick={handleClearSheetFilters}
+                                leftSection={
+                                  <HugeiconsIcon
+                                    icon={Cancel01Icon}
+                                    strokeWidth={2}
+                                    className="size-3.5"
+                                  />
+                                }
+                              >
+                                Clear ({filterCount})
+                              </Button>
+                            )}
+                          </div>
+                        </DrawerHeader>
+                        <DrawerBody>{controls(facets, "sheet")}</DrawerBody>
+                      </DrawerContent>
+                    </Drawer>
                   </div>
                   {/* Right pair: leaderboards + repo matching — the chin's
                       "go places" corner on every breakpoint. Match my repo is
