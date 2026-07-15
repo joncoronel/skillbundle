@@ -8,11 +8,13 @@ delete them when shipped. Newest thinking near the top.
 
 ### Match repo: deferred features (recents, match counts, GitHub OAuth)
 
-Shipped (Jul 2026): repo mode morphs the composer card in place — control row
-collapses via animated height, Analyze inline in the input row (URL-bar
-pattern), chin persists with the mode switch in its right corner ("Match my
-repo →" enters, "← Search skills" exits), repo-shaped query carry-over,
-Esc-to-exit (Paper artboard "H — Match repo morph", STATE 2B + follow-ups).
+Shipped (Jul 2026): repo mode morphs the composer card in place — the composer
+is a single input row + chin (no separate control row anymore; filter toggles
+sit inside the input, sort lives in the chin), Analyze inline in the input row
+(URL-bar pattern), chin persists with the mode switch in its right corner
+("Match repo →" enters, "← Search skills" exits), repo-shaped query
+carry-over, Esc-to-exit, and repo-result narrowing (Official toggle +
+Best match / Most installed).
 
 Still to build, independent of container:
 
@@ -39,22 +41,6 @@ per recommendation group (lexical package overlaps) but nothing renders it —
 per-row "matches react" notes were tried and cut as noise. Its natural home
 is the skill detail sheet, where a clicked row has room to explain "why this
 matched your repo" properly.
-
-### Search & discovery overhaul
-
-- **Move search to a faceted engine (Typesense / Meilisearch / Algolia).** The current
-  Convex full-text search is single-field + prefix, no typo tolerance. A faceted engine
-  would give typo tolerance, multi-field ranking, and — the bigger win — one query layer
-  that powers **both** search and browse.
-- **Add filters + sorting to results** (e.g. technology, curated/official, install count).
-- **Decide: do filters/sorting also apply to the browse views (Popular / Trending / Hot),
-  not just search?** Leaning yes — filters that vanish when you stop searching is a
-  confusing UX, and "filter + sort the whole catalog" is exactly what a faceted engine is
-  for (and what Convex is weakest at). This decision drives the infra decision below.
-- **Open cost/infra question:** a faceted engine means a Convex→engine **sync pipeline**
-  (a second store to keep current as the catalog churns daily) plus **hosting cost**. We're
-  on Vercel Hobby + Convex Pro and deliberately avoid extra paid services — weigh that
-  against pushing Convex's own search further if the only real pain is typo tolerance.
 
 ### Home-list chips
 
