@@ -168,7 +168,7 @@ const RELEVANCE_SORT_BY =
  * a trust tie-breaker when a query is present, but falls back to installs when
  * browsing (relevance is meaningless with no query / a match-all `*`).
  */
-function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string | undefined {
+function buildSortBy(sort: SkillSort | undefined, hasQuery: boolean): string {
   switch (sort) {
     case "installs":
       return "installs:desc";
@@ -271,8 +271,8 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
   const filterBy = buildFilterBy(args.filters);
   if (filterBy) params.set("filter_by", filterBy);
 
-  const sortBy = buildSortBy(args.sort, hasQuery);
-  if (sortBy) params.set("sort_by", sortBy);
+  // Always present (every catalog sort maps to a sort_by).
+  params.set("sort_by", buildSortBy(args.sort, hasQuery));
 
   if (args.facets) params.set("facet_by", FACET_FIELDS.join(","));
 

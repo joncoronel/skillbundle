@@ -269,14 +269,11 @@ export default defineSchema({
     .index("by_curatedOwner", ["curatedOwner"])
     // Audit-fetch queue. Queries with `q.eq("needsAudit", true)` walk only
     // the skills that need their audit refreshed. Drained by fetchAuditBatch.
-    .index("by_needsAudit", ["needsAudit"])
-    // Full-text search index for the home page text search. Lives on
-    // skillSummaries (~200 bytes/row) instead of skills (~25 KB/row) so each
-    // page of search results is ~5 KB on the wire instead of ~625 KB.
-    .searchIndex("search_name", {
-      searchField: "name",
-      filterFields: ["isDelisted", "curatedOwner"],
-    }),
+    .index("by_needsAudit", ["needsAudit"]),
+    // (Removed: the `search_name` full-text index. It backed the old Convex
+    // `searchSkills` home query, now replaced by browser-direct Typesense —
+    // see docs/search-overhaul.md. With no consumer it was pure write
+    // amplification on this ~75k-row table, which the sync rewrites daily.)
 
   // One row per audited skill. Lives in its own table because audits change
   // independently of skill content (re-run periodically by skills.sh's audit

@@ -125,10 +125,18 @@ export const resetCollection = internalAction({
 
 /**
  * Read one page of non-delisted summaries and shape them into Typesense
- * documents. Walks the `by_isDelisted_installs` index (order irrelevant for a
- * full backfill). Mapping happens here so the action just forwards docs to the
+ * documents. Mapping happens here so the action just forwards docs to the
  * import endpoint. momentum and contentUpdatedAt are deferred (later pass), so
  * they're omitted — the schema marks them optional.
+ *
+ * Walks `by_isDelisted` (NOT `by_isDelisted_installs`): the mark-and-sweep runs
+ * across many rescheduled transactions spanning minutes, and `installs` is
+ * mutated by the sync/reconcile/refresh paths. Convex cursor pagination is only
+ * stable when the ordering key is immutable for the walk — an unvisited row
+ * whose `installs` fell below the cursor would be skipped, left unstamped, and
+ * then SWEPT from the index while still live. Within the `isDelisted=false`
+ * partition `by_isDelisted` orders by `_creationTime` (immutable), so the walk
+ * can't reorder under itself. Order is irrelevant to a full backfill anyway.
  */
 export const pageSummariesForSync = internalQuery({
   args: {
@@ -144,7 +152,7 @@ export const pageSummariesForSync = internalQuery({
   handler: async (ctx, { cursor, numItems, syncedAt }) => {
     const page = await ctx.db
       .query("skillSummaries")
-      .withIndex("by_isDelisted_installs", (q) => q.eq("isDelisted", false))
+      .withIndex("by_isDelisted", (q) => q.eq("isDelisted", false))
       .paginate({ cursor, numItems });
 
     const docs = page.page.map((s) => {
@@ -243,6 +251,13 @@ const SYNC_MAX_PAGES_PER_RUN = 20; // ~5k docs/invocation before rescheduling
 // it a multiple of that (240 % 20 === 0) or the backstop overshoots by up to
 // one chunk — harmless for a backstop, but why be sloppy.
 const SYNC_MAX_PAGES = maxIterForRows(CATALOG_MAX_ROWS, SYNC_PAGE_SIZE);
+// The sweep protects docs that failed to import this run (they keep last run's
+// older stamp) by excluding their ids from the delete filter — so one poison
+// doc no longer blocks the sweep forever. Above this many failures the run is
+// treated as systemic (Typesense down / schema mismatch): skip the sweep
+// entirely rather than build a giant exclusion filter, and let the next clean
+// run clear the backlog.
+const SWEEP_EXCLUDE_CAP = 100;
 
 /**
  * Full catalog sync into Typesense — the daily job (and the manual full
@@ -284,6 +299,10 @@ export const syncCatalog = internalAction({
     failed: v.optional(v.number()),
     pagesDone: v.optional(v.number()),
     sampleErrors: v.optional(v.array(v.string())),
+    // Ids of docs that failed to import so far this run — threaded forward so
+    // the terminal sweep can exclude them (they still carry last run's stamp).
+    // Capped at SWEEP_EXCLUDE_CAP; past that the run is treated as systemic.
+    failedIds: v.optional(v.array(v.string())),
   },
   returns: v.union(
     v.object({
@@ -351,60 +370,97 @@ export const syncCatalog = internalAction({
     let failed = args.failed ?? 0;
     let pagesDone = args.pagesDone ?? 0;
     const sampleErrors: string[] = args.sampleErrors ?? [];
+    const failedIds: string[] = args.failedIds ?? [];
 
-    for (let i = 0; i < SYNC_MAX_PAGES_PER_RUN; i++) {
-      const page = await ctx.runQuery(internal.typesense.pageSummariesForSync, {
-        cursor,
-        numItems: SYNC_PAGE_SIZE,
-        syncedAt,
-      });
-      if (page.docs.length > 0) {
-        const res = await importDocuments(page.docs);
-        imported += res.imported;
-        failed += res.failed;
-        for (const e of res.errors) if (sampleErrors.length < 5) sampleErrors.push(e);
-      }
-      pagesDone++;
-      cursor = page.continueCursor;
-      if (page.isDone) {
-        if (failed > 0) {
-          // Partial import — sweeping now would delete the failed (but live)
-          // docs, which still carry the previous run's stamp. Skip it.
-          console.error(
-            `typesense syncCatalog: ${failed} of ${imported + failed} docs failed to import; ` +
-              `sweep skipped so failed docs aren't dropped from search. ` +
-              `Sample errors: ${JSON.stringify(sampleErrors)}`,
-          );
-          await ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
-          return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
+    // From here we OWN the lock (fresh acquire, or verified on a continuation).
+    // Any throw below must release it — otherwise a transport blip (Typesense
+    // 5xx / network) strands the lock for the full TTL. A plain `finally` won't
+    // work: the reschedule path returns NORMALLY and must KEEP the lock for the
+    // next invocation. So the lock is released in exactly two places — a
+    // terminal outcome (done/cap), and the catch (throw) — never on reschedule.
+    const release = () =>
+      ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
+    try {
+      for (let i = 0; i < SYNC_MAX_PAGES_PER_RUN; i++) {
+        const page = await ctx.runQuery(internal.typesense.pageSummariesForSync, {
+          cursor,
+          numItems: SYNC_PAGE_SIZE,
+          syncedAt,
+        });
+        if (page.docs.length > 0) {
+          const res = await importDocuments(page.docs);
+          imported += res.imported;
+          failed += res.failed;
+          for (const e of res.errors) if (sampleErrors.length < 5) sampleErrors.push(e);
+          for (const id of res.failedIds)
+            if (failedIds.length < SWEEP_EXCLUDE_CAP) failedIds.push(id);
         }
-        // Sweep: everything not touched this run left the catalog — remove it.
-        const swept = await deleteByFilter(`syncedAt:<${syncedAt}`);
-        await ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
-        return { done: true as const, imported, failed, swept, sweepSkipped: false, pagesDone, sampleErrors };
+        pagesDone++;
+        cursor = page.continueCursor;
+        if (page.isDone) {
+          let swept = 0;
+          let sweepSkipped = false;
+          if (failed === 0) {
+            // Clean walk — sweep everything not touched this run (left the
+            // non-delisted set: delisted / renamed away).
+            swept = await deleteByFilter(`syncedAt:<${syncedAt}`);
+          } else if (failed <= SWEEP_EXCLUDE_CAP) {
+            // Some docs failed to import — they still carry last run's older
+            // stamp, so a bare `syncedAt:<X` sweep would delete them while
+            // live. Exclude their ids: genuinely-gone docs are still removed,
+            // but the failed-but-live ones survive. This is what stops a single
+            // persistently-failing doc from blocking the sweep forever (which
+            // would leak delisted rows into search unbounded).
+            const exclude = failedIds.map((id) => `\`${id}\``).join(",");
+            swept = await deleteByFilter(
+              `syncedAt:<${syncedAt} && id:!=[${exclude}]`,
+            );
+            console.error(
+              `typesense syncCatalog: ${failed} docs failed to import; swept ${swept} stale docs ` +
+                `excluding the ${failedIds.length} failed ids. Sample errors: ${JSON.stringify(sampleErrors)}`,
+            );
+          } else {
+            // Too many failures to enumerate safely — treat as systemic and
+            // skip the sweep; the next clean run clears the backlog.
+            sweepSkipped = true;
+            console.error(
+              `typesense syncCatalog: ${failed} docs failed (> ${SWEEP_EXCLUDE_CAP} cap) — ` +
+                `sweep skipped this run (systemic failure?). Sample errors: ${JSON.stringify(sampleErrors)}`,
+            );
+          }
+          await release();
+          return { done: true as const, imported, failed, swept, sweepSkipped, pagesDone, sampleErrors };
+        }
       }
-    }
 
-    if (pagesDone >= SYNC_MAX_PAGES) {
-      // Backstop against a non-draining cursor. No sweep (the walk never
-      // completed, so unvisited docs still carry old stamps) — just stop loudly.
-      console.error(
-        `typesense syncCatalog: hit continuation cap (${pagesDone} pages, ~${pagesDone * SYNC_PAGE_SIZE} rows) ` +
-          `without draining — cursor bug or catalog exceeds CATALOG_MAX_ROWS. Sweep skipped.`,
-      );
-      await ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
-      return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
-    }
+      if (pagesDone >= SYNC_MAX_PAGES) {
+        // Backstop against a non-draining cursor. No sweep (the walk never
+        // completed, so unvisited docs still carry old stamps) — just stop loudly.
+        console.error(
+          `typesense syncCatalog: hit continuation cap (${pagesDone} pages, ~${pagesDone * SYNC_PAGE_SIZE} rows) ` +
+            `without draining — cursor bug or catalog exceeds CATALOG_MAX_ROWS. Sweep skipped.`,
+        );
+        await release();
+        return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
+      }
 
-    // More to go — continue in a fresh action so we never hit the time limit.
-    await ctx.scheduler.runAfter(0, internal.typesense.syncCatalog, {
-      cursor,
-      syncedAt,
-      imported,
-      failed,
-      pagesDone,
-      sampleErrors,
-    });
-    return { done: false as const, scheduledMore: true as const, imported, failed, pagesDone, sampleErrors };
+      // More to go — continue in a fresh action so we never hit the time limit.
+      // Deliberately NO release here: the lock stays held across the whole run.
+      await ctx.scheduler.runAfter(0, internal.typesense.syncCatalog, {
+        cursor,
+        syncedAt,
+        imported,
+        failed,
+        pagesDone,
+        sampleErrors,
+        failedIds,
+      });
+      return { done: false as const, scheduledMore: true as const, imported, failed, pagesDone, sampleErrors };
+    } catch (e) {
+      // Release the lock on any throw so it isn't stranded for the TTL. (The
+      // release is a no-op if a newer run already stole the lock.)
+      await release();
+      throw e;
+    }
   },
 });

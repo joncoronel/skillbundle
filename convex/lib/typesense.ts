@@ -226,30 +226,57 @@ export const typesenseSkillDocValidator = v.object({
 export type TypesenseSkillDoc = Infer<typeof typesenseSkillDocValidator>;
 
 /**
- * Drift tripwire for the one remaining manual mirror: the collection schema
- * and the doc validator must list the same fields. The failure mode is SILENT
- * in production — Typesense stores unknown document fields unindexed, so a
- * field added to the validator but not the schema "works" (it's in the docs)
- * while every filter/sort on it quietly matches nothing. Called from
- * setupCollection and at each sync start, so drift is a loud dashboard error
- * the same day it ships. (`id` is Typesense's implicit document id — never a
- * schema field.)
+ * Drift tripwire for the one remaining manual mirror. It guarantees two things
+ * about the collection schema vs. the doc validator, and NOTHING beyond them —
+ * don't over-trust it:
+ *
+ *  1. **Same field set.** A field in one but not the other is drift. The
+ *     failure is SILENT in prod — Typesense stores unknown document fields
+ *     unindexed, so a validator field missing from the schema "works" (it's in
+ *     the docs) while every filter/sort on it quietly matches nothing.
+ *  2. **No schema-required field is validator-optional.** That asymmetry lets
+ *     the validator emit a doc omitting a field the schema requires, which
+ *     Typesense rejects at import — the whole page fails. (The reverse —
+ *     schema-optional, validator-required, e.g. `owner` — is SAFE: the
+ *     validator forces the field present, so no doc ever omits it. Not
+ *     flagged.) This does NOT compare field TYPES.
+ *
+ * Called from setupCollection and at each sync start, so drift is a loud
+ * dashboard error the same day it ships. (`id` is Typesense's implicit document
+ * id — never a schema field.)
  *
  * When the Tier 2 auto-embedding lands (docs/search-overhaul.md: a schema
  * `embedding` field with an `embed` config that Typesense computes — documents
- * never carry it), it will trip the schema-side check by design. Add a small
+ * never carry it), it will trip the field-set check by design. Add a small
  * schema-only allowlist here then (e.g. `SCHEMA_ONLY_FIELDS`), not before.
  */
 export function assertSchemaMirror(): void {
-  const schemaFields = new Set(
-    skillsCollectionSchema("_check").fields.map((f) => f.name),
+  const schema = skillsCollectionSchema("_check").fields;
+  const schemaFields = new Set(schema.map((f) => f.name));
+  const schemaRequired = new Set(
+    schema.filter((f) => f.optional !== true).map((f) => f.name),
   );
-  const docFields = Object.keys(typesenseSkillDocValidator.fields).filter(
-    (k) => k !== "id",
-  );
+  const validatorFields = typesenseSkillDocValidator.fields as Record<
+    string,
+    { isOptional?: "optional" | "required" }
+  >;
+  const docFields = Object.keys(validatorFields).filter((k) => k !== "id");
+
   const missingInSchema = docFields.filter((f) => !schemaFields.has(f));
   const missingInDoc = [...schemaFields].filter((f) => !docFields.includes(f));
-  if (missingInSchema.length > 0 || missingInDoc.length > 0) {
+  // Schema-required fields the validator marks optional → a doc could omit
+  // them → Typesense rejects the import page.
+  const optionalityDrift = docFields.filter(
+    (f) =>
+      schemaRequired.has(f) &&
+      validatorFields[f]?.isOptional === "optional",
+  );
+
+  if (
+    missingInSchema.length > 0 ||
+    missingInDoc.length > 0 ||
+    optionalityDrift.length > 0
+  ) {
     throw new Error(
       "Typesense schema/validator drift (convex/lib/typesense.ts): " +
         (missingInSchema.length > 0
@@ -258,6 +285,10 @@ export function assertSchemaMirror(): void {
           : "") +
         (missingInDoc.length > 0
           ? `schema fields missing from typesenseSkillDocValidator: ${missingInDoc.join(", ")}. `
+          : "") +
+        (optionalityDrift.length > 0
+          ? `schema-required but validator-optional: ${optionalityDrift.join(", ")} ` +
+            "(a doc omitting one fails the Typesense import). "
           : "") +
         "Update both together.",
     );
@@ -349,25 +380,31 @@ export async function dropCollection(): Promise<void> {
  */
 export async function importDocuments(
   docs: TypesenseSkillDoc[],
-): Promise<{ imported: number; failed: number; errors: string[] }> {
-  if (docs.length === 0) return { imported: 0, failed: 0, errors: [] };
+): Promise<{ imported: number; failed: number; errors: string[]; failedIds: string[] }> {
+  if (docs.length === 0) return { imported: 0, failed: 0, errors: [], failedIds: [] };
   const { collection } = getTypesenseConfig();
   const jsonl = docs.map((d) => JSON.stringify(d)).join("\n");
   const { text } = await tsRequest(
     `/collections/${encodeURIComponent(collection)}/documents/import`,
     { method: "POST", body: jsonl, contentType: "text/plain", query: "action=upsert" },
   );
+  // The /import response is JSONL with one result line PER INPUT DOC, in input
+  // order — so line i corresponds to docs[i]. That lets us recover the id of
+  // each failed doc, which the sweep needs to protect live-but-failing docs
+  // (they keep their old syncedAt stamp) from deletion.
   let failed = 0;
   const errors: string[] = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    const result = JSON.parse(line) as { success: boolean; error?: string };
+  const failedIds: string[] = [];
+  const lines = text.split("\n").filter((l) => l);
+  for (let i = 0; i < lines.length; i++) {
+    const result = JSON.parse(lines[i]) as { success: boolean; error?: string };
     if (!result.success) {
       failed++;
+      failedIds.push(docs[i].id);
       if (errors.length < 5 && result.error) errors.push(result.error);
     }
   }
-  return { imported: docs.length - failed, failed, errors };
+  return { imported: docs.length - failed, failed, errors, failedIds };
 }
 
 /**
