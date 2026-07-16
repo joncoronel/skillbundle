@@ -30,17 +30,14 @@ export function catalogSearchQueryKey(
   filters: SkillFilters,
   searchDescriptions: boolean,
 ) {
-  // Stable key for the filters object (fixed key order via explicit fields).
-  const filtersKey = `${filters.officialOnly ? 1 : 0}|${filters.audit ?? ""}|${
-    filters.hideForks ? 1 : 0
-  }|${filters.excludeBroken ? 1 : 0}|${filters.minInstalls ?? ""}|${
-    filters.source ?? ""
-  }|${(filters.owners ?? []).join(",")}`;
+  // The filters object goes in the key as-is: React Query hashes plain objects
+  // structurally (sorted keys, undefined dropped), so a new SkillFilters field
+  // is automatically part of the key — no hand-maintained encoding to forget.
   return [
     "typesense-catalog",
     query,
     sort,
-    filtersKey,
+    filters,
     searchDescriptions,
   ] as const;
 }
@@ -182,7 +179,13 @@ export function useCatalogSearchStatus({
   // when it lands, so it always sees the final cache state.
   const subscribe = useCallback(
     (onStoreChange: () => void) =>
-      cache.subscribe(() => queueMicrotask(onStoreChange)),
+      cache.subscribe((event) => {
+        // Only catalog-search entries can change our snapshots — skip the
+        // app-wide churn (every Convex query event otherwise lands here and
+        // forces a snapshot re-read).
+        if (event.query.queryKey[0] !== "typesense-catalog") return;
+        queueMicrotask(onStoreChange);
+      }),
     [cache],
   );
 

@@ -3,6 +3,7 @@
 import { Activity, useMemo } from "react";
 import type { FunctionReturnType } from "convex/server";
 import {
+  CatalogFacetsProvider,
   ExplorerStateProvider,
   useExplorerState,
 } from "@/components/explorer-state";
@@ -18,6 +19,7 @@ import { LeaderboardSheet } from "@/components/leaderboard-sheet";
 import { RepoAnalysisResults } from "@/components/repo-url-input";
 import {
   SkillDetailSheet,
+  SkillDetailHandleProvider,
   createSkillDetailHandle,
 } from "@/components/skill-detail-sheet";
 import type { api } from "@/convex/_generated/api";
@@ -84,6 +86,7 @@ export function SkillExplorerView({
     hasQuery,
     isRepo,
     anyFilter,
+    hasNarrowing,
     searchActive,
     effectiveSort,
     filters,
@@ -92,7 +95,7 @@ export function SkillExplorerView({
     setParams,
   } = useExplorerState();
 
-  // Trending/Hot tab rows, mapped once from the server-cached snapshots (the
+  // Trending/Hot sheet rows, mapped once from the server-cached snapshots (the
   // leaderboard crons keep those fresh; there's no client subscription).
   const trendingSkills = useMemo(
     () => (initialTrending?.page ?? []).map(rowToSkill),
@@ -139,12 +142,12 @@ export function SkillExplorerView({
   const showInputSpinner = hasQuery && pending;
 
   return (
-    <>
-      {/* Framed discovery column. On desktop faint vertical rails flank the
-          hero + search + list, and the search's full-bleed border-b meets them
-          at a small crosshair — a restrained technical frame that gives the page
-          structure. Mobile drops the rails; only the horizontal separator under
-          the search remains. */}
+    // Providers for what the layout below shares: rows open the skill detail
+    // sheet, filter controls read the current facet counts — neither is
+    // couriered through the components in between.
+    <SkillDetailHandleProvider handle={skillDetailHandle}>
+    <CatalogFacetsProvider facets={facets}>
+      {/* Discovery column: hero + search composer + list region. */}
       <div className="relative pb-20 sm:min-h-[calc(100dvh-3.5rem)] sm:px-8 lg:px-10">
         {/* Hero — constant, scrolls away (never collapses). */}
         <section className="pt-10 pb-6 sm:pt-12">
@@ -162,7 +165,6 @@ export function SkillExplorerView({
         <SkillComposer
           canAutoDetect={canAutoDetect}
           showInputSpinner={showInputSpinner}
-          facets={facets}
         />
 
         {isRepo ? (
@@ -173,7 +175,6 @@ export function SkillExplorerView({
             <RepoAnalysisResults
               repoUrl={repoUrl}
               canAutoDetect={canAutoDetect}
-              sheetHandle={skillDetailHandle}
               onTryExample={(url) => setParams({ repoUrl: url })}
             />
           </div>
@@ -197,10 +198,7 @@ export function SkillExplorerView({
                   The full catalog, sorted by all-time installs from{" "}
                   <SkillsShLink />
                 </CatalogNote>
-                <PopularList
-                  initialPage={initialPopularSkills}
-                  sheetHandle={skillDetailHandle}
-                />
+                <PopularList initialPage={initialPopularSkills} />
               </div>
             </Activity>
             {resultsActive && (
@@ -210,8 +208,7 @@ export function SkillExplorerView({
                 sort={effectiveSort}
                 filters={filters}
                 searchDescriptions={searchDescriptions}
-                anyFilterActive={anyFilter}
-                sheetHandle={skillDetailHandle}
+                hasNarrowing={hasNarrowing}
               />
             )}
           </div>
@@ -226,9 +223,9 @@ export function SkillExplorerView({
         onViewChange={(v) => setParams({ view: v })}
         hotSkills={hotSkills}
         trendingSkills={trendingSkills}
-        sheetHandle={skillDetailHandle}
       />
-    </>
+    </CatalogFacetsProvider>
+    </SkillDetailHandleProvider>
   );
 }
 

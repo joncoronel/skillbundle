@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import type { SkillFilters, SkillSort } from "@/lib/search/typesense";
 import { useCatalogSearch } from "@/hooks/use-catalog-search";
+import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import { SkillRowGrid } from "@/components/default-skills-list";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -23,8 +22,9 @@ interface ActiveCatalogResultsProps {
   filters: SkillFilters;
   /** Also match on description (default: names only). */
   searchDescriptions: boolean;
-  anyFilterActive: boolean;
-  sheetHandle: SkillDetailHandle;
+  /** An actual narrowing filter is set (not just an explicit sort) — gates
+   *  the "loosen a filter" hint so it never shows with zero filters. */
+  hasNarrowing: boolean;
 }
 
 /**
@@ -45,8 +45,7 @@ export function ActiveCatalogResults({
   sort,
   filters,
   searchDescriptions,
-  anyFilterActive,
-  sheetHandle,
+  hasNarrowing,
 }: ActiveCatalogResultsProps) {
   const {
     hits,
@@ -60,21 +59,11 @@ export function ActiveCatalogResults({
     isFetchingNextPage,
   } = useCatalogSearch({ query, sort, filters, searchDescriptions });
 
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: "400px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const sentinelRef = useInfiniteScrollSentinel({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
 
   if (error) {
     return (
@@ -117,7 +106,7 @@ export function ActiveCatalogResults({
               {query
                 ? `No skills found for “${query}”`
                 : "No skills match these filters."}
-              {anyFilterActive && query && (
+              {hasNarrowing && query && (
                 <span className="block mt-1 text-xs">
                   Try loosening a filter.
                 </span>
@@ -137,7 +126,7 @@ export function ActiveCatalogResults({
             </p>
             {/* SkillHit is structurally a SkillData (plus engine fields) —
                 rows render hits directly, no mapping layer. */}
-            <SkillRowGrid skills={hits} sheetHandle={sheetHandle} />
+            <SkillRowGrid skills={hits} />
             <div ref={sentinelRef} aria-hidden="true" className="h-px" />
             {isFetchingNextPage && (
               <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">

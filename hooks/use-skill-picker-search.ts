@@ -2,7 +2,10 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { searchSkills, type SkillSearchResult } from "@/lib/search/typesense";
-import { useDebouncedQueryValue } from "@/hooks/use-debounced-query-value";
+import {
+  deriveInputLoading,
+  useDebouncedQueryValue,
+} from "@/hooks/use-debounced-query-value";
 
 // The pickers show a flat, non-paginated list — one page, capped here. Deep
 // results past this are reachable by typing a tighter query.
@@ -55,19 +58,8 @@ export function useSkillPickerSearch(rawQuery: string): {
     placeholderData: keepPreviousData,
   });
 
-  // Real results for what's typed are already showing (even if a background
-  // revalidation is in flight) — never spin over them.
-  const showingTrimmedData =
-    trimmed === effectiveQuery &&
-    queryResult.data !== undefined &&
-    !queryResult.isPlaceholderData;
-
-  const isInputLoading =
-    trimmed.length > 0 &&
-    !showingTrimmedData &&
-    (trimmed !== effectiveQuery ||
-      queryResult.isFetching ||
-      queryResult.isPlaceholderData);
-
-  return { effectiveQuery, isInputLoading };
+  return {
+    effectiveQuery,
+    isInputLoading: deriveInputLoading(trimmed, effectiveQuery, queryResult),
+  };
 }

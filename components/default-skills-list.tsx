@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useConvex } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
+import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import {
+  rowPositionClassName,
   SelectableSkillRow,
   type SkillData,
   type LeaderboardMetric,
 } from "@/components/skill-card";
-import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
 import { cn } from "@/lib/utils";
@@ -22,22 +23,16 @@ type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
 //
 // This is the entry-state catalog on the home page: the server-cached first
 // page renders statically (SSR + prerender), then infinite scroll activates
-// client-side. The old Popular/Trending/Hot tab block that used to live here
-// was replaced by the zeitgeist rail (components/zeitgeist-rail.tsx) + the
-// catalog section — see components/skill-explorer.tsx.
+// client-side. Trending/Hot live in their own sheet (leaderboard-sheet.tsx);
+// the active search state swaps this list for ActiveCatalogResults — see
+// components/skill-explorer.tsx.
 // ---------------------------------------------------------------------------
 
 // `useInfiniteQuery`'s observer reads `Date.now()` during render, which can't be
 // baked into a prerender. Render the server-cached first page statically for SSR
 // and first paint (real content in the static shell), then activate infinite
 // scroll once the client takes over.
-export function PopularList({
-  initialPage,
-  sheetHandle,
-}: {
-  initialPage: Page;
-  sheetHandle: SkillDetailHandle;
-}) {
+export function PopularList({ initialPage }: { initialPage: Page }) {
   // useHydrated: false during the prerender and hydration render, then true —
   // so the Date.now()-reading observer below only mounts on the client.
   const isClient = useHydrated();
@@ -47,24 +42,15 @@ export function PopularList({
     return skills.length === 0 ? (
       <EmptyState message="No skills available yet." />
     ) : (
-      <SkillRowGrid skills={skills} sheetHandle={sheetHandle} />
+      <SkillRowGrid skills={skills} />
     );
   }
 
-  return (
-    <PopularInfiniteList initialPage={initialPage} sheetHandle={sheetHandle} />
-  );
+  return <PopularInfiniteList initialPage={initialPage} />;
 }
 
-function PopularInfiniteList({
-  initialPage,
-  sheetHandle,
-}: {
-  initialPage: Page;
-  sheetHandle: SkillDetailHandle;
-}) {
+function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
   const convex = useConvex();
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
@@ -94,20 +80,11 @@ function PopularInfiniteList({
       refetchOnReconnect: false,
     });
 
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: "400px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const sentinelRef = useInfiniteScrollSentinel({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  });
 
   const skills = useMemo(
     () => (data?.pages ?? []).flatMap((p) => p.page.map(rowToSkill)),
@@ -120,7 +97,7 @@ function PopularInfiniteList({
 
   return (
     <>
-      <SkillRowGrid skills={skills} sheetHandle={sheetHandle} />
+      <SkillRowGrid skills={skills} />
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       {isFetchingNextPage && (
         <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
@@ -133,47 +110,33 @@ function PopularInfiniteList({
 }
 
 // ---------------------------------------------------------------------------
-// Shared building blocks (also used by the zeitgeist rail + active results)
+// Shared building blocks (also used by the leaderboard sheet + active results)
 // ---------------------------------------------------------------------------
 
 export function SkillRowGrid({
   skills,
-  sheetHandle,
   metric,
 }: {
   skills: SkillData[];
-  sheetHandle: SkillDetailHandle;
   metric?: LeaderboardMetric;
 }) {
   return (
     <div className="grid grid-cols-1">
-      {skills.map((skill, i) => {
-        const isFirst = i === 0;
-        const isLast = i === skills.length - 1;
-        const isSolo = skills.length === 1;
-        return (
-          <SelectableSkillRow
-            key={`${skill.source}/${skill.skillId}`}
-            skill={skill}
-            sheetHandle={sheetHandle}
-            metric={metric}
-            className={cn(
-              // These lists are unbounded (infinite scroll): content-visibility
-              // skips layout/paint for off-screen rows. The intrinsic-size
-              // `auto` keyword remembers each row's real height once rendered
-              // — 76px is only the pre-render estimate for scrollbar math.
-              "[content-visibility:auto] [contain-intrinsic-size:auto_76px]",
-              isSolo
-                ? undefined
-                : isFirst
-                  ? "rounded-b-none"
-                  : isLast
-                    ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0",
-            )}
-          />
-        );
-      })}
+      {skills.map((skill, i) => (
+        <SelectableSkillRow
+          key={`${skill.source}/${skill.skillId}`}
+          skill={skill}
+          metric={metric}
+          className={cn(
+            // These lists are unbounded (infinite scroll): content-visibility
+            // skips layout/paint for off-screen rows. The intrinsic-size
+            // `auto` keyword remembers each row's real height once rendered
+            // — 76px is only the pre-render estimate for scrollbar math.
+            "[content-visibility:auto] [contain-intrinsic-size:auto_76px]",
+            rowPositionClassName(i, skills.length),
+          )}
+        />
+      ))}
     </div>
   );
 }
@@ -203,21 +166,10 @@ export function rowToSkill(r: {
   hotInstallsYesterday?: number;
   copyCount?: number;
 }): SkillData {
+  // The row IS structurally a SkillData — spread it through; only the derived
+  // field below needs computing.
   return {
-    source: r.source,
-    skillId: r.skillId,
-    name: r.name,
-    description: r.description,
-    installs: r.installs,
-    isDelisted: r.isDelisted,
-    hasContentFetchError: r.hasContentFetchError,
-    curatedOwner: r.curatedOwner,
-    worstAuditStatus: r.worstAuditStatus,
-    worstAuditRiskLevel: r.worstAuditRiskLevel,
-    copyCount: r.copyCount,
-    trendingRank: r.trendingRank,
-    trendingInstalls: r.trendingInstalls,
-    hotChange: r.hotChange,
+    ...r,
     // Current-hour install volume = this hour's installs, reconstructed from
     // the delta + same-hour-yesterday. Only set for Hot-rail rows; it's the
     // metric the Hot list is ranked by, shown there in place of lifetime

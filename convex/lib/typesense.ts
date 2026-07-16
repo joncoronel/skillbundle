@@ -9,14 +9,20 @@
  * Env (set on the Convex deployment, NOT Vercel — the admin key is secret):
  *   TYPESENSE_HOST           e.g. "typesense-production-0c4a.up.railway.app"
  *   TYPESENSE_ADMIN_API_KEY  the admin key from Railway (full read/write)
- *   TYPESENSE_COLLECTION     optional; defaults to "skills". Set to
- *                            "skills_dev" on the dev deployment so dev testing
- *                            doesn't write into the collection prod serves.
+ *   TYPESENSE_COLLECTION     REQUIRED on non-production deployments (e.g.
+ *                            "skills_dev"); defaults to "skills" only on prod
+ *                            (CRONS_ENABLED=true). This client can drop and
+ *                            rewrite the collection, so a dev deployment must
+ *                            never silently point at the one prod serves.
  *
  * Railway fronts Typesense with HTTPS on 443, so host + https is all we need.
  */
 
 import { v, type Infer } from "convex/values";
+// The separator set lives in a dependency-free shared leaf: the browser
+// highlight renderer needs the same characters, and a value import of THIS
+// module (the admin transport) would put it on the client bundle path.
+import { NAME_TOKEN_SEPARATORS } from "../../lib/search/token-separators";
 
 export interface TypesenseConfig {
   host: string;
@@ -33,11 +39,23 @@ export function getTypesenseConfig(): TypesenseConfig {
         "on the Convex deployment (npx convex env set ...).",
     );
   }
-  return {
-    host,
-    apiKey,
-    collection: process.env.TYPESENSE_COLLECTION ?? "skills",
-  };
+  // The "skills" default applies ONLY on the production deployment
+  // (CRONS_ENABLED=true, this codebase's prod marker — see crons.ts). This is
+  // the WRITE path — sync, resetCollection, dropCollection — so a dev
+  // deployment missing TYPESENSE_COLLECTION must fail loudly here rather than
+  // silently sync into (or drop) the collection production serves. Mirrors the
+  // NODE_ENV gate on the browser read client (lib/search/typesense.ts).
+  const collection =
+    process.env.TYPESENSE_COLLECTION ??
+    (process.env.CRONS_ENABLED === "true" ? "skills" : undefined);
+  if (!collection) {
+    throw new Error(
+      'TYPESENSE_COLLECTION is not set. Set it explicitly (e.g. "skills_dev") on ' +
+        'this deployment — the "skills" default applies only in production ' +
+        "(CRONS_ENABLED=true), so non-prod deployments can never write to the prod collection.",
+    );
+  }
+  return { host, apiKey, collection };
 }
 
 export class TypesenseError extends Error {
@@ -108,11 +126,6 @@ interface TypesenseField {
   token_separators?: string[];
 }
 
-// Split hyphenated / underscored / dotted identifiers into their component
-// words so a search for "foundry" matches "microsoft-foundry" (not just
-// tokens that START with "foundry"). Typesense only splits on whitespace by
-// default, which is wrong for skill names, which are almost all identifiers.
-const NAME_TOKEN_SEPARATORS = ["-", "_", ".", "/"];
 
 /**
  * The `skills` collection schema. Mirrors the queryable subset of
@@ -179,9 +192,11 @@ export function skillsCollectionSchema(name: string) {
  * The document shape we push — SINGLE SOURCE for the doc type. The sync query's
  * `returns` validates against this validator, `TypesenseSkillDoc` derives from
  * it via `Infer`, and the frontend's `SkillHit` (lib/search/typesense.ts)
- * derives from the type — so the three can't drift. Keep the field list in
- * sync with `skillsCollectionSchema` above (the one remaining manual mirror;
- * Typesense's schema language can't be derived from a Convex validator).
+ * derives from the type — so the three can't drift. The field list must match
+ * `skillsCollectionSchema` above (a manual mirror — Typesense's schema
+ * language can't be derived from a Convex validator without giving up the
+ * static doc type); `assertSchemaMirror` below makes any mismatch a loud
+ * error at setup + every sync start instead of a silently unindexed field.
  */
 export const typesenseSkillDocValidator = v.object({
   /** `${source}::${skillId}` */
@@ -209,6 +224,45 @@ export const typesenseSkillDocValidator = v.object({
 });
 
 export type TypesenseSkillDoc = Infer<typeof typesenseSkillDocValidator>;
+
+/**
+ * Drift tripwire for the one remaining manual mirror: the collection schema
+ * and the doc validator must list the same fields. The failure mode is SILENT
+ * in production — Typesense stores unknown document fields unindexed, so a
+ * field added to the validator but not the schema "works" (it's in the docs)
+ * while every filter/sort on it quietly matches nothing. Called from
+ * setupCollection and at each sync start, so drift is a loud dashboard error
+ * the same day it ships. (`id` is Typesense's implicit document id — never a
+ * schema field.)
+ *
+ * When the Tier 2 auto-embedding lands (docs/search-overhaul.md: a schema
+ * `embedding` field with an `embed` config that Typesense computes — documents
+ * never carry it), it will trip the schema-side check by design. Add a small
+ * schema-only allowlist here then (e.g. `SCHEMA_ONLY_FIELDS`), not before.
+ */
+export function assertSchemaMirror(): void {
+  const schemaFields = new Set(
+    skillsCollectionSchema("_check").fields.map((f) => f.name),
+  );
+  const docFields = Object.keys(typesenseSkillDocValidator.fields).filter(
+    (k) => k !== "id",
+  );
+  const missingInSchema = docFields.filter((f) => !schemaFields.has(f));
+  const missingInDoc = [...schemaFields].filter((f) => !docFields.includes(f));
+  if (missingInSchema.length > 0 || missingInDoc.length > 0) {
+    throw new Error(
+      "Typesense schema/validator drift (convex/lib/typesense.ts): " +
+        (missingInSchema.length > 0
+          ? `validator fields missing from skillsCollectionSchema: ${missingInSchema.join(", ")} ` +
+            "(they'd be stored UNINDEXED — filters/sorts on them silently match nothing). "
+          : "") +
+        (missingInDoc.length > 0
+          ? `schema fields missing from typesenseSkillDocValidator: ${missingInDoc.join(", ")}. `
+          : "") +
+        "Update both together.",
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Operations

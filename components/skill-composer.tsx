@@ -49,7 +49,6 @@ import {
   SortSelect,
 } from "@/components/catalog-controls";
 import { useExplorerState } from "@/components/explorer-state";
-import type { FacetCount } from "@/lib/search/typesense";
 import { cn } from "@/lib/utils";
 
 // One repo-shape test for carry-over AND pre-submit validation: a GitHub
@@ -66,8 +65,6 @@ interface SkillComposerProps {
   canAutoDetect: boolean;
   /** Derived in SkillExplorer from the shared query cache. */
   showInputSpinner: boolean;
-  /** Facet counts from the current result set (active state only). */
-  facets: Record<string, FacetCount[]>;
 }
 
 /**
@@ -85,19 +82,14 @@ interface SkillComposerProps {
 export function SkillComposer({
   canAutoDetect,
   showInputSpinner,
-  facets,
 }: SkillComposerProps) {
   const {
     textQuery,
     repoUrl,
-    mode,
     isRepo,
-    hasQuery,
     official,
     searchDescriptions,
-    filterCount,
     setParams,
-    clearSheetFilters,
   } = useExplorerState();
 
   // Local draft for the repo field — only pushed to the URL on submit. When
@@ -394,7 +386,25 @@ export function SkillComposer({
             internally while the right pair floats between their lines. */}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 px-3">
           {isRepo ? (
-            <>
+            <RepoChin repoInputInvalid={repoInputInvalid} />
+          ) : (
+            <SearchChin onEnterRepoMode={enterRepoMode} />
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * Repo mode's chin: the helper/validation line plus the way back to search.
+ * Reads explorer state itself — the composer only lends it the one piece of
+ * local state it owns (the validation flag).
+ */
+function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
+  const { setParams } = useExplorerState();
+  return (
+    <>
               {/* Helper slot doubles as the validation slot: an invalid
                   Analyze attempt swaps the hint for an error with a format
                   example (role=alert announces it). The error shows on
@@ -424,13 +434,23 @@ export function SkillComposer({
                   />
                 }
               >
-                Search skills
-              </Button>
-            </>
-          ) : (
-            <>
+        Search skills
+      </Button>
+    </>
+  );
+}
+
+/**
+ * Search mode's chin: the filter cluster (desktop), the sort + navigation
+ * corner, and the mobile Sort & filter drawer. Reads explorer state itself;
+ * entering repo mode stays with the composer (it touches the shared input).
+ */
+function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
+  const { filterCount, setParams, clearSheetFilters } = useExplorerState();
+  return (
+    <>
               <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5">
-                <CatalogControlsBar facets={facets} />
+                <CatalogControlsBar />
               </div>
               {/* Mobile: the desktop filter cluster above is hidden, so its
                   two homes here are the sheet (sort/filters/switches) and a
@@ -490,7 +510,7 @@ export function SkillComposer({
                       </div>
                     </DrawerHeader>
                     <DrawerBody>
-                      <CatalogControlsSheet facets={facets} />
+                      <CatalogControlsSheet />
                     </DrawerBody>
                   </DrawerContent>
                 </Drawer>
@@ -515,78 +535,54 @@ export function SkillComposer({
                   orientation="vertical"
                   className="h-4! mx-1 max-[860px]:hidden"
                 />
-                {/* The icon squares cover BOTH the mobile layout and the
-                    640-860px desktop band (wider now that sort shares the
-                    chin) where even the short labels don't fit next to the
-                    filters — icons instead of a wrapped second chin row. */}
-                <Button
-                  variant="ghost"
-                  size="icon_sm"
-                  className="min-[860px]:hidden"
-                  onClick={() => setParams({ view: "hot" })}
-                  aria-label="Hot/Trending leaderboards"
-                >
-                  <HugeiconsIcon
-                    icon={FireIcon}
-                    strokeWidth={2}
-                    className="size-4 text-warning-foreground"
-                  />
-                </Button>
+                {/* Below 860px (mobile AND the 640-860px band where the
+                    labels don't fit next to the filters) each action
+                    collapses to its icon_sm square — ONE responsive button
+                    per action, not a hidden/shown pair: the label span (and
+                    Match repo's arrow) hide, and the width overrides
+                    reproduce icon_sm's square (size-9, sm:size-8, no
+                    padding). Flame/GitHub are safe bare glyphs; both open
+                    surfaces that explain themselves. */}
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="shrink-0 text-muted-foreground max-[860px]:hidden"
+                  className="shrink-0 text-muted-foreground max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
                   onClick={() => setParams({ view: "hot" })}
+                  aria-label="Hot/Trending leaderboards"
                   leftSection={
                     <HugeiconsIcon
                       icon={FireIcon}
                       strokeWidth={2}
-                      className="size-3.5 text-warning-foreground"
+                      className="size-3.5 max-[860px]:size-4 text-warning-foreground"
                     />
                   }
                 >
-                  Hot/Trending
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon_sm"
-                  className="text-muted-foreground min-[860px]:hidden -me-2.5"
-                  onClick={enterRepoMode}
-                  aria-label="Match repo"
-                >
-                  <HugeiconsIcon
-                    icon={GithubIcon}
-                    strokeWidth={2}
-                    className="size-4"
-                  />
+                  <span className="max-[860px]:hidden">Hot/Trending</span>
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="shrink-0 text-muted-foreground max-[860px]:hidden -me-2"
-                  onClick={enterRepoMode}
+                  className="shrink-0 text-muted-foreground -me-2 max-[860px]:-me-2.5 max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
+                  onClick={onEnterRepoMode}
+                  aria-label="Match repo"
                   leftSection={
                     <HugeiconsIcon
                       icon={GithubIcon}
                       strokeWidth={2}
-                      className="size-3.5"
+                      className="size-3.5 max-[860px]:size-4"
                     />
                   }
                   rightSection={
                     <HugeiconsIcon
                       icon={ArrowRight02Icon}
                       strokeWidth={2}
-                      className="size-3.5"
+                      className="size-3.5 max-[860px]:hidden"
                     />
                   }
                 >
-                  Match repo
+                  <span className="max-[860px]:hidden">Match repo</span>
                 </Button>
-              </div>
-            </>
-          )}
-        </div>
-      </Card>
-    </div>
+      </div>
+    </>
   );
 }

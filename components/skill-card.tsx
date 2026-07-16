@@ -27,7 +27,7 @@ import {
   useIsSkillSelected,
 } from "@/lib/bundle-selection";
 import { cn, formatInstalls, timeAgo } from "@/lib/utils";
-import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
+import { useSkillDetailHandle } from "@/components/skill-detail-sheet";
 import {
   deriveSkillStatus,
   SkillStatusBadge,
@@ -60,6 +60,22 @@ export interface SkillEditControls {
 // ---------------------------------------------------------------------------
 // Types & helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Corner/border classes for a row inside a stacked list (SkillRowGrid, repo
+ * match results): first row keeps top corners, last keeps bottom corners,
+ * middles are square, and every non-first row drops its top border so the
+ * stack reads as one framed unit.
+ */
+export function rowPositionClassName(
+  index: number,
+  length: number,
+): string | undefined {
+  if (length === 1) return undefined;
+  if (index === 0) return "rounded-b-none";
+  if (index === length - 1) return "rounded-t-none border-t-0";
+  return "rounded-none border-t-0";
+}
 
 export interface SkillData {
   name: string;
@@ -103,13 +119,14 @@ export interface SkillData {
 
 function SkillName({
   skill,
-  sheetHandle,
   className,
 }: {
   skill: SkillData;
-  sheetHandle?: SkillDetailHandle;
   className?: string;
 }) {
+  // The page's sheet handle comes from context (provided once per page);
+  // no provider = link to the skill page instead.
+  const sheetHandle = useSkillDetailHandle();
   // On a live search hit, highlight the matched substring of the name;
   // otherwise render it plain.
   const nameContent = skill.nameHighlight
@@ -298,7 +315,6 @@ const SkillSelectionCheckbox = memo(function SkillSelectionCheckbox({
 
 interface SkillViewProps {
   skill: SkillData;
-  sheetHandle?: SkillDetailHandle;
   className?: string;
   /** Which leaderboard rail this row belongs to (default: lifetime view).
    *  "hot" adds the momentum chip and shows hourly installs; "trending" shows
@@ -403,14 +419,12 @@ const SkillEditControlButtons = memo(function SkillEditControlButtons({
 // always look "changed."
 const SkillRowContent = memo(function SkillRowContent({
   skill,
-  sheetHandle,
   selectable,
   checkboxId,
   metric,
   hideSource,
 }: {
   skill: SkillData;
-  sheetHandle?: SkillDetailHandle;
   selectable?: boolean;
   checkboxId?: string;
   metric?: LeaderboardMetric;
@@ -426,11 +440,7 @@ const SkillRowContent = memo(function SkillRowContent({
       ) : null}
       <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
         <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-sm font-semibold">
-          <SkillName
-            skill={skill}
-            sheetHandle={sheetHandle}
-            className="min-w-0 truncate"
-          />
+          <SkillName skill={skill} className="min-w-0 truncate" />
           {skill.curatedOwner && (
             <OfficialBadge
               owner={skill.curatedOwner}
@@ -453,17 +463,13 @@ const SkillRowContent = memo(function SkillRowContent({
 
 export const SkillRowView = memo(function SkillRowView({
   skill,
-  sheetHandle,
   metric,
 }: SkillViewProps) {
-  return (
-    <SkillRowContent skill={skill} sheetHandle={sheetHandle} metric={metric} />
-  );
+  return <SkillRowContent skill={skill} metric={metric} />;
 });
 
 export const SelectableSkillRow = memo(function SelectableSkillRow({
   skill,
-  sheetHandle,
   className,
   metric,
   hideSource,
@@ -481,7 +487,6 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
     >
       <SkillRowContent
         skill={skill}
-        sheetHandle={sheetHandle}
         metric={metric}
         selectable
         checkboxId={checkboxId}
@@ -497,13 +502,11 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
 
 const SkillCardContent = memo(function SkillCardContent({
   skill,
-  sheetHandle,
   selectable,
   checkboxId,
   metric,
 }: {
   skill: SkillData;
-  sheetHandle?: SkillDetailHandle;
   selectable?: boolean;
   checkboxId?: string;
   metric?: LeaderboardMetric;
@@ -529,7 +532,6 @@ const SkillCardContent = memo(function SkillCardContent({
           <CardTitle className="text-sm leading-snug flex items-center gap-1">
             <SkillName
               skill={skill}
-              sheetHandle={sheetHandle}
               className="[text-box:trim-both_cap_alphabetic]"
             />
             {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
@@ -580,7 +582,6 @@ const SkillCardContent = memo(function SkillCardContent({
 
 export const SkillCardView = memo(function SkillCardView({
   skill,
-  sheetHandle,
   className,
   metric,
   editControls,
@@ -596,7 +597,7 @@ export const SkillCardView = memo(function SkillCardView({
   const showQuickAdd = enableQuickAdd && !editControls;
   return (
     <Card className={cn("relative gap-3 py-4", className)}>
-      <SkillCardContent skill={skill} sheetHandle={sheetHandle} metric={metric} />
+      <SkillCardContent skill={skill} metric={metric} />
       {editControls ? (
         <div className="absolute right-2 top-2 z-10">
           <SkillEditControlButtons controls={editControls} />
@@ -619,7 +620,6 @@ export const SkillCardView = memo(function SkillCardView({
 
 export const SelectableSkillCard = memo(function SelectableSkillCard({
   skill,
-  sheetHandle,
   className,
   metric,
 }: SkillViewProps) {
@@ -632,7 +632,6 @@ export const SelectableSkillCard = memo(function SelectableSkillCard({
     >
       <SkillCardContent
         skill={skill}
-        sheetHandle={sheetHandle}
         metric={metric}
         selectable
         checkboxId={checkboxId}

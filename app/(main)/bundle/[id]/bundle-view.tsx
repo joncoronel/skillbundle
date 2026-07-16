@@ -10,6 +10,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { SkillCardView } from "@/components/skill-card";
 import {
   SkillDetailSheet,
+  SkillDetailHandleProvider,
   createSkillDetailHandle,
 } from "@/components/skill-detail-sheet";
 
@@ -122,6 +123,9 @@ export function BundleView({
   const commandCount = generateInstallCommands(bundle.skills).length;
 
   return (
+    // Rows anywhere in this page (read-only grid, edit-mode diff grid) open
+    // the skill detail sheet through this provider.
+    <SkillDetailHandleProvider handle={skillDetailHandle}>
     <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
@@ -316,7 +320,6 @@ export function BundleView({
                 <SkillCardView
                   key={`${skill.source}/${skill.skillId}`}
                   skill={skill}
-                  sheetHandle={skillDetailHandle}
                   enableQuickAdd={isAuthenticated}
                   currentBundleId={bundle._id}
                 />
@@ -334,7 +337,6 @@ export function BundleView({
               bundleId={bundle._id}
               queryArgs={queryArgs}
               initialSkills={bundle.skills}
-              sheetHandle={skillDetailHandle}
               onExit={() => setEditingSkills(false)}
             />
           ) : null}
@@ -361,6 +363,7 @@ export function BundleView({
         </>
       )}
     </main>
+    </SkillDetailHandleProvider>
   );
 }
 

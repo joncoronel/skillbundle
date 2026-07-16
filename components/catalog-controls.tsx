@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/cubby-ui/switch";
 import { LabeledSection } from "@/components/labeled-section";
 import { ItemCount } from "@/components/item-count";
 import { PublisherSelect } from "@/components/publisher-select";
-import { useExplorerState } from "@/components/explorer-state";
+import { useCatalogFacets, useExplorerState } from "@/components/explorer-state";
 import { formatInstalls, cn } from "@/lib/utils";
 import type { FacetCount } from "@/lib/search/typesense";
 import type { AuditFilterValue, CatalogSortValue } from "@/lib/search-params";
@@ -66,7 +66,7 @@ const MIN_INSTALL_ITEMS = {
 //   scrollbar-compensation padding), alignItemWithTrigger is dropped (its
 //   measure-then-reposition is unstable in a scrollable sheet), and popups
 //   sit one tier above the sheet.
-type ControlSurface = "chin" | "sheet";
+export type ControlSurface = "chin" | "sheet";
 const surfaceProps = (surface: ControlSurface) =>
   ({
     inSheet: surface === "sheet",
@@ -130,14 +130,13 @@ function facetCount(
 
 function AuditSelect({
   surface,
-  facets,
   className,
 }: {
   surface: ControlSurface;
-  facets?: Record<string, FacetCount[]>;
   className?: string;
 }) {
   const { audit, setParams } = useExplorerState();
+  const facets = useCatalogFacets();
   const { inSheet, selectAlign, selectModal, popupLevel, triggerVariant } =
     surfaceProps(surface);
   const passCount = facetCount(facets, "worstAuditStatus", "pass");
@@ -222,12 +221,7 @@ function MinInstallsSelect({
  * behind "More" (badge shows how many of those are active). Clear resets
  * exactly the chin's own filters (`filterCount.chin`).
  */
-export function CatalogControlsBar({
-  facets,
-}: {
-  /** Facet counts from the current result set (active state only). */
-  facets?: Record<string, FacetCount[]>;
-}) {
+export function CatalogControlsBar() {
   const { publisher, setParams, minInstalls, broken, filterCount, clearFilters } =
     useExplorerState();
   return (
@@ -235,9 +229,9 @@ export function CatalogControlsBar({
       <PublisherSelect
         value={publisher}
         onChange={(v) => setParams({ publisher: v })}
-        inSheet={false}
+        surface="chin"
       />
-      <AuditSelect surface="chin" facets={facets} />
+      <AuditSelect surface="chin" />
 
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -339,11 +333,7 @@ export function CatalogControlsBar({
  * obvious. The filters below — Official included — all narrow, so Clear resets
  * them together (`filterCount.sheet`).
  */
-export function CatalogControlsSheet({
-  facets,
-}: {
-  facets?: Record<string, FacetCount[]>;
-}) {
+export function CatalogControlsSheet() {
   const {
     publisher,
     official,
@@ -371,12 +361,12 @@ export function CatalogControlsSheet({
             <PublisherSelect
               value={publisher}
               onChange={(v) => setParams({ publisher: v })}
-              inSheet
+              surface="sheet"
               className="w-full"
             />
           </Field>
           <Field label="Security">
-            <AuditSelect surface="sheet" facets={facets} className="w-full" />
+            <AuditSelect surface="sheet" className="w-full" />
           </Field>
           <Field label="Minimum installs">
             <MinInstallsSelect surface="sheet" className="w-full" />

@@ -124,7 +124,7 @@ export type ToggleGroupItemProps = ToggleProps;
  * and ignore it.
  */
 function ToggleGroupItem({ variant, size, ...props }: ToggleGroupItemProps) {
-  const group = React.useContext(ToggleGroupContext);
+  const group = React.use(ToggleGroupContext);
   const resolvedSize = size ?? group.size ?? "default";
   // Detached cells own their variant (reusing the Toggle cva). Attached `outline`
   // reuses the Toggle `outline` too so its states stay in the card family; solid /

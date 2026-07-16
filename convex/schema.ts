@@ -462,6 +462,17 @@ export default defineSchema({
     .index("by_user_bundle", ["userId", "bundleId"])
     .index("by_bundle", ["bundleId"]),
 
+  // Single-row run lock for the Typesense catalog sync (typesense.syncCatalog).
+  // Two overlapping mark-and-sweep walks can cross-stamp documents and sweep
+  // live docs out of the search index (e.g. a manual run overlapping the daily
+  // chained run) — the lock makes a second start a loud no-op instead.
+  // `completedAt` unset = a run is in progress (or crashed; stale locks past
+  // the TTL are stealable).
+  typesenseSyncLock: defineTable({
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }),
+
   syncStats: defineTable({
     totalSkills: v.number(),
     contentFetchErrors: v.number(),

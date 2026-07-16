@@ -16,10 +16,13 @@ Related: [TODO.md](../TODO.md) (the original "Search & discovery overhaul" note)
 - **Phase:** SHIPPED (v1, dev). Engine committed: **Typesense v29 self-hosted on
   Railway** (persistent volume), queried **browser-direct with a search-only key**.
 - **Backend:** `convex/lib/typesense.ts` + `convex/typesense.ts` — daily
-  mark-and-sweep `syncCatalog` cron (07:30 UTC, after the catalog settles), full
-  catalog mirrored (~15.5k non-delisted docs). Dev collection `skills_dev`; prod
-  uses `skills` (prod deploy checklist still pending: prod Convex env vars +
-  `setupCollection` + initial sync + Vercel `NEXT_PUBLIC_TYPESENSE_*`).
+  mark-and-sweep `syncCatalog`, chained off `reconcileUnseenSkills`' completion
+  (not a wall-clock cron) and guarded by a run lock so overlapping walks can't
+  cross-stamp and sweep live docs; full catalog mirrored (~15.5k non-delisted
+  docs). Dev collection `skills_dev` (TYPESENSE_COLLECTION is required outside
+  prod); prod uses `skills` (prod deploy checklist still pending: prod Convex
+  env vars + `setupCollection` + initial sync + Vercel
+  `NEXT_PUBLIC_TYPESENSE_*`).
 - **Frontend:** `lib/search/typesense.ts` (browser client) +
   `hooks/use-catalog-search.ts` + the two-state home surface
   (`components/skill-explorer.tsx`). **Hybrid wiring chosen** (option 1 below):

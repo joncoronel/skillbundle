@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import type { ExploreSortValue } from "@/lib/search-params";
 import { BundleCard, BundleCardSkeleton } from "@/components/bundle-card";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -15,40 +16,18 @@ interface BundleGridProps {
 }
 
 export function BundleGrid({ sort, onSwitchSort }: BundleGridProps) {
-  const sentinelRef = useRef<HTMLDivElement>(null);
-
   const { results, status, loadMore } = usePaginatedQuery(
     api.bundles.listExplore,
     { sort },
     { initialNumItems: 18 },
   );
 
-  const canLoadMore = status === "CanLoadMore";
-
-  // canLoadMore flips on every scroll batch (LoadingFirstPage → CanLoadMore →
-  // LoadingMore → CanLoadMore). Including it in the observer effect's deps
-  // would tear down and rebuild the observer on each transition. Stash the
-  // latest value in a ref (synced via a no-deps effect) so the observer reads
-  // it without being a dep.
-  const canLoadMoreRef = useRef(canLoadMore);
-  useEffect(() => {
-    canLoadMoreRef.current = canLoadMore;
+  const fetchNextPage = useCallback(() => loadMore(12), [loadMore]);
+  const sentinelRef = useInfiniteScrollSentinel({
+    hasNextPage: status === "CanLoadMore",
+    isFetchingNextPage: status === "LoadingMore",
+    fetchNextPage,
   });
-
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting && canLoadMoreRef.current) {
-          loadMore(12);
-        }
-      },
-      { rootMargin: "400px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [loadMore]);
 
   const isFirstLoad = status === "LoadingFirstPage";
 

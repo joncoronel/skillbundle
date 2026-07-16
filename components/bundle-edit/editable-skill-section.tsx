@@ -18,7 +18,6 @@ import {
   AlertDialogDescription,
 } from "@/components/ui/cubby-ui/alert-dialog";
 import { SkillCardView, type SkillData } from "@/components/skill-card";
-import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border/marching-border";
 import { useBundleEdit } from "@/hooks/use-bundle-edit";
 import { cn } from "@/lib/utils";
@@ -40,7 +39,6 @@ interface EditableSkillSectionProps {
   queryArgs: { urlId: string; shareToken?: string };
   /** The bundle's current skills, used to seed the staging area. */
   initialSkills: SkillData[];
-  sheetHandle: SkillDetailHandle;
   onExit: () => void;
 }
 
@@ -49,7 +47,6 @@ export function EditableSkillSection({
   bundleId,
   queryArgs,
   initialSkills,
-  sheetHandle,
   onExit,
 }: EditableSkillSectionProps) {
   const edit = useBundleEdit<SkillData>(initialSkills);
@@ -187,7 +184,6 @@ export function EditableSkillSection({
             >
               <SkillCardView
                 skill={skill}
-                sheetHandle={sheetHandle}
                 className={cn(
                   "h-full",
                   // Hide the card's solid 1px border on staged cards so

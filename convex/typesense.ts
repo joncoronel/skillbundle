@@ -10,10 +10,15 @@
  */
 
 import { v } from "convex/values";
-import { internalAction, internalQuery } from "./_generated/server";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { maxIterForRows, CATALOG_MAX_ROWS } from "./lib/pagination";
 import {
+  assertSchemaMirror,
   ping,
   ensureCollection,
   dropCollection,
@@ -41,6 +46,7 @@ export const setupCollection = internalAction({
     message: v.string(),
   }),
   handler: async () => {
+    assertSchemaMirror();
     const { host, collection } = getTypesenseConfig();
     const reachable = await ping();
     if (!reachable) {
@@ -174,6 +180,61 @@ export const pageSummariesForSync = internalQuery({
   },
 });
 
+// A full walk is minutes at most; a lock this old belongs to a crashed run
+// (an action that died without rescheduling) and can be stolen.
+const SYNC_LOCK_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Take the sync run lock. Returns the new run's start timestamp (which doubles
+ * as its mark-and-sweep stamp), or null if an unfinished, non-stale run holds
+ * the lock. Single mutation = serializable check-and-set, so two simultaneous
+ * starts can't both win.
+ */
+export const acquireSyncLock = internalMutation({
+  args: {},
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const lock = await ctx.db.query("typesenseSyncLock").first();
+    if (
+      lock &&
+      lock.completedAt === undefined &&
+      now - lock.startedAt < SYNC_LOCK_TTL_MS
+    ) {
+      return null;
+    }
+    if (lock) {
+      await ctx.db.patch(lock._id, { startedAt: now, completedAt: undefined });
+    } else {
+      await ctx.db.insert("typesenseSyncLock", { startedAt: now });
+    }
+    return now;
+  },
+});
+
+export const getSyncLock = internalQuery({
+  args: {},
+  returns: v.union(v.object({ startedAt: v.number() }), v.null()),
+  handler: async (ctx) => {
+    const lock = await ctx.db.query("typesenseSyncLock").first();
+    return lock ? { startedAt: lock.startedAt } : null;
+  },
+});
+
+export const releaseSyncLock = internalMutation({
+  args: { startedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { startedAt }) => {
+    const lock = await ctx.db.query("typesenseSyncLock").first();
+    // Only the owning run releases — a newer run that stole a stale lock
+    // keeps it (this release arriving late must not free the newer run's lock).
+    if (lock && lock.startedAt === startedAt) {
+      await ctx.db.patch(lock._id, { completedAt: Date.now() });
+    }
+    return null;
+  },
+});
+
 const SYNC_PAGE_SIZE = 250;
 const SYNC_MAX_PAGES_PER_RUN = 20; // ~5k docs/invocation before rescheduling
 // Continuation cap (in pages), derived from the shared catalog budget like the
@@ -201,7 +262,17 @@ const SYNC_MAX_PAGES = maxIterForRows(CATALOG_MAX_ROWS, SYNC_PAGE_SIZE);
  * Self-reschedules to stay under the action time limit: up to
  * SYNC_MAX_PAGES_PER_RUN pages per invocation, threading the cursor + running
  * totals + the shared `syncedAt` stamp forward.
- * Run manually with: npx convex run typesense:syncCatalog
+ *
+ * Run-locked: two overlapping walks would cross-stamp docs (the older run
+ * re-stamps with an OLDER syncedAt after the newer run touched them) and the
+ * newer run's sweep would then delete live documents. A fresh start that finds
+ * an unfinished, non-stale run skips itself loudly; a continuation that finds
+ * the lock taken over by a newer run abandons without sweeping. The lock's
+ * startedAt doubles as the run's syncedAt stamp.
+ *
+ * Scheduled by chaining off reconcileUnseenSkills' completion (see
+ * reconcile.ts / crons.ts), not a fixed-time cron — so it indexes settled
+ * installs/delist flags. Run manually with: npx convex run typesense:syncCatalog
  */
 export const syncCatalog = internalAction({
   args: {
@@ -232,9 +303,49 @@ export const syncCatalog = internalAction({
       pagesDone: v.number(),
       sampleErrors: v.array(v.string()),
     }),
+    v.object({
+      done: v.literal(true),
+      skipped: v.literal(true),
+      reason: v.string(),
+    }),
   ),
   handler: async (ctx, args) => {
-    const syncedAt = args.syncedAt ?? Date.now();
+    let syncedAt = args.syncedAt;
+    if (syncedAt === undefined) {
+      // Fresh start: fail loudly on schema/validator drift before touching the
+      // index (a drifted field would sync "successfully" but be unsearchable).
+      assertSchemaMirror();
+      // Take the run lock (its timestamp is this run's stamp).
+      const acquired = await ctx.runMutation(
+        internal.typesense.acquireSyncLock,
+        {},
+      );
+      if (acquired === null) {
+        console.warn(
+          "typesense syncCatalog: another sync is already running — skipping this start.",
+        );
+        return {
+          done: true as const,
+          skipped: true as const,
+          reason: "another sync is in progress",
+        };
+      }
+      syncedAt = acquired;
+    } else {
+      // Continuation: confirm this run still owns the lock. A newer run having
+      // taken over means our stamps are stale — abandon without sweeping.
+      const lock = await ctx.runQuery(internal.typesense.getSyncLock, {});
+      if (!lock || lock.startedAt !== syncedAt) {
+        console.warn(
+          "typesense syncCatalog: run lock was taken over by a newer run — abandoning this continuation (no sweep).",
+        );
+        return {
+          done: true as const,
+          skipped: true as const,
+          reason: "lock taken over by a newer run",
+        };
+      }
+    }
     let cursor = args.cursor ?? null;
     let imported = args.imported ?? 0;
     let failed = args.failed ?? 0;
@@ -264,10 +375,12 @@ export const syncCatalog = internalAction({
               `sweep skipped so failed docs aren't dropped from search. ` +
               `Sample errors: ${JSON.stringify(sampleErrors)}`,
           );
+          await ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
           return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
         }
         // Sweep: everything not touched this run left the catalog — remove it.
         const swept = await deleteByFilter(`syncedAt:<${syncedAt}`);
+        await ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
         return { done: true as const, imported, failed, swept, sweepSkipped: false, pagesDone, sampleErrors };
       }
     }
@@ -279,6 +392,7 @@ export const syncCatalog = internalAction({
         `typesense syncCatalog: hit continuation cap (${pagesDone} pages, ~${pagesDone * SYNC_PAGE_SIZE} rows) ` +
           `without draining — cursor bug or catalog exceeds CATALOG_MAX_ROWS. Sweep skipped.`,
       );
+      await ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
       return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
     }
 

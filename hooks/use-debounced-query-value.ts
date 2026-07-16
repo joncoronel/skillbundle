@@ -45,3 +45,36 @@ export function useDebouncedQueryValue(
 
   return trimmed ? (isCached ? trimmed : debounced) : "";
 }
+
+/**
+ * The spinner derivation paired with useDebouncedQueryValue — shared by every
+ * search input so the invariant lives in ONE place: loading is true while
+ * search work is outstanding for what's typed (debounce running, fetch in
+ * flight, or placeholder rows showing), and false the moment the trimmed
+ * input's own results are on screen — a background revalidation must never
+ * spin over real results (the derived-loading-state rule).
+ */
+export function deriveInputLoading(
+  trimmed: string,
+  effectiveQuery: string,
+  queryResult: {
+    data: unknown;
+    isFetching: boolean;
+    isPlaceholderData: boolean;
+  },
+): boolean {
+  // Real results for what's typed are already showing (even if a background
+  // revalidation is in flight) — never spin over them.
+  const showingTrimmedData =
+    trimmed === effectiveQuery &&
+    queryResult.data !== undefined &&
+    !queryResult.isPlaceholderData;
+
+  return (
+    trimmed.length > 0 &&
+    !showingTrimmedData &&
+    (trimmed !== effectiveQuery ||
+      queryResult.isFetching ||
+      queryResult.isPlaceholderData)
+  );
+}

@@ -9,7 +9,7 @@ import {
   type HomeParams,
   type CatalogSortValue,
 } from "@/lib/search-params";
-import type { SkillFilters } from "@/lib/search/typesense";
+import type { FacetCount, SkillFilters } from "@/lib/search/typesense";
 
 /**
  * The home explorer's shared state: the URL params plus the derivations every
@@ -28,6 +28,12 @@ export interface ExplorerState extends HomeParams {
   isRepo: boolean;
   /** Any explicit narrowing/sort beyond the entry state (activates search). */
   anyFilter: boolean;
+  /**
+   * Any actual narrowing filter (Official included) — excludes explicit sort,
+   * which activates search but doesn't narrow results. Drives "loosen a
+   * filter"-style copy; use `anyFilter` for activation.
+   */
+  hasNarrowing: boolean;
   /** Text mode with a query, filter, or explicit sort — Typesense drives. */
   searchActive: boolean;
   /** sortParam with null auto-resolved (relevance with a query, else installs). */
@@ -64,13 +70,13 @@ function buildExplorerState(
 ): ExplorerState {
   const trimmedQuery = params.textQuery.trim();
   const hasQuery = trimmedQuery.length > 0;
-  const anyFilter =
+  const hasNarrowing =
     params.official ||
     params.publisher.length > 0 ||
     params.audit !== null ||
     params.minInstalls !== null ||
-    params.broken ||
-    params.sortParam !== null;
+    params.broken;
+  const anyFilter = hasNarrowing || params.sortParam !== null;
   const isRepo = params.mode === "repo";
 
   const narrowing =
@@ -86,6 +92,7 @@ function buildExplorerState(
     hasQuery,
     isRepo,
     anyFilter,
+    hasNarrowing,
     searchActive: !isRepo && (hasQuery || anyFilter),
     effectiveSort: params.sortParam ?? (hasQuery ? "relevance" : "installs"),
     filters: {
@@ -175,4 +182,33 @@ export function useExplorerState(): ExplorerState {
     );
   }
   return ctx;
+}
+
+// -- Facet counts ------------------------------------------------------------
+
+const EMPTY_FACETS: Record<string, FacetCount[]> = {};
+
+// Derived (not URL) state, so it can't live on ExplorerState itself — the
+// facets come out of useCatalogSearchStatus in SkillExplorerView, BELOW the
+// state provider. Its own context saves the composer from couriering a prop
+// it never reads down to the filter controls. Default = no counts (the static
+// shell and idle state render without a provider value).
+const CatalogFacetsContext =
+  createContext<Record<string, FacetCount[]>>(EMPTY_FACETS);
+
+export function CatalogFacetsProvider({
+  facets,
+  children,
+}: {
+  facets: Record<string, FacetCount[]>;
+  children: React.ReactNode;
+}) {
+  return (
+    <CatalogFacetsContext value={facets}>{children}</CatalogFacetsContext>
+  );
+}
+
+/** Facet counts for the current result set ({} when idle/static). */
+export function useCatalogFacets(): Record<string, FacetCount[]> {
+  return use(CatalogFacetsContext);
 }

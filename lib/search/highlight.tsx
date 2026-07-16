@@ -1,4 +1,5 @@
 import * as React from "react";
+import { NAME_TOKEN_SEPARATORS } from "@/lib/search/token-separators";
 
 // Minimal HTML-entity decode for the text between/around Typesense's <mark>
 // tags. Typesense escapes these five in field values; we render the parts as
@@ -18,7 +19,12 @@ function decodeEntities(s: string): string {
 
 // Hoisted — see renderHighlight below. (`split` never uses lastIndex, and
 // `replace` with /g resets it, so sharing these across calls is safe.)
-const BRIDGE_SEPARATORS_RE = /<\/mark>([-_./]+)<mark>/g;
+// The separator class is built from the collection schema's own
+// token_separators so the bridge can't drift from what Typesense splits on.
+const BRIDGE_SEPARATORS_RE = new RegExp(
+  `</mark>([${NAME_TOKEN_SEPARATORS.map((s) => `\\${s}`).join("")}]+)<mark>`,
+  "g",
+);
 const MARK_TAG_RE = /<\/?mark>/;
 
 /**

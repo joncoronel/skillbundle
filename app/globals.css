@@ -45,7 +45,6 @@ html {
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
-  --color-rail: var(--rail);
   --color-input: var(--input);
   --color-input-elevated: var(--input-elevated);
   --color-ring: var(--ring);
@@ -230,11 +229,6 @@ html {
   --secondary-hover: color-mix(in oklch, var(--secondary), black 5%);
   --outline-hover: color-mix(in oklch, var(--card), black 5%);
   --border: oklch(0 0 0 / 10%);
-  /* Opaque sibling of --border, for the home frame rails/separator + junction
-     dots — an opaque line lets the dot sit on the crossing without the
-     see-through muddle two semi-transparent colors create. Matched to the
-     rendered weight of --border over --background. */
-  --rail: oklch(0.9 0 0);
   --input: var(--surface-3);
   --input-elevated: oklch(0 0 0 / 8%);
   --ring: oklch(0.55 0.2 250);
@@ -384,7 +378,6 @@ html {
   --secondary-hover: color-mix(in oklch, var(--secondary), white 5%);
   --outline-hover: color-mix(in oklch, var(--card), white 5%);
   --border: oklch(1 0 0 / 10%);
-  --rail: oklch(0.3 var(--neutral-chroma) var(--neutral-hue));
   --input-elevated: oklch(1 0 0 / 9%);
   --scrollbar: oklch(0.7 var(--neutral-chroma) var(--neutral-hue));
   --sidebar-border: oklch(0.28 var(--neutral-chroma) var(--neutral-hue));

@@ -42,7 +42,7 @@ export const leaderboardViewParser = parseAsStringLiteral(leaderboardViewValues)
 // resolves it to "relevance" when a query is present, "installs" otherwise,
 // and only an explicit user choice is reflected in the URL. Trending/Hot are
 // NOT sorts (they're subset ranks on ~60/~30 rows) — they live in the
-// zeitgeist rail, not here. "recent"/"rising" join once the Typesense sync
+// leaderboard sheet, not here. "recent"/"rising" join once the Typesense sync
 // populates contentUpdatedAt/momentum7d (see docs/search-overhaul.md).
 const catalogSortValues = ["relevance", "installs"] as const;
 export type CatalogSortValue = (typeof catalogSortValues)[number];
@@ -120,6 +120,19 @@ export const HOME_PARAM_DEFAULTS: HomeParams = Object.fromEntries(
     (parser as { defaultValue?: unknown }).defaultValue ?? null,
   ]),
 ) as HomeParams;
+
+if (process.env.NODE_ENV !== "production") {
+  // Drift tripwire for the internal read above: a renamed `defaultValue`
+  // would null out EVERY .withDefault() parser uniformly, so one canary
+  // (mode, defaulted to "text") catches it loudly instead of the static
+  // shell silently rendering the wrong entry state.
+  if (HOME_PARAM_DEFAULTS.mode === null) {
+    throw new Error(
+      "HOME_PARAM_DEFAULTS: nuqs's internal `defaultValue` field is no longer " +
+        "readable (renamed in an upgrade?). Fix the derivation in lib/search-params.ts.",
+    );
+  }
+}
 
 // -- Explore page (/explore) parsers --
 

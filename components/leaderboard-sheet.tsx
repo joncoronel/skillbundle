@@ -13,7 +13,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { SkillRowGrid, EmptyState } from "@/components/default-skills-list";
 import type { SkillData } from "@/components/skill-card";
-import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
 import type { LeaderboardViewValue } from "@/lib/search-params";
 
 interface LeaderboardSheetProps {
@@ -22,7 +21,6 @@ interface LeaderboardSheetProps {
   onViewChange: (view: LeaderboardViewValue | null) => void;
   hotSkills: SkillData[];
   trendingSkills: SkillData[];
-  sheetHandle: SkillDetailHandle;
 }
 
 const CAPTIONS: Record<LeaderboardViewValue, string> = {
@@ -45,7 +43,6 @@ export function LeaderboardSheet({
   onViewChange,
   hotSkills,
   trendingSkills,
-  sheetHandle,
 }: LeaderboardSheetProps) {
   // Hold the last real view while closing so the content doesn't flip
   // mid-exit-animation (view goes null the moment close starts — a bare
@@ -95,11 +92,7 @@ export function LeaderboardSheet({
             {skills.length === 0 ? (
               <EmptyState message="No leaderboard data yet — check back after the next sync." />
             ) : (
-              <SkillRowGrid
-                skills={skills}
-                sheetHandle={sheetHandle}
-                metric={active}
-              />
+              <SkillRowGrid skills={skills} metric={active} />
             )}
           </div>
         </SheetBody>

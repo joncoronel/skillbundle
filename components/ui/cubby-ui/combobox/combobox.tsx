@@ -79,7 +79,7 @@ function ComboboxInput({
   /** Class applied to the inner `<input>`. `className` styles the field wrapper. */
   inputClassName?: string;
 }) {
-  const context = React.useContext(ComboboxContext);
+  const context = React.use(ComboboxContext);
   const id = idProp ?? context?.id;
 
   return (
@@ -133,7 +133,7 @@ function ComboboxChipInput({
   className,
   ...props
 }: BaseCombobox.Input.Props) {
-  const context = React.useContext(ComboboxContext);
+  const context = React.use(ComboboxContext);
   const id = idProp ?? context?.id;
 
   return (
@@ -510,7 +510,7 @@ function ComboboxChips({
   variant = "default",
   ...props
 }: BaseCombobox.Chips.Props & { variant?: "default" | "elevated" }) {
-  const context = React.useContext(ComboboxContext);
+  const context = React.use(ComboboxContext);
 
   return (
     <BaseCombobox.Chips
@@ -584,7 +584,7 @@ function ComboboxPopup({
   /** Shadow weight (1-8). Defaults to 3. */
   shadowLevel?: SurfaceLevel;
 }) {
-  const context = React.useContext(ComboboxContext);
+  const context = React.use(ComboboxContext);
 
   return (
     <ComboboxPortal>
@@ -620,7 +620,7 @@ function ComboboxLabel({
   className,
   ...props
 }: React.ComponentProps<typeof Label>) {
-  const context = React.useContext(ComboboxContext);
+  const context = React.use(ComboboxContext);
 
   return <Label htmlFor={context?.id} className={className} {...props} />;
 }

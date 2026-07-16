@@ -127,7 +127,11 @@ export interface SkillSearchArgs {
 // Query building
 // ---------------------------------------------------------------------------
 
-const FACET_FIELDS = ["isOfficial", "worstAuditStatus", "isDuplicate"] as const;
+// isOfficial feeds the Official toggle's potential count treatment;
+// worstAuditStatus feeds the audit select's "pass" count. isDuplicate is NOT
+// faceted: the flag is false on 100% of the catalog today (see the hideForks
+// note in explorer-state.tsx), so its counts carry no information.
+const FACET_FIELDS = ["isOfficial", "worstAuditStatus"] as const;
 
 function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   const clauses: string[] = [];
@@ -187,7 +191,10 @@ interface RawSearchResponse {
   found: number;
   page: number;
   hits?: Array<{
-    document: SkillHit;
+    // The wire document is the synced doc as indexed — syncedAt included,
+    // nameHighlight (a search-time construct) never present. SkillHit is
+    // built from it explicitly below.
+    document: TypesenseSkillDoc;
     // Newer Typesense returns `highlight` (keyed by field); older, `highlights`
     // (an array). We read whichever is present.
     highlight?: Record<string, { value?: string }>;
@@ -210,12 +217,35 @@ function readNameHighlight(h: {
 }
 
 /**
+ * Shared transport for both endpoints below: one search request against the
+ * configured collection with the search-only key, throwing on config or HTTP
+ * errors (callers are React Query queryFns — they surface it).
+ */
+async function tsSearch(
+  params: URLSearchParams,
+  label: string,
+  signal?: AbortSignal,
+): Promise<RawSearchResponse> {
+  const { host, searchKey, collection } = requireConfig();
+  const url =
+    `https://${host}/collections/${encodeURIComponent(collection)}` +
+    `/documents/search?${params.toString()}`;
+  const res = await fetch(url, {
+    headers: { "X-TYPESENSE-API-KEY": searchKey },
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Typesense ${label} ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return (await res.json()) as RawSearchResponse;
+}
+
+/**
  * Run a catalog search / browse against Typesense. Throws if the engine isn't
  * configured or the request fails — callers (a React Query queryFn) surface it.
  */
 export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchResult> {
-  const { host, searchKey, collection } = requireConfig();
-
   const query = args.query?.trim() ?? "";
   const hasQuery = query.length > 0;
 
@@ -246,30 +276,20 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
 
   if (args.facets) params.set("facet_by", FACET_FIELDS.join(","));
 
-  const url =
-    `https://${host}/collections/${encodeURIComponent(collection)}` +
-    `/documents/search?${params.toString()}`;
-
-  const res = await fetch(url, {
-    headers: { "X-TYPESENSE-API-KEY": searchKey },
-    signal: args.signal,
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Typesense search ${res.status}: ${body.slice(0, 200)}`);
-  }
-
-  const raw = (await res.json()) as RawSearchResponse;
+  const raw = await tsSearch(params, "search", args.signal);
   const facets: Record<string, FacetCount[]> = {};
   for (const f of raw.facet_counts ?? []) facets[f.field_name] = f.counts;
 
   return {
     found: raw.found,
     page: raw.page,
-    hits: (raw.hits ?? []).map((h) => ({
-      ...h.document,
-      nameHighlight: readNameHighlight(h),
-    })),
+    hits: (raw.hits ?? []).map((h) => {
+      // Strip the mark-and-sweep bookkeeping stamp so rows carry only the
+      // catalog fields SkillHit declares.
+      const { syncedAt, ...doc } = h.document;
+      void syncedAt;
+      return { ...doc, nameHighlight: readNameHighlight(h) };
+    }),
     facets,
   };
 }
@@ -286,7 +306,6 @@ export async function listOwners(opts: {
   limit?: number;
   signal?: AbortSignal;
 } = {}): Promise<OwnerCount[]> {
-  const { host, searchKey, collection } = requireConfig();
   const query = opts.query?.trim();
   const params = new URLSearchParams();
   params.set("q", "*");
@@ -298,18 +317,7 @@ export async function listOwners(opts: {
   // Typeahead: narrow the returned facet values to those matching the input.
   if (query) params.set("facet_query", `owner:${query}`);
 
-  const url =
-    `https://${host}/collections/${encodeURIComponent(collection)}` +
-    `/documents/search?${params.toString()}`;
-  const res = await fetch(url, {
-    headers: { "X-TYPESENSE-API-KEY": searchKey },
-    signal: opts.signal,
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Typesense facet ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const raw = (await res.json()) as RawSearchResponse;
+  const raw = await tsSearch(params, "facet", opts.signal);
   const counts =
     raw.facet_counts?.find((f) => f.field_name === "owner")?.counts ?? [];
   return counts.map((c) => ({ value: c.value, count: c.count }));

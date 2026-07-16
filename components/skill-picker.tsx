@@ -171,21 +171,10 @@ export function PickerSearchResults({ query }: { query: string }) {
 
   return (
     <PickerList>
+      {/* SkillHit is structurally a PickerSkill (plus engine fields) — no
+          field-by-field mapping to maintain. */}
       {results.map((s) => (
-        <PickerRow
-          key={skillKey(s.source, s.skillId)}
-          skill={{
-            source: s.source,
-            skillId: s.skillId,
-            name: s.name,
-            nameHighlight: s.nameHighlight,
-            description: s.description,
-            installs: s.installs,
-            curatedOwner: s.curatedOwner,
-            worstAuditStatus: s.worstAuditStatus,
-            worstAuditRiskLevel: s.worstAuditRiskLevel,
-          }}
-        />
+        <PickerRow key={skillKey(s.source, s.skillId)} skill={s} />
       ))}
     </PickerList>
   );
@@ -217,20 +206,9 @@ export function PickerPopularResults() {
     <>
       <p className="text-xs text-muted-foreground">Popular skills</p>
       <PickerList>
+        {/* The summary row is structurally a PickerSkill — pass it through. */}
         {results.map((s) => (
-          <PickerRow
-            key={skillKey(s.source, s.skillId)}
-            skill={{
-              source: s.source,
-              skillId: s.skillId,
-              name: s.name,
-              description: s.description,
-              installs: s.installs,
-              curatedOwner: s.curatedOwner,
-              worstAuditStatus: s.worstAuditStatus,
-              worstAuditRiskLevel: s.worstAuditRiskLevel,
-            }}
-          />
+          <PickerRow key={skillKey(s.source, s.skillId)} skill={s} />
         ))}
       </PickerList>
     </>

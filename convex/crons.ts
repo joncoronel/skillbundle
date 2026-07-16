@@ -88,19 +88,11 @@ if (process.env.CRONS_ENABLED === "true") {
     {},
   );
 
-  // Daily at 07:30 UTC: mirror the catalog into Typesense (search engine). Runs
-  // after syncSkills (06:00), syncCurated (06:30), and once reconcile (07:00) is
-  // underway, so installs/ranks/curated/delist flags are settled. Mark-and-sweep
-  // (see typesense.syncCatalog): upserts every non-delisted summary stamped with
-  // the run time, then deletes any doc left with an older stamp (delisted/gone).
-  // Self-scheduling in batches. Audit/content facets may lag the same-day
-  // pipeline by a run; they self-heal the next day.
-  crons.daily(
-    "sync typesense catalog",
-    { hourUTC: 7, minuteUTC: 30 },
-    internal.typesense.syncCatalog,
-    {},
-  );
+  // The Typesense catalog sync is NOT wall-clock-scheduled: it chains off
+  // reconcileUnseenSkills' completion (see reconcile.ts chainTypesenseSync) so
+  // it always indexes settled installs/delist flags instead of racing the
+  // pipeline, and syncCatalog's run lock prevents overlapping walks (e.g. a
+  // manual run). Mark-and-sweep — see typesense.syncCatalog.
 
   // Weekly Sunday 08:00 UTC: resolve GitHub repo identities for duplicate/rename
   // detection (Phase 2). Stamps githubRepoId + repoLiveName onto summaries so

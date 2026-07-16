@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 
@@ -90,7 +90,13 @@ export function ComparePickerSheet({
 
   const { effectiveQuery, isInputLoading } = useSkillPickerSearch(rawQuery);
 
-  const existingKeys = new Set(refs.map((r) => skillKey(r.source, r.skillId)));
+  // Memoized on refs: rawQuery state lives in this component, so an unmemoized
+  // Set would be a fresh reference every keystroke and invalidate
+  // PickerProvider's memoized context — re-rendering every row for nothing.
+  const existingKeys = useMemo(
+    () => new Set(refs.map((r) => skillKey(r.source, r.skillId))),
+    [refs],
+  );
   const atCap = refs.length >= MAX_COMPARE_SKILLS;
 
   return (

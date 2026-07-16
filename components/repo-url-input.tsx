@@ -21,8 +21,11 @@ import {
 } from "@/components/ui/cubby-ui/select";
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
-import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
-import type { SkillDetailHandle } from "@/components/skill-detail-sheet";
+import {
+  rowPositionClassName,
+  SelectableSkillRow,
+  type SkillData,
+} from "@/components/skill-card";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
   Collapsible,
@@ -69,7 +72,6 @@ interface RepoAnalysisResultsProps {
   /** The repo URL from the URL param. Empty = no analysis yet. */
   repoUrl: string;
   canAutoDetect: boolean;
-  sheetHandle: SkillDetailHandle;
   /** Fills the input and runs the analysis for the empty state's example
    *  repo — wiring lives in the parent, which owns both pieces of state. */
   onTryExample?: (url: string) => void;
@@ -84,7 +86,6 @@ interface RepoAnalysisResultsProps {
 export function RepoAnalysisResults({
   repoUrl,
   canAutoDetect,
-  sheetHandle,
   onTryExample,
 }: RepoAnalysisResultsProps) {
   const convex = useConvex();
@@ -325,34 +326,20 @@ export function RepoAnalysisResults({
            internal truncation kick in. Same pattern as SkillRowGrid. */
         <div className="grid grid-cols-1">
           {shownGroups.map((group, i) => {
-            const isFirst = i === 0;
-            const isLast = i === shownGroups.length - 1;
-            const isSolo = shownGroups.length === 1;
-            const positionClassName = isSolo
-              ? undefined
-              : isFirst
-                ? "rounded-b-none"
-                : isLast
-                  ? "rounded-t-none border-t-0"
-                  : cn("rounded-none border-t-0");
+            const positionClassName = rowPositionClassName(
+              i,
+              shownGroups.length,
+            );
 
             if (group.variantCount === 1) {
               const variant = group.variants[0];
-              const skill: SkillData = {
-                source: variant.source,
-                skillId: variant.skillId,
-                name: group.name,
-                description: variant.description,
-                installs: variant.installs,
-                curatedOwner: variant.curatedOwner,
-                worstAuditStatus: variant.worstAuditStatus,
-                worstAuditRiskLevel: variant.worstAuditRiskLevel,
-              };
+              // The variant is structurally a SkillData minus `name`, which
+              // lives on the group.
+              const skill: SkillData = { ...variant, name: group.name };
               return (
                 <SelectableSkillRow
                   key={`singleton:${variant.source}/${variant.skillId}`}
                   skill={skill}
-                  sheetHandle={sheetHandle}
                   className={positionClassName}
                 />
               );
@@ -363,7 +350,6 @@ export function RepoAnalysisResults({
                 key={`group:${group.name}`}
                 group={group}
                 className={positionClassName}
-                sheetHandle={sheetHandle}
               />
             );
           })}
@@ -380,14 +366,9 @@ export function RepoAnalysisResults({
 interface SkillGroupRowProps {
   group: GroupedRecommendation;
   className?: string;
-  sheetHandle: SkillDetailHandle;
 }
 
-function SkillGroupRow({
-  group,
-  className,
-  sheetHandle,
-}: SkillGroupRowProps) {
+function SkillGroupRow({ group, className }: SkillGroupRowProps) {
   const visibleCount = group.variants.length;
   const cappedRemainder = group.variantCount - visibleCount;
 
@@ -447,22 +428,12 @@ function SkillGroupRow({
             connects to the rest of its border. */}
         <div className="border-t bg-muted dark:border-border/50 [&:has(>_label:first-child[data-checked])]:border-t-primary/30">
           {group.variants.map((variant, i) => {
-            const skill: SkillData = {
-              source: variant.source,
-              skillId: variant.skillId,
-              name: group.name,
-              description: variant.description,
-              installs: variant.installs,
-              curatedOwner: variant.curatedOwner,
-              worstAuditStatus: variant.worstAuditStatus,
-              worstAuditRiskLevel: variant.worstAuditRiskLevel,
-            };
+            const skill: SkillData = { ...variant, name: group.name };
             const isLast = i === group.variants.length - 1;
             return (
               <SelectableSkillRow
                 key={`${variant.source}/${variant.skillId}`}
                 skill={skill}
-                sheetHandle={sheetHandle}
                 className={cn(
                   // Square the corners and remove the standalone card border
                   // so variants render as one continuous list inside the
