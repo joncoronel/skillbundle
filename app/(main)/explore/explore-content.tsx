@@ -8,7 +8,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { exploreQueryParser } from "@/lib/search-params";
-import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
+import { useBundleSearch } from "@/hooks/use-bundle-search";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { ExploreFilters } from "@/components/explore/explore-filters";
@@ -25,11 +25,7 @@ export function ExploreContent() {
   // *do* read `queryResult.data` and `queryResult.isPlaceholderData` here —
   // those are the inputs to the crossfade's `hasSettled` state machine
   // below — so Proxy tracking subscribes this component to them as expected.
-  const { effectiveQuery, isInputLoading, queryResult } =
-    useDebouncedCachedSearch({
-      rawQuery: query,
-      fn: api.bundles.searchPublic,
-    });
+  const { effectiveQuery, isInputLoading, queryResult } = useBundleSearch(query);
   const { data: results, isPlaceholderData } = queryResult;
 
   // Has the current search session settled at least once? Gates the crossfade:

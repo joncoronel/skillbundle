@@ -25,7 +25,11 @@
 // Run with { dryRun: true } to see the classification (healthy vs broke) with no
 // detail calls or writes — it's derived purely from our own DB fields.
 
-import { internalAction, internalQuery } from "./_generated/server";
+import {
+  internalAction,
+  internalQuery,
+  type ActionCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { revalidateHomeTag } from "./lib/revalidate";
@@ -57,6 +61,23 @@ const RECONCILE_BATCH = 150;
 // Self-firing so nobody has to remember to check; run devStats:countDeadButInstallable
 // to quantify the standing population.
 const RECONCILE_GONE_WARN = 50;
+
+/**
+ * Chain the Typesense catalog sync off this job's completion — the last step
+ * of the daily pipeline whose data the search index mirrors (installs, delist
+ * flags, lastSeenInApi). Chained rather than wall-clock-scheduled so the sync
+ * can't race a still-running reconcile; syncCatalog's own run lock backstops
+ * any remaining overlap (e.g. a manual run). Gated like cron registration
+ * (CRONS_ENABLED, prod only) so a manual dev reconcile doesn't schedule a sync
+ * on a deployment without Typesense env. Audit/content facets may still lag
+ * their own pipeline branch by a run — they self-heal the next day.
+ * Fired on the bail path too: syncing yesterday's settled data is still
+ * strictly better than skipping the day (mark-and-sweep is idempotent).
+ */
+async function chainTypesenseSync(ctx: ActionCtx) {
+  if (process.env.CRONS_ENABLED !== "true") return;
+  await ctx.scheduler.runAfter(0, internal.typesense.syncCatalog, {});
+}
 
 // The per-row projection listUnseenSummaries returns and the action accumulates.
 // Named once so the query's .map() and the stale[] accumulator can't drift apart
@@ -175,6 +196,8 @@ export const reconcileUnseenSkills = internalAction({
       console.error(
         `reconcileUnseenSkills: ${stale.length} stale rows exceed cap ${MAX_RECONCILE} — syncSkills likely failed. Bailing without writes.`,
       );
+      // Not on a dry run — a diagnostic pass must never schedule real work.
+      if (!dryRun) await chainTypesenseSync(ctx);
       return {
         dryRun,
         bailed: true,
@@ -298,6 +321,10 @@ export const reconcileUnseenSkills = internalAction({
           `run devStats:countDeadButInstallable to quantify.`,
       );
     }
+
+    // Terminal exit (no continuation scheduled): the daily reconcile is done —
+    // kick the Typesense catalog sync.
+    if (!rescheduled) await chainTypesenseSync(ctx);
 
     return {
       dryRun,

@@ -5,6 +5,14 @@ import {
   loadSkill,
   SkillDetailPage,
 } from "@/components/skill-detail-page";
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/cubby-ui/breadcrumbs";
 import { representativeGitHubSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
@@ -61,27 +69,29 @@ export default async function SkillPage({ params }: { params: Params }) {
       externalIcon={GithubIcon}
       externalLabel={source}
       breadcrumb={
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-6">
-          <Link href="/" className="hover:text-foreground transition-colors">
-            Home
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/${org}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {org}
-          </Link>
-          <span>/</span>
-          <Link
-            href={`/${source}`}
-            className="hover:text-foreground transition-colors"
-          >
-            {repo}
-          </Link>
-          <span>/</span>
-          <span className="text-foreground">{skillId}</span>
-        </nav>
+        <Breadcrumb size="sm" className="mb-6">
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href="/" />}>Home</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/${org}`} />}>
+                {org}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink render={<Link href={`/${source}`} />}>
+                {repo}
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{skillId}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       }
     />
   );

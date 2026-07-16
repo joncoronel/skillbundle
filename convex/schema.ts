@@ -269,14 +269,11 @@ export default defineSchema({
     .index("by_curatedOwner", ["curatedOwner"])
     // Audit-fetch queue. Queries with `q.eq("needsAudit", true)` walk only
     // the skills that need their audit refreshed. Drained by fetchAuditBatch.
-    .index("by_needsAudit", ["needsAudit"])
-    // Full-text search index for the home page text search. Lives on
-    // skillSummaries (~200 bytes/row) instead of skills (~25 KB/row) so each
-    // page of search results is ~5 KB on the wire instead of ~625 KB.
-    .searchIndex("search_name", {
-      searchField: "name",
-      filterFields: ["isDelisted", "curatedOwner"],
-    }),
+    .index("by_needsAudit", ["needsAudit"]),
+    // (Removed: the `search_name` full-text index. It backed the old Convex
+    // `searchSkills` home query, now replaced by browser-direct Typesense —
+    // see docs/search-overhaul.md. With no consumer it was pure write
+    // amplification on this ~75k-row table, which the sync rewrites daily.)
 
   // One row per audited skill. Lives in its own table because audits change
   // independently of skill content (re-run periodically by skills.sh's audit
@@ -389,8 +386,13 @@ export default defineSchema({
               skillId: v.string(),
               description: v.optional(v.string()),
               installs: v.number(),
+              curatedOwner: v.optional(v.string()),
+              worstAuditStatus: v.optional(v.string()),
+              worstAuditRiskLevel: v.optional(v.string()),
             }),
           ),
+          // Lexical package overlaps surfaced as the row's match reason.
+          matchedPackages: v.optional(v.array(v.string())),
         }),
       ),
     ),
@@ -456,6 +458,17 @@ export default defineSchema({
   })
     .index("by_user_bundle", ["userId", "bundleId"])
     .index("by_bundle", ["bundleId"]),
+
+  // Single-row run lock for the Typesense catalog sync (typesense.syncCatalog).
+  // Two overlapping mark-and-sweep walks can cross-stamp documents and sweep
+  // live docs out of the search index (e.g. a manual run overlapping the daily
+  // chained run) — the lock makes a second start a loud no-op instead.
+  // `completedAt` unset = a run is in progress (or crashed; stale locks past
+  // the TTL are stealable).
+  typesenseSyncLock: defineTable({
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }),
 
   syncStats: defineTable({
     totalSkills: v.number(),

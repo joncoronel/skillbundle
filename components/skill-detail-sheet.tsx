@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, use } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
@@ -64,6 +65,34 @@ export type SkillDetailHandle = ReturnType<typeof createSheetHandle<SkillData>>;
 
 export function createSkillDetailHandle() {
   return createSheetHandle<SkillData>();
+}
+
+// The handle used to thread through every list/row component between the page
+// (which creates it) and SkillName (which opens the sheet) — ~7 signatures of
+// pure pass-through. Context instead: the page provides its handle once, rows
+// read it where it's used. Null (no provider — e.g. a source page) = rows
+// link to the skill page instead of opening a sheet, same as the old optional
+// prop being absent.
+const SkillDetailHandleContext = createContext<SkillDetailHandle | null>(null);
+
+export function SkillDetailHandleProvider({
+  handle,
+  children,
+}: {
+  handle: SkillDetailHandle;
+  children: React.ReactNode;
+}) {
+  return (
+    <SkillDetailHandleContext value={handle}>
+      {children}
+    </SkillDetailHandleContext>
+  );
+}
+
+/** The nearest page's skill-detail handle, or null when the surface has none
+ *  (rows fall back to linking at the skill page). */
+export function useSkillDetailHandle(): SkillDetailHandle | null {
+  return use(SkillDetailHandleContext);
 }
 
 /**

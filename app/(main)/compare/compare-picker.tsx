@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
   Sheet,
@@ -16,21 +15,22 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import {
   PickerPopularResults,
+  PickerProvider,
   PickerSearchResults,
   SkillSearchField,
   skillKey,
   type PickerSkill,
   type SkillPickerCopy,
 } from "@/components/skill-picker";
-import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
+import { useSkillPickerSearch } from "@/hooks/use-skill-picker-search";
 import { MAX_COMPARE_SKILLS, type SkillRef } from "@/lib/compare";
 
 const compareCopy: SkillPickerCopy = {
   added: "In comparison",
-  add: (name) => `Add ${name} to the comparison`,
-  addDisabled: (name) =>
-    `Add ${name} (comparison is at the ${MAX_COMPARE_SKILLS}-skill maximum)`,
-  remove: (name) => `Remove ${name} from the comparison`,
+  add: (name, source) => `Add ${name} (${source}) to the comparison`,
+  addDisabled: (name, source) =>
+    `Add ${name} (${source}). Comparison is at the ${MAX_COMPARE_SKILLS}-skill maximum.`,
+  remove: (name, source) => `Remove ${name} (${source}) from the comparison`,
 };
 
 /** The slim add-column strip at the grid's edge. */
@@ -88,12 +88,15 @@ export function ComparePickerSheet({
 }) {
   const [rawQuery, setRawQuery] = useState("");
 
-  const { effectiveQuery, isInputLoading } = useDebouncedCachedSearch({
-    rawQuery,
-    fn: api.skills.searchSkills,
-  });
+  const { effectiveQuery, isInputLoading } = useSkillPickerSearch(rawQuery);
 
-  const existingKeys = new Set(refs.map((r) => skillKey(r.source, r.skillId)));
+  // Memoized on refs: rawQuery state lives in this component, so an unmemoized
+  // Set would be a fresh reference every keystroke and invalidate
+  // PickerProvider's memoized context — re-rendering every row for nothing.
+  const existingKeys = useMemo(
+    () => new Set(refs.map((r) => skillKey(r.source, r.skillId))),
+    [refs],
+  );
   const atCap = refs.length >= MAX_COMPARE_SKILLS;
 
   return (
@@ -117,24 +120,19 @@ export function ComparePickerSheet({
             {refs.length} / {MAX_COMPARE_SKILLS} in comparison
           </p>
 
-          {effectiveQuery ? (
-            <PickerSearchResults
-              query={effectiveQuery}
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={compareCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          ) : (
-            <PickerPopularResults
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={compareCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          )}
+          <PickerProvider
+            existingKeys={existingKeys}
+            atCap={atCap}
+            copy={compareCopy}
+            onAdd={onAdd}
+            onRemove={onRemove}
+          >
+            {effectiveQuery ? (
+              <PickerSearchResults query={effectiveQuery} />
+            ) : (
+              <PickerPopularResults />
+            )}
+          </PickerProvider>
         </SheetBody>
       </SheetContent>
     </Sheet>

@@ -1,20 +1,27 @@
-import * as React from "react";
-import { cn } from "@/lib/utils";
-import { solidSurface } from "@/lib/cubby-ui/elevated";
+"use client";
 
+import * as React from "react";
+import { mergeProps } from "@base-ui/react/merge-props";
+import { useRender } from "@base-ui/react/use-render";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons";
+
+import { cn } from "@/lib/utils";
+
+type BreadcrumbVariant = "default" | "surface";
 type BreadcrumbSize = "sm" | "md" | "lg";
 
 interface BreadcrumbProps extends React.ComponentProps<"nav"> {
+  variant?: BreadcrumbVariant;
   size?: BreadcrumbSize;
   "aria-label"?: string;
 }
 
 function Breadcrumb({
+  variant = "default",
   size = "md",
   "aria-label": ariaLabel = "breadcrumb",
   className,
@@ -24,6 +31,7 @@ function Breadcrumb({
     <nav
       aria-label={ariaLabel}
       data-slot="breadcrumb"
+      data-variant={variant}
       data-size={size}
       className={cn("group", className)}
       {...props}
@@ -36,13 +44,11 @@ function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
     <ol
       data-slot="breadcrumb-list"
       className={cn(
-        "text-muted-foreground inline-flex flex-wrap items-center gap-1.5 text-sm break-words sm:gap-2.5",
+        "text-muted-foreground inline-flex flex-wrap items-center gap-1.5 text-sm wrap-break-word sm:gap-2.5",
         "group-data-[size=sm]:gap-1 group-data-[size=sm]:text-xs group-data-[size=sm]:sm:gap-2",
         "group-data-[size=lg]:gap-2 group-data-[size=lg]:text-base group-data-[size=lg]:sm:gap-3",
-        "rounded-lg p-1",
-        // Gray-frame outer with elevation shadow + rim.
-        solidSurface(3, 2),
-        "bg-muted",
+        // surface variant — framed gray track lifted off the page.
+        "group-data-[variant=surface]:bg-muted group-data-[variant=surface]:rounded-lg group-data-[variant=surface]:p-1 group-data-[variant=surface]:shadow-[var(--surface-shadow-1),var(--surface-rim-1)]",
         className,
       )}
       {...props}
@@ -69,30 +75,25 @@ function BreadcrumbItem({
   );
 }
 
-interface BreadcrumbLinkProps extends React.ComponentProps<"a"> {
-  render?: (props: { className: string }) => React.ReactNode;
-}
+type BreadcrumbLinkProps = useRender.ComponentProps<"a">;
 
-function BreadcrumbLink({
-  render,
-  className,
-  children,
-  ...props
-}: BreadcrumbLinkProps) {
-  const linkClassName = cn(
-    "hover:text-foreground transition-colors duration-200 rounded-sm px-1.5 py-0.5",
-    className,
-  );
+function BreadcrumbLink({ className, render, ...props }: BreadcrumbLinkProps) {
+  const defaultProps = {
+    "data-slot": "breadcrumb-link",
+    className: cn(
+      "rounded-sm transition-colors duration-200 hover:text-foreground",
+      "outline-solid outline-2 outline-offset-2 outline-transparent focus-visible:outline-ring/50",
+      // surface variant — padded hit area so links sit inside the track.
+      "group-data-[variant=surface]:px-1.5 group-data-[variant=surface]:py-0.5",
+      className,
+    ),
+  };
 
-  if (render) {
-    return render({ className: linkClassName });
-  }
-
-  return (
-    <a data-slot="breadcrumb-link" className={linkClassName} {...props}>
-      {children}
-    </a>
-  );
+  return useRender({
+    defaultTagName: "a",
+    render,
+    props: mergeProps<"a">(defaultProps, props),
+  });
 }
 
 function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
@@ -101,10 +102,9 @@ function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
       data-slot="breadcrumb-page"
       aria-current="page"
       className={cn(
-        "text-foreground rounded-sm px-2 py-1 font-normal",
-        // Current-page pill — lifted out of the muted track, same elevation
-        // treatment as the Tabs capsule indicator.
-        solidSurface(4, 2),
+        "text-foreground font-normal",
+        // surface variant — current-page pill lifted out of the muted track.
+        "group-data-[variant=surface]:bg-surface-4 group-data-[variant=surface]:rounded-sm group-data-[variant=surface]:px-2 group-data-[variant=surface]:py-1 group-data-[variant=surface]:shadow-[var(--surface-shadow-3),var(--surface-rim-3)]",
         className,
       )}
       {...props}
@@ -157,7 +157,7 @@ function BreadcrumbEllipsis({
       role="presentation"
       aria-hidden="true"
       className={cn(
-        "flex w-9 items-center justify-center",
+        "flex size-9 items-center justify-center",
         "group-data-[size=sm]:size-7",
         "group-data-[size=lg]:size-11",
         className,

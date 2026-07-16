@@ -1,5 +1,13 @@
 "use client";
 
+// Next.js App Router adapter: nuqs reads the URL through Next's
+// useSearchParams() and writes through the Next router. This is required (not
+// the framework-agnostic `react` adapter) so useQueryState stays in sync with
+// Next's CLIENT-SIDE navigations — a <Link> to `/compare?skills=…` updates the
+// params reactively. The `react` adapter only observes `popstate`, so soft
+// navigations silently drop the params. Reading searchParams this way makes a
+// param-driven client subtree dynamic under Cache Components, so those routes
+// wrap it in a Suspense boundary whose fallback is the static shell.
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ConvexClientProvider } from "./ConvexClientProvider";

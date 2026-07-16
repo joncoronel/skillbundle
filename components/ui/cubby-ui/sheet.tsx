@@ -277,7 +277,14 @@ function SheetBody({
       )}
     >
       <ScrollArea
-        className="flex-1"
+        // Base UI's ScrollArea.Content forces `min-width: fit-content`, which
+        // inside the scroll viewport resolves to max-content — so non-wrapping
+        // content (code blocks) would stretch the body's track past the
+        // viewport and turn the sheet's vertical scroll into a horizontal one.
+        // Clamp this scroll area's own Content back to the viewport width (the
+        // direct-child chain leaves nested ScrollAreas, e.g. the one inside a
+        // CodeBlock, free to scroll horizontally within their own box).
+        className="flex-1 [&>[data-slot=scroll-area-viewport]>[data-slot=scroll-area-content]]:min-w-0!"
         fadeEdges={fadeEdges}
         scrollbarGutter={scrollbarGutter}
         persistScrollbar={persistScrollbar}

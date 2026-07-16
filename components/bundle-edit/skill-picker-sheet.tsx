@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 
-import { api } from "@/convex/_generated/api";
 import {
   Sheet,
   SheetBody,
@@ -13,12 +12,13 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import {
   PickerPopularResults,
+  PickerProvider,
   PickerSearchResults,
   SkillSearchField,
   type PickerSkill,
   type SkillPickerCopy,
 } from "@/components/skill-picker";
-import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
+import { useSkillPickerSearch } from "@/hooks/use-skill-picker-search";
 import { cn } from "@/lib/utils";
 import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
 
@@ -31,10 +31,10 @@ export type { PickerSkill };
 
 const bundleCopy: SkillPickerCopy = {
   added: "In bundle",
-  add: (name) => `Add ${name} to bundle`,
-  addDisabled: (name) =>
-    `Add ${name} (bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum)`,
-  remove: (name) => `Remove ${name} from bundle`,
+  add: (name, source) => `Add ${name} (${source}) to bundle`,
+  addDisabled: (name, source) =>
+    `Add ${name} (${source}). Bundle is at the ${MAX_BUNDLE_SKILLS}-skill maximum.`,
+  remove: (name, source) => `Remove ${name} (${source}) from bundle`,
 };
 
 export interface BundleEditSkillPickerProps {
@@ -65,10 +65,7 @@ export function BundleEditSkillPicker({
     if (!open) setRawQuery("");
   }
 
-  const { effectiveQuery, isInputLoading } = useDebouncedCachedSearch({
-    rawQuery,
-    fn: api.skills.searchSkills,
-  });
+  const { effectiveQuery, isInputLoading } = useSkillPickerSearch(rawQuery);
 
   // Staged count drives the cap preempt. `existingKeys` already represents
   // "current bundle + staged adds − staged removes," so its size is the
@@ -109,24 +106,19 @@ export function BundleEditSkillPicker({
             </p>
           ) : null}
 
-          {effectiveQuery ? (
-            <PickerSearchResults
-              query={effectiveQuery}
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={bundleCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          ) : (
-            <PickerPopularResults
-              existingKeys={existingKeys}
-              atCap={atCap}
-              copy={bundleCopy}
-              onAdd={onAdd}
-              onRemove={onRemove}
-            />
-          )}
+          <PickerProvider
+            existingKeys={existingKeys}
+            atCap={atCap}
+            copy={bundleCopy}
+            onAdd={onAdd}
+            onRemove={onRemove}
+          >
+            {effectiveQuery ? (
+              <PickerSearchResults query={effectiveQuery} />
+            ) : (
+              <PickerPopularResults />
+            )}
+          </PickerProvider>
         </SheetBody>
       </SheetContent>
     </Sheet>

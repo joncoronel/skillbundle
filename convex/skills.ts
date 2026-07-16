@@ -2712,37 +2712,6 @@ export const pruneSnapshotsBatch = internalMutation({
 });
 
 /**
- * Full-text search over skill names. Returns up to 100 BM25-ordered results
- * (Convex search indexes do not support custom ordering).
- */
-export const searchSkills = query({
-  args: {
-    query: v.string(),
-    officialOnly: v.optional(v.boolean()),
-  },
-  // Reads from skillSummaries (~200 bytes/row) instead of skills (~25 KB/row)
-  // so the full result set is ~20 KB on the wire instead of ~2.5 MB. The
-  // frontend only needs source/skillId/name/description/installs/isDelisted/
-  // hasContentFetchError, all of which are mirrored on the summary.
-  handler: async (ctx, { query: searchQuery, officialOnly }) => {
-    const trimmed = searchQuery.trim();
-    if (!trimmed) {
-      return [];
-    }
-    const results = await ctx.db
-      .query("skillSummaries")
-      .withSearchIndex("search_name", (q) =>
-        q.search("name", trimmed).eq("isDelisted", false),
-      )
-      .take(150);
-    return results
-      .filter((s) => !s.isDuplicate)
-      .filter((s) => (officialOnly ? !!s.curatedOwner : true))
-      .slice(0, 100);
-  },
-});
-
-/**
  * Paginated list of non-delisted skills sorted by installs (descending).
  * Used as the default "browse" view on the home page when no search query
  * is entered. Reads from skillSummaries (~200 bytes/row) for cheap wire size.

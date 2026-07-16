@@ -180,8 +180,12 @@ export const setCachedRecommendations = internalMutation({
             skillId: v.string(),
             description: v.optional(v.string()),
             installs: v.number(),
+            curatedOwner: v.optional(v.string()),
+            worstAuditStatus: v.optional(v.string()),
+            worstAuditRiskLevel: v.optional(v.string()),
           }),
         ),
+        matchedPackages: v.optional(v.array(v.string())),
       }),
     ),
   },
@@ -225,7 +229,18 @@ export interface GroupedRecommendation {
     skillId: string;
     description?: string;
     installs: number;
+    /** Curated/official owner slug, when the variant is an official skill. */
+    curatedOwner?: string;
+    worstAuditStatus?: string;
+    worstAuditRiskLevel?: string;
   }>;
+  /**
+   * Repo packages whose names literally appear in this group's name or
+   * descriptions — the lexical slice of the match, surfaced as the row's
+   * "matches: …" reason. Empty/absent = the match is purely semantic
+   * (embedding similarity), which the results header explains.
+   */
+  matchedPackages?: string[];
 }
 
 export interface AnalyzeRepoResult {
@@ -601,16 +616,22 @@ export const analyzeRepo = action({
     function computeScore(
       summary: (typeof entries)[number]["summary"],
       vectorScore: number,
-    ): number {
+    ): { score: number; matchedPackages: string[] } {
       const haystack =
         `${summary.name} ${summary.description ?? ""}`.toLowerCase();
-      let matchCount = 0;
+      // Collect the actual matching package names (not just a count) — they
+      // double as the row's user-facing "matches: …" reason.
+      const matchedPackages: string[] = [];
       for (const pkg of packageSet) {
-        if (pkg.length >= 4 && haystack.includes(pkg)) matchCount++;
+        if (pkg.length >= 4 && haystack.includes(pkg)) matchedPackages.push(pkg);
       }
-      const packageMultiplier = 1 + 0.03 * Math.log2(matchCount + 1);
+      const packageMultiplier =
+        1 + 0.03 * Math.log2(matchedPackages.length + 1);
       const popMultiplier = 1 + 0.05 * Math.log10(summary.installs + 1);
-      return vectorScore * packageMultiplier * popMultiplier;
+      return {
+        score: vectorScore * packageMultiplier * popMultiplier,
+        matchedPackages,
+      };
     }
 
     interface PendingGroup {
@@ -618,11 +639,16 @@ export const analyzeRepo = action({
       // The MAX composite score across all variants in this group.
       // Determines the group's position in the final result list.
       score: number;
+      // Union of every variant's lexical package matches (insertion-ordered).
+      matchedPackages: Set<string>;
       variants: Array<{
         source: string;
         skillId: string;
         description?: string;
         installs: number;
+        curatedOwner?: string;
+        worstAuditStatus?: string;
+        worstAuditRiskLevel?: string;
       }>;
     }
 
@@ -642,18 +668,26 @@ export const analyzeRepo = action({
         skillId: summary.skillId,
         description: summary.description,
         installs: summary.installs,
+        curatedOwner: summary.curatedOwner,
+        worstAuditStatus: summary.worstAuditStatus,
+        worstAuditRiskLevel: summary.worstAuditRiskLevel,
       };
-      const variantScore = computeScore(summary, result._score);
+      const { score: variantScore, matchedPackages } = computeScore(
+        summary,
+        result._score,
+      );
 
       const existing = groupsByName.get(summary.name);
       if (existing === undefined) {
         groupsByName.set(summary.name, {
           name: summary.name,
           score: variantScore,
+          matchedPackages: new Set(matchedPackages),
           variants: [variant],
         });
       } else {
         existing.variants.push(variant);
+        for (const pkg of matchedPackages) existing.matchedPackages.add(pkg);
         // Group inherits the best score across all its variants.
         if (variantScore > existing.score) {
           existing.score = variantScore;
@@ -676,6 +710,8 @@ export const analyzeRepo = action({
         name: group.name,
         variantCount: sortedVariants.length,
         variants: sortedVariants.slice(0, MAX_VARIANTS_PER_GROUP),
+        // Cap the user-facing match reason at 3 — one is a lot already.
+        matchedPackages: Array.from(group.matchedPackages).slice(0, 3),
       };
     });
 

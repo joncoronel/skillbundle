@@ -4,10 +4,11 @@ import { ExploreFallback } from "@/components/explore/explore-fallback";
 import { ExploreContent } from "./explore-content";
 
 export default function ExplorePage() {
-  // The page is static. <ExploreContent> reads search params (nuqs), which
-  // suspends during prerendering — the fallback renders the identical default
-  // browse state so the prerendered HTML is a full-looking page and the route
-  // stays prefetchable. After hydration the live tree applies any URL params.
+  // The page is static. <ExploreContent> reads search params via nuqs' Next
+  // adapter, which suspends during prerendering — the fallback renders the
+  // identical default browse state so the prerendered HTML is a full-looking
+  // page and the route stays prefetchable. After hydration the live tree
+  // applies any URL params and stays in sync with Next's client-side router.
 
   return (
     <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">

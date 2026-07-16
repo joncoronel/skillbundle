@@ -88,6 +88,24 @@ if (process.env.CRONS_ENABLED === "true") {
     {},
   );
 
+  // The Typesense catalog sync is primarily chained off reconcileUnseenSkills'
+  // completion (see reconcile.ts chainTypesenseSync) so it indexes settled
+  // installs/delist flags instead of racing the pipeline. Mark-and-sweep — see
+  // typesense.syncCatalog.
+  //
+  // This daily wall-clock run is the BACKSTOP: Convex doesn't retry actions, so
+  // if reconcile throws mid-flight its chain link never fires and nothing syncs
+  // that day. Bounds worst-case staleness to ~24h instead of "until reconcile
+  // succeeds again". syncCatalog's run lock makes any overlap with the chained
+  // run a no-op, so this costs nothing on a normal day. Scheduled at 09:00 UTC
+  // — comfortably after the ~07:00 reconcile chain has run on a healthy day.
+  crons.daily(
+    "typesense sync backstop",
+    { hourUTC: 9, minuteUTC: 0 },
+    internal.typesense.syncCatalog,
+    {},
+  );
+
   // Weekly Sunday 08:00 UTC: resolve GitHub repo identities for duplicate/rename
   // detection (Phase 2). Stamps githubRepoId + repoLiveName onto summaries so
   // getSkillCopies can group aliases (same repo id) and forks (same content,

@@ -68,13 +68,7 @@ export default async function WellKnownSourcePage({
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink
-              render={({ className }) => (
-                <Link href="/" className={className}>
-                  Home
-                </Link>
-              )}
-            />
+            <BreadcrumbLink render={<Link href="/" />}>Home</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>

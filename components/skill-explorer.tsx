@@ -1,42 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryState } from "nuqs";
+import { Activity, useMemo } from "react";
 import type { FunctionReturnType } from "convex/server";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  Search01Icon,
-  Cancel01Icon,
-  GithubIcon,
-  FlashIcon,
-} from "@hugeicons/core-free-icons";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+  CatalogFacetsProvider,
+  ExplorerStateProvider,
+  useExplorerState,
+} from "@/components/explorer-state";
 import {
-  modeParser,
-  searchQueryParser,
-  repoUrlParser,
-  type ModeValue,
-} from "@/lib/search-params";
-import { useDebouncedCachedSearch } from "@/hooks/use-debounced-cached-search";
-import { Input } from "@/components/ui/cubby-ui/input";
-import { Kbd } from "@/components/ui/cubby-ui/kbd";
-import { Button } from "@/components/ui/cubby-ui/button";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsPanels,
-  TabsContent,
-} from "@/components/ui/cubby-ui/tabs";
-import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
-import { SkillSearchResults } from "@/components/skill-search";
-import { DefaultSkillsList } from "@/components/default-skills-list";
+  catalogSearchQueryKey,
+  useCatalogSearchStatus,
+} from "@/hooks/use-catalog-search";
+import { useDebouncedQueryValue } from "@/hooks/use-debounced-query-value";
+import { PopularList, rowToSkill } from "@/components/default-skills-list";
+import { SkillComposer } from "@/components/skill-composer";
+import { ActiveCatalogResults } from "@/components/catalog-results";
+import { LeaderboardSheet } from "@/components/leaderboard-sheet";
 import { RepoAnalysisResults } from "@/components/repo-url-input";
 import {
   SkillDetailSheet,
+  SkillDetailHandleProvider,
   createSkillDetailHandle,
 } from "@/components/skill-detail-sheet";
-import { api } from "@/convex/_generated/api";
+import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 
 interface SkillExplorerProps {
@@ -48,276 +34,215 @@ interface SkillExplorerProps {
 
 const skillDetailHandle = createSkillDetailHandle();
 
-export function SkillExplorer({
+/**
+ * Live wrapper: mounts the nuqs-backed explorer state provider around the
+ * view. Reading search params makes this subtree dynamic under Cache
+ * Components, so app/(main)/page.tsx wraps it in Suspense with a fallback
+ * that renders the same view under ExplorerStaticProvider (the no-params
+ * entry state) — see app/(main)/home-content.tsx.
+ */
+export function SkillExplorer(props: SkillExplorerProps) {
+  return (
+    <ExplorerStateProvider>
+      <SkillExplorerView {...props} />
+    </ExplorerStateProvider>
+  );
+}
+
+/**
+ * The home page's discovery surface — ONE stable layout (no view transitions,
+ * no hero-collapse, no relocating search box). The hero, the search composer,
+ * and its chin hold fixed positions; only the list region below changes.
+ * Typing and activating a filter are therefore the same gesture — both just
+ * swap what's in the list — which is what makes the two feel consistent (an
+ * earlier design morphed the whole page when you searched, which was jarring
+ * when your first action was a filter, not typing).
+ *
+ * - **Idle:** the SSR'd + infinite-scroll Popular catalog renders.
+ * - **Query / filter / non-default sort active:** the list swaps to
+ *   Typesense-backed results in the same spot. The Popular list stays mounted
+ *   (hidden via <Activity>) so clearing the search restores scroll depth.
+ * - **Repo mode:** the same region shows repo match results.
+ *
+ * URL state comes from the explorer context (provided above, or statically by
+ * the Suspense fallback). Search status — the input spinner, the
+ * Popular→results handoff, facet counts — is DERIVED here from the shared
+ * React Query cache (useCatalogSearchStatus): this component owns the
+ * debounced effective query, ActiveCatalogResults fetches under the same key,
+ * and nothing is reported back up through effects. Anything that reads
+ * Date.now() during render (the Typesense infinite query) still mounts only
+ * when a search is active — never in the prerendered idle state.
+ */
+export function SkillExplorerView({
   canAutoDetect,
   initialPopularSkills,
   initialTrending,
   initialHot,
 }: SkillExplorerProps) {
-  const [mode, setMode] = useQueryState("mode", modeParser);
-  const [textQuery, setTextQuery] = useQueryState("q", searchQueryParser);
-  const [repoUrl, setRepoUrl] = useQueryState("repo", repoUrlParser);
-
-  // Search machinery (debounce + cache bypass + spinner state) lives in the
-  // shared hook. We *do* read `queryResult.data`/`isPlaceholderData` here —
-  // they drive the crossfade's `hasSettled` state machine below — so Proxy
-  // tracking subscribes this component to them as intended (same contract
-  // as /explore's ExploreContent).
   const {
-    effectiveQuery: effectiveTextQuery,
-    isInputLoading: textIsLoading,
-    queryResult: textQueryResult,
-  } = useDebouncedCachedSearch({
-    rawQuery: textQuery,
-    fn: api.skills.searchSkills,
-  });
-  const { data: textResults, isPlaceholderData: textIsPlaceholder } =
-    textQueryResult;
+    textQuery,
+    repoUrl,
+    trimmedQuery,
+    hasQuery,
+    isRepo,
+    anyFilter,
+    hasNarrowing,
+    searchActive,
+    effectiveSort,
+    filters,
+    searchDescriptions,
+    view,
+    setParams,
+  } = useExplorerState();
 
-  // Has the current search session settled at least once? Gates the
-  // crossfade the same way /explore does (see explore-content.tsx):
-  //   - First search (""→"d"): leaderboard stays visible as filler until
-  //     "d" lands → flips true → crossfade straight to real results
-  //   - Refinement ("d"→"dd"): stays true; placeholder keeps "d" rows visible
-  //   - Clear: resets to false → crossfade back to the leaderboard
-  //   - Fresh after clear ("d"→clear→"g"): false again until "g" lands
-  // Crossfading only on settled data means the pane never animates while a
-  // skeleton shimmers underneath — that combination (height + blur
-  // transition over an animating gradient) is what made the swap stutter.
-  // The input's inline spinner is the in-flight feedback instead. Always
-  // starts false, including direct-link loads with `?q=foo`, so the
-  // leaderboard shows while the search fetches rather than a blank pane.
-  const [searchSettled, setSearchSettled] = useState(false);
-  if (!effectiveTextQuery && searchSettled) setSearchSettled(false);
-  if (
-    effectiveTextQuery &&
-    textResults !== undefined &&
-    !textIsPlaceholder &&
-    !searchSettled
-  ) {
-    setSearchSettled(true);
-  }
-  const showSearchResults = effectiveTextQuery.length > 0 && searchSettled;
-
-  // Local input state for the repo field — only pushed to the URL on submit.
-  const [repoInput, setRepoInput] = useState(repoUrl);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Keyboard shortcut: focus on /
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (
-        e.key === "/" &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        document.activeElement?.tagName !== "INPUT" &&
-        document.activeElement?.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        inputRef.current?.focus();
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  function handleRepoSubmit() {
-    const trimmed = repoInput.trim();
-    if (!trimmed) return;
-    setRepoUrl(trimmed);
-  }
-
-  const handleModeChange = useCallback(
-    (value: string) => setMode(value as ModeValue),
-    [setMode],
+  // Trending/Hot sheet rows, mapped once from the server-cached snapshots (the
+  // leaderboard crons keep those fresh; there's no client subscription).
+  const trendingSkills = useMemo(
+    () => (initialTrending?.page ?? []).map(rowToSkill),
+    [initialTrending],
+  );
+  const hotSkills = useMemo(
+    () => (initialHot ?? []).map(rowToSkill),
+    [initialHot],
   );
 
-  const isText = mode === "text";
-  const inputValue = isText ? textQuery : repoInput;
-  const placeholder = isText
-    ? "Search skills by name…"
-    : "https://github.com/owner/repo";
-  // Spinner only shows in text mode — the hook's `textIsLoading` covers
-  // every "pending search work" state for the text input.
-  const isInputLoading = isText && textIsLoading;
-  const Icon = isText ? Search01Icon : GithubIcon;
+  // The effective (debounced / cache-bypassed) query — the ONE value
+  // ActiveCatalogResults fetches with, so the status derivation below reads
+  // the same cache entries the results render from.
+  const effectiveQuery = useDebouncedQueryValue(textQuery, (trimmed) =>
+    catalogSearchQueryKey(trimmed, effectiveSort, filters, searchDescriptions),
+  );
 
-  // The text-mode default state (tabs list + search input shell) is mirrored
-  // statically in app/(main)/home-fallback.tsx — keep that markup in sync.
+  // Mount the results view only once there's something REAL to fetch: the
+  // debounced query has caught up, or a filter narrows the browse ("" + a
+  // filter is a legitimate filtered-browse). Without this gate, the first
+  // keystroke of a fresh search — searchActive already true, effectiveQuery
+  // still "" for the debounce window — would fire a match-all browse the old
+  // per-mount debounce never issued, and its (cached) full-catalog rows would
+  // flash as settled results before the typed query's rows land.
+  const resultsActive = searchActive && (effectiveQuery !== "" || anyFilter);
+
+  // Derived search status — no report-up callbacks, no effect mirrors:
+  // - pending: work outstanding for what's typed (debounce/fetch); cached
+  //   retypes are never pending, so the spinner can't lie.
+  // - settled: results have something to render; until then the Popular list
+  //   stays up (dimmed) as filler, so a cold search never flashes empty.
+  // - facets: live counts for the filter controls, held across refinements.
+  // `active` is searchActive (not resultsActive): the spinner must run through
+  // the first debounce window, before the results view mounts. settled can't
+  // false-positive there — the gated "" browse entry is never fetched.
+  const { pending, settled, facets } = useCatalogSearchStatus({
+    trimmedQuery,
+    effectiveQuery,
+    sort: effectiveSort,
+    filters,
+    searchDescriptions,
+    active: searchActive,
+  });
+  const showInputSpinner = hasQuery && pending;
+
   return (
-    <>
-      <Tabs value={mode} onValueChange={handleModeChange}>
-        <TabsList variant="underline" className="mb-3">
-          <TabsTrigger value="text">
-            <HugeiconsIcon
-              icon={Search01Icon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-            Search
-          </TabsTrigger>
-          <TabsTrigger value="repo">
-            <HugeiconsIcon
-              icon={GithubIcon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-            Repo
-          </TabsTrigger>
-        </TabsList>
+    // Providers for what the layout below shares: rows open the skill detail
+    // sheet, filter controls read the current facet counts — neither is
+    // couriered through the components in between.
+    <SkillDetailHandleProvider handle={skillDetailHandle}>
+    <CatalogFacetsProvider facets={facets}>
+      {/* Discovery column: hero + search composer + list region. */}
+      <div className="relative pb-20 sm:min-h-[calc(100dvh-3.5rem)] sm:px-8 lg:px-10">
+        {/* Hero — constant, scrolls away (never collapses). */}
+        <section className="pt-10 pb-6 sm:pt-12">
+          <h1 className="font-display text-3xl font-medium tracking-tight text-balance sm:text-4xl">
+            Pick skills.{" "}
+            <span className="text-primary">Ship one install command.</span>
+          </h1>
+          <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
+            Search and compare skills for Cursor, Claude Code, and other coding
+            agents. Bundle the ones you want and share the whole set with a
+            link.
+          </p>
+        </section>
 
-        {/* Unified input — lives inside Tabs root but outside TabsPanels so
-            it doesn't animate on mode change. State (mode) drives which
-            input/placeholder/icon renders. */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            {isInputLoading ? (
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 size-4 flex items-center justify-center text-muted-foreground pointer-events-none">
-                <DotMatrixRipple size="xs" ariaLabel="Searching" />
-              </span>
-            ) : (
-              <HugeiconsIcon
-                icon={Icon}
-                strokeWidth={2}
-                className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
-              />
-            )}
-            <Input
-              ref={inputRef}
-              placeholder={placeholder}
-              value={inputValue}
-              onChange={(e) => {
-                if (isText) {
-                  setTextQuery(e.target.value);
-                  // Reset debounced value when clearing so the next keystroke
-                  // doesn't briefly resurface stale results.
-                } else {
-                  setRepoInput(e.target.value);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (!isText && e.key === "Enter") handleRepoSubmit();
-              }}
-              className="pl-9 pr-9"
-            />
-            {!inputValue && (
-              <Kbd
-                size="sm"
-                variant="ghost"
-                className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none max-sm:hidden"
-                aria-hidden="true"
-              >
-                /
-              </Kbd>
-            )}
-            {inputValue && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => {
-                  if (isText) {
-                    setTextQuery("");
-                  } else {
-                    setRepoInput("");
-                    setRepoUrl("");
-                  }
-                }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
-              >
-                <HugeiconsIcon
-                  icon={Cancel01Icon}
-                  strokeWidth={2}
-                  className="size-4"
-                />
-              </button>
-            )}
-          </div>
-          {!isText && (
-            <Button
-              variant="outline"
-              onClick={handleRepoSubmit}
-              disabled={!repoInput.trim() || !canAutoDetect}
-              leftSection={
-                <HugeiconsIcon
-                  icon={FlashIcon}
-                  strokeWidth={2}
-                  className="size-3.5"
-                />
-              }
-            >
-              Analyze
-            </Button>
-          )}
-        </div>
+        <SkillComposer
+          canAutoDetect={canAutoDetect}
+          showInputSpinner={showInputSpinner}
+        />
 
-        {/* Results region — each panel keeps mounted so per-mode state
-            (search results, repo analysis) survives mode switches. */}
-        <TabsPanels>
-          <TabsContent value="text">
-            {/* Both lists stay mounted inside the Crossfade: the default list
-                preserves scroll + pagination state across type-and-clear, and
-                the search list preserves its 60+ rows (each with jotai
-                subscriptions) across browse ↔ search toggles. Crossfade puts
-                `hidden` (display:none) on the inactive pane, which also makes
-                the default list's IntersectionObserver sentinel
-                non-intersecting while the user is searching, and animates the
-                opacity/height swap between the two. `active` waits for
-                searchSettled (see above) so the crossfade always lands on
-                real rows, never a loading skeleton. The fallback
-                (app/(main)/home-fallback.tsx) mirrors this wrapper DOM —
-                keep them in sync.
-
-                Each pane is dimmed while a search is in flight
-                (`isInputLoading`): on a first search the leaderboard is the
-                visible pane, so the dim gives a content-area "working" signal
-                beyond the small input spinner (matters on slow connections);
-                during refinement the previous results dim while the next set
-                fetches. Opacity-only, so it composes with the crossfade and
-                stays off the layout/paint path. */}
-            <Crossfade active={showSearchResults}>
-              <div
-                className={cn(
-                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
-                  isInputLoading && "opacity-55",
-                )}
-              >
-                <DefaultSkillsList
-                  initialPage={initialPopularSkills}
-                  initialTrending={initialTrending}
-                  initialHot={initialHot}
-                  sheetHandle={skillDetailHandle}
-                />
-              </div>
-              <div
-                className={cn(
-                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
-                  isInputLoading && "opacity-55",
-                )}
-              >
-                <SkillSearchResults
-                  query={effectiveTextQuery}
-                  sheetHandle={skillDetailHandle}
-                />
-              </div>
-            </Crossfade>
-          </TabsContent>
-          <TabsContent value="repo">
+        {isRepo ? (
+          /* Repo mode's region: match results (or the paste-a-repo empty
+             state). starting: fades it in on the mode morph — it only mounts
+             on entry, so the static shell never sees the fade. */
+          <div className="pt-4 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
             <RepoAnalysisResults
               repoUrl={repoUrl}
               canAutoDetect={canAutoDetect}
-              sheetHandle={skillDetailHandle}
-              onTryExample={(url) => {
-                setRepoInput(url);
-                setRepoUrl(url);
-              }}
+              onTryExample={(url) => setParams({ repoUrl: url })}
             />
-          </TabsContent>
-        </TabsPanels>
-      </Tabs>
+          </div>
+        ) : (
+          /* List region — the ONLY thing that changes on interaction. */
+          <div className="pt-4">
+            {/* Popular list stays mounted (preserves scroll + pagination).
+                While a search is settling it dims as filler; once results are
+                ready, <Activity mode="hidden"> takes it out of the document
+                AND out of React's urgent render path — with a bare CSS
+                `hidden`, the hidden subtree still re-rendered at full
+                priority on every keystroke. */}
+            <Activity mode={searchActive && settled ? "hidden" : "visible"}>
+              <div
+                className={cn(
+                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
+                  searchActive && !settled && "opacity-55",
+                )}
+              >
+                <CatalogNote>
+                  The full catalog, sorted by all-time installs from{" "}
+                  <SkillsShLink />
+                </CatalogNote>
+                <PopularList initialPage={initialPopularSkills} />
+              </div>
+            </Activity>
+            {resultsActive && (
+              <ActiveCatalogResults
+                query={effectiveQuery}
+                stale={trimmedQuery !== effectiveQuery}
+                sort={effectiveSort}
+                filters={filters}
+                searchDescriptions={searchDescriptions}
+                hasNarrowing={hasNarrowing}
+              />
+            )}
+          </div>
+        )}
+      </div>
 
       {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
           state persists across navigation to /compare. */}
       <SkillDetailSheet handle={skillDetailHandle} />
-    </>
+      <LeaderboardSheet
+        view={view}
+        onViewChange={(v) => setParams({ view: v })}
+        hotSkills={hotSkills}
+        trendingSkills={trendingSkills}
+      />
+    </CatalogFacetsProvider>
+    </SkillDetailHandleProvider>
+  );
+}
+
+/** Thin attribution/context line above a lens's list. */
+function CatalogNote({ children }: { children: React.ReactNode }) {
+  return <p className="mb-3 text-xs text-muted-foreground">{children}</p>;
+}
+
+function SkillsShLink() {
+  return (
+    <a
+      href="https://skills.sh"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline hover:text-foreground transition-colors"
+    >
+      skills.sh
+    </a>
   );
 }

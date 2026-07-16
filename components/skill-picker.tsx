@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { createContext, use, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -13,9 +13,16 @@ import {
 
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Input } from "@/components/ui/cubby-ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/cubby-ui/input-group";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { skillPickerSearchOptions } from "@/hooks/use-skill-picker-search";
+import { renderHighlight } from "@/lib/search/highlight";
 import { formatInstalls } from "@/lib/utils";
 
 // Shared skill-picker building blocks: a search field plus a result list with
@@ -26,6 +33,8 @@ export interface PickerSkill {
   source: string;
   skillId: string;
   name: string;
+  /** Typesense `<mark>`-wrapped name for search rows; render via renderHighlight. */
+  nameHighlight?: string;
   description?: string;
   installs: number;
   curatedOwner?: string;
@@ -37,14 +46,19 @@ export function skillKey(source: string, skillId: string) {
   return `${source}::${skillId}`;
 }
 
-/** Per-row labels naming what skills are added to ("bundle", "comparison"). */
+/**
+ * Per-row labels naming what skills are added to ("bundle", "comparison").
+ * The dynamic labels take the skill's source too: names collide across repos
+ * (the same skill republished from several sources), so a name-only label
+ * gives screen readers three identical "Add X" buttons.
+ */
 export interface SkillPickerCopy {
   /** aria-label of the ✓ shown beside already-added skills. */
   added: string;
-  add: (name: string) => string;
+  add: (name: string, source: string) => string;
   /** Add aria-label while the cap blocks adding; should say why. */
-  addDisabled: (name: string) => string;
-  remove: (name: string) => string;
+  addDisabled: (name: string, source: string) => string;
+  remove: (name: string, source: string) => string;
 }
 
 export function SkillSearchField({
@@ -59,44 +73,39 @@ export function SkillSearchField({
   placeholder?: string;
 }) {
   return (
-    <div className="relative">
-      {loading ? (
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 size-4 flex items-center justify-center text-muted-foreground pointer-events-none">
+    <InputGroup variant="elevated">
+      <InputGroupAddon>
+        {loading ? (
           <DotMatrixRipple size="xs" ariaLabel="Searching" />
-        </span>
-      ) : (
-        <HugeiconsIcon
-          icon={Search01Icon}
-          strokeWidth={2}
-          className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none"
-        />
-      )}
-      <Input
-        variant="elevated"
+        ) : (
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
+        )}
+      </InputGroupAddon>
+      <InputGroupInput
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="pl-9 pr-9"
       />
       {value && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onChange("")}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
-        >
-          <HugeiconsIcon
-            icon={Cancel01Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        </button>
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton
+            size="icon_xs"
+            aria-label="Clear search"
+            onClick={() => onChange("")}
+          >
+            <HugeiconsIcon
+              icon={Cancel01Icon}
+              strokeWidth={2}
+              className="size-4"
+            />
+          </InputGroupButton>
+        </InputGroupAddon>
       )}
-    </div>
+    </InputGroup>
   );
 }
 
-interface PickerResultsProps {
+interface PickerContextValue {
   existingKeys: Set<string>;
   atCap: boolean;
   copy: SkillPickerCopy;
@@ -104,26 +113,51 @@ interface PickerResultsProps {
   onRemove: (source: string, skillId: string) => void;
 }
 
-export function PickerSearchResults({
-  query,
-  existingKeys,
-  atCap,
-  copy,
-  onAdd,
-  onRemove,
-}: PickerResultsProps & { query: string }) {
-  const { data, isPending } = useQuery({
-    ...convexQuery(api.skills.searchSkills, { query }),
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
-  });
+const PickerContext = createContext<PickerContextValue | null>(null);
+
+/**
+ * Owns the picker's shared selection contract (what's added, the cap, the
+ * copy, the add/remove handlers) so the list components stay pure structure —
+ * rows read it via context instead of a 5-prop bundle drilled through them.
+ */
+export function PickerProvider({
+  children,
+  ...value
+}: PickerContextValue & { children: React.ReactNode }) {
+  const { existingKeys, atCap, copy, onAdd, onRemove } = value;
+  const memoized = useMemo(
+    () => ({ existingKeys, atCap, copy, onAdd, onRemove }),
+    [existingKeys, atCap, copy, onAdd, onRemove],
+  );
+  return <PickerContext value={memoized}>{children}</PickerContext>;
+}
+
+function usePicker(): PickerContextValue {
+  const context = use(PickerContext);
+  if (!context) {
+    throw new Error("Picker components must be used within a PickerProvider.");
+  }
+  return context;
+}
+
+export function PickerSearchResults({ query }: { query: string }) {
+  // Same query (key + fn) as useSkillPickerSearch in the parent sheet, so the
+  // spinner and this list share one cache entry and one network request.
+  const { data, isPending, isError } = useQuery(skillPickerSearchOptions(query));
 
   if (isPending) {
     return <PickerListSkeleton />;
   }
 
-  const results = data ?? [];
+  if (isError) {
+    return (
+      <p className="text-sm text-muted-foreground py-8 text-center">
+        Search is unavailable right now. Try again in a moment.
+      </p>
+    );
+  }
+
+  const results = data?.hits ?? [];
   if (results.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
@@ -134,37 +168,16 @@ export function PickerSearchResults({
 
   return (
     <PickerList>
+      {/* SkillHit is structurally a PickerSkill (plus engine fields) — no
+          field-by-field mapping to maintain. */}
       {results.map((s) => (
-        <PickerRow
-          key={skillKey(s.source, s.skillId)}
-          skill={{
-            source: s.source,
-            skillId: s.skillId,
-            name: s.name,
-            description: s.description,
-            installs: s.installs,
-            curatedOwner: s.curatedOwner,
-            worstAuditStatus: s.worstAuditStatus,
-            worstAuditRiskLevel: s.worstAuditRiskLevel,
-          }}
-          existingKeys={existingKeys}
-          atCap={atCap}
-          copy={copy}
-          onAdd={onAdd}
-          onRemove={onRemove}
-        />
+        <PickerRow key={skillKey(s.source, s.skillId)} skill={s} />
       ))}
     </PickerList>
   );
 }
 
-export function PickerPopularResults({
-  existingKeys,
-  atCap,
-  copy,
-  onAdd,
-  onRemove,
-}: PickerResultsProps) {
+export function PickerPopularResults() {
   const { data, isPending } = useQuery({
     ...convexQuery(api.skills.listPopularSkills, {
       paginationOpts: { numItems: 30, cursor: null },
@@ -190,25 +203,9 @@ export function PickerPopularResults({
     <>
       <p className="text-xs text-muted-foreground">Popular skills</p>
       <PickerList>
+        {/* The summary row is structurally a PickerSkill — pass it through. */}
         {results.map((s) => (
-          <PickerRow
-            key={skillKey(s.source, s.skillId)}
-            skill={{
-              source: s.source,
-              skillId: s.skillId,
-              name: s.name,
-              description: s.description,
-              installs: s.installs,
-              curatedOwner: s.curatedOwner,
-              worstAuditStatus: s.worstAuditStatus,
-              worstAuditRiskLevel: s.worstAuditRiskLevel,
-            }}
-            existingKeys={existingKeys}
-            atCap={atCap}
-            copy={copy}
-            onAdd={onAdd}
-            onRemove={onRemove}
-          />
+          <PickerRow key={skillKey(s.source, s.skillId)} skill={s} />
         ))}
       </PickerList>
     </>
@@ -245,14 +242,8 @@ export function PickerListSkeleton() {
   );
 }
 
-export function PickerRow({
-  skill,
-  existingKeys,
-  atCap,
-  copy,
-  onAdd,
-  onRemove,
-}: PickerResultsProps & { skill: PickerSkill }) {
+export function PickerRow({ skill }: { skill: PickerSkill }) {
+  const { existingKeys, atCap, copy, onAdd, onRemove } = usePicker();
   const key = useMemo(
     () => skillKey(skill.source, skill.skillId),
     [skill.source, skill.skillId],
@@ -278,7 +269,9 @@ export function PickerRow({
             />
           ) : null}
           <span className="text-sm font-semibold leading-tight">
-            {skill.name}
+            {skill.nameHighlight
+              ? renderHighlight(skill.nameHighlight)
+              : skill.name}
           </span>
           <span className="text-xs text-muted-foreground">{skill.source}</span>
         </div>
@@ -301,7 +294,7 @@ export function PickerRow({
           variant="outline"
           size="xs"
           onClick={() => onRemove(skill.source, skill.skillId)}
-          aria-label={copy.remove(skill.name)}
+          aria-label={copy.remove(skill.name, skill.source)}
           className="shrink-0 text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
           leftSection={
             <HugeiconsIcon
@@ -325,7 +318,9 @@ export function PickerRow({
           onClick={() => onAdd(skill)}
           disabled={addDisabled}
           aria-label={
-            addDisabled ? copy.addDisabled(skill.name) : copy.add(skill.name)
+            addDisabled
+              ? copy.addDisabled(skill.name, skill.source)
+              : copy.add(skill.name, skill.source)
           }
           className="shrink-0"
           leftSection={

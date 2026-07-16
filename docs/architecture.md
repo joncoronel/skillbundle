@@ -489,7 +489,8 @@ lib/
 hooks/
   use-hydrated.ts           # false during SSR/hydration render, true after
   use-user-plan.ts          # plan/limits, auth-aware skip + loading
-  use-debounced-cached-search.ts
+  use-debounced-query-value.ts  # shared search debounce + cache bypass + spinner derivation
+  use-bundle-search.ts          # /explore bundle search (Convex-backed)
 
 convex/
   convex.config.ts          # registers @convex-dev/polar

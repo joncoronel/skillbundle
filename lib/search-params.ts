@@ -1,4 +1,14 @@
-import { createParser, parseAsString, parseAsStringLiteral } from "nuqs";
+import { startTransition } from "react";
+import {
+  createParser,
+  parseAsArrayOf,
+  parseAsBoolean,
+  parseAsInteger,
+  parseAsString,
+  parseAsStringLiteral,
+  type inferParserType,
+  type UrlKeys,
+} from "nuqs";
 import {
   parseSkillsParam,
   serializeSkillsParam,
@@ -19,10 +29,98 @@ export const modeParser = parseAsStringLiteral(modeValues).withDefault("text");
 export const searchQueryParser = parseAsString.withDefault("");
 export const repoUrlParser = parseAsString.withDefault("");
 
-const leaderboardTabValues = ["popular", "trending", "hot"] as const;
-export type LeaderboardTabValue = (typeof leaderboardTabValues)[number];
-export const leaderboardTabParser =
-  parseAsStringLiteral(leaderboardTabValues).withDefault("popular");
+// Leaderboard sheet. null = closed; "hot"/"trending" open the sheet on that
+// tab. URL-backed so leaderboard views are shareable and back closes the sheet.
+// (Replaces the old ?tab= browse lens — Trending/Hot no longer swap the
+// catalog; they live in their own sheet so the composer's search/sort/filters
+// never point at a list they don't control.)
+const leaderboardViewValues = ["hot", "trending"] as const;
+export type LeaderboardViewValue = (typeof leaderboardViewValues)[number];
+export const leaderboardViewParser = parseAsStringLiteral(leaderboardViewValues);
+
+// Catalog sort. Deliberately NO .withDefault(): null means "auto" — the UI
+// resolves it to "relevance" when a query is present, "installs" otherwise,
+// and only an explicit user choice is reflected in the URL. Trending/Hot are
+// NOT sorts (they're subset ranks on ~60/~30 rows) — they live in the
+// leaderboard sheet, not here. "recent"/"rising" join once the Typesense sync
+// populates contentUpdatedAt/momentum7d (see docs/search-overhaul.md).
+const catalogSortValues = ["relevance", "installs"] as const;
+export type CatalogSortValue = (typeof catalogSortValues)[number];
+export const catalogSortParser = parseAsStringLiteral(catalogSortValues);
+
+// Catalog filters. Every filter's broadest value is the default and stays
+// absent from the URL — the URL only records explicit narrowing.
+export const officialFilterParser = parseAsBoolean.withDefault(false);
+// "pass" = passed audits only; "nofail" = anything except a failed verdict.
+const auditFilterValues = ["pass", "nofail"] as const;
+export type AuditFilterValue = (typeof auditFilterValues)[number];
+export const auditFilterParser = parseAsStringLiteral(auditFilterValues);
+// Minimum lifetime installs (preset buckets in the UI; any integer accepted).
+export const minInstallsParser = parseAsInteger;
+// Publisher (owner) narrowing — any-of a set of owner slugs (e.g.
+// ["vercel-labs","anthropics"]). Comma-separated in the URL (?pub=a,b); [] = any.
+export const publisherParser = parseAsArrayOf(parseAsString)
+  .withDefault([])
+  .withOptions({ clearOnDefault: true });
+// Search scope. Default (false) searches skill names only; opt in to also
+// search descriptions. A preference, not a filter — not part of "active
+// filters" / Clear.
+export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
+// true = hide skills whose SKILL.md fetch failed (install command may break).
+export const brokenFilterParser = parseAsBoolean.withDefault(false);
+
+// The home page's full URL-state surface as ONE useQueryStates map. Writes
+// that trigger list re-renders go through startTransition (non-urgent) so the
+// controls stay responsive; textQuery/repoUrl stay urgent — they drive
+// controlled inputs — and view (the leaderboard sheet) is a plain open/close.
+export const homeParamParsers = {
+  mode: modeParser.withOptions({ startTransition }),
+  textQuery: searchQueryParser,
+  repoUrl: repoUrlParser,
+  sortParam: catalogSortParser.withOptions({ startTransition }),
+  official: officialFilterParser.withOptions({ startTransition }),
+  publisher: publisherParser.withOptions({
+    startTransition,
+    clearOnDefault: true,
+  }),
+  audit: auditFilterParser.withOptions({ startTransition }),
+  minInstalls: minInstallsParser.withOptions({ startTransition }),
+  searchDescriptions: searchDescriptionsParser.withOptions({ startTransition }),
+  broken: brokenFilterParser.withOptions({ startTransition }),
+  view: leaderboardViewParser,
+} as const;
+
+// Short URL keys, so state names can be readable while URLs stay terse.
+export const homeParamUrlKeys = {
+  mode: "mode",
+  textQuery: "q",
+  repoUrl: "repo",
+  sortParam: "sort",
+  official: "official",
+  publisher: "pub",
+  audit: "audit",
+  minInstalls: "min",
+  searchDescriptions: "desc",
+  broken: "broken",
+  view: "view",
+} as const satisfies UrlKeys<typeof homeParamParsers>;
+
+export type HomeParams = inferParserType<typeof homeParamParsers>;
+
+// The no-params entry state, derived MECHANICALLY from the parsers: a parser
+// built with .withDefault() carries a public `defaultValue`; one without it
+// defaults to null. The static home shell renders from this, so it can't drift
+// from what useQueryStates resolves. `defaultValue` is part of nuqs's public
+// type surface (the .withDefault() return type — which nuqs's own
+// `inferParserType` reads), so a rename would be a COMPILE error here, not a
+// silent runtime null: no runtime canary needed. The only cast is the
+// Object.fromEntries erasure back to HomeParams.
+export const HOME_PARAM_DEFAULTS: HomeParams = Object.fromEntries(
+  Object.entries(homeParamParsers).map(([key, parser]) => [
+    key,
+    "defaultValue" in parser ? parser.defaultValue : null,
+  ]),
+) as HomeParams;
 
 // -- Explore page (/explore) parsers --
 
