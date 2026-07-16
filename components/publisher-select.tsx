@@ -79,13 +79,13 @@ export function PublisherSelect({
 
   const showLoading = deriveInputLoading(trimmed, effectiveQuery, ownersQuery);
 
-  // Selected items (id = slug), stable while the value's contents are
-  // unchanged so the merge below doesn't churn every render.
-  const valueKey = value.join(",");
+  // Selected items (id = slug). `value` is the nuqs-parsed publisher array,
+  // which is reference-stable across renders while the URL param is unchanged
+  // (nuqs caches the parse), so depending on it directly is enough — no
+  // join-key + eslint-disable needed.
   const selected = useMemo<OwnerItem[]>(
     () => value.map((v) => ({ id: v, count: 0 })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [valueKey],
+    [value],
   );
 
   // Results merged with the current selection, so selected publishers stay

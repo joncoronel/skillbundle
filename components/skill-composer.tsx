@@ -185,8 +185,9 @@ export function SkillComposer({
   // (icon addon + input + trailing addon). Mode changes the icon, the
   // placeholder, and the trailing addon's 32px control (toggles vs Analyze);
   // the input element itself is identical in both modes, so focus survives
-  // the switch.
-  const searchField = (inputClassName?: string) => (
+  // the switch. Built once per render as a value (one call site, so no
+  // parameter — the input's fixed height is inlined below).
+  const searchField = (
     <div className="flex w-full items-center">
       <InputGroupAddon>
         {showInputSpinner ? (
@@ -204,7 +205,11 @@ export function SkillComposer({
         value={inputValue}
         onChange={handleInputChange}
         onKeyDown={handleInputKeyDown}
-        className={cn("pl-2", inputClassName)}
+        // h-11 at BOTH breakpoints: the Input's own sm:h-9 would win the merge
+        // over a bare h-11 (the field silently rendered 36px for months because
+        // of this trap). 44px is the hero scale on purpose — the 32px trailing
+        // controls sit inside the field's height instead of inflating the row.
+        className={cn("pl-2 h-11 sm:h-11")}
       />
       {/* The field is deliberately 44px (hero scale), so the 32px controls
           here sit INSIDE the input's own height with the addon's standard
@@ -362,12 +367,7 @@ export function SkillComposer({
             elevated components nested inside composite against the
             right substrate. */}
         <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
-          {/* h-11 at BOTH breakpoints: the Input's own sm:h-9 would win
-              the merge over a bare h-11 (the field silently rendered
-              36px for months because of this trap). 44px is the hero
-              scale on purpose — the 32px trailing controls sit inside
-              the field's height instead of inflating the row. */}
-          {searchField("h-11 sm:h-11")}
+          {searchField}
         </InputGroup>
 
         {/* Chin: filters left, leaderboards entry right. On mobile the

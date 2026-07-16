@@ -178,12 +178,14 @@ function AuditSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent alignItemWithTrigger={selectAlign} level={popupLevel}>
-        <SelectItem value={ANY}>Any audit</SelectItem>
+        {/* Labels come from AUDIT_ITEMS (single source, shared with the trigger
+            display) — only the "pass" item adds a facet count. */}
+        <SelectItem value={ANY}>{AUDIT_ITEMS[ANY]}</SelectItem>
         <SelectItem value="pass">
-          Passed audits only
+          {AUDIT_ITEMS.pass}
           <ItemCount count={passCount} />
         </SelectItem>
-        <SelectItem value="nofail">Hide failed audits</SelectItem>
+        <SelectItem value="nofail">{AUDIT_ITEMS.nofail}</SelectItem>
       </SelectContent>
     </Select>
   );

@@ -84,7 +84,10 @@ export function useCatalogSearch({
         query: effectiveQuery,
         sort,
         filters,
-        searchDescriptions,
+        // Match the key's browse-mode collapse (catalogSearchQueryKey): with
+        // no query, query_by is ignored, so the request visibly agrees with the
+        // cache key instead of carrying a value that can't affect results.
+        searchDescriptions: effectiveQuery ? searchDescriptions : false,
         page: pageParam,
         perPage: PER_PAGE,
         // Facet counts only change with query/filters, not page — fetch once.
