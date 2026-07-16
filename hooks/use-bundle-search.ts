@@ -1,11 +1,12 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@/convex/_generated/api";
 import {
   deriveInputLoading,
   useDebouncedQueryValue,
+  SEARCH_RESULT_CACHE,
 } from "@/hooks/use-debounced-query-value";
 
 /**
@@ -31,9 +32,7 @@ export function useBundleSearch(rawQuery: string) {
       api.bundles.searchPublic,
       effectiveQuery ? { query: effectiveQuery } : "skip",
     ),
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
+    ...SEARCH_RESULT_CACHE,
   });
 
   return {

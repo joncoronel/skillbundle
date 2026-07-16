@@ -30,7 +30,8 @@ stale set is existing summaries), and the tag is set-on-insert only — so
 |---|---|---|
 | `syncSkills` | daily 06:00 | Walk the full leaderboard; upsert installs + rank + daily snapshot; stamp `lastSeenInApi`. Owns leaderboard installs. |
 | `syncCurated` | daily 06:30 | Ensure curated skills exist; stamp `curatedOwner`; clear stale `curatedOwner`. **Does not write installs** (`ownsInstalls:false`). |
-| `reconcileUnseenSkills` | daily 07:00 | Keep alive + refresh **healthy off-board** skills via the detail endpoint (installs + snapshot + stamp). Skips broke + dead aliases. |
+| `reconcileUnseenSkills` | daily 07:00 | Keep alive + refresh **healthy off-board** skills via the detail endpoint (installs + snapshot + stamp). Skips broke + dead aliases. **Chains `typesense.syncCatalog` on its terminal exit** (see below). |
+| `syncCatalog` (Typesense) | chained off reconcile + daily 09:00 backstop | Mirror the non-delisted catalog into the Typesense search index (mark-and-sweep). See below. |
 | `markDelistedSkills` | (chained off syncSkills) | Delist skills unseen for 30 days. |
 | `markStaleContent` | (chained off syncSkills) | Re-flag content >7 days old for re-fetch; drives the discovery/content/audit pipeline. |
 | `resolveRepoIdentities` | weekly Sun 08:00 | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto **never-resolved** summaries, cached per repo. |
@@ -161,6 +162,35 @@ into one consistent bucket.
 every 24h. If the freshness window were ≥ 24h, a skill it stamped yesterday would
 read as "fresh" the next day and get skipped — refreshing only every *other* day
 and leaving chart gaps. 23h leaves buffer for cron jitter while staying under 24h.
+
+## Typesense search mirror (`syncCatalog`)
+
+The home + picker search is served **browser-direct from a self-hosted Typesense**
+(Railway), not from Convex. `typesense.syncCatalog` keeps that index a mirror of
+the non-delisted catalog. It's the **terminal step of the daily pipeline** — the
+detailed engine contract lives in `docs/search-overhaul.md`; what matters for the
+lifecycle:
+
+- **Scheduling.** NOT a fixed-time cron primarily: `reconcileUnseenSkills` chains
+  it on its terminal exit (`reconcile.ts` `chainTypesenseSync`, gated on
+  `CRONS_ENABLED` and skipped on `dryRun`), so it indexes installs/delist flags
+  only after they've settled for the day. A **daily 09:00 backstop cron** exists
+  because Convex doesn't retry actions — if reconcile throws mid-flight its chain
+  link never fires, and the backstop bounds staleness to ~24h.
+- **Run lock.** A single-row `typesenseSyncLock` table serializes runs: two
+  overlapping mark-and-sweep walks could cross-stamp and delete live docs, so a
+  second start is a loud no-op (and the backstop overlapping the chained run is
+  therefore free). Released on every terminal exit AND on throw; a stale lock past
+  a 1h TTL is stealable.
+- **Mark-and-sweep.** Every non-delisted summary is upserted stamped with the run's
+  start time; a doc left with an older stamp (delisted / renamed away) is swept.
+  The walk uses the **immutable `by_isDelisted` index** (not `by_isDelisted_installs`)
+  so a concurrent `installs` write can't reorder it and skip a live row. A doc that
+  fails to import keeps its old stamp and is **excluded from the sweep** (by id) so
+  it isn't dropped while live; only a mass failure (> `SWEEP_EXCLUDE_CAP`) skips the
+  sweep wholesale. **The mirror can strand a stale doc for a run, but never deletes a
+  live one.** A schema/validator mismatch is caught loudly at start by
+  `assertSchemaMirror`.
 
 ## Duplicate / rename detection (Phase 2)
 

@@ -20,9 +20,14 @@ Related: [TODO.md](../TODO.md) (the original "Search & discovery overhaul" note)
   (not a wall-clock cron) and guarded by a run lock so overlapping walks can't
   cross-stamp and sweep live docs; full catalog mirrored (~15.5k non-delisted
   docs). Dev collection `skills_dev` (TYPESENSE_COLLECTION is required outside
-  prod); prod uses `skills` (prod deploy checklist still pending: prod Convex
-  env vars + `setupCollection` + initial sync + Vercel
-  `NEXT_PUBLIC_TYPESENSE_*`).
+  prod); prod uses `skills`. **Prod backend is set up:** prod Convex has
+  TYPESENSE_HOST / _ADMIN_API_KEY / CRONS_ENABLED (so the collection defaults to
+  `skills`), and the `skills` collection exists and is populated + kept fresh by
+  the daily cron. **The remaining merge gate is the FRONTEND env:** the browser
+  client needs `NEXT_PUBLIC_TYPESENSE_HOST` / `_SEARCH_KEY` / `_COLLECTION` set
+  in Vercel for Production AND Preview. Preview builds run `NODE_ENV=production`
+  and the deployed code searches Typesense, so if those vars are missing the
+  client throws and search errors — set them before/with the merge.
 - **Frontend:** `lib/search/typesense.ts` (browser client) +
   `hooks/use-catalog-search.ts` + the two-state home surface
   (`components/skill-explorer.tsx`). **Hybrid wiring chosen** (option 1 below):

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, use, useMemo } from "react";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -143,10 +143,7 @@ function usePicker(): PickerContextValue {
 export function PickerSearchResults({ query }: { query: string }) {
   // Same query (key + fn) as useSkillPickerSearch in the parent sheet, so the
   // spinner and this list share one cache entry and one network request.
-  const { data, isPending, isError } = useQuery({
-    ...skillPickerSearchOptions(query),
-    placeholderData: keepPreviousData,
-  });
+  const { data, isPending, isError } = useQuery(skillPickerSearchOptions(query));
 
   if (isPending) {
     return <PickerListSkeleton />;

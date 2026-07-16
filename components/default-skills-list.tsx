@@ -99,12 +99,7 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
     <>
       <SkillRowGrid skills={skills} />
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-      {isFetchingNextPage && (
-        <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
-          <DotMatrixComet size="xs" ariaLabel="Loading more skills" />
-          <span className="text-xs">Loading more skills…</span>
-        </div>
-      )}
+      {isFetchingNextPage && <LoadingMoreFooter noun="skills" />}
     </>
   );
 }
@@ -141,10 +136,28 @@ export function SkillRowGrid({
   );
 }
 
-export function EmptyState({ message }: { message: string }) {
+export function EmptyState({
+  message,
+  children,
+}: {
+  message: string;
+  /** Optional extra content under the message (a hint line, an action). */
+  children?: React.ReactNode;
+}) {
   return (
     <div className="rounded-lg border border-dashed border-border py-10 text-center">
       <p className="text-sm text-muted-foreground">{message}</p>
+      {children}
+    </div>
+  );
+}
+
+/** Infinite-scroll "loading more" footer, shared by the paginated lists. */
+export function LoadingMoreFooter({ noun }: { noun: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
+      <DotMatrixComet size="xs" ariaLabel={`Loading more ${noun}`} />
+      <span className="text-xs">Loading more {noun}…</span>
     </div>
   );
 }

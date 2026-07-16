@@ -1,10 +1,11 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { searchSkills, type SkillSearchResult } from "@/lib/search/typesense";
 import {
   deriveInputLoading,
   useDebouncedQueryValue,
+  SEARCH_RESULT_CACHE,
 } from "@/hooks/use-debounced-query-value";
 
 // The pickers show a flat, non-paginated list — one page, capped here. Deep
@@ -29,8 +30,7 @@ export function skillPickerSearchOptions(query: string) {
         perPage: PICKER_RESULTS,
         signal,
       }),
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
+    ...SEARCH_RESULT_CACHE,
   };
 }
 
@@ -55,7 +55,6 @@ export function useSkillPickerSearch(rawQuery: string): {
   const queryResult = useQuery({
     ...skillPickerSearchOptions(effectiveQuery),
     enabled: effectiveQuery.length > 0,
-    placeholderData: keepPreviousData,
   });
 
   return {

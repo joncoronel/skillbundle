@@ -41,12 +41,14 @@ export interface ExplorerState extends HomeParams {
   /** The engine-agnostic filter set for searchSkills/query keys. */
   filters: SkillFilters;
   /**
-   * How many narrowing filters are active. `chin` counts the desktop chin's
-   * own controls (Official lives up in the input row there, with its own
-   * pressed state); `sheet` adds Official, whose mobile home IS the sheet.
-   * Clear always covers exactly the controls that share its surface.
+   * How many narrowing filters are active, per surface that shows a count.
+   * `chin` counts the desktop chin's own controls (Official lives up in the
+   * input row there, with its own pressed state); `sheet` adds Official, whose
+   * mobile home IS the sheet; `more` counts just the two behind the chin's
+   * "More" dropdown (minimum-installs + hide-broken). Each Clear / badge covers
+   * exactly the controls on its surface — derived here so no call site re-counts.
    */
-  filterCount: { chin: number; sheet: number };
+  filterCount: { chin: number; sheet: number; more: number };
 
   // -- Actions --
   /** The chin's Clear: narrowing filters only (not sort/scope/Official). */
@@ -79,11 +81,12 @@ function buildExplorerState(
   const anyFilter = hasNarrowing || params.sortParam !== null;
   const isRepo = params.mode === "repo";
 
+  // `more` = just the two filters behind the chin's "More" dropdown; `narrowing`
+  // = every chin filter (More's two + publisher + audit).
+  const moreCount =
+    (params.minInstalls !== null ? 1 : 0) + (params.broken ? 1 : 0);
   const narrowing =
-    (params.publisher.length > 0 ? 1 : 0) +
-    (params.audit ? 1 : 0) +
-    (params.minInstalls !== null ? 1 : 0) +
-    (params.broken ? 1 : 0);
+    (params.publisher.length > 0 ? 1 : 0) + (params.audit ? 1 : 0) + moreCount;
 
   return {
     ...params,
@@ -110,6 +113,7 @@ function buildExplorerState(
     filterCount: {
       chin: narrowing,
       sheet: narrowing + (params.official ? 1 : 0),
+      more: moreCount,
     },
     clearFilters: () =>
       setParams({ publisher: [], audit: null, minInstalls: null, broken: false }),

@@ -107,32 +107,20 @@ export const homeParamUrlKeys = {
 
 export type HomeParams = inferParserType<typeof homeParamParsers>;
 
-// The no-params entry state, derived MECHANICALLY from the parsers (a parser
-// without .withDefault() defaults to null) — the static home shell renders
-// from this, and it can't drift from what useQueryStates resolves.
-// `defaultValue` is what .withDefault() sets but isn't part of nuqs's public
-// type surface (hence the cast) — if a nuqs major bump renames it, every
-// default here silently becomes null and the static shell renders the wrong
-// entry state, so re-verify this read on nuqs upgrades.
+// The no-params entry state, derived MECHANICALLY from the parsers: a parser
+// built with .withDefault() carries a public `defaultValue`; one without it
+// defaults to null. The static home shell renders from this, so it can't drift
+// from what useQueryStates resolves. `defaultValue` is part of nuqs's public
+// type surface (the .withDefault() return type — which nuqs's own
+// `inferParserType` reads), so a rename would be a COMPILE error here, not a
+// silent runtime null: no runtime canary needed. The only cast is the
+// Object.fromEntries erasure back to HomeParams.
 export const HOME_PARAM_DEFAULTS: HomeParams = Object.fromEntries(
   Object.entries(homeParamParsers).map(([key, parser]) => [
     key,
-    (parser as { defaultValue?: unknown }).defaultValue ?? null,
+    "defaultValue" in parser ? parser.defaultValue : null,
   ]),
 ) as HomeParams;
-
-if (process.env.NODE_ENV !== "production") {
-  // Drift tripwire for the internal read above: a renamed `defaultValue`
-  // would null out EVERY .withDefault() parser uniformly, so one canary
-  // (mode, defaulted to "text") catches it loudly instead of the static
-  // shell silently rendering the wrong entry state.
-  if (HOME_PARAM_DEFAULTS.mode === null) {
-    throw new Error(
-      "HOME_PARAM_DEFAULTS: nuqs's internal `defaultValue` field is no longer " +
-        "readable (renamed in an upgrade?). Fix the derivation in lib/search-params.ts.",
-    );
-  }
-}
 
 // -- Explore page (/explore) parsers --
 

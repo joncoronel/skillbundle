@@ -46,6 +46,7 @@ import {
 import {
   CatalogControlsBar,
   CatalogControlsSheet,
+  FilterCountBadge,
   SortSelect,
 } from "@/components/catalog-controls";
 import { useExplorerState } from "@/components/explorer-state";
@@ -405,35 +406,35 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
   const { setParams } = useExplorerState();
   return (
     <>
-              {/* Helper slot doubles as the validation slot: an invalid
-                  Analyze attempt swaps the hint for an error with a format
-                  example (role=alert announces it). The error shows on
-                  mobile too — it's actionable, unlike the ambient hint. */}
-              {repoInputInvalid ? (
-                <p role="alert" className="min-w-0 text-xs text-destructive">
-                  Enter a GitHub repo URL, like github.com/vercel/next.js
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
-                  Reads languages and packages from public repos
-                </p>
-              )}
-              {/* Same corner as "Match repo" in search mode — the mode
-                  switch lives in one stable spot. ms-auto keeps it pinned
-                  right on mobile, where the helper text is hidden. */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ms-auto -me-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
-                onClick={() => setParams({ mode: "text" })}
-                leftSection={
-                  <HugeiconsIcon
-                    icon={ArrowLeft02Icon}
-                    strokeWidth={2}
-                    className="size-3.5"
-                  />
-                }
-              >
+      {/* Helper slot doubles as the validation slot: an invalid Analyze
+          attempt swaps the hint for an error with a format example
+          (role=alert announces it). The error shows on mobile too — it's
+          actionable, unlike the ambient hint. */}
+      {repoInputInvalid ? (
+        <p role="alert" className="min-w-0 text-xs text-destructive">
+          Enter a GitHub repo URL, like github.com/vercel/next.js
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+          Reads languages and packages from public repos
+        </p>
+      )}
+      {/* Same corner as "Match repo" in search mode — the mode switch lives in
+          one stable spot. ms-auto keeps it pinned right on mobile, where the
+          helper text is hidden. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="ms-auto -me-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+        onClick={() => setParams({ mode: "text" })}
+        leftSection={
+          <HugeiconsIcon
+            icon={ArrowLeft02Icon}
+            strokeWidth={2}
+            className="size-3.5"
+          />
+        }
+      >
         Search skills
       </Button>
     </>
@@ -449,139 +450,133 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
   const { filterCount, setParams, clearSheetFilters } = useExplorerState();
   return (
     <>
-              <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5">
-                <CatalogControlsBar />
-              </div>
-              {/* Mobile: the desktop filter cluster above is hidden, so its
-                  two homes here are the sheet (sort/filters/switches) and a
-                  chin-level Match repo. */}
-              <div className="flex items-center gap-0.5 sm:hidden">
-                <Drawer direction="bottom">
-                  <DrawerTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground -ms-2"
-                        leftSection={
-                          <HugeiconsIcon
-                            icon={FilterHorizontalIcon}
-                            strokeWidth={2}
-                            className="size-3.5"
-                          />
-                        }
-                        rightSection={
-                          filterCount.sheet > 0 ? (
-                            <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground tabular-nums">
-                              {filterCount.sheet}
-                            </span>
-                          ) : undefined
-                        }
+      <div className="hidden min-w-0 sm:flex sm:items-center sm:gap-1.5">
+        <CatalogControlsBar />
+      </div>
+      {/* Mobile: the desktop filter cluster above is hidden, so its
+          two homes here are the sheet (sort/filters/switches) and a
+          chin-level Match repo. */}
+      <div className="flex items-center gap-0.5 sm:hidden">
+        <Drawer direction="bottom">
+          <DrawerTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground -ms-2"
+                leftSection={
+                  <HugeiconsIcon
+                    icon={FilterHorizontalIcon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                }
+                rightSection={<FilterCountBadge count={filterCount.sheet} />}
+              />
+            }
+          >
+            Sort & filter
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHandle />
+            <DrawerHeader>
+              {/* Fixed-height title row: min-h-9 reserves the Clear
+                  button's height (size="sm" = h-9 on mobile) so it can
+                  appear/disappear without shifting the sheet's content. */}
+              <div className="flex min-h-9 items-center justify-between gap-2">
+                <DrawerTitle>Sort &amp; filter</DrawerTitle>
+                {filterCount.sheet > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-me-2 text-muted-foreground"
+                    onClick={clearSheetFilters}
+                    leftSection={
+                      <HugeiconsIcon
+                        icon={Cancel01Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
                       />
                     }
                   >
-                    Sort & filter
-                  </DrawerTrigger>
-                  <DrawerContent>
-                    <DrawerHandle />
-                    <DrawerHeader>
-                      {/* Fixed-height title row: min-h-9 reserves the Clear
-                          button's height (size="sm" = h-9 on mobile) so it can
-                          appear/disappear without shifting the sheet's content. */}
-                      <div className="flex min-h-9 items-center justify-between gap-2">
-                        <DrawerTitle>Sort &amp; filter</DrawerTitle>
-                        {filterCount.sheet > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="-me-2 text-muted-foreground"
-                            onClick={clearSheetFilters}
-                            leftSection={
-                              <HugeiconsIcon
-                                icon={Cancel01Icon}
-                                strokeWidth={2}
-                                className="size-3.5"
-                              />
-                            }
-                          >
-                            Clear ({filterCount.sheet})
-                          </Button>
-                        )}
-                      </div>
-                    </DrawerHeader>
-                    <DrawerBody>
-                      <CatalogControlsSheet />
-                    </DrawerBody>
-                  </DrawerContent>
-                </Drawer>
+                    Clear ({filterCount.sheet})
+                  </Button>
+                )}
               </div>
-              {/* Right pair: leaderboards + repo matching — the chin's
-                  "go places" corner on every breakpoint. Match repo is
-                  outermost with a → : the arrows are the mode-switch
-                  grammar ("Match repo →" enters the flow, "← Search
-                  skills" exits it, both in this same corner). Mobile gets
-                  dedicated square icon buttons (flame/GitHub are safe
-                  bare glyphs, and both open surfaces that explain
-                  themselves) in the same order. ms-auto keeps the pair
-                  right-aligned when it wraps to its own row (justify-
-                  between only spaces items sharing a line). */}
-              <div className="ms-auto flex items-center gap-0.5">
-                {/* Sort — a result-view preference, so it lives with the
-                    chin's other list controls, right-aligned above the
-                    list it orders (and next to the results its Relevance
-                    auto-swap concerns). Mobile keeps sort in the sheet. */}
-                <SortSelect className="max-sm:hidden" />
-                <Separator
-                  orientation="vertical"
-                  className="h-4! mx-1 max-[860px]:hidden"
-                />
-                {/* Below 860px (mobile AND the 640-860px band where the
-                    labels don't fit next to the filters) each action
-                    collapses to its icon_sm square — ONE responsive button
-                    per action, not a hidden/shown pair: the label span (and
-                    Match repo's arrow) hide, and the width overrides
-                    reproduce icon_sm's square (size-9, sm:size-8, no
-                    padding). Flame/GitHub are safe bare glyphs; both open
-                    surfaces that explain themselves. */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
-                  onClick={() => setParams({ view: "hot" })}
-                  aria-label="Hot/Trending leaderboards"
-                  leftSection={
-                    <HugeiconsIcon
-                      icon={FireIcon}
-                      strokeWidth={2}
-                      className="size-3.5 max-[860px]:size-4 text-warning-foreground"
-                    />
-                  }
-                >
-                  <span className="max-[860px]:hidden">Hot/Trending</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground -me-2 max-[860px]:-me-2.5 max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
-                  onClick={onEnterRepoMode}
-                  aria-label="Match repo"
-                  leftSection={
-                    <HugeiconsIcon
-                      icon={GithubIcon}
-                      strokeWidth={2}
-                      className="size-3.5 max-[860px]:size-4"
-                    />
-                  }
-                  rightSection={
-                    <HugeiconsIcon
-                      icon={ArrowRight02Icon}
-                      strokeWidth={2}
-                      className="size-3.5 max-[860px]:hidden"
-                    />
-                  }
-                >
-                  <span className="max-[860px]:hidden">Match repo</span>
-                </Button>
+            </DrawerHeader>
+            <DrawerBody>
+              <CatalogControlsSheet />
+            </DrawerBody>
+          </DrawerContent>
+        </Drawer>
+      </div>
+      {/* Right pair: leaderboards + repo matching — the chin's
+          "go places" corner on every breakpoint. Match repo is
+          outermost with a → : the arrows are the mode-switch
+          grammar ("Match repo →" enters the flow, "← Search
+          skills" exits it, both in this same corner). Mobile gets
+          dedicated square icon buttons (flame/GitHub are safe
+          bare glyphs, and both open surfaces that explain
+          themselves) in the same order. ms-auto keeps the pair
+          right-aligned when it wraps to its own row (justify-
+          between only spaces items sharing a line). */}
+      <div className="ms-auto flex items-center gap-0.5">
+        {/* Sort — a result-view preference, so it lives with the
+            chin's other list controls, right-aligned above the
+            list it orders (and next to the results its Relevance
+            auto-swap concerns). Mobile keeps sort in the sheet. */}
+        <SortSelect className="max-sm:hidden" />
+        <Separator
+          orientation="vertical"
+          className="h-4! mx-1 max-[860px]:hidden"
+        />
+        {/* Below 860px (mobile AND the 640-860px band where the
+            labels don't fit next to the filters) each action
+            collapses to its icon_sm square — ONE responsive button
+            per action, not a hidden/shown pair: the label span (and
+            Match repo's arrow) hide, and the width overrides
+            reproduce icon_sm's square (size-9, sm:size-8, no
+            padding). Flame/GitHub are safe bare glyphs; both open
+            surfaces that explain themselves. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-muted-foreground max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
+          onClick={() => setParams({ view: "hot" })}
+          aria-label="Hot/Trending leaderboards"
+          leftSection={
+            <HugeiconsIcon
+              icon={FireIcon}
+              strokeWidth={2}
+              className="size-3.5 max-[860px]:size-4 text-warning-foreground"
+            />
+          }
+        >
+          <span className="max-[860px]:hidden">Hot/Trending</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-muted-foreground -me-2 max-[860px]:-me-2.5 max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
+          onClick={onEnterRepoMode}
+          aria-label="Match repo"
+          leftSection={
+            <HugeiconsIcon
+              icon={GithubIcon}
+              strokeWidth={2}
+              className="size-3.5 max-[860px]:size-4"
+            />
+          }
+          rightSection={
+            <HugeiconsIcon
+              icon={ArrowRight02Icon}
+              strokeWidth={2}
+              className="size-3.5 max-[860px]:hidden"
+            />
+          }
+        >
+          <span className="max-[860px]:hidden">Match repo</span>
+        </Button>
       </div>
     </>
   );

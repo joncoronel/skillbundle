@@ -1,8 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQueryClient, type QueryKey } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/search-params";
+
+/**
+ * Shared React Query cache policy for search RESULT SETS — the catalog
+ * (useInfiniteQuery), the skill pickers, and /explore bundle search. One place
+ * so the three don't drift: keepPreviousData holds the prior rows while a
+ * refinement fetches (no empty flash), 60s stale keeps a session snappy without
+ * refetch churn, 5min gc survives a cleared-then-retyped search. (The publisher
+ * facet list keeps its own longer staleness — it's a slow-changing count list,
+ * not a result set — see publisher-select.tsx.)
+ */
+export const SEARCH_RESULT_CACHE = {
+  placeholderData: keepPreviousData,
+  staleTime: 60_000,
+  gcTime: 5 * 60_000,
+} as const;
 
 /**
  * The one debounce + cache-bypass state machine behind every search input

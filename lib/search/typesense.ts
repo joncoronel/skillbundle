@@ -131,23 +131,35 @@ export interface SkillSearchArgs {
 // worstAuditStatus feeds the audit select's "pass" count. isDuplicate is NOT
 // faceted: the flag is false on 100% of the catalog today (see the hideForks
 // note in explorer-state.tsx), so its counts carry no information.
-const FACET_FIELDS = ["isOfficial", "worstAuditStatus"] as const;
+// Field-name accessor tied to the indexed doc shape: a doc-field rename becomes
+// a compile error at every filter/facet site instead of a silently-broken query
+// string — the client-side counterpart to the server's assertSchemaMirror.
+const field = (name: keyof TypesenseSkillDoc): string => name;
+
+const FACET_FIELDS = [
+  "isOfficial",
+  "worstAuditStatus",
+] as const satisfies readonly (keyof TypesenseSkillDoc)[];
 
 function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   const clauses: string[] = [];
-  if (filters.officialOnly) clauses.push("isOfficial:true");
-  if (filters.audit === "pass") clauses.push("worstAuditStatus:=pass");
-  if (filters.audit === "nofail") clauses.push("worstAuditStatus:!=fail");
-  if (filters.hideForks) clauses.push("isDuplicate:false");
-  if (filters.excludeBroken) clauses.push("hasContentFetchError:false");
-  if (filters.minInstalls !== undefined) clauses.push(`installs:>=${filters.minInstalls}`);
-  // Backtick-quote string values (sources/owners are simple slugs, but this is
-  // robust to any that aren't — and keeps the two clauses' escaping consistent).
-  if (filters.source) clauses.push(`source:=\`${filters.source}\``);
+  if (filters.officialOnly) clauses.push(`${field("isOfficial")}:true`);
+  if (filters.audit === "pass") clauses.push(`${field("worstAuditStatus")}:=pass`);
+  if (filters.audit === "nofail") clauses.push(`${field("worstAuditStatus")}:!=fail`);
+  if (filters.hideForks) clauses.push(`${field("isDuplicate")}:false`);
+  if (filters.excludeBroken) clauses.push(`${field("hasContentFetchError")}:false`);
+  if (filters.minInstalls !== undefined)
+    clauses.push(`${field("installs")}:>=${filters.minInstalls}`);
+  // Backtick-quote string values. These come from the URL (?pub=, source), so
+  // strip any backtick first: an unescaped one closes the quote early and
+  // malforms the filter, which Typesense 400s — turning "0 results" into the
+  // full "Search is unavailable" error card. Owners/sources are slugs, so a
+  // backtick is never a legitimate character to drop.
+  const quote = (v: string) => `\`${v.replace(/`/g, "")}\``;
+  if (filters.source) clauses.push(`${field("source")}:=${quote(filters.source)}`);
   if (filters.owners && filters.owners.length > 0) {
-    // Any-of: `owner:=[`a`,`b`]`.
-    const list = filters.owners.map((o) => `\`${o}\``).join(",");
-    clauses.push(`owner:=[${list}]`);
+    // Any-of: owner:=[`a`,`b`].
+    clauses.push(`${field("owner")}:=[${filters.owners.map(quote).join(",")}]`);
   }
   return clauses.length > 0 ? clauses.join(" && ") : undefined;
 }

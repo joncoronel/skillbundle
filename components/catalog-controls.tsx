@@ -43,6 +43,12 @@ const ANY = "any";
 
 const MIN_INSTALL_PRESETS = [100, 1_000, 10_000] as const;
 
+// Single source for a preset's label and for parsing the select value back to
+// the param, so the standalone select and the "More" radio group can't drift.
+const minInstallLabel = (n: number) => `${formatInstalls(n)}+ installs`;
+const parseMinInstalls = (v: string): number | null =>
+  v === ANY ? null : Number(v);
+
 const AUDIT_ITEMS = {
   [ANY]: "Any audit",
   pass: "Passed audits only",
@@ -51,10 +57,7 @@ const AUDIT_ITEMS = {
 const MIN_INSTALL_ITEMS = {
   [ANY]: "Any installs",
   ...Object.fromEntries(
-    MIN_INSTALL_PRESETS.map((n) => [
-      String(n),
-      `${formatInstalls(n)}+ installs`,
-    ]),
+    MIN_INSTALL_PRESETS.map((n) => [String(n), minInstallLabel(n)]),
   ),
 };
 
@@ -75,6 +78,18 @@ const surfaceProps = (surface: ControlSurface) =>
     popupLevel: surface === "sheet" ? 7 : 5,
     triggerVariant: surface === "sheet" ? ("elevated" as const) : ("ghost" as const),
   }) as const;
+
+/** The small primary count pill shown on a filter trigger (chin "More", the
+ *  mobile "Sort & filter" trigger). Renders nothing at zero so call sites can
+ *  drop it straight into a `rightSection`. */
+export function FilterCountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground tabular-nums">
+      {count}
+    </span>
+  );
+}
 
 /**
  * The catalog sort picker, standalone so the composer chin mounts it next to
@@ -188,7 +203,7 @@ function MinInstallsSelect({
     <Select
       value={minInstalls !== null ? String(minInstalls) : ANY}
       onValueChange={(v) => {
-        if (v) setParams({ minInstalls: v === ANY ? null : Number(v) });
+        if (v) setParams({ minInstalls: parseMinInstalls(v) });
       }}
       items={MIN_INSTALL_ITEMS}
       modal={selectModal}
@@ -205,7 +220,7 @@ function MinInstallsSelect({
         <SelectItem value={ANY}>Any installs</SelectItem>
         {MIN_INSTALL_PRESETS.map((n) => (
           <SelectItem key={n} value={String(n)}>
-            {formatInstalls(n)}+ installs
+            {minInstallLabel(n)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -224,6 +239,7 @@ function MinInstallsSelect({
 export function CatalogControlsBar() {
   const { publisher, setParams, minInstalls, broken, filterCount, clearFilters } =
     useExplorerState();
+  const moreCount = filterCount.more;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <PublisherSelect
@@ -248,13 +264,7 @@ export function CatalogControlsBar() {
                   className="size-3.5"
                 />
               }
-              rightSection={
-                minInstalls !== null || broken ? (
-                  <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground tabular-nums">
-                    {(minInstalls !== null ? 1 : 0) + (broken ? 1 : 0)}
-                  </span>
-                ) : undefined
-              }
+              rightSection={<FilterCountBadge count={moreCount} />}
             />
           }
         >
@@ -269,9 +279,7 @@ export function CatalogControlsBar() {
           <DropdownMenuLabel>Minimum installs</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={minInstalls !== null ? String(minInstalls) : ANY}
-            onValueChange={(v) =>
-              setParams({ minInstalls: v === ANY ? null : Number(v) })
-            }
+            onValueChange={(v) => setParams({ minInstalls: parseMinInstalls(v) })}
           >
             <DropdownMenuRadioItem value={ANY} closeOnClick={false}>
               Any
@@ -282,7 +290,7 @@ export function CatalogControlsBar() {
                 value={String(n)}
                 closeOnClick={false}
               >
-                {formatInstalls(n)}+ installs
+                {minInstallLabel(n)}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>

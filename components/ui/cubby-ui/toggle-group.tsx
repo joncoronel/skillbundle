@@ -108,10 +108,30 @@ function ToggleGroup({
       )}
       {...props}
     >
-      <ToggleGroupContext.Provider value={{ size, variant, detached }}>
+      <ToggleGroupProvider size={size} variant={variant} detached={detached}>
         {children}
-      </ToggleGroupContext.Provider>
+      </ToggleGroupProvider>
     </BaseToggleGroup>
+  );
+}
+
+// Memoized so the context value is stable across the group's re-renders — a
+// consumer (ToggleGroupItem) that memoizes on it isn't invalidated every time
+// the parent renders for an unrelated reason.
+function ToggleGroupProvider({
+  size,
+  variant,
+  detached,
+  children,
+}: ToggleGroupContextValue & { children: React.ReactNode }) {
+  const value = React.useMemo(
+    () => ({ size, variant, detached }),
+    [size, variant, detached],
+  );
+  return (
+    <ToggleGroupContext.Provider value={value}>
+      {children}
+    </ToggleGroupContext.Provider>
   );
 }
 

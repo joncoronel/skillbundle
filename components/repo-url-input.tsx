@@ -104,7 +104,11 @@ export function RepoAnalysisResults({
       convex.action(api.recommendations.analyzeRepo, {
         repoUrl: trimmedUrl,
       }),
-    enabled: !!trimmedUrl,
+    // Gate on the plan too: free users (canAutoDetect=false) see the upgrade
+    // prompt below, so firing the analyzeRepo action (a GitHub round-trip) for
+    // them is pure waste — the result is never shown. Not a bypass: the server
+    // re-checks the plan regardless.
+    enabled: !!trimmedUrl && canAutoDetect,
     staleTime: 10 * 60_000,
     gcTime: 10 * 60_000,
     retry: false,

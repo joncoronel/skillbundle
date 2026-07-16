@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
-  keepPreviousData,
   useInfiniteQuery,
   useQueryClient,
   type InfiniteData,
@@ -15,6 +14,7 @@ import {
   type SkillSearchResult,
   type SkillSort,
 } from "@/lib/search/typesense";
+import { SEARCH_RESULT_CACHE } from "@/hooks/use-debounced-query-value";
 
 const PER_PAGE = 30;
 
@@ -30,16 +30,15 @@ export function catalogSearchQueryKey(
   filters: SkillFilters,
   searchDescriptions: boolean,
 ) {
+  // In browse mode (empty query) searchDescriptions can't change results —
+  // there's no query to match names-vs-descriptions against — so collapse it to
+  // false. Otherwise toggling the scope mid-browse would refetch an identical
+  // set and dim the rows for nothing.
+  const scope = query === "" ? false : searchDescriptions;
   // The filters object goes in the key as-is: React Query hashes plain objects
   // structurally (sorted keys, undefined dropped), so a new SkillFilters field
   // is automatically part of the key — no hand-maintained encoding to forget.
-  return [
-    "typesense-catalog",
-    query,
-    sort,
-    filters,
-    searchDescriptions,
-  ] as const;
+  return ["typesense-catalog", query, sort, filters, scope] as const;
 }
 
 interface UseCatalogSearchOptions {
@@ -95,11 +94,10 @@ export function useCatalogSearch({
     initialPageParam: 1,
     getNextPageParam: (last) =>
       last.page * PER_PAGE < last.found ? last.page + 1 : undefined,
-    // Keep the previous result set mounted while a refinement fetches, so
-    // typing "auth" → "authe" dims the old rows instead of flashing empty.
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
+    // Keep the previous result set mounted while a refinement fetches (so
+    // typing "auth" → "authe" dims the old rows instead of flashing empty),
+    // plus the shared stale/gc policy.
+    ...SEARCH_RESULT_CACHE,
   });
 
   const hits: SkillHit[] = useMemo(
@@ -112,10 +110,14 @@ export function useCatalogSearch({
   return {
     hits,
     found: firstPage?.found ?? 0,
-    /** Fetching or showing a previous state's rows — drives the loading dim.
-     *  (The debounce gap is the caller's to add: `trimmed !== effectiveQuery`.) */
-    isPending:
-      query.isPlaceholderData || (query.isFetching && !query.isFetchingNextPage),
+    /** Showing a PREVIOUS state's rows while this key fetches (keepPreviousData)
+     *  — drives the loading dim. Deliberately NOT `isFetching`: a background
+     *  revalidation of the current key (window refocus after staleTime) must
+     *  never dim already-correct rows — the house derived-loading rule. Cold
+     *  fetches are covered by `isInitialLoading`, pagination by
+     *  `isFetchingNextPage`. (The debounce gap is the caller's to add:
+     *  `trimmed !== effectiveQuery`.) */
+    isPending: query.isPlaceholderData,
     /** No data at all yet (first ever fetch for this state). */
     isInitialLoading: query.isPending,
     error: query.error,

@@ -3,8 +3,11 @@
 import type { SkillFilters, SkillSort } from "@/lib/search/typesense";
 import { useCatalogSearch } from "@/hooks/use-catalog-search";
 import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
-import { SkillRowGrid } from "@/components/default-skills-list";
-import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
+import {
+  EmptyState,
+  LoadingMoreFooter,
+  SkillRowGrid,
+} from "@/components/default-skills-list";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { cn } from "@/lib/utils";
 
@@ -67,21 +70,16 @@ export function ActiveCatalogResults({
 
   if (error) {
     return (
-      <div>
-        <div className="rounded-lg border border-dashed border-border py-10 text-center">
-          <p className="text-sm text-muted-foreground">
-            Search is unavailable right now.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => refetch()}
-          >
-            Try again
-          </Button>
-        </div>
-      </div>
+      <EmptyState message="Search is unavailable right now.">
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => refetch()}
+        >
+          Try again
+        </Button>
+      </EmptyState>
     );
   }
 
@@ -90,53 +88,47 @@ export function ActiveCatalogResults({
   if (isInitialLoading) return null;
 
   return (
-    <div>
-      <div
-        className={cn(
-          // `starting:opacity-0` fades the results in on the handoff from the
-          // (dimming-out) Popular list; `opacity-55` dims them while stale
-          // (debounce running) or during a warm refinement fetch.
-          "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none starting:opacity-0",
-          (stale || isPending) && "opacity-55",
-        )}
-      >
-        {hits.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border py-10 text-center">
-            <p className="text-sm text-muted-foreground">
-              {query
-                ? `No skills found for “${query}”`
-                : "No skills match these filters."}
-              {hasNarrowing && query && (
-                <span className="block mt-1 text-xs">
-                  Try loosening a filter.
-                </span>
-              )}
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* role=status: count changes announce as the query/filters
-                narrow, so screen readers hear the search working. */}
-            <p
-              role="status"
-              aria-live="polite"
-              className="text-xs text-muted-foreground mb-3 tabular-nums"
-            >
-              {found.toLocaleString()} result{found !== 1 && "s"}
-            </p>
-            {/* SkillHit is structurally a SkillData (plus engine fields) —
-                rows render hits directly, no mapping layer. */}
-            <SkillRowGrid skills={hits} />
-            <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-            {isFetchingNextPage && (
-              <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
-                <DotMatrixComet size="xs" ariaLabel="Loading more results" />
-                <span className="text-xs">Loading more…</span>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+    <div
+      className={cn(
+        // `starting:opacity-0` fades the results in on the handoff from the
+        // (dimming-out) Popular list; `opacity-55` dims them while stale
+        // (debounce running) or during a warm refinement fetch.
+        "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none starting:opacity-0",
+        (stale || isPending) && "opacity-55",
+      )}
+    >
+      {hits.length === 0 ? (
+        <EmptyState
+          message={
+            query
+              ? `No skills found for “${query}”`
+              : "No skills match these filters."
+          }
+        >
+          {hasNarrowing && query && (
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Try loosening a filter.
+            </span>
+          )}
+        </EmptyState>
+      ) : (
+        <>
+          {/* role=status: count changes announce as the query/filters narrow,
+              so screen readers hear the search working. */}
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-xs text-muted-foreground mb-3 tabular-nums"
+          >
+            {found.toLocaleString()} result{found !== 1 && "s"}
+          </p>
+          {/* SkillHit is structurally a SkillData (plus engine fields) — rows
+              render hits directly, no mapping layer. */}
+          <SkillRowGrid skills={hits} />
+          <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+          {isFetchingNextPage && <LoadingMoreFooter noun="results" />}
+        </>
+      )}
     </div>
   );
 }

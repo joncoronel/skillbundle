@@ -196,7 +196,8 @@ export const reconcileUnseenSkills = internalAction({
       console.error(
         `reconcileUnseenSkills: ${stale.length} stale rows exceed cap ${MAX_RECONCILE} — syncSkills likely failed. Bailing without writes.`,
       );
-      await chainTypesenseSync(ctx);
+      // Not on a dry run — a diagnostic pass must never schedule real work.
+      if (!dryRun) await chainTypesenseSync(ctx);
       return {
         dryRun,
         bailed: true,
