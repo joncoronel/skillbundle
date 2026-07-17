@@ -17,11 +17,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/cubby-ui/dropdown-menu";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/cubby-ui/input-otp";
+import { CodeField } from "@/components/auth/code-field";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { useResendTimer } from "@/hooks/use-resend-timer";
 import { useReverificationFlow } from "./reverification-provider";
@@ -258,32 +254,13 @@ export function EmailSection() {
             </form>
           ) : (
             <div className="flex flex-col items-center gap-4">
-              <InputOTP
-                maxLength={6}
+              <CodeField
                 value={code}
-                onChange={setCode}
+                onValueChange={setCode}
                 onComplete={handleVerify}
+                invalid={!!error}
                 autoFocus
-              >
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                </InputOTPGroup>
-                <InputOTPGroup>
-                  <InputOTPSlot index={1} />
-                </InputOTPGroup>
-                <InputOTPGroup>
-                  <InputOTPSlot index={2} />
-                </InputOTPGroup>
-                <InputOTPGroup>
-                  <InputOTPSlot index={3} />
-                </InputOTPGroup>
-                <InputOTPGroup>
-                  <InputOTPSlot index={4} />
-                </InputOTPGroup>
-                <InputOTPGroup>
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
+              />
               <button
                 type="button"
                 className={cn(

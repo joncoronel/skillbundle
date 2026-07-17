@@ -4,12 +4,9 @@ import * as React from "react";
 import { useSignIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/cubby-ui/input-otp";
+import { useResendTimer } from "@/hooks/use-resend-timer";
 import { AuthFrame } from "./auth-frame";
+import { CodeField } from "./code-field";
 import { OAuthButtons } from "./oauth-buttons";
 import {
   AuthCrossButton,
@@ -19,31 +16,28 @@ import {
   AuthFieldLabel,
   AuthFormError,
   AuthSubmitButton,
-  getSafeRedirectUrl,
+  isExpiredCodeError,
+  navigateAfterAuth,
   resolveClerkErrorMessage,
-  type ClerkErrorLike,
+  resolveClerkThrownError,
 } from "./shared";
-
-const RESEND_COOLDOWN_MS = 30_000;
 
 export function SignInForm() {
   const { signIn, errors } = useSignIn();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [code, setCode] = React.useState("");
-  // Set once Clerk asks for the email code and we've sent it. Clerk's Client
-  // Trust triggers a second factor on password sign-in from a new device even
-  // for accounts without user-configured MFA — the emailed code proves it's
-  // them. Without this branch the form silently stalled at that step.
+  // Set once Clerk asks for the email code and we've reached the code step.
+  // Clerk's Client Trust triggers a second factor on password sign-in from a
+  // new device even for accounts without user-configured MFA — the emailed code
+  // proves it's them. Without this branch the form silently stalled there.
   const [verifying, setVerifying] = React.useState(false);
-  const [resendState, setResendState] = React.useState<
-    "idle" | "sending" | "sent"
-  >("idle");
   const [flowError, setFlowError] = React.useState<string | null>(null);
+  // The send-failure path lands on the verify screen without a code actually
+  // sent — track it so the heading doesn't claim "we sent a code".
+  const [sendFailed, setSendFailed] = React.useState(false);
+  const { countdown, startTimer, resetTimer } = useResendTimer();
   const router = useRouter();
-
-  const otpRef = React.useRef<HTMLInputElement>(null);
-  const cooldownRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cache Components keeps this route mounted via React Activity on navigation,
   // which otherwise preserves input values and transient auth state between
@@ -54,14 +48,15 @@ export function SignInForm() {
       setPassword("");
       setCode("");
       setVerifying(false);
-      setResendState("idle");
       setFlowError(null);
-      if (cooldownRef.current) {
-        clearTimeout(cooldownRef.current);
-        cooldownRef.current = null;
-      }
+      setSendFailed(false);
+      // Reset the resend countdown too: its interval is cleaned up on hide, but
+      // the number would otherwise survive frozen — and the send-failure path
+      // doesn't restart it, so a revisit could show a dead, permanently
+      // disabled "resend code (N)".
+      resetTimer();
     };
-  }, []);
+  }, [resetTimer]);
 
   const identifierError = errors?.fields?.identifier;
   const passwordError = errors?.fields?.password;
@@ -71,47 +66,25 @@ export function SignInForm() {
     ...(flowError ? [flowError] : []),
   ];
 
-  const isCodeExpired =
-    codeError?.code === "verification_expired" ||
-    errors?.global?.some((e) => e.code === "verification_expired");
-
-  React.useEffect(() => {
-    if (isCodeExpired) setCode("");
-  }, [isCodeExpired]);
-
-  const finalizeSignIn = async () => {
-    // Read redirect_url directly from window.location instead of via
-    // useSearchParams. Cache Components forces any component that calls
-    // useSearchParams to opt out of static prerendering, which would push the
-    // auth flow into dynamic rendering on every request. This runs after
-    // submit (client-side), so window is available and we avoid the prerender
-    // penalty. Don't "fix" back to the hook without weighing the cache impact.
-    const redirectUrl = getSafeRedirectUrl(
-      new URLSearchParams(window.location.search).get("redirect_url"),
-    );
+  const finalize = async () => {
     await signIn.finalize({
       navigate: ({ session, decorateUrl }) => {
+        // No session tasks are configured in this app; if one is ever pending,
+        // Clerk keeps the session incomplete and we don't navigate.
         if (session?.currentTask) return;
-        const url = decorateUrl(redirectUrl);
-        if (url.startsWith("http")) {
-          window.location.href = url;
-        } else {
-          router.push(url);
-        }
+        navigateAfterAuth(router, decorateUrl);
       },
     });
   };
 
   const submit = async () => {
     setFlowError(null);
-    const { error } = await signIn.password({
-      identifier: email,
-      password,
-    });
+    setSendFailed(false);
+    const { error } = await signIn.password({ identifier: email, password });
     if (error) return;
 
     if (signIn.status === "complete") {
-      await finalizeSignIn();
+      await finalize();
       return;
     }
 
@@ -125,114 +98,98 @@ export function SignInForm() {
       try {
         await signIn.mfa.sendEmailCode();
         setVerifying(true);
+        startTimer();
       } catch (err) {
-        const first = (err as { errors?: ClerkErrorLike[] })?.errors?.[0];
+        // Send failed after a correct password. Still advance to the code
+        // screen (not back to the password form, whose only button re-runs an
+        // already-past first factor) so the user can retry via "resend code" —
+        // and don't start the cooldown, so resend is available immediately.
+        setVerifying(true);
+        setSendFailed(true);
         setFlowError(
-          first
-            ? resolveClerkErrorMessage(first)
-            : "Couldn't send the verification code. Try again.",
+          resolveClerkThrownError(
+            err,
+            "Couldn't send the code. Use resend to try again.",
+          ),
         );
       }
       return;
     }
 
-    // Any other non-complete status has no path in this app — surface it
-    // rather than leaving the button looking like it did nothing.
-    setFlowError("Couldn't complete sign in. Try again.");
+    // A non-email second factor (TOTP/SMS) — this app can't complete it, so say
+    // so distinctly rather than looping on a generic "try again".
+    setFlowError("This sign-in method isn't supported here yet.");
   };
 
-  const submitVerify = async () => {
-    const { error } = await signIn.mfa.verifyEmailCode({ code });
-    if (error) return;
+  const verifyCode = async (value: string) => {
+    setFlowError(null);
+    const { error } = await signIn.mfa.verifyEmailCode({ code: value });
+    if (error) {
+      // Expired code → clear so a fresh resend starts clean; a wrong code stays
+      // put so the user can fix a digit.
+      if (isExpiredCodeError(error)) setCode("");
+      return;
+    }
     if (signIn.status === "complete") {
-      await finalizeSignIn();
+      await finalize();
+    } else {
+      // Verified without error but not complete — surface it instead of leaving
+      // the user on a dead form (the silent stall this whole flow exists to fix).
+      setFlowError("Couldn't complete sign in. Try again.");
     }
   };
 
   const handleResend = async () => {
-    if (resendState !== "idle") return;
-    setResendState("sending");
+    if (countdown > 0) return;
     setFlowError(null);
     try {
       await signIn.mfa.sendEmailCode();
-      setResendState("sent");
       setCode("");
-      otpRef.current?.focus();
-      if (cooldownRef.current) clearTimeout(cooldownRef.current);
-      cooldownRef.current = setTimeout(
-        () => setResendState("idle"),
-        RESEND_COOLDOWN_MS,
-      );
+      setSendFailed(false);
+      startTimer();
     } catch (err) {
-      const first = (err as { errors?: ClerkErrorLike[] })?.errors?.[0];
       setFlowError(
-        first
-          ? resolveClerkErrorMessage(first)
-          : "Couldn't resend the code. Try again in a moment.",
+        resolveClerkThrownError(
+          err,
+          "Couldn't resend the code. Try again in a moment.",
+        ),
       );
-      setResendState("idle");
     }
   };
 
-  // Second-factor step: Client Trust wants an email code before finishing.
-  // Same "check your email" affordance as sign-up so the OTP moment reads the
-  // same across both flows.
+  // Second-factor step: Client Trust wants an email code before finishing. Same
+  // "check your email" affordance as sign-up so the OTP moment reads the same.
   if (verifying) {
-    const resendStatus =
-      resendState === "sending"
-        ? "sending…"
-        : resendState === "sent"
-          ? "code sent ✓"
-          : null;
-
     return (
       <AuthFrame
         title="Verify it's you."
-        description={`New device, so we sent a 6-digit code to ${email}.`}
+        description={
+          sendFailed
+            ? "We couldn't send the code. Use resend to try again."
+            : `New device, so we sent a 6-digit code to ${email}.`
+        }
         footer={
-          <div className="flex items-center gap-3">
-            {resendStatus ? <span role="status">{resendStatus}</span> : null}
-            <AuthCrossButton
-              onClick={handleResend}
-              disabled={resendState !== "idle"}
-            >
-              resend code
-            </AuthCrossButton>
-          </div>
+          <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
+            {countdown > 0 ? `resend code (${countdown})` : "resend code"}
+          </AuthCrossButton>
         }
       >
-        <form action={submitVerify} className="flex flex-col gap-6">
+        <form
+          action={(formData) => verifyCode(String(formData.get("code") ?? ""))}
+          className="flex flex-col gap-6"
+        >
           <div className="flex flex-col gap-3">
             <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
-            <InputOTP
+            <CodeField
               id="code"
-              ref={otpRef}
-              maxLength={6}
+              name="code"
               value={code}
-              onChange={setCode}
+              onValueChange={setCode}
+              autoSubmit
+              invalid={!!codeError}
+              describedBy={codeError ? "code-error" : undefined}
               autoFocus
-              aria-invalid={codeError ? true : undefined}
-              aria-describedby={codeError ? "code-error" : undefined}
-            >
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={1} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={2} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={3} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={4} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={5} />
-              </InputOTPGroup>
-            </InputOTP>
+            />
             {codeError && (
               <AuthFieldError
                 id="code-error"

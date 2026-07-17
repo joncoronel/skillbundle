@@ -4,12 +4,9 @@ import * as React from "react";
 import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/cubby-ui/input-otp";
+import { useResendTimer } from "@/hooks/use-resend-timer";
 import { AuthFrame } from "./auth-frame";
+import { CodeField } from "./code-field";
 import { OAuthButtons } from "./oauth-buttons";
 import {
   AuthCrossButton,
@@ -19,12 +16,11 @@ import {
   AuthFieldLabel,
   AuthFormError,
   AuthSubmitButton,
-  getSafeRedirectUrl,
+  isExpiredCodeError,
+  navigateAfterAuth,
   resolveClerkErrorMessage,
-  type ClerkErrorLike,
+  resolveClerkThrownError,
 } from "./shared";
-
-const RESEND_COOLDOWN_MS = 30_000;
 
 export function SignUpForm() {
   const { signUp, errors } = useSignUp();
@@ -32,11 +28,9 @@ export function SignUpForm() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [code, setCode] = React.useState("");
-  const [resendState, setResendState] = React.useState<
-    "idle" | "sending" | "sent"
-  >("idle");
   const [resendError, setResendError] = React.useState<string | null>(null);
   const [advancedToVerify, setAdvancedToVerify] = React.useState(false);
+  const { countdown, startTimer, resetTimer } = useResendTimer();
   const router = useRouter();
 
   const emailError = errors?.fields?.emailAddress;
@@ -49,35 +43,23 @@ export function SignUpForm() {
     ...(resendError ? [resendError] : []),
   ];
 
-  const otpRef = React.useRef<HTMLInputElement>(null);
-  const cooldownRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // Cache Components keeps this route mounted via React Activity on
   // navigation, which otherwise preserves form input values and transient
   // auth state between visits. Reset everything when the route becomes hidden
-  // so returning to it is a fresh experience.
+  // so returning to it is a fresh experience (the resend timer cleans up its
+  // own interval).
   React.useLayoutEffect(() => {
     return () => {
       setEmail("");
       setPassword("");
       setCode("");
       setAdvancedToVerify(false);
-      setResendState("idle");
       setResendError(null);
-      if (cooldownRef.current) {
-        clearTimeout(cooldownRef.current);
-        cooldownRef.current = null;
-      }
+      // Reset the resend countdown so a frozen number can't survive a hide/show
+      // (the interval is already cleaned up by the hook).
+      resetTimer();
     };
-  }, []);
-
-  const isCodeExpired =
-    codeError?.code === "verification_expired" ||
-    errors?.global?.some((e) => e.code === "verification_expired");
-
-  React.useEffect(() => {
-    if (isCodeExpired) setCode("");
-  }, [isCodeExpired]);
+  }, [resetTimer]);
 
   const submitSignUp = async () => {
     const { error } = await signUp.password({
@@ -89,69 +71,54 @@ export function SignUpForm() {
     try {
       await signUp.verifications.sendEmailCode();
       setAdvancedToVerify(true);
+      startTimer();
     } catch (err) {
       // Account was created but the code wasn't sent. Don't advance —
       // surface the failure so the user knows to retry.
-      const first = (err as { errors?: ClerkErrorLike[] })?.errors?.[0];
       setResendError(
-        first
-          ? resolveClerkErrorMessage(first)
-          : "Couldn't send the verification code. Try again.",
+        resolveClerkThrownError(
+          err,
+          "Couldn't send the verification code. Try again.",
+        ),
       );
     }
   };
 
-  const submitVerify = async () => {
-    await signUp.verifications.verifyEmailCode({ code });
+  const submitVerify = async (value: string) => {
+    const { error } = await signUp.verifications.verifyEmailCode({
+      code: value,
+    });
+    if (error) {
+      // Expired code → clear so a fresh resend starts clean; a wrong code stays
+      // put so the user can fix a digit.
+      if (isExpiredCodeError(error)) setCode("");
+      return;
+    }
 
     if (signUp.status === "complete") {
-      // Read redirect_url directly from window.location instead of via
-      // useSearchParams. Cache Components forces any component that calls
-      // useSearchParams to opt out of static prerendering, which would
-      // push the auth flow into dynamic rendering on every request. This
-      // runs after verify (client-side), so window is available and we
-      // avoid the prerender penalty. Don't "fix" back to the hook without
-      // weighing the cache impact.
-      const redirectUrl = getSafeRedirectUrl(
-        new URLSearchParams(window.location.search).get("redirect_url"),
-      );
       await signUp.finalize({
         navigate: ({ session, decorateUrl }) => {
           if (session?.currentTask) return;
-          const url = decorateUrl(redirectUrl);
-          if (url.startsWith("http")) {
-            window.location.href = url;
-          } else {
-            router.push(url);
-          }
+          navigateAfterAuth(router, decorateUrl);
         },
       });
     }
   };
 
   const handleResend = async () => {
-    if (resendState !== "idle") return;
-    setResendState("sending");
+    if (countdown > 0) return;
     setResendError(null);
     try {
       await signUp.verifications.sendEmailCode();
-      setResendState("sent");
       setCode("");
-      otpRef.current?.focus();
-      if (cooldownRef.current) clearTimeout(cooldownRef.current);
-      cooldownRef.current = setTimeout(
-        () => setResendState("idle"),
-        RESEND_COOLDOWN_MS,
-      );
+      startTimer();
     } catch (err) {
-      const clerkErrors = (err as { errors?: ClerkErrorLike[] })?.errors;
-      const first = clerkErrors?.[0];
       setResendError(
-        first
-          ? resolveClerkErrorMessage(first)
-          : "Couldn't resend the code. Try again in a moment.",
+        resolveClerkThrownError(
+          err,
+          "Couldn't resend the code. Try again in a moment.",
+        ),
       );
-      setResendState("idle");
     }
   };
 
@@ -165,64 +132,37 @@ export function SignUpForm() {
     signUp.missingFields?.length === 0;
 
   if (needsVerification || isVerifyComplete) {
-    const resendStatus =
-      resendState === "sending"
-        ? "sending…"
-        : resendState === "sent"
-          ? "code sent ✓"
-          : null;
-
     return (
       <AuthFrame
         title="Check your email."
         description={`We sent a 6-digit code to ${email}.`}
         footer={
           isVerifyComplete ? null : (
-            <div className="flex items-center gap-3">
-              {resendStatus ? <span role="status">{resendStatus}</span> : null}
-              <AuthCrossButton
-                onClick={handleResend}
-                disabled={resendState !== "idle"}
-              >
-                resend code
-              </AuthCrossButton>
-            </div>
+            <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
+              {countdown > 0 ? `resend code (${countdown})` : "resend code"}
+            </AuthCrossButton>
           )
         }
       >
-        <form action={submitVerify} className="flex flex-col gap-6">
+        <form
+          action={(formData) =>
+            submitVerify(String(formData.get("code") ?? ""))
+          }
+          className="flex flex-col gap-6"
+        >
           <div className="flex flex-col gap-3">
             <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
-            <InputOTP
+            <CodeField
               id="code"
-              ref={otpRef}
-              maxLength={6}
+              name="code"
               value={code}
-              onChange={setCode}
-              autoFocus={!isVerifyComplete}
+              onValueChange={setCode}
+              autoSubmit={!isVerifyComplete}
               disabled={isVerifyComplete}
-              aria-invalid={codeError ? true : undefined}
-              aria-describedby={codeError ? "code-error" : undefined}
-            >
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={1} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={2} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={3} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={4} />
-              </InputOTPGroup>
-              <InputOTPGroup>
-                <InputOTPSlot index={5} />
-              </InputOTPGroup>
-            </InputOTP>
+              invalid={!!codeError && !isVerifyComplete}
+              describedBy={codeError ? "code-error" : undefined}
+              autoFocus={!isVerifyComplete}
+            />
             {codeError && !isVerifyComplete && (
               <AuthFieldError
                 id="code-error"
