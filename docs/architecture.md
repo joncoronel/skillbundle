@@ -292,15 +292,37 @@ Skip queries for unauthenticated users (`"skip"` = no subscription, no round-tri
 // hooks/use-user-plan.ts
 export function useUserPlan() {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-  const result = useQuery(api.plans.currentPlan, isAuthenticated ? {} : "skip");
+  const { data: result, isPending, isError } = useQuery({
+    ...convexQuery(api.plans.currentPlan, isAuthenticated ? {} : "skip"),
+    enabled: isAuthenticated,
+  });
+
   return {
     plan: (result?.plan ?? "free") as Plan,
     limits: result?.limits ?? null,
     gatingEnabled: result?.gatingEnabled ?? false,
-    isLoading: authLoading || (isAuthenticated && result === undefined),
+    // Fully resolved: auth AND the plan query.
+    isLoading: authLoading || (isAuthenticated && isPending),
+    // Auth-only readiness — see the two rules below.
+    isAuthLoading: authLoading,
+    // Plan query failed: "unknown", never "free".
+    isPlanError: isAuthenticated && isError,
   };
 }
 ```
+
+Two rules the extra fields encode (established by the repo-match paywall,
+`components/repo-url-input.tsx`):
+
+- **Gate fetches on auth readiness, not plan resolution.** A caller that only
+  needs the Convex JWT attached should watch `isAuthLoading`, so its request
+  runs in parallel with the plan round-trip instead of serially behind it. The
+  server is the authoritative gate for plan-restricted work — client plan
+  checks exist only to skip round-trips that are known to fail.
+- **A failed plan query means "unknown", never "free".** Gate on
+  `isPlanError` separately from `limits` being null, otherwise a websocket
+  blip shows a paying user the paywall with no way to recover. When the plan
+  is unknown, fall through to the server and let it decide.
 
 ---
 

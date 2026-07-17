@@ -7,6 +7,7 @@ import { StarIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { signInUrl } from "@/components/auth/shared";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +61,7 @@ export function StarButton({
       // Preserve the bundle URL so the user lands back here after sign-in
       // instead of bouncing to /. Mirrors what the proxy does for hard nav.
       const path = window.location.pathname + window.location.search;
-      router.push(`/sign-in?redirect_url=${encodeURIComponent(path)}`);
+      router.push(signInUrl(path));
       return;
     }
     try {

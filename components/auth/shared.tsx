@@ -30,6 +30,16 @@ export function getSafeRedirectUrl(raw: string | null): string {
   }
 }
 
+/**
+ * Build the sign-in URL that returns the user to `redirectTo` afterward. The
+ * one place this query string is assembled — the /sign-in page validates the
+ * param with getSafeRedirectUrl above, so callers (paywall, star, fork-bundle)
+ * don't hand-roll it.
+ */
+export function signInUrl(redirectTo: string): string {
+  return `/sign-in?redirect_url=${encodeURIComponent(redirectTo)}`;
+}
+
 export function AuthFieldLabel({
   className,
   ...props

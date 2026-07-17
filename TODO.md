@@ -6,6 +6,28 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Match repo: free-run quota (phase 2 of the paywall)
+
+Shipped (Jul 2026, phase 1): repo match is Pro-gated, but the demo repo
+(`shadcn-ui/ui`) runs free for everyone — signed out included — so people can
+taste it before paying. Gate is server-enforced in `convex/recommendations.ts`
+via the `matchesDemoRepo` allowlist in `lib/repo-match.ts`; free/logged-out
+users who analyze their own repo get an inline, sign-in-aware paywall.
+
+Deferred (phase 2): give **signed-in free users a small quota of real runs**
+on their own repos (lean: ~3 lifetime, sign-in required) so the taste is
+personal, not just the canned demo. Then upgrade-gate beyond that.
+
+Why deferred, not built now: it's the expensive part (needs a per-user
+usage-tracking table + reset logic, and every fresh repo costs a GitHub tree
+fetch + Voyage embedding), and it only pays off if the free demo *isn't*
+converting. Ship phase 1, watch whether demo → sign-up / upgrade happens, and
+only build the quota if the canned demo under-converts. Enforce the quota
+inside `isRepoMatchAllowed()` in `lib/repo-match.ts` — the one predicate both
+the server gate and the client mirror already call, so the policy changes in
+exactly one place; the client can show remaining count but never gates. Don't extend quota to logged-out users (no
+reliable identity to meter → abuse surface); sign-in is the natural wall.
+
 ### Match repo: deferred features (recents, match counts, GitHub OAuth)
 
 Shipped (Jul 2026): repo mode morphs the composer card in place — the composer

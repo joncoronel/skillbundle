@@ -26,7 +26,6 @@ import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 
 interface SkillExplorerProps {
-  canAutoDetect: boolean;
   initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
   initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
   initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
@@ -74,14 +73,12 @@ export function SkillExplorer(props: SkillExplorerProps) {
  * when a search is active — never in the prerendered idle state.
  */
 export function SkillExplorerView({
-  canAutoDetect,
   initialPopularSkills,
   initialTrending,
   initialHot,
 }: SkillExplorerProps) {
   const {
     textQuery,
-    repoUrl,
     trimmedQuery,
     hasQuery,
     isRepo,
@@ -162,21 +159,14 @@ export function SkillExplorerView({
           </p>
         </section>
 
-        <SkillComposer
-          canAutoDetect={canAutoDetect}
-          showInputSpinner={showInputSpinner}
-        />
+        <SkillComposer showInputSpinner={showInputSpinner} />
 
         {isRepo ? (
           /* Repo mode's region: match results (or the paste-a-repo empty
              state). starting: fades it in on the mode morph — it only mounts
              on entry, so the static shell never sees the fade. */
           <div className="pt-4 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
-            <RepoAnalysisResults
-              repoUrl={repoUrl}
-              canAutoDetect={canAutoDetect}
-              onTryExample={(url) => setParams({ repoUrl: url })}
-            />
+            <RepoAnalysisResults />
           </div>
         ) : (
           /* List region — the ONLY thing that changes on interaction. */

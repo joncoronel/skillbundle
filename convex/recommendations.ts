@@ -5,18 +5,23 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
   buildRepoFingerprint,
   fingerprintToEmbeddingInput,
   scanTree,
-  parseGitHubUrl,
   type RepoFingerprint,
   type TreeScanResult,
 } from "./github";
 import { embedText } from "./lib/embeddings";
 import { fetchRepoMetadata, fetchRepoTree, NOT_MODIFIED } from "./lib/github";
+import {
+  extractRepoSlug,
+  matchesDemoRepo,
+  isRepoMatchAllowed,
+  PRO_REQUIRED,
+} from "../lib/repo-match";
 
 // ---------------------------------------------------------------------------
 // Tree scan ↔ cache encoding
@@ -74,10 +79,6 @@ const ANALYZE_REPO_DEBUG = false;
 
 function debugLog(msg: string): void {
   if (ANALYZE_REPO_DEBUG) console.log(msg);
-}
-
-function makeCacheKey(owner: string, repo: string): string {
-  return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
 
 export const getCachedFingerprint = internalQuery({
@@ -270,20 +271,7 @@ const MAX_VARIANTS_PER_GROUP = 10;
 export const analyzeRepo = action({
   args: { repoUrl: v.string() },
   handler: async (ctx, { repoUrl }): Promise<AnalyzeRepoResult> => {
-    const { limits } = await ctx.runQuery(
-      internal.plans.internalCurrentPlan,
-      {},
-    );
-    if (!limits.canAutoDetect) {
-      return {
-        error: "GitHub auto-detection requires a Pro plan.",
-        repoName: "",
-        fingerprint: null,
-        recommendations: [],
-      };
-    }
-
-    const parsed = parseGitHubUrl(repoUrl);
+    const parsed = extractRepoSlug(repoUrl);
     if (!parsed) {
       return {
         error: "Invalid GitHub URL",
@@ -293,10 +281,36 @@ export const analyzeRepo = action({
       };
     }
 
-    const { owner, repo } = parsed;
-    const repoName = `${owner}/${repo}`;
-    const cacheKey = makeCacheKey(owner, repo);
+    // GitHub owner/repo are case-insensitive, so normalize to lowercase once at
+    // the entrance. This is the security-relevant spot: matchesDemoRepo already
+    // lowercases, so without this a case variant (`ShAdCn-Ui/Ui`) skips the plan
+    // check AND misses the raw-cased tree cache, forcing a full unauthenticated
+    // GitHub + embedding recompute per variant. One normalized key feeds both
+    // caches (tree + fingerprint), so every case collapses to a single entry.
+    const owner = parsed.owner.toLowerCase();
+    const repo = parsed.repo.toLowerCase();
+    // Lowercase feeds the caches + GitHub calls (both case-insensitive), so
+    // every case variant collapses to one entry. Display keeps the user's
+    // casing so "Microsoft/TypeScript" doesn't render all-lowercase.
+    const repoName = `${parsed.owner}/${parsed.repo}`;
     const repoKey = `${owner}/${repo}`;
+    const cacheKey = repoKey;
+
+    // Repo match is Pro-gated; the demo allowlist is the one exception (runs
+    // free for everyone, signed out included). Skip the plan query for demo
+    // repos, and gate everything else through the shared predicate. Thrown as a
+    // ConvexError so it lands as a query error, not cacheable data — see
+    // PRO_REQUIRED. This is the authoritative gate; the client mirrors it only
+    // to avoid the round-trip.
+    if (!matchesDemoRepo(owner, repo)) {
+      const { limits } = await ctx.runQuery(
+        internal.plans.internalCurrentPlan,
+        {},
+      );
+      if (!isRepoMatchAllowed(limits, owner, repo)) {
+        throw new ConvexError({ code: PRO_REQUIRED });
+      }
+    }
 
     const t0 = Date.now();
     let tPrev = t0;

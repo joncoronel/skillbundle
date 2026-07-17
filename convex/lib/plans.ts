@@ -16,7 +16,10 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   free: {
     maxBundles: 3,
     canMakePrivate: false,
-    canAutoDetect: true,
+    // Pro-only, but the demo allowlist (lib/repo-match.ts) still runs free for
+    // everyone so people can taste repo match before upgrading. Enforced in
+    // convex/recommendations.ts.
+    canAutoDetect: false,
     canViewAnalytics: false,
     canExport: false,
   },
