@@ -8,6 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GitForkIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { signInUrl } from "@/components/auth/shared";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 
@@ -39,7 +40,7 @@ export function ForkBundleButton({
       // Preserve the bundle URL so the user lands back here after sign-in
       // instead of bouncing to /. Mirrors what the proxy does for hard nav.
       const path = window.location.pathname + window.location.search;
-      router.push(`/sign-in?redirect_url=${encodeURIComponent(path)}`);
+      router.push(signInUrl(path));
       return;
     }
 

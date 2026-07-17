@@ -5,19 +5,23 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
   buildRepoFingerprint,
   fingerprintToEmbeddingInput,
   scanTree,
-  parseGitHubUrl,
   type RepoFingerprint,
   type TreeScanResult,
 } from "./github";
 import { embedText } from "./lib/embeddings";
 import { fetchRepoMetadata, fetchRepoTree, NOT_MODIFIED } from "./lib/github";
-import { matchesDemoRepo } from "../lib/repo-match";
+import {
+  extractRepoSlug,
+  matchesDemoRepo,
+  isRepoMatchAllowed,
+  PRO_REQUIRED,
+} from "../lib/repo-match";
 
 // ---------------------------------------------------------------------------
 // Tree scan ↔ cache encoding
@@ -75,10 +79,6 @@ const ANALYZE_REPO_DEBUG = false;
 
 function debugLog(msg: string): void {
   if (ANALYZE_REPO_DEBUG) console.log(msg);
-}
-
-function makeCacheKey(owner: string, repo: string): string {
-  return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
 
 export const getCachedFingerprint = internalQuery({
@@ -246,14 +246,6 @@ export interface GroupedRecommendation {
 
 export interface AnalyzeRepoResult {
   error: string | null;
-  /**
-   * Machine-readable discriminator for errors the client handles specially.
-   * `pro_required` = the plan gate rejected a non-demo repo; the client renders
-   * the paywall for it rather than the raw error card, so even a stale/raced
-   * cached rejection resolves to the designed UI. The client mirror stays a
-   * pure optimization; this is the authoritative signal.
-   */
-  errorCode?: "pro_required";
   repoName: string;
   fingerprint: RepoFingerprint | null;
   recommendations: GroupedRecommendation[];
@@ -279,7 +271,7 @@ const MAX_VARIANTS_PER_GROUP = 10;
 export const analyzeRepo = action({
   args: { repoUrl: v.string() },
   handler: async (ctx, { repoUrl }): Promise<AnalyzeRepoResult> => {
-    const parsed = parseGitHubUrl(repoUrl);
+    const parsed = extractRepoSlug(repoUrl);
     if (!parsed) {
       return {
         error: "Invalid GitHub URL",
@@ -289,31 +281,36 @@ export const analyzeRepo = action({
       };
     }
 
-    const { owner, repo } = parsed;
+    // GitHub owner/repo are case-insensitive, so normalize to lowercase once at
+    // the entrance. This is the security-relevant spot: matchesDemoRepo already
+    // lowercases, so without this a case variant (`ShAdCn-Ui/Ui`) skips the plan
+    // check AND misses the raw-cased tree cache, forcing a full unauthenticated
+    // GitHub + embedding recompute per variant. One normalized key feeds both
+    // caches (tree + fingerprint), so every case collapses to a single entry.
+    const owner = parsed.owner.toLowerCase();
+    const repo = parsed.repo.toLowerCase();
+    // Lowercase feeds the caches + GitHub calls (both case-insensitive), so
+    // every case variant collapses to one entry. Display keeps the user's
+    // casing so "Microsoft/TypeScript" doesn't render all-lowercase.
+    const repoName = `${parsed.owner}/${parsed.repo}`;
+    const repoKey = `${owner}/${repo}`;
+    const cacheKey = repoKey;
 
-    // Repo match is Pro-gated. The demo allowlist (lib/repo-match.ts) is the one
-    // exception: it runs free for everyone (signed out included) so people can
-    // see the feature work before upgrading. Skip the plan query for demo repos;
-    // gate everything else on canAutoDetect. This is the authoritative gate —
-    // the client mirrors it for UX but never enforces it.
+    // Repo match is Pro-gated; the demo allowlist is the one exception (runs
+    // free for everyone, signed out included). Skip the plan query for demo
+    // repos, and gate everything else through the shared predicate. Thrown as a
+    // ConvexError so it lands as a query error, not cacheable data — see
+    // PRO_REQUIRED. This is the authoritative gate; the client mirrors it only
+    // to avoid the round-trip.
     if (!matchesDemoRepo(owner, repo)) {
       const { limits } = await ctx.runQuery(
         internal.plans.internalCurrentPlan,
         {},
       );
-      if (!limits.canAutoDetect) {
-        return {
-          error: "GitHub auto-detection requires a Pro plan.",
-          errorCode: "pro_required",
-          repoName: "",
-          fingerprint: null,
-          recommendations: [],
-        };
+      if (!isRepoMatchAllowed(limits, owner, repo)) {
+        throw new ConvexError({ code: PRO_REQUIRED });
       }
     }
-    const repoName = `${owner}/${repo}`;
-    const cacheKey = makeCacheKey(owner, repo);
-    const repoKey = `${owner}/${repo}`;
 
     const t0 = Date.now();
     let tPrev = t0;

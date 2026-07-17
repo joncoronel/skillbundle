@@ -85,7 +85,11 @@ results pane in place; the hero stays put.
 codebase. The repo is fingerprinted (packages, config files, languages, topics,
 README excerpt), embedded, and vector-searched against the skill embeddings;
 results are grouped by skill with their variants. Cached per repo. This is a
-**Pro-gated** feature (`canAutoDetect`).
+**Pro-gated** feature (`canAutoDetect`), with a free demo allowlist
+(`lib/repo-match.ts`): anyone — signed out included — can analyze
+`shadcn-ui/ui` to see it work, while locked users analyzing their own repo get
+an inline, sign-in-aware paywall. The gate is enforced server-side in
+`convex/recommendations.ts`; the client mirrors it only to skip the round-trip.
 
 **Catalog pages** (deep browse, public, shareable, SEO-oriented):
 

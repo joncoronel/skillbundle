@@ -1,14 +1,4 @@
 import type { TreeEntry } from "./lib/github";
-import { extractRepoSlug } from "../lib/repo-match";
-
-// ---------------------------------------------------------------------------
-// URL parsing
-// ---------------------------------------------------------------------------
-
-// Delegate to the canonical parser (lib/repo-match) so the server, the demo
-// allowlist, and the composer's validation stay in lockstep. It accepts full
-// URLs and bare `owner/repo` slugs with a case-insensitive host.
-const parseGitHubUrl = extractRepoSlug;
 
 // ---------------------------------------------------------------------------
 // Repo fingerprint — semantic signals about a repo's tech stack
@@ -385,5 +375,3 @@ export function fingerprintToEmbeddingInput(
   }
   return parts.join("\n\n");
 }
-
-export { parseGitHubUrl };

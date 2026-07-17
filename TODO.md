@@ -23,8 +23,9 @@ usage-tracking table + reset logic, and every fresh repo costs a GitHub tree
 fetch + Voyage embedding), and it only pays off if the free demo *isn't*
 converting. Ship phase 1, watch whether demo → sign-up / upgrade happens, and
 only build the quota if the canned demo under-converts. Enforce the quota
-server-side next to the existing `canAutoDetect` check; the client can show
-remaining count but never gates. Don't extend quota to logged-out users (no
+inside `isRepoMatchAllowed()` in `lib/repo-match.ts` — the one predicate both
+the server gate and the client mirror already call, so the policy changes in
+exactly one place; the client can show remaining count but never gates. Don't extend quota to logged-out users (no
 reliable identity to meter → abuse surface); sign-in is the natural wall.
 
 ### Match repo: deferred features (recents, match counts, GitHub OAuth)

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useConvex, useConvexAuth } from "convex/react";
+import { ConvexError } from "convex/values";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -14,8 +15,12 @@ import {
 import {
   EXAMPLE_REPO_SLUG,
   EXAMPLE_REPO_URL,
-  isDemoRepoInput,
+  extractRepoSlug,
+  matchesDemoRepo,
+  isRepoMatchAllowed,
+  PRO_REQUIRED,
 } from "@/lib/repo-match";
+import { signInUrl } from "@/components/auth/shared";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Toggle } from "@/components/ui/cubby-ui/toggle";
 import {
@@ -85,7 +90,12 @@ function groupIsOfficial(group: GroupedRecommendation) {
 export function RepoAnalysisResults() {
   const convex = useConvex();
   const { repoUrl, setParams } = useExplorerState();
-  const { limits, isLoading: planLoading } = useUserPlan();
+  const {
+    limits,
+    isLoading: planLoading,
+    isAuthLoading,
+    isPlanError,
+  } = useUserPlan();
 
   // Result narrowing — local state, not URL state: it scopes one analysis
   // view, resets naturally with the component, and repo links shared without
@@ -94,18 +104,45 @@ export function RepoAnalysisResults() {
   const [resultSort, setResultSort] = useState<"match" | "installs">("match");
 
   const trimmedUrl = repoUrl.trim();
+  const parsed = extractRepoSlug(trimmedUrl);
+
+  // Parseability is orthogonal to the plan gate: a submitted value the parser
+  // can't read at all (only reachable via a hand-edited or stale pre-parser
+  // shared link — the composer validates on submit) is an invalid-URL error for
+  // everyone, handled below before any gating. Checking it here keeps the plan
+  // logic operating only on real repos, so there's no "unparseable → treat as
+  // canAutoDetect" fallback to reason about.
+  const invalidUrl = !!trimmedUrl && !parsed;
 
   // Repo match is Pro-only, but the demo repo (shadcn-ui/ui) runs free for
-  // everyone. Locked users who ask for their own repo get the paywall instead.
-  const isExample = isDemoRepoInput(trimmedUrl);
+  // everyone. `allowed` runs the SAME predicate the server throws through, so
+  // the client's gate can't drift from the authoritative one (and phase-2's
+  // quota lands in one place).
+  const isExample = parsed ? matchesDemoRepo(parsed.owner, parsed.repo) : false;
   const canAutoDetect = limits?.canAutoDetect ?? false;
+  const allowed = parsed
+    ? isRepoMatchAllowed({ canAutoDetect }, parsed.owner, parsed.repo)
+    : false;
 
-  // Fetch only when it can succeed: the demo always, any other repo once the
-  // plan has RESOLVED and allows it. Gating non-demo fetches on `!planLoading`
-  // also guarantees the Convex JWT is attached (the plan query itself needs
-  // auth), so analyzeRepo never runs unauthenticated during the load window and
-  // caches a bogus "requires Pro" rejection.
-  const canFetch = isExample || (!planLoading && canAutoDetect);
+  // "This user is free" — the plan has resolved (not loading, and not errored:
+  // an error is "unknown", not "free", so a Pro user whose plan query blipped
+  // isn't wrongly gated) and doesn't grant auto-detect. Feeds the empty-state
+  // hint and the demo footer, so they can't disagree with the paywall.
+  const planResolvedFree = !planLoading && !isPlanError && !canAutoDetect;
+
+  // Definitively locked: a real (parseable) repo this user can't run, plan
+  // resolved. The paywall shows with no server round-trip.
+  const knownLocked = !!parsed && !allowed && !planLoading && !isPlanError;
+
+  // Fire as soon as we CAN, not once the plan is known. The demo fires
+  // immediately; anything else fires the moment auth is ready (so the JWT is
+  // attached) unless we already know the user is locked — so a Pro user's cold
+  // deep-link analysis runs in parallel with plan resolution, not serially
+  // behind it. The server is the authoritative gate (it throws PRO_REQUIRED),
+  // so firing before the client plan resolves is safe. Never fires for an
+  // unparseable input.
+  const canFetch =
+    !!parsed && (isExample || (!isAuthLoading && !knownLocked));
 
   const { data, isPending, error } = useQuery<AnalyzeRepoResult>({
     queryKey: ["repo", "analyze", trimmedUrl],
@@ -113,7 +150,7 @@ export function RepoAnalysisResults() {
       convex.action(api.recommendations.analyzeRepo, {
         repoUrl: trimmedUrl,
       }),
-    enabled: !!trimmedUrl && canFetch,
+    enabled: canFetch,
     staleTime: 10 * 60_000,
     gcTime: 10 * 60_000,
     retry: false,
@@ -121,26 +158,49 @@ export function RepoAnalysisResults() {
 
   const tryExample = () => setParams({ repoUrl: EXAMPLE_REPO_URL });
 
-  // A plan rejection — from the server now, or a stale/raced cache entry —
-  // always resolves to the paywall, never the raw error card. The client gate
-  // is UX-only; this typed code is what makes that true even for cached results.
-  const proRequired = data?.errorCode === "pro_required";
+  // The plan rejection is a thrown ConvexError, so it lands here as the query
+  // error — never cached as data, so it can't pin a paying user to the paywall.
+  // Map its code to the paywall; every other error is the generic failure card.
+  const proRequired =
+    error instanceof ConvexError &&
+    (error.data as { code?: string } | undefined)?.code === PRO_REQUIRED;
 
-  // Two distinct waits share the skeleton. `analyzing` is the real one — a repo
-  // we're allowed to fetch, with the request in flight. The other is the plan
-  // still resolving for a non-demo repo: we show the skeleton then too so the
-  // gate doesn't flash (paywall at a Pro user, or the empty state) for a frame,
-  // but it is NOT analysis, so it must not claim to be (see the status line).
-  const analyzing = !!trimmedUrl && canFetch && isPending;
-  const loading = analyzing || (!!trimmedUrl && planLoading && !isExample);
+  // Paywall when the client already knows the user is locked, OR when the
+  // server rejected (the authoritative backstop — e.g. a plan blip the client
+  // read optimistically as Pro).
+  const isPaywall = knownLocked || proRequired;
 
-  // A plan rejection is routed to the paywall below, so it must NOT surface as
-  // the generic error card (which would otherwise shadow the paywall).
+  // "Analyzing…" is claimed ONLY for a real, allowed analysis in flight. A
+  // locked user's query can fire optimistically before the plan resolves, but
+  // we never tell them we're analyzing a repo we're about to gate — they get a
+  // neutral skeleton, then the paywall.
+  const analyzing = isPending && canFetch && (isExample || canAutoDetect);
+
+  // Skeleton for a real (parseable) non-demo repo whenever a fetch is in flight
+  // OR its gate is still unknown — the plan resolving, or (when the plan query
+  // errored) an optimistic fetch running with no resolved plan. Without the
+  // in-flight arm, the plan-error case would flash the empty state, then pop
+  // results with no skeleton. An unparseable input is known synchronously, so
+  // it skips the skeleton and goes straight to the error card below.
+  const loading =
+    analyzing ||
+    (!!parsed &&
+      !isExample &&
+      !isPaywall &&
+      (planLoading || (isPending && canFetch)));
+
+  // A pro_required rejection routes to the paywall, so it must NOT surface as
+  // the generic error card. An unparseable input is the same invalid-URL error
+  // the server would return — shown client-side (no round-trip) so a free user
+  // and a Pro user get the same truthful message. Returned data errors (server
+  // "Invalid GitHub URL", fetch failure) still surface here too.
   const actionError = proRequired
     ? null
-    : error
-      ? error.message || "Something went wrong analyzing this repository. Please try again."
-      : data?.error ?? null;
+    : invalidUrl
+      ? "Invalid GitHub URL"
+      : error
+        ? error.message || "Something went wrong analyzing this repository. Please try again."
+        : data?.error ?? null;
 
   if (loading) {
     const rowCount = 6;
@@ -220,30 +280,24 @@ export function RepoAnalysisResults() {
     );
   }
 
-  const result = data;
-
-  // Paywall precedence: a locked user's own repo, or any plan rejection that
-  // slipped through as data (a stale/raced cache entry). Checked before the
-  // results render so a `pro_required` result can never fall through into an
-  // empty results view.
-  const isPaywall =
-    !!trimmedUrl && (proRequired || (!isExample && !canAutoDetect));
-
   // Pre-analysis: no successful result to show. Two states share this slot —
   // the teaching empty state and (for a locked user's own repo) the paywall.
   // Crossfade between them so clicking Analyze resolves the gate as a
-  // considered response, not a hard swap.
-  if (!result || isPaywall) {
+  // considered response, not a hard swap. `isPaywall` takes precedence over any
+  // in-flight or errored query so a rejection never falls into an empty result.
+  if (!data || isPaywall) {
     return (
       <Crossfade active={isPaywall}>
         <RepoMatchEmptyState
           onTryExample={tryExample}
-          showUpgradeHint={!planLoading && !canAutoDetect}
+          showUpgradeHint={planResolvedFree}
         />
         <RepoMatchPaywall onTryExample={tryExample} />
       </Crossfade>
     );
   }
+
+  const result = data;
 
   const recs = result.recommendations;
   const fingerprint = result.fingerprint;
@@ -384,10 +438,11 @@ export function RepoAnalysisResults() {
         </div>
       )}
 
-      {/* The demo is the taste; this is the ask. Only when a locked user is
-          looking at the free example — Pro users (canAutoDetect) and any
-          non-demo repo never see it. */}
-      {!canAutoDetect && isExample && (
+      {/* The demo is the taste; this is the ask. Only when a resolved-free user
+          is looking at the example — gated on the SAME planResolvedFree as the
+          empty-state hint (not a lone !canAutoDetect) so it can't flash at a Pro
+          user mid plan-load, and never shows for a non-demo repo. */}
+      {planResolvedFree && isExample && (
         <p className="mt-4 text-xs text-muted-foreground">
           This is the {EXAMPLE_REPO_SLUG} example.{" "}
           <Link href="/pricing" className="underline hover:text-foreground">
@@ -486,11 +541,7 @@ function RepoMatchPaywall({
             nativeButton={false}
             variant="primary"
             size="sm"
-            render={
-              <Link
-                href={`/sign-in?redirect_url=${encodeURIComponent("/pricing")}`}
-              />
-            }
+            render={<Link href={signInUrl("/pricing")} />}
           >
             Sign in to upgrade
           </Button>
