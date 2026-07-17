@@ -3,7 +3,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { SkillExplorer, SkillExplorerView } from "@/components/skill-explorer";
 import { ExplorerStaticProvider } from "@/components/explorer-state";
-import { useUserPlan } from "@/hooks/use-user-plan";
 import type { api } from "@/convex/_generated/api";
 
 type HomeContentProps = {
@@ -21,12 +20,9 @@ export function HomeContent({
   initialTrending,
   initialHot,
 }: HomeContentProps) {
-  const { limits } = useUserPlan();
-
   return (
     <main className="mx-auto max-w-6xl px-4">
       <SkillExplorer
-        canAutoDetect={limits?.canAutoDetect ?? true}
         initialPopularSkills={initialPopularSkills}
         initialTrending={initialTrending}
         initialHot={initialHot}
@@ -55,7 +51,6 @@ export function HomeFallback({
     <main className="mx-auto max-w-6xl px-4">
       <ExplorerStaticProvider>
         <SkillExplorerView
-          canAutoDetect
           initialPopularSkills={initialPopularSkills}
           initialTrending={initialTrending}
           initialHot={initialHot}

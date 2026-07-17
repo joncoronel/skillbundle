@@ -1,22 +1,14 @@
 import type { TreeEntry } from "./lib/github";
+import { extractRepoSlug } from "../lib/repo-match";
 
 // ---------------------------------------------------------------------------
 // URL parsing
 // ---------------------------------------------------------------------------
 
-function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
-  // Strip trailing slashes, .git suffix, and fragment/query
-  let cleaned = url.trim().replace(/\/+$/, "").replace(/\.git$/, "");
-  cleaned = cleaned.split("?")[0].split("#")[0];
-
-  // Match github.com/owner/repo (with or without protocol)
-  const match = cleaned.match(
-    /(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/]+)/,
-  );
-  if (!match) return null;
-
-  return { owner: match[1], repo: match[2] };
-}
+// Delegate to the canonical parser (lib/repo-match) so the server, the demo
+// allowlist, and the composer's validation stay in lockstep. It accepts full
+// URLs and bare `owner/repo` slugs with a case-insensitive host.
+const parseGitHubUrl = extractRepoSlug;
 
 // ---------------------------------------------------------------------------
 // Repo fingerprint — semantic signals about a repo's tech stack

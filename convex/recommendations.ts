@@ -17,6 +17,7 @@ import {
 } from "./github";
 import { embedText } from "./lib/embeddings";
 import { fetchRepoMetadata, fetchRepoTree, NOT_MODIFIED } from "./lib/github";
+import { matchesDemoRepo } from "../lib/repo-match";
 
 // ---------------------------------------------------------------------------
 // Tree scan ↔ cache encoding
@@ -245,6 +246,14 @@ export interface GroupedRecommendation {
 
 export interface AnalyzeRepoResult {
   error: string | null;
+  /**
+   * Machine-readable discriminator for errors the client handles specially.
+   * `pro_required` = the plan gate rejected a non-demo repo; the client renders
+   * the paywall for it rather than the raw error card, so even a stale/raced
+   * cached rejection resolves to the designed UI. The client mirror stays a
+   * pure optimization; this is the authoritative signal.
+   */
+  errorCode?: "pro_required";
   repoName: string;
   fingerprint: RepoFingerprint | null;
   recommendations: GroupedRecommendation[];
@@ -270,19 +279,6 @@ const MAX_VARIANTS_PER_GROUP = 10;
 export const analyzeRepo = action({
   args: { repoUrl: v.string() },
   handler: async (ctx, { repoUrl }): Promise<AnalyzeRepoResult> => {
-    const { limits } = await ctx.runQuery(
-      internal.plans.internalCurrentPlan,
-      {},
-    );
-    if (!limits.canAutoDetect) {
-      return {
-        error: "GitHub auto-detection requires a Pro plan.",
-        repoName: "",
-        fingerprint: null,
-        recommendations: [],
-      };
-    }
-
     const parsed = parseGitHubUrl(repoUrl);
     if (!parsed) {
       return {
@@ -294,6 +290,27 @@ export const analyzeRepo = action({
     }
 
     const { owner, repo } = parsed;
+
+    // Repo match is Pro-gated. The demo allowlist (lib/repo-match.ts) is the one
+    // exception: it runs free for everyone (signed out included) so people can
+    // see the feature work before upgrading. Skip the plan query for demo repos;
+    // gate everything else on canAutoDetect. This is the authoritative gate —
+    // the client mirrors it for UX but never enforces it.
+    if (!matchesDemoRepo(owner, repo)) {
+      const { limits } = await ctx.runQuery(
+        internal.plans.internalCurrentPlan,
+        {},
+      );
+      if (!limits.canAutoDetect) {
+        return {
+          error: "GitHub auto-detection requires a Pro plan.",
+          errorCode: "pro_required",
+          repoName: "",
+          fingerprint: null,
+          recommendations: [],
+        };
+      }
+    }
     const repoName = `${owner}/${repo}`;
     const cacheKey = makeCacheKey(owner, repo);
     const repoKey = `${owner}/${repo}`;

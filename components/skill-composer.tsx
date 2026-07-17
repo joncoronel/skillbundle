@@ -50,20 +50,16 @@ import {
   SortSelect,
 } from "@/components/catalog-controls";
 import { useExplorerState } from "@/components/explorer-state";
+import { extractRepoSlug } from "@/lib/repo-match";
 import { cn } from "@/lib/utils";
 
-// One repo-shape test for carry-over AND pre-submit validation: a GitHub
-// URL or a bare owner/repo slug.
+// One repo-shape test for carry-over AND pre-submit validation, delegating to
+// the canonical parser so "repo-shaped" here matches what the server accepts.
 function looksLikeRepo(value: string) {
-  return (
-    /^(https?:\/\/)?(www\.)?github\.com\/[\w.-]+\/[\w.-]+/i.test(value) ||
-    /^[\w.-]+\/[\w.-]+$/.test(value)
-  );
+  return extractRepoSlug(value) !== null;
 }
 
 interface SkillComposerProps {
-  /** Whether the current plan allows repo analysis (gates Analyze). */
-  canAutoDetect: boolean;
   /** Derived in SkillExplorer from the shared query cache. */
   showInputSpinner: boolean;
 }
@@ -80,10 +76,7 @@ interface SkillComposerProps {
  * URL state comes from the explorer context; the only local state is the repo
  * field's draft (pushed to the URL on submit) and its validation flag.
  */
-export function SkillComposer({
-  canAutoDetect,
-  showInputSpinner,
-}: SkillComposerProps) {
+export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   const {
     textQuery,
     repoUrl,
@@ -341,7 +334,7 @@ export function SkillComposer({
             size="sm"
             className="shrink-0 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
             onClick={handleRepoSubmit}
-            disabled={!repoDraft.trim() || !canAutoDetect}
+            disabled={!repoDraft.trim()}
             leftSection={
               <HugeiconsIcon
                 icon={FlashIcon}
