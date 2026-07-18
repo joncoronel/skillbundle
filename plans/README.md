@@ -23,7 +23,7 @@ were requested this round.
 | 006 | Bound `recordCopy` to public bundles | P2 | S | — | TODO |
 | 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | TODO |
 | 008 | `.env.example` + README env + AGENTS.md tagging fix | P2 | S | — | TODO |
-| 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | TODO |
+| 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | DONE (executed 2026-07-18, commit `bf87e69`, PR from `plan-009`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale).
