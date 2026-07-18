@@ -20,12 +20,27 @@ import {
 // URL ID helpers
 // ---------------------------------------------------------------------------
 
+const ID_CHARS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+// 62 doesn't divide 256, so use % with a slight bias — acceptable here.
+function randomId(length: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (b) => ID_CHARS[b % ID_CHARS.length]).join("");
+}
+
 function generateUrlId(length = 10): string {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length }, () =>
-    chars[Math.floor(Math.random() * chars.length)],
-  ).join("");
+  return randomId(length);
+}
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
+  return diff === 0;
 }
 
 async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
@@ -333,9 +348,7 @@ export const generateShareToken = mutation({
       throw new ConvexError("Bundle not found or unauthorized");
     }
 
-    const token = Array.from({ length: 4 }, () =>
-      Math.random().toString(36).slice(2),
-    ).join("");
+    const token = randomId(32);
 
     await ctx.db.patch(bundleId, { shareToken: token });
     return token;
@@ -428,7 +441,7 @@ export const getByUrlId = query({
       const hasValidToken =
         shareToken !== undefined &&
         bundle.shareToken !== undefined &&
-        shareToken === bundle.shareToken;
+        timingSafeEqualStr(shareToken, bundle.shareToken);
 
       if (!isOwner && !hasValidToken) return null;
     }
