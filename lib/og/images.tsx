@@ -3,7 +3,7 @@ import { cacheLife } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
-import { isGitHubSource } from "@/lib/skill-urls";
+import { buildSkillInstallCommand } from "@/lib/install-commands";
 import { og } from "./theme";
 import { FONT } from "./fonts";
 import {
@@ -163,11 +163,16 @@ export async function skillOgImage(source: string, skillId: string) {
     });
   }
 
+  const command = buildSkillInstallCommand(source, skillId);
+  if (command === null) {
+    return sectionOgImage({
+      word: "404",
+      subtitle: "This skill may have been delisted or moved.",
+    });
+  }
+
   const name = skill.name || skillId;
   const audit = auditTag(skill.worstAuditStatus, skill.worstAuditRiskLevel);
-  const command = isGitHubSource(source)
-    ? `npx skills add ${source} --skill ${skillId}`
-    : `npx skills add ${source}/${skillId}`;
 
   return renderOg(
     <Frame category="Skill">

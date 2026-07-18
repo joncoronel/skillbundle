@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import {
   loadSkill,
   SkillDetailPage,
 } from "@/components/skill-detail-page";
+import { buildSkillInstallCommand } from "@/lib/install-commands";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -54,7 +56,8 @@ export default async function WellKnownSkillPage({
   params: Params;
 }) {
   const { source, skillId } = await params;
-  const installCommand = `npx skills add ${source}/${skillId}`;
+  const installCommand = buildSkillInstallCommand(source, skillId);
+  if (installCommand === null) notFound();
 
   return (
     <SkillDetailPage
