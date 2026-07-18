@@ -1155,6 +1155,9 @@ export const fetchSkillContent = internalAction({
             `Error fetching content for ${label} after ${MAX_RETRIES} attempts:`,
             e,
           );
+          await ctx.runMutation(internal.skills.markContentFetchFailed, {
+            skillId,
+          });
         }
       }
     }
