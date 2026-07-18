@@ -340,6 +340,8 @@ export const listSkillsWithErrors = query({
   handler: async (ctx, { filter }) => {
     await assertAdmin(ctx);
 
+    const LIST_CAP = 1000;
+
     // All queries use summaries (~200 bytes) instead of skills (~30KB)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mapSummary(s: any) {
@@ -369,7 +371,7 @@ export const listSkillsWithErrors = query({
           .withIndex("by_hasContentFetchError", (q) =>
             q.eq("hasContentFetchError", true),
           )
-          .collect();
+          .take(LIST_CAP);
         skills = results.filter((s) => s.skillDocId).map(mapSummary);
         break;
       }
@@ -379,7 +381,7 @@ export const listSkillsWithErrors = query({
           .withIndex("by_needsContentFetch", (q) =>
             q.eq("needsContentFetch", true),
           )
-          .collect();
+          .take(LIST_CAP);
         skills = results.filter((s) => s.skillDocId).map(mapSummary);
         break;
       }
@@ -389,7 +391,7 @@ export const listSkillsWithErrors = query({
           .withIndex("by_needsDiscovery", (q) =>
             q.eq("needsDiscovery", true),
           )
-          .collect();
+          .take(LIST_CAP);
         skills = results.filter((s) => s.skillDocId).map(mapSummary);
         break;
       }
@@ -397,7 +399,7 @@ export const listSkillsWithErrors = query({
         const results = await ctx.db
           .query("skillSummaries")
           .withIndex("by_hasSkillMdUrl", (q) => q.eq("hasSkillMdUrl", false))
-          .collect();
+          .take(LIST_CAP);
         skills = results
           .filter(
             (s) =>
@@ -410,22 +412,20 @@ export const listSkillsWithErrors = query({
       case "noUrlExhausted": {
         const results = await ctx.db
           .query("skillSummaries")
-          .withIndex("by_hasSkillMdUrl", (q) => q.eq("hasSkillMdUrl", false))
-          .collect();
-        skills = results
-          .filter(
-            (s) =>
-              s.skillDocId &&
-              (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES,
+          .withIndex("by_hasSkillMdUrl_discoveryFailCount", (q) =>
+            q
+              .eq("hasSkillMdUrl", false)
+              .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
           )
-          .map(mapSummary);
+          .take(LIST_CAP);
+        skills = results.filter((s) => s.skillDocId).map(mapSummary);
         break;
       }
       case "delisted": {
         const results = await ctx.db
           .query("skillSummaries")
           .withIndex("by_isDelisted", (q) => q.eq("isDelisted", true))
-          .collect();
+          .take(LIST_CAP);
         skills = results.filter((s) => s.skillDocId).map(mapSummary);
         break;
       }
@@ -537,16 +537,14 @@ export const retryBatch = internalMutation({
       }
     } else if (filter === "noUrlExhausted") {
       // Reset skills that have given up on discovery (failCount >= MAX_DISCOVERY_FAILURES)
-      // TODO: .collect() is unbounded — risks Convex's 16k doc limit if the no-URL set
-      // grows large. Consider an index on (hasSkillMdUrl, discoveryFailCount) or paginating.
-      const summaries = await ctx.db
+      const exhausted = await ctx.db
         .query("skillSummaries")
-        .withIndex("by_hasSkillMdUrl", (q) => q.eq("hasSkillMdUrl", false))
-        .collect();
-
-      const exhausted = summaries
-        .filter((s) => (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES)
-        .slice(0, 200);
+        .withIndex("by_hasSkillMdUrl_discoveryFailCount", (q) =>
+          q
+            .eq("hasSkillMdUrl", false)
+            .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
+        )
+        .take(200);
 
       for (const summary of exhausted) {
         if (summary.skillDocId) {
