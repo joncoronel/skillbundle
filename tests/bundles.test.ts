@@ -511,6 +511,86 @@ describe("updateBundleDescription", () => {
 });
 
 // ---------------------------------------------------------------------------
+// generateShareToken / getByUrlId (share-token access gate)
+// ---------------------------------------------------------------------------
+
+describe("generateShareToken", () => {
+  async function seedPrivateBundle(t: TestHandle, userId: Id<"users">) {
+    return await t.run(async (ctx) => {
+      const now = Date.now();
+      return await ctx.db.insert("bundles", {
+        userId,
+        name: "Private bundle",
+        urlId: `private-${Math.random().toString(36).slice(2, 8)}`,
+        skills: [],
+        isPublic: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+  }
+
+  test("returns a 32-char base62 token, and consecutive calls differ", async () => {
+    const { t, asUser, userId } = await setup();
+    const bundleId = await seedPrivateBundle(t, userId);
+
+    const token1 = await asUser.mutation(api.bundles.generateShareToken, {
+      bundleId,
+    });
+    const token2 = await asUser.mutation(api.bundles.generateShareToken, {
+      bundleId,
+    });
+
+    expect(token1).toMatch(/^[A-Za-z0-9]{32}$/);
+    expect(token2).toMatch(/^[A-Za-z0-9]{32}$/);
+    expect(token1).not.toBe(token2);
+  });
+
+  test("getByUrlId on a private bundle: null with no/wrong token, returns bundle with the exact token", async () => {
+    const { t, asUser, userId } = await setup();
+    const bundleId = await seedPrivateBundle(t, userId);
+    const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
+    const urlId = bundle!.urlId;
+
+    const token = await asUser.mutation(api.bundles.generateShareToken, {
+      bundleId,
+    });
+
+    // No token, no auth: null.
+    const noToken = await t.query(api.bundles.getByUrlId, { urlId });
+    expect(noToken).toBeNull();
+
+    // Wrong token, no auth: null.
+    const wrongToken = await t.query(api.bundles.getByUrlId, {
+      urlId,
+      shareToken: "not-the-right-token-not-the-right-tok",
+    });
+    expect(wrongToken).toBeNull();
+
+    // Exact token, no auth: returns the bundle.
+    const withToken = await t.query(api.bundles.getByUrlId, {
+      urlId,
+      shareToken: token,
+    });
+    expect(withToken).not.toBeNull();
+    expect(withToken!.urlId).toBe(urlId);
+  });
+});
+
+describe("createBundle urlId", () => {
+  test("produces a 10-char base62 urlId", async () => {
+    const { t, asUser } = await setup();
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: "UrlId check",
+      skills: [{ source: "owner/repo", skillId: "skill-a" }],
+      isPublic: true,
+    });
+    const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
+    expect(bundle!.urlId).toMatch(/^[A-Za-z0-9]{10}$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ConvexError shape check
 // ---------------------------------------------------------------------------
 //
