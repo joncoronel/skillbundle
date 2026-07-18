@@ -68,7 +68,10 @@ Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06
 
 ### Technology tagging
 
-Two-tier: `convex/skills.ts` `tagSkill()` auto-tags during sync; `lib/technologies.ts` defines the frontend display technologies with IDs and names.
+Not implemented. An earlier design (auto-tagging during sync + a frontend
+technology registry) was never built; `components/skill-card.tsx` exposes an
+optional `technologies` prop that nothing currently populates. If you're
+asked to add technology tagging, treat it as new work, not a refactor.
 
 ## Conventions
 
