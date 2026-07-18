@@ -117,6 +117,12 @@ function buildExplorerState(
     },
     clearFilters: () =>
       setParams({ publisher: [], audit: null, minInstalls: null, broken: false }),
+    // Doubles as the filtered-to-empty state's "Show all N matches" action
+    // (catalog-results.tsx): resets every engine-level narrowing filter this
+    // surface can set, so what it reveals matches what the baseline probe
+    // counted. Keep in sync with activeNarrowingKeys in lib/search/typesense.ts
+    // (`source` is in that list but has no home-page control, so it's not
+    // resettable — or settable — here).
     clearSheetFilters: () =>
       setParams({
         publisher: [],

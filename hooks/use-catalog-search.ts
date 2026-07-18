@@ -113,6 +113,12 @@ export function useCatalogSearch({
   return {
     hits,
     found: firstPage?.found ?? 0,
+    /** Page-1 probe verdict — the narrowing filters hid every exact match
+     *  for a real word. searchSkills already disowns the engine's fabricated
+     *  response (hits/found/facets come back empty), so this is the ONLY
+     *  signal in that state; render the filtered-to-empty state from the
+     *  verdict's own snapshot fields (see SkillSearchResult.hiddenByFilters). */
+    hiddenByFilters: firstPage?.hiddenByFilters,
     /** Showing a PREVIOUS state's rows while this key fetches (keepPreviousData)
      *  — drives the loading dim. Deliberately NOT `isFetching`: a background
      *  revalidation of the current key (window refocus after staleTime) must
