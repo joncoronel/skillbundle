@@ -243,6 +243,10 @@ export default defineSchema({
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
     .index("by_hasSkillMdUrl", ["hasSkillMdUrl"])
+    .index("by_hasSkillMdUrl_discoveryFailCount", [
+      "hasSkillMdUrl",
+      "discoveryFailCount",
+    ])
     // Lets us look up summaries by their owning skill row's _id. Used by
     // analyzeRepo to convert vector-search results (which return skill IDs)
     // into cheap summary lookups instead of reading full skill docs.
