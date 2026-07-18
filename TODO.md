@@ -27,10 +27,16 @@ Shipped (Jul 2026): all four OTP surfaces — `sign-up-form.tsx`,
 `settings/reverification-provider.tsx` — share `components/auth/code-field.tsx`
 (on the cubby-ui `otp-field` primitive) with auto-submit on complete.
 `shared.tsx` owns `navigateAfterAuth` (the open-redirect boundary, previously
-copied twice), `resolveClerkThrownError`, and `isExpiredCodeError` (expired-code
-clears now happen in the verify event path, not a boolean-dep effect). Resend is
-unified on the `useResendTimer` hook everywhere (a countdown). The old
-`input-otp` component + dependency are removed.
+copied twice) and `isExpiredCodeError` (expired-code clears now happen in the
+verify event path, not a boolean-dep effect). Resend is unified on the
+`useResendTimer` hook everywhere (a countdown). The old `input-otp` component +
+dependency are removed.
+
+Code-send failures now branch on the returned `{ error }` (the actions API
+resolves with it rather than throwing) instead of a `try/catch` that never fired
+— so a failed send no longer starts a misleading resend cooldown or claims a
+code was sent. `AuthFormError` de-dupes so the hook's `errors.global` and our own
+message don't double up.
 
 Deferred (optional, low-value): each form still hand-lists its Activity-reset
 fields; a single reducer/reset would make forgetting one impossible. Left as a

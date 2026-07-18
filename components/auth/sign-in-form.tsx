@@ -19,7 +19,6 @@ import {
   isExpiredCodeError,
   navigateAfterAuth,
   resolveClerkErrorMessage,
-  resolveClerkThrownError,
 } from "./shared";
 
 export function SignInForm() {
@@ -96,22 +95,29 @@ export function SignInForm() {
     );
     if (emailFactor) {
       try {
-        await signIn.mfa.sendEmailCode();
+        // The actions API resolves with { error } instead of throwing, so a
+        // failed send lands here — not the catch below.
+        const { error: sendError } = await signIn.mfa.sendEmailCode();
+        if (sendError) {
+          // Still advance to the code screen (not back to the password form,
+          // whose only button re-runs an already-past first factor) so the user
+          // can retry via "resend code" — flag the failure so the heading stays
+          // honest, and don't start the cooldown so resend is available now.
+          setVerifying(true);
+          setSendFailed(true);
+          setFlowError(
+            resolveClerkErrorMessage(sendError) ||
+              "Couldn't send the code. Use resend to try again.",
+          );
+          return;
+        }
         setVerifying(true);
         startTimer();
-      } catch (err) {
-        // Send failed after a correct password. Still advance to the code
-        // screen (not back to the password form, whose only button re-runs an
-        // already-past first factor) so the user can retry via "resend code" —
-        // and don't start the cooldown, so resend is available immediately.
+      } catch {
+        // A genuinely thrown (non-{error}) failure — same recovery.
         setVerifying(true);
         setSendFailed(true);
-        setFlowError(
-          resolveClerkThrownError(
-            err,
-            "Couldn't send the code. Use resend to try again.",
-          ),
-        );
+        setFlowError("Couldn't send the code. Use resend to try again.");
       }
       return;
     }
@@ -143,17 +149,24 @@ export function SignInForm() {
     if (countdown > 0) return;
     setFlowError(null);
     try {
-      await signIn.mfa.sendEmailCode();
+      const { error } = await signIn.mfa.sendEmailCode();
+      if (error) {
+        // Failed resend: keep the cooldown off and any typed digits intact so
+        // the user can retry immediately. Don't flip `sendFailed` — if the
+        // first send succeeded, an earlier code is still valid so "we sent a
+        // code" stays true; if it had failed, `sendFailed` is already true.
+        // Just surface why the resend didn't go through.
+        setFlowError(
+          resolveClerkErrorMessage(error) ||
+            "Couldn't resend the code. Try again in a moment.",
+        );
+        return;
+      }
       setCode("");
       setSendFailed(false);
       startTimer();
-    } catch (err) {
-      setFlowError(
-        resolveClerkThrownError(
-          err,
-          "Couldn't resend the code. Try again in a moment.",
-        ),
-      );
+    } catch {
+      setFlowError("Couldn't resend the code. Try again in a moment.");
     }
   };
 

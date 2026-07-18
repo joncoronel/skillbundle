@@ -66,16 +66,6 @@ export function navigateAfterAuth(
 }
 
 /**
- * Unwrap a thrown Clerk error to a user-facing message. Clerk throws
- * `{ errors: [...] }`; resolveClerkErrorMessage already unwraps that shape, so
- * this is the one place the `.errors[0]` + fallback dance lives.
- */
-export function resolveClerkThrownError(err: unknown, fallback: string): string {
-  const first = (err as { errors?: ClerkErrorLike[] })?.errors?.[0];
-  return first ? resolveClerkErrorMessage(first) : fallback;
-}
-
-/**
  * True when a Clerk verify error means the code expired (as opposed to a wrong
  * code). Callers clear the input on expiry so a fresh resend starts clean, but
  * keep a mistyped code so the user can fix a digit.
@@ -232,7 +222,12 @@ export function resolveClerkErrorMessage(
 }
 
 export function AuthFormError({ messages }: { messages: string[] }) {
-  const visible = messages.filter((m) => m.trim().length > 0);
+  // De-dupe: a failed Clerk action surfaces its error through both the hook's
+  // `errors.global` and any message we set ourselves (flowError / resendError),
+  // which resolve to the same string. Show it once.
+  const visible = Array.from(
+    new Set(messages.map((m) => m.trim()).filter((m) => m.length > 0)),
+  );
   if (visible.length === 0) return null;
   return (
     <div

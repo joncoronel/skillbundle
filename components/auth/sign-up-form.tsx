@@ -19,7 +19,6 @@ import {
   isExpiredCodeError,
   navigateAfterAuth,
   resolveClerkErrorMessage,
-  resolveClerkThrownError,
 } from "./shared";
 
 export function SignUpForm() {
@@ -69,18 +68,22 @@ export function SignUpForm() {
     if (error) return;
 
     try {
-      await signUp.verifications.sendEmailCode();
+      // The actions API resolves with { error } instead of throwing, so a
+      // failed send lands here — not the catch below.
+      const { error: sendError } = await signUp.verifications.sendEmailCode();
+      if (sendError) {
+        // Account was created but the code wasn't sent. Don't advance —
+        // surface the failure so the user knows to retry.
+        setResendError(
+          resolveClerkErrorMessage(sendError) ||
+            "Couldn't send the verification code. Try again.",
+        );
+        return;
+      }
       setAdvancedToVerify(true);
       startTimer();
-    } catch (err) {
-      // Account was created but the code wasn't sent. Don't advance —
-      // surface the failure so the user knows to retry.
-      setResendError(
-        resolveClerkThrownError(
-          err,
-          "Couldn't send the verification code. Try again.",
-        ),
-      );
+    } catch {
+      setResendError("Couldn't send the verification code. Try again.");
     }
   };
 
@@ -109,16 +112,20 @@ export function SignUpForm() {
     if (countdown > 0) return;
     setResendError(null);
     try {
-      await signUp.verifications.sendEmailCode();
+      const { error } = await signUp.verifications.sendEmailCode();
+      if (error) {
+        // Failed resend: keep the cooldown off and any typed digits intact so
+        // the user can retry immediately.
+        setResendError(
+          resolveClerkErrorMessage(error) ||
+            "Couldn't resend the code. Try again in a moment.",
+        );
+        return;
+      }
       setCode("");
       startTimer();
-    } catch (err) {
-      setResendError(
-        resolveClerkThrownError(
-          err,
-          "Couldn't resend the code. Try again in a moment.",
-        ),
-      );
+    } catch {
+      setResendError("Couldn't resend the code. Try again in a moment.");
     }
   };
 
