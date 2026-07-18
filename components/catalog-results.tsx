@@ -1,6 +1,10 @@
 "use client";
 
-import type { SkillFilters, SkillSort } from "@/lib/search/typesense";
+import type {
+  HiddenByFilters,
+  SkillFilters,
+  SkillSort,
+} from "@/lib/search/typesense";
 import { useCatalogSearch } from "@/hooks/use-catalog-search";
 import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import { useExplorerState } from "@/components/explorer-state";
@@ -35,7 +39,8 @@ interface ActiveCatalogResultsProps {
  * The active-state catalog: Typesense-backed results for the current
  * query/sort/filter combination, with page-based infinite scroll.
  *
- * Purely presentational over the shared query cache — the parent derives its
+ * Presentational over the shared query cache, plus one explorer-context read
+ * (the filtered-to-empty state's clear action) — the parent derives its
  * status (input spinner, Popular-list handoff, facet counts) from the same
  * cache entries via useCatalogSearchStatus, so nothing is reported up.
  *
@@ -99,18 +104,14 @@ export function ActiveCatalogResults({
         (stale || isPending) && "opacity-55",
       )}
     >
-      {hiddenByFilters !== undefined ? (
+      {hiddenByFilters ? (
         // The query is a real word in the catalog but the narrowing filters
-        // hid every exact match — whatever the engine returned in that state
-        // is typo fallback ("hero" + Official → "zero" skills), not matches.
-        // Render the honest empty state INSTEAD of the hits, mirroring the
-        // repo-match screen's Official empty state with the advice upgraded
-        // to a one-click action.
-        <NarrowedToEmptyState
-          query={query}
-          count={hiddenByFilters}
-          filters={filters}
-        />
+        // hid every exact match — the engine's response in that state is typo
+        // fallback ("hero" + Official → "zero" skills), already disowned by
+        // searchSkills (hits are empty). Render the honest empty state,
+        // mirroring the repo-match screen's Official empty state with the
+        // advice upgraded to a one-click action.
+        <NarrowedToEmptyState verdict={hiddenByFilters} />
       ) : hits.length === 0 ? (
         <EmptyState
           message={
@@ -149,35 +150,27 @@ export function ActiveCatalogResults({
 
 /**
  * Filtered-to-empty state: names the filter that emptied the results when
- * Official is the sole narrowing filter (the common toggle case), stays
- * generic otherwise, and offers the way out as one click. clearSheetFilters
- * resets exactly the narrowing set (Official included) — the set that hid
- * the matches — leaving query/sort/scope alone, so the revealed count
- * matches what the probe counted.
+ * Official was the sole narrowing filter (the common toggle case), stays
+ * generic otherwise, and offers the way out as one click.
+ *
+ * The copy comes ONLY from the verdict — a snapshot of the state it was
+ * computed for — never from live explorer state: under keepPreviousData a
+ * previous key's verdict renders (dimmed) while the URL/filters are already
+ * ahead of it, and copy built from live state would describe a filter set
+ * the verdict knows nothing about. The ACTION deliberately reads live state
+ * instead: clearSheetFilters resets the current narrowing set (Official
+ * included — the same set the probes gate on, see activeNarrowingKeys in
+ * lib/search/typesense.ts), leaving query/sort/scope alone, so the revealed
+ * set matches what the probe counted.
  */
-function NarrowedToEmptyState({
-  query,
-  count,
-  filters,
-}: {
-  query: string;
-  count: number;
-  filters: SkillFilters;
-}) {
+function NarrowedToEmptyState({ verdict }: { verdict: HiddenByFilters }) {
   const { clearSheetFilters } = useExplorerState();
-  const officialIsOnlyFilter =
-    Boolean(filters.officialOnly) &&
-    !filters.audit &&
-    filters.minInstalls === undefined &&
-    !filters.excludeBroken &&
-    !filters.source &&
-    !(filters.owners && filters.owners.length > 0);
   return (
     <EmptyState
       message={
-        officialIsOnlyFilter
-          ? `No official skills match “${query}”`
-          : `No skills match “${query}” with these filters`
+        verdict.officialOnly
+          ? `No official skills match “${verdict.query}”`
+          : `No skills match “${verdict.query}” with these filters`
       }
     >
       <Button
@@ -186,7 +179,9 @@ function NarrowedToEmptyState({
         className="mt-3"
         onClick={clearSheetFilters}
       >
-        {count === 1 ? "Show the match" : `Show all ${count} matches`}
+        {verdict.count === 1
+          ? "Show the match"
+          : `Show all ${verdict.count} matches`}
       </Button>
     </EmptyState>
   );

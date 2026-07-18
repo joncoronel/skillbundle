@@ -165,11 +165,22 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
       ("hero" + Official → "zero" skills, a broken filter contract). Page-1
       narrowed query searches now ride two count-only exact probes (`num_typos:
       0`, `per_page: 0` — one narrowed, one baseline) in the same request via
-      `multi_search`; "exacts exist baseline, zero narrowed" ⇒
-      `hiddenByFilters`, and the UI renders a filtered-to-empty state with a
-      one-click un-narrow instead of the fabricated hits. Genuine typos
-      ("naxt") have no exacts to hide, so correction still works under
-      filters. · `lib/search/typesense.ts` (`hiddenByFilters`),
+      `multi_search`; "exacts exist baseline, zero narrowed" ⇒ a
+      `hiddenByFilters` verdict, and the UI renders a filtered-to-empty state
+      with a one-click un-narrow instead of the fabricated hits. A set verdict
+      **disowns the engine's response at the source** — hits/found/facets come
+      back empty (the facet counts were computed over the same fabricated set)
+      — so a consumer that ignores the verdict degrades to an honest generic
+      empty state rather than re-shipping the bug. The verdict snapshots the
+      query/filter state it was computed for, so the empty state stays truthful
+      while showing dimmed under keepPreviousData. Genuine typos ("naxt") have
+      no exacts to hide, so correction still works under filters. **Cost,
+      owned:** every page-1 fetch under narrowing filters is 3 engine queries
+      (refocus revalidations included), bounded by the debounce + the shared
+      staleTime; if engine load ever matters, the lever is firing the baseline
+      count as a follow-up only after a narrowed miss (a waterfall in the rare
+      case, fast paint in the common one). ·
+      `lib/search/typesense.ts` (`hiddenByFilters`, `activeNarrowingKeys`),
       `catalog-results.tsx` (`NarrowedToEmptyState`)
 - [x] **Prefix / search-as-you-type** · TS default
 - [ ] **Highlighting** matched terms in results. · TS: `highlight_full_fields`
