@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getCurrentUser } from "./users";
 
 // ---------------------------------------------------------------------------
 // Record a copy event by incrementing the bundleStats counter inline.
@@ -15,6 +16,18 @@ export const recordCopy = mutation({
   handler: async (ctx, { bundleId }) => {
     const bundle = await ctx.db.get(bundleId);
     if (!bundle) return;
+
+    // Copy count is a public trust signal, and this mutation is deliberately
+    // callable signed-out (copying a public bundle is core free UX). For
+    // private bundles, only the owner's own copies count: the owner still
+    // sees a live number on their dashboard/detail page, while anonymous
+    // callers can neither inflate a count nor mint stats rows for bundles
+    // they can't view. (Share-token visitors' copies are accepted as
+    // uncounted — recordCopy doesn't receive the token.)
+    if (!bundle.isPublic) {
+      const user = await getCurrentUser(ctx);
+      if (!user || user._id !== bundle.userId) return;
+    }
 
     const now = Date.now();
     const existing = await ctx.db
