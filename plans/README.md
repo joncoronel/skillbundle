@@ -22,7 +22,7 @@ were requested this round.
 | 005 | Repo-match Pro-gate tests | P1 | M | — | TODO |
 | 006 | Bound `recordCopy` to public bundles | P2 | S | — | TODO |
 | 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | TODO |
-| 008 | `.env.example` + README env + AGENTS.md tagging fix | P2 | S | — | TODO |
+| 008 | `.env.example` + README env + AGENTS.md tagging fix | P2 | S | — | DONE (executed 2026-07-18, commit `f299a94`, PR from `plan-008`) |
 | 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
