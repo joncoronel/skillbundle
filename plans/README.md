@@ -17,7 +17,7 @@ were requested this round.
 | --- | --- | --- | --- | --- | --- |
 | 001 | Share tokens & urlIds via CSPRNG | P1 | S | — | DONE (executed 2026-07-18, commit `0192ed4`, PR from `plan-001`) |
 | 002 | Typecheck script + CI gate | P1 | S | — | DONE (executed 2026-07-18, commit `a266376` on `advisor/002-ci-typecheck-gate`, awaiting merge) |
-| 003 | Record content-fetch failures on thrown fetch | P1 | S | — | TODO |
+| 003 | Record content-fetch failures on thrown fetch | P1 | S | — | DONE (executed 2026-07-18, commit `0381319`, PR from `plan-003`) |
 | 004 | Validate skill ids in install commands | P1 | M | — | TODO |
 | 005 | Repo-match Pro-gate tests | P1 | M | — | TODO |
 | 006 | Bound `recordCopy` to public bundles | P2 | S | — | TODO |
