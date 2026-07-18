@@ -40,12 +40,14 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Environment Variables
 
-Frontend (`.env.local`):
+Frontend (`.env.local`) — see `.env.example` for a ready-to-copy template:
 
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
 - `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_POLAR_PRO_MONTHLY_PRODUCT_ID`, `NEXT_PUBLIC_POLAR_PRO_YEARLY_PRODUCT_ID`
+- `NEXT_PUBLIC_TYPESENSE_HOST`, `NEXT_PUBLIC_TYPESENSE_SEARCH_KEY`, `NEXT_PUBLIC_TYPESENSE_COLLECTION` — search is browser-direct to Typesense, so these are required or search throws.
+- `NEXT_PUBLIC_OPENPANEL_CLIENT_ID`, `OPENPANEL_CLIENT_SECRET` (optional, analytics)
 - `NEXT_PUBLIC_CONVEX_URL` is written automatically by `npx convex dev`, so you don't need to set it by hand.
 
 Convex (set with `npx convex env set …`):
@@ -55,6 +57,8 @@ Convex (set with `npx convex env set …`):
 - `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID`
 - `SKILLS_SH_API_KEY`, `VOYAGE_API_KEY`
 - `GITHUB_TOKEN` (optional), `ADMIN_EMAILS`
+- `TYPESENSE_HOST`, `TYPESENSE_ADMIN_API_KEY`, `TYPESENSE_COLLECTION` (required outside production — see `docs/search-overhaul.md`)
+- `REVALIDATE_SECRET`, `SITE_REVALIDATE_URL`
 - `CRONS_ENABLED`: set to `true` on production only. Cron jobs (skill sync, leaderboards) are skipped unless this is `true`, so dev deployments don't run the sync. Populate a dev deployment on demand with `npx convex run skills:syncSkills`.
 
 ## Scripts
