@@ -113,6 +113,10 @@ export function useCatalogSearch({
   return {
     hits,
     found: firstPage?.found ?? 0,
+    /** Page-1 probe verdict — when set, `hits` are typo fallback for a real
+     *  word the filters hid; render the filtered-to-empty state instead (see
+     *  SkillSearchResult.hiddenByFilters). */
+    hiddenByFilters: firstPage?.hiddenByFilters,
     /** Showing a PREVIOUS state's rows while this key fetches (keepPreviousData)
      *  — drives the loading dim. Deliberately NOT `isFetching`: a background
      *  revalidation of the current key (window refocus after staleTime) must

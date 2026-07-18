@@ -159,6 +159,18 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
       are on). · `query_by_weights: 3,1`
 - [x] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS default (`num_typos`);
       verified: "postgress" → 117 results
+- [x] **Honest fallback under filters** — Typesense escalates to typo matching
+      when the *filtered* exact set is empty, so a real word whose matches are
+      all filtered out got silently swapped for edit-distance neighbors
+      ("hero" + Official → "zero" skills, a broken filter contract). Page-1
+      narrowed query searches now ride two count-only exact probes (`num_typos:
+      0`, `per_page: 0` — one narrowed, one baseline) in the same request via
+      `multi_search`; "exacts exist baseline, zero narrowed" ⇒
+      `hiddenByFilters`, and the UI renders a filtered-to-empty state with a
+      one-click un-narrow instead of the fabricated hits. Genuine typos
+      ("naxt") have no exacts to hide, so correction still works under
+      filters. · `lib/search/typesense.ts` (`hiddenByFilters`),
+      `catalog-results.tsx` (`NarrowedToEmptyState`)
 - [x] **Prefix / search-as-you-type** · TS default
 - [ ] **Highlighting** matched terms in results. · TS: `highlight_full_fields`
       (rows don't render highlights yet)

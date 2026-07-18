@@ -3,6 +3,7 @@
 import type { SkillFilters, SkillSort } from "@/lib/search/typesense";
 import { useCatalogSearch } from "@/hooks/use-catalog-search";
 import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
+import { useExplorerState } from "@/components/explorer-state";
 import {
   EmptyState,
   LoadingMoreFooter,
@@ -53,6 +54,7 @@ export function ActiveCatalogResults({
   const {
     hits,
     found,
+    hiddenByFilters,
     isPending,
     isInitialLoading,
     error,
@@ -97,7 +99,19 @@ export function ActiveCatalogResults({
         (stale || isPending) && "opacity-55",
       )}
     >
-      {hits.length === 0 ? (
+      {hiddenByFilters !== undefined ? (
+        // The query is a real word in the catalog but the narrowing filters
+        // hid every exact match — whatever the engine returned in that state
+        // is typo fallback ("hero" + Official → "zero" skills), not matches.
+        // Render the honest empty state INSTEAD of the hits, mirroring the
+        // repo-match screen's Official empty state with the advice upgraded
+        // to a one-click action.
+        <NarrowedToEmptyState
+          query={query}
+          count={hiddenByFilters}
+          filters={filters}
+        />
+      ) : hits.length === 0 ? (
         <EmptyState
           message={
             query
@@ -130,5 +144,50 @@ export function ActiveCatalogResults({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Filtered-to-empty state: names the filter that emptied the results when
+ * Official is the sole narrowing filter (the common toggle case), stays
+ * generic otherwise, and offers the way out as one click. clearSheetFilters
+ * resets exactly the narrowing set (Official included) — the set that hid
+ * the matches — leaving query/sort/scope alone, so the revealed count
+ * matches what the probe counted.
+ */
+function NarrowedToEmptyState({
+  query,
+  count,
+  filters,
+}: {
+  query: string;
+  count: number;
+  filters: SkillFilters;
+}) {
+  const { clearSheetFilters } = useExplorerState();
+  const officialIsOnlyFilter =
+    Boolean(filters.officialOnly) &&
+    !filters.audit &&
+    filters.minInstalls === undefined &&
+    !filters.excludeBroken &&
+    !filters.source &&
+    !(filters.owners && filters.owners.length > 0);
+  return (
+    <EmptyState
+      message={
+        officialIsOnlyFilter
+          ? `No official skills match “${query}”`
+          : `No skills match “${query}” with these filters`
+      }
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-3"
+        onClick={clearSheetFilters}
+      >
+        {count === 1 ? "Show the match" : `Show all ${count} matches`}
+      </Button>
+    </EmptyState>
   );
 }
