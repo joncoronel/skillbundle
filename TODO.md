@@ -6,6 +6,43 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Sign-in second factor: email code only (future: real MFA)
+
+Shipped (Jul 2026): sign-in handles Clerk's Client Trust email-code step
+(new-device verification) instead of silently stalling —
+`components/auth/sign-in-form.tsx`. A non-email second factor already fails with
+a distinct "this sign-in method isn't supported here" message.
+
+Remaining (future): the branch handles the `email_code` factor ONLY, which is
+all this app produces today — there's no MFA-setup UI, so no authenticator / SMS
+/ backup factors exist. If real user-configurable MFA is ever added (a Clerk
+dashboard setting + a management surface), `submit`'s second-factor branch must
+also handle `totp` / `phone_code` / backup codes (verify methods already exist
+on `signIn.mfa`).
+
+### Auth OTP: shared code field (shipped)
+
+Shipped (Jul 2026): all four OTP surfaces — `sign-up-form.tsx`,
+`sign-in-form.tsx`, `settings/email-section.tsx`,
+`settings/reverification-provider.tsx` — share `components/auth/code-field.tsx`
+(on the cubby-ui `otp-field` primitive) with auto-submit on complete.
+`shared.tsx` owns `navigateAfterAuth` (the open-redirect boundary, previously
+copied twice) and `isExpiredCodeError` (expired-code clears now happen in the
+verify event path, not a boolean-dep effect). Resend is unified on the
+`useResendTimer` hook everywhere (a countdown). The old `input-otp` component +
+dependency are removed.
+
+Code-send failures now branch on the returned `{ error }` (the actions API
+resolves with it rather than throwing) instead of a `try/catch` that never fired
+— so a failed send no longer starts a misleading resend cooldown or claims a
+code was sent. `AuthFormError` de-dupes so the hook's `errors.global` and our own
+message don't double up.
+
+Deferred (optional, low-value): each form still hand-lists its Activity-reset
+fields; a single reducer/reset would make forgetting one impossible. Left as a
+state-management refactor of working auth forms for a maintainability-only
+payoff — not worth the risk now.
+
 ### Match repo: free-run quota (phase 2 of the paywall)
 
 Shipped (Jul 2026, phase 1): repo match is Pro-gated, but the demo repo

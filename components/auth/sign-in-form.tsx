@@ -4,16 +4,20 @@ import * as React from "react";
 import { useSignIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
+import { useResendTimer } from "@/hooks/use-resend-timer";
 import { AuthFrame } from "./auth-frame";
+import { CodeField } from "./code-field";
 import { OAuthButtons } from "./oauth-buttons";
 import {
+  AuthCrossButton,
   AuthCrossLink,
   AuthDivider,
   AuthFieldError,
   AuthFieldLabel,
   AuthFormError,
   AuthSubmitButton,
-  getSafeRedirectUrl,
+  isExpiredCodeError,
+  navigateAfterAuth,
   resolveClerkErrorMessage,
 } from "./shared";
 
@@ -21,54 +25,199 @@ export function SignInForm() {
   const { signIn, errors } = useSignIn();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [code, setCode] = React.useState("");
+  // Set once Clerk asks for the email code and we've reached the code step.
+  // Clerk's Client Trust triggers a second factor on password sign-in from a
+  // new device even for accounts without user-configured MFA — the emailed code
+  // proves it's them. Without this branch the form silently stalled there.
+  const [verifying, setVerifying] = React.useState(false);
+  const [flowError, setFlowError] = React.useState<string | null>(null);
+  // The send-failure path lands on the verify screen without a code actually
+  // sent — track it so the heading doesn't claim "we sent a code".
+  const [sendFailed, setSendFailed] = React.useState(false);
+  const { countdown, startTimer, resetTimer } = useResendTimer();
   const router = useRouter();
 
-  // Cache Components keeps this route mounted via React Activity on
-  // navigation, which otherwise preserves input values between visits.
-  // Clear form state when the route becomes hidden.
+  // Cache Components keeps this route mounted via React Activity on navigation,
+  // which otherwise preserves input values and transient auth state between
+  // visits. Clear everything when the route becomes hidden.
   React.useLayoutEffect(() => {
     return () => {
       setEmail("");
       setPassword("");
+      setCode("");
+      setVerifying(false);
+      setFlowError(null);
+      setSendFailed(false);
+      // Reset the resend countdown too: its interval is cleaned up on hide, but
+      // the number would otherwise survive frozen — and the send-failure path
+      // doesn't restart it, so a revisit could show a dead, permanently
+      // disabled "resend code (N)".
+      resetTimer();
     };
-  }, []);
+  }, [resetTimer]);
 
   const identifierError = errors?.fields?.identifier;
   const passwordError = errors?.fields?.password;
-  const globalErrorMessages =
-    errors?.global?.map((e) => resolveClerkErrorMessage(e)) ?? [];
+  const codeError = errors?.fields?.code;
+  const globalErrorMessages = [
+    ...(errors?.global?.map((e) => resolveClerkErrorMessage(e)) ?? []),
+    ...(flowError ? [flowError] : []),
+  ];
+
+  const finalize = async () => {
+    await signIn.finalize({
+      navigate: ({ session, decorateUrl }) => {
+        // No session tasks are configured in this app; if one is ever pending,
+        // Clerk keeps the session incomplete and we don't navigate.
+        if (session?.currentTask) return;
+        navigateAfterAuth(router, decorateUrl);
+      },
+    });
+  };
 
   const submit = async () => {
-    const { error } = await signIn.password({
-      identifier: email,
-      password,
-    });
+    setFlowError(null);
+    setSendFailed(false);
+    const { error } = await signIn.password({ identifier: email, password });
     if (error) return;
 
     if (signIn.status === "complete") {
-      // Read redirect_url directly from window.location instead of via
-      // useSearchParams. Cache Components forces any component that calls
-      // useSearchParams to opt out of static prerendering, which would
-      // push the auth flow into dynamic rendering on every request. This
-      // runs after submit (client-side), so window is available and we
-      // avoid the prerender penalty. Don't "fix" back to the hook without
-      // weighing the cache impact.
-      const redirectUrl = getSafeRedirectUrl(
-        new URLSearchParams(window.location.search).get("redirect_url"),
-      );
-      await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
-          if (session?.currentTask) return;
-          const url = decorateUrl(redirectUrl);
-          if (url.startsWith("http")) {
-            window.location.href = url;
-          } else {
-            router.push(url);
-          }
-        },
-      });
+      await finalize();
+      return;
+    }
+
+    // Password accepted but Clerk wants a second factor. For this app that's
+    // always the Client Trust email code (it exposes no MFA setup, so no
+    // authenticator/SMS factors exist). Send it and advance to the code step.
+    const emailFactor = signIn.supportedSecondFactors?.find(
+      (factor) => factor.strategy === "email_code",
+    );
+    if (emailFactor) {
+      try {
+        // The actions API resolves with { error } instead of throwing, so a
+        // failed send lands here — not the catch below.
+        const { error: sendError } = await signIn.mfa.sendEmailCode();
+        if (sendError) {
+          // Still advance to the code screen (not back to the password form,
+          // whose only button re-runs an already-past first factor) so the user
+          // can retry via "resend code" — flag the failure so the heading stays
+          // honest, and don't start the cooldown so resend is available now.
+          setVerifying(true);
+          setSendFailed(true);
+          setFlowError(
+            resolveClerkErrorMessage(sendError) ||
+              "Couldn't send the code. Use resend to try again.",
+          );
+          return;
+        }
+        setVerifying(true);
+        startTimer();
+      } catch {
+        // A genuinely thrown (non-{error}) failure — same recovery.
+        setVerifying(true);
+        setSendFailed(true);
+        setFlowError("Couldn't send the code. Use resend to try again.");
+      }
+      return;
+    }
+
+    // A non-email second factor (TOTP/SMS) — this app can't complete it, so say
+    // so distinctly rather than looping on a generic "try again".
+    setFlowError("This sign-in method isn't supported here yet.");
+  };
+
+  const verifyCode = async (value: string) => {
+    setFlowError(null);
+    const { error } = await signIn.mfa.verifyEmailCode({ code: value });
+    if (error) {
+      // Expired code → clear so a fresh resend starts clean; a wrong code stays
+      // put so the user can fix a digit.
+      if (isExpiredCodeError(error)) setCode("");
+      return;
+    }
+    if (signIn.status === "complete") {
+      await finalize();
+    } else {
+      // Verified without error but not complete — surface it instead of leaving
+      // the user on a dead form (the silent stall this whole flow exists to fix).
+      setFlowError("Couldn't complete sign in. Try again.");
     }
   };
+
+  const handleResend = async () => {
+    if (countdown > 0) return;
+    setFlowError(null);
+    try {
+      const { error } = await signIn.mfa.sendEmailCode();
+      if (error) {
+        // Failed resend: keep the cooldown off and any typed digits intact so
+        // the user can retry immediately. Don't flip `sendFailed` — if the
+        // first send succeeded, an earlier code is still valid so "we sent a
+        // code" stays true; if it had failed, `sendFailed` is already true.
+        // Just surface why the resend didn't go through.
+        setFlowError(
+          resolveClerkErrorMessage(error) ||
+            "Couldn't resend the code. Try again in a moment.",
+        );
+        return;
+      }
+      setCode("");
+      setSendFailed(false);
+      startTimer();
+    } catch {
+      setFlowError("Couldn't resend the code. Try again in a moment.");
+    }
+  };
+
+  // Second-factor step: Client Trust wants an email code before finishing. Same
+  // "check your email" affordance as sign-up so the OTP moment reads the same.
+  if (verifying) {
+    return (
+      <AuthFrame
+        title="Verify it's you."
+        description={
+          sendFailed
+            ? "We couldn't send the code. Use resend to try again."
+            : `New device, so we sent a 6-digit code to ${email}.`
+        }
+        footer={
+          <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
+            {countdown > 0 ? `resend code (${countdown})` : "resend code"}
+          </AuthCrossButton>
+        }
+      >
+        <form
+          action={(formData) => verifyCode(String(formData.get("code") ?? ""))}
+          className="flex flex-col gap-6"
+        >
+          <div className="flex flex-col gap-3">
+            <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
+            <CodeField
+              id="code"
+              name="code"
+              value={code}
+              onValueChange={setCode}
+              autoSubmit
+              invalid={!!codeError}
+              describedBy={codeError ? "code-error" : undefined}
+              autoFocus
+            />
+            {codeError && (
+              <AuthFieldError
+                id="code-error"
+                message={resolveClerkErrorMessage(codeError)}
+              />
+            )}
+          </div>
+
+          <AuthFormError messages={globalErrorMessages} />
+
+          <AuthSubmitButton idleLabel="Verify" pendingLabel="Verifying" />
+        </form>
+      </AuthFrame>
+    );
+  }
 
   return (
     <AuthFrame

@@ -12,11 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/cubby-ui/dialog";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/cubby-ui/input-otp";
+import { CodeField } from "@/components/auth/code-field";
 import { useResendTimer } from "@/hooks/use-resend-timer";
 import { cn, getClerkErrorMessage } from "@/lib/utils";
 
@@ -180,12 +176,12 @@ function ReverificationDialog({
     }
   };
 
-  const handleVerify = async () => {
+  const handleVerify = async (value?: string) => {
     setError("");
     try {
       await session?.attemptFirstFactorVerification({
         strategy: "email_code",
-        code,
+        code: value ?? code,
       });
       onComplete();
     } catch (err) {
@@ -204,33 +200,15 @@ function ReverificationDialog({
           {email && <p className="text-sm font-medium">{email}</p>}
         </DialogHeader>
         <DialogBody className="flex flex-col items-center gap-4">
-          <InputOTP
-            maxLength={6}
+          <CodeField
             value={code}
-            onChange={setCode}
+            onValueChange={setCode}
             onComplete={ready ? handleVerify : undefined}
-            autoFocus
             disabled={!ready}
-          >
-            <InputOTPGroup>
-              <InputOTPSlot index={0} variant="elevated" />
-            </InputOTPGroup>
-            <InputOTPGroup>
-              <InputOTPSlot index={1} variant="elevated" />
-            </InputOTPGroup>
-            <InputOTPGroup>
-              <InputOTPSlot index={2} variant="elevated" />
-            </InputOTPGroup>
-            <InputOTPGroup>
-              <InputOTPSlot index={3} variant="elevated" />
-            </InputOTPGroup>
-            <InputOTPGroup>
-              <InputOTPSlot index={4} variant="elevated" />
-            </InputOTPGroup>
-            <InputOTPGroup>
-              <InputOTPSlot index={5} variant="elevated" />
-            </InputOTPGroup>
-          </InputOTP>
+            invalid={!!error}
+            variant="elevated"
+            autoFocus
+          />
           <button
             type="button"
             className={cn(
@@ -261,7 +239,7 @@ function ReverificationDialog({
         <DialogFooter>
           <Button
             className="w-full"
-            onClick={handleVerify}
+            onClick={() => handleVerify()}
             disabled={!ready || code.length < 6}
           >
             Continue

@@ -40,6 +40,44 @@ export function signInUrl(redirectTo: string): string {
   return `/sign-in?redirect_url=${encodeURIComponent(redirectTo)}`;
 }
 
+/**
+ * The post-auth destination, shared by signIn.finalize and signUp.finalize.
+ * Reads the proxy-injected redirect_url from window.location — NOT
+ * useSearchParams, which would opt the auth route out of static prerendering
+ * under Cache Components (this runs client-side after submit, so window is
+ * available). Validates it same-origin via getSafeRedirectUrl and navigates.
+ * Hoisted so the open-redirect boundary lives in exactly one place; callers keep
+ * the `navigate` closure inline (Clerk infers its param types) and handle the
+ * `session.currentTask` early-return there.
+ */
+export function navigateAfterAuth(
+  router: { push: (href: string) => void },
+  decorateUrl: (url: string) => string,
+): void {
+  const redirectUrl = getSafeRedirectUrl(
+    new URLSearchParams(window.location.search).get("redirect_url"),
+  );
+  const url = decorateUrl(redirectUrl);
+  if (url.startsWith("http")) {
+    window.location.href = url;
+  } else {
+    router.push(url);
+  }
+}
+
+/**
+ * True when a Clerk verify error means the code expired (as opposed to a wrong
+ * code). Callers clear the input on expiry so a fresh resend starts clean, but
+ * keep a mistyped code so the user can fix a digit.
+ */
+export function isExpiredCodeError(err: unknown): boolean {
+  const e = err as ClerkErrorLike | undefined;
+  return (
+    e?.code === "verification_expired" ||
+    (e?.errors?.some((x) => x?.code === "verification_expired") ?? false)
+  );
+}
+
 export function AuthFieldLabel({
   className,
   ...props
@@ -184,7 +222,12 @@ export function resolveClerkErrorMessage(
 }
 
 export function AuthFormError({ messages }: { messages: string[] }) {
-  const visible = messages.filter((m) => m.trim().length > 0);
+  // De-dupe: a failed Clerk action surfaces its error through both the hook's
+  // `errors.global` and any message we set ourselves (flowError / resendError),
+  // which resolve to the same string. Show it once.
+  const visible = Array.from(
+    new Set(messages.map((m) => m.trim()).filter((m) => m.length > 0)),
+  );
   if (visible.length === 0) return null;
   return (
     <div
