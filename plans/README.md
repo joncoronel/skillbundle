@@ -21,7 +21,7 @@ were requested this round.
 | 004 | Validate skill ids in install commands | P1 | M | — | DONE (executed 2026-07-18 as rev 2 — scope widened to detail pages + OG after executor STOP; commit `dc184d4`, PR from `plan-004`) |
 | 005 | Repo-match Pro-gate tests | P1 | M | — | TODO |
 | 006 | Bound `recordCopy` to public bundles | P2 | S | — | TODO |
-| 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | TODO |
+| 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | DONE (executed 2026-07-18, commit `81e91a8`, PR from `plan-007`) |
 | 008 | `.env.example` + README env + AGENTS.md tagging fix | P2 | S | — | TODO |
 | 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | TODO |
 
