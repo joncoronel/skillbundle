@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import {
   loadSkill,
   SkillDetailPage,
 } from "@/components/skill-detail-page";
+import { buildSkillInstallCommand } from "@/lib/install-commands";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -58,7 +60,8 @@ export async function generateMetadata({
 export default async function SkillPage({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
-  const installCommand = `npx skills add ${source} --skill ${skillId}`;
+  const installCommand = buildSkillInstallCommand(source, skillId);
+  if (installCommand === null) notFound();
 
   return (
     <SkillDetailPage
