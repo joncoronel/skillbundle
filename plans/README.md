@@ -20,7 +20,7 @@ were requested this round.
 | 003 | Record content-fetch failures on thrown fetch | P1 | S | — | DONE (executed 2026-07-18, commit `0381319`, PR from `plan-003`) |
 | 004 | Validate skill ids in install commands | P1 | M | — | DONE (executed 2026-07-18 as rev 2 — scope widened to detail pages + OG after executor STOP; commit `dc184d4`, PR from `plan-004`) |
 | 005 | Repo-match Pro-gate tests | P1 | M | — | TODO |
-| 006 | Bound `recordCopy` to public bundles | P2 | S | — | TODO |
+| 006 | Bound `recordCopy` to public bundles | P2 | S | — | DONE (executed 2026-07-18; revised after STOP — owner-only counting for private bundles per operator sign-off; commit `51f2869`, PR from `plan-006`) |
 | 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | TODO |
 | 008 | `.env.example` + README env + AGENTS.md tagging fix | P2 | S | — | TODO |
 | 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | TODO |
