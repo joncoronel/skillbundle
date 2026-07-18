@@ -20,10 +20,10 @@ were requested this round.
 | 003 | Record content-fetch failures on thrown fetch | P1 | S | — | DONE (executed 2026-07-18, commit `0381319`, PR from `plan-003`) |
 | 004 | Validate skill ids in install commands | P1 | M | — | DONE (executed 2026-07-18 as rev 2 — scope widened to detail pages + OG after executor STOP; commit `dc184d4`, PR from `plan-004`) |
 | 005 | Repo-match Pro-gate tests | P1 | M | — | DONE (executed 2026-07-18, commit `1a5b828`, PR from `plan-005`) |
-| 006 | Bound `recordCopy` to public bundles | P2 | S | — | TODO |
-| 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | TODO |
+| 006 | Bound `recordCopy` to public bundles | P2 | S | — | DONE (executed 2026-07-18; revised after STOP — owner-only counting for private bundles per operator sign-off; commit `51f2869`, PR from `plan-006`) |
+| 007 | Bound `/dev` dashboard reads + compound index | P2 | S | — | DONE (executed 2026-07-18, commit `81e91a8`, PR from `plan-007`) |
 | 008 | `.env.example` + README env + AGENTS.md tagging fix | P2 | S | — | DONE (executed 2026-07-18, commit `f299a94`, PR from `plan-008`) |
-| 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | TODO |
+| 009 | Drop fuse.js, align eslint-config-next | P2 | S | 002 (soft) | DONE (executed 2026-07-18, commit `bf87e69`, PR from `plan-009`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale).
