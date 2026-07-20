@@ -206,9 +206,13 @@ export const reconcileUnseenSkills = internalAction({
 
     // 2. Safety gate: an implausibly large stale set means syncSkills broke —
     // bail rather than mass-hit the detail endpoint papering over it.
-    if (stale.length > MAX_RECONCILE) {
+    // GitHub-only rows are excluded from the gate's count: they're
+    // stale-by-design ~6 of every 7 days (heartbeat cadence), so a bulk
+    // GitHub-only import could otherwise push a perfectly healthy day over
+    // the cap and freeze ordinary rows toward wrongful delist.
+    if (stale.length - githubOnlySkipped > MAX_RECONCILE) {
       console.error(
-        `reconcileUnseenSkills: ${stale.length} stale rows exceed cap ${MAX_RECONCILE} — syncSkills likely failed. Bailing without writes.`,
+        `reconcileUnseenSkills: ${stale.length - githubOnlySkipped} stale rows (${stale.length} incl. ${githubOnlySkipped} github-only, which don't count toward the cap) exceed cap ${MAX_RECONCILE} — syncSkills likely failed. Bailing without writes.`,
       );
       // Not on a dry run — a diagnostic pass must never schedule real work.
       if (!dryRun) await chainTypesenseSync(ctx);

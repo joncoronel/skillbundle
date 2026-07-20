@@ -75,6 +75,13 @@ parsed name to confirm before `addSkillFromGitHub` writes anything. The
 confirmation step is deliberate — an automatic fallback would let a mistyped
 slug silently bind to the wrong SKILL.md.
 
+The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
+SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
+the preview binds the same file post-insert discovery would. The lifecycle
+consequences of the flag stay where the lifecycle lives: `skills.ts`
+(heartbeat + adoption + cap exemption), `reconcile.ts` (skip), `devStats.ts`
+(diagnostics exclusions).
+
 Such a row carries **`isGitHubOnly: true`** (on both the skills row and the
 summary, since the hot scans read summaries only) and `installs: 0`.
 
@@ -96,15 +103,25 @@ detail endpoint can only 404, so a call is pure waste, and an unstamped "gone"
 row would otherwise sit at the head of the oldest-first scan forever — the
 starvation hazard documented at that batch slice.
 
-**Adoption.** The moment any skills.sh feed reports the skill, `upsertSkillsBatch`
-clears `isGitHubOnly` (the `adopting` branch) and ordinary rules resume: reconcile
-refreshes it, `syncSkills` owns its installs and writes snapshots, the 30-day
-delist applies normally. Adoption is forced through the "something changed"
-sub-case so it can't land in the `nothingChanged` fast path, which patches
-`lastSeenInApi` alone and would leave the marker (and reconcile's skip) set
-permanently. Matching is purely on `(source, skillId)`, so nothing else is needed
-— but the manually-entered source/slug must match what skills.sh eventually
-publishes, or you get a second row instead of an adoption.
+**Adoption — two routes.** The moment any skills.sh feed reports the skill,
+`upsertSkillsBatch` clears `isGitHubOnly` (the `adopting` branch) and ordinary
+rules resume: reconcile refreshes it, `syncSkills` owns its installs and writes
+snapshots, the 30-day delist applies normally. Adoption is forced through the
+"something changed" sub-case so it can't land in the `nothingChanged` fast path,
+which patches `lastSeenInApi` alone and would leave the marker (and reconcile's
+skip) set permanently. Matching is purely on `(source, skillId)`, so nothing
+else is needed — but the manually-entered source/slug must match what skills.sh
+eventually publishes, or you get a second row instead of an adoption.
+
+Feeds alone are NOT a guarantee, though: a skill can be listed on skills.sh
+(detail 200) yet absent from every feed — the exact coverage gap manual add
+exists for. So `addSkillManually` is the **on-demand adoption route**: its
+precheck deliberately does NOT short-circuit to `already_exists` for a live
+GitHub-only row; it probes the detail endpoint, and on 200 runs the normal
+upsert (which fires the `adopting` transition) and reports `status: "adopted"`.
+If detail still 404s, it reports `already_exists` — the row stays GitHub-only.
+"Re-run the normal add once it's listed" is therefore a real recovery path, not
+just advice.
 
 **What's degraded** (none of it errors): `installs` reads 0 and `installRank` is
 unset until adoption; the install chart never renders (too few snapshot points);

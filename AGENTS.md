@@ -60,7 +60,9 @@ Modules, grouped by concern:
 - **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
 - **Bundles & social:** `bundles.ts`, `bundleStars.ts`, `bundleEvents.ts`.
 - **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts` (+ `convex.config.ts` registers the `@convex-dev/polar` component).
-- **Admin / dev:** `devStats.ts` (the `/dev` dashboard stats), `devSeed.ts`.
+- **Admin / dev:** `devStats.ts` (the `/dev` dashboard stats), `devSeed.ts`,
+  `githubOnly.ts` (admin add of skills that exist only on GitHub, not on
+  skills.sh — see docs/skill-lifecycle.md "GitHub-only skills").
 
 ### Crons (`crons.ts`)
 

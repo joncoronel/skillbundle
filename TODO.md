@@ -6,6 +6,22 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Tighten SKILL.md slug matching to whole-word prefixes
+
+`lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the
+frontmatter-name-to-slug rule used by both discovery (`skills.ts`) and the
+GitHub-only resolver (`githubOnly.ts`). The rule is deliberately loose: bare
+`kebab.startsWith(skillId)` has no word boundary, so slug `test` matches a file
+named "Testing Library Helper" (`testing-library-helper`). The tightening is
+`kebab === skillId || kebab.startsWith(skillId + "-")` — whole-word prefix only.
+
+Deferred from the GitHub-only PR (Jul 2026) because it changes matching
+behavior for the entire existing catalog's discovery pipeline, not just the new
+feature — it needs its own change with a look at whether any currently-matched
+skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
+tighten one caller without the others (that's the drift the shared matcher
+exists to prevent).
+
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
 `loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`

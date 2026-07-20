@@ -18,7 +18,7 @@ import {
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 
 type AddResult = {
-  status: "inserted" | "relisted" | "already_exists";
+  status: "inserted" | "relisted" | "already_exists" | "adopted";
   source: string;
   skillId: string;
   name: string;
@@ -36,16 +36,23 @@ type GitHubCandidate = {
   description?: string;
 };
 
+// One async flow is in flight at a time; the phase names it honestly so the
+// button can say what is actually happening ("Checking GitHub…" during the
+// preview, not a misleading "Adding…"). Every await site sets its own phase.
+type Phase = "idle" | "adding" | "previewing" | "confirming";
+
 export function AddSkillForm() {
   const { data: admin } = useQuery(convexQuery(api.devStats.isAdmin, {}));
   const addSkill = useAction(api.skills.addSkillManually);
-  const previewGitHub = useAction(api.skills.previewGitHubSkill);
-  const addFromGitHub = useAction(api.skills.addSkillFromGitHub);
+  const previewGitHub = useAction(api.githubOnly.previewGitHubSkill);
+  const addFromGitHub = useAction(api.githubOnly.addSkillFromGitHub);
 
   const [input, setInput] = useState("");
-  const [pending, setPending] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
   const [lastAdded, setLastAdded] = useState<AddResult | null>(null);
   const [candidate, setCandidate] = useState<GitHubCandidate | null>(null);
+
+  const pending = phase !== "idle";
 
   if (admin === false) {
     return (
@@ -70,6 +77,12 @@ export function AddSkillForm() {
         toast.success({
           title: "Skill relisted",
           description: `${result.name} was previously delisted and is now active again.`,
+        });
+        break;
+      case "adopted":
+        toast.success({
+          title: "Skill adopted",
+          description: `${result.name} is now listed on skills.sh — upgraded from GitHub-only to a normal catalog entry with its real install count.`,
         });
         break;
       case "already_exists":
@@ -103,7 +116,7 @@ export function AddSkillForm() {
       return;
     }
 
-    setPending(true);
+    setPhase("adding");
     setCandidate(null);
     try {
       const result = await addSkill({ input: trimmed });
@@ -117,6 +130,7 @@ export function AddSkillForm() {
       // a union-typed property, not a discriminant).
       const { status } = result;
       if (status === "not_on_skills_sh") {
+        setPhase("previewing");
         await offerGitHubFallback(trimmed);
       } else {
         announce({ ...result, status });
@@ -128,7 +142,7 @@ export function AddSkillForm() {
         description: friendlyError(message),
       });
     } finally {
-      setPending(false);
+      setPhase("idle");
     }
   }
 
@@ -138,8 +152,8 @@ export function AddSkillForm() {
       if (preview.status === "ok") {
         setCandidate({ input: trimmed, ...preview });
         // The confirmation card mounts silently below the form; without this,
-        // a keyboard/screen-reader user hears "Adding…" end and gets no signal
-        // that a confirmation step now exists further down the page.
+        // a keyboard/screen-reader user hears the pending label end and gets
+        // no signal that a confirmation step now exists further down the page.
         toast.info({
           title: "Not on skills.sh",
           description: `Found ${preview.path} on GitHub — review and confirm below.`,
@@ -161,7 +175,7 @@ export function AddSkillForm() {
 
   async function handleConfirmGitHub() {
     if (!candidate || pending) return;
-    setPending(true);
+    setPhase("confirming");
     try {
       // The action's status ("inserted" | "relisted") is a subset of AddResult's
       // — pass it through rather than assuming, so a relist reports as one.
@@ -173,7 +187,7 @@ export function AddSkillForm() {
         description: friendlyError(message),
       });
     } finally {
-      setPending(false);
+      setPhase("idle");
     }
   }
 
@@ -190,13 +204,15 @@ export function AddSkillForm() {
               placeholder="vercel-labs/agent-skills/next-js-development"
               value={input}
               onChange={(e) => {
-                setInput(e.target.value);
+                const value = e.target.value;
+                setInput(value);
                 // Retyping a different skill while the confirmation card is up
                 // would otherwise leave a stale card whose Confirm adds the OLD
                 // input — the exact mis-add the confirm step exists to prevent.
-                if (candidate && e.target.value.trim() !== candidate.input) {
-                  setCandidate(null);
-                }
+                // Functional form: no stale closure over `candidate`.
+                setCandidate((prev) =>
+                  prev && value.trim() !== prev.input ? null : prev,
+                );
               }}
               disabled={pending}
               autoFocus
@@ -208,7 +224,11 @@ export function AddSkillForm() {
                 GitHub repo instead.
               </p>
               <Button type="submit" disabled={!input.trim() || pending}>
-                {pending ? "Adding…" : "Add to catalog"}
+                {phase === "adding"
+                  ? "Adding…"
+                  : phase === "previewing"
+                    ? "Checking GitHub…"
+                    : "Add to catalog"}
               </Button>
             </div>
           </form>
@@ -216,86 +236,111 @@ export function AddSkillForm() {
       </Card>
 
       {candidate && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Not on skills.sh — add from GitHub?</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-4 text-sm text-muted-foreground">
-              skills.sh has no listing for this skill, but a SKILL.md was found
-              in the repo. Check that this is the right file before adding.
-            </p>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Name</dt>
-              <dd className="font-medium">{candidate.name}</dd>
-              <dt className="text-muted-foreground">Repo</dt>
-              <dd className="font-mono text-xs">{candidate.source}</dd>
-              <dt className="text-muted-foreground">Slug</dt>
-              <dd className="font-mono text-xs">{candidate.skillId}</dd>
-              <dt className="text-muted-foreground">File</dt>
-              <dd className="font-mono text-xs">{candidate.path}</dd>
-              {candidate.description && (
-                <>
-                  <dt className="text-muted-foreground">Description</dt>
-                  <dd>{candidate.description}</dd>
-                </>
-              )}
-            </dl>
-            <p className="mt-4 text-xs text-muted-foreground">
-              It will show 0 installs and no security audit until it appears on
-              skills.sh, at which point the daily sync takes over automatically.
-            </p>
-            <div className="mt-4 flex items-center gap-3">
-              <Button onClick={handleConfirmGitHub} disabled={pending}>
-                {pending ? "Adding…" : "Add as GitHub-only"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setCandidate(null)}
-                disabled={pending}
-              >
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <GitHubCandidateCard
+          candidate={candidate}
+          confirming={phase === "confirming"}
+          disabled={pending}
+          onConfirm={handleConfirmGitHub}
+          onCancel={() => setCandidate(null)}
+        />
       )}
 
-      {lastAdded && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Last added</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{lastAdded.status}</dd>
-              <dt className="text-muted-foreground">Name</dt>
-              <dd className="font-medium">{lastAdded.name}</dd>
-              <dt className="text-muted-foreground">Source</dt>
-              <dd className="font-mono text-xs">{lastAdded.source}</dd>
-              <dt className="text-muted-foreground">Slug</dt>
-              <dd className="font-mono text-xs">{lastAdded.skillId}</dd>
-            </dl>
-            <div className="mt-4">
-              <Button
-                nativeButton={false}
-                variant="outline"
-                size="sm"
-                render={
-                  <Link
-                    href={skillDetailHref(lastAdded.source, lastAdded.skillId)}
-                    target="_blank"
-                  />
-                }
-              >
-                Open on SkillBundle
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {lastAdded && <LastAddedCard result={lastAdded} />}
     </div>
+  );
+}
+
+function GitHubCandidateCard({
+  candidate,
+  confirming,
+  disabled,
+  onConfirm,
+  onCancel,
+}: {
+  candidate: GitHubCandidate;
+  confirming: boolean;
+  disabled: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Not on skills.sh — add from GitHub?</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">
+          skills.sh has no listing for this skill, but a SKILL.md was found in
+          the repo. Check that this is the right file before adding.
+        </p>
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-muted-foreground">Name</dt>
+          <dd className="font-medium">{candidate.name}</dd>
+          <dt className="text-muted-foreground">Repo</dt>
+          <dd className="font-mono text-xs">{candidate.source}</dd>
+          <dt className="text-muted-foreground">Slug</dt>
+          <dd className="font-mono text-xs">{candidate.skillId}</dd>
+          <dt className="text-muted-foreground">File</dt>
+          <dd className="font-mono text-xs">{candidate.path}</dd>
+          {candidate.description && (
+            <>
+              <dt className="text-muted-foreground">Description</dt>
+              <dd>{candidate.description}</dd>
+            </>
+          )}
+        </dl>
+        <p className="mt-4 text-xs text-muted-foreground">
+          It will show 0 installs and no security audit until it appears on
+          skills.sh — at which point the daily sync adopts it automatically, or
+          re-running the normal add adopts it on the spot.
+        </p>
+        <div className="mt-4 flex items-center gap-3">
+          <Button onClick={onConfirm} disabled={disabled}>
+            {confirming ? "Adding…" : "Add as GitHub-only"}
+          </Button>
+          <Button variant="outline" onClick={onCancel} disabled={disabled}>
+            Cancel
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LastAddedCard({ result }: { result: AddResult }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Last added</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-muted-foreground">Status</dt>
+          <dd className="font-medium">{result.status}</dd>
+          <dt className="text-muted-foreground">Name</dt>
+          <dd className="font-medium">{result.name}</dd>
+          <dt className="text-muted-foreground">Source</dt>
+          <dd className="font-mono text-xs">{result.source}</dd>
+          <dt className="text-muted-foreground">Slug</dt>
+          <dd className="font-mono text-xs">{result.skillId}</dd>
+        </dl>
+        <div className="mt-4">
+          <Button
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+            render={
+              <Link
+                href={skillDetailHref(result.source, result.skillId)}
+                target="_blank"
+              />
+            }
+          >
+            Open on SkillBundle
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
