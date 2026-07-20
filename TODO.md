@@ -6,6 +6,17 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Add-skill: repo-root URL should offer a skill picker
+
+`/dev/add-skill` accepts GitHub deep links (tree/blob/raw, slug derived from
+the URL tail — `lib/parse-skill-input.ts`), but a bare repo URL
+(`github.com/owner/repo`) has no slug to derive and errors with guidance.
+The nicer flow: recognize the repo-root case, list every SKILL.md the repo
+contains (the `githubOnly.ts` resolver already walks the tree and collects
+candidates), and let the admin pick one. Real feature, not a parse fix —
+needs a picker UI state in the form and a "list skills in repo" action.
+Admin-only surface, so build it when the guidance error actually annoys.
+
 ### Tighten SKILL.md slug matching to whole-word prefixes
 
 `lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the

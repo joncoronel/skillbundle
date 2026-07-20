@@ -219,9 +219,10 @@ export function AddSkillForm() {
             />
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
-                Paste a skills.sh URL or the <code>source/slug</code> form. If
-                the skill isn&apos;t on skills.sh, we&apos;ll look for it in the
-                GitHub repo instead.
+                Paste a skills.sh URL, a GitHub link to the skill&apos;s
+                folder, or the <code>source/slug</code> form. If the skill
+                isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
+                repo instead.
               </p>
               <Button type="submit" disabled={!input.trim() || pending}>
                 {phase === "adding"
@@ -386,7 +387,7 @@ function previewError(
 function friendlyError(raw: string): string {
   const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
   if (/URL must be from skills\.sh/i.test(cleaned)) {
-    return "That URL isn't from skills.sh. Paste a skills.sh URL or a source/slug.";
+    return "That URL isn't from skills.sh or GitHub. Paste one of those, or a source/slug.";
   }
   if (/looks like a domain/i.test(cleaned)) {
     return cleaned;
