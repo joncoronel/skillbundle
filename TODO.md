@@ -36,6 +36,29 @@ pipeline previously never pinged the tag itself; publishing relied on `reconcile
 when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
 `internal.skills.revalidateSkillSyncTag` at their terminals.
 
+### Skills that are not on skills.sh at all ("GitHub-only")
+
+Shipped (Jul 2026). `/dev/add-skill` now falls back to the GitHub repo when the
+skills.sh detail endpoint 404s: `previewGitHubSkill` resolves the SKILL.md and shows
+the admin the file path + parsed name to confirm, then `addSkillFromGitHub` inserts
+with `installs: 0` and `isGitHubOnly: true`. Full design in
+[docs/skill-lifecycle.md](docs/skill-lifecycle.md) ("GitHub-only skills").
+
+Rather than exempting these rows from the 30-day delist, the content pipeline stamps
+`lastSeenInApi` on every successful SKILL.md fetch (the "GitHub heartbeat"), so a row
+lives exactly as long as GitHub serves the file and a dead repo still cleans itself up
+on the normal track. Reconcile skips them (detail can only 404). Adoption needs no
+special-casing beyond clearing the marker: matching is on `(source, skillId)`, so
+`syncSkills` takes over installs and snapshots the moment the skill appears upstream.
+
+Known cost, accepted: audits stay `"unknown"` for these rows because the audit
+endpoint 404s. Revisit only if GitHub-only skills become common enough that the
+missing security signal matters.
+
+Deferred follow-up: nothing surfaces `isGitHubOnly` in the UI. A quiet marker on the
+skill page (explaining why installs read 0 and the audit is unknown) would be honest,
+but it's only worth building once more than a couple of these exist.
+
 ### Sign-in second factor: email code only (future: real MFA)
 
 Shipped (Jul 2026): sign-in handles Clerk's Client Trust email-code step

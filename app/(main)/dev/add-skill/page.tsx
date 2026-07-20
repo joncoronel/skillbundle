@@ -11,8 +11,9 @@ export default function AddSkillPage() {
           Add Skill Manually
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Insert a skill from skills.sh into the catalog, bypassing the
-          50-install leaderboard threshold. Admin-only.
+          Insert a skill into the catalog by hand: one skills.sh lists but the
+          leaderboard feed missed, or one that only exists in a GitHub repo.
+          Admin-only.
         </p>
       </div>
 

@@ -17,6 +17,16 @@ export default defineSchema({
     content: v.optional(v.string()),
     installs: v.number(),
     leaderboard: v.string(),
+    // True when this row was added straight from a GitHub repo and has no
+    // skills.sh presence at all (absent from the leaderboard feed AND the
+    // detail endpoint). Such a row has no upstream install count, and no
+    // skills.sh feed will ever stamp its `lastSeenInApi` — so the content
+    // pipeline stamps it instead (see updateDescription): GitHub still serving
+    // SKILL.md is what proves it alive, and a dead repo stops the stamps and
+    // lets the normal 30-day delist remove it. Cleared the moment any
+    // skills.sh feed reports the skill ("adoption" in upsertSkillsBatch), at
+    // which point ordinary lifecycle rules resume.
+    isGitHubOnly: v.optional(v.boolean()),
     // Discovered raw.githubusercontent.com URL for the SKILL.md file. Set by
     // discoverSkillMdUrls after walking the GitHub Tree (or empty string if
     // discovery failed). Used by fetchSkillContent for the actual download.
@@ -179,6 +189,11 @@ export default defineSchema({
     // Mirrored from skills row. Used for default-filtering forks/copies out
     // of listing and search queries.
     isDuplicate: v.optional(v.boolean()),
+    // Mirrored from skills row. Read on the hot paths that only touch
+    // summaries: reconcile skips these rows (the detail endpoint would 404
+    // forever, and an unstamped row clogs the head of its oldest-first scan).
+    // See the skills-table comment for the full lifecycle.
+    isGitHubOnly: v.optional(v.boolean()),
     // Mirrored from skills row. Drives the "Official" badge on every card.
     // The value is the curated owner slug (e.g. "vercel-labs"). Used as a
     // filter field on the search index for "Official only" search results.

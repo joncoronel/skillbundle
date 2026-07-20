@@ -91,6 +91,7 @@ type UnseenSummary = {
   hasSkillMdUrl: boolean;
   discoveryFailCount: number;
   repoLiveName?: string;
+  isGitHubOnly: boolean;
 };
 
 export const listUnseenSummaries = internalQuery({
@@ -120,6 +121,7 @@ export const listUnseenSummaries = internalQuery({
       // this row is a dead renamed alias (the detail endpoint serves a stale
       // inflated count for those, so reconcile must not refresh from it).
       repoLiveName: s.repoLiveName,
+      isGitHubOnly: s.isGitHubOnly ?? false,
     }));
 
     return {
@@ -185,8 +187,14 @@ export const reconcileUnseenSkills = internalAction({
     // detail endpoint serves a stale, inflated count for a renamed repo's old
     // name — refreshing from it would re-introduce the qu-skills-style inflation.
     // They're duplicates of the live repo anyway; if off-board they delist.
+    // GitHub-only rows are excluded for the same reason as dead aliases: the
+    // detail endpoint can only 404 for them (skills.sh has never heard of the
+    // skill), so a call would be pure waste — and worse, a "gone" row is never
+    // stamped, so it would sit at the head of this oldest-first scan forever,
+    // exactly the starvation hazard described below. Their liveness comes from
+    // the content pipeline's GitHub heartbeat instead (see schema.ts).
     const healthyRows = stale.filter(
-      (s) => isRefreshHealthy(s) && !isDeadRenamedAlias(s),
+      (s) => isRefreshHealthy(s) && !isDeadRenamedAlias(s) && !s.isGitHubOnly,
     );
     const broke = stale.length - healthyRows.length;
 
