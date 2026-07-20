@@ -1358,7 +1358,7 @@ export const updateDescription = internalMutation({
         // (which copies skills.lastSeenInApi onto summaries) can never
         // overwrite a heartbeat-fresh summary with a frozen add-time value
         // and mass-delist live GitHub-only rows.
-        ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
+        ...(skill.isGitHubOnly && { lastSeenInApi: now }),
       });
       const summary = await ctx.db
         .query("skillSummaries")
@@ -1378,11 +1378,13 @@ export const updateDescription = internalMutation({
           // repo is serving the file, which is the whole liveness signal.
           // Deliberately scoped to GitHub-only rows — for everything else
           // `lastSeenInApi` must keep meaning "skills.sh still lists this".
-          // discoveryFailCount also resets here: ordinary rows un-stick via
-          // installsChanged, which never fires for a feedless row, so without
-          // this three transient discovery failures would freeze the row
-          // forever (markStaleContent stops re-flagging at the cap).
-          ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
+          // (No discoveryFailCount reset here — it would be dead code: a row
+          // can only reach a content fetch with a discovered URL, and
+          // updateSkillMdUrl zeroes the counter whenever it sets a URL, so
+          // "URL present ⇒ counter 0" already holds. Discovery-exhaustion
+          // recovery for GitHub-only rows lives in markStaleContentBatch's
+          // cap exemption instead.)
+          ...(skill.isGitHubOnly && { lastSeenInApi: now }),
         });
       }
       return;
@@ -1414,7 +1416,7 @@ export const updateDescription = internalMutation({
       contentFetchFailCount: 0,
       hasContentFetchError: false,
       // GitHub heartbeat, skills-row side — see the unchanged-hash branch.
-      ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
+      ...(skill.isGitHubOnly && { lastSeenInApi: now }),
     });
 
     await upsertSkillSummary(ctx, {
@@ -1432,7 +1434,7 @@ export const updateDescription = internalMutation({
       hasSkillMdUrl: !!skillMdUrl && skillMdUrl !== "",
       // GitHub heartbeat (changed-content path) — see the unchanged-hash branch
       // above for why this is the liveness signal for a GitHub-only row.
-      ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
+      ...(skill.isGitHubOnly && { lastSeenInApi: now }),
     });
   },
 });
@@ -1450,9 +1452,9 @@ export const markContentFetched = internalMutation({
       // and no body), which is still a SUCCESSFUL fetch proving the repo
       // alive. Without the stamp, a GitHub-only skill with that SKILL.md
       // shape would fetch fine every 7 days yet delist at 30 — exactly the
-      // failure the heartbeat exists to prevent. Same lockstep + fail-count
-      // reasoning as updateDescription.
-      ...(skill?.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
+      // failure the heartbeat exists to prevent. Same lockstep reasoning as
+      // updateDescription.
+      ...(skill?.isGitHubOnly && { lastSeenInApi: now }),
     });
     if (skill) {
       const summary = await ctx.db
@@ -1465,7 +1467,7 @@ export const markContentFetched = internalMutation({
         await ctx.db.patch(summary._id, {
           contentFetchedAt: now,
           needsContentFetch: false,
-          ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
+          ...(skill.isGitHubOnly && { lastSeenInApi: now }),
         });
       }
     }
@@ -1563,10 +1565,23 @@ export const markStaleContentBatch = internalMutation({
           hasUrl &&
           !s.needsContentFetch &&
           now - (s.contentFetchedAt ?? 0) > CONTENT_REFRESH_INTERVAL_MS;
+        // GitHub-only rows are exempt from the MAX_DISCOVERY_FAILURES cap:
+        // ordinary skills un-stick from exhausted discovery when new installs
+        // arrive (installsChanged resets the counter), but no feed ever
+        // changes a GitHub-only row's installs, so three transient failures
+        // (e.g. GitHub rate-limit windows) would otherwise freeze it forever —
+        // no rediscovery, no content fetch, no heartbeat, silent delist at
+        // day 30 while the repo is alive. The retry cost is bounded: one
+        // discovery attempt per REDISCOVERY_INTERVAL_MS, and a truly dead
+        // repo stops costing anything once the missed heartbeats delist the
+        // row (the isDelisted skip above).
+        const pastFailureCap =
+          (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES &&
+          !s.isGitHubOnly;
         const needsRediscovery =
           !hasUrl &&
           !s.needsDiscovery &&
-          (s.discoveryFailCount ?? 0) < MAX_DISCOVERY_FAILURES &&
+          !pastFailureCap &&
           now - (s.contentFetchedAt ?? 0) > REDISCOVERY_INTERVAL_MS;
 
         if (contentStale) {
@@ -3633,11 +3648,18 @@ async function resolveGitHubSkillMd(
       "SKILL.md",
     ];
     for (const path of probePaths) {
-      const res = await fetch(
-        `https://raw.githubusercontent.com/${source}/${meta.defaultBranch}/${path}`,
-      );
-      if (!res.ok) continue;
-      const contents = await res.text();
+      // Network-level throws (DNS, reset) are treated like a non-ok response:
+      // skip the path rather than escaping as a redacted "Server Error" toast.
+      let contents: string;
+      try {
+        const res = await fetch(
+          `https://raw.githubusercontent.com/${source}/${meta.defaultBranch}/${path}`,
+        );
+        if (!res.ok) continue;
+        contents = await res.text();
+      } catch {
+        continue;
+      }
       // The two conventional dirs match by construction (dir name == slug).
       // A root SKILL.md must earn the match via frontmatter name, same rule
       // as pass 2 below — otherwise any repo with a root SKILL.md would
@@ -3864,13 +3886,17 @@ export const addSkillFromGitHub = action({
       await withTransientRetry(() => v1GetSkillDetail(source, skillId));
       listedOnSkillsSh = true;
     } catch (err) {
-      // 404 confirmed: genuinely not on skills.sh — proceed.
+      // 404 confirmed: genuinely not on skills.sh — proceed. Everything else
+      // is wrapped in ConvexError (same as the preview path) so the prod
+      // toast is actionable instead of the redacted "Server Error".
       if (!(err instanceof SkillsApiNotFoundError)) {
         throw err instanceof SkillsApiRateLimitError
           ? new ConvexError(
               "skills.sh is rate-limiting requests. Try again in a minute.",
             )
-          : err;
+          : new ConvexError(
+              "skills.sh didn't answer (transient failure). Try again.",
+            );
       }
     }
     if (listedOnSkillsSh) {
