@@ -60,6 +60,9 @@ export default defineSchema({
     // MAX_DISCOVERY_FAILURES (3), markStaleContent stops re-flagging the
     // skill — it's "exhausted." Reset to 0 when installs change (active
     // installs are a signal the repo is alive) or when discovery succeeds.
+    // Exception: isGitHubOnly rows are exempt from the cap (no feed ever
+    // changes their installs, so they'd freeze forever) — they keep retrying
+    // on the rediscovery cadence; see markStaleContentBatch.
     discoveryFailCount: v.optional(v.number()),
     lastSeenInApi: v.optional(v.number()),
     isDelisted: v.optional(v.boolean()),

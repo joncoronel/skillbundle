@@ -83,10 +83,13 @@ rows, so `updateDescription` stamps `lastSeenInApi` itself whenever a raw
 SKILL.md fetch succeeds — on the unchanged-hash path too, since identical
 content still proves the repo is serving the file. `markStaleContent` re-flags
 content every 7 days, comfortably inside the 30-day delist window. **This is
-why no delist exemption exists:** if the repo dies, fetches fail, discovery
-exhausts, the stamps stop, and `markDelistedSkills` removes the row on the
-normal 30-day track. "Seen" keeps meaning "something proved it alive"; only the
-prover changes.
+why no delist exemption exists:** if the repo dies, fetches fail, the stamps
+stop, and `markDelistedSkills` removes the row on the normal 30-day track.
+(Discovery never permanently exhausts for these rows — they're exempt from the
+`MAX_DISCOVERY_FAILURES` cap and retry on the rediscovery cadence, since no
+feed ever resets their counter — but failed fetches produce no heartbeat
+regardless, so the dead-repo path is unchanged.) "Seen" keeps meaning
+"something proved it alive"; only the prover changes.
 
 **Reconcile skips them** (`reconcile.ts`, alongside the dead-alias skip): the
 detail endpoint can only 404, so a call is pure waste, and an unstamped "gone"
