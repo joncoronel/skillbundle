@@ -196,7 +196,13 @@ export const reconcileUnseenSkills = internalAction({
     const healthyRows = stale.filter(
       (s) => isRefreshHealthy(s) && !isDeadRenamedAlias(s) && !s.isGitHubOnly,
     );
-    const broke = stale.length - healthyRows.length;
+    // GitHub-only rows get their own bucket so they don't inflate `broke` —
+    // that count feeds the "would delist" dry-run label and, together with
+    // deadButInstallable, is the tripwire for the deferred Fix-2 decision
+    // (docs/skill-lifecycle.md). A GitHub-only row sitting stale between
+    // ~7-day heartbeats is healthy by design, not "broke".
+    const githubOnlySkipped = stale.filter((s) => s.isGitHubOnly).length;
+    const broke = stale.length - healthyRows.length - githubOnlySkipped;
 
     // 2. Safety gate: an implausibly large stale set means syncSkills broke —
     // bail rather than mass-hit the detail endpoint papering over it.
@@ -222,7 +228,7 @@ export const reconcileUnseenSkills = internalAction({
     // vs broke is derived purely from our DB fields, so this is instant.
     if (dryRun) {
       console.log(
-        `reconcileUnseenSkills DRY RUN: ${stale.length} stale -> ${healthyRows.length} healthy (would refresh), ${broke} broke (would delist)`,
+        `reconcileUnseenSkills DRY RUN: ${stale.length} stale -> ${healthyRows.length} healthy (would refresh), ${broke} broke (would delist), ${githubOnlySkipped} github-only (skipped by design)`,
       );
       for (const s of healthyRows.slice(0, 40)) {
         console.log(`  refresh: ${s.source}/${s.skillId}`);
@@ -319,7 +325,7 @@ export const reconcileUnseenSkills = internalAction({
     }
 
     console.log(
-      `reconcileUnseenSkills: ${stale.length} stale, ${healthyRows.length} healthy; refreshed ${refreshed}, gone ${gone}, broke(skipped) ${broke}${rescheduled ? "; rescheduled for remainder" : ""}`,
+      `reconcileUnseenSkills: ${stale.length} stale, ${healthyRows.length} healthy; refreshed ${refreshed}, gone ${gone}, broke(skipped) ${broke}, github-only(skipped) ${githubOnlySkipped}${rescheduled ? "; rescheduled for remainder" : ""}`,
     );
     if (gone >= RECONCILE_GONE_WARN) {
       console.warn(

@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Local, per-machine Claude Code permissions (not for the repo)
 .claude/settings.local.json
+
+# Local review-panel output (not for the repo)
+reviews/

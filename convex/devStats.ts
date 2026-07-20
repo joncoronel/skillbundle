@@ -177,6 +177,12 @@ export const recalculateStatsBatch = internalMutation({
       else if (
         s.lastSeenInApi < deadCutoff &&
         !isDeadRenamedAlias(s) &&
+        // GitHub-only rows are excluded: their heartbeat cadence (~7 days, the
+        // markStaleContent window) straddles this 7-day cutoff, so healthy
+        // rows would flap in and out of the metric and erode the Fix-2
+        // tripwire signal. They were never "dropped from skills.sh" — skills.sh
+        // never had them.
+        !s.isGitHubOnly &&
         summaryRefreshHealthy(s)
       ) {
         deadButInstallable++;
@@ -310,6 +316,9 @@ export const countDeadButInstallable = internalQuery({
     let healthy = 0;
     let healthyNonAlias = 0;
     for (const s of stale) {
+      // Same GitHub-only exclusion as the daily recalc above: not a
+      // dead-but-installable candidate, just a heartbeat-cadence row.
+      if (s.isGitHubOnly) continue;
       if (!summaryRefreshHealthy(s)) continue;
       healthy++;
       if (!isDeadRenamedAlias(s)) healthyNonAlias++;

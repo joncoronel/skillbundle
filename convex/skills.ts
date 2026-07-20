@@ -22,6 +22,7 @@ import {
   SkillsApiNotFoundError,
   SkillsApiRateLimitError,
   withTransientRetry,
+  type V1SkillDetail,
 } from "./lib/skillsApi";
 import {
   resolveDefaultBranch,
@@ -607,9 +608,16 @@ export const upsertSkillsBatch = internalMutation({
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
-          // Same adoption clear as the fast path, for the rare orphaned-row case.
-          ...((existing.isGitHubOnly ?? false) &&
-            !isGitHubOnly && { isGitHubOnly: false }),
+          // Same set/clear ternary as the fast path, for the rare orphaned-row
+          // case. The SET arm matters: the recreated summary below gets the
+          // marker, and if the skills row didn't too, the heartbeat (which
+          // reads the skills row in updateDescription) would never stamp — the
+          // row would silently delist at 30 days despite a live repo.
+          ...(isGitHubOnly
+            ? { isGitHubOnly: true }
+            : (existing.isGitHubOnly ?? false)
+              ? { isGitHubOnly: false }
+              : {}),
           ...(wasRelisted && {
             isDelisted: false,
             needsEmbedding: true,
@@ -1345,6 +1353,12 @@ export const updateDescription = internalMutation({
         needsContentFetch: false,
         contentFetchFailCount: 0,
         hasContentFetchError: false,
+        // GitHub heartbeat, skills-row side — kept in lockstep with the
+        // summary stamp below so the manual backfillSkillSummariesBatch tool
+        // (which copies skills.lastSeenInApi onto summaries) can never
+        // overwrite a heartbeat-fresh summary with a frozen add-time value
+        // and mass-delist live GitHub-only rows.
+        ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
       });
       const summary = await ctx.db
         .query("skillSummaries")
@@ -1364,7 +1378,11 @@ export const updateDescription = internalMutation({
           // repo is serving the file, which is the whole liveness signal.
           // Deliberately scoped to GitHub-only rows — for everything else
           // `lastSeenInApi` must keep meaning "skills.sh still lists this".
-          ...(skill.isGitHubOnly && { lastSeenInApi: now }),
+          // discoveryFailCount also resets here: ordinary rows un-stick via
+          // installsChanged, which never fires for a feedless row, so without
+          // this three transient discovery failures would freeze the row
+          // forever (markStaleContent stops re-flagging at the cap).
+          ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
         });
       }
       return;
@@ -1395,6 +1413,8 @@ export const updateDescription = internalMutation({
       needsContentFetch: false,
       contentFetchFailCount: 0,
       hasContentFetchError: false,
+      // GitHub heartbeat, skills-row side — see the unchanged-hash branch.
+      ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
     });
 
     await upsertSkillSummary(ctx, {
@@ -1412,7 +1432,7 @@ export const updateDescription = internalMutation({
       hasSkillMdUrl: !!skillMdUrl && skillMdUrl !== "",
       // GitHub heartbeat (changed-content path) — see the unchanged-hash branch
       // above for why this is the liveness signal for a GitHub-only row.
-      ...(skill.isGitHubOnly && { lastSeenInApi: now }),
+      ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
     });
   },
 });
@@ -1425,6 +1445,14 @@ export const markContentFetched = internalMutation({
     await ctx.db.patch(skillId, {
       contentFetchedAt: now,
       needsContentFetch: false,
+      // GitHub heartbeat — this path handles a frontmatter-only / empty-body
+      // SKILL.md (fetchSkillContent routes here when there's no description
+      // and no body), which is still a SUCCESSFUL fetch proving the repo
+      // alive. Without the stamp, a GitHub-only skill with that SKILL.md
+      // shape would fetch fine every 7 days yet delist at 30 — exactly the
+      // failure the heartbeat exists to prevent. Same lockstep + fail-count
+      // reasoning as updateDescription.
+      ...(skill?.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
     });
     if (skill) {
       const summary = await ctx.db
@@ -1437,6 +1465,7 @@ export const markContentFetched = internalMutation({
         await ctx.db.patch(summary._id, {
           contentFetchedAt: now,
           needsContentFetch: false,
+          ...(skill.isGitHubOnly && { lastSeenInApi: now, discoveryFailCount: 0 }),
         });
       }
     }
@@ -3388,6 +3417,12 @@ export const addSkillManually = action({
       v.literal("inserted"),
       v.literal("relisted"),
       v.literal("already_exists"),
+      // The skills.sh detail endpoint 404ed. Returned as a status — NOT thrown
+      // — because prod Convex redacts non-ConvexError messages to a generic
+      // "Server Error", so the client could never distinguish "not listed"
+      // (the trigger for the GitHub-only fallback) from a real failure by
+      // message-sniffing. Expected outcomes are data, not exceptions.
+      v.literal("not_on_skills_sh"),
     ),
     source: v.string(),
     skillId: v.string(),
@@ -3399,7 +3434,7 @@ export const addSkillManually = action({
     ctx,
     { input },
   ): Promise<{
-    status: "inserted" | "relisted" | "already_exists";
+    status: "inserted" | "relisted" | "already_exists" | "not_on_skills_sh";
     source: string;
     skillId: string;
     name: string;
@@ -3438,11 +3473,25 @@ export const addSkillManually = action({
       };
     }
 
-    // Verify against skills.sh. Throws SkillsApiNotFoundError on 404, which
-    // the action handler surfaces to the caller as a normal error string.
-    const detail = await withTransientRetry(() =>
-      v1GetSkillDetail(source, skillId),
-    );
+    // Verify against skills.sh. A 404 is an EXPECTED outcome (the trigger for
+    // the client's GitHub-only fallback), so it's returned as a status, not
+    // thrown — see the returns-validator comment. Rate limits are wrapped in
+    // ConvexError so the prod toast says something actionable instead of the
+    // redacted "Server Error".
+    let detail: V1SkillDetail;
+    try {
+      detail = await withTransientRetry(() => v1GetSkillDetail(source, skillId));
+    } catch (err) {
+      if (err instanceof SkillsApiNotFoundError) {
+        return { status: "not_on_skills_sh" as const, source, skillId, name: "" };
+      }
+      if (err instanceof SkillsApiRateLimitError) {
+        throw new ConvexError(
+          "skills.sh is rate-limiting requests. Try again in a minute.",
+        );
+      }
+      throw err;
+    }
 
     // Pull the human name out of SKILL.md frontmatter (the listing endpoint
     // would have given it to us directly, but detail doesn't include name as
@@ -3526,7 +3575,22 @@ type GitHubSkillResolution =
       description?: string;
     }
   | { status: "no_repo" }
-  | { status: "no_skill_md" };
+  | { status: "no_skill_md" }
+  // The repo exists but its file tree couldn't be listed (409 too-large, rate
+  // limit, transient error) or came back truncated, AND the direct path probes
+  // found nothing. Distinct from no_skill_md because "we couldn't look" must
+  // never be reported to the admin as the definitive "we looked and it's not
+  // there" — that reads as "check the slug" when the slug may be fine.
+  | { status: "tree_unavailable" };
+
+/**
+ * Bound on how many SKILL.md candidates pass 2 will download. This runs
+ * serially inside a user-facing action (the admin is watching a spinner), so a
+ * skills monorepo with hundreds of SKILL.md files must not turn preview into a
+ * multi-minute stall. Anything past the cap is treated as not-found — the
+ * direct-path probes and pass 1 cover the conventional layouts regardless.
+ */
+const RESOLVE_PASS2_CAP = 50;
 
 /**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
@@ -3536,7 +3600,8 @@ type GitHubSkillResolution =
  * admin confirms in the preview is the same one the discovery pipeline binds to
  * after insert. It does not reuse that function because discovery is batch-
  * oriented and writes straight to the DB, whereas this has to report a result
- * before any row exists.
+ * before any row exists. When the tree is unavailable it also mirrors
+ * discovery's fallback: probe the conventional paths directly.
  */
 async function resolveGitHubSkillMd(
   source: string,
@@ -3544,10 +3609,51 @@ async function resolveGitHubSkillMd(
 ): Promise<GitHubSkillResolution> {
   const [owner, repo] = source.split("/");
   const meta = await fetchRepoMetadata(owner, repo);
+  // NOTE: fetchRepoMetadata cannot distinguish 404 from a rate limit (both
+  // return null), so the caller's message for no_repo hedges accordingly.
   if (!meta) return { status: "no_repo" };
 
+  const okResult = (path: string, contents: string): GitHubSkillResolution => ({
+    status: "ok",
+    skillMdUrl: `https://raw.githubusercontent.com/${source}/${meta.defaultBranch}/${path}`,
+    path,
+    name: extractSkillMdName(contents) ?? humanizeSlug(skillId),
+    description: extractFrontmatterDescription(contents) ?? undefined,
+  });
+
   const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
-  if (!tree || tree === NOT_MODIFIED) return { status: "no_skill_md" };
+  // Tree unavailable (too large / rate limited / transient) or truncated:
+  // don't claim absence — fall back to probing the conventional layouts
+  // directly, the same escape hatch discoverSkillMdUrls uses (skills/{id},
+  // .claude/skills/{id}, repo root).
+  if (!tree || tree === NOT_MODIFIED || tree.truncated) {
+    const probePaths = [
+      `skills/${skillId}/SKILL.md`,
+      `.claude/skills/${skillId}/SKILL.md`,
+      "SKILL.md",
+    ];
+    for (const path of probePaths) {
+      const res = await fetch(
+        `https://raw.githubusercontent.com/${source}/${meta.defaultBranch}/${path}`,
+      );
+      if (!res.ok) continue;
+      const contents = await res.text();
+      // The two conventional dirs match by construction (dir name == slug).
+      // A root SKILL.md must earn the match via frontmatter name, same rule
+      // as pass 2 below — otherwise any repo with a root SKILL.md would
+      // "resolve" every slug typed at it whenever the tree is down.
+      if (path !== "SKILL.md") return okResult(path, contents);
+      const fmName = extractSkillMdName(contents);
+      const kebab = fmName?.toLowerCase().replace(/\s+/g, "-");
+      if (
+        fmName &&
+        (fmName === skillId || kebab === skillId || kebab?.startsWith(skillId))
+      ) {
+        return okResult(path, contents);
+      }
+    }
+    return { status: "tree_unavailable" };
+  }
 
   const rawUrl = (path: string) =>
     `https://raw.githubusercontent.com/${source}/${tree.branch}/${path}`;
@@ -3564,38 +3670,32 @@ async function resolveGitHubSkillMd(
   }
   if (candidates.length === 0) return { status: "no_skill_md" };
 
-  // Pass 1: a directory named exactly like the slug.
-  let matched = byDir.get(skillId);
+  // Pass 1: a directory named exactly like the slug. Fetch it once here — its
+  // contents are needed for the name/description either way.
+  const dirMatch = byDir.get(skillId);
+  if (dirMatch) {
+    const res = await fetch(rawUrl(dirMatch));
+    if (res.ok) return okResult(dirMatch, await res.text());
+    // The tree said the file exists but raw serves an error — transient CDN
+    // trouble, not proof of absence.
+    return { status: "tree_unavailable" };
+  }
 
   // Pass 2: frontmatter `name`. Covers a root-level SKILL.md (no parent dir to
-  // match on) and repos whose folder names don't line up with the slug.
-  if (!matched) {
-    for (const path of candidates) {
-      const res = await fetch(rawUrl(path));
-      if (!res.ok) continue;
-      const fmName = extractSkillMdName(await res.text());
-      if (!fmName) continue;
-      const kebab = fmName.toLowerCase().replace(/\s+/g, "-");
-      if (fmName === skillId || kebab === skillId || kebab.startsWith(skillId)) {
-        matched = path;
-        break;
-      }
+  // match on) and repos whose folder names don't line up with the slug. The
+  // body is kept on match so it isn't downloaded a second time.
+  for (const path of candidates.slice(0, RESOLVE_PASS2_CAP)) {
+    const res = await fetch(rawUrl(path));
+    if (!res.ok) continue;
+    const contents = await res.text();
+    const fmName = extractSkillMdName(contents);
+    if (!fmName) continue;
+    const kebab = fmName.toLowerCase().replace(/\s+/g, "-");
+    if (fmName === skillId || kebab === skillId || kebab.startsWith(skillId)) {
+      return okResult(path, contents);
     }
   }
-  if (!matched) return { status: "no_skill_md" };
-
-  const url = rawUrl(matched);
-  const res = await fetch(url);
-  if (!res.ok) return { status: "no_skill_md" };
-  const contents = await res.text();
-
-  return {
-    status: "ok",
-    skillMdUrl: url,
-    path: matched,
-    name: extractSkillMdName(contents) ?? humanizeSlug(skillId),
-    description: extractFrontmatterDescription(contents) ?? undefined,
-  };
+  return { status: "no_skill_md" };
 }
 
 type GitHubPreview =
@@ -3604,6 +3704,7 @@ type GitHubPreview =
   | { status: "already_exists"; name: string }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
+  | { status: "tree_unavailable" }
   | {
       status: "ok";
       source: string;
@@ -3630,6 +3731,7 @@ export const previewGitHubSkill = action({
     v.object({ status: v.literal("already_exists"), name: v.string() }),
     v.object({ status: v.literal("no_repo") }),
     v.object({ status: v.literal("no_skill_md") }),
+    v.object({ status: v.literal("tree_unavailable") }),
     v.object({
       status: v.literal("ok"),
       source: v.string(),
@@ -3664,12 +3766,22 @@ export const previewGitHubSkill = action({
     }
 
     // If skills.sh does know the skill, the ordinary manual add is the right
-    // path — it yields a real install count and a normal lifecycle.
+    // path — it yields a real install count and a normal lifecycle. Non-404
+    // failures are wrapped in ConvexError so the prod toast is actionable
+    // instead of the redacted "Server Error".
     try {
       await withTransientRetry(() => v1GetSkillDetail(source, skillId));
       return { status: "on_skills_sh" };
     } catch (err) {
-      if (!(err instanceof SkillsApiNotFoundError)) throw err;
+      if (!(err instanceof SkillsApiNotFoundError)) {
+        throw err instanceof SkillsApiRateLimitError
+          ? new ConvexError(
+              "skills.sh is rate-limiting requests. Try again in a minute.",
+            )
+          : new ConvexError(
+              "skills.sh didn't answer (transient failure). Try again.",
+            );
+      }
     }
 
     const resolved = await resolveGitHubSkillMd(source, skillId);
@@ -3741,17 +3853,50 @@ export const addSkillFromGitHub = action({
       throw new ConvexError(`${precheck.name} is already in the catalog.`);
     }
 
-    // Re-resolve server-side rather than trusting anything the preview returned
-    // to the client.
+    // Re-verify the skills.sh 404 too — not just the repo. The preview checked
+    // it, but this action must not trust any preview verdict (it can be called
+    // directly, and the skill can appear on skills.sh between preview and
+    // confirm). Without this, a LISTED skill could be inserted as GitHub-only
+    // with installs 0 — and since reconcile skips GitHub-only rows, a skill
+    // absent from the leaderboard feed would then never recover its real count.
+    let listedOnSkillsSh = false;
+    try {
+      await withTransientRetry(() => v1GetSkillDetail(source, skillId));
+      listedOnSkillsSh = true;
+    } catch (err) {
+      // 404 confirmed: genuinely not on skills.sh — proceed.
+      if (!(err instanceof SkillsApiNotFoundError)) {
+        throw err instanceof SkillsApiRateLimitError
+          ? new ConvexError(
+              "skills.sh is rate-limiting requests. Try again in a minute.",
+            )
+          : err;
+      }
+    }
+    if (listedOnSkillsSh) {
+      throw new ConvexError(
+        `${source}/${skillId} IS listed on skills.sh — use the normal add instead.`,
+      );
+    }
+
+    // Re-resolve the repo server-side rather than trusting anything the
+    // preview returned to the client.
     const resolved = await resolveGitHubSkillMd(source, skillId);
     if (resolved.status === "no_repo") {
+      // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
+      // don't claim certainty.
       throw new ConvexError(
-        `No public GitHub repo at "${source}".`,
+        `Couldn't find a public GitHub repo at "${source}" (or GitHub rate-limited the lookup — try again in a minute).`,
+      );
+    }
+    if (resolved.status === "tree_unavailable") {
+      throw new ConvexError(
+        `Couldn't list the files in ${source} (repo too large or GitHub rate-limited). The conventional SKILL.md paths were probed directly with no match — try again shortly.`,
       );
     }
     if (resolved.status === "no_skill_md") {
       throw new ConvexError(
-        `No SKILL.md for "${skillId}" in ${source}. Checked every SKILL.md in the repo by folder name and frontmatter name.`,
+        `No SKILL.md for "${skillId}" in ${source} (matched by folder name and frontmatter name). Check the slug.`,
       );
     }
 
@@ -3769,6 +3914,12 @@ export const addSkillFromGitHub = action({
       ],
       leaderboard: GITHUB_ONLY_LEADERBOARD,
       isGitHubOnly: true,
+      // Don't own installs: for a FRESH row the insert path still seeds the 0
+      // above, but a RELIST (delisted row being re-claimed as GitHub-only) then
+      // keeps its last-known real install count instead of being zeroed, and no
+      // spurious 0-install snapshot is written into skillSnapshots (which would
+      // permanently dent the insights chart if the skill is later adopted).
+      ownsInstalls: false,
     });
 
     // Same post-add chain as addSkillManually: fill in SKILL.md within seconds

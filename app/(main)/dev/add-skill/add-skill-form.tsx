@@ -106,20 +106,27 @@ export function AddSkillForm() {
     setPending(true);
     setCandidate(null);
     try {
-      announce(await addSkill({ input: trimmed }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // Not on skills.sh at all. Rather than dead-ending, look for the skill in
-      // its GitHub repo and let the admin confirm what we found. Confirmation is
+      const result = await addSkill({ input: trimmed });
+      // Not on skills.sh at all — a TYPED status, not an error. (It must not be
+      // signaled by throwing: prod Convex redacts non-ConvexError messages to a
+      // generic "Server Error", so any message-sniffing branch would be dead in
+      // production.) Rather than dead-ending, look for the skill in its GitHub
+      // repo and let the admin confirm what we found. Confirmation is
       // deliberate: a mistyped slug should be visible before anything is written.
-      if (/skills\.sh API 404/i.test(message)) {
+      // Destructured so the narrowing survives into the else branch (status is
+      // a union-typed property, not a discriminant).
+      const { status } = result;
+      if (status === "not_on_skills_sh") {
         await offerGitHubFallback(trimmed);
       } else {
-        toast.error({
-          title: "Couldn't add skill",
-          description: friendlyError(message),
-        });
+        announce({ ...result, status });
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error({
+        title: "Couldn't add skill",
+        description: friendlyError(message),
+      });
     } finally {
       setPending(false);
     }
@@ -130,6 +137,13 @@ export function AddSkillForm() {
       const preview = await previewGitHub({ input: trimmed });
       if (preview.status === "ok") {
         setCandidate({ input: trimmed, ...preview });
+        // The confirmation card mounts silently below the form; without this,
+        // a keyboard/screen-reader user hears "Adding…" end and gets no signal
+        // that a confirmation step now exists further down the page.
+        toast.info({
+          title: "Not on skills.sh",
+          description: `Found ${preview.path} on GitHub — review and confirm below.`,
+        });
         return;
       }
       toast.error({
@@ -175,7 +189,15 @@ export function AddSkillForm() {
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Retyping a different skill while the confirmation card is up
+                // would otherwise leave a stale card whose Confirm adds the OLD
+                // input — the exact mis-add the confirm step exists to prevent.
+                if (candidate && e.target.value.trim() !== candidate.input) {
+                  setCandidate(null);
+                }
+              }}
               disabled={pending}
               autoFocus
             />
@@ -289,7 +311,13 @@ function skillDetailHref(source: string, skillId: string): string {
 
 // Why the GitHub fallback couldn't offer anything, in terms the admin can act on.
 function previewError(
-  status: "not_github" | "on_skills_sh" | "already_exists" | "no_repo" | "no_skill_md",
+  status:
+    | "not_github"
+    | "on_skills_sh"
+    | "already_exists"
+    | "no_repo"
+    | "no_skill_md"
+    | "tree_unavailable",
 ): string {
   switch (status) {
     case "not_github":
@@ -299,9 +327,11 @@ function previewError(
     case "already_exists":
       return "This skill is already in the catalog.";
     case "no_repo":
-      return "No public GitHub repo at that owner/repo.";
+      return "Couldn't find a public GitHub repo at that owner/repo (or GitHub rate-limited the lookup — try again in a minute).";
     case "no_skill_md":
-      return "No matching SKILL.md in that repo. Checked every SKILL.md by folder name and frontmatter name — check the slug.";
+      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name) — check the slug.";
+    case "tree_unavailable":
+      return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
   }
 }
 
@@ -315,9 +345,6 @@ function friendlyError(raw: string): string {
   }
   if (/looks like a domain/i.test(cleaned)) {
     return cleaned;
-  }
-  if (/skills\.sh API 404/i.test(cleaned)) {
-    return "Skill not found on skills.sh.";
   }
   if (/not authorized/i.test(cleaned) || /not authenticated/i.test(cleaned)) {
     return "You don't have permission to add skills.";
