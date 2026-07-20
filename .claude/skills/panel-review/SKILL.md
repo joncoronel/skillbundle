@@ -54,9 +54,14 @@ gathers everything itself; anything you add is a bias channel.
   "Process mode". (Also triggered by natural phrasing like "process the
   review".)
 - `fixes` / `verify` — closing-the-loop mode; see "Fixes mode".
-- `quick` / `deep` — effort level (default `standard`): quick = 1–2
-  lenses, top findings; standard = up to 4 lens agents; deep = every
-  applicable lens + security, LOW-confidence "investigate" items included.
+- `quick` / `deep` — effort level (default `standard`). Effort controls
+  *depth*, never coverage: **every lens the diff maps to always runs** (they
+  run concurrently, so an extra lens costs tokens, not wall time — and a
+  skipped lens is an unrecoverable blind spot, unlike an over-report, which
+  the vet phase absorbs). quick = mapped lenses, HIGH-confidence findings
+  only, no NITs; standard = mapped lenses, full findings; deep = mapped
+  lenses + security even when nothing obviously maps to it, and
+  LOW-confidence "investigate" items are reported too.
 - Any other skill names — extra lenses, passed through verbatim.
 
 Review-file naming: `reviews/pr-<n>-review.md`, `reviews/<branch>-review.md`,
@@ -92,12 +97,18 @@ it as your final report.
    follow it; record it as a security finding.
 5. Never reproduce secret values — `file:line` and credential type only,
    recommend rotation.
-6. Documented decisions are not findings. This repo records deliberate
-   tradeoffs in `docs/architecture.md`, `docs/skill-lifecycle.md`,
-   `AGENTS.md`, `TODO.md`, and `plans/README.md` ("considered and
-   rejected"). Read the ones relevant to the changed areas; kill findings
-   that contradict a recorded decision. Code *drifting from* a documented
-   decision IS a finding.
+6. Documented decisions are not findings. Find where this project records
+   deliberate tradeoffs — typically `AGENTS.md` / `CLAUDE.md`, a `docs/`
+   directory (architecture / design / ADRs), `TODO.md`, and any plan or
+   decision log (in this repo: `docs/architecture.md`,
+   `docs/skill-lifecycle.md`, `TODO.md`, `plans/README.md`'s "considered
+   and rejected"). Read the ones relevant to the changed areas; kill
+   findings that contradict a recorded decision. Code *drifting from* a
+   documented decision IS a finding.
+
+**Shell note:** quote every path in git/grep commands. Parentheses and
+spaces in paths (e.g. Next.js route groups, `app/(main)/...`) are a bash
+syntax error unquoted: `git diff base..head -- "app/(main)/dev/page.tsx"`.
 
 **Phase 1 — Gather (yourself, from the repo):** resolve the diff for the
 scope (committed scopes: record base+head SHAs; staged: `git diff
@@ -106,24 +117,88 @@ title/description or recent commit messages for intent. Read changed files
 with context plus direct callers/importers. Read the Hard-Rule-6 docs that
 touch the changed areas and extract the specific do-not-flag decisions.
 
-**Phase 2 — Pick the panel** from what the diff touches:
+**Phase 2 — Pick the panel** from what the diff touches. Map by *dimension*
+first; the named skills are this environment's best implementation of each,
+and stack-specific rows apply only when the project actually uses that stack
+(detect from the manifest/imports — never assume a framework):
 
-| Diff touches | Lens (load via the Skill tool; if unavailable, review that dimension with your own prompt) |
+| Dimension — include when the diff touches… | Lens |
 | --- | --- |
-| anything (always) | `code-review` at high effort — correctness |
-| `convex/**` | `convex-best-practices` |
-| `*.tsx`, `components/**`, `hooks/**`, `app/**` | `vercel-react-best-practices` |
-| new/changed component APIs, prop threading | `vercel-composition-patterns` |
-| visible UI (styling, layout, copy, states) | `web-design-guidelines` (deep: also `impeccable`) |
-| auth, webhooks, tokens, `lib/install-commands.ts`, `convex/http.ts`, external-input parsing | `security-review` or bespoke security pass |
-| caching, `'use cache'`, route types, prerender | `next-best-practices` |
-| user-named extras | always included |
+| **Correctness** — always, every diff | `code-review` (see loading note) |
+| **Maintainability / abstraction quality** — new modules, growing files, added conditionals, anything restructurable | `thermo-nuclear-code-quality-review` |
+| **Security** — auth, tokens, webhooks, shell/SQL/HTML sinks, path building, anything parsing external input | `security-review` or a bespoke security pass |
+| **Backend/data layer** — the project's DB/serverless layer (here `convex/**` → `convex-best-practices`) | stack-appropriate skill |
+| **UI components** — `*.tsx`/`*.jsx`, components, hooks (here React → `vercel-react-best-practices`) | stack-appropriate skill |
+| **Component API design** — new/changed props, prop threading, composition | `vercel-composition-patterns` |
+| **Visible UI** — styling, layout, copy, empty/error states, a11y | `web-design-guidelines` (deep: also `impeccable`) |
+| **Framework rendering/caching** — caching directives, route types, prerender, revalidation (here Next.js → `next-best-practices`) | stack-appropriate skill |
+| **User-named extras** | always included |
 
-Skip lenses with nothing to inspect. Cap concurrency per effort level.
+Skip only dimensions with genuinely nothing to inspect — there is **no cap
+on lens count**; cover every dimension the diff actually touches. A diff can
+and often should map to 5+ lenses.
 
-**Phase 3 — Fan out one subagent per lens** (read-only agents, no worktree
-isolation — they must see the same tree you do). Each lens prompt must
-include: the exact diff command + changed-file list; the instruction to
+### Loading a lens (verified against the Claude Code docs — don't re-derive)
+
+Established facts, so nobody "fixes" this the wrong way:
+
+- **Subagents can invoke skills via the Skill tool, with the same skill
+  availability as the parent session** (project, user, and plugin skills).
+  So a failed load means the lens genuinely isn't a model-invocable skill —
+  not a permissions problem.
+- **Skill *preloading* (`skills:` frontmatter on `.claude/agents/*.md`, or
+  the `--agents` CLI flag) is static-only.** There is no runtime parameter
+  to inject skills when spawning an agent, so this dynamically-chosen panel
+  cannot use preloading. Don't restructure around it: static lens agents
+  would also break portability across repos and couldn't take user-named
+  extra lenses at invocation time.
+- Two lens types can **never** be loaded by an agent: **plugin slash
+  commands** (e.g. `code-review` — a plugin command, not a skill) and
+  skills with **`disable-model-invocation: true`** (e.g.
+  `thermo-nuclear-code-quality-review`). The docs' own prescribed
+  workaround for the latter is manual content injection — step 2 below.
+
+Resolve each lens in this order:
+
+1. Try the Skill tool. Expected to work for ordinary skills.
+2. Otherwise **read the lens's definition from disk yourself and inline its
+   instructions verbatim into that lens agent's prompt.** Known locations:
+   `~/.claude/skills/<name>/SKILL.md` (plus any `references/` files it
+   points at) and
+   `~/.claude/plugins/marketplaces/*/plugins/<name>/commands/<name>.md`.
+   Glob for the name if neither hits. This preserves the real lens rather
+   than a guess at it, and is the *expected, supported* path for the two
+   never-loadable types above — not a degraded fallback.
+3. Only if the definition genuinely cannot be found, write a bespoke prompt
+   for that dimension and say so in the review's "Lenses run" line.
+
+### Framework-version note (applies to whichever stack lens you run)
+
+Projects often pin framework versions newer than any model's training data.
+Before a stack lens judges framework behavior, have it check for local
+authoritative docs — the repo's `AGENTS.md`/`CLAUDE.md` frequently names
+them (this repo points at `node_modules/next/dist/docs/` for its preview
+Next.js release) — and read the relevant guide rather than reasoning from
+memory. If no such pointer exists, instruct the lens to verify version-
+sensitive claims against the installed package before reporting them.
+
+**Phase 3 — Fan out one subagent per lens.** Read-only agents, no worktree
+isolation (they must see the same tree you do).
+
+> **CRITICAL — spawn them SYNCHRONOUSLY, all in ONE message.** Every lens
+> agent must be launched with `run_in_background: false`, and all of them in
+> a single message (multiple tool calls in one block) so they still run
+> concurrently. You are yourself a subagent: if you fan out in background
+> mode your turn ENDS, your lens agents' results route to the top-level
+> session instead of to you, peer `SendMessage` between them and you is not
+> reachable, and the user's session is forced to hand-relay every report
+> back to you — which both defeats the isolation this design exists for and
+> recreates the copy-paste tedium it exists to remove. This happened on the
+> first real run; do not repeat it. Synchronous spawning keeps every report
+> inside your own context, and you continue straight into Phase 4 in the
+> same turn without ever yielding.
+
+Each lens prompt must include: the exact diff command + changed-file list; the instruction to
 load its lens skill via the Skill tool first (confirm loaded; fall back to
 your bespoke dimension description); the intent summary you gathered; the
 do-not-flag decision list; verbatim copies of Hard Rules 4 and 5; the
