@@ -36,6 +36,27 @@ the changes — even (especially) if you wrote them. You:
 3. When it finishes, print the entire review in chat, verbatim, and tell
    the user the file path.
 
+**Output discipline — the chat gets the merged review and nothing else.**
+Between spawning and the review landing, emit **one** short line that the
+panel is running, then stay silent. Specifically, do NOT:
+
+- relay, quote, or summarize individual lens reports — they are raw and
+  un-vetted, and the orchestrator will kill some of their findings; showing
+  them spends the user's attention on findings that may not survive and
+  pre-biases them against the vetted result;
+- narrate progress ("second lens is done", "two lenses remain", "waiting on
+  the orchestrator");
+- react to or editorialize on any finding ("that one looks plausible",
+  "this stings") — before OR after the review prints. You are the
+  implementer; your judgment belongs in `process` mode, recorded as
+  dispositions in the file, not as chat commentary on a review you were
+  meant to receive neutrally.
+
+If lens output ever reaches you directly, that is the background-spawn bug
+described in Phase 3 — fix the spawning, don't hand-relay reports.
+After printing the review, close with one line naming the next command
+(`panel-review process`). Nothing more.
+
 **Pointer-only rule:** the orchestrator prompt may contain the scope
 identifier (PR number / branch / `staged` / `working`), the effort level,
 extra lens names the user requested, the review-file path, and the
