@@ -18,19 +18,41 @@ import {
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 
 type AddResult = {
-  status: "inserted" | "relisted" | "already_exists";
+  status: "inserted" | "relisted" | "already_exists" | "adopted";
   source: string;
   skillId: string;
   name: string;
 };
 
+// A resolved GitHub-only candidate awaiting the admin's confirmation. `input` is
+// carried alongside so the confirm call re-sends exactly what produced this
+// preview (the action re-resolves server-side rather than trusting these fields).
+type GitHubCandidate = {
+  input: string;
+  source: string;
+  skillId: string;
+  path: string;
+  name: string;
+  description?: string;
+};
+
+// One async flow is in flight at a time; the phase names it honestly so the
+// button can say what is actually happening ("Checking GitHub…" during the
+// preview, not a misleading "Adding…"). Every await site sets its own phase.
+type Phase = "idle" | "adding" | "previewing" | "confirming";
+
 export function AddSkillForm() {
   const { data: admin } = useQuery(convexQuery(api.devStats.isAdmin, {}));
   const addSkill = useAction(api.skills.addSkillManually);
+  const previewGitHub = useAction(api.githubOnly.previewGitHubSkill);
+  const addFromGitHub = useAction(api.githubOnly.addSkillFromGitHub);
 
   const [input, setInput] = useState("");
-  const [pending, setPending] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
   const [lastAdded, setLastAdded] = useState<AddResult | null>(null);
+  const [candidate, setCandidate] = useState<GitHubCandidate | null>(null);
+
+  const pending = phase !== "idle";
 
   if (admin === false) {
     return (
@@ -38,6 +60,38 @@ export function AddSkillForm() {
         You don&apos;t have access to this page.
       </p>
     );
+  }
+
+  function announce(result: AddResult) {
+    setLastAdded(result);
+    setInput("");
+    setCandidate(null);
+    switch (result.status) {
+      case "inserted":
+        toast.success({
+          title: "Skill added",
+          description: `${result.name} is now in the catalog. SKILL.md will fill in shortly.`,
+        });
+        break;
+      case "relisted":
+        toast.success({
+          title: "Skill relisted",
+          description: `${result.name} was previously delisted and is now active again.`,
+        });
+        break;
+      case "adopted":
+        toast.success({
+          title: "Skill adopted",
+          description: `${result.name} is now listed on skills.sh — upgraded from GitHub-only to a normal catalog entry with its real install count.`,
+        });
+        break;
+      case "already_exists":
+        toast.info({
+          title: "Already in catalog",
+          description: `${result.name} is already listed. No changes made.`,
+        });
+        break;
+    }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -62,37 +116,78 @@ export function AddSkillForm() {
       return;
     }
 
-    setPending(true);
+    setPhase("adding");
+    setCandidate(null);
     try {
       const result = await addSkill({ input: trimmed });
-      setLastAdded(result);
-      setInput("");
-      switch (result.status) {
-        case "inserted":
-          toast.success({
-            title: "Skill added",
-            description: `${result.name} is now in the catalog. SKILL.md will fill in shortly.`,
-          });
-          break;
-        case "relisted":
-          toast.success({
-            title: "Skill relisted",
-            description: `${result.name} was previously delisted and is now active again.`,
-          });
-          break;
-        case "already_exists":
-          toast.info({
-            title: "Already in catalog",
-            description: `${result.name} is already listed. No changes made.`,
-          });
-          break;
+      // Not on skills.sh at all — a TYPED status, not an error. (It must not be
+      // signaled by throwing: prod Convex redacts non-ConvexError messages to a
+      // generic "Server Error", so any message-sniffing branch would be dead in
+      // production.) Rather than dead-ending, look for the skill in its GitHub
+      // repo and let the admin confirm what we found. Confirmation is
+      // deliberate: a mistyped slug should be visible before anything is written.
+      // Destructured so the narrowing survives into the else branch (status is
+      // a union-typed property, not a discriminant).
+      const { status } = result;
+      if (status === "not_on_skills_sh") {
+        setPhase("previewing");
+        await offerGitHubFallback(trimmed);
+      } else {
+        announce({ ...result, status });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const friendly = friendlyError(message);
-      toast.error({ title: "Couldn't add skill", description: friendly });
+      toast.error({
+        title: "Couldn't add skill",
+        description: friendlyError(message),
+      });
     } finally {
-      setPending(false);
+      setPhase("idle");
+    }
+  }
+
+  async function offerGitHubFallback(trimmed: string) {
+    try {
+      const preview = await previewGitHub({ input: trimmed });
+      if (preview.status === "ok") {
+        setCandidate({ input: trimmed, ...preview });
+        // The confirmation card mounts silently below the form; without this,
+        // a keyboard/screen-reader user hears the pending label end and gets
+        // no signal that a confirmation step now exists further down the page.
+        toast.info({
+          title: "Not on skills.sh",
+          description: `Found ${preview.path} on GitHub — review and confirm below.`,
+        });
+        return;
+      }
+      toast.error({
+        title: "Not on skills.sh",
+        description: previewError(preview.status),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error({
+        title: "Couldn't check GitHub",
+        description: friendlyError(message),
+      });
+    }
+  }
+
+  async function handleConfirmGitHub() {
+    if (!candidate || pending) return;
+    setPhase("confirming");
+    try {
+      // The action's status ("inserted" | "relisted") is a subset of AddResult's
+      // — pass it through rather than assuming, so a relist reports as one.
+      announce(await addFromGitHub({ input: candidate.input }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error({
+        title: "Couldn't add skill",
+        description: friendlyError(message),
+      });
+    } finally {
+      setPhase("idle");
     }
   }
 
@@ -108,58 +203,145 @@ export function AddSkillForm() {
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setInput(value);
+                // Retyping a different skill while the confirmation card is up
+                // would otherwise leave a stale card whose Confirm adds the OLD
+                // input — the exact mis-add the confirm step exists to prevent.
+                // Functional form: no stale closure over `candidate`.
+                setCandidate((prev) =>
+                  prev && value.trim() !== prev.input ? null : prev,
+                );
+              }}
               disabled={pending}
               autoFocus
             />
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
-                Paste a skills.sh URL or the <code>source/slug</code> form. The
-                skill must already exist on skills.sh.
+                Paste a skills.sh URL, a GitHub link to the skill&apos;s
+                folder, or the <code>source/slug</code> form. If the skill
+                isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
+                repo instead.
               </p>
               <Button type="submit" disabled={!input.trim() || pending}>
-                {pending ? "Adding…" : "Add to catalog"}
+                {phase === "adding"
+                  ? "Adding…"
+                  : phase === "previewing"
+                    ? "Checking GitHub…"
+                    : "Add to catalog"}
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
 
-      {lastAdded && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Last added</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Status</dt>
-              <dd className="font-medium">{lastAdded.status}</dd>
-              <dt className="text-muted-foreground">Name</dt>
-              <dd className="font-medium">{lastAdded.name}</dd>
-              <dt className="text-muted-foreground">Source</dt>
-              <dd className="font-mono text-xs">{lastAdded.source}</dd>
-              <dt className="text-muted-foreground">Slug</dt>
-              <dd className="font-mono text-xs">{lastAdded.skillId}</dd>
-            </dl>
-            <div className="mt-4">
-              <Button
-                nativeButton={false}
-                variant="outline"
-                size="sm"
-                render={
-                  <Link
-                    href={skillDetailHref(lastAdded.source, lastAdded.skillId)}
-                    target="_blank"
-                  />
-                }
-              >
-                Open on SkillBundle
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {candidate && (
+        <GitHubCandidateCard
+          candidate={candidate}
+          confirming={phase === "confirming"}
+          disabled={pending}
+          onConfirm={handleConfirmGitHub}
+          onCancel={() => setCandidate(null)}
+        />
       )}
+
+      {lastAdded && <LastAddedCard result={lastAdded} />}
     </div>
+  );
+}
+
+function GitHubCandidateCard({
+  candidate,
+  confirming,
+  disabled,
+  onConfirm,
+  onCancel,
+}: {
+  candidate: GitHubCandidate;
+  confirming: boolean;
+  disabled: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Not on skills.sh — add from GitHub?</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">
+          skills.sh has no listing for this skill, but a SKILL.md was found in
+          the repo. Check that this is the right file before adding.
+        </p>
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-muted-foreground">Name</dt>
+          <dd className="font-medium">{candidate.name}</dd>
+          <dt className="text-muted-foreground">Repo</dt>
+          <dd className="font-mono text-xs">{candidate.source}</dd>
+          <dt className="text-muted-foreground">Slug</dt>
+          <dd className="font-mono text-xs">{candidate.skillId}</dd>
+          <dt className="text-muted-foreground">File</dt>
+          <dd className="font-mono text-xs">{candidate.path}</dd>
+          {candidate.description && (
+            <>
+              <dt className="text-muted-foreground">Description</dt>
+              <dd>{candidate.description}</dd>
+            </>
+          )}
+        </dl>
+        <p className="mt-4 text-xs text-muted-foreground">
+          It will show 0 installs and no security audit until it appears on
+          skills.sh — at which point the daily sync adopts it automatically, or
+          re-running the normal add adopts it on the spot.
+        </p>
+        <div className="mt-4 flex items-center gap-3">
+          <Button onClick={onConfirm} disabled={disabled}>
+            {confirming ? "Adding…" : "Add as GitHub-only"}
+          </Button>
+          <Button variant="outline" onClick={onCancel} disabled={disabled}>
+            Cancel
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LastAddedCard({ result }: { result: AddResult }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Last added</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-muted-foreground">Status</dt>
+          <dd className="font-medium">{result.status}</dd>
+          <dt className="text-muted-foreground">Name</dt>
+          <dd className="font-medium">{result.name}</dd>
+          <dt className="text-muted-foreground">Source</dt>
+          <dd className="font-mono text-xs">{result.source}</dd>
+          <dt className="text-muted-foreground">Slug</dt>
+          <dd className="font-mono text-xs">{result.skillId}</dd>
+        </dl>
+        <div className="mt-4">
+          <Button
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+            render={
+              <Link
+                href={skillDetailHref(result.source, result.skillId)}
+                target="_blank"
+              />
+            }
+          >
+            Open on SkillBundle
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -173,19 +355,42 @@ function skillDetailHref(source: string, skillId: string): string {
     : `/site/${source}/${skillId}`;
 }
 
+// Why the GitHub fallback couldn't offer anything, in terms the admin can act on.
+function previewError(
+  status:
+    | "not_github"
+    | "on_skills_sh"
+    | "already_exists"
+    | "no_repo"
+    | "no_skill_md"
+    | "tree_unavailable",
+): string {
+  switch (status) {
+    case "not_github":
+      return "Only GitHub repos can be added without a skills.sh listing.";
+    case "on_skills_sh":
+      return "skills.sh does list this skill — retry the normal add.";
+    case "already_exists":
+      return "This skill is already in the catalog.";
+    case "no_repo":
+      return "Couldn't find a public GitHub repo at that owner/repo (or GitHub rate-limited the lookup — try again in a minute).";
+    case "no_skill_md":
+      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name) — check the slug.";
+    case "tree_unavailable":
+      return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
+  }
+}
+
 // Convert raw error strings from the Convex action into something the admin
 // can actually act on. Avoids surfacing internal stack-trace prefixes
 // (e.g. "[Request ID: ...]") in toasts.
 function friendlyError(raw: string): string {
   const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
   if (/URL must be from skills\.sh/i.test(cleaned)) {
-    return "That URL isn't from skills.sh. Paste a skills.sh URL or a source/slug.";
+    return "That URL isn't from skills.sh or GitHub. Paste one of those, or a source/slug.";
   }
   if (/looks like a domain/i.test(cleaned)) {
     return cleaned;
-  }
-  if (/skills\.sh API 404/i.test(cleaned)) {
-    return "Skill not found on skills.sh. Manual adds must already be listed there.";
   }
   if (/not authorized/i.test(cleaned) || /not authenticated/i.test(cleaned)) {
     return "You don't have permission to add skills.";

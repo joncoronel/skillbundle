@@ -91,6 +91,7 @@ type UnseenSummary = {
   hasSkillMdUrl: boolean;
   discoveryFailCount: number;
   repoLiveName?: string;
+  isGitHubOnly: boolean;
 };
 
 export const listUnseenSummaries = internalQuery({
@@ -120,6 +121,7 @@ export const listUnseenSummaries = internalQuery({
       // this row is a dead renamed alias (the detail endpoint serves a stale
       // inflated count for those, so reconcile must not refresh from it).
       repoLiveName: s.repoLiveName,
+      isGitHubOnly: s.isGitHubOnly ?? false,
     }));
 
     return {
@@ -185,16 +187,32 @@ export const reconcileUnseenSkills = internalAction({
     // detail endpoint serves a stale, inflated count for a renamed repo's old
     // name — refreshing from it would re-introduce the qu-skills-style inflation.
     // They're duplicates of the live repo anyway; if off-board they delist.
+    // GitHub-only rows are excluded for the same reason as dead aliases: the
+    // detail endpoint can only 404 for them (skills.sh has never heard of the
+    // skill), so a call would be pure waste — and worse, a "gone" row is never
+    // stamped, so it would sit at the head of this oldest-first scan forever,
+    // exactly the starvation hazard described below. Their liveness comes from
+    // the content pipeline's GitHub heartbeat instead (see schema.ts).
     const healthyRows = stale.filter(
-      (s) => isRefreshHealthy(s) && !isDeadRenamedAlias(s),
+      (s) => isRefreshHealthy(s) && !isDeadRenamedAlias(s) && !s.isGitHubOnly,
     );
-    const broke = stale.length - healthyRows.length;
+    // GitHub-only rows get their own bucket so they don't inflate `broke` —
+    // that count feeds the "would delist" dry-run label and, together with
+    // deadButInstallable, is the tripwire for the deferred Fix-2 decision
+    // (docs/skill-lifecycle.md). A GitHub-only row sitting stale between
+    // ~7-day heartbeats is healthy by design, not "broke".
+    const githubOnlySkipped = stale.filter((s) => s.isGitHubOnly).length;
+    const broke = stale.length - healthyRows.length - githubOnlySkipped;
 
     // 2. Safety gate: an implausibly large stale set means syncSkills broke —
     // bail rather than mass-hit the detail endpoint papering over it.
-    if (stale.length > MAX_RECONCILE) {
+    // GitHub-only rows are excluded from the gate's count: they're
+    // stale-by-design ~6 of every 7 days (heartbeat cadence), so a bulk
+    // GitHub-only import could otherwise push a perfectly healthy day over
+    // the cap and freeze ordinary rows toward wrongful delist.
+    if (stale.length - githubOnlySkipped > MAX_RECONCILE) {
       console.error(
-        `reconcileUnseenSkills: ${stale.length} stale rows exceed cap ${MAX_RECONCILE} — syncSkills likely failed. Bailing without writes.`,
+        `reconcileUnseenSkills: ${stale.length - githubOnlySkipped} stale rows (${stale.length} incl. ${githubOnlySkipped} github-only, which don't count toward the cap) exceed cap ${MAX_RECONCILE} — syncSkills likely failed. Bailing without writes.`,
       );
       // Not on a dry run — a diagnostic pass must never schedule real work.
       if (!dryRun) await chainTypesenseSync(ctx);
@@ -214,7 +232,7 @@ export const reconcileUnseenSkills = internalAction({
     // vs broke is derived purely from our DB fields, so this is instant.
     if (dryRun) {
       console.log(
-        `reconcileUnseenSkills DRY RUN: ${stale.length} stale -> ${healthyRows.length} healthy (would refresh), ${broke} broke (would delist)`,
+        `reconcileUnseenSkills DRY RUN: ${stale.length} stale -> ${healthyRows.length} healthy (would refresh), ${broke} broke (would delist), ${githubOnlySkipped} github-only (skipped by design)`,
       );
       for (const s of healthyRows.slice(0, 40)) {
         console.log(`  refresh: ${s.source}/${s.skillId}`);
@@ -311,7 +329,7 @@ export const reconcileUnseenSkills = internalAction({
     }
 
     console.log(
-      `reconcileUnseenSkills: ${stale.length} stale, ${healthyRows.length} healthy; refreshed ${refreshed}, gone ${gone}, broke(skipped) ${broke}${rescheduled ? "; rescheduled for remainder" : ""}`,
+      `reconcileUnseenSkills: ${stale.length} stale, ${healthyRows.length} healthy; refreshed ${refreshed}, gone ${gone}, broke(skipped) ${broke}, github-only(skipped) ${githubOnlySkipped}${rescheduled ? "; rescheduled for remainder" : ""}`,
     );
     if (gone >= RECONCILE_GONE_WARN) {
       console.warn(

@@ -6,6 +6,86 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Add-skill: repo-root URL should offer a skill picker
+
+`/dev/add-skill` accepts GitHub deep links (tree/blob/raw, slug derived from
+the URL tail — `lib/parse-skill-input.ts`), but a bare repo URL
+(`github.com/owner/repo`) has no slug to derive and errors with guidance.
+The nicer flow: recognize the repo-root case, list every SKILL.md the repo
+contains (the `githubOnly.ts` resolver already walks the tree and collects
+candidates), and let the admin pick one. Real feature, not a parse fix —
+needs a picker UI state in the form and a "list skills in repo" action.
+Admin-only surface, so build it when the guidance error actually annoys.
+
+### Tighten SKILL.md slug matching to whole-word prefixes
+
+`lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the
+frontmatter-name-to-slug rule used by both discovery (`skills.ts`) and the
+GitHub-only resolver (`githubOnly.ts`). The rule is deliberately loose: bare
+`kebab.startsWith(skillId)` has no word boundary, so slug `test` matches a file
+named "Testing Library Helper" (`testing-library-helper`). The tightening is
+`kebab === skillId || kebab.startsWith(skillId + "-")` — whole-word prefix only.
+
+Deferred from the GitHub-only PR (Jul 2026) because it changes matching
+behavior for the entire existing catalog's discovery pipeline, not just the new
+feature — it needs its own change with a look at whether any currently-matched
+skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
+tighten one caller without the others (that's the drift the shared matcher
+exists to prevent).
+
+### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
+
+`loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`
+all tag their cache entries with one fixed string, `SKILL_SYNC_TAG = "skill-sync"`.
+Each skill gets its own cache entry (keyed by `source` + `skillId`), but every entry
+carries the *same* tag, so `revalidateHomeTag("skill-sync")` invalidates the entire
+catalog at once. There is no way to refresh a single skill.
+
+Fine today: invalidation only *marks* entries stale, so a page rebuilds only when
+someone actually visits it. Cost is bounded by traffic, not by the ~9.5k catalog.
+The tag is also only pinged a few times a day (syncSkills 06:00, reconcile 07:00,
+and now the content-chain terminal, see below).
+
+Idea: make the tag dynamic, `cacheTag("skill:" + source + "/" + skillId)`, and have
+the content-fetch step ping only the skills it actually touched. This is also the
+prerequisite for making the terminal ping fire "only when content changed" in any
+meaningful way, since a targeted check buys nothing while the tag nukes everything.
+
+Why deferred: the staggered per-skill `fetchSkillContent` calls are independent
+scheduled actions with no shared state, so there is nowhere to collect "which skills
+changed this run" without adding a counter table or similar; `/api/revalidate` would
+also need to accept a batch of tags. Not worth it until cache churn shows up as real
+Vercel function load (relevant on Hobby, so worth watching rather than ignoring).
+
+Context: this came out of fixing the content-publish ordering (Jul 2026). The content
+pipeline previously never pinged the tag itself; publishing relied on `reconcile`'s
+07:00 ping, which is gated on `refreshed > 0` and fires at a fixed hour rather than
+when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
+`internal.skills.revalidateSkillSyncTag` at their terminals.
+
+### Skills that are not on skills.sh at all ("GitHub-only")
+
+Shipped (Jul 2026). `/dev/add-skill` now falls back to the GitHub repo when the
+skills.sh detail endpoint 404s: `previewGitHubSkill` resolves the SKILL.md and shows
+the admin the file path + parsed name to confirm, then `addSkillFromGitHub` inserts
+with `installs: 0` and `isGitHubOnly: true`. Full design in
+[docs/skill-lifecycle.md](docs/skill-lifecycle.md) ("GitHub-only skills").
+
+Rather than exempting these rows from the 30-day delist, the content pipeline stamps
+`lastSeenInApi` on every successful SKILL.md fetch (the "GitHub heartbeat"), so a row
+lives exactly as long as GitHub serves the file and a dead repo still cleans itself up
+on the normal track. Reconcile skips them (detail can only 404). Adoption needs no
+special-casing beyond clearing the marker: matching is on `(source, skillId)`, so
+`syncSkills` takes over installs and snapshots the moment the skill appears upstream.
+
+Known cost, accepted: audits stay `"unknown"` for these rows because the audit
+endpoint 404s. Revisit only if GitHub-only skills become common enough that the
+missing security signal matters.
+
+Deferred follow-up: nothing surfaces `isGitHubOnly` in the UI. A quiet marker on the
+skill page (explaining why installs read 0 and the audit is unknown) would be honest,
+but it's only worth building once more than a couple of these exist.
+
 ### Sign-in second factor: email code only (future: real MFA)
 
 Shipped (Jul 2026): sign-in handles Clerk's Client Trust email-code step

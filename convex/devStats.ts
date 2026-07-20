@@ -170,13 +170,25 @@ export const recalculateStatsBatch = internalMutation({
       if (s.needsDiscovery) pendingDiscovery++;
       if (s.hasSkillMdUrl === false) {
         noSkillMdUrl++;
-        if ((s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES)
+        // GitHub-only rows are exempt from the failure cap (they keep
+        // retrying on the rediscovery cadence — see markStaleContentBatch),
+        // so a high fail count doesn't mean "gave up" for them.
+        if (
+          (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES &&
+          !s.isGitHubOnly
+        )
           noUrlExhausted++;
       }
       if (s.isDelisted) delisted++;
       else if (
         s.lastSeenInApi < deadCutoff &&
         !isDeadRenamedAlias(s) &&
+        // GitHub-only rows are excluded: their heartbeat cadence (~7 days, the
+        // markStaleContent window) straddles this 7-day cutoff, so healthy
+        // rows would flap in and out of the metric and erode the Fix-2
+        // tripwire signal. They were never "dropped from skills.sh" — skills.sh
+        // never had them.
+        !s.isGitHubOnly &&
         summaryRefreshHealthy(s)
       ) {
         deadButInstallable++;
@@ -310,6 +322,9 @@ export const countDeadButInstallable = internalQuery({
     let healthy = 0;
     let healthyNonAlias = 0;
     for (const s of stale) {
+      // Same GitHub-only exclusion as the daily recalc above: not a
+      // dead-but-installable candidate, just a heartbeat-cadence row.
+      if (s.isGitHubOnly) continue;
       if (!summaryRefreshHealthy(s)) continue;
       healthy++;
       if (!isDeadRenamedAlias(s)) healthyNonAlias++;
@@ -404,7 +419,10 @@ export const listSkillsWithErrors = query({
           .filter(
             (s) =>
               s.skillDocId &&
-              (s.discoveryFailCount ?? 0) < MAX_DISCOVERY_FAILURES,
+              // GitHub-only rows always count as retrying: they're exempt
+              // from the failure cap (markStaleContentBatch).
+              ((s.discoveryFailCount ?? 0) < MAX_DISCOVERY_FAILURES ||
+                s.isGitHubOnly),
           )
           .map(mapSummary);
         break;
@@ -418,7 +436,10 @@ export const listSkillsWithErrors = query({
               .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
           )
           .take(LIST_CAP);
-        skills = results.filter((s) => s.skillDocId).map(mapSummary);
+        // Cap-exempt GitHub-only rows aren't exhausted — they retry weekly.
+        skills = results
+          .filter((s) => s.skillDocId && !s.isGitHubOnly)
+          .map(mapSummary);
         break;
       }
       case "delisted": {
@@ -537,14 +558,18 @@ export const retryBatch = internalMutation({
       }
     } else if (filter === "noUrlExhausted") {
       // Reset skills that have given up on discovery (failCount >= MAX_DISCOVERY_FAILURES)
-      const exhausted = await ctx.db
-        .query("skillSummaries")
-        .withIndex("by_hasSkillMdUrl_discoveryFailCount", (q) =>
-          q
-            .eq("hasSkillMdUrl", false)
-            .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
-        )
-        .take(200);
+      const exhausted = (
+        await ctx.db
+          .query("skillSummaries")
+          .withIndex("by_hasSkillMdUrl_discoveryFailCount", (q) =>
+            q
+              .eq("hasSkillMdUrl", false)
+              .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
+          )
+          .take(200)
+      // GitHub-only rows aren't stuck (cap-exempt, still retrying) — nothing
+      // to reset, and resetting would just add churn.
+      ).filter((s) => !s.isGitHubOnly);
 
       for (const summary of exhausted) {
         if (summary.skillDocId) {

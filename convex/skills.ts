@@ -22,6 +22,7 @@ import {
   SkillsApiNotFoundError,
   SkillsApiRateLimitError,
   withTransientRetry,
+  type V1SkillDetail,
 } from "./lib/skillsApi";
 import {
   resolveDefaultBranch,
@@ -31,6 +32,7 @@ import {
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
+import { kebabCase, matchesSkillId } from "./lib/skillMatch";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 
@@ -150,6 +152,46 @@ export const syncSkills = internalAction({
   },
 });
 
+/**
+ * GitHub heartbeat patch fragment — see the isGitHubOnly note in schema.ts.
+ * No skills.sh feed will ever stamp a GitHub-only row, so a successful raw
+ * SKILL.md fetch is what keeps it out of the 30-day delist; every content-
+ * pipeline success terminal spreads this into BOTH the skills-row and summary
+ * patches (lockstep matters: backfillSkillSummariesBatch copies the skills-row
+ * value onto summaries, so a one-sided stamp would let that tool regress live
+ * rows into delisting). Deliberately scoped to GitHub-only rows — for
+ * everything else `lastSeenInApi` must keep meaning "skills.sh still lists
+ * this". (No discoveryFailCount reset here — it would be dead code: a row only
+ * reaches a content fetch with a discovered URL, and updateSkillMdUrl zeroes
+ * the counter whenever it sets one, so "URL present ⇒ counter 0" already
+ * holds. Discovery-exhaustion recovery lives in markStaleContentBatch's cap
+ * exemption instead.)
+ */
+function gitHubOnlyHeartbeat(
+  skill: { isGitHubOnly?: boolean } | null | undefined,
+  now: number,
+): { lastSeenInApi?: number } {
+  return skill?.isGitHubOnly ? { lastSeenInApi: now } : {};
+}
+
+/**
+ * The isGitHubOnly set/clear transition for upsertSkillsBatch's three row
+ * patch sites (fast path skill row + summary, orphan path). SET when the
+ * GitHub-only add path is (re)claiming the row — including relisting a row
+ * that had delisted as an ordinary skill, which must gain the marker or
+ * reconcile would keep 404ing it back out. CLEAR ("adoption") when any
+ * skills.sh feed reports a row that carried the marker: ordinary lifecycle
+ * rules resume. Mutually exclusive by construction.
+ */
+function gitHubOnlyMarkerPatch(
+  current: boolean | undefined,
+  incoming: boolean,
+): { isGitHubOnly?: boolean } {
+  if (incoming) return { isGitHubOnly: true };
+  if (current ?? false) return { isGitHubOnly: false };
+  return {};
+}
+
 async function upsertSkillSummary(
   ctx: MutationCtx,
   fields: {
@@ -163,6 +205,7 @@ async function upsertSkillSummary(
     lastSeenInApi?: number;
     isDelisted?: boolean;
     isDuplicate?: boolean;
+    isGitHubOnly?: boolean;
     curatedOwner?: string;
     trendingRank?: number;
     trendingInstalls?: number;
@@ -209,6 +252,9 @@ async function upsertSkillSummary(
       ...(fields.isDelisted !== undefined && { isDelisted: fields.isDelisted }),
       ...(fields.isDuplicate !== undefined && {
         isDuplicate: fields.isDuplicate,
+      }),
+      ...(fields.isGitHubOnly !== undefined && {
+        isGitHubOnly: fields.isGitHubOnly,
       }),
       ...(fields.curatedOwner !== undefined && {
         curatedOwner: fields.curatedOwner,
@@ -285,6 +331,7 @@ async function upsertSkillSummary(
       // and indexed equality filters (`q.eq("isDelisted", false)`) match.
       isDelisted: fields.isDelisted ?? false,
       isDuplicate: fields.isDuplicate ?? false,
+      isGitHubOnly: fields.isGitHubOnly,
       curatedOwner: fields.curatedOwner,
       trendingRank: fields.trendingRank,
       trendingInstalls: fields.trendingInstalls,
@@ -382,6 +429,11 @@ export const upsertSkillsBatch = internalMutation({
     // across two buckets as each batch reads its own clock. Omitted by
     // single-skill callers (manual upserts), which fall back to the current day.
     day: v.optional(v.string()),
+    // Only the GitHub-only add path passes true. Every other caller is a
+    // skills.sh feed, and a feed reporting the skill is exactly what "adoption"
+    // means — so leaving this false is what clears the marker off a row that
+    // was previously GitHub-only. See the `adopting` note in the fast path.
+    isGitHubOnly: v.optional(v.boolean()),
   },
   /**
    * Listing-call upsert. Two paths:
@@ -405,7 +457,13 @@ export const upsertSkillsBatch = internalMutation({
    */
   handler: async (
     ctx,
-    { skills, leaderboard, ownsInstalls = true, day: pinnedDay },
+    {
+      skills,
+      leaderboard,
+      ownsInstalls = true,
+      day: pinnedDay,
+      isGitHubOnly = false,
+    },
   ) => {
     const now = Date.now();
     // Prefer the caller's pinned day (see the `day` arg doc); fall back to the
@@ -437,8 +495,19 @@ export const upsertSkillsBatch = internalMutation({
         const nameChanged = summary.name !== skill.name;
         const duplicateChanged =
           (summary.isDuplicate ?? false) !== skill.isDuplicate;
+        // Adoption: a row added straight from GitHub is now being reported by a
+        // skills.sh feed, so it stops being GitHub-only and rejoins the ordinary
+        // lifecycle (reconcile refreshes it, the 30-day delist applies, installs
+        // get a real owner). Counts as a change so it can't fall into sub-case A,
+        // which patches `lastSeenInApi` alone and would leave the marker set —
+        // and with it reconcile's skip, permanently.
+        const adopting = (summary.isGitHubOnly ?? false) && !isGitHubOnly;
         const nothingChanged =
-          !wasRelisted && !installsChanged && !nameChanged && !duplicateChanged;
+          !wasRelisted &&
+          !installsChanged &&
+          !nameChanged &&
+          !duplicateChanged &&
+          !adopting;
 
         // Sub-case A: literally nothing moved since last sync. Minimum work
         // per the delisting invariant: just touch summary.lastSeenInApi so
@@ -515,6 +584,7 @@ export const upsertSkillsBatch = internalMutation({
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
+          ...gitHubOnlyMarkerPatch(summary.isGitHubOnly, isGitHubOnly),
           ...relistPatchSkill,
         });
         await ctx.db.patch(summary._id, {
@@ -524,6 +594,7 @@ export const upsertSkillsBatch = internalMutation({
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
+          ...gitHubOnlyMarkerPatch(summary.isGitHubOnly, isGitHubOnly),
           ...relistPatchSummary,
         });
         if (ownsInstalls) {
@@ -561,6 +632,11 @@ export const upsertSkillsBatch = internalMutation({
           lastSeenInApi: now,
           isDuplicate: skill.isDuplicate,
           ...(installsChanged && { discoveryFailCount: 0 }),
+          // Same transition as the fast path, for the rare orphaned-row case.
+          // The SET arm matters: the recreated summary below gets the marker,
+          // and if the skills row didn't too, the heartbeat (which reads the
+          // skills row) would never stamp and the row would silently delist.
+          ...gitHubOnlyMarkerPatch(existing.isGitHubOnly, isGitHubOnly),
           ...(wasRelisted && {
             isDelisted: false,
             needsEmbedding: true,
@@ -591,6 +667,11 @@ export const upsertSkillsBatch = internalMutation({
           // By the time we sync a leaderboard skill, skills.sh's audit
           // pipeline has almost certainly run for it.
           needsAudit: true,
+          // Only set when true, so ordinary rows stay lean. The audit flag above
+          // is deliberately still set for a GitHub-only row: the audit endpoint
+          // 404s and audits.ts records "unknown", which is the honest verdict and
+          // self-corrects if the skill is ever adopted.
+          ...(isGitHubOnly && { isGitHubOnly: true }),
         });
       }
 
@@ -611,6 +692,7 @@ export const upsertSkillsBatch = internalMutation({
         ...(existing?.syncHash !== undefined && { syncHash: existing.syncHash }),
         lastSeenInApi: now,
         isDuplicate: skill.isDuplicate,
+        ...(isGitHubOnly && { isGitHubOnly: true }),
         skillDocId,
         ...(existing && {
           contentFetchedAt: existing.contentFetchedAt,
@@ -650,7 +732,7 @@ export const upsertSkillsBatch = internalMutation({
 // Content helpers
 // ---------------------------------------------------------------------------
 
-function extractFrontmatterDescription(content: string): string | null {
+export function extractFrontmatterDescription(content: string): string | null {
   // YAML frontmatter is between --- markers
   const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return null;
@@ -881,11 +963,14 @@ export const discoverSkillMdUrls = internalAction({
           const nameMatch = text.match(/^name:\s*(.+)$/m);
           if (!nameMatch) continue;
           const name = nameMatch[1].trim().replace(/^["']|["']$/g, "");
-          const kebabName = name.toLowerCase().replace(/\s+/g, "-");
-          let skill = remaining.get(name) ?? remaining.get(kebabName);
+          // Exact matches first (cheap map lookups), then the shared rule from
+          // lib/skillMatch.ts — the same matcher the admin-facing GitHub-only
+          // resolver uses, so preview and post-insert discovery can never bind
+          // different files for the same slug.
+          let skill = remaining.get(name) ?? remaining.get(kebabCase(name));
           if (!skill) {
             for (const [skillId, s] of remaining) {
-              if (kebabName.startsWith(skillId)) {
+              if (matchesSkillId(name, skillId)) {
                 skill = s;
                 break;
               }
@@ -1164,6 +1249,41 @@ export const fetchSkillContent = internalAction({
   },
 });
 
+/**
+ * Schedulable wrapper around `revalidateHomeTag("skill-sync")`, fired at the
+ * terminal of each content chain — i.e. the first moment the content this
+ * chain wrote is actually readable.
+ *
+ * Every *other* caller pings the tag before the content it means to publish
+ * exists: `syncSkills` pings at its own terminal and only then schedules
+ * `markStaleContent` (+8s), which is what *starts* discovery → fetch; and
+ * `addSkillManually` pings immediately after scheduling its backfill. Since
+ * `loadSkill` reads through `'use cache'` on `cacheLife("days")`, a page
+ * rendered in that gap caches a row whose `content` is still empty.
+ *
+ * On the daily path this was masked: `reconcileUnseenSkills` pings the same
+ * tag at 07:00 (reconcile.ts), after the 06:00 content pipeline has settled,
+ * so the day's content did get published. But that ping is incidental — it's
+ * semantically "install counts changed", it's gated on `refreshed > 0`, and it
+ * lands at a fixed hour rather than when content is ready. It silently fails
+ * to publish when reconcile refreshes nothing, or when the content pipeline
+ * runs past 07:00. Manual adds had no such backstop at all: the row could sit
+ * contentless until the next reconcile that happened to refresh something.
+ *
+ * Pinging here makes the publish explicit and unconditional instead of a side
+ * effect of an unrelated job. Best-effort and idempotent (`revalidateHomeTag`
+ * swallows errors and no-ops when the env vars are unset, i.e. everywhere but
+ * prod), so the extra ping costs nothing when there was no content to write.
+ */
+export const revalidateSkillSyncTag = internalAction({
+  args: {},
+  returns: v.null(),
+  handler: async () => {
+    await revalidateHomeTag("skill-sync");
+    return null;
+  },
+});
+
 export const backfillFetchContent = internalAction({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
@@ -1220,6 +1340,14 @@ export const backfillFetchContent = internalAction({
         internal.audits.fetchAuditBatch,
         {},
       );
+      // Publish the content this chain just wrote. `finalDelay` already covers
+      // the staggered per-skill `fetchSkillContent` calls, so by now the rows
+      // carry their new SKILL.md — this is the first moment a ping is useful.
+      await ctx.scheduler.runAfter(
+        finalDelay + 15_000,
+        internal.skills.revalidateSkillSyncTag,
+        {},
+      );
     }
   },
 });
@@ -1247,6 +1375,7 @@ export const updateDescription = internalMutation({
         needsContentFetch: false,
         contentFetchFailCount: 0,
         hasContentFetchError: false,
+        ...gitHubOnlyHeartbeat(skill, now),
       });
       const summary = await ctx.db
         .query("skillSummaries")
@@ -1259,6 +1388,9 @@ export const updateDescription = internalMutation({
           contentFetchedAt: now,
           needsContentFetch: false,
           hasContentFetchError: false,
+          // Stamped on the unchanged-hash path too: identical content still
+          // proves the repo is serving the file — the whole liveness signal.
+          ...gitHubOnlyHeartbeat(skill, now),
         });
       }
       return;
@@ -1289,6 +1421,7 @@ export const updateDescription = internalMutation({
       needsContentFetch: false,
       contentFetchFailCount: 0,
       hasContentFetchError: false,
+      ...gitHubOnlyHeartbeat(skill, now),
     });
 
     await upsertSkillSummary(ctx, {
@@ -1304,6 +1437,13 @@ export const updateDescription = internalMutation({
       hasContentFetchError: false,
       skillMdUrl,
       hasSkillMdUrl: !!skillMdUrl && skillMdUrl !== "",
+      // Mirror the marker through summary recreation: this call can INSERT a
+      // missing summary (orphaned-row case), and without the flag the new
+      // summary would drift from the skills row — reconcile would stop
+      // skipping the row, and feed-driven adoption (keyed on the summary
+      // flag) could never fire.
+      isGitHubOnly: skill.isGitHubOnly,
+      ...gitHubOnlyHeartbeat(skill, now),
     });
   },
 });
@@ -1316,6 +1456,9 @@ export const markContentFetched = internalMutation({
     await ctx.db.patch(skillId, {
       contentFetchedAt: now,
       needsContentFetch: false,
+      // This path handles a frontmatter-only / empty-body SKILL.md — still a
+      // SUCCESSFUL fetch proving the repo alive, so it heartbeats too.
+      ...gitHubOnlyHeartbeat(skill, now),
     });
     if (skill) {
       const summary = await ctx.db
@@ -1328,6 +1471,7 @@ export const markContentFetched = internalMutation({
         await ctx.db.patch(summary._id, {
           contentFetchedAt: now,
           needsContentFetch: false,
+          ...gitHubOnlyHeartbeat(skill, now),
         });
       }
     }
@@ -1425,10 +1569,23 @@ export const markStaleContentBatch = internalMutation({
           hasUrl &&
           !s.needsContentFetch &&
           now - (s.contentFetchedAt ?? 0) > CONTENT_REFRESH_INTERVAL_MS;
+        // GitHub-only rows are exempt from the MAX_DISCOVERY_FAILURES cap:
+        // ordinary skills un-stick from exhausted discovery when new installs
+        // arrive (installsChanged resets the counter), but no feed ever
+        // changes a GitHub-only row's installs, so three transient failures
+        // (e.g. GitHub rate-limit windows) would otherwise freeze it forever —
+        // no rediscovery, no content fetch, no heartbeat, silent delist at
+        // day 30 while the repo is alive. The retry cost is bounded: one
+        // discovery attempt per REDISCOVERY_INTERVAL_MS, and a truly dead
+        // repo stops costing anything once the missed heartbeats delist the
+        // row (the isDelisted skip above).
+        const pastFailureCap =
+          (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES &&
+          !s.isGitHubOnly;
         const needsRediscovery =
           !hasUrl &&
           !s.needsDiscovery &&
-          (s.discoveryFailCount ?? 0) < MAX_DISCOVERY_FAILURES &&
+          !pastFailureCap &&
           now - (s.contentFetchedAt ?? 0) > REDISCOVERY_INTERVAL_MS;
 
         if (contentStale) {
@@ -1757,6 +1914,13 @@ export const fetchSkillDetailBatch = internalAction({
       await ctx.scheduler.runAfter(
         10_000,
         internal.skills.embedSkillsBatch,
+        {},
+      );
+      // Same publish step as the raw-content chain: well-known sources get
+      // their content here, so this branch needs its own ping.
+      await ctx.scheduler.runAfter(
+        15_000,
+        internal.skills.revalidateSkillSyncTag,
         {},
       );
     }
@@ -3192,7 +3356,7 @@ const MANUAL_LEADERBOARD = "manual";
 // Mirror the loose regex used by the discovery path (~line 734): "name: X",
 // optionally quoted. Restricted to the YAML frontmatter block so we don't
 // accidentally pick up a "name:" line in the body.
-function extractSkillMdName(content: string): string | null {
+export function extractSkillMdName(content: string): string | null {
   const fm = content.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!fm) return null;
   const nameMatch = fm[1].match(/^name:\s*(.+)$/m);
@@ -3200,7 +3364,7 @@ function extractSkillMdName(content: string): string | null {
   return nameMatch[1].trim().replace(/^["']|["']$/g, "");
 }
 
-function humanizeSlug(slug: string): string {
+export function humanizeSlug(slug: string): string {
   return slug
     .split(/[-_/]+/)
     .filter(Boolean)
@@ -3220,6 +3384,11 @@ export const getManualAddPrecheck = internalQuery({
     v.object({
       name: v.string(),
       isDelisted: v.boolean(),
+      // Exposed so addSkillManually can offer the adoption escape hatch: a
+      // GitHub-only row must NOT short-circuit to already_exists, or the
+      // documented "retry the normal add once it's listed" recovery would be
+      // a dead end (the detail endpoint would never be consulted).
+      isGitHubOnly: v.boolean(),
     }),
   ),
   handler: async (ctx, { source, skillId }) => {
@@ -3233,6 +3402,7 @@ export const getManualAddPrecheck = internalQuery({
     return {
       name: summary.name,
       isDelisted: summary.isDelisted ?? false,
+      isGitHubOnly: summary.isGitHubOnly ?? false,
     };
   },
 });
@@ -3272,6 +3442,17 @@ export const addSkillManually = action({
       v.literal("inserted"),
       v.literal("relisted"),
       v.literal("already_exists"),
+      // A GitHub-only row whose skill has since appeared on skills.sh was
+      // upgraded to a normal row (marker cleared, real installs taken over).
+      // This is the documented recovery path for a GitHub-only skill that
+      // later gets listed but never shows up on a feed.
+      v.literal("adopted"),
+      // The skills.sh detail endpoint 404ed. Returned as a status — NOT thrown
+      // — because prod Convex redacts non-ConvexError messages to a generic
+      // "Server Error", so the client could never distinguish "not listed"
+      // (the trigger for the GitHub-only fallback) from a real failure by
+      // message-sniffing. Expected outcomes are data, not exceptions.
+      v.literal("not_on_skills_sh"),
     ),
     source: v.string(),
     skillId: v.string(),
@@ -3283,7 +3464,12 @@ export const addSkillManually = action({
     ctx,
     { input },
   ): Promise<{
-    status: "inserted" | "relisted" | "already_exists";
+    status:
+      | "inserted"
+      | "relisted"
+      | "already_exists"
+      | "adopted"
+      | "not_on_skills_sh";
     source: string;
     skillId: string;
     name: string;
@@ -3306,14 +3492,23 @@ export const addSkillManually = action({
     // Skip the API call if the catalog already has this skill in good standing.
     // Re-adding is harmless (upsertSkillsBatch is idempotent), but we'd rather
     // give the admin a clear "no-op" signal than a silent success.
+    //
+    // EXCEPT for GitHub-only rows: they are in the catalog but NOT on
+    // skills.sh, and re-running the normal add is their documented adoption
+    // escape hatch (a skill can be listed on skills.sh yet absent from every
+    // feed — the improve-ui coverage gap — so feed-driven adoption alone can
+    // strand them at 0 installs forever). Short-circuiting here would make
+    // that recovery a silent no-op, so GitHub-only rows fall through to the
+    // detail probe: 200 → adopt below; still 404 → report already_exists.
     const precheck: {
       name: string;
       isDelisted: boolean;
+      isGitHubOnly: boolean;
     } | null = await ctx.runQuery(internal.skills.getManualAddPrecheck, {
       source,
       skillId,
     });
-    if (precheck && !precheck.isDelisted) {
+    if (precheck && !precheck.isDelisted && !precheck.isGitHubOnly) {
       return {
         status: "already_exists" as const,
         source,
@@ -3322,11 +3517,36 @@ export const addSkillManually = action({
       };
     }
 
-    // Verify against skills.sh. Throws SkillsApiNotFoundError on 404, which
-    // the action handler surfaces to the caller as a normal error string.
-    const detail = await withTransientRetry(() =>
-      v1GetSkillDetail(source, skillId),
-    );
+    // Verify against skills.sh. A 404 is an EXPECTED outcome (the trigger for
+    // the client's GitHub-only fallback), so it's returned as a status, not
+    // thrown — see the returns-validator comment. Rate limits are wrapped in
+    // ConvexError so the prod toast says something actionable instead of the
+    // redacted "Server Error".
+    let detail: V1SkillDetail;
+    try {
+      detail = await withTransientRetry(() => v1GetSkillDetail(source, skillId));
+    } catch (err) {
+      if (err instanceof SkillsApiNotFoundError) {
+        // A live GitHub-only row that is STILL not on skills.sh: nothing to
+        // adopt, and offering the GitHub fallback would only dead-end at
+        // "already in the catalog" — report it as already existing instead.
+        if (precheck && !precheck.isDelisted) {
+          return {
+            status: "already_exists" as const,
+            source,
+            skillId,
+            name: precheck.name,
+          };
+        }
+        return { status: "not_on_skills_sh" as const, source, skillId, name: "" };
+      }
+      if (err instanceof SkillsApiRateLimitError) {
+        throw new ConvexError(
+          "skills.sh is rate-limiting requests. Try again in a minute.",
+        );
+      }
+      throw err;
+    }
 
     // Pull the human name out of SKILL.md frontmatter (the listing endpoint
     // would have given it to us directly, but detail doesn't include name as
@@ -3380,13 +3600,17 @@ export const addSkillManually = action({
     await revalidateHomeTag("skill-sync");
 
     return {
+      // A live row could only reach the upsert via the GitHub-only
+      // fall-through, and the upsert (isGitHubOnly unset → false) just ran
+      // the adoption transition: marker cleared, real install count owned.
       status: precheck?.isDelisted
         ? ("relisted" as const)
-        : ("inserted" as const),
+        : precheck
+          ? ("adopted" as const)
+          : ("inserted" as const),
       source: detail.source,
       skillId: detail.slug,
       name,
     };
   },
 });
-

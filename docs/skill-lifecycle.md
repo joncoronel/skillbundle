@@ -15,6 +15,10 @@ A skill row enters our DB one of three ways:
    ensures each curated skill exists (Pass 0) + stamps `curatedOwner`.
 3. **Manual add** — `addSkillManually` (admin-only `/dev/add-skill`) verifies a
    skill against the detail endpoint and inserts it (`leaderboard: "manual"`).
+4. **GitHub-only add** — `addSkillFromGitHub` (same admin page, offered only
+   after the detail endpoint 404s) verifies a SKILL.md directly in the GitHub
+   repo and inserts with `installs: 0`, `leaderboard: "github"`, and
+   `isGitHubOnly: true`. See [GitHub-only skills](#github-only-skills).
 
 `leaderboard` is an **origin tag set on insert only** (never overwritten) — it
 records how the row first appeared, nothing more. Values: `all-time` (leaderboard),
@@ -42,7 +46,8 @@ stale set is existing summaries), and the tag is set-on-insert only — so
 
 `lastSeenInApi` = the last time any sync touched a skill. It's stamped by
 **`syncSkills`, `syncCurated`, `reconcileUnseenSkills`, and `refreshCuratedSkills`**
-(and on manual add/relist).
+(and on manual add/relist) — plus, for `isGitHubOnly` rows only, by the content
+pipeline itself (see [GitHub-only skills](#github-only-skills)).
 
 - **`markDelistedSkills`** sets `isDelisted = true` on any non-delisted skill whose
   `lastSeenInApi` is older than **30 days** (`DELIST_THRESHOLD_MS`).
@@ -58,6 +63,73 @@ stale set is existing summaries), and the tag is set-on-insert only — so
 - **Row is kept** (~200B summary + skills row) for the delisted count and a
   fast relist. If the skill reappears in a feed, `upsertSkillsBatch` relists it
   (`isDelisted = false`, re-fetch content).
+
+## GitHub-only skills
+
+A skill can be wanted in the catalog while being **absent from skills.sh
+entirely** — not on the leaderboard feed *and* 404 on the detail endpoint. The
+`/dev/add-skill` form offers this path only as a fallback: it tries
+`addSkillManually` first, and on a detail 404 calls `previewGitHubSkill`, which
+resolves the SKILL.md in the repo and shows the admin the exact file path +
+parsed name to confirm before `addSkillFromGitHub` writes anything. The
+confirmation step is deliberate — an automatic fallback would let a mistyped
+slug silently bind to the wrong SKILL.md.
+
+The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
+SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
+the preview binds the same file post-insert discovery would. The lifecycle
+consequences of the flag stay where the lifecycle lives: `skills.ts`
+(heartbeat + adoption + cap exemption), `reconcile.ts` (skip), `devStats.ts`
+(diagnostics exclusions).
+
+Such a row carries **`isGitHubOnly: true`** (on both the skills row and the
+summary, since the hot scans read summaries only) and `installs: 0`.
+
+**Liveness: the GitHub heartbeat.** No skills.sh feed will ever stamp these
+rows, so `updateDescription` stamps `lastSeenInApi` itself whenever a raw
+SKILL.md fetch succeeds — on the unchanged-hash path too, since identical
+content still proves the repo is serving the file. `markStaleContent` re-flags
+content every 7 days, comfortably inside the 30-day delist window. **This is
+why no delist exemption exists:** if the repo dies, fetches fail, the stamps
+stop, and `markDelistedSkills` removes the row on the normal 30-day track.
+(Discovery never permanently exhausts for these rows — they're exempt from the
+`MAX_DISCOVERY_FAILURES` cap and retry on the rediscovery cadence, since no
+feed ever resets their counter — but failed fetches produce no heartbeat
+regardless, so the dead-repo path is unchanged.) "Seen" keeps meaning
+"something proved it alive"; only the prover changes.
+
+**Reconcile skips them** (`reconcile.ts`, alongside the dead-alias skip): the
+detail endpoint can only 404, so a call is pure waste, and an unstamped "gone"
+row would otherwise sit at the head of the oldest-first scan forever — the
+starvation hazard documented at that batch slice.
+
+**Adoption — two routes.** The moment any skills.sh feed reports the skill,
+`upsertSkillsBatch` clears `isGitHubOnly` (the `adopting` branch) and ordinary
+rules resume: reconcile refreshes it, `syncSkills` owns its installs and writes
+snapshots, the 30-day delist applies normally. Adoption is forced through the
+"something changed" sub-case so it can't land in the `nothingChanged` fast path,
+which patches `lastSeenInApi` alone and would leave the marker (and reconcile's
+skip) set permanently. Matching is purely on `(source, skillId)`, so nothing
+else is needed — but the manually-entered source/slug must match what skills.sh
+eventually publishes, or you get a second row instead of an adoption.
+
+Feeds alone are NOT a guarantee, though: a skill can be listed on skills.sh
+(detail 200) yet absent from every feed — the exact coverage gap manual add
+exists for. So `addSkillManually` is the **on-demand adoption route**: its
+precheck deliberately does NOT short-circuit to `already_exists` for a live
+GitHub-only row; it probes the detail endpoint, and on 200 runs the normal
+upsert (which fires the `adopting` transition) and reports `status: "adopted"`.
+If detail still 404s, it reports `already_exists` — the row stays GitHub-only.
+"Re-run the normal add once it's listed" is therefore a real recovery path, not
+just advice.
+
+**What's degraded** (none of it errors): `installs` reads 0 and `installRank` is
+unset until adoption; the install chart never renders (too few snapshot points);
+audits are permanently `"unknown"` because the audit endpoint 404s (handled
+by design in `audits.ts`); Typesense indexes the row but it ranks last on
+install-weighted sorts. Content, embeddings, `syncHash` fork/alias detection and
+the install command all work unchanged — they were never skills.sh-dependent for
+GitHub sources.
 
 ## Dead-but-installable skills & the "Fix 2" decision
 
@@ -152,7 +224,9 @@ into one consistent bucket.
    scan. Both `isDelisted` and `lastSeenInApi` are **required** fields, so the
    range has no `undefined` edge case (see Migration notes).
 2. Keep only **healthy** (`hasSkillMdUrl && !hasContentFetchError &&
-   discoveryFailCount < 3`) **and not a dead alias** (`repoLiveName === source`).
+   discoveryFailCount < 3`), **not a dead alias** (`repoLiveName === source`),
+   and **not `isGitHubOnly`** (detail can only 404 for those — see
+   [GitHub-only skills](#github-only-skills)).
 3. Detail-refresh each (installs + snapshot + stamp), batched (`RECONCILE_BATCH`),
    self-scheduling. Broke/dead-alias skills are left unstamped → they delist.
 4. Safety cap: if the stale set exceeds `MAX_RECONCILE` (3000), bail (a sign
