@@ -6,6 +6,36 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
+
+`loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`
+all tag their cache entries with one fixed string, `SKILL_SYNC_TAG = "skill-sync"`.
+Each skill gets its own cache entry (keyed by `source` + `skillId`), but every entry
+carries the *same* tag, so `revalidateHomeTag("skill-sync")` invalidates the entire
+catalog at once. There is no way to refresh a single skill.
+
+Fine today: invalidation only *marks* entries stale, so a page rebuilds only when
+someone actually visits it. Cost is bounded by traffic, not by the ~9.5k catalog.
+The tag is also only pinged a few times a day (syncSkills 06:00, reconcile 07:00,
+and now the content-chain terminal, see below).
+
+Idea: make the tag dynamic, `cacheTag("skill:" + source + "/" + skillId)`, and have
+the content-fetch step ping only the skills it actually touched. This is also the
+prerequisite for making the terminal ping fire "only when content changed" in any
+meaningful way, since a targeted check buys nothing while the tag nukes everything.
+
+Why deferred: the staggered per-skill `fetchSkillContent` calls are independent
+scheduled actions with no shared state, so there is nowhere to collect "which skills
+changed this run" without adding a counter table or similar; `/api/revalidate` would
+also need to accept a batch of tags. Not worth it until cache churn shows up as real
+Vercel function load (relevant on Hobby, so worth watching rather than ignoring).
+
+Context: this came out of fixing the content-publish ordering (Jul 2026). The content
+pipeline previously never pinged the tag itself; publishing relied on `reconcile`'s
+07:00 ping, which is gated on `refreshed > 0` and fires at a fixed hour rather than
+when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
+`internal.skills.revalidateSkillSyncTag` at their terminals.
+
 ### Sign-in second factor: email code only (future: real MFA)
 
 Shipped (Jul 2026): sign-in handles Clerk's Client Trust email-code step

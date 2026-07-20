@@ -1164,6 +1164,41 @@ export const fetchSkillContent = internalAction({
   },
 });
 
+/**
+ * Schedulable wrapper around `revalidateHomeTag("skill-sync")`, fired at the
+ * terminal of each content chain — i.e. the first moment the content this
+ * chain wrote is actually readable.
+ *
+ * Every *other* caller pings the tag before the content it means to publish
+ * exists: `syncSkills` pings at its own terminal and only then schedules
+ * `markStaleContent` (+8s), which is what *starts* discovery → fetch; and
+ * `addSkillManually` pings immediately after scheduling its backfill. Since
+ * `loadSkill` reads through `'use cache'` on `cacheLife("days")`, a page
+ * rendered in that gap caches a row whose `content` is still empty.
+ *
+ * On the daily path this was masked: `reconcileUnseenSkills` pings the same
+ * tag at 07:00 (reconcile.ts), after the 06:00 content pipeline has settled,
+ * so the day's content did get published. But that ping is incidental — it's
+ * semantically "install counts changed", it's gated on `refreshed > 0`, and it
+ * lands at a fixed hour rather than when content is ready. It silently fails
+ * to publish when reconcile refreshes nothing, or when the content pipeline
+ * runs past 07:00. Manual adds had no such backstop at all: the row could sit
+ * contentless until the next reconcile that happened to refresh something.
+ *
+ * Pinging here makes the publish explicit and unconditional instead of a side
+ * effect of an unrelated job. Best-effort and idempotent (`revalidateHomeTag`
+ * swallows errors and no-ops when the env vars are unset, i.e. everywhere but
+ * prod), so the extra ping costs nothing when there was no content to write.
+ */
+export const revalidateSkillSyncTag = internalAction({
+  args: {},
+  returns: v.null(),
+  handler: async () => {
+    await revalidateHomeTag("skill-sync");
+    return null;
+  },
+});
+
 export const backfillFetchContent = internalAction({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
@@ -1218,6 +1253,14 @@ export const backfillFetchContent = internalAction({
       await ctx.scheduler.runAfter(
         finalDelay + 10_000,
         internal.audits.fetchAuditBatch,
+        {},
+      );
+      // Publish the content this chain just wrote. `finalDelay` already covers
+      // the staggered per-skill `fetchSkillContent` calls, so by now the rows
+      // carry their new SKILL.md — this is the first moment a ping is useful.
+      await ctx.scheduler.runAfter(
+        finalDelay + 15_000,
+        internal.skills.revalidateSkillSyncTag,
         {},
       );
     }
@@ -1757,6 +1800,13 @@ export const fetchSkillDetailBatch = internalAction({
       await ctx.scheduler.runAfter(
         10_000,
         internal.skills.embedSkillsBatch,
+        {},
+      );
+      // Same publish step as the raw-content chain: well-known sources get
+      // their content here, so this branch needs its own ping.
+      await ctx.scheduler.runAfter(
+        15_000,
+        internal.skills.revalidateSkillSyncTag,
         {},
       );
     }
