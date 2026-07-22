@@ -5,7 +5,7 @@ import {
   internalQuery,
   query,
 } from "./_generated/server";
-import type { MutationCtx, ActionCtx } from "./_generated/server";
+import type { MutationCtx, ActionCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
@@ -3727,35 +3727,65 @@ export const getAuthedUserId = internalQuery({
 });
 
 /**
- * The signed-in user's GitHub-only-add quota. `used` counts rows they added
- * whose immutable `leaderboard === "github"` origin tag marks them GitHub-only
- * (stable across adoption). `limit` is null for unlimited (Pro). Powers the
- * "N of M used" indicator and the confirm-time gate.
+ * Compute a user's GitHub-only-add quota. `used` counts rows they added whose
+ * immutable `leaderboard === "github"` origin tag marks them GitHub-only
+ * (stable across adoption). `limit` is null for unlimited (Pro).
+ */
+async function computeGitHubAddQuota(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+): Promise<{
+  plan: "free" | "pro";
+  used: number;
+  limit: number | null;
+  atLimit: boolean;
+}> {
+  const { plan, limits } = await getUserPlanWithLimits(ctx);
+  const owned = await ctx.db
+    .query("skills")
+    .withIndex("by_addedBy_leaderboard", (q) =>
+      q.eq("addedBy", userId).eq("leaderboard", GITHUB_LEADERBOARD),
+    )
+    .collect();
+  const used = owned.length;
+  const limit = Number.isFinite(limits.maxGitHubOnlyAdds)
+    ? limits.maxGitHubOnlyAdds
+    : null;
+  return { plan, used, limit, atLimit: limit !== null && used >= limit };
+}
+
+const gitHubQuotaValidator = v.object({
+  plan: v.union(v.literal("free"), v.literal("pro")),
+  used: v.number(),
+  limit: v.union(v.number(), v.null()),
+  atLimit: v.boolean(),
+});
+
+/**
+ * The signed-in user's GitHub-only-add quota, plus their id — internal, for the
+ * add actions (the "N of M used" preview indicator and the confirm-time gate).
  */
 export const getGitHubAddQuota = internalQuery({
   args: {},
-  returns: v.object({
-    plan: v.union(v.literal("free"), v.literal("pro")),
-    used: v.number(),
-    limit: v.union(v.number(), v.null()),
-    atLimit: v.boolean(),
-    userId: v.id("users"),
-  }),
+  returns: v.object({ ...gitHubQuotaValidator.fields, userId: v.id("users") }),
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
     if (!user) throw new ConvexError("Sign in to add a skill.");
-    const { plan, limits } = await getUserPlanWithLimits(ctx);
-    const owned = await ctx.db
-      .query("skills")
-      .withIndex("by_addedBy_leaderboard", (q) =>
-        q.eq("addedBy", user._id).eq("leaderboard", GITHUB_LEADERBOARD),
-      )
-      .collect();
-    const used = owned.length;
-    const limit = Number.isFinite(limits.maxGitHubOnlyAdds)
-      ? limits.maxGitHubOnlyAdds
-      : null;
-    const atLimit = limit !== null && used >= limit;
-    return { plan, used, limit, atLimit, userId: user._id };
+    const quota = await computeGitHubAddQuota(ctx, user._id);
+    return { ...quota, userId: user._id };
+  },
+});
+
+/**
+ * The signed-in user's GitHub-only-add quota — public, for the /add page's
+ * "X of 3 free adds used" indicator. Returns null when signed out.
+ */
+export const myGitHubAddQuota = query({
+  args: {},
+  returns: v.union(v.null(), gitHubQuotaValidator),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+    return await computeGitHubAddQuota(ctx, user._id);
   },
 });

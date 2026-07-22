@@ -129,7 +129,7 @@ export function ActiveCatalogResults({
           {query && (
             <>
               <span className="mt-3 block text-xs text-muted-foreground">
-                Know it exists in a GitHub repo?
+                Know a skill we&apos;re missing? Add it from skills.sh or GitHub.
               </span>
               <AddSkillDialog
                 initialInput={/\/|github\.com/i.test(query) ? query : undefined}

@@ -19,7 +19,7 @@ import { AddSkillFlow } from "@/components/add-skill/add-skill-flow";
  */
 export function AddSkillDialog({
   initialInput,
-  label = "Add it from GitHub",
+  label = "Add a skill",
   className,
 }: {
   initialInput?: string;

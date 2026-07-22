@@ -78,19 +78,19 @@ function buildExplorerState(
     params.audit !== null ||
     params.minInstalls !== null ||
     params.broken ||
-    params.sourceKind !== "all";
+    params.hideGitHubOnly;
   const anyFilter = hasNarrowing || params.sortParam !== null;
   const isRepo = params.mode === "repo";
 
-  // `more` = just the two filters behind the chin's "More" dropdown; `narrowing`
-  // = every chin filter (More's two + publisher + audit + source).
+  // `more` = the filters behind the chin's "More" dropdown (min installs, hide
+  // broken, hide GitHub-only); `narrowing` = every chin filter (More's +
+  // publisher + audit).
   const moreCount =
-    (params.minInstalls !== null ? 1 : 0) + (params.broken ? 1 : 0);
+    (params.minInstalls !== null ? 1 : 0) +
+    (params.broken ? 1 : 0) +
+    (params.hideGitHubOnly ? 1 : 0);
   const narrowing =
-    (params.publisher.length > 0 ? 1 : 0) +
-    (params.audit ? 1 : 0) +
-    (params.sourceKind !== "all" ? 1 : 0) +
-    moreCount;
+    (params.publisher.length > 0 ? 1 : 0) + (params.audit ? 1 : 0) + moreCount;
 
   return {
     ...params,
@@ -113,7 +113,9 @@ function buildExplorerState(
       // docs/search-overhaul.md. Kept so it auto-applies if it ever populates.
       hideForks: true,
       excludeBroken: params.broken || undefined,
-      sourceKind: params.sourceKind !== "all" ? params.sourceKind : undefined,
+      // Binary control → the engine's tri-state source filter: hide GitHub-only
+      // means "skills.sh-backed only"; off leaves it unset (show everything).
+      sourceKind: params.hideGitHubOnly ? "skillssh" : undefined,
     },
     filterCount: {
       chin: narrowing,
@@ -126,7 +128,7 @@ function buildExplorerState(
         audit: null,
         minInstalls: null,
         broken: false,
-        sourceKind: "all",
+        hideGitHubOnly: false,
       }),
     // Doubles as the filtered-to-empty state's "Show all N matches" action
     // (catalog-results.tsx): resets every engine-level narrowing filter this
@@ -141,7 +143,7 @@ function buildExplorerState(
         minInstalls: null,
         broken: false,
         official: false,
-        sourceKind: "all",
+        hideGitHubOnly: false,
       }),
     changeSort: (next) => {
       const autoDefault: CatalogSortValue = hasQuery ? "relevance" : "installs";

@@ -186,7 +186,7 @@ export function AddSkillFlow({
   return (
     <div className="space-y-5">
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Label htmlFor="add-skill-input">GitHub link or source/slug</Label>
+        <Label htmlFor="add-skill-input">Skill link or source</Label>
         <Input
           id="add-skill-input"
           type="text"
