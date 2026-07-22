@@ -88,9 +88,15 @@ export function AddSkillFlow({
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmed = input.trim();
-    // The auth guards mirror the button state: signed-out submits go to
-    // sign-in, and while auth is still resolving nothing fires (an action
-    // called before the token lands would error even for a signed-in user).
+    // The auth guards mirror the button state. A signed-out Enter-press takes
+    // the same path as clicking the visible "Sign in to add" button; while
+    // auth is still resolving nothing fires (an action called before the
+    // token lands would error even for a signed-in user).
+    if (signedOut) {
+      const path = window.location.pathname + window.location.search;
+      router.push(signInUrl(path));
+      return;
+    }
     if (!trimmed || pending || authLoading || !isAuthenticated) return;
     // The candidate card for this exact input is already on screen — nothing
     // to re-fetch. (Not a cache: any change to the input invalidates the
@@ -166,10 +172,18 @@ export function AddSkillFlow({
       // Race backstop: the server enforces the quota atomically inside the
       // insert. When it rejects a stale confirm, flip the candidate's own
       // snapshot too so the card swaps to its upgrade state instead of
-      // leaving an enabled button that keeps failing.
+      // leaving an enabled button that keeps failing. wasDelisted flips with
+      // it: relists never hit the gate, so a quota error PROVES the insert
+      // was genuine and any relist marker from preview time is stale.
       if (isQuotaError(err)) {
         setCandidate((c) =>
-          c ? { ...c, quota: { ...c.quota, atLimit: true } } : c,
+          c
+            ? {
+                ...c,
+                wasDelisted: false,
+                quota: { ...c.quota, atLimit: true },
+              }
+            : c,
         );
         setNotice({ tone: "error", text: quotaErrorText(err) });
       } else {
