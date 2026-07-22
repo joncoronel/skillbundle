@@ -77,16 +77,20 @@ function buildExplorerState(
     params.publisher.length > 0 ||
     params.audit !== null ||
     params.minInstalls !== null ||
-    params.broken;
+    params.broken ||
+    params.sourceKind !== "all";
   const anyFilter = hasNarrowing || params.sortParam !== null;
   const isRepo = params.mode === "repo";
 
   // `more` = just the two filters behind the chin's "More" dropdown; `narrowing`
-  // = every chin filter (More's two + publisher + audit).
+  // = every chin filter (More's two + publisher + audit + source).
   const moreCount =
     (params.minInstalls !== null ? 1 : 0) + (params.broken ? 1 : 0);
   const narrowing =
-    (params.publisher.length > 0 ? 1 : 0) + (params.audit ? 1 : 0) + moreCount;
+    (params.publisher.length > 0 ? 1 : 0) +
+    (params.audit ? 1 : 0) +
+    (params.sourceKind !== "all" ? 1 : 0) +
+    moreCount;
 
   return {
     ...params,
@@ -109,6 +113,7 @@ function buildExplorerState(
       // docs/search-overhaul.md. Kept so it auto-applies if it ever populates.
       hideForks: true,
       excludeBroken: params.broken || undefined,
+      sourceKind: params.sourceKind !== "all" ? params.sourceKind : undefined,
     },
     filterCount: {
       chin: narrowing,
@@ -116,7 +121,13 @@ function buildExplorerState(
       more: moreCount,
     },
     clearFilters: () =>
-      setParams({ publisher: [], audit: null, minInstalls: null, broken: false }),
+      setParams({
+        publisher: [],
+        audit: null,
+        minInstalls: null,
+        broken: false,
+        sourceKind: "all",
+      }),
     // Doubles as the filtered-to-empty state's "Show all N matches" action
     // (catalog-results.tsx): resets every engine-level narrowing filter this
     // surface can set, so what it reveals matches what the baseline probe
@@ -130,6 +141,7 @@ function buildExplorerState(
         minInstalls: null,
         broken: false,
         official: false,
+        sourceKind: "all",
       }),
     changeSort: (next) => {
       const autoDefault: CatalogSortValue = hasQuery ? "relevance" : "installs";

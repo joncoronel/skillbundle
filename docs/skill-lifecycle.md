@@ -75,6 +75,27 @@ parsed name to confirm before `addSkillFromGitHub` writes anything. The
 confirmation step is deliberate — an automatic fallback would let a mistyped
 slug silently bind to the wrong SKILL.md.
 
+**Public add path.** The same pipeline is exposed to any signed-in user via
+`addSkillManuallyPublic` (Branch 1, skills.ts) → `previewGitHubSkillPublic` /
+`addSkillFromGitHubPublic` (Branch 2, githubOnly.ts), fronted by
+`components/add-skill/add-skill-flow.tsx` (the `/add` page + the search
+empty-state dialog). The public actions share the admin cores — they only swap
+`assertAdmin` for auth and add two things:
+
+- **Attribution.** `addedBy` (a `users` id) is stamped on the genuine-insert
+  path only (never relist/adoption, preserving the original adder). It threads
+  through `upsertSkillsBatch`.
+- **Quota.** Free accounts get `maxGitHubOnlyAdds` (3) GitHub-only adds; Pro is
+  unlimited (`convex/lib/plans.ts`). **Normal skills.sh adds (Branch 1) are
+  never capped** — they're vetted-by-skills.sh and would sync anyway. The count
+  is `addedBy == user AND leaderboard == "github"` via the
+  `by_addedBy_leaderboard` index; because `leaderboard` is an immutable origin
+  tag, adoption (which only clears `isGitHubOnly`) never distorts it — a stable
+  lifetime count. Enforcement is atomic inside `upsertSkillsBatch`
+  (`enforceGitHubQuotaFor`), so a double-submit can't race past the cap; the
+  action also pre-checks via `getGitHubAddQuota` for a clean early error and the
+  preview's "N of M used" indicator.
+
 The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
 SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
 the preview binds the same file post-insert discovery would. The lifecycle

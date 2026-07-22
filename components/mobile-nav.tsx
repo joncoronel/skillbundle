@@ -22,6 +22,7 @@ import {
   Menu01Icon,
   Tag01Icon,
   CheckmarkCircle02Icon,
+  PlusSignCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { LogoMark } from "@/components/brand-mark";
@@ -98,6 +99,13 @@ function DrawerNavLinks({ activeHref }: { activeHref: string | null }) {
         isActive={activeHref === "/compare"}
       >
         Compare
+      </DrawerNavLink>
+      <DrawerNavLink
+        href="/add"
+        icon={PlusSignCircleIcon}
+        isActive={activeHref === "/add"}
+      >
+        Add skill
       </DrawerNavLink>
       <DrawerNavLink
         href="/dashboard"

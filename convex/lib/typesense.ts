@@ -156,6 +156,11 @@ export function skillsCollectionSchema(name: string) {
     { name: "installRank", type: "int32", index: false, optional: true },
     { name: "curatedOwner", type: "string", facet: true, optional: true },
     { name: "isOfficial", type: "bool", facet: true },
+    // True for skills added straight from GitHub (not on skills.sh). Faceted so
+    // the source filter can include/exclude them. optional so it can be added
+    // to an existing collection without a destructive reset (like `owner`); the
+    // sync always populates it, so filtering never skips a doc.
+    { name: "isGitHubOnly", type: "bool", facet: true, optional: true },
     { name: "isDuplicate", type: "bool", facet: true },
     { name: "hasContentFetchError", type: "bool", facet: true },
     { name: "worstAuditStatus", type: "string", facet: true, optional: true },
@@ -211,6 +216,7 @@ export const typesenseSkillDocValidator = v.object({
   installRank: v.optional(v.number()),
   curatedOwner: v.optional(v.string()),
   isOfficial: v.boolean(),
+  isGitHubOnly: v.boolean(),
   isDuplicate: v.boolean(),
   hasContentFetchError: v.boolean(),
   worstAuditStatus: v.optional(v.string()),

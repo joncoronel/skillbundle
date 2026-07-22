@@ -15,6 +15,7 @@ import {
   internalMutation,
   internalQuery,
 } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { maxIterForRows, CATALOG_MAX_ROWS } from "./lib/pagination";
 import {
@@ -138,6 +139,45 @@ export const resetCollection = internalAction({
  * partition `by_isDelisted` orders by `_creationTime` (immutable), so the walk
  * can't reorder under itself. Order is irrelevant to a full backfill anyway.
  */
+/**
+ * Map one `skillSummaries` row to its Typesense document. The SINGLE mapping —
+ * shared by the full mark-and-sweep sync (`pageSummariesForSync`) and the
+ * targeted single-doc upsert on add (`indexSkill`) — so the two can never index
+ * a skill differently.
+ */
+export function buildSkillDoc(
+  s: Doc<"skillSummaries">,
+  syncedAt: number,
+): TypesenseSkillDoc {
+  const doc: TypesenseSkillDoc = {
+    id: `${s.source}::${s.skillId}`,
+    name: s.name,
+    source: s.source,
+    // Publisher = the "owner" segment of "owner/repo" (whole string when
+    // there's no "/", e.g. a well-known single-token source).
+    owner: s.source.split("/")[0],
+    skillId: s.skillId,
+    installs: s.installs,
+    isOfficial: Boolean(s.curatedOwner),
+    isGitHubOnly: Boolean(s.isGitHubOnly),
+    isDuplicate: Boolean(s.isDuplicate),
+    hasContentFetchError: Boolean(s.hasContentFetchError),
+    // Defaulted (not omitted) so audit filters behave on unaudited rows:
+    // Typesense skips docs MISSING a filtered field, which would wrongly
+    // drop unaudited skills from "no failed audits" (:!=fail). "unknown"
+    // matches skillAudits' no-audits-yet verdict.
+    worstAuditStatus: s.worstAuditStatus ?? "unknown",
+    syncedAt,
+  };
+  // Optional fields — omit when absent so JSON.stringify drops them.
+  if (s.description) doc.description = s.description;
+  if (s.installRank !== undefined) doc.installRank = s.installRank;
+  if (s.curatedOwner) doc.curatedOwner = s.curatedOwner;
+  if (s.worstAuditRiskLevel) doc.worstAuditRiskLevel = s.worstAuditRiskLevel;
+  if (s.copyCount !== undefined) doc.copyCount = s.copyCount;
+  return doc;
+}
+
 export const pageSummariesForSync = internalQuery({
   args: {
     cursor: v.union(v.string(), v.null()),
@@ -155,36 +195,68 @@ export const pageSummariesForSync = internalQuery({
       .withIndex("by_isDelisted", (q) => q.eq("isDelisted", false))
       .paginate({ cursor, numItems });
 
-    const docs = page.page.map((s) => {
-      const doc: TypesenseSkillDoc = {
-        id: `${s.source}::${s.skillId}`,
-        name: s.name,
-        source: s.source,
-        // Publisher = the "owner" segment of "owner/repo" (whole string when
-        // there's no "/", e.g. a well-known single-token source).
-        owner: s.source.split("/")[0],
-        skillId: s.skillId,
-        installs: s.installs,
-        isOfficial: Boolean(s.curatedOwner),
-        isDuplicate: Boolean(s.isDuplicate),
-        hasContentFetchError: Boolean(s.hasContentFetchError),
-        // Defaulted (not omitted) so audit filters behave on unaudited rows:
-        // Typesense skips docs MISSING a filtered field, which would wrongly
-        // drop unaudited skills from "no failed audits" (:!=fail). "unknown"
-        // matches skillAudits' no-audits-yet verdict.
-        worstAuditStatus: s.worstAuditStatus ?? "unknown",
-        syncedAt,
-      };
-      // Optional fields — omit when absent so JSON.stringify drops them.
-      if (s.description) doc.description = s.description;
-      if (s.installRank !== undefined) doc.installRank = s.installRank;
-      if (s.curatedOwner) doc.curatedOwner = s.curatedOwner;
-      if (s.worstAuditRiskLevel) doc.worstAuditRiskLevel = s.worstAuditRiskLevel;
-      if (s.copyCount !== undefined) doc.copyCount = s.copyCount;
-      return doc;
-    });
+    const docs = page.page.map((s) => buildSkillDoc(s, syncedAt));
 
     return { docs, continueCursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/** Fetch one non-delisted summary for the targeted on-add index. */
+export const getSummaryForIndex = internalQuery({
+  args: { source: v.string(), skillId: v.string() },
+  returns: v.union(v.null(), v.any()),
+  handler: async (ctx, { source, skillId }) => {
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", source).eq("skillId", skillId),
+      )
+      .unique();
+    if (!summary || summary.isDelisted) return null;
+    return summary;
+  },
+});
+
+/**
+ * Index a single skill into Typesense immediately, instead of waiting for the
+ * daily mark-and-sweep. Scheduled from the manual-add paths so a just-added
+ * skill is searchable within seconds. Upsert-only — it never sweeps, so it
+ * needs no run lock and can't race the full sync (which re-imports the same
+ * doc with its own stamp on the next run). Best-effort: any failure (Typesense
+ * unconfigured, transient error) is swallowed — the daily sync backfills it.
+ */
+export const indexSkill = internalAction({
+  args: {
+    source: v.string(),
+    skillId: v.string(),
+    // The SKILL.md description the caller already resolved during the add. The
+    // content pipeline writes the summary's description asynchronously (a few
+    // seconds after insert), so on a fresh add the summary has none yet — this
+    // fills it so the very first indexed doc is complete, not name-only.
+    description: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { source, skillId, description }) => {
+    try {
+      const summary: Doc<"skillSummaries"> | null = await ctx.runQuery(
+        internal.typesense.getSummaryForIndex,
+        { source, skillId },
+      );
+      if (!summary) return null;
+      // Date.now() in an action is fine (non-deterministic context). A fresh
+      // stamp keeps a concurrent/next sweep from deleting this doc.
+      const doc = buildSkillDoc(summary, Date.now());
+      // Prefer a real stored description; fall back to the caller's freshly
+      // parsed one on the add path (guard against overwriting with empty).
+      if (!doc.description && description) doc.description = description;
+      await importDocuments([doc]);
+    } catch (err) {
+      console.warn(
+        `typesense indexSkill: couldn't index ${source}/${skillId} (daily sync will backfill):`,
+        err,
+      );
+    }
+    return null;
   },
 });
 

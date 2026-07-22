@@ -10,6 +10,7 @@ import {
   DashboardSquare01Icon,
   Tag01Icon,
   CheckmarkCircle02Icon,
+  PlusSignCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,19 @@ function NavLinks({ activeHref }: { activeHref: string | null }) {
         }
       >
         Official
+      </NavLink>
+      <NavLink
+        href="/add"
+        activeHref={activeHref}
+        icon={
+          <HugeiconsIcon
+            icon={PlusSignCircleIcon}
+            strokeWidth={2}
+            className="size-4"
+          />
+        }
+      >
+        Add skill
       </NavLink>
       <NavLink
         href="/dashboard"

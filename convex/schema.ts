@@ -27,6 +27,13 @@ export default defineSchema({
     // skills.sh feed reports the skill ("adoption" in upsertSkillsBatch), at
     // which point ordinary lifecycle rules resume.
     isGitHubOnly: v.optional(v.boolean()),
+    // The user who manually added this skill (public "add from GitHub" flow),
+    // for attribution/takedown and to count a free user's GitHub-only-add quota.
+    // Stamped once on insert and never rewritten (adoption/relist preserve it),
+    // so the quota count stays stable. Undefined for skills that entered via
+    // the normal sync pipeline. Quota only counts rows where the immutable
+    // origin tag `leaderboard === "github"`; see convex/lib/plans.ts.
+    addedBy: v.optional(v.id("users")),
     // Discovered raw.githubusercontent.com URL for the SKILL.md file. Set by
     // discoverSkillMdUrls after walking the GitHub Tree (or empty string if
     // discovery failed). Used by fetchSkillContent for the actual download.
@@ -111,6 +118,9 @@ export default defineSchema({
     embeddingSkipReason: v.optional(v.string()),
   })
     .index("by_source_skillId", ["source", "skillId"])
+    // Counts a user's GitHub-only adds for the free-tier quota. Compound with
+    // leaderboard so the count filters to `leaderboard === "github"` in-index.
+    .index("by_addedBy_leaderboard", ["addedBy", "leaderboard"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_isDelisted", ["isDelisted"])

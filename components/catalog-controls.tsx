@@ -30,7 +30,11 @@ import { PublisherSelect } from "@/components/publisher-select";
 import { useCatalogFacets, useExplorerState } from "@/components/explorer-state";
 import { formatInstalls, cn } from "@/lib/utils";
 import type { FacetCount } from "@/lib/search/typesense";
-import type { AuditFilterValue, CatalogSortValue } from "@/lib/search-params";
+import type {
+  AuditFilterValue,
+  CatalogSortValue,
+  SourceKindValue,
+} from "@/lib/search-params";
 
 const SORT_LABELS: Record<CatalogSortValue, string> = {
   relevance: "Relevance",
@@ -53,6 +57,11 @@ const AUDIT_ITEMS = {
   [ANY]: "Any audit",
   pass: "Passed audits only",
   nofail: "Hide failed audits",
+};
+const SOURCE_ITEMS: Record<SourceKindValue, string> = {
+  all: "All sources",
+  skillssh: "skills.sh only",
+  github: "GitHub-only",
 };
 const MIN_INSTALL_ITEMS = {
   [ANY]: "Any installs",
@@ -191,6 +200,46 @@ function AuditSelect({
   );
 }
 
+function SourceSelect({
+  surface,
+  className,
+}: {
+  surface: ControlSurface;
+  className?: string;
+}) {
+  const { sourceKind, setParams } = useExplorerState();
+  const { inSheet, selectAlign, selectModal, popupLevel, triggerVariant } =
+    surfaceProps(surface);
+  return (
+    <Select
+      value={sourceKind}
+      onValueChange={(v) => {
+        if (v) setParams({ sourceKind: v as SourceKindValue });
+      }}
+      items={SOURCE_ITEMS}
+      modal={selectModal}
+    >
+      <SelectTrigger
+        size="sm"
+        variant={triggerVariant}
+        aria-label="Filter by source"
+        className={cn(
+          // Match AuditSelect: ghost rests muted, full foreground once narrowed.
+          !inSheet && sourceKind !== "all" && "text-foreground",
+          className,
+        )}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={selectAlign} level={popupLevel}>
+        <SelectItem value="all">{SOURCE_ITEMS.all}</SelectItem>
+        <SelectItem value="skillssh">{SOURCE_ITEMS.skillssh}</SelectItem>
+        <SelectItem value="github">{SOURCE_ITEMS.github}</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
 function MinInstallsSelect({
   surface,
   className,
@@ -250,6 +299,7 @@ export function CatalogControlsBar() {
         surface="chin"
       />
       <AuditSelect surface="chin" />
+      <SourceSelect surface="chin" />
 
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -377,6 +427,9 @@ export function CatalogControlsSheet() {
           </Field>
           <Field label="Security">
             <AuditSelect surface="sheet" className="w-full" />
+          </Field>
+          <Field label="Source">
+            <SourceSelect surface="sheet" className="w-full" />
           </Field>
           <Field label="Minimum installs">
             <MinInstallsSelect surface="sheet" className="w-full" />

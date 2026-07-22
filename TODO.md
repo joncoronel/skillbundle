@@ -6,6 +6,24 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Public add-skill: moderation / report queue
+
+The public add flow (`/add`, search empty-state) lets any signed-in user add a
+GitHub-only skill. Abuse is bounded by hard validation (must be a real repo with
+a resolvable SKILL.md), the free-tier cap (`maxGitHubOnlyAdds`), leaderboard
+exclusion, and `addedBy` attribution for targeted removal. Not yet built: a
+report affordance on skill pages + an admin moderation view keyed on `addedBy`
+(e.g. list a user's adds, bulk-remove). Build when the first abuse actually shows
+up — attribution is already in place to support it.
+
+### Add-skill: upfront quota indicator on /add
+
+The "N of 3 free GitHub-only adds used" indicator currently only appears on the
+GitHub-only preview card (from `previewGitHubSkillPublic`'s returned quota). A
+signed-in free user on `/add` sees no remaining-count until they preview a
+GitHub-only skill. Nice-to-have: a small public `myGitHubAddQuota` query to show
+it upfront. Deferred to keep the surface minimal.
+
 ### Add-skill: repo-root URL should offer a skill picker
 
 `/dev/add-skill` accepts GitHub deep links (tree/blob/raw, slug derived from

@@ -68,6 +68,13 @@ export const publisherParser = parseAsArrayOf(parseAsString)
 export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
 // true = hide skills whose SKILL.md fetch failed (install command may break).
 export const brokenFilterParser = parseAsBoolean.withDefault(false);
+// Catalog source: "all" (default, both) stays absent from the URL; "skillssh"
+// = only skills.sh-backed skills; "github" = only GitHub-only skills.
+const sourceKindValues = ["all", "skillssh", "github"] as const;
+export type SourceKindValue = (typeof sourceKindValues)[number];
+export const sourceKindParser = parseAsStringLiteral(sourceKindValues)
+  .withDefault("all")
+  .withOptions({ clearOnDefault: true });
 
 // The home page's full URL-state surface as ONE useQueryStates map. Writes
 // that trigger list re-renders go through startTransition (non-urgent) so the
@@ -87,6 +94,10 @@ export const homeParamParsers = {
   minInstalls: minInstallsParser.withOptions({ startTransition }),
   searchDescriptions: searchDescriptionsParser.withOptions({ startTransition }),
   broken: brokenFilterParser.withOptions({ startTransition }),
+  sourceKind: sourceKindParser.withOptions({
+    startTransition,
+    clearOnDefault: true,
+  }),
   view: leaderboardViewParser,
 } as const;
 
@@ -102,6 +113,7 @@ export const homeParamUrlKeys = {
   minInstalls: "min",
   searchDescriptions: "desc",
   broken: "broken",
+  sourceKind: "src",
   view: "view",
 } as const satisfies UrlKeys<typeof homeParamParsers>;
 

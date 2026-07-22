@@ -26,6 +26,7 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
       "Browse, search & compare skills",
       "3 saved bundles",
       "Public bundles only",
+      "Add 3 GitHub-only skills",
       "Basic install commands",
     ],
     cta: {
@@ -45,6 +46,7 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
       "GitHub repo auto-detection",
       "Unlimited saved bundles",
       "Private bundles",
+      "Unlimited GitHub-only skill adds",
       "Bundle analytics",
     ],
     cta: {
@@ -84,6 +86,13 @@ export const COMPARISON: ComparisonGroup[] = [
       { label: "Public bundles", free: true, pro: true },
       { label: "Private bundles", free: false, pro: true },
       { label: "Bundle analytics (views, copies)", free: false, pro: true },
+    ],
+  },
+  {
+    title: "Contributing",
+    rows: [
+      { label: "Add skills that are on skills.sh", free: true, pro: true },
+      { label: "Add GitHub-only skills", free: "Up to 3", pro: "Unlimited" },
     ],
   },
 ];
