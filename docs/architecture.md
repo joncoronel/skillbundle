@@ -48,6 +48,7 @@ svix
 | `/compare` | `○` Static | Skills in `?skills=` param (nuqs), one client Convex query per column |
 | `/settings` | `○` Static | Clerk hooks client-side; sessions via server action, fetched on demand |
 | `/dashboard` | `○` Static | `listByUser` + `currentPlan` client-fetched over the authed websocket |
+| `/add` | `○` Static | Public add-skill flow; auth resolves client-side (`useConvexAuth`), quota via `myGitHubAddQuota` over the websocket, adds via Convex actions |
 | `/official`, `/pricing` | `○` Static | official: `'use cache'` curated owners loader |
 | `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly via `loading.tsx`, then upgrade. Data via `'use cache'` + `cacheTag('skill-sync')` loaders |
 | `/bundle/[id]`, `/dev`, `/dev/add-skill` | `◐` Partial Prerender | bundle: `loading.tsx` shell + `preloadQuery` authed content streams in; dev: `verifyAdmin()` streams behind a Suspense gate |

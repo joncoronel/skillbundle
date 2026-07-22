@@ -139,6 +139,13 @@ export interface SkillFilters {
   source?: string;
   /** Restrict to any of these publisher owners (slug before "/" in source). */
   owners?: string[];
+  /**
+   * Hide GitHub-only skills (show only skills.sh-backed ones). Backed by the
+   * faceted isGitHubOnly doc field. Boolean on purpose — it mirrors the URL
+   * param and the sibling hide-toggles; widen to a tri-state only if a
+   * GitHub-only-only browse surface ever exists.
+   */
+  hideGitHubOnly?: boolean;
 }
 
 /** A publisher (owner) and how many skills it has, for the Publisher picker. */
@@ -187,6 +194,13 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   if (filters.audit === "pass") clauses.push(`${field("worstAuditStatus")}:=pass`);
   if (filters.audit === "nofail") clauses.push(`${field("worstAuditStatus")}:!=fail`);
   if (filters.hideForks) clauses.push(`${field("isDuplicate")}:false`);
+  // Typesense SKIPS docs missing a filtered field, so this clause only
+  // behaves once the collection schema carries isGitHubOnly and docs are
+  // synced (see the deploy note on skillsCollectionSchema in
+  // convex/lib/typesense.ts). Default off adds no clause, so the baseline
+  // view never depends on it.
+  if (filters.hideGitHubOnly)
+    clauses.push(`${field("isGitHubOnly")}:false`);
   if (filters.excludeBroken) clauses.push(`${field("hasContentFetchError")}:false`);
   if (filters.minInstalls !== undefined)
     clauses.push(`${field("installs")}:>=${filters.minInstalls}`);
@@ -223,6 +237,7 @@ function activeNarrowingKeys(filters: SkillFilters = {}): (keyof SkillFilters)[]
   if (filters.source) keys.push("source");
   if (filters.owners !== undefined && filters.owners.length > 0)
     keys.push("owners");
+  if (filters.hideGitHubOnly) keys.push("hideGitHubOnly");
   return keys;
 }
 

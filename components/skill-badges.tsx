@@ -4,6 +4,7 @@ import {
   ArrowDown02Icon,
   ArrowUp02Icon,
   CheckmarkBadge02Icon,
+  GithubIcon,
 } from "@hugeicons/core-free-icons";
 import {
   Tooltip,
@@ -105,6 +106,24 @@ export function OfficialBadge({
         className="size-4"
       />
     </span>
+  );
+}
+
+/**
+ * Marks a skill that exists only on GitHub, not through the skills.sh API.
+ * Uses the muted signal chip (icon carries the meaning, never color alone); the
+ * tooltip explains the reduced-data consequence. Auto-disappears the moment the
+ * skill is adopted onto skills.sh (isGitHubOnly clears in the sync).
+ */
+export function GitHubOnlyBadge({ className }: { className?: string }) {
+  return (
+    <SignalChip
+      icon={GithubIcon}
+      label="GitHub-only skill"
+      tone="muted"
+      tooltip="Only on GitHub, not skills.sh. Install counts and security audits stay unavailable until it's listed on skills.sh."
+      className={className}
+    />
   );
 }
 

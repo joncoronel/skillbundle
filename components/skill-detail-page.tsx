@@ -223,6 +223,14 @@ async function SkillDetailBody({
         </div>
       )}
 
+      {skill.isGitHubOnly && !skill.isDelisted && (
+        <div className="mb-4 rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
+          This skill is available only on GitHub, not through the skills.sh API.
+          Install counts and security audits stay unavailable until it&apos;s
+          listed on skills.sh.
+        </div>
+      )}
+
       {copies.renamedTo && (
         <div className="mb-4 rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
           This repository was renamed. Live version:{" "}

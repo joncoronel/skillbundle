@@ -35,6 +35,7 @@ import {
 import {
   HotMomentumChip,
   OfficialBadge,
+  GitHubOnlyBadge,
   SignalChip,
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
@@ -94,6 +95,9 @@ export interface SkillData {
   createdAt?: number;
   isDelisted?: boolean;
   hasContentFetchError?: boolean;
+  /** True when the skill exists only on GitHub, not on the skills.sh API.
+   *  Drives the "GitHub-only" badge. Clears automatically on adoption. */
+  isGitHubOnly?: boolean;
   // v1 API fields, denormalized onto skillSummaries.
   curatedOwner?: string;
   worstAuditStatus?: string;
@@ -447,6 +451,9 @@ const SkillRowContent = memo(function SkillRowContent({
               className="shrink-0 self-center"
             />
           )}
+          {skill.isGitHubOnly && (
+            <GitHubOnlyBadge className="shrink-0 self-center" />
+          )}
         </span>
         {!hideSource && (
           <span className="min-w-0 max-w-full truncate text-sm text-muted-foreground">
@@ -535,6 +542,7 @@ const SkillCardContent = memo(function SkillCardContent({
               className="[text-box:trim-both_cap_alphabetic]"
             />
             {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
+            {skill.isGitHubOnly && <GitHubOnlyBadge />}
           </CardTitle>
         </div>
         <CardDescription className="text-xs line-clamp-2">

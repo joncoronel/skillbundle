@@ -68,6 +68,10 @@ export const publisherParser = parseAsArrayOf(parseAsString)
 export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
 // true = hide skills whose SKILL.md fetch failed (install command may break).
 export const brokenFilterParser = parseAsBoolean.withDefault(false);
+// true = hide GitHub-only skills (show only skills backed by the skills.sh
+// API). Default false shows everything; a checkbox in the "More" filter menu
+// flips it, mirroring "hide broken installs".
+export const hideGitHubOnlyParser = parseAsBoolean.withDefault(false);
 
 // The home page's full URL-state surface as ONE useQueryStates map. Writes
 // that trigger list re-renders go through startTransition (non-urgent) so the
@@ -87,6 +91,7 @@ export const homeParamParsers = {
   minInstalls: minInstallsParser.withOptions({ startTransition }),
   searchDescriptions: searchDescriptionsParser.withOptions({ startTransition }),
   broken: brokenFilterParser.withOptions({ startTransition }),
+  hideGitHubOnly: hideGitHubOnlyParser.withOptions({ startTransition }),
   view: leaderboardViewParser,
 } as const;
 
@@ -102,6 +107,7 @@ export const homeParamUrlKeys = {
   minInstalls: "min",
   searchDescriptions: "desc",
   broken: "broken",
+  hideGitHubOnly: "nogithub",
   view: "view",
 } as const satisfies UrlKeys<typeof homeParamParsers>;
 

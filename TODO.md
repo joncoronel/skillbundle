@@ -6,6 +6,28 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Public add-skill: moderation / report queue
+
+The public add flow (`/add`, search empty-state) lets any signed-in user add a
+GitHub-only skill. Abuse is bounded by hard validation (must be a real repo with
+a resolvable SKILL.md), the free-tier cap (`maxGitHubOnlyAdds`), leaderboard
+exclusion, and `addedBy` attribution for targeted removal. Not yet built: a
+report affordance on skill pages + an admin moderation view keyed on `addedBy`
+(e.g. list a user's adds, bulk-remove). Build when the first abuse actually shows
+up — attribution is already in place to support it.
+
+### Typesense prod collection: one-time reset for `isGitHubOnly`
+
+The prod `skills` collection predates the `isGitHubOnly` field and there is no
+schema-alter path in this codebase, so the "Hide GitHub-only skills" filter
+errors against it until the collection is recreated. Decided (Jul 2026): the
+reset route, not a PATCH helper. Run back to back, during low traffic:
+
+    npx convex run typesense:resetCollection --prod
+    npx convex run typesense:syncCatalog --prod
+
+Dev already done (2026-07-22). Delete this entry once prod has run.
+
 ### Add-skill: repo-root URL should offer a skill picker
 
 `/dev/add-skill` accepts GitHub deep links (tree/blob/raw, slug derived from
@@ -82,9 +104,9 @@ Known cost, accepted: audits stay `"unknown"` for these rows because the audit
 endpoint 404s. Revisit only if GitHub-only skills become common enough that the
 missing security signal matters.
 
-Deferred follow-up: nothing surfaces `isGitHubOnly` in the UI. A quiet marker on the
-skill page (explaining why installs read 0 and the audit is unknown) would be honest,
-but it's only worth building once more than a couple of these exist.
+Shipped since (Jul 2026, public add-skill PR): `isGitHubOnly` now surfaces across
+the UI — a badge on cards/rows, an info banner on the skill detail page, and a
+"Hide GitHub-only skills" search filter.
 
 ### Sign-in second factor: email code only (future: real MFA)
 

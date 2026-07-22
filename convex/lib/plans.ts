@@ -10,6 +10,11 @@ export interface PlanLimits {
   canAutoDetect: boolean;
   canViewAnalytics: boolean;
   canExport: boolean;
+  // Lifetime cap on GitHub-only skill adds (skills that don't exist on
+  // skills.sh at all). Normal skills.sh adds are always free/unlimited — they
+  // carry no abuse risk and just accelerate an inevitable sync. Counted by
+  // `addedBy` rows whose immutable `leaderboard === "github"` origin tag.
+  maxGitHubOnlyAdds: number;
 }
 
 const PLAN_LIMITS: Record<Plan, PlanLimits> = {
@@ -22,6 +27,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     canAutoDetect: false,
     canViewAnalytics: false,
     canExport: false,
+    maxGitHubOnlyAdds: 3,
   },
   pro: {
     maxBundles: Infinity,
@@ -29,6 +35,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     canAutoDetect: true,
     canViewAnalytics: true,
     canExport: true,
+    maxGitHubOnlyAdds: Infinity,
   },
 };
 

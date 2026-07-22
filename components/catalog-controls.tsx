@@ -239,8 +239,15 @@ function MinInstallsSelect({
  * exactly the chin's own filters (`filterCount.chin`).
  */
 export function CatalogControlsBar() {
-  const { publisher, setParams, minInstalls, broken, filterCount, clearFilters } =
-    useExplorerState();
+  const {
+    publisher,
+    setParams,
+    minInstalls,
+    broken,
+    hideGitHubOnly,
+    filterCount,
+    clearFilters,
+  } = useExplorerState();
   const moreCount = filterCount.more;
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -306,6 +313,15 @@ export function CatalogControlsBar() {
           >
             Hide broken installs
           </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={hideGitHubOnly}
+            onCheckedChange={(checked) =>
+              setParams({ hideGitHubOnly: !!checked })
+            }
+            closeOnClick={false}
+          >
+            Hide GitHub-only skills
+          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -349,6 +365,7 @@ export function CatalogControlsSheet() {
     official,
     searchDescriptions,
     broken,
+    hideGitHubOnly,
     setParams,
   } = useExplorerState();
   return (
@@ -393,6 +410,12 @@ export function CatalogControlsSheet() {
             hint="Skip skills whose install command may fail"
             checked={broken}
             onCheckedChange={(v) => setParams({ broken: v })}
+          />
+          <SwitchRow
+            label="Hide GitHub-only skills"
+            hint="Only skills available through the skills.sh API"
+            checked={hideGitHubOnly}
+            onCheckedChange={(v) => setParams({ hideGitHubOnly: v })}
           />
         </div>
       </LabeledSection>

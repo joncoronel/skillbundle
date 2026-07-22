@@ -5,7 +5,7 @@ import {
   internalQuery,
   query,
 } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
@@ -35,6 +35,15 @@ import { isGitHubSource } from "./lib/source";
 import { kebabCase, matchesSkillId } from "./lib/skillMatch";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
+import { getCurrentUser } from "./users";
+import {
+  gitHubQuotaValidator,
+  countGitHubOnlyAdds,
+  computeGitHubAddQuota,
+  quotaExceededError,
+} from "./lib/githubQuota";
+import { kickPostAddChain } from "./lib/postAdd";
+import { toPublicError } from "./lib/publicError";
 
 // ---------------------------------------------------------------------------
 // Sync actions
@@ -434,6 +443,18 @@ export const upsertSkillsBatch = internalMutation({
     // means — so leaving this false is what clears the marker off a row that
     // was previously GitHub-only. See the `adopting` note in the fast path.
     isGitHubOnly: v.optional(v.boolean()),
+    // The user who added this skill via the public add flow. Stamped only on
+    // the genuine-new-insert path (never on relist/orphan/adoption) so original
+    // attribution is preserved, and used to count a free user's GitHub-only-add
+    // quota. Omitted by every sync caller.
+    addedBy: v.optional(v.id("users")),
+    // Enforce the free-tier GitHub-only-add quota atomically inside this
+    // mutation — same transaction as the insert — so two concurrent submits
+    // can't both slip past a client-side check. Only the public GitHub-only add
+    // path passes it (and only for free users); every sync caller omits it.
+    enforceGitHubQuotaFor: v.optional(
+      v.object({ userId: v.id("users"), limit: v.number() }),
+    ),
   },
   /**
    * Listing-call upsert. Two paths:
@@ -463,6 +484,8 @@ export const upsertSkillsBatch = internalMutation({
       ownsInstalls = true,
       day: pinnedDay,
       isGitHubOnly = false,
+      addedBy,
+      enforceGitHubQuotaFor,
     },
   ) => {
     const now = Date.now();
@@ -648,6 +671,22 @@ export const upsertSkillsBatch = internalMutation({
         });
       } else {
         // Genuinely new skill.
+        //
+        // Atomic free-tier quota gate for the public GitHub-only add path.
+        // Counting + insert share this one transaction, so a double-submit
+        // can't race two rows past the cap. Deliberately scoped to THIS branch
+        // only: relist/orphan paths never stamp `addedBy` (no quota consumed),
+        // so an at-limit user relisting a delisted row must not be rejected.
+        if (enforceGitHubQuotaFor) {
+          const counted = await countGitHubOnlyAdds(
+            ctx,
+            enforceGitHubQuotaFor.userId,
+            enforceGitHubQuotaFor.limit,
+          );
+          if (counted >= enforceGitHubQuotaFor.limit) {
+            throw quotaExceededError();
+          }
+        }
         skillDocId = await ctx.db.insert("skills", {
           source: skill.source,
           skillId: skill.skillId,
@@ -672,6 +711,10 @@ export const upsertSkillsBatch = internalMutation({
           // 404s and audits.ts records "unknown", which is the honest verdict and
           // self-corrects if the skill is ever adopted.
           ...(isGitHubOnly && { isGitHubOnly: true }),
+          // Attribution for the public add flow. Genuine-insert only — relist
+          // and orphan paths above never touch it, preserving the original
+          // adder. Undefined for sync-pipeline rows.
+          ...(addedBy && { addedBy }),
         });
       }
 
@@ -3346,6 +3389,8 @@ export const getContent = query({
 // doesn't touch, regardless of origin tag) — there is no manual-specific cron.
 
 const MANUAL_LEADERBOARD = "manual";
+// The GitHub-only origin tag + quota machinery live in lib/githubQuota.ts —
+// one module owns the tag the insert writes AND the tag the count filters on.
 
 // parseSkillInput lives at lib/parse-skill-input.ts so the /dev/add-skill form
 // can import it and validate input client-side. Validating before calling the
@@ -3429,188 +3474,278 @@ export const promoteSkillToManual = internalMutation({
   },
 });
 
+type ManualAddResult = {
+  status:
+    | "inserted"
+    | "relisted"
+    | "already_exists"
+    | "adopted"
+    | "not_on_skills_sh";
+  source: string;
+  skillId: string;
+  name: string;
+};
+
+const manualAddReturns = v.object({
+  status: v.union(
+    v.literal("inserted"),
+    v.literal("relisted"),
+    v.literal("already_exists"),
+    // A GitHub-only row whose skill has since appeared on skills.sh was
+    // upgraded to a normal row (marker cleared, real installs taken over).
+    // This is the documented recovery path for a GitHub-only skill that
+    // later gets listed but never shows up on a feed.
+    v.literal("adopted"),
+    // The skills.sh detail endpoint 404ed. Returned as a status — NOT thrown —
+    // because prod Convex redacts non-ConvexError messages to a generic
+    // "Server Error", so the client could never distinguish "not listed" (the
+    // trigger for the GitHub-only fallback) from a real failure by
+    // message-sniffing. Expected outcomes are data, not exceptions.
+    v.literal("not_on_skills_sh"),
+  ),
+  source: v.string(),
+  skillId: v.string(),
+  name: v.string(),
+});
+
 /**
- * Admin-only manual skill add. Verifies the skill exists on skills.sh, then
- * routes through the canonical upsertSkillsBatch with `leaderboard: "manual"`.
- * Kicks the discovery/content-fetch chain so SKILL.md is downloaded within
- * seconds rather than waiting for the next syncSkills run.
+ * The manual-add pipeline, shared by the admin action and the public one.
+ *
+ * Verifies the skill exists on skills.sh, then routes through the canonical
+ * upsertSkillsBatch with `leaderboard: "manual"`, and kicks the
+ * discovery/content-fetch chain so SKILL.md is downloaded within seconds
+ * rather than waiting for the next syncSkills run. When `addedBy` is supplied
+ * (public flow) it's threaded into the insert for attribution — normal-add
+ * rows land as `leaderboard: "manual"`, so they never count against the
+ * GitHub-only quota. Callers own the auth gate before invoking this.
+ */
+async function manualAddCore(
+  ctx: ActionCtx,
+  input: string,
+  addedBy?: Id<"users">,
+): Promise<ManualAddResult> {
+  // Wrap parseSkillInput's plain Error → ConvexError so production preserves
+  // the message instead of redacting to a generic "Server Error". (Defense-
+  // in-depth — the form already validates client-side; this only matters if
+  // someone calls the action via the Convex dashboard or programmatically.)
+  let source: string;
+  let skillId: string;
+  try {
+    ({ source, skillId } = parseSkillInput(input));
+  } catch (err) {
+    if (err instanceof Error) throw new ConvexError(err.message);
+    throw err;
+  }
+
+  // Skip the API call if the catalog already has this skill in good standing.
+  // Re-adding is harmless (upsertSkillsBatch is idempotent), but we'd rather
+  // give a clear "no-op" signal than a silent success.
+  //
+  // EXCEPT for GitHub-only rows: they are in the catalog but NOT on skills.sh,
+  // and re-running the normal add is their documented adoption escape hatch (a
+  // skill can be listed on skills.sh yet absent from every feed — the
+  // improve-ui coverage gap — so feed-driven adoption alone can strand them at
+  // 0 installs forever). Short-circuiting here would make that recovery a
+  // silent no-op, so GitHub-only rows fall through to the detail probe: 200 →
+  // adopt below; still 404 → report already_exists.
+  const precheck: {
+    name: string;
+    isDelisted: boolean;
+    isGitHubOnly: boolean;
+  } | null = await ctx.runQuery(internal.skills.getManualAddPrecheck, {
+    source,
+    skillId,
+  });
+  if (precheck && !precheck.isDelisted && !precheck.isGitHubOnly) {
+    return {
+      status: "already_exists" as const,
+      source,
+      skillId,
+      name: precheck.name,
+    };
+  }
+
+  // Verify against skills.sh. A 404 is an EXPECTED outcome (the trigger for
+  // the client's GitHub-only fallback), so it's returned as a status, not
+  // thrown — see the returns-validator comment. Rate limits are wrapped in
+  // ConvexError so the prod toast says something actionable instead of the
+  // redacted "Server Error".
+  let detail: V1SkillDetail;
+  try {
+    detail = await withTransientRetry(() => v1GetSkillDetail(source, skillId));
+  } catch (err) {
+    if (err instanceof SkillsApiNotFoundError) {
+      // A live GitHub-only row that is STILL not on skills.sh: nothing to
+      // adopt, and offering the GitHub fallback would only dead-end at
+      // "already in the catalog" — report it as already existing instead.
+      if (precheck && !precheck.isDelisted) {
+        return {
+          status: "already_exists" as const,
+          source,
+          skillId,
+          name: precheck.name,
+        };
+      }
+      return { status: "not_on_skills_sh" as const, source, skillId, name: "" };
+    }
+    if (err instanceof SkillsApiRateLimitError) {
+      throw new ConvexError(
+        "skills.sh is rate-limiting requests. Try again in a minute.",
+      );
+    }
+    throw err;
+  }
+
+  // Pull the human name out of SKILL.md frontmatter (the listing endpoint
+  // would have given it to us directly, but detail doesn't include name as
+  // a top-level field). Fall back to a humanized slug if the SKILL.md
+  // doesn't parse cleanly.
+  const skillMd = detail.files?.find((f) => f.path === "SKILL.md");
+  const parsedName = skillMd ? extractSkillMdName(skillMd.contents) : null;
+  const name = parsedName ?? humanizeSlug(detail.slug);
+  // Same source the content pipeline will use — parse it now so the immediate
+  // Typesense index (below) has a description instead of just the name.
+  const parsedDescription = skillMd
+    ? (extractFrontmatterDescription(skillMd.contents) ?? undefined)
+    : undefined;
+
+  await ctx.runMutation(internal.skills.upsertSkillsBatch, {
+    skills: [
+      {
+        source: detail.source,
+        skillId: detail.slug,
+        name,
+        installs: detail.installs,
+        // detail endpoint doesn't expose isDuplicate; default to false. If
+        // the skill is later flagged as a duplicate upstream, syncSkills
+        // mirrors that into our row next time it appears on the leaderboard.
+        isDuplicate: false,
+      },
+    ],
+    leaderboard: MANUAL_LEADERBOARD,
+    ...(addedBy && { addedBy }),
+  });
+
+  // On relist: upsertSkillsBatch deliberately doesn't patch `leaderboard`
+  // (origin tag, set on insert only), so normalize it to "manual" for
+  // provenance. Keeping the relisted skill fresh + undeleted is handled
+  // generically by reconcileUnseenSkills (by health + staleness, not by tag).
+  if (precheck?.isDelisted) {
+    await ctx.runMutation(internal.skills.promoteSkillToManual, {
+      source: detail.source,
+      skillId: detail.slug,
+    });
+  }
+
+  // Backfill chain + cache bust + immediate Typesense index — shared with the
+  // GitHub-only add; see lib/postAdd.ts for the why of each step.
+  await kickPostAddChain(ctx, {
+    source: detail.source,
+    skillId: detail.slug,
+    description: parsedDescription,
+  });
+
+  return {
+    // A live row could only reach the upsert via the GitHub-only fall-through,
+    // and the upsert (isGitHubOnly unset → false) just ran the adoption
+    // transition: marker cleared, real install count owned.
+    status: precheck?.isDelisted
+      ? ("relisted" as const)
+      : precheck
+        ? ("adopted" as const)
+        : ("inserted" as const),
+    source: detail.source,
+    skillId: detail.slug,
+    name,
+  };
+}
+
+/**
+ * Admin-only manual skill add. See manualAddCore.
  */
 export const addSkillManually = action({
   args: { input: v.string() },
-  returns: v.object({
-    status: v.union(
-      v.literal("inserted"),
-      v.literal("relisted"),
-      v.literal("already_exists"),
-      // A GitHub-only row whose skill has since appeared on skills.sh was
-      // upgraded to a normal row (marker cleared, real installs taken over).
-      // This is the documented recovery path for a GitHub-only skill that
-      // later gets listed but never shows up on a feed.
-      v.literal("adopted"),
-      // The skills.sh detail endpoint 404ed. Returned as a status — NOT thrown
-      // — because prod Convex redacts non-ConvexError messages to a generic
-      // "Server Error", so the client could never distinguish "not listed"
-      // (the trigger for the GitHub-only fallback) from a real failure by
-      // message-sniffing. Expected outcomes are data, not exceptions.
-      v.literal("not_on_skills_sh"),
-    ),
-    source: v.string(),
-    skillId: v.string(),
-    name: v.string(),
-  }),
+  returns: manualAddReturns,
   // Explicit return-type annotation breaks the inference cycle introduced by
   // `ctx.runQuery(internal.skills.*)` referencing the same file's api type.
-  handler: async (
-    ctx,
-    { input },
-  ): Promise<{
-    status:
-      | "inserted"
-      | "relisted"
-      | "already_exists"
-      | "adopted"
-      | "not_on_skills_sh";
-    source: string;
-    skillId: string;
-    name: string;
-  }> => {
+  handler: async (ctx, { input }): Promise<ManualAddResult> => {
     await assertAdmin(ctx);
+    return manualAddCore(ctx, input);
+  },
+});
 
-    // Wrap parseSkillInput's plain Error → ConvexError so production preserves
-    // the message instead of redacting to a generic "Server Error". (Defense-
-    // in-depth — the form already validates client-side; this only matters if
-    // someone calls the action via the Convex dashboard or programmatically.)
-    let source: string;
-    let skillId: string;
+/**
+ * Public manual skill add (Branch 1 of the public add flow). Any signed-in
+ * user can add a skill that already exists on skills.sh — no quota, since the
+ * row is vetted-by-skills.sh and would sync within a day anyway. Attribution
+ * is stamped via `addedBy`. A `not_on_skills_sh` result is the client's signal
+ * to fall through to the GitHub-only path (githubOnly.previewGitHubSkillPublic).
+ */
+export const addSkillManuallyPublic = action({
+  args: { input: v.string() },
+  returns: manualAddReturns,
+  handler: async (ctx, { input }): Promise<ManualAddResult> => {
+    const userId: Id<"users"> = await ctx.runQuery(
+      internal.skills.getAuthedUserId,
+      {},
+    );
+    // Same per-user throttle as the GitHub-only branch (throttle.ts): this
+    // branch hits the skills.sh detail endpoint per call, and the client
+    // cascades from here into the GitHub fallback, so both share one budget.
+    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, { userId });
     try {
-      ({ source, skillId } = parseSkillInput(input));
+      return await manualAddCore(ctx, input, userId);
     } catch (err) {
-      if (err instanceof Error) throw new ConvexError(err.message);
-      throw err;
+      // Prod redacts non-ConvexError throws to "Server Error"; keep transient
+      // upstream failures actionable for the user (logged server-side).
+      throw toPublicError(
+        err,
+        "Something went wrong talking to skills.sh. Try again in a minute.",
+      );
     }
+  },
+});
 
-    // Skip the API call if the catalog already has this skill in good standing.
-    // Re-adding is harmless (upsertSkillsBatch is idempotent), but we'd rather
-    // give the admin a clear "no-op" signal than a silent success.
-    //
-    // EXCEPT for GitHub-only rows: they are in the catalog but NOT on
-    // skills.sh, and re-running the normal add is their documented adoption
-    // escape hatch (a skill can be listed on skills.sh yet absent from every
-    // feed — the improve-ui coverage gap — so feed-driven adoption alone can
-    // strand them at 0 installs forever). Short-circuiting here would make
-    // that recovery a silent no-op, so GitHub-only rows fall through to the
-    // detail probe: 200 → adopt below; still 404 → report already_exists.
-    const precheck: {
-      name: string;
-      isDelisted: boolean;
-      isGitHubOnly: boolean;
-    } | null = await ctx.runQuery(internal.skills.getManualAddPrecheck, {
-      source,
-      skillId,
-    });
-    if (precheck && !precheck.isDelisted && !precheck.isGitHubOnly) {
-      return {
-        status: "already_exists" as const,
-        source,
-        skillId,
-        name: precheck.name,
-      };
-    }
+/**
+ * Resolve the signed-in user's id, or throw a clean ConvexError. Used by the
+ * public add actions (which run as actions and can't touch the db directly).
+ */
+export const getAuthedUserId = internalQuery({
+  args: {},
+  returns: v.id("users"),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) throw new ConvexError("Sign in to add a skill.");
+    return user._id;
+  },
+});
 
-    // Verify against skills.sh. A 404 is an EXPECTED outcome (the trigger for
-    // the client's GitHub-only fallback), so it's returned as a status, not
-    // thrown — see the returns-validator comment. Rate limits are wrapped in
-    // ConvexError so the prod toast says something actionable instead of the
-    // redacted "Server Error".
-    let detail: V1SkillDetail;
-    try {
-      detail = await withTransientRetry(() => v1GetSkillDetail(source, skillId));
-    } catch (err) {
-      if (err instanceof SkillsApiNotFoundError) {
-        // A live GitHub-only row that is STILL not on skills.sh: nothing to
-        // adopt, and offering the GitHub fallback would only dead-end at
-        // "already in the catalog" — report it as already existing instead.
-        if (precheck && !precheck.isDelisted) {
-          return {
-            status: "already_exists" as const,
-            source,
-            skillId,
-            name: precheck.name,
-          };
-        }
-        return { status: "not_on_skills_sh" as const, source, skillId, name: "" };
-      }
-      if (err instanceof SkillsApiRateLimitError) {
-        throw new ConvexError(
-          "skills.sh is rate-limiting requests. Try again in a minute.",
-        );
-      }
-      throw err;
-    }
+/**
+ * The signed-in user's GitHub-only-add quota, plus their id — internal, for the
+ * add actions (the "N of M used" preview indicator and the confirm-time gate).
+ * Quota semantics live in lib/githubQuota.ts.
+ */
+export const getGitHubAddQuota = internalQuery({
+  args: {},
+  returns: v.object({ ...gitHubQuotaValidator.fields, userId: v.id("users") }),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) throw new ConvexError("Sign in to add a skill.");
+    const quota = await computeGitHubAddQuota(ctx, user._id);
+    return { ...quota, userId: user._id };
+  },
+});
 
-    // Pull the human name out of SKILL.md frontmatter (the listing endpoint
-    // would have given it to us directly, but detail doesn't include name as
-    // a top-level field). Fall back to a humanized slug if the SKILL.md
-    // doesn't parse cleanly.
-    const skillMd = detail.files?.find((f) => f.path === "SKILL.md");
-    const parsedName = skillMd ? extractSkillMdName(skillMd.contents) : null;
-    const name = parsedName ?? humanizeSlug(detail.slug);
-
-    await ctx.runMutation(internal.skills.upsertSkillsBatch, {
-      skills: [
-        {
-          source: detail.source,
-          skillId: detail.slug,
-          name,
-          installs: detail.installs,
-          // detail endpoint doesn't expose isDuplicate; default to false. If
-          // the skill is later flagged as a duplicate upstream, syncSkills
-          // mirrors that into our row next time it appears on the leaderboard.
-          isDuplicate: false,
-        },
-      ],
-      leaderboard: MANUAL_LEADERBOARD,
-    });
-
-    // On relist: upsertSkillsBatch deliberately doesn't patch `leaderboard`
-    // (origin tag, set on insert only), so normalize it to "manual" for
-    // provenance. Keeping the relisted skill fresh + undeleted is handled
-    // generically by reconcileUnseenSkills (by health + staleness, not by tag).
-    if (precheck?.isDelisted) {
-      await ctx.runMutation(internal.skills.promoteSkillToManual, {
-        source: detail.source,
-        skillId: detail.slug,
-      });
-    }
-
-    // Drain the discovery + content-fetch + audit chain so the new row's
-    // SKILL.md and audit data fill in within seconds. Mirrors syncCurated's
-    // pattern. Idempotent — if the row already exists, the workers find
-    // nothing flagged and exit.
-    await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
-
-    // Bust the skill-page cache immediately. The skill detail page is ISR'd
-    // (revalidate: 86400) and its loadSkill data cache is tagged "skill-sync";
-    // a path visited BEFORE this add has a cached `notFound()` render that
-    // would otherwise persist for up to 24h (until the next daily syncSkills
-    // ping or the ISR window). Without this, the "Open on SkillBundle" link
-    // right after adding lands on a stale 404. The org/repo directory pages
-    // now carry the same tag, so they refresh too. Best-effort —
-    // revalidateHomeTag swallows errors and no-ops in dev.
-    await revalidateHomeTag("skill-sync");
-
-    return {
-      // A live row could only reach the upsert via the GitHub-only
-      // fall-through, and the upsert (isGitHubOnly unset → false) just ran
-      // the adoption transition: marker cleared, real install count owned.
-      status: precheck?.isDelisted
-        ? ("relisted" as const)
-        : precheck
-          ? ("adopted" as const)
-          : ("inserted" as const),
-      source: detail.source,
-      skillId: detail.slug,
-      name,
-    };
+/**
+ * The signed-in user's GitHub-only-add quota — public, for the /add page's
+ * "X of 3 free adds used" indicator. Returns null when signed out.
+ */
+export const myGitHubAddQuota = query({
+  args: {},
+  returns: v.union(v.null(), gitHubQuotaValidator),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+    return await computeGitHubAddQuota(ctx, user._id);
   },
 });

@@ -170,6 +170,7 @@ export function rowToSkill(r: {
   installs: number;
   isDelisted?: boolean;
   hasContentFetchError?: boolean;
+  isGitHubOnly?: boolean;
   curatedOwner?: string;
   worstAuditStatus?: string;
   worstAuditRiskLevel?: string;

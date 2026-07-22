@@ -14,6 +14,7 @@ import {
   SkillRowGrid,
 } from "@/components/default-skills-list";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { AddSkillDialog } from "@/components/add-skill/add-skill-dialog";
 import { cn } from "@/lib/utils";
 
 interface ActiveCatalogResultsProps {
@@ -124,6 +125,17 @@ export function ActiveCatalogResults({
             <span className="mt-1 block text-xs text-muted-foreground">
               Try loosening a filter.
             </span>
+          )}
+          {query && (
+            <>
+              <span className="mt-3 block text-xs text-muted-foreground">
+                Know a skill we&apos;re missing? Add it from skills.sh or GitHub.
+              </span>
+              <AddSkillDialog
+                initialInput={/\/|github\.com/i.test(query) ? query : undefined}
+                className="mt-2"
+              />
+            </>
           )}
         </EmptyState>
       ) : (
