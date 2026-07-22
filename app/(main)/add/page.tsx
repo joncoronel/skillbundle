@@ -23,7 +23,10 @@ export default function AddSkillPage() {
       </header>
 
       <div className="mt-10 lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start lg:gap-x-12">
-        <AddSkillFlow autoFocus />
+        {/* No autoFocus here: on page load it would jump focus past the h1 and
+            pop the mobile keyboard. The dialog entry point keeps it, where the
+            user explicitly asked to add. */}
+        <AddSkillFlow />
 
         <aside className="mt-10 space-y-6 lg:mt-0">
           <GitHubAddQuota />
@@ -49,8 +52,8 @@ export default function AddSkillPage() {
                 <span className="font-medium text-foreground">
                   What you can add.
                 </span>{" "}
-                Any skill that&apos;s on skills.sh, unlimited. GitHub-only skills
-                are capped at 3 on the free plan.
+                Any skill that&apos;s on skills.sh, unlimited. GitHub-only
+                skills are capped on the free plan, unlimited on Pro.
               </li>
             </ul>
           </div>

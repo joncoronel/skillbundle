@@ -44,9 +44,10 @@ export interface ExplorerState extends HomeParams {
    * How many narrowing filters are active, per surface that shows a count.
    * `chin` counts the desktop chin's own controls (Official lives up in the
    * input row there, with its own pressed state); `sheet` adds Official, whose
-   * mobile home IS the sheet; `more` counts just the two behind the chin's
-   * "More" dropdown (minimum-installs + hide-broken). Each Clear / badge covers
-   * exactly the controls on its surface — derived here so no call site re-counts.
+   * mobile home IS the sheet; `more` counts the three behind the chin's "More"
+   * dropdown (minimum-installs + hide-broken + hide-GitHub-only). Each Clear /
+   * badge covers exactly the controls on its surface — derived here so no call
+   * site re-counts.
    */
   filterCount: { chin: number; sheet: number; more: number };
 
@@ -113,9 +114,7 @@ function buildExplorerState(
       // docs/search-overhaul.md. Kept so it auto-applies if it ever populates.
       hideForks: true,
       excludeBroken: params.broken || undefined,
-      // Binary control → the engine's tri-state source filter: hide GitHub-only
-      // means "skills.sh-backed only"; off leaves it unset (show everything).
-      sourceKind: params.hideGitHubOnly ? "skillssh" : undefined,
+      hideGitHubOnly: params.hideGitHubOnly || undefined,
     },
     filterCount: {
       chin: narrowing,

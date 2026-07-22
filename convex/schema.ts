@@ -9,6 +9,17 @@ export default defineSchema({
     externalId: v.string(),
   }).index("byExternalId", ["externalId"]),
 
+  // Fixed-window per-user throttles for public actions that fan out to
+  // external APIs (currently one key: the add-skill flow, whose preview can
+  // cost dozens of GitHub calls). One row per (user, key); the enforcing
+  // mutation resets `count` when the window has elapsed. See throttle.ts.
+  userThrottles: defineTable({
+    userId: v.id("users"),
+    key: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_user_key", ["userId", "key"]),
+
   skills: defineTable({
     source: v.string(),
     skillId: v.string(),

@@ -140,11 +140,12 @@ export interface SkillFilters {
   /** Restrict to any of these publisher owners (slug before "/" in source). */
   owners?: string[];
   /**
-   * Catalog source: "github" = only GitHub-only skills (not on skills.sh),
-   * "skillssh" = only skills.sh-backed skills, "all"/undefined = both. Backed
-   * by the faceted isGitHubOnly doc field.
+   * Hide GitHub-only skills (show only skills.sh-backed ones). Backed by the
+   * faceted isGitHubOnly doc field. Boolean on purpose — it mirrors the URL
+   * param and the sibling hide-toggles; widen to a tri-state only if a
+   * GitHub-only-only browse surface ever exists.
    */
-  sourceKind?: "all" | "skillssh" | "github";
+  hideGitHubOnly?: boolean;
 }
 
 /** A publisher (owner) and how many skills it has, for the Publisher picker. */
@@ -193,11 +194,12 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   if (filters.audit === "pass") clauses.push(`${field("worstAuditStatus")}:=pass`);
   if (filters.audit === "nofail") clauses.push(`${field("worstAuditStatus")}:!=fail`);
   if (filters.hideForks) clauses.push(`${field("isDuplicate")}:false`);
-  // Un-reindexed docs lack isGitHubOnly and are skipped by these clauses; the
-  // default "all" adds no clause, so the baseline view never drops them.
-  if (filters.sourceKind === "github")
-    clauses.push(`${field("isGitHubOnly")}:true`);
-  if (filters.sourceKind === "skillssh")
+  // Typesense SKIPS docs missing a filtered field, so this clause only
+  // behaves once the collection schema carries isGitHubOnly and docs are
+  // synced (see the deploy note on skillsCollectionSchema in
+  // convex/lib/typesense.ts). Default off adds no clause, so the baseline
+  // view never depends on it.
+  if (filters.hideGitHubOnly)
     clauses.push(`${field("isGitHubOnly")}:false`);
   if (filters.excludeBroken) clauses.push(`${field("hasContentFetchError")}:false`);
   if (filters.minInstalls !== undefined)
@@ -235,8 +237,7 @@ function activeNarrowingKeys(filters: SkillFilters = {}): (keyof SkillFilters)[]
   if (filters.source) keys.push("source");
   if (filters.owners !== undefined && filters.owners.length > 0)
     keys.push("owners");
-  if (filters.sourceKind && filters.sourceKind !== "all")
-    keys.push("sourceKind");
+  if (filters.hideGitHubOnly) keys.push("hideGitHubOnly");
   return keys;
 }
 

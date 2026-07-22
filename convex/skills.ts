@@ -5,7 +5,7 @@ import {
   internalQuery,
   query,
 } from "./_generated/server";
-import type { MutationCtx, ActionCtx, QueryCtx } from "./_generated/server";
+import type { MutationCtx, ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
@@ -36,7 +36,14 @@ import { kebabCase, matchesSkillId } from "./lib/skillMatch";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 import { getCurrentUser } from "./users";
-import { getUserPlanWithLimits } from "./lib/plans";
+import {
+  gitHubQuotaValidator,
+  countGitHubOnlyAdds,
+  computeGitHubAddQuota,
+  quotaExceededError,
+} from "./lib/githubQuota";
+import { kickPostAddChain } from "./lib/postAdd";
+import { toPublicError } from "./lib/publicError";
 
 // ---------------------------------------------------------------------------
 // Sync actions
@@ -486,28 +493,6 @@ export const upsertSkillsBatch = internalMutation({
     // current app-timezone day for callers that don't pin.
     const day = pinnedDay ?? appDay(now);
 
-    // Atomic free-tier quota gate for the public GitHub-only add path. Counting
-    // + insert share this one transaction, so a double-submit can't race two
-    // rows past the cap. `leaderboard: "github"` is an immutable origin tag, so
-    // adoption (which only clears isGitHubOnly) never distorts the count.
-    if (enforceGitHubQuotaFor) {
-      const owned = await ctx.db
-        .query("skills")
-        .withIndex("by_addedBy_leaderboard", (q) =>
-          q
-            .eq("addedBy", enforceGitHubQuotaFor.userId)
-            .eq("leaderboard", GITHUB_LEADERBOARD),
-        )
-        .collect();
-      if (owned.length >= enforceGitHubQuotaFor.limit) {
-        throw new ConvexError({
-          code: "quota_exceeded",
-          message:
-            "You've used all your free GitHub-only skill adds. Upgrade to Pro for unlimited.",
-        });
-      }
-    }
-
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
 
@@ -686,6 +671,22 @@ export const upsertSkillsBatch = internalMutation({
         });
       } else {
         // Genuinely new skill.
+        //
+        // Atomic free-tier quota gate for the public GitHub-only add path.
+        // Counting + insert share this one transaction, so a double-submit
+        // can't race two rows past the cap. Deliberately scoped to THIS branch
+        // only: relist/orphan paths never stamp `addedBy` (no quota consumed),
+        // so an at-limit user relisting a delisted row must not be rejected.
+        if (enforceGitHubQuotaFor) {
+          const counted = await countGitHubOnlyAdds(
+            ctx,
+            enforceGitHubQuotaFor.userId,
+            enforceGitHubQuotaFor.limit,
+          );
+          if (counted >= enforceGitHubQuotaFor.limit) {
+            throw quotaExceededError();
+          }
+        }
         skillDocId = await ctx.db.insert("skills", {
           source: skill.source,
           skillId: skill.skillId,
@@ -3388,10 +3389,8 @@ export const getContent = query({
 // doesn't touch, regardless of origin tag) — there is no manual-specific cron.
 
 const MANUAL_LEADERBOARD = "manual";
-// Origin tag for rows added straight from a GitHub repo (mirrors
-// GITHUB_ONLY_LEADERBOARD in githubOnly.ts). Immutable once set, so it's the
-// stable key for counting a user's GitHub-only-add quota.
-const GITHUB_LEADERBOARD = "github";
+// The GitHub-only origin tag + quota machinery live in lib/githubQuota.ts —
+// one module owns the tag the insert writes AND the tag the count filters on.
 
 // parseSkillInput lives at lib/parse-skill-input.ts so the /dev/add-skill form
 // can import it and validate input client-side. Validating before calling the
@@ -3638,27 +3637,9 @@ async function manualAddCore(
     });
   }
 
-  // Drain the discovery + content-fetch + audit chain so the new row's
-  // SKILL.md and audit data fill in within seconds. Mirrors syncCurated's
-  // pattern. Idempotent — if the row already exists, the workers find
-  // nothing flagged and exit.
-  await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
-
-  // Bust the skill-page cache immediately. The skill detail page is ISR'd
-  // (revalidate: 86400) and its loadSkill data cache is tagged "skill-sync";
-  // a path visited BEFORE this add has a cached `notFound()` render that
-  // would otherwise persist for up to 24h (until the next daily syncSkills
-  // ping or the ISR window). Without this, the "Open on SkillBundle" link
-  // right after adding lands on a stale 404. The org/repo directory pages
-  // now carry the same tag, so they refresh too. Best-effort —
-  // revalidateHomeTag swallows errors and no-ops in dev.
-  await revalidateHomeTag("skill-sync");
-
-  // Index this one skill into Typesense now instead of waiting for the daily
-  // mark-and-sweep, so it's searchable within seconds of the add. Pass the
-  // SKILL.md description we already parsed so the first indexed doc is complete
-  // (name + description), not name-only.
-  await ctx.scheduler.runAfter(0, internal.typesense.indexSkill, {
+  // Backfill chain + cache bust + immediate Typesense index — shared with the
+  // GitHub-only add; see lib/postAdd.ts for the why of each step.
+  await kickPostAddChain(ctx, {
     source: detail.source,
     skillId: detail.slug,
     description: parsedDescription,
@@ -3708,7 +3689,20 @@ export const addSkillManuallyPublic = action({
       internal.skills.getAuthedUserId,
       {},
     );
-    return manualAddCore(ctx, input, userId);
+    // Same per-user throttle as the GitHub-only branch (throttle.ts): this
+    // branch hits the skills.sh detail endpoint per call, and the client
+    // cascades from here into the GitHub fallback, so both share one budget.
+    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, { userId });
+    try {
+      return await manualAddCore(ctx, input, userId);
+    } catch (err) {
+      // Prod redacts non-ConvexError throws to "Server Error"; keep transient
+      // upstream failures actionable for the user (logged server-side).
+      throw toPublicError(
+        err,
+        "Something went wrong talking to skills.sh. Try again in a minute.",
+      );
+    }
   },
 });
 
@@ -3727,43 +3721,9 @@ export const getAuthedUserId = internalQuery({
 });
 
 /**
- * Compute a user's GitHub-only-add quota. `used` counts rows they added whose
- * immutable `leaderboard === "github"` origin tag marks them GitHub-only
- * (stable across adoption). `limit` is null for unlimited (Pro).
- */
-async function computeGitHubAddQuota(
-  ctx: QueryCtx,
-  userId: Id<"users">,
-): Promise<{
-  plan: "free" | "pro";
-  used: number;
-  limit: number | null;
-  atLimit: boolean;
-}> {
-  const { plan, limits } = await getUserPlanWithLimits(ctx);
-  const owned = await ctx.db
-    .query("skills")
-    .withIndex("by_addedBy_leaderboard", (q) =>
-      q.eq("addedBy", userId).eq("leaderboard", GITHUB_LEADERBOARD),
-    )
-    .collect();
-  const used = owned.length;
-  const limit = Number.isFinite(limits.maxGitHubOnlyAdds)
-    ? limits.maxGitHubOnlyAdds
-    : null;
-  return { plan, used, limit, atLimit: limit !== null && used >= limit };
-}
-
-const gitHubQuotaValidator = v.object({
-  plan: v.union(v.literal("free"), v.literal("pro")),
-  used: v.number(),
-  limit: v.union(v.number(), v.null()),
-  atLimit: v.boolean(),
-});
-
-/**
  * The signed-in user's GitHub-only-add quota, plus their id — internal, for the
  * add actions (the "N of M used" preview indicator and the confirm-time gate).
+ * Quota semantics live in lib/githubQuota.ts.
  */
 export const getGitHubAddQuota = internalQuery({
   args: {},

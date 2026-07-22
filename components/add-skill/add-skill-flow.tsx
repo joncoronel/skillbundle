@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
 import { skillHref } from "@/lib/skill-urls";
@@ -19,27 +20,16 @@ import {
   CardContent,
 } from "@/components/ui/cubby-ui/card";
 import { UpgradeBanner } from "@/components/upgrade-banner";
-import { toast } from "@/components/ui/cubby-ui/toast/toast";
 
-type QuotaStatus = {
-  plan: "free" | "pro";
-  used: number;
-  limit: number | null;
-  atLimit: boolean;
-};
-
-// A resolved GitHub-only candidate awaiting confirmation. `input` is carried so
-// the confirm call re-sends exactly what produced this preview (the action
-// re-resolves server-side rather than trusting these fields).
-type GitHubCandidate = {
-  input: string;
-  source: string;
-  skillId: string;
-  path: string;
-  name: string;
-  description?: string;
-  quota: QuotaStatus;
-};
+// Derived from the server's return validator so the client can't drift from
+// what the action actually sends (the review's finding on hand-declared
+// shapes). `input` is carried alongside so the confirm call re-sends exactly
+// what produced this preview; the action re-verifies server-side regardless.
+type PreviewResult = FunctionReturnType<
+  typeof api.githubOnly.previewGitHubSkillPublic
+>;
+type PreviewOk = Extract<PreviewResult, { status: "ok" }>;
+type GitHubCandidate = PreviewOk & { input: string };
 
 // The outcome of a completed add, for the success card.
 type Added = {
@@ -49,8 +39,9 @@ type Added = {
   name: string;
 };
 
-// An inline, non-toast message shown under the form (already-in-catalog,
-// couldn't-resolve, etc.) — tone drives the color.
+// An inline message shown under the form (already-in-catalog,
+// couldn't-resolve, etc.). Rendered inside a persistent aria-live region so
+// async outcomes are announced; tone drives the color.
 type Notice = { tone: "info" | "error"; text: string };
 
 // One async step in flight at a time; the phase names it so the button says
@@ -59,14 +50,13 @@ type Phase = "idle" | "adding" | "previewing" | "confirming";
 
 export function AddSkillFlow({
   initialInput = "",
-  onSuccess,
   autoFocus,
 }: {
   initialInput?: string;
-  onSuccess?: (added: Added) => void;
   autoFocus?: boolean;
 }) {
-  const { isAuthenticated, isLoading } = useConvexAuth();
+  const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const addManually = useAction(api.skills.addSkillManuallyPublic);
   const previewGitHub = useAction(api.githubOnly.previewGitHubSkillPublic);
   const addFromGitHub = useAction(api.githubOnly.addSkillFromGitHubPublic);
@@ -78,15 +68,14 @@ export function AddSkillFlow({
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const pending = phase !== "idle";
+  // The form is the permanent shell: signed-out visitors keep the input (and
+  // anything they've typed/pasted) and only the submit affordance swaps to a
+  // sign-in button. Swapping the whole tree after auth resolves would destroy
+  // an autofocused field mid-typing.
+  const signedOut = !authLoading && !isAuthenticated;
 
-  if (!isLoading && !isAuthenticated) {
-    return <SignInPrompt />;
-  }
-
-  function reset() {
-    setCandidate(null);
-    setNotice(null);
-    setAdded(null);
+  function focusInput() {
+    document.getElementById("add-skill-input")?.focus();
   }
 
   function succeed(a: Added) {
@@ -94,13 +83,15 @@ export function AddSkillFlow({
     setInput("");
     setCandidate(null);
     setNotice(null);
-    onSuccess?.(a);
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || pending) return;
+    // The auth guards mirror the button state: signed-out submits go to
+    // sign-in, and while auth is still resolving nothing fires (an action
+    // called before the token lands would error even for a signed-in user).
+    if (!trimmed || pending || authLoading || !isAuthenticated) return;
 
     // Validate the input shape client-side before hitting the action, so a
     // typo never reaches the server (Convex forwards server throws to the dev
@@ -112,16 +103,18 @@ export function AddSkillFlow({
       return;
     }
 
-    reset();
+    setCandidate(null);
+    setNotice(null);
+    setAdded(null);
     setPhase("adding");
     try {
       // Branch 1: try the normal add first. It resolves against the skills.sh
       // detail endpoint, so a skill that's on skills.sh but not yet in our
-      // catalog lands as a proper skill here — no quota spent.
+      // catalog lands as a proper skill here. No quota spent.
       const result = await addManually({ input: trimmed });
       const { status } = result;
       if (status === "not_on_skills_sh") {
-        // Branch 2: not on skills.sh at all — resolve it in its GitHub repo and
+        // Branch 2: not on skills.sh at all. Resolve it in its GitHub repo and
         // let the user confirm before we add a GitHub-only row.
         setPhase("previewing");
         await offerGitHubFallback(trimmed);
@@ -130,7 +123,6 @@ export function AddSkillFlow({
           tone: "info",
           text: `${result.name} is already in the catalog.`,
         });
-        setCandidate(null);
       } else {
         succeed({
           kind: "skillssh",
@@ -149,7 +141,7 @@ export function AddSkillFlow({
   async function offerGitHubFallback(trimmed: string) {
     const preview = await previewGitHub({ input: trimmed });
     if (preview.status === "ok") {
-      setCandidate({ input: trimmed, ...preview });
+      setCandidate({ ...preview, input: trimmed });
       return;
     }
     setNotice({ tone: "error", text: previewError(preview.status) });
@@ -166,14 +158,15 @@ export function AddSkillFlow({
         skillId: result.skillId,
         name: result.name,
       });
-      toast.success({
-        title: "Skill added",
-        description: `${result.name} is now in the catalog.`,
-      });
     } catch (err) {
-      // Race backstop: the server enforces the quota atomically even though the
-      // card already gates on it, so a stale/racing confirm surfaces here.
+      // Race backstop: the server enforces the quota atomically inside the
+      // insert. When it rejects a stale confirm, flip the candidate's own
+      // snapshot too so the card swaps to its upgrade state instead of
+      // leaving an enabled button that keeps failing.
       if (isQuotaError(err)) {
+        setCandidate((c) =>
+          c ? { ...c, quota: { ...c.quota, atLimit: true } } : c,
+        );
         setNotice({ tone: "error", text: quotaErrorText(err) });
       } else {
         setNotice({ tone: "error", text: friendlyError(errText(err)) });
@@ -202,7 +195,11 @@ export function AddSkillFlow({
             );
             if (notice) setNotice(null);
           }}
-          disabled={pending}
+          // readOnly, not disabled: a disabled input drops keyboard focus to
+          // <body> on every Enter-submit. The button carries the disabled state.
+          readOnly={pending}
+          aria-invalid={notice?.tone === "error" || undefined}
+          aria-describedby="add-skill-notice"
           autoFocus={autoFocus}
         />
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -211,31 +208,53 @@ export function AddSkillFlow({
             the <code className="font-mono">owner/repo/slug</code> form. If it
             isn&apos;t on skills.sh yet, we&apos;ll look in the GitHub repo.
           </p>
-          <Button
-            type="submit"
-            disabled={!input.trim() || pending}
-            className="shrink-0"
-          >
-            {phase === "adding"
-              ? "Checking…"
-              : phase === "previewing"
-                ? "Checking GitHub…"
-                : "Add skill"}
-          </Button>
+          {signedOut ? (
+            <Button
+              type="button"
+              className="shrink-0"
+              onClick={() => {
+                const path =
+                  window.location.pathname + window.location.search;
+                router.push(signInUrl(path));
+              }}
+            >
+              Sign in to add
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              disabled={!input.trim() || pending || authLoading}
+              className="shrink-0"
+            >
+              {phase === "adding"
+                ? "Checking…"
+                : phase === "previewing"
+                  ? "Checking GitHub…"
+                  : "Add skill"}
+            </Button>
+          )}
         </div>
       </form>
 
-      {notice && (
+      {/* Persistent live region: async outcomes (errors, info, success) are
+          announced to screen readers instead of appearing silently after the
+          button re-enables. */}
+      <div role="status" aria-live="polite" className="space-y-5">
         <p
+          id="add-skill-notice"
           className={
-            notice.tone === "error"
-              ? "text-sm text-destructive"
-              : "text-sm text-muted-foreground"
+            notice
+              ? notice.tone === "error"
+                ? "text-sm text-destructive"
+                : "text-sm text-muted-foreground"
+              : "sr-only"
           }
         >
-          {notice.text}
+          {notice?.text}
         </p>
-      )}
+
+        {added && <SuccessCard added={added} />}
+      </div>
 
       {candidate && (
         <GitHubCandidateCard
@@ -243,11 +262,14 @@ export function AddSkillFlow({
           confirming={phase === "confirming"}
           disabled={pending}
           onConfirm={handleConfirmGitHub}
-          onCancel={() => setCandidate(null)}
+          onCancel={() => {
+            setCandidate(null);
+            // The focused Cancel button unmounts with the card; put focus
+            // somewhere useful instead of letting it fall to <body>.
+            focusInput();
+          }}
         />
       )}
-
-      {added && <SuccessCard added={added} />}
     </div>
   );
 }
@@ -265,12 +287,15 @@ function GitHubCandidateCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const { quota } = candidate;
+  const { quota, wasDelisted } = candidate;
+  // Relists consume no quota (the row already exists, delisted), so the
+  // upgrade wall only applies to a genuine new insert.
+  const blocked = quota.atLimit && !wasDelisted;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Not on skills.sh — add it from GitHub?
+          Not on skills.sh. Add it from GitHub?
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -298,7 +323,7 @@ function GitHubCandidateCard({
           which point it&apos;s adopted as a normal skill automatically.
         </p>
 
-        {quota.atLimit ? (
+        {blocked ? (
           <UpgradeBanner
             message={`You've used all ${quota.limit} of your free GitHub-only adds. Upgrade to Pro to add unlimited.`}
           />
@@ -307,17 +332,20 @@ function GitHubCandidateCard({
             <Button onClick={onConfirm} disabled={disabled}>
               {confirming ? "Adding…" : "Add to catalog"}
             </Button>
-            <Button
-              variant="outline"
-              onClick={onCancel}
-              disabled={disabled}
-            >
+            <Button variant="outline" onClick={onCancel} disabled={disabled}>
               Cancel
             </Button>
-            {quota.limit !== null && (
+            {wasDelisted ? (
               <span className="text-xs text-muted-foreground">
-                {quota.used} of {quota.limit} free GitHub-only adds used
+                This skill was in the catalog before. Relisting it doesn&apos;t
+                use your quota.
               </span>
+            ) : (
+              quota.limit !== null && (
+                <span className="text-xs text-muted-foreground">
+                  {quota.used} of {quota.limit} free GitHub-only adds used
+                </span>
+              )
             )}
           </div>
         )}
@@ -346,30 +374,6 @@ function SuccessCard({ added }: { added: Added }) {
           render={<Link href={skillHref(added.source, added.skillId)} />}
         >
           View skill
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SignInPrompt() {
-  const router = useRouter();
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-start gap-3 py-6">
-        <p className="text-sm text-muted-foreground">
-          Sign in to add a skill to the catalog.
-        </p>
-        <Button
-          onClick={() => {
-            const path =
-              typeof window !== "undefined"
-                ? window.location.pathname + window.location.search
-                : "/add";
-            router.push(signInUrl(path));
-          }}
-        >
-          Sign in
         </Button>
       </CardContent>
     </Card>
@@ -423,13 +427,13 @@ function previewError(
     case "not_github":
       return "Only GitHub repos can be added without a skills.sh listing.";
     case "on_skills_sh":
-      return "skills.sh does list this skill — try adding it again.";
+      return "skills.sh does list this skill. Try adding it again.";
     case "already_exists":
       return "This skill is already in the catalog.";
     case "no_repo":
-      return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup — try again in a minute).";
+      return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":
-      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name) — check the slug.";
+      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name). Check the slug.";
     case "tree_unavailable":
       return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
   }

@@ -201,11 +201,16 @@ export const pageSummariesForSync = internalQuery({
   },
 });
 
-/** Fetch one non-delisted summary for the targeted on-add index. */
-export const getSummaryForIndex = internalQuery({
-  args: { source: v.string(), skillId: v.string() },
-  returns: v.union(v.null(), v.any()),
-  handler: async (ctx, { source, skillId }) => {
+/**
+ * Build one non-delisted skill's Typesense document for the targeted on-add
+ * index. The doc is assembled HERE (not in the action) so the boundary is
+ * covered by the real validator — an action-side annotation over `v.any()`
+ * would let a future projection type-check while emitting wrong docs.
+ */
+export const getSkillDocForIndex = internalQuery({
+  args: { source: v.string(), skillId: v.string(), syncedAt: v.number() },
+  returns: v.union(v.null(), typesenseSkillDocValidator),
+  handler: async (ctx, { source, skillId, syncedAt }) => {
     const summary = await ctx.db
       .query("skillSummaries")
       .withIndex("by_source_skillId", (q) =>
@@ -213,7 +218,7 @@ export const getSummaryForIndex = internalQuery({
       )
       .unique();
     if (!summary || summary.isDelisted) return null;
-    return summary;
+    return buildSkillDoc(summary, syncedAt);
   },
 });
 
@@ -238,14 +243,13 @@ export const indexSkill = internalAction({
   returns: v.null(),
   handler: async (ctx, { source, skillId, description }) => {
     try {
-      const summary: Doc<"skillSummaries"> | null = await ctx.runQuery(
-        internal.typesense.getSummaryForIndex,
-        { source, skillId },
-      );
-      if (!summary) return null;
       // Date.now() in an action is fine (non-deterministic context). A fresh
       // stamp keeps a concurrent/next sweep from deleting this doc.
-      const doc = buildSkillDoc(summary, Date.now());
+      const doc: TypesenseSkillDoc | null = await ctx.runQuery(
+        internal.typesense.getSkillDocForIndex,
+        { source, skillId, syncedAt: Date.now() },
+      );
+      if (!doc) return null;
       // Prefer a real stored description; fall back to the caller's freshly
       // parsed one on the add path (guard against overwriting with empty).
       if (!doc.description && description) doc.description = description;

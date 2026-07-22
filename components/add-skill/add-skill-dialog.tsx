@@ -19,11 +19,9 @@ import { AddSkillFlow } from "@/components/add-skill/add-skill-flow";
  */
 export function AddSkillDialog({
   initialInput,
-  label = "Add a skill",
   className,
 }: {
   initialInput?: string;
-  label?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -35,7 +33,7 @@ export function AddSkillDialog({
         className={className}
         onClick={() => setOpen(true)}
       >
-        {label}
+        Add a skill
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent variant="inset">

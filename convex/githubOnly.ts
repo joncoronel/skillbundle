@@ -41,20 +41,19 @@ import {
   SkillsApiRateLimitError,
   withTransientRetry,
 } from "./lib/skillsApi";
-import { revalidateHomeTag } from "./lib/revalidate";
 import { matchesSkillId } from "./lib/skillMatch";
+import {
+  GITHUB_LEADERBOARD,
+  gitHubQuotaValidator,
+  type GitHubAddQuotaStatus,
+} from "./lib/githubQuota";
+import { kickPostAddChain } from "./lib/postAdd";
+import { toPublicError } from "./lib/publicError";
 import {
   extractFrontmatterDescription,
   extractSkillMdName,
   humanizeSlug,
 } from "./skills";
-
-/**
- * Origin tag for rows added straight from a GitHub repo. Like every other
- * `leaderboard` value it's provenance only (set on insert, never patched); the
- * load-bearing flag is `isGitHubOnly` on the row itself.
- */
-const GITHUB_ONLY_LEADERBOARD = "github";
 
 /**
  * Bound on how many SKILL.md candidates pass 2 will download. This runs
@@ -285,6 +284,10 @@ type GitHubPreview =
       path: string;
       name: string;
       description?: string;
+      // The row exists in the catalog but is delisted, so confirming performs
+      // a RELIST — which stamps no `addedBy` and consumes no quota. The UI
+      // uses this to keep the confirm available for at-limit users.
+      wasDelisted: boolean;
     };
 
 type Precheck = {
@@ -294,29 +297,17 @@ type Precheck = {
 } | null;
 
 /**
- * Read-only "what would we add?" probe behind the /dev/add-skill fallback.
- *
- * The form calls this only after `addSkillManually` reports `not_on_skills_sh`,
- * so the admin sees the resolved repo path and parsed name before anything is
- * written. That confirmation step is the guard against a mistyped slug quietly
- * binding to the wrong SKILL.md — the failure mode an automatic fallback would
- * have.
+ * The read-only "what would we add?" probe, shared by the admin and public
+ * preview actions AND re-run by addGitHubCore at confirm time (so a direct
+ * call or a preview-confirm race can neither insert a duplicate nor mis-mark
+ * a skill skills.sh actually lists). Callers own the auth gate.
  *
  * The three checks (catalog precheck, skills.sh listing, repo resolution) are
  * independent reads, so they start together and settle before being inspected
- * in priority order — the interactive wait is the slowest single check, not
- * the sum. (This also means the skills.sh re-check the fallback flow implies
- * — addSkillManually just 404ed — overlaps the repo resolution instead of
- * stacking another round-trip on it.) The waste when an early check
- * short-circuits is accepted: admin-only volume.
- */
-/**
- * The read-only "what would we add?" probe, shared by the admin and public
- * preview actions. Callers own the auth gate; this does the three parallel
- * checks (catalog precheck, skills.sh listing, repo resolution) and evaluates
- * them in priority order — a definitive catalog answer beats a listing answer
- * beats resolution, and a lower-priority check's failure must not mask a
- * higher-priority success.
+ * in priority order: a definitive catalog answer beats a listing answer beats
+ * resolution, and a lower-priority check's failure must not mask a
+ * higher-priority success. The waste when an early check short-circuits is
+ * accepted; the public actions are throttled.
  */
 async function previewGitHubCore(
   ctx: ActionCtx,
@@ -353,17 +344,61 @@ async function previewGitHubCore(
     path: resolved.path,
     name: resolved.name,
     description: resolved.description,
+    // Past the already_exists check, a non-null precheck can only be a
+    // delisted row.
+    wasDelisted: precheck !== null,
   };
 }
 
 /**
+ * One home for translating a failed preview status into the user-facing
+ * ConvexError the confirm path throws. Kept beside previewGitHubCore so the
+ * check logic and its failure copy can't drift between preview and confirm.
+ */
+function previewFailureError(
+  preview: Exclude<GitHubPreview, { status: "ok" }>,
+  source: string,
+  skillId: string,
+): ConvexError<string> {
+  switch (preview.status) {
+    case "not_github":
+      return new ConvexError(
+        `"${source}" isn't a GitHub source. Only GitHub repos can be added without a skills.sh listing.`,
+      );
+    case "already_exists":
+      return new ConvexError(`${preview.name} is already in the catalog.`);
+    // Re-verified at confirm time — not just the repo. Without this, a LISTED
+    // skill could be inserted as GitHub-only with installs 0, and since
+    // reconcile skips GitHub-only rows, a skill absent from the leaderboard
+    // feed would then only recover via the manual adoption path.
+    case "on_skills_sh":
+      return new ConvexError(
+        `${source}/${skillId} is listed on skills.sh. Run the add again to bring it in the normal way.`,
+      );
+    case "no_repo":
+      // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
+      // don't claim certainty.
+      return new ConvexError(
+        `Couldn't find a public GitHub repo at "${source}" (or GitHub rate-limited the lookup). Try again in a minute.`,
+      );
+    case "tree_unavailable":
+      return new ConvexError(
+        `Couldn't list the files in ${source} (repo too large or GitHub rate-limited). The conventional SKILL.md paths were probed directly with no match. Try again shortly.`,
+      );
+    case "no_skill_md":
+      return new ConvexError(
+        `No SKILL.md for "${skillId}" in ${source} (matched by folder name and frontmatter name). Check the slug.`,
+      );
+  }
+}
+
+/**
  * Insert a skill straight from its GitHub repo, shared by the admin and public
- * confirm actions. Re-verifies everything server-side (same three checks, same
- * priority order) rather than trusting the preview, so a direct call or a
- * preview→confirm race can neither insert a duplicate nor mis-mark a skill
- * skills.sh actually lists. `opts.addedBy` records the adder (public flow);
- * `opts.enforceGitHubQuotaFor` makes upsertSkillsBatch enforce the free-tier
- * cap atomically with the insert. Callers own the auth gate.
+ * confirm actions. Runs the same previewGitHubCore checks server-side rather
+ * than trusting the client's preview, then inserts. `opts.addedBy` records the
+ * adder (public flow); `opts.enforceGitHubQuotaFor` makes upsertSkillsBatch
+ * enforce the free-tier cap atomically with the insert (genuine inserts only —
+ * relists consume no quota). Callers own the auth gate.
  */
 async function addGitHubCore(
   ctx: ActionCtx,
@@ -380,52 +415,9 @@ async function addGitHubCore(
 }> {
   const { source, skillId } = parseAdminInput(input);
 
-  if (!isGitHubSource(source)) {
-    throw new ConvexError(
-      `"${source}" isn't a GitHub source. Only GitHub repos can be added without a skills.sh listing.`,
-    );
-  }
-
-  const [precheckR, listingR, resolvedR] = await Promise.allSettled([
-    ctx.runQuery(internal.skills.getManualAddPrecheck, {
-      source,
-      skillId,
-    }) as Promise<Precheck>,
-    checkSkillsShListing(source, skillId),
-    resolveGitHubSkillMd(source, skillId),
-  ]);
-
-  const precheck = unwrap(precheckR);
-  if (precheck && !precheck.isDelisted) {
-    throw new ConvexError(`${precheck.name} is already in the catalog.`);
-  }
-  // Re-verify the skills.sh 404 too — not just the repo. Without this, a
-  // LISTED skill could be inserted as GitHub-only with installs 0, and since
-  // reconcile skips GitHub-only rows, a skill absent from the leaderboard feed
-  // would then only recover via the manual adoption path.
-  if (unwrap(listingR) === "listed") {
-    throw new ConvexError(
-      `${source}/${skillId} IS listed on skills.sh — use the normal add instead.`,
-    );
-  }
-
-  const resolved = unwrap(resolvedR);
-  if (resolved.status === "no_repo") {
-    // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
-    // don't claim certainty.
-    throw new ConvexError(
-      `Couldn't find a public GitHub repo at "${source}" (or GitHub rate-limited the lookup — try again in a minute).`,
-    );
-  }
-  if (resolved.status === "tree_unavailable") {
-    throw new ConvexError(
-      `Couldn't list the files in ${source} (repo too large or GitHub rate-limited). The conventional SKILL.md paths were probed directly with no match — try again shortly.`,
-    );
-  }
-  if (resolved.status === "no_skill_md") {
-    throw new ConvexError(
-      `No SKILL.md for "${skillId}" in ${source} (matched by folder name and frontmatter name). Check the slug.`,
-    );
+  const preview = await previewGitHubCore(ctx, input);
+  if (preview.status !== "ok") {
+    throw previewFailureError(preview, source, skillId);
   }
 
   await ctx.runMutation(internal.skills.upsertSkillsBatch, {
@@ -433,7 +425,7 @@ async function addGitHubCore(
       {
         source,
         skillId,
-        name: resolved.name,
+        name: preview.name,
         // No upstream count exists. syncSkills takes over the moment the skill
         // shows up on the leaderboard (the adoption path), and the normal add
         // can adopt it on demand once skills.sh lists it.
@@ -441,7 +433,7 @@ async function addGitHubCore(
         isDuplicate: false,
       },
     ],
-    leaderboard: GITHUB_ONLY_LEADERBOARD,
+    leaderboard: GITHUB_LEADERBOARD,
     isGitHubOnly: true,
     // Don't own installs: a FRESH row still seeds the 0 above, but a RELIST
     // (delisted row re-claimed as GitHub-only) keeps its last-known install
@@ -453,26 +445,19 @@ async function addGitHubCore(
     }),
   });
 
-  // Same post-add chain as the normal add: fill in SKILL.md within seconds and
-  // drop the cached notFound() render for this path.
-  await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
-  await revalidateHomeTag("skill-sync");
-
-  // Index this one skill into Typesense now instead of waiting for the daily
-  // mark-and-sweep, so it's searchable within seconds of the add. Pass the
-  // SKILL.md description we already resolved so the first indexed doc is
-  // complete (name + description), not name-only.
-  await ctx.scheduler.runAfter(0, internal.typesense.indexSkill, {
+  // Backfill chain + cache bust + immediate Typesense index — shared with the
+  // normal add; see lib/postAdd.ts for the why of each step.
+  await kickPostAddChain(ctx, {
     source,
     skillId,
-    description: resolved.description,
+    description: preview.description,
   });
 
   return {
-    status: precheck?.isDelisted ? ("relisted" as const) : ("inserted" as const),
+    status: preview.wasDelisted ? ("relisted" as const) : ("inserted" as const),
     source,
     skillId,
-    name: resolved.name,
+    name: preview.name,
   };
 }
 
@@ -492,6 +477,7 @@ export const previewGitHubSkill = action({
       path: v.string(),
       name: v.string(),
       description: v.optional(v.string()),
+      wasDelisted: v.boolean(),
     }),
   ),
   handler: async (ctx, { input }): Promise<GitHubPreview> => {
@@ -550,33 +536,27 @@ export const addSkillFromGitHub = action({
 // Branch 1 (a skill that IS on skills.sh) is skills.addSkillManuallyPublic;
 // the client tries that first and falls through here on `not_on_skills_sh`.
 // Both actions gate on auth by calling skills.getGitHubAddQuota, which throws
-// a clean ConvexError when signed out. Only this branch is quota-limited.
+// a clean ConvexError when signed out, and both count against the shared
+// per-user add-flow throttle (throttle.ts) — repo resolution is dozens of
+// GitHub calls against the pipeline's shared token budget, so it can't be
+// free-for-all even though only this branch is quota-limited.
 // ---------------------------------------------------------------------------
 
-/** Client-facing quota status (the private userId is stripped before return). */
-const quotaValidator = v.object({
-  plan: v.union(v.literal("free"), v.literal("pro")),
-  used: v.number(),
-  // null = unlimited (Pro).
-  limit: v.union(v.number(), v.null()),
-  atLimit: v.boolean(),
-});
-
-type QuotaStatus = {
-  plan: "free" | "pro";
-  used: number;
-  limit: number | null;
-  atLimit: boolean;
-};
+const PUBLIC_ADD_FALLBACK_ERROR =
+  "Something went wrong talking to GitHub or skills.sh. Try again in a minute.";
 
 type GitHubPreviewPublic =
   | Exclude<GitHubPreview, { status: "ok" }>
-  | (Extract<GitHubPreview, { status: "ok" }> & { quota: QuotaStatus });
+  | (Extract<GitHubPreview, { status: "ok" }> & {
+      quota: GitHubAddQuotaStatus;
+    });
 
 /**
  * Public preview: resolves the repo AND returns the caller's GitHub-only-add
  * quota on the `ok` branch, so the flow can show "N of M used" and swap the
  * confirm button for an upgrade prompt when the user is already at the cap.
+ * Not short-circuited at the cap: `wasDelisted` previews must stay reachable
+ * (relists consume no quota), and the throttle bounds the resolution cost.
  */
 export const previewGitHubSkillPublic = action({
   args: { input: v.string() },
@@ -594,33 +574,43 @@ export const previewGitHubSkillPublic = action({
       path: v.string(),
       name: v.string(),
       description: v.optional(v.string()),
-      quota: quotaValidator,
+      wasDelisted: v.boolean(),
+      quota: gitHubQuotaValidator,
     }),
   ),
   handler: async (ctx, { input }): Promise<GitHubPreviewPublic> => {
     // Doubles as the auth gate: getGitHubAddQuota throws if not signed in.
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
-    const preview = await previewGitHubCore(ctx, input);
-    if (preview.status === "ok") {
-      return {
-        ...preview,
-        quota: {
-          plan: quota.plan,
-          used: quota.used,
-          limit: quota.limit,
-          atLimit: quota.atLimit,
-        },
-      };
+    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
+      userId: quota.userId,
+    });
+    try {
+      const preview = await previewGitHubCore(ctx, input);
+      if (preview.status === "ok") {
+        return {
+          ...preview,
+          quota: {
+            plan: quota.plan,
+            used: quota.used,
+            limit: quota.limit,
+            atLimit: quota.atLimit,
+          },
+        };
+      }
+      return preview;
+    } catch (err) {
+      throw toPublicError(err, PUBLIC_ADD_FALLBACK_ERROR);
     }
-    return preview;
   },
 });
 
 /**
- * Public confirm: enforces the free-tier cap and attributes the add. The early
- * atLimit check avoids wasted GitHub resolution when the user is already over;
- * upsertSkillsBatch re-checks atomically (enforceGitHubQuotaFor) as the
- * race-safe backstop.
+ * Public confirm: attributes the add and enforces the free-tier cap
+ * atomically inside upsertSkillsBatch (enforceGitHubQuotaFor) — and only on
+ * the genuine-insert branch, so an at-limit user can still relist a delisted
+ * row (no quota consumed there). No action-level atLimit pre-throw for the
+ * same reason; the UI gates the genuine-insert case and the throttle bounds
+ * the resolution cost of anything that slips past it.
  */
 export const addSkillFromGitHubPublic = action({
   args: { input: v.string() },
@@ -640,19 +630,19 @@ export const addSkillFromGitHubPublic = action({
     name: string;
   }> => {
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
-    if (quota.atLimit) {
-      throw new ConvexError({
-        code: "quota_exceeded",
-        message:
-          "You've used all your free GitHub-only skill adds. Upgrade to Pro for unlimited.",
-      });
-    }
-    return addGitHubCore(ctx, input, {
-      addedBy: quota.userId,
-      // Only free users (finite limit) get the atomic re-check; Pro is null.
-      ...(quota.limit !== null && {
-        enforceGitHubQuotaFor: { userId: quota.userId, limit: quota.limit },
-      }),
+    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
+      userId: quota.userId,
     });
+    try {
+      return await addGitHubCore(ctx, input, {
+        addedBy: quota.userId,
+        // Only free users (finite limit) get the atomic gate; Pro is null.
+        ...(quota.limit !== null && {
+          enforceGitHubQuotaFor: { userId: quota.userId, limit: quota.limit },
+        }),
+      });
+    } catch (err) {
+      throw toPublicError(err, PUBLIC_ADD_FALLBACK_ERROR);
+    }
   },
 });

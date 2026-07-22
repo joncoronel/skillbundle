@@ -156,10 +156,20 @@ export function skillsCollectionSchema(name: string) {
     { name: "installRank", type: "int32", index: false, optional: true },
     { name: "curatedOwner", type: "string", facet: true, optional: true },
     { name: "isOfficial", type: "bool", facet: true },
-    // True for skills added straight from GitHub (not on skills.sh). Faceted so
-    // the source filter can include/exclude them. optional so it can be added
-    // to an existing collection without a destructive reset (like `owner`); the
-    // sync always populates it, so filtering never skips a doc.
+    // True for skills added straight from GitHub (not on skills.sh). Faceted
+    // so the "Hide GitHub-only skills" filter can exclude them. optional so
+    // docs indexed before a backfill don't fail import.
+    //
+    // DEPLOY NOTE: this schema only applies at collection CREATE time
+    // (ensureCollection is create-if-missing; there is no alter path in this
+    // codebase). A pre-existing collection doesn't know the field, and a
+    // filter_by on a schema-missing field is a Typesense request error — the
+    // filter breaks outright, it doesn't just under-match. Adding a field
+    // therefore requires, per environment, once:
+    //   npx convex run typesense:resetCollection [--prod]
+    //   npx convex run typesense:syncCatalog [--prod]
+    // (brief empty-index window until the sync refills; run them back to
+    // back). Done on dev 2026-07-22; prod tracked in TODO.md.
     { name: "isGitHubOnly", type: "bool", facet: true, optional: true },
     { name: "isDuplicate", type: "bool", facet: true },
     { name: "hasContentFetchError", type: "bool", facet: true },
