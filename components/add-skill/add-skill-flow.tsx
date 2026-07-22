@@ -92,6 +92,10 @@ export function AddSkillFlow({
     // sign-in, and while auth is still resolving nothing fires (an action
     // called before the token lands would error even for a signed-in user).
     if (!trimmed || pending || authLoading || !isAuthenticated) return;
+    // The candidate card for this exact input is already on screen — nothing
+    // to re-fetch. (Not a cache: any change to the input invalidates the
+    // candidate in onChange, and confirm re-verifies server-side regardless.)
+    if (candidate?.input === trimmed) return;
 
     // Validate the input shape client-side before hitting the action, so a
     // typo never reaches the server (Convex forwards server throws to the dev
