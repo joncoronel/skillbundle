@@ -90,6 +90,37 @@ hand-lists its Activity-reset fields; a single reducer/reset would make forgetti
 one impossible. Left as a state-management refactor of working auth forms for a
 maintainability-only payoff — not worth the risk now.
 
+### Match repo: cold-load delay before repo suggestions appear
+
+The issue (noticed Jul 2026, dev + will persist smaller in prod): on a cold
+reload of `/?mode=repo` as a connected Pro user, the repo suggestions take
+several seconds to exist — clicking the input early opens nothing (the
+popup markup isn't rendered until `repos.length > 0`), and the empty state
+visibly steps through "(nothing)" → "Loading your repositories…" →
+"GitHub connected — N repos". Root cause is a serial startup chain: Clerk
+boot → Convex JWT handshake → plan query → only then `listMyRepos`, which
+is itself slow (Clerk Backend API for the token + GitHub `/user/repos`,
+~1–2s). A reload wipes TanStack Query's in-memory cache, so every cold
+load pays the whole chain again.
+
+Patched (Jul 2026, `hooks/use-my-repos.ts`): the query no longer waits for
+the plan round trip — it fires as soon as Convex auth is ready + the
+connection looks usable client-side, mirroring analyzeRepo's optimistic
+`canFetch` ("server is the authoritative gate"); a free user's
+`PRO_REQUIRED` rejection is filtered out of `reposError`. This removes one
+serialized round trip but NOT the Clerk-boot or action latency.
+
+Better solution to actually build: **persist the repo list across
+reloads** — TanStack Query's persister (`@tanstack/query-persist-client` +
+localStorage/IDB) scoped to the `["github","myRepos",userId]` key, so a
+reload renders last session's list instantly (popup usable immediately)
+while the fetch revalidates in the background. Repo lists change rarely;
+minutes-stale is fine. Alternatives considered: server-side caching of the
+repo list in Convex was rejected in the feature design (no persistence of
+GitHub-derived per-user data beyond the analysis caches); shaving the
+action itself (parallelize Clerk+GitHub calls) doesn't help because the
+token IS the input to the GitHub call.
+
 ### Match repo: watch the two-press Esc in repo mode
 
 With repo suggestions (Jul 2026), Esc in repo mode is staged: first press
