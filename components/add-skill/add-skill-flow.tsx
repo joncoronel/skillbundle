@@ -41,8 +41,13 @@ type Added = {
 
 // An inline message shown under the form (already-in-catalog,
 // couldn't-resolve, etc.). Rendered inside a persistent aria-live region so
-// async outcomes are announced; tone drives the color.
-type Notice = { tone: "info" | "error"; text: string };
+// async outcomes are announced; tone drives the color. `link` adds a "View
+// skill" affordance (already-in-catalog points at the existing row).
+type Notice = {
+  tone: "info" | "error";
+  text: string;
+  link?: { source: string; skillId: string };
+};
 
 // One async step in flight at a time; the phase names it so the button says
 // what's actually happening.
@@ -132,6 +137,7 @@ export function AddSkillFlow({
         setNotice({
           tone: "info",
           text: `${result.name} is already in the catalog.`,
+          link: { source: result.source, skillId: result.skillId },
         });
       } else {
         succeed({
@@ -269,6 +275,17 @@ export function AddSkillFlow({
           }
         >
           {notice?.text}
+          {notice?.link && (
+            <>
+              {" "}
+              <Link
+                href={skillHref(notice.link.source, notice.link.skillId)}
+                className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+              >
+                View skill
+              </Link>
+            </>
+          )}
         </p>
 
         {added && <SuccessCard added={added} />}
