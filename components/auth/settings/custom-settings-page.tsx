@@ -14,7 +14,7 @@ import {
   settingsTabParser,
   type SettingsTabValue,
 } from "@/lib/search-params";
-import { ReverificationProvider } from "./reverification-provider";
+import { ReverificationProvider } from "@/components/auth/reverification-provider";
 import { ProfileTab } from "./profile-tab";
 import { SecurityTab, type BackendSession } from "./security-tab";
 import { BillingTab } from "./billing-tab";

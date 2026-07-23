@@ -20,7 +20,7 @@ import {
 import { CodeField } from "@/components/auth/code-field";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { useResendTimer } from "@/hooks/use-resend-timer";
-import { useReverificationFlow } from "./reverification-provider";
+import { useReverificationFlow } from "@/components/auth/reverification-provider";
 import { cn, getClerkErrorMessage } from "@/lib/utils";
 
 export function EmailSection() {

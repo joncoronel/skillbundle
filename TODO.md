@@ -90,6 +90,64 @@ hand-lists its Activity-reset fields; a single reducer/reset would make forgetti
 one impossible. Left as a state-management refactor of working auth forms for a
 maintainability-only payoff — not worth the risk now.
 
+### Match repo: cold-load delay before repo suggestions appear
+
+The issue (noticed Jul 2026, dev + will persist smaller in prod): on a cold
+reload of `/?mode=repo` as a connected Pro user, the repo suggestions take
+several seconds to exist — clicking the input early opens nothing (the
+popup markup isn't rendered until `repos.length > 0`), and the empty state
+visibly steps through "(nothing)" → "Loading your repositories…" →
+"GitHub connected — N repos". Root cause is a serial startup chain: Clerk
+boot → Convex JWT handshake → plan query → only then `listMyRepos`, which
+is itself slow (Clerk Backend API for the token + GitHub `/user/repos`,
+~1–2s). A reload wipes TanStack Query's in-memory cache, so every cold
+load pays the whole chain again.
+
+Patched (Jul 2026, `hooks/use-my-repos.ts`): the query no longer waits for
+the plan round trip — it fires as soon as Convex auth is ready + the
+connection looks usable client-side, mirroring analyzeRepo's optimistic
+`canFetch` ("server is the authoritative gate"); a free user's
+`PRO_REQUIRED` rejection is filtered out of `reposError`. This removes one
+serialized round trip but NOT the Clerk-boot or action latency.
+
+Better solution to actually build: **persist the repo list across
+reloads** — TanStack Query's persister (`@tanstack/query-persist-client` +
+localStorage/IDB) scoped to the `["github","myRepos",userId]` key, so a
+reload renders last session's list instantly (popup usable immediately)
+while the fetch revalidates in the background. Repo lists change rarely;
+minutes-stale is fine. Alternatives considered: server-side caching of the
+repo list in Convex was rejected in the feature design (no persistence of
+GitHub-derived per-user data beyond the analysis caches); shaving the
+action itself (parallelize Clerk+GitHub calls) doesn't help because the
+token IS the input to the GitHub call.
+
+### Match repo: watch the two-press Esc in repo mode
+
+With repo suggestions (Jul 2026), Esc in repo mode is staged: first press
+closes the suggestion popup (Base UI), second press on an empty input exits
+to search mode. Implemented via `suggestionsOpenRef` + `onOpenChange` in
+`components/skill-composer.tsx` (a `defaultPrevented` check can't observe
+Base UI's document-level dismissal). This is the standard combobox-in-
+container idiom (VS Code quick-open etc.) — keep unless real usage shows the
+two-press flow surprising people. If Esc-to-exit is ever dropped, delete the
+whole apparatus with it: the mode-exit branch, the ref, and the
+`onOpenChange` prop (Base UI closes its own popup without us).
+
+### Match repo: GitHub App migration (read-only, per-repo consent)
+
+The GitHub connect flow (Jul 2026) uses a GitHub **OAuth App** via Clerk's
+social connection, which forces the classic `repo` scope for private access —
+GitHub's consent screen honestly calls it "full control of private
+repositories" (read+write; no read-only OAuth scope exists). The better
+mechanism is a GitHub **App**: fine-grained read-only "Contents" permission,
+and users pick which repos to grant during installation. Costs that keep it
+parked: a separate install-then-authorize flow, expiring user-to-server
+tokens, repo listing via the installations API instead of `/user/repos`, and
+it doesn't drop into Clerk's social-connection plumbing that sign-in,
+settings, and the picker all ride on. Revisit only if users measurably balk
+at the consent screen (drop-off between clicking Connect and completing
+authorization).
+
 ### Match repo: free-run quota (phase 2 of the paywall)
 
 Shipped (Jul 2026, phase 1): repo match is Pro-gated, but the demo repo
@@ -112,7 +170,7 @@ the server gate and the client mirror already call, so the policy changes in
 exactly one place; the client can show remaining count but never gates. Don't extend quota to logged-out users (no
 reliable identity to meter → abuse surface); sign-in is the natural wall.
 
-### Match repo: deferred features (recents, match counts, GitHub OAuth)
+### Match repo: deferred features (recents, match counts)
 
 Shipped (Jul 2026): repo mode morphs the composer card in place — the composer
 is a single input row + chin (no separate control row anymore; filter toggles
@@ -122,11 +180,24 @@ sit inside the input, sort lives in the chin), Analyze inline in the input row
 carry-over, Esc-to-exit, and repo-result narrowing (Official toggle +
 Best match / Most installed).
 
+Shipped (Jul 2026): **Connect GitHub + repo picker with private-repo
+analysis.** Clerk-based (no separate OAuth app): the picker in the repo empty
+state (`components/repo-picker.tsx`) connects via
+`user.createExternalAccount({ strategy: "oauth_github", additionalScopes: ["repo"] })`
+(or `reauthorize` when GitHub was the sign-in provider), `listMyRepos` in
+`convex/githubAccount.ts` pulls the token from Clerk's Backend API
+(`convex/lib/clerkGithub.ts`, needs `CLERK_SECRET_KEY` in Convex env) and
+lists the user's repos, and `analyzeRepo` retries private repos with the user
+token under user-scoped (`user_…:owner/repo`) cache keys so private
+fingerprints never enter the global cache. Requires custom GitHub OAuth
+credentials on the Clerk GitHub connection (extra scopes don't work on
+Clerk's shared dev credentials).
+
 Still to build, independent of container:
 
 - **RECENT** list of previously analyzed repos with match counts
-  (e.g. `joncoronel/skillbundle · 42 matches`).
-- **"Connect GitHub for private repos"** (OAuth).
+  (e.g. `joncoronel/skillbundle · 42 matches`). Its slot is marked in
+  `RepoMatchEmptyState` between the picker and the example button.
 - Free users see the recents area replaced by the Pro upsell.
 
 Container decision, updated Jul 2026: the original vision (Paper artboard "F")
