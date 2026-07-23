@@ -11,6 +11,7 @@ import {
   useReverificationFlow,
 } from "@/components/auth/reverification-provider";
 import { useMyRepos } from "@/hooks/use-my-repos";
+import { MAX_GITHUB_REPOS } from "@/lib/repo-match";
 
 // Where GitHub sends the user back after the OAuth consent screen — repo mode
 // on the home page, so they land exactly where they left.
@@ -197,10 +198,12 @@ function RepoPickerInner() {
         ? "Loading your repositories…"
         : repos.length === 0
           ? "No repositories on your GitHub account yet."
-          : // The server caps the list at 200 (newest-pushed) — don't claim
-            // "your 200 repos" to someone who owns more.
+          : // The server caps the list (newest-pushed) — don't claim "your
+            // N repos" to someone who owns more than the cap.
             `GitHub connected — start typing above to pick from your ${
-              repos.length >= 200 ? "200 most recent repos" : `${repos.length} repos`
+              repos.length >= MAX_GITHUB_REPOS
+                ? `${MAX_GITHUB_REPOS} most recent repos`
+                : `${repos.length} repos`
             }.`}
     </p>
   );

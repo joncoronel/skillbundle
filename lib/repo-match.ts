@@ -9,6 +9,13 @@
 // Shared by both the Convex backend (../lib/repo-match) and the client
 // (@/lib/repo-match) so the two can never drift.
 
+/**
+ * Server-side cap on how many of the user's GitHub repos `listMyRepos`
+ * returns (newest-pushed first). Shared here so client copy about the cap
+ * can't drift from the server's actual limit.
+ */
+export const MAX_GITHUB_REPOS = 200;
+
 /** The repo shown in the repo-mode empty state's "Try it" button. */
 export const EXAMPLE_REPO_SLUG = "shadcn-ui/ui";
 export const EXAMPLE_REPO_URL = `https://github.com/${EXAMPLE_REPO_SLUG}`;

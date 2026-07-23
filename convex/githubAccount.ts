@@ -7,7 +7,7 @@ import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { getGithubOauthToken } from "./lib/clerkGithub";
-import { PRO_REQUIRED } from "../lib/repo-match";
+import { MAX_GITHUB_REPOS, PRO_REQUIRED } from "../lib/repo-match";
 
 export interface MyRepo {
   /** "owner/repo" — directly usable as the repo-match input. */
@@ -28,7 +28,7 @@ export type ListMyReposResult =
   | { status: "ok"; repos: MyRepo[] };
 
 const PER_PAGE = 100;
-const MAX_REPOS = 200;
+const MAX_REPOS = MAX_GITHUB_REPOS;
 
 interface GitHubRepoJson {
   full_name?: unknown;
