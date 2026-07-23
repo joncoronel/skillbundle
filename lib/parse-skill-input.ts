@@ -24,9 +24,13 @@
  *       "https://github.com/owner/repo/blob/main/skills/my-skill/SKILL.md"
  *       "https://raw.githubusercontent.com/owner/repo/main/skills/my-skill/SKILL.md"
  *     The slug is the SKILL.md's parent folder (or the deepest path segment).
- *     A repo-root GitHub URL has no derivable slug and errors with guidance.
- *     A wrong guess is harmless: the resolver verifies against the repo and
- *     the admin confirms the resolved file path before anything is written.
+ *     A SKILL.md at the repo ROOT has no parent folder, so the slug falls back
+ *     to the repo name (the conventional slug for a single-skill repo, and what
+ *     skills.sh uses for it). A bare repo/tree URL — which names no specific
+ *     skill — still errors with guidance.
+ *     A wrong guess is harmless: the resolver verifies against the repo (a root
+ *     SKILL.md only binds when its frontmatter name matches the slug) and the
+ *     user confirms the resolved file path before anything is written.
  *
  * Source-vs-slug split mirrors `isGitHubSource` in convex/skills.ts: a dot in
  * the first segment means it's a well-known source (1-segment source), no dot
@@ -133,11 +137,21 @@ function parseGitHubUrl(
       rest[0] === "refs" && rest[1] === "heads" ? rest.slice(3) : rest.slice(1);
   }
   // Link to the SKILL.md file itself → the slug is its parent folder.
+  let pointedAtSkillMd = false;
   if (rest.length > 0 && rest[rest.length - 1].toLowerCase() === "skill.md") {
     rest = rest.slice(0, -1);
+    pointedAtSkillMd = true;
   }
 
-  const skillId = rest[rest.length - 1];
+  // A SKILL.md at the repo root leaves no tail segment. Fall back to the repo
+  // name — but ONLY when the URL actually pointed at a SKILL.md. A bare repo
+  // URL, a tree/branch root, or a non-content page (issues/pulls/...) names no
+  // specific skill, so those still error below with guidance. The guess is
+  // verified downstream: the resolver only binds a root SKILL.md when its
+  // frontmatter name matches this slug, so a monorepo root SKILL.md that isn't
+  // named after the repo fails cleanly instead of adding a mis-slugged row.
+  let skillId = rest[rest.length - 1] ?? "";
+  if (!skillId && pointedAtSkillMd) skillId = parts[1];
   if (!skillId) {
     throw new Error(
       `That GitHub URL points at the repo, not a specific skill. Link the skill's folder (e.g. .../tree/main/skills/my-skill) or use the "owner/repo/skill-name" form.`,
