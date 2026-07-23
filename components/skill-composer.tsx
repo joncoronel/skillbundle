@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Search01Icon,
@@ -24,6 +24,8 @@ import {
   AutocompleteItem,
   AutocompleteEmpty,
   AutocompleteCollection,
+  AutocompleteStatus,
+  useAutocompleteFilter,
 } from "@/components/ui/cubby-ui/autocomplete";
 import { useMyRepos } from "@/hooks/use-my-repos";
 import type { MyRepo } from "@/convex/githubAccount";
@@ -76,6 +78,10 @@ function looksLikeRepo(value: string) {
 // so the Autocomplete root's `items` identity doesn't churn per render.
 const NO_REPOS: MyRepo[] = [];
 
+// Cap on rendered suggestions (the server list caps at 200; nobody scrolls
+// that in a popup — they type). A Status line reports what's hidden.
+const SUGGESTION_LIMIT = 60;
+
 interface SkillComposerProps {
   /** Derived in SkillExplorer from the shared query cache. */
   showInputSpinner: boolean;
@@ -127,6 +133,10 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   const showRepoSuggestions =
     isRepo && isPro && !!account && hasRepoScope && repos.length > 0;
 
+  // Diacritic/case-insensitive matcher, shared by the root's filter and the
+  // hidden-count Status line so they can't disagree.
+  const { contains } = useAutocompleteFilter({ sensitivity: "base" });
+
   // The currently highlighted suggestion (arrow keys / hover). Read by the
   // Enter handler so "commit the highlighted repo" and "analyze the typed
   // text" can't both fire from one keypress.
@@ -138,6 +148,17 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   // the multi-select combobox's chips anchor.
   const [suggestionsAnchor, setSuggestionsAnchor] =
     useState<HTMLDivElement | null>(null);
+
+  // Matches beyond SUGGESTION_LIMIT are hidden by the root's `limit`; count
+  // them here (same matcher) so the Status line can say so instead of the
+  // popup silently pretending the list is complete.
+  const totalMatches = useMemo(() => {
+    if (!showRepoSuggestions) return 0;
+    const q = repoDraft.trim();
+    if (!q) return repos.length;
+    return repos.filter((r) => contains(r.fullName, q)).length;
+  }, [showRepoSuggestions, repos, repoDraft, contains]);
+  const hiddenCount = Math.max(0, totalMatches - SUGGESTION_LIMIT);
 
   function selectRepo(repo: MyRepo) {
     setRepoDraft(repo.fullName);
@@ -438,6 +459,8 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           onValueChange={handleValueChange}
           items={showRepoSuggestions ? repos : NO_REPOS}
           itemToStringValue={(repo: MyRepo) => repo.fullName}
+          filter={contains}
+          limit={SUGGESTION_LIMIT}
           openOnInputClick={showRepoSuggestions}
           onItemHighlighted={(repo) => {
             highlightedRepoRef.current = repo ?? null;
@@ -492,6 +515,11 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                       )}
                     </AutocompleteCollection>
                   </AutocompleteList>
+                  <AutocompleteStatus className="text-xs">
+                    {hiddenCount > 0
+                      ? `${hiddenCount} more — keep typing to narrow`
+                      : null}
+                  </AutocompleteStatus>
                 </AutocompletePopup>
               </AutocompletePositioner>
             </AutocompletePortal>
