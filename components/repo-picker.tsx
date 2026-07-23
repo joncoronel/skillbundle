@@ -222,12 +222,14 @@ function ConnectPrompt({
         size="sm"
         onClick={onClick}
         disabled={connecting}
+        leftSection={
+          <HugeiconsIcon
+            icon={GithubIcon}
+            strokeWidth={2}
+            className="size-3.5"
+          />
+        }
       >
-        <HugeiconsIcon
-          icon={GithubIcon}
-          strokeWidth={2}
-          className="size-3.5"
-        />
         {connecting ? "Opening GitHub…" : label}
       </Button>
       <p className="mx-auto mt-2 max-w-sm text-xs text-muted-foreground">
