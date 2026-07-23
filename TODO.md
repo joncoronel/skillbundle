@@ -90,6 +90,18 @@ hand-lists its Activity-reset fields; a single reducer/reset would make forgetti
 one impossible. Left as a state-management refactor of working auth forms for a
 maintainability-only payoff — not worth the risk now.
 
+### Match repo: watch the two-press Esc in repo mode
+
+With repo suggestions (Jul 2026), Esc in repo mode is staged: first press
+closes the suggestion popup (Base UI), second press on an empty input exits
+to search mode. Implemented via `suggestionsOpenRef` + `onOpenChange` in
+`components/skill-composer.tsx` (a `defaultPrevented` check can't observe
+Base UI's document-level dismissal). This is the standard combobox-in-
+container idiom (VS Code quick-open etc.) — keep unless real usage shows the
+two-press flow surprising people. If Esc-to-exit is ever dropped, delete the
+whole apparatus with it: the mode-exit branch, the ref, and the
+`onOpenChange` prop (Base UI closes its own popup without us).
+
 ### Match repo: GitHub App migration (read-only, per-repo consent)
 
 The GitHub connect flow (Jul 2026) uses a GitHub **OAuth App** via Clerk's
