@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
-import { useReverificationFlow } from "./reverification-provider";
+import { useReverificationFlow } from "@/components/auth/reverification-provider";
 import { getClerkErrorMessage } from "@/lib/utils";
 
 export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {

@@ -38,6 +38,7 @@ import {
   type SkillData,
 } from "@/components/skill-card";
 import { useExplorerState } from "@/components/explorer-state";
+import { RepoPicker } from "@/components/repo-picker";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
@@ -129,6 +130,10 @@ export function RepoAnalysisResults() {
   // isn't wrongly gated) and doesn't grant auto-detect. Feeds the empty-state
   // hint and the demo footer, so they can't disagree with the paywall.
   const planResolvedFree = !planLoading && !isPlanError && !canAutoDetect;
+
+  // The Pro mirror: resolved AND allowed. Gates the repo picker in the empty
+  // state, so it can never flash at a free user mid plan-load.
+  const planResolvedPro = !planLoading && !isPlanError && canAutoDetect;
 
   // Definitively locked: a real (parseable) repo this user can't run, plan
   // resolved. The paywall shows with no server round-trip.
@@ -273,8 +278,8 @@ export function RepoAnalysisResults() {
       >
         <p className="text-sm font-medium text-destructive">{actionError}</p>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-          Double-check the URL — public GitHub repos only, like
-          github.com/vercel/next.js.
+          Double-check the URL — like github.com/vercel/next.js. Private repos
+          need your GitHub account connected.
         </p>
       </div>
     );
@@ -291,6 +296,7 @@ export function RepoAnalysisResults() {
         <RepoMatchEmptyState
           onTryExample={tryExample}
           showUpgradeHint={planResolvedFree}
+          showPicker={planResolvedPro}
         />
         <RepoMatchPaywall onTryExample={tryExample} />
       </Crossfade>
@@ -467,9 +473,12 @@ export function RepoAnalysisResults() {
 function RepoMatchEmptyState({
   onTryExample,
   showUpgradeHint,
+  showPicker,
 }: {
   onTryExample: () => void;
   showUpgradeHint: boolean;
+  /** Resolved-Pro users get the connect-GitHub / pick-a-repo affordance. */
+  showPicker: boolean;
 }) {
   return (
     <div className="mt-4 rounded-xl border border-dashed border-border px-6 py-10 text-center">
@@ -483,10 +492,20 @@ function RepoMatchEmptyState({
         Paste a GitHub repo URL and Analyze reads its languages and packages,
         then recommends skills that fit the stack.
       </p>
+      {/* Fades in once the plan resolves Pro, so free users' layout never
+          jumps. Space isn't reserved — the picker is an upgrade to the card,
+          not a hole in it. */}
+      {showPicker && (
+        <div className="starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+          <RepoPicker />
+        </div>
+      )}
+      {/* Future home of the RECENT list (previously analyzed repos + match
+          counts) — sits between the picker and the example button. */}
       <Button
-        variant="outline"
+        variant={showPicker ? "ghost" : "outline"}
         size="sm"
-        className="mt-4"
+        className={cn("mt-4", showPicker && "text-muted-foreground")}
         onClick={onTryExample}
       >
         Try it on {EXAMPLE_REPO_SLUG}

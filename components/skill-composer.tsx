@@ -13,7 +13,20 @@ import {
   ArrowLeft02Icon,
   CheckmarkBadge01Icon,
   TextAlignLeftIcon,
+  SquareLock02Icon,
 } from "@hugeicons/core-free-icons";
+import { Autocomplete as BaseAutocomplete } from "@base-ui/react/autocomplete";
+import {
+  AutocompletePortal,
+  AutocompletePositioner,
+  AutocompletePopup,
+  AutocompleteList,
+  AutocompleteItem,
+  AutocompleteEmpty,
+  AutocompleteCollection,
+} from "@/components/ui/cubby-ui/autocomplete";
+import { useMyRepos } from "@/hooks/use-my-repos";
+import type { MyRepo } from "@/convex/githubAccount";
 import {
   InputGroup,
   InputGroupAddon,
@@ -59,6 +72,10 @@ function looksLikeRepo(value: string) {
   return extractRepoSlug(value) !== null;
 }
 
+// Stable empty list for the modes/states where repo suggestions don't apply,
+// so the Autocomplete root's `items` identity doesn't churn per render.
+const NO_REPOS: MyRepo[] = [];
+
 interface SkillComposerProps {
   /** Derived in SkillExplorer from the shared query cache. */
   showInputSpinner: boolean;
@@ -101,6 +118,32 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   // cleared on the next keystroke.
   const [repoInputInvalid, setRepoInputInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Repo suggestions: the input doubles as an autocomplete over the user's
+  // own repos once their GitHub connection is healthy (connect/grant CTAs
+  // live in the empty state below). Everything degrades to the plain URL
+  // field when the list isn't available.
+  const { repos, account, hasRepoScope, isPro } = useMyRepos();
+  const showRepoSuggestions =
+    isRepo && isPro && !!account && hasRepoScope && repos.length > 0;
+
+  // The currently highlighted suggestion (arrow keys / hover). Read by the
+  // Enter handler so "commit the highlighted repo" and "analyze the typed
+  // text" can't both fire from one keypress.
+  const highlightedRepoRef = useRef<MyRepo | null>(null);
+
+  // Anchor the suggestion popup to the whole InputGroup, not the bare input —
+  // otherwise --anchor-width is the input element's width (minus both addons)
+  // and the popup renders narrower than the field it belongs to. Same fix as
+  // the multi-select combobox's chips anchor.
+  const [suggestionsAnchor, setSuggestionsAnchor] =
+    useState<HTMLDivElement | null>(null);
+
+  function selectRepo(repo: MyRepo) {
+    setRepoDraft(repo.fullName);
+    setRepoInputInvalid(false);
+    setParams({ repoUrl: repo.fullName });
+  }
 
   // Entering repo mode keeps the composer card; only the contents morph. If
   // what's typed already looks like a repo (URL or owner/repo), carry it into
@@ -150,20 +193,40 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
     ? "https://github.com/owner/repo"
     : "Search skills…";
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Autocomplete-root value handler — fires for keystrokes AND for Base UI
+  // filling the input on a suggestion commit, so both paths stay in sync.
+  const handleValueChange = (value: string) => {
     if (isRepo) {
-      setRepoDraft(e.target.value);
+      setRepoDraft(value);
       // A new keystroke is a new attempt — drop the stale validation error.
       if (repoInputInvalid) setRepoInputInvalid(false);
     } else {
-      setParams({ textQuery: e.target.value });
+      setParams({ textQuery: value });
     }
   };
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!isRepo) return;
-    if (e.key === "Enter") handleRepoSubmit();
-    // Esc on an empty repo input backs out to search (same as "Search skills").
-    if (e.key === "Escape" && !repoDraft.trim()) setParams({ mode: "text" });
+    if (e.key === "Enter") {
+      // A highlighted suggestion wins the keypress: submit it directly
+      // (covers keyboard commit regardless of how Base UI sequences the
+      // fill), never the half-typed text under it.
+      const highlighted = highlightedRepoRef.current;
+      if (showRepoSuggestions && highlighted) {
+        selectRepo(highlighted);
+        return;
+      }
+      handleRepoSubmit();
+    }
+    // Esc on an empty repo input backs out to search (same as "Search
+    // skills"). defaultPrevented = Base UI consumed it to close the
+    // suggestion popup — that keypress isn't also an exit.
+    if (
+      e.key === "Escape" &&
+      !e.defaultPrevented &&
+      !repoDraft.trim()
+    ) {
+      setParams({ mode: "text" });
+    }
   };
   const handleClearInput = () => {
     if (isRepo) {
@@ -192,17 +255,23 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           />
         )}
       </InputGroupAddon>
-      <InputGroupInput
-        ref={inputRef}
-        placeholder={placeholder}
-        value={inputValue}
-        onChange={handleInputChange}
-        onKeyDown={handleInputKeyDown}
-        // h-11 at BOTH breakpoints: the Input's own sm:h-9 would win the merge
-        // over a bare h-11 (the field silently rendered 36px for months because
-        // of this trap). 44px is the hero scale on purpose — the 32px trailing
-        // controls sit inside the field's height instead of inflating the row.
-        className={cn("pl-2 h-11 sm:h-11")}
+      {/* The Autocomplete root (wrapping the whole InputGroup below) owns
+          value + onChange; this render pairing keeps the composer's own
+          input styling and ref. */}
+      <BaseAutocomplete.Input
+        render={
+          <InputGroupInput
+            ref={inputRef}
+            placeholder={placeholder}
+            onKeyDown={handleInputKeyDown}
+            // h-11 at BOTH breakpoints: the Input's own sm:h-9 would win the
+            // merge over a bare h-11 (the field silently rendered 36px for
+            // months because of this trap). 44px is the hero scale on purpose
+            // — the 32px trailing controls sit inside the field's height
+            // instead of inflating the row.
+            className={cn("pl-2 h-11 sm:h-11")}
+          />
+        }
       />
       {/* The field is deliberately 44px (hero scale), so the 32px controls
           here sit INSIDE the input's own height with the addon's standard
@@ -359,9 +428,75 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
             rim instead of a 1px line), and --popup-surface is set so
             elevated components nested inside composite against the
             right substrate. */}
-        <InputGroup className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]">
-          {searchField}
-        </InputGroup>
+        {/* The Autocomplete root is a context provider (no DOM); it wraps the
+            input in BOTH modes so the input element never remounts on the
+            morph (focus survives). Suggestions only exist in repo mode with a
+            healthy GitHub connection — otherwise items is a stable empty list
+            and no popup markup renders at all. */}
+        <BaseAutocomplete.Root
+          value={inputValue}
+          onValueChange={handleValueChange}
+          items={showRepoSuggestions ? repos : NO_REPOS}
+          itemToStringValue={(repo: MyRepo) => repo.fullName}
+          openOnInputClick={showRepoSuggestions}
+          onItemHighlighted={(repo) => {
+            highlightedRepoRef.current = repo ?? null;
+          }}
+        >
+          <InputGroup
+            ref={setSuggestionsAnchor}
+            className="border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)] [--popup-surface:var(--surface-3)]"
+          >
+            {searchField}
+          </InputGroup>
+          {showRepoSuggestions && (
+            <AutocompletePortal>
+              {/* Above the sticky composer's own z-30 so the list never
+                  slides under the results it filters. */}
+              <AutocompletePositioner
+                className="z-40"
+                align="start"
+                anchor={suggestionsAnchor ?? undefined}
+              >
+                <AutocompletePopup>
+                  {/* An unlisted value is still valid input — say so instead
+                      of a dead "no results". */}
+                  <AutocompleteEmpty>
+                    Not one of your repos — Analyze reads any public repo URL.
+                  </AutocompleteEmpty>
+                  <AutocompleteList className="max-h-72">
+                    <AutocompleteCollection>
+                      {(repo: MyRepo) => (
+                        <AutocompleteItem
+                          key={repo.fullName}
+                          value={repo}
+                          onClick={() => selectRepo(repo)}
+                        >
+                          <span className="min-w-0 truncate">
+                            {repo.fullName}
+                          </span>
+                          {repo.private && (
+                            <HugeiconsIcon
+                              icon={SquareLock02Icon}
+                              strokeWidth={2}
+                              className="ml-1.5 size-3.5 shrink-0 text-muted-foreground"
+                              aria-label="Private repository"
+                            />
+                          )}
+                          {repo.language && (
+                            <span className="ml-auto shrink-0 pl-3 text-xs text-muted-foreground">
+                              {repo.language}
+                            </span>
+                          )}
+                        </AutocompleteItem>
+                      )}
+                    </AutocompleteCollection>
+                  </AutocompleteList>
+                </AutocompletePopup>
+              </AutocompletePositioner>
+            </AutocompletePortal>
+          )}
+        </BaseAutocomplete.Root>
 
         {/* Chin: filters left, leaderboards entry right. On mobile the
             filters collapse to one trigger → bottom sheet (sort lives

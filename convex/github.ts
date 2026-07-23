@@ -103,10 +103,29 @@ export async function fetchRawFile(
   repo: string,
   branch: string,
   path: string,
+  token?: string,
 ): Promise<string | null> {
-  const url = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+  // With a user token, go through the contents API — raw.githubusercontent.com
+  // auth is unreliable for OAuth-app tokens and can't see private repos.
+  const url = token
+    ? `https://api.github.com/repos/${owner}/${repo}/contents/${path
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}?ref=${encodeURIComponent(branch)}`
+    : `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
   try {
-    const res = await fetch(url);
+    const res = await fetch(
+      url,
+      token
+        ? {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.raw+json",
+              "User-Agent": "SkillBundle",
+            },
+          }
+        : undefined,
+    );
     if (!res.ok) return null;
     return await res.text();
   } catch {
@@ -283,6 +302,8 @@ interface BuildFingerprintInput {
   configFiles: string[];
   /** Paths of files to fetch for dependency extraction. */
   filesToFetch: string[];
+  /** User OAuth token for private-repo file reads (contents API). */
+  token?: string;
 }
 
 /**
@@ -293,13 +314,21 @@ interface BuildFingerprintInput {
 export async function buildRepoFingerprint(
   input: BuildFingerprintInput,
 ): Promise<RepoFingerprint> {
-  const { owner, repo, branch, description, topics, configFiles, filesToFetch } =
-    input;
+  const {
+    owner,
+    repo,
+    branch,
+    description,
+    topics,
+    configFiles,
+    filesToFetch,
+    token,
+  } = input;
 
   // Fetch all needed files in one parallel burst
   const fileContents = await Promise.all(
     filesToFetch.map(async (path) => {
-      const content = await fetchRawFile(owner, repo, branch, path);
+      const content = await fetchRawFile(owner, repo, branch, path, token);
       return { path, content };
     }),
   );

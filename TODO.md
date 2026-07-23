@@ -90,6 +90,21 @@ hand-lists its Activity-reset fields; a single reducer/reset would make forgetti
 one impossible. Left as a state-management refactor of working auth forms for a
 maintainability-only payoff — not worth the risk now.
 
+### Match repo: GitHub App migration (read-only, per-repo consent)
+
+The GitHub connect flow (Jul 2026) uses a GitHub **OAuth App** via Clerk's
+social connection, which forces the classic `repo` scope for private access —
+GitHub's consent screen honestly calls it "full control of private
+repositories" (read+write; no read-only OAuth scope exists). The better
+mechanism is a GitHub **App**: fine-grained read-only "Contents" permission,
+and users pick which repos to grant during installation. Costs that keep it
+parked: a separate install-then-authorize flow, expiring user-to-server
+tokens, repo listing via the installations API instead of `/user/repos`, and
+it doesn't drop into Clerk's social-connection plumbing that sign-in,
+settings, and the picker all ride on. Revisit only if users measurably balk
+at the consent screen (drop-off between clicking Connect and completing
+authorization).
+
 ### Match repo: free-run quota (phase 2 of the paywall)
 
 Shipped (Jul 2026, phase 1): repo match is Pro-gated, but the demo repo
@@ -112,7 +127,7 @@ the server gate and the client mirror already call, so the policy changes in
 exactly one place; the client can show remaining count but never gates. Don't extend quota to logged-out users (no
 reliable identity to meter → abuse surface); sign-in is the natural wall.
 
-### Match repo: deferred features (recents, match counts, GitHub OAuth)
+### Match repo: deferred features (recents, match counts)
 
 Shipped (Jul 2026): repo mode morphs the composer card in place — the composer
 is a single input row + chin (no separate control row anymore; filter toggles
@@ -122,11 +137,24 @@ sit inside the input, sort lives in the chin), Analyze inline in the input row
 carry-over, Esc-to-exit, and repo-result narrowing (Official toggle +
 Best match / Most installed).
 
+Shipped (Jul 2026): **Connect GitHub + repo picker with private-repo
+analysis.** Clerk-based (no separate OAuth app): the picker in the repo empty
+state (`components/repo-picker.tsx`) connects via
+`user.createExternalAccount({ strategy: "oauth_github", additionalScopes: ["repo"] })`
+(or `reauthorize` when GitHub was the sign-in provider), `listMyRepos` in
+`convex/githubAccount.ts` pulls the token from Clerk's Backend API
+(`convex/lib/clerkGithub.ts`, needs `CLERK_SECRET_KEY` in Convex env) and
+lists the user's repos, and `analyzeRepo` retries private repos with the user
+token under user-scoped (`user_…:owner/repo`) cache keys so private
+fingerprints never enter the global cache. Requires custom GitHub OAuth
+credentials on the Clerk GitHub connection (extra scopes don't work on
+Clerk's shared dev credentials).
+
 Still to build, independent of container:
 
 - **RECENT** list of previously analyzed repos with match counts
-  (e.g. `joncoronel/skillbundle · 42 matches`).
-- **"Connect GitHub for private repos"** (OAuth).
+  (e.g. `joncoronel/skillbundle · 42 matches`). Its slot is marked in
+  `RepoMatchEmptyState` between the picker and the example button.
 - Free users see the recents area replaced by the Pro upsell.
 
 Container decision, updated Jul 2026: the original vision (Paper artboard "F")

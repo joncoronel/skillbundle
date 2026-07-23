@@ -3,6 +3,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  type ActionCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v, ConvexError } from "convex/values";
@@ -16,6 +17,7 @@ import {
 } from "./github";
 import { embedText } from "./lib/embeddings";
 import { fetchRepoMetadata, fetchRepoTree, NOT_MODIFIED } from "./lib/github";
+import { getGithubOauthToken } from "./lib/clerkGithub";
 import {
   extractRepoSlug,
   matchesDemoRepo,
@@ -312,6 +314,95 @@ export const analyzeRepo = action({
       }
     }
 
+    // ------------------------------------------------------------------
+    // Public vs private analysis
+    // ------------------------------------------------------------------
+    // Private analyses run with the user's GitHub OAuth token (from Clerk)
+    // and are isolated under `${clerkUserId}:owner/repo` cache keys — `:` is
+    // outside GitHub's name charset and Clerk ids contain no `/`, so these
+    // can never collide with the global `owner/repo` keys or each other.
+    // The global cache is never written from a token-authenticated pass, so
+    // one user's private fingerprint can't be served to anyone else.
+    const identity = await ctx.auth.getUserIdentity();
+    const privateKey = identity ? `${identity.subject}:${repoKey}` : null;
+
+    // Private-first shortcut: a user-scoped tree-cache row means this user
+    // has analyzed this repo privately before — skip the public pass (and
+    // its guaranteed 404 probe) and go straight to the private one.
+    if (identity && privateKey) {
+      const privateTree = await ctx.runQuery(
+        internal.githubCache.getTreeCache,
+        { repo: privateKey },
+      );
+      if (privateTree) {
+        const tokenResult = await getGithubOauthToken(identity.subject);
+        if (tokenResult?.status === "connected") {
+          return await runAnalysis(ctx, {
+            owner,
+            repo,
+            repoName,
+            cacheKey: privateKey,
+            treeCacheKey: privateKey,
+            token: tokenResult.token,
+          });
+        }
+        // Token revoked/disconnected — fall through to the public pass.
+      }
+    }
+
+    const publicResult = await runAnalysis(ctx, {
+      owner,
+      repo,
+      repoName,
+      cacheKey,
+      treeCacheKey: repoKey,
+    });
+    if (publicResult.error !== FETCH_ERROR || !identity || !privateKey) {
+      return publicResult;
+    }
+
+    // Public fetch failed and the caller is signed in — retry with their
+    // GitHub token in case the repo is private and they have access. Any
+    // non-connected token status keeps the public error: the picker UI, not
+    // this error path, is what teaches users to connect GitHub.
+    const tokenResult = await getGithubOauthToken(identity.subject);
+    if (tokenResult?.status !== "connected") return publicResult;
+    return await runAnalysis(ctx, {
+      owner,
+      repo,
+      repoName,
+      cacheKey: privateKey,
+      treeCacheKey: privateKey,
+      token: tokenResult.token,
+    });
+  },
+});
+
+const FETCH_ERROR = "Could not fetch repository details";
+
+/**
+ * The full analysis pipeline (tree freshness check → fingerprint → embedding
+ * → vector search → grouping), parameterized over cache keys and an optional
+ * user token so it can run as either the global public pass or a per-user
+ * private pass.
+ */
+async function runAnalysis(
+  ctx: ActionCtx,
+  opts: {
+    owner: string;
+    repo: string;
+    /** Display casing for results. */
+    repoName: string;
+    /** repoFingerprintCache key (global "owner/repo" or "user_…:owner/repo"). */
+    cacheKey: string;
+    /** githubTreeCache `repo` field key, same convention. */
+    treeCacheKey: string;
+    /** User OAuth token — presence marks this as a private pass. */
+    token?: string;
+  },
+): Promise<AnalyzeRepoResult> {
+  {
+    const { owner, repo, repoName, cacheKey, treeCacheKey, token } = opts;
     const t0 = Date.now();
     let tPrev = t0;
     const mark = (label: string): void => {
@@ -335,7 +426,7 @@ export const analyzeRepo = action({
     // and rebuild — so users who just restructured their repo get fresh
     // results immediately.
     const treeCache = await ctx.runQuery(internal.githubCache.getTreeCache, {
-      repo: repoKey,
+      repo: treeCacheKey,
     });
 
     let treeChanged = false;
@@ -345,6 +436,7 @@ export const analyzeRepo = action({
     if (treeCache) {
       const treeResult = await fetchRepoTree(owner, repo, [treeCache.branch], {
         etag: treeCache.etag,
+        token,
       });
       if (treeResult === NOT_MODIFIED) {
         // Repo unchanged — fingerprint cache (if any) is still valid
@@ -352,7 +444,7 @@ export const analyzeRepo = action({
           `[analyzeRepo] ✓ Tree cache HIT (304 Not Modified) — repo unchanged`,
         );
         await ctx.runMutation(internal.githubCache.touchTreeCache, {
-          repo: repoKey,
+          repo: treeCacheKey,
         });
         branch = treeCache.branch;
         scan = decodeCachedScan(treeCache.dependencyFilePaths);
@@ -364,7 +456,7 @@ export const analyzeRepo = action({
         scan = scanTree(treeResult.entries);
         if (treeResult.etag) {
           await ctx.runMutation(internal.githubCache.setTreeCache, {
-            repo: repoKey,
+            repo: treeCacheKey,
             branch: treeResult.branch,
             etag: treeResult.etag,
             dependencyFilePaths: encodeScanForCache(scan),
@@ -425,7 +517,7 @@ export const analyzeRepo = action({
       // ------------------------------------------------------------------
       // Step 3: Fetch metadata + tree (if not already done)
       // ------------------------------------------------------------------
-      const meta = await fetchRepoMetadata(owner, repo);
+      const meta = await fetchRepoMetadata(owner, repo, token);
       if (!branch) branch = meta?.defaultBranch ?? "main";
       mark("GitHub metadata fetch");
 
@@ -436,13 +528,15 @@ export const analyzeRepo = action({
         if (!branchesToTry.includes("main")) branchesToTry.push("main");
         if (!branchesToTry.includes("master")) branchesToTry.push("master");
 
-        const treeResult = await fetchRepoTree(owner, repo, branchesToTry);
+        const treeResult = await fetchRepoTree(owner, repo, branchesToTry, {
+          token,
+        });
         if (treeResult && treeResult !== NOT_MODIFIED) {
           branch = treeResult.branch;
           scan = scanTree(treeResult.entries);
           if (treeResult.etag) {
             await ctx.runMutation(internal.githubCache.setTreeCache, {
-              repo: repoKey,
+              repo: treeCacheKey,
               branch: treeResult.branch,
               etag: treeResult.etag,
               dependencyFilePaths: encodeScanForCache(scan),
@@ -450,6 +544,18 @@ export const analyzeRepo = action({
           }
         }
         // If tree API fails, scan stays null — graceful degradation.
+      }
+
+      // Nothing resolved at all (metadata 404 AND no tree): the repo is
+      // private, deleted, or unreachable. Bail before firing the per-file
+      // fetches below — on a private repo they are all guaranteed to fail.
+      if (!meta && !scan) {
+        return {
+          error: FETCH_ERROR,
+          repoName,
+          fingerprint: null,
+          recommendations: [],
+        };
       }
 
       // ------------------------------------------------------------------
@@ -495,6 +601,7 @@ export const analyzeRepo = action({
         topics: meta?.topics ?? [],
         configFiles: scan?.configFiles ?? [],
         filesToFetch,
+        token,
       });
       mark(`GitHub file fetches (${filesToFetch.length} files)`);
 
@@ -506,7 +613,7 @@ export const analyzeRepo = action({
         fingerprint.topics.length === 0
       ) {
         return {
-          error: "Could not fetch repository details",
+          error: FETCH_ERROR,
           repoName,
           fingerprint: null,
           recommendations: [],
@@ -748,5 +855,5 @@ export const analyzeRepo = action({
       fingerprint,
       recommendations,
     };
-  },
-});
+  }
+}

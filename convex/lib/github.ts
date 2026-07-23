@@ -3,9 +3,13 @@
  * and skills.ts (skill content discovery).
  */
 
-/** Build auth + user-agent headers for GitHub API requests. */
-export function githubHeaders(): Record<string, string> {
-  const token = process.env.GITHUB_TOKEN;
+/**
+ * Build auth + user-agent headers for GitHub API requests.
+ * Pass a user OAuth token to act on the user's behalf (private repos);
+ * otherwise the app-wide GITHUB_TOKEN is used.
+ */
+export function githubHeaders(userToken?: string): Record<string, string> {
+  const token = userToken ?? process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
     "User-Agent": "SkillBundle",
@@ -53,9 +57,10 @@ export interface RepoMetadata {
 export async function fetchRepoMetadata(
   owner: string,
   repo: string,
+  token?: string,
 ): Promise<RepoMetadata | null> {
   if (!isSafeRepoPath(`${owner}/${repo}`)) return null;
-  const headers = githubHeaders();
+  const headers = githubHeaders(token);
   // Topics require the mercy preview header on older APIs, but the v3 endpoint
   // returns them by default now. Belt-and-suspenders.
   headers.Accept = "application/vnd.github.mercy-preview+json";
@@ -146,10 +151,10 @@ export async function fetchRepoTree(
   owner: string,
   repo: string,
   branches: string[],
-  options?: { etag?: string },
+  options?: { etag?: string; token?: string },
 ): Promise<TreeResult | NotModified | null> {
   if (!isSafeRepoPath(`${owner}/${repo}`)) return null;
-  const baseHeaders = githubHeaders();
+  const baseHeaders = githubHeaders(options?.token);
 
   for (const branch of branches) {
     const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;

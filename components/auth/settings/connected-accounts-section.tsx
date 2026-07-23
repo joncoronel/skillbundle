@@ -5,7 +5,7 @@ import { useUser, useReverification } from "@clerk/nextjs";
 import { isReverificationCancelledError } from "@clerk/nextjs/errors";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
-import { useReverificationFlow } from "./reverification-provider";
+import { useReverificationFlow } from "@/components/auth/reverification-provider";
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
