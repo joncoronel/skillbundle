@@ -104,6 +104,26 @@ describe("parseSkillInput — accepts", () => {
     ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
   });
 
+  test("GitHub blob URL to a ROOT-level SKILL.md (slug falls back to repo name)", () => {
+    // Single-skill repos keep their SKILL.md at the root — no parent folder to
+    // name the slug, so we use the repo name (what skills.sh uses for it). The
+    // resolver re-verifies against the file's frontmatter, so a wrong guess on
+    // a monorepo fails cleanly rather than adding a mis-slugged row.
+    expect(
+      parseSkillInput(
+        "https://github.com/petergyang/no-ai-slop/blob/main/SKILL.md",
+      ),
+    ).toEqual({ source: "petergyang/no-ai-slop", skillId: "no-ai-slop" });
+  });
+
+  test("raw.githubusercontent.com URL to a ROOT-level SKILL.md (repo-name slug)", () => {
+    expect(
+      parseSkillInput(
+        "https://raw.githubusercontent.com/petergyang/no-ai-slop/main/SKILL.md",
+      ),
+    ).toEqual({ source: "petergyang/no-ai-slop", skillId: "no-ai-slop" });
+  });
+
   test("GitHub tree URL with a slashed branch name (tail-derived slug survives)", () => {
     expect(
       parseSkillInput(
@@ -157,14 +177,6 @@ describe("parseSkillInput — rejects", () => {
   test("GitHub tree URL to the branch root (still no slug)", () => {
     expect(() =>
       parseSkillInput("https://github.com/vercel-labs/agent-skills/tree/main"),
-    ).toThrow(/link the skill's folder/i);
-  });
-
-  test("GitHub blob URL to a root-level SKILL.md (no parent folder = no slug)", () => {
-    expect(() =>
-      parseSkillInput(
-        "https://github.com/vercel-labs/agent-skills/blob/main/SKILL.md",
-      ),
     ).toThrow(/link the skill's folder/i);
   });
 
