@@ -16,18 +16,6 @@ report affordance on skill pages + an admin moderation view keyed on `addedBy`
 (e.g. list a user's adds, bulk-remove). Build when the first abuse actually shows
 up — attribution is already in place to support it.
 
-### Typesense prod collection: one-time reset for `isGitHubOnly`
-
-The prod `skills` collection predates the `isGitHubOnly` field and there is no
-schema-alter path in this codebase, so the "Hide GitHub-only skills" filter
-errors against it until the collection is recreated. Decided (Jul 2026): the
-reset route, not a PATCH helper. Run back to back, during low traffic:
-
-    npx convex run typesense:resetCollection --prod
-    npx convex run typesense:syncCatalog --prod
-
-Dev already done (2026-07-22). Delete this entry once prod has run.
-
 ### Add-skill: repo-root URL should offer a skill picker
 
 `/dev/add-skill` accepts GitHub deep links (tree/blob/raw, slug derived from
@@ -41,7 +29,7 @@ Admin-only surface, so build it when the guidance error actually annoys.
 
 ### Tighten SKILL.md slug matching to whole-word prefixes
 
-`lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the
+`convex/lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the
 frontmatter-name-to-slug rule used by both discovery (`skills.ts`) and the
 GitHub-only resolver (`githubOnly.ts`). The rule is deliberately loose: bare
 `kebab.startsWith(skillId)` has no word boundary, so slug `test` matches a file
@@ -85,65 +73,22 @@ pipeline previously never pinged the tag itself; publishing relied on `reconcile
 when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
 `internal.skills.revalidateSkillSyncTag` at their terminals.
 
-### Skills that are not on skills.sh at all ("GitHub-only")
+### Sign-in second factor: real MFA (future)
 
-Shipped (Jul 2026). `/dev/add-skill` now falls back to the GitHub repo when the
-skills.sh detail endpoint 404s: `previewGitHubSkill` resolves the SKILL.md and shows
-the admin the file path + parsed name to confirm, then `addSkillFromGitHub` inserts
-with `installs: 0` and `isGitHubOnly: true`. Full design in
-[docs/skill-lifecycle.md](docs/skill-lifecycle.md) ("GitHub-only skills").
+Today `submit`'s second-factor branch handles Clerk's `email_code` factor ONLY,
+which is all this app produces (new-device Client Trust verification). There's no
+MFA-setup UI, so no authenticator / SMS / backup factors exist. If real
+user-configurable MFA is ever added (a Clerk dashboard setting + a management
+surface), the branch in `components/auth/sign-in-form.tsx` must also handle
+`totp` / `phone_code` / backup codes (verify methods already exist on
+`signIn.mfa`).
 
-Rather than exempting these rows from the 30-day delist, the content pipeline stamps
-`lastSeenInApi` on every successful SKILL.md fetch (the "GitHub heartbeat"), so a row
-lives exactly as long as GitHub serves the file and a dead repo still cleans itself up
-on the normal track. Reconcile skips them (detail can only 404). Adoption needs no
-special-casing beyond clearing the marker: matching is on `(source, skillId)`, so
-`syncSkills` takes over installs and snapshots the moment the skill appears upstream.
+### Auth OTP: shared-code-field reset refactor (deferred, low-value)
 
-Known cost, accepted: audits stay `"unknown"` for these rows because the audit
-endpoint 404s. Revisit only if GitHub-only skills become common enough that the
-missing security signal matters.
-
-Shipped since (Jul 2026, public add-skill PR): `isGitHubOnly` now surfaces across
-the UI — a badge on cards/rows, an info banner on the skill detail page, and a
-"Hide GitHub-only skills" search filter.
-
-### Sign-in second factor: email code only (future: real MFA)
-
-Shipped (Jul 2026): sign-in handles Clerk's Client Trust email-code step
-(new-device verification) instead of silently stalling —
-`components/auth/sign-in-form.tsx`. A non-email second factor already fails with
-a distinct "this sign-in method isn't supported here" message.
-
-Remaining (future): the branch handles the `email_code` factor ONLY, which is
-all this app produces today — there's no MFA-setup UI, so no authenticator / SMS
-/ backup factors exist. If real user-configurable MFA is ever added (a Clerk
-dashboard setting + a management surface), `submit`'s second-factor branch must
-also handle `totp` / `phone_code` / backup codes (verify methods already exist
-on `signIn.mfa`).
-
-### Auth OTP: shared code field (shipped)
-
-Shipped (Jul 2026): all four OTP surfaces — `sign-up-form.tsx`,
-`sign-in-form.tsx`, `settings/email-section.tsx`,
-`settings/reverification-provider.tsx` — share `components/auth/code-field.tsx`
-(on the cubby-ui `otp-field` primitive) with auto-submit on complete.
-`shared.tsx` owns `navigateAfterAuth` (the open-redirect boundary, previously
-copied twice) and `isExpiredCodeError` (expired-code clears now happen in the
-verify event path, not a boolean-dep effect). Resend is unified on the
-`useResendTimer` hook everywhere (a countdown). The old `input-otp` component +
-dependency are removed.
-
-Code-send failures now branch on the returned `{ error }` (the actions API
-resolves with it rather than throwing) instead of a `try/catch` that never fired
-— so a failed send no longer starts a misleading resend cooldown or claims a
-code was sent. `AuthFormError` de-dupes so the hook's `errors.global` and our own
-message don't double up.
-
-Deferred (optional, low-value): each form still hand-lists its Activity-reset
-fields; a single reducer/reset would make forgetting one impossible. Left as a
-state-management refactor of working auth forms for a maintainability-only
-payoff — not worth the risk now.
+The four OTP surfaces share `components/auth/code-field.tsx`, but each form still
+hand-lists its Activity-reset fields; a single reducer/reset would make forgetting
+one impossible. Left as a state-management refactor of working auth forms for a
+maintainability-only payoff — not worth the risk now.
 
 ### Match repo: free-run quota (phase 2 of the paywall)
 
@@ -206,10 +151,13 @@ matched your repo" properly.
 ### Home-list chips
 
 - **Reconsider the row-level chips** as part of a list redesign.
-  - The **"install may fail"** (fetch-warning) chip has real protective value — it warns
-    before a user copies a broken install command. Lean: keep (restyle is fine).
-  - The **"N copies" / shared-content** chip is informational and the easiest to cut from
-    dense rows. Lean: remove from rows, keep only on the detail page.
+  - The **fetch-warning** signal (now the unified `SkillStatusBadge` via
+    `deriveSkillStatus({ hasContentFetchError })` in `components/skill-card.tsx`) has real
+    protective value — it warns before a user copies a broken install command. Lean: keep
+    (restyle is fine).
+  - The **"N copies"** chip (`CopiesBadge` in `components/skill-card.tsx`) is informational
+    and the easiest to cut from dense rows. Lean: remove from rows, keep only on the detail
+    page.
 
 ## Parked decisions (context lives elsewhere)
 
