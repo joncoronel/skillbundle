@@ -1,56 +1,85 @@
-# SkillBundle Design Context
+# Product
 
-## Register
+<!-- impeccable:product-schema 1 -->
 
-product
+## Platform
+
+web
 
 ## Users
 
 **Primary audience:** Developers, indie hackers, and vibe coders who use AI coding assistants (Cursor, Claude Code, etc.) and want to customize their skill setup.
 
-**Mindset on arrival:** A mix of discovery-driven exploration ("what skills exist for my stack?") and task-driven efficiency ("I know what I want, let me bundle it and get the install command"). The experience should reward both modes — browsing should feel interesting, and the action path should feel fast.
+**Situation on arrival:** A mix of discovery-driven exploration ("what skills exist for my stack?") and task-driven efficiency ("I know what I want, let me bundle it and get the install command"). The experience should reward both modes — browsing should feel interesting, and the action path should feel fast.
 
-**Job to be done:** Find the right AI coding skills for their tech stack, save them into reusable bundles, and share or install them with minimal friction. SkillBundle is the one-stop shop — discovery, comparison, curation, and distribution in one place.
+**Job to be done:** Find the right AI coding skills for their tech stack, save them into reusable bundles, and share or install them with minimal friction.
 
-## Brand Personality
+**Access model:** A mostly-signed-out public directory. Browsing, searching, viewing catalog pages, and opening shared bundles need no account. Auth is only required to save and manage your own bundles.
 
-**Three words:** Sharp, fast, inviting.
+## Product Purpose
 
-**Expanded:** SkillBundle feels like a well-made developer tool that respects your time. It's confident and opinionated in its presentation — not tentative or generic. There's a cleverness to the interactions and copy that makes it feel like it was built by someone who actually uses these tools. It moves quickly, communicates clearly, and doesn't waste space on ceremony.
+SkillBundle is the one-stop shop for the AI coding-skill lifecycle: discovery, comparison, curation, and distribution in one place. It syncs the public skills.sh ecosystem into its own catalog, then lets developers browse (leaderboards, per-owner/per-repo pages, a curated "official" directory), discover (full-text search, or paste a GitHub repo to get skills matched to that codebase), compare similar skills side by side, and bundle the ones they want into a shareable set with a single install command.
 
-**Emotional goals:** Confidence (I'm picking the right skills), efficiency (this is fast), and a quiet sense of delight (this feels good to use).
+Success looks like a developer going from "what should I install?" to a copyable install command — for a curated, shareable bundle — with minimal friction, whether they arrived to browse or to act.
 
-## Aesthetic Direction
+## Positioning
 
-**Visual references:**
-- **Firecrawl.dev** — Clean neutrals, vibrant orange accent used with restraint, geometric sans-serif typography, generous whitespace, technical sophistication that still feels approachable. Bordered containers, consistent gutters, minimal iconography.
-- **Nothing phone / Nothing OS** — Industrial-geometric confidence, high contrast, bold typographic hierarchy, dot-matrix and geometric motifs, monochrome base with a single accent color. Design that has a point of view — distinctive without being decorative.
+The differentiator is the pairing of two things a neighboring product could not truthfully copy at once:
 
-**Intersection of references:** Both share sharp confidence, high contrast, geometric precision, and a single warm accent on a neutral base. Neither is soft or rounded. Both feel *designed* rather than assembled from a template.
+1. **The full lifecycle in one place.** Discovery → comparison → curation → distribution, ending in a single install command. Individual features (search, leaderboards, repo matching) exist elsewhere in pieces; SkillBundle owns the whole arc.
+2. **The bundle as the primitive.** A named, shareable, forkable, starrable set of skills is the unit of value. It is what gets curated, passed around, installed, and ranked — the thing the whole lifecycle produces and the reason to return.
 
-**Current direction:** Blue primary accent (`oklch(0.6 0.2 250)`), Geist Sans/Mono for UI, Geist Pixel Circle for display. The pixel display face is a deliberate identity choice — keep it. This foundation is solid and aligned with the references — evolve it rather than replace it. The accent is distinctive and should stay as the signature color.
+Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to that actual codebase) is a strong supporting mechanism, but it serves the lifecycle rather than defining it.
 
-**Theme:** Light and dark mode, system-preference default. Both modes should feel equally considered — dark mode is not an afterthought.
+## Operating Context
 
-**Anti-references:** Generic SaaS landing pages with gradient hero blobs. Overly playful/cartoon dev tools. Glassmorphism-heavy dashboards. Anything that looks like it was generated by a template or AI without a human point of view.
+- **Upstream dependency:** the public skills.sh ecosystem and its v1 API, plus GitHub (Tree walks for SKILL.md discovery, repo-identity resolution). skills.sh only exposes a point-in-time install count, so history and momentum are reconstructed from daily snapshots.
+- **Distribution target:** the `npx skills add owner/repo --skill …` CLI. Bundle install commands are generated by grouping skills per source repo to minimize commands (joined with `&&` across repos).
+- **Data pipeline:** skills enter via all-time leaderboard sync, the curated/official set, or admin manual add, then are enriched (content, install history, leaderboard ranks, security audits, embeddings, duplicate detection) on a daily Convex cron chain. Skills unseen for 30 days are soft-delisted.
+- **Sharing surface:** bundles unfurl in chat apps via OG tags; public bundles are ranked by stars/copies and surfaced on `/explore`.
 
-## Design Principles
+## Capabilities and Constraints
 
-1. **Precision over decoration.** Every visual element should earn its place. Prefer sharp alignments, intentional spacing, and typographic hierarchy over decorative effects. If it doesn't communicate something, remove it.
+**Capabilities:**
 
-2. **Speed is a feature.** The interface should feel fast — both in actual performance and perceived responsiveness. Interactions should be immediate, layouts should load without shifting, and the path from discovery to action should be short.
+- Browse leaderboards (Popular / Trending / Hot), owner and repo catalog pages, and a curated `/official` directory.
+- Full-text search over skill names, with an "Official only" filter.
+- GitHub repo analysis — paste a repo, get matched skills (Pro-gated; free demo allowlist so anyone can try it on `shadcn-ui/ui`).
+- Side-by-side skill comparison (`/compare`).
+- Skill detail: rendered SKILL.md, install count + rank, installs-over-time chart with momentum, security audit panel, copyable install command, variants across forks/aliases.
+- Bundles: create/manage (auth), public or private (link-only via share token), stars/forks/copy counts, featured placement.
 
-3. **Confidence without arrogance.** The design should have a clear point of view (bold type, decisive color, strong hierarchy) but still feel welcoming. Sharp doesn't mean cold. Invite people in, then get out of their way.
+**Constraints / undecided:**
 
-4. **Density when it matters, space when it doesn't.** Skill grids and comparison views can be information-dense — developers expect that. But hero sections, onboarding, and empty states should breathe. Match density to the user's intent at that moment.
+- Search is currently single-field Convex full-text (prefix, no typo tolerance). A move to a faceted engine (filters + sorting + typo tolerance) is under consideration, weighed against sync-pipeline and hosting cost — not decided.
+- Billing is Polar (Merchant of Record) via `@convex-dev/polar`, gated behind a master `FEATURE_GATING_ENABLED` switch. Everything is free at launch until there is traction. Pro is $8/mo / $72/yr covering repo auto-detection, unlimited + private bundles, and bundle analytics.
+- Explicitly out of scope: skill generation/editing, automatic compatibility detection between skills, team workspaces / shared team bundles, and a native mobile app.
 
-5. **One accent, used with intent.** Blue (`oklch(0.6 0.2 250)`) is the signature. Use it for primary actions, active states, and key highlights. Everything else lives in the neutral palette. The accent works because it's rare.
+## Brand Commitments
 
-## Accessibility
+- **Name:** SkillBundle.
+- **Voice — three words:** Sharp, fast, inviting. It feels like a well-made developer tool that respects your time: confident and opinionated, never tentative or generic, with a cleverness to the interactions and copy that reads as built by someone who actually uses these tools. It moves quickly, communicates clearly, and does not waste space on ceremony.
+- **Emotional goals:** confidence (I'm picking the right skills), efficiency (this is fast), and a quiet sense of delight (this feels good to use).
+- **Identity constraint:** the Geist Pixel display face is a deliberate, binding identity choice — keep it. (Full visual world — palette, typography, references — lives in DESIGN.md, which is the authority for it.)
 
-- Target WCAG 2.1 AA compliance as a minimum across both themes.
-- Ensure sufficient color contrast ratios (4.5:1 for normal text, 3:1 for large text and UI components).
-- Support reduced motion preferences — provide `prefers-reduced-motion` alternatives for all animations.
-- Keyboard navigable — all interactive elements reachable and operable via keyboard.
-- Screen reader friendly — semantic HTML, proper ARIA labels, meaningful alt text.
+## Evidence on Hand
+
+- **Real catalog data:** live skills synced daily from skills.sh (content, install counts, ranks), real security audit verdicts per provider, and real repo fingerprints — not mock data.
+- **Real social data:** actual bundles with stars, forks, and copy counts; featured bundles for editorial placement.
+- **No fabricated proof:** there are no invented testimonials, customer logos, benchmarks, or press. Future work must not fabricate them; use the real catalog and bundle activity as the proof.
+
+## Product Principles
+
+1. **Serve both the browser and the doer.** Reward exploration and make the action path short; match density to the user's intent at each moment (dense grids and comparisons where developers expect them, room to breathe in hero, onboarding, and empty states).
+2. **Speed is a feature.** Fast in fact and in feel — immediate interactions, no layout shift, a short path from discovery to install command.
+3. **The bundle is the payoff.** Every surface should make it easy to move skills toward a bundle and out as a shareable install command.
+4. **Show real signal, honestly.** Lean on real install counts, ranks, audits, and bundle activity as proof; never invent it, and flag when a skill's install may fail.
+5. **Confidence without arrogance.** A clear point of view that still welcomes people in — invite them, then get out of their way.
+
+## Accessibility & Inclusion
+
+- Target WCAG 2.1 AA as a minimum across both light and dark themes.
+- Sufficient contrast (4.5:1 normal text, 3:1 large text and UI components).
+- Support reduced-motion preferences with `prefers-reduced-motion` alternatives for all animations.
+- Fully keyboard navigable; screen-reader friendly (semantic HTML, proper ARIA, meaningful alt text).
 - Color is never the sole indicator of state — pair with icons, text, or patterns.
