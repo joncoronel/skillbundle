@@ -197,7 +197,11 @@ function RepoPickerInner() {
         ? "Loading your repositories…"
         : repos.length === 0
           ? "No repositories on your GitHub account yet."
-          : `GitHub connected — start typing above to pick from your ${repos.length} repos.`}
+          : // The server caps the list at 200 (newest-pushed) — don't claim
+            // "your 200 repos" to someone who owns more.
+            `GitHub connected — start typing above to pick from your ${
+              repos.length >= 200 ? "200 most recent repos" : `${repos.length} repos`
+            }.`}
     </p>
   );
 }

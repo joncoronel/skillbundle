@@ -48,6 +48,8 @@ export interface RepoMetadata {
   defaultBranch: string;
   description: string | null;
   topics: string[];
+  /** GitHub's visibility flag — false means publicly fetchable. */
+  private: boolean;
 }
 
 /**
@@ -74,11 +76,13 @@ export async function fetchRepoMetadata(
       default_branch: string;
       description: string | null;
       topics?: string[];
+      private?: boolean;
     };
     return {
       defaultBranch: data.default_branch,
       description: data.description,
       topics: data.topics ?? [],
+      private: data.private === true,
     };
   } catch {
     return null;

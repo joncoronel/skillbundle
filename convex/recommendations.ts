@@ -326,6 +326,23 @@ export const analyzeRepo = action({
     const identity = await ctx.auth.getUserIdentity();
     const privateKey = identity ? `${identity.subject}:${repoKey}` : null;
 
+    // The user's GitHub token, fetched from Clerk at most once per request
+    // (the shortcut and the retry below can otherwise both pay the call).
+    let tokenResult: Awaited<ReturnType<typeof getGithubOauthToken>> | undefined;
+    const getToken = async () =>
+      identity
+        ? (tokenResult ??= await getGithubOauthToken(identity.subject))
+        : null;
+    const runPrivate = (key: string, token: string) =>
+      runAnalysis(ctx, {
+        owner,
+        repo,
+        repoName,
+        cacheKey: key,
+        treeCacheKey: key,
+        token,
+      });
+
     // Private-first shortcut: a user-scoped tree-cache row means this user
     // has analyzed this repo privately before — skip the public pass (and
     // its guaranteed 404 probe) and go straight to the private one.
@@ -335,16 +352,9 @@ export const analyzeRepo = action({
         { repo: privateKey },
       );
       if (privateTree) {
-        const tokenResult = await getGithubOauthToken(identity.subject);
-        if (tokenResult?.status === "connected") {
-          return await runAnalysis(ctx, {
-            owner,
-            repo,
-            repoName,
-            cacheKey: privateKey,
-            treeCacheKey: privateKey,
-            token: tokenResult.token,
-          });
+        const token = await getToken();
+        if (token?.status === "connected") {
+          return await runPrivate(privateKey, token.token);
         }
         // Token revoked/disconnected — fall through to the public pass.
       }
@@ -357,7 +367,7 @@ export const analyzeRepo = action({
       cacheKey,
       treeCacheKey: repoKey,
     });
-    if (publicResult.error !== FETCH_ERROR || !identity || !privateKey) {
+    if (publicResult.error !== FETCH_ERROR || !privateKey) {
       return publicResult;
     }
 
@@ -365,16 +375,9 @@ export const analyzeRepo = action({
     // GitHub token in case the repo is private and they have access. Any
     // non-connected token status keeps the public error: the picker UI, not
     // this error path, is what teaches users to connect GitHub.
-    const tokenResult = await getGithubOauthToken(identity.subject);
-    if (tokenResult?.status !== "connected") return publicResult;
-    return await runAnalysis(ctx, {
-      owner,
-      repo,
-      repoName,
-      cacheKey: privateKey,
-      treeCacheKey: privateKey,
-      token: tokenResult.token,
-    });
+    const token = await getToken();
+    if (token?.status !== "connected") return publicResult;
+    return await runPrivate(privateKey, token.token);
   },
 });
 
@@ -401,57 +404,152 @@ async function runAnalysis(
     token?: string;
   },
 ): Promise<AnalyzeRepoResult> {
-  {
-    const { owner, repo, repoName, cacheKey, treeCacheKey, token } = opts;
-    const t0 = Date.now();
-    let tPrev = t0;
-    const mark = (label: string): void => {
-      const now = Date.now();
-      debugLog(`[analyzeRepo]   ⏱ ${label}: ${now - tPrev}ms`);
-      tPrev = now;
-    };
+  const { owner, repo, repoName, token } = opts;
+  // `let`: a token pass that discovers the repo is actually PUBLIC (GitHub
+  // metadata says private: false) downgrades to the global keys below, so a
+  // transient public-fetch failure can't permanently pin a public repo to a
+  // per-user cache (and the private-first shortcut only ever sees user rows
+  // for genuinely private repos).
+  let { cacheKey, treeCacheKey } = opts;
+  const t0 = Date.now();
+  let tPrev = t0;
+  const mark = (label: string): void => {
+    const now = Date.now();
+    debugLog(`[analyzeRepo]   ⏱ ${label}: ${now - tPrev}ms`);
+    tPrev = now;
+  };
 
-    debugLog(`[analyzeRepo] Starting for ${repoName}`);
+  debugLog(`[analyzeRepo] Starting for ${repoName}`);
 
-    let fingerprint: RepoFingerprint;
-    let queryEmbedding: number[];
+  let fingerprint: RepoFingerprint;
+  let queryEmbedding: number[];
 
-    // ------------------------------------------------------------------
-    // Step 1: Tree ETag freshness check
-    // ------------------------------------------------------------------
-    // Always check whether the repo has changed before trusting any cache.
-    // With an authenticated GITHUB_TOKEN, 304 responses are free (don't
-    // count against the 5,000/hour rate limit), so this costs only ~100ms
-    // of latency. If the tree changed, we invalidate the fingerprint cache
-    // and rebuild — so users who just restructured their repo get fresh
-    // results immediately.
-    const treeCache = await ctx.runQuery(internal.githubCache.getTreeCache, {
-      repo: treeCacheKey,
+  // ------------------------------------------------------------------
+  // Step 1: Tree ETag freshness check
+  // ------------------------------------------------------------------
+  // Always check whether the repo has changed before trusting any cache.
+  // With an authenticated GITHUB_TOKEN, 304 responses are free (don't
+  // count against the 5,000/hour rate limit), so this costs only ~100ms
+  // of latency. If the tree changed, we invalidate the fingerprint cache
+  // and rebuild — so users who just restructured their repo get fresh
+  // results immediately.
+  const treeCache = await ctx.runQuery(internal.githubCache.getTreeCache, {
+    repo: treeCacheKey,
+  });
+
+  let treeChanged = false;
+  let scan: TreeScanResult | null = null;
+  let branch: string | undefined;
+
+  if (treeCache) {
+    const treeResult = await fetchRepoTree(owner, repo, [treeCache.branch], {
+      etag: treeCache.etag,
+      token,
     });
+    if (treeResult === NOT_MODIFIED) {
+      // Repo unchanged — fingerprint cache (if any) is still valid
+      debugLog(
+        `[analyzeRepo] ✓ Tree cache HIT (304 Not Modified) — repo unchanged`,
+      );
+      await ctx.runMutation(internal.githubCache.touchTreeCache, {
+        repo: treeCacheKey,
+      });
+      branch = treeCache.branch;
+      scan = decodeCachedScan(treeCache.dependencyFilePaths);
+    } else if (treeResult) {
+      // Repo changed — rebuild fingerprint even if cached
+      debugLog(`[analyzeRepo] ⟳ Tree cache STALE — repo changed, rebuilding`);
+      treeChanged = true;
+      branch = treeResult.branch;
+      scan = scanTree(treeResult.entries);
+      if (treeResult.etag) {
+        await ctx.runMutation(internal.githubCache.setTreeCache, {
+          repo: treeCacheKey,
+          branch: treeResult.branch,
+          etag: treeResult.etag,
+          dependencyFilePaths: encodeScanForCache(scan),
+        });
+      }
+    } else {
+      // Tree API failed — trust the fingerprint cache if available
+      debugLog(`[analyzeRepo] ⚠ Tree API failed — falling back to cache`);
+      branch = treeCache.branch;
+      scan = decodeCachedScan(treeCache.dependencyFilePaths);
+    }
+  } else {
+    // No tree cache at all — need full rebuild
+    debugLog(
+      `[analyzeRepo] ✗ Tree cache MISS — first-time analysis or previously cleared`,
+    );
+    treeChanged = true;
+  }
+  mark("Tree check");
 
-    let treeChanged = false;
-    let scan: TreeScanResult | null = null;
-    let branch: string | undefined;
+  // ------------------------------------------------------------------
+  // Step 2: Check fingerprint cache (skip if tree changed)
+  // ------------------------------------------------------------------
+  const cached = treeChanged
+    ? null
+    : await ctx.runQuery(internal.recommendations.getCachedFingerprint, {
+        cacheKey,
+      });
 
-    if (treeCache) {
-      const treeResult = await fetchRepoTree(owner, repo, [treeCache.branch], {
-        etag: treeCache.etag,
+  if (cached) {
+    fingerprint = cached.fingerprint;
+    queryEmbedding = cached.embedding;
+    mark("Fingerprint cache check");
+
+    // Full cache hit — skip vector search, summary lookups, and grouping.
+    if (cached.recommendations) {
+      debugLog(
+        `[analyzeRepo] ✓ FULL CACHE HIT — returning ${cached.recommendations.length} cached recommendations (no vector search)`,
+      );
+      debugLog(`[analyzeRepo] Total: ${Date.now() - t0}ms`);
+      return {
+        error: null,
+        repoName,
+        fingerprint,
+        recommendations: cached.recommendations,
+      };
+    }
+    debugLog(
+      `[analyzeRepo] ◐ PARTIAL CACHE HIT — reusing fingerprint+embedding, running vector search`,
+    );
+  } else {
+    mark("Fingerprint cache check");
+    debugLog(
+      treeChanged
+        ? `[analyzeRepo] ✗ Fingerprint cache SKIPPED (tree changed) — full rebuild from GitHub`
+        : `[analyzeRepo] ✗ Fingerprint cache MISS — rebuilding fingerprint+embedding (tree data reused from cache)`,
+    );
+    // ------------------------------------------------------------------
+    // Step 3: Fetch metadata + tree (if not already done)
+    // ------------------------------------------------------------------
+    const meta = await fetchRepoMetadata(owner, repo, token);
+    if (!branch) branch = meta?.defaultBranch ?? "main";
+    mark("GitHub metadata fetch");
+
+    // Token pass on a repo GitHub reports as public: the private retry was
+    // a false alarm (transient public-fetch failure, not a private repo).
+    // Downgrade every subsequent cache write to the global keys — public
+    // fingerprints belong in the shared cache, and no user-scoped row means
+    // no sticky misroute via the private-first shortcut.
+    if (token && meta && !meta.private) {
+      cacheKey = `${owner}/${repo}`;
+      treeCacheKey = `${owner}/${repo}`;
+    }
+
+    // If we don't have a tree scan yet (no cache existed), fetch fresh
+    if (!scan) {
+      const branchesToTry: string[] = [];
+      if (meta?.defaultBranch) branchesToTry.push(meta.defaultBranch);
+      if (!branchesToTry.includes("main")) branchesToTry.push("main");
+      if (!branchesToTry.includes("master")) branchesToTry.push("master");
+
+      const treeResult = await fetchRepoTree(owner, repo, branchesToTry, {
         token,
       });
-      if (treeResult === NOT_MODIFIED) {
-        // Repo unchanged — fingerprint cache (if any) is still valid
-        debugLog(
-          `[analyzeRepo] ✓ Tree cache HIT (304 Not Modified) — repo unchanged`,
-        );
-        await ctx.runMutation(internal.githubCache.touchTreeCache, {
-          repo: treeCacheKey,
-        });
-        branch = treeCache.branch;
-        scan = decodeCachedScan(treeCache.dependencyFilePaths);
-      } else if (treeResult) {
-        // Repo changed — rebuild fingerprint even if cached
-        debugLog(`[analyzeRepo] ⟳ Tree cache STALE — repo changed, rebuilding`);
-        treeChanged = true;
+      if (treeResult && treeResult !== NOT_MODIFIED) {
         branch = treeResult.branch;
         scan = scanTree(treeResult.entries);
         if (treeResult.etag) {
@@ -462,398 +560,317 @@ async function runAnalysis(
             dependencyFilePaths: encodeScanForCache(scan),
           });
         }
-      } else {
-        // Tree API failed — trust the fingerprint cache if available
-        debugLog(`[analyzeRepo] ⚠ Tree API failed — falling back to cache`);
-        branch = treeCache.branch;
-        scan = decodeCachedScan(treeCache.dependencyFilePaths);
       }
-    } else {
-      // No tree cache at all — need full rebuild
-      debugLog(
-        `[analyzeRepo] ✗ Tree cache MISS — first-time analysis or previously cleared`,
-      );
-      treeChanged = true;
-    }
-    mark("Tree check");
-
-    // ------------------------------------------------------------------
-    // Step 2: Check fingerprint cache (skip if tree changed)
-    // ------------------------------------------------------------------
-    const cached = treeChanged
-      ? null
-      : await ctx.runQuery(internal.recommendations.getCachedFingerprint, {
-          cacheKey,
-        });
-
-    if (cached) {
-      fingerprint = cached.fingerprint;
-      queryEmbedding = cached.embedding;
-      mark("Fingerprint cache check");
-
-      // Full cache hit — skip vector search, summary lookups, and grouping.
-      if (cached.recommendations) {
-        debugLog(
-          `[analyzeRepo] ✓ FULL CACHE HIT — returning ${cached.recommendations.length} cached recommendations (no vector search)`,
-        );
-        debugLog(`[analyzeRepo] Total: ${Date.now() - t0}ms`);
-        return {
-          error: null,
-          repoName,
-          fingerprint,
-          recommendations: cached.recommendations,
-        };
-      }
-      debugLog(
-        `[analyzeRepo] ◐ PARTIAL CACHE HIT — reusing fingerprint+embedding, running vector search`,
-      );
-    } else {
-      mark("Fingerprint cache check");
-      debugLog(
-        treeChanged
-          ? `[analyzeRepo] ✗ Fingerprint cache SKIPPED (tree changed) — full rebuild from GitHub`
-          : `[analyzeRepo] ✗ Fingerprint cache MISS — rebuilding fingerprint+embedding (tree data reused from cache)`,
-      );
-      // ------------------------------------------------------------------
-      // Step 3: Fetch metadata + tree (if not already done)
-      // ------------------------------------------------------------------
-      const meta = await fetchRepoMetadata(owner, repo, token);
-      if (!branch) branch = meta?.defaultBranch ?? "main";
-      mark("GitHub metadata fetch");
-
-      // If we don't have a tree scan yet (no cache existed), fetch fresh
-      if (!scan) {
-        const branchesToTry: string[] = [];
-        if (meta?.defaultBranch) branchesToTry.push(meta.defaultBranch);
-        if (!branchesToTry.includes("main")) branchesToTry.push("main");
-        if (!branchesToTry.includes("master")) branchesToTry.push("master");
-
-        const treeResult = await fetchRepoTree(owner, repo, branchesToTry, {
-          token,
-        });
-        if (treeResult && treeResult !== NOT_MODIFIED) {
-          branch = treeResult.branch;
-          scan = scanTree(treeResult.entries);
-          if (treeResult.etag) {
-            await ctx.runMutation(internal.githubCache.setTreeCache, {
-              repo: treeCacheKey,
-              branch: treeResult.branch,
-              etag: treeResult.etag,
-              dependencyFilePaths: encodeScanForCache(scan),
-            });
-          }
-        }
-        // If tree API fails, scan stays null — graceful degradation.
-      }
-
-      // Nothing resolved at all (metadata 404 AND no tree): the repo is
-      // private, deleted, or unreachable. Bail before firing the per-file
-      // fetches below — on a private repo they are all guaranteed to fail.
-      if (!meta && !scan) {
-        return {
-          error: FETCH_ERROR,
-          repoName,
-          fingerprint: null,
-          recommendations: [],
-        };
-      }
-
-      // ------------------------------------------------------------------
-      // Step 4: Determine which files to fetch
-      // ------------------------------------------------------------------
-      const allDepFiles = [
-        "package.json",
-        "requirements.txt",
-        "pyproject.toml",
-        "Cargo.toml",
-        "go.mod",
-        "Dockerfile",
-      ];
-      const allReadmeCandidates = [
-        "README.md",
-        "readme.md",
-        "README.MD",
-        "Readme.md",
-      ];
-
-      let filesToFetch: string[];
-      if (scan) {
-        filesToFetch = [
-          ...scan.depFiles,
-          ...scan.workspacePackageJsonPaths,
-          ...(scan.readmePath ? [scan.readmePath] : []),
-        ];
-      } else {
-        filesToFetch = [...allDepFiles, ...allReadmeCandidates];
-      }
-
-      // ------------------------------------------------------------------
-      // Step 5: Build fingerprint from resolved inputs
-      // ------------------------------------------------------------------
-      debugLog(
-        `[analyzeRepo] Fetching ${filesToFetch.length} files from GitHub...`,
-      );
-      fingerprint = await buildRepoFingerprint({
-        owner,
-        repo,
-        branch,
-        description: meta?.description ?? undefined,
-        topics: meta?.topics ?? [],
-        configFiles: scan?.configFiles ?? [],
-        filesToFetch,
-        token,
-      });
-      mark(`GitHub file fetches (${filesToFetch.length} files)`);
-
-      if (
-        fingerprint.packages.length === 0 &&
-        fingerprint.configFiles.length === 0 &&
-        !fingerprint.readmeExcerpt &&
-        !fingerprint.description &&
-        fingerprint.topics.length === 0
-      ) {
-        return {
-          error: FETCH_ERROR,
-          repoName,
-          fingerprint: null,
-          recommendations: [],
-        };
-      }
-
-      // ------------------------------------------------------------------
-      // Step 6: Embed and cache
-      // ------------------------------------------------------------------
-      const embeddingInput = fingerprintToEmbeddingInput(fingerprint);
-      try {
-        queryEmbedding = await embedText(embeddingInput, "query");
-      } catch (e) {
-        console.error("Failed to embed repo fingerprint:", e);
-        return {
-          error: "Failed to analyze repository (embedding error)",
-          repoName,
-          fingerprint,
-          recommendations: [],
-        };
-      }
-      mark("Voyage embedding");
-
-      await ctx.runMutation(internal.recommendations.setCachedFingerprint, {
-        cacheKey,
-        fingerprint,
-        embedding: queryEmbedding,
-      });
-      mark("Save fingerprint cache");
+      // If tree API fails, scan stays null — graceful degradation.
     }
 
-    // Vector search over the skillEmbeddings table. Returns embedding-row
-    // IDs paired with cosine-similarity scores. We translate those IDs back
-    // to summary metadata via the by_skillEmbeddingId index — never reading
-    // the heavy embedding rows themselves.
-    debugLog(`[analyzeRepo] Running vector search against skillEmbeddings...`);
-    const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
-      vector: queryEmbedding,
-      limit: SEARCH_LIMIT,
-      filter: (q) => q.eq("isDelisted", false),
-    });
-    debugLog(
-      `[analyzeRepo] Vector search returned ${results.length} candidates`,
-    );
-    mark("Vector search");
-
-    if (results.length === 0) {
+    // Nothing resolved at all (metadata 404 AND no tree): the repo is
+    // private, deleted, or unreachable. Bail before firing the per-file
+    // fetches below — on a private repo they are all guaranteed to fail.
+    if (!meta && !scan) {
       return {
-        error: null,
+        error: FETCH_ERROR,
+        repoName,
+        fingerprint: null,
+        recommendations: [],
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Step 4: Determine which files to fetch
+    // ------------------------------------------------------------------
+    const allDepFiles = [
+      "package.json",
+      "requirements.txt",
+      "pyproject.toml",
+      "Cargo.toml",
+      "go.mod",
+      "Dockerfile",
+    ];
+    const allReadmeCandidates = [
+      "README.md",
+      "readme.md",
+      "README.MD",
+      "Readme.md",
+    ];
+
+    let filesToFetch: string[];
+    if (scan) {
+      filesToFetch = [
+        ...scan.depFiles,
+        ...scan.workspacePackageJsonPaths,
+        ...(scan.readmePath ? [scan.readmePath] : []),
+      ];
+    } else {
+      filesToFetch = [...allDepFiles, ...allReadmeCandidates];
+    }
+
+    // ------------------------------------------------------------------
+    // Step 5: Build fingerprint from resolved inputs
+    // ------------------------------------------------------------------
+    debugLog(
+      `[analyzeRepo] Fetching ${filesToFetch.length} files from GitHub...`,
+    );
+    fingerprint = await buildRepoFingerprint({
+      owner,
+      repo,
+      branch,
+      description: meta?.description ?? undefined,
+      topics: meta?.topics ?? [],
+      configFiles: scan?.configFiles ?? [],
+      filesToFetch,
+      token,
+    });
+    mark(`GitHub file fetches (${filesToFetch.length} files)`);
+
+    if (
+      fingerprint.packages.length === 0 &&
+      fingerprint.configFiles.length === 0 &&
+      !fingerprint.readmeExcerpt &&
+      !fingerprint.description &&
+      fingerprint.topics.length === 0
+    ) {
+      return {
+        error: FETCH_ERROR,
+        repoName,
+        fingerprint: null,
+        recommendations: [],
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Step 6: Embed and cache
+    // ------------------------------------------------------------------
+    const embeddingInput = fingerprintToEmbeddingInput(fingerprint);
+    try {
+      queryEmbedding = await embedText(embeddingInput, "query");
+    } catch (e) {
+      console.error("Failed to embed repo fingerprint:", e);
+      return {
+        error: "Failed to analyze repository (embedding error)",
         repoName,
         fingerprint,
         recommendations: [],
       };
     }
+    mark("Voyage embedding");
 
-    // Load summary metadata for each ranked embedding. The summaries table
-    // has a `skillEmbeddingId` back-reference so we can look up summaries
-    // directly from the embedding IDs returned by vector search, without
-    // ever reading the embedding rows themselves (each is ~12 KB).
-    const embeddingIds = results.map((r) => r._id as Id<"skillEmbeddings">);
-    const entries = await ctx.runQuery(
-      internal.skills.getSummariesByEmbeddingIds,
-      { ids: embeddingIds },
-    );
-    mark("Summary lookups");
-
-    // Index summaries by their corresponding skillEmbedding _id so we can
-    // preserve the vector-search ranking when looping over results below.
-    const summaryByEmbeddingId = new Map(
-      entries.map((e) => [e.skillEmbeddingId, e.summary]),
-    );
-
-    // ---------------------------------------------------------------------
-    // Grouping pass — collapse same-name variants into one row each
-    // ---------------------------------------------------------------------
-    // Popular skills are forked verbatim into many repos' agent-skills
-    // folders, producing 10-20+ rows in the database with the same name from
-    // different sources. Without grouping, those variants each take a slot in
-    // the top RESULT_LIMIT, crowding out genuinely different skills.
-    //
-    // Strategy: group every candidate by exact name. Each group becomes one
-    // row in the final list, with all variants accessible behind a
-    // collapsible UI. Singletons (groups of 1) render as normal rows.
-    //
-    // Score handling: a group inherits the MAX composite score across all
-    // its variants. We compute the composite score (vector similarity +
-    // package bonus + popularity bonus) for every variant and use the
-    // highest. This means a group is ranked by whichever variant scored
-    // best by any metric — so a group benefits from BOTH its best
-    // vector-similarity match AND its most popular member.
-    //
-    // Variant ordering inside a group: install count descending. Once the
-    // user has decided "I want this concept," install count is the most
-    // useful trust signal for picking which version to install.
-    //
-    // Variant cap: MAX_VARIANTS_PER_GROUP. Beyond this, the long tail isn't
-    // useful. The frontend can show "showing N of M" using `variantCount`.
-    const packageSet = fingerprint.packages.map((p) => p.toLowerCase());
-
-    // Helper: compute the composite score for a single variant.
-    //
-    // Uses multiplicative bonuses so everything scales with the underlying
-    // vector relevance. An off-topic skill can't vault over relevant skills
-    // no matter how many packages it mentions or how popular it is — its
-    // low vector score keeps it low even after multipliers.
-    //
-    // Package multiplier — rewards skills whose name/description mentions
-    // exact packages from the repo. Log-scaled so matches have diminishing
-    // returns (1 match is a lot, 10th match is barely extra):
-    //   1 match   → 1.03x
-    //   3 matches → 1.06x
-    //   7 matches → 1.09x
-    //   15 matches→ 1.12x
-    //   30 matches→ 1.15x
-    //
-    // Popularity multiplier — rewards skills with higher install counts:
-    //   100 installs    → 1.10x
-    //   1,000 installs  → 1.15x
-    //   10,000 installs → 1.20x
-    //   100,000 installs→ 1.25x
-    function computeScore(
-      summary: (typeof entries)[number]["summary"],
-      vectorScore: number,
-    ): { score: number; matchedPackages: string[] } {
-      const haystack =
-        `${summary.name} ${summary.description ?? ""}`.toLowerCase();
-      // Collect the actual matching package names (not just a count) — they
-      // double as the row's user-facing "matches: …" reason.
-      const matchedPackages: string[] = [];
-      for (const pkg of packageSet) {
-        if (pkg.length >= 4 && haystack.includes(pkg)) matchedPackages.push(pkg);
-      }
-      const packageMultiplier =
-        1 + 0.03 * Math.log2(matchedPackages.length + 1);
-      const popMultiplier = 1 + 0.05 * Math.log10(summary.installs + 1);
-      return {
-        score: vectorScore * packageMultiplier * popMultiplier,
-        matchedPackages,
-      };
-    }
-
-    interface PendingGroup {
-      name: string;
-      // The MAX composite score across all variants in this group.
-      // Determines the group's position in the final result list.
-      score: number;
-      // Union of every variant's lexical package matches (insertion-ordered).
-      matchedPackages: Set<string>;
-      variants: Array<{
-        source: string;
-        skillId: string;
-        description?: string;
-        installs: number;
-        curatedOwner?: string;
-        worstAuditStatus?: string;
-        worstAuditRiskLevel?: string;
-      }>;
-    }
-
-    const groupsByName = new Map<string, PendingGroup>();
-
-    for (const result of results) {
-      const summary = summaryByEmbeddingId.get(
-        result._id as Id<"skillEmbeddings">,
-      );
-      if (!summary) continue;
-      // Drop fork/copy duplicates from recommendation results — the user
-      // expects to see the canonical skill, not a re-uploaded clone of it.
-      if (summary.isDuplicate) continue;
-
-      const variant = {
-        source: summary.source,
-        skillId: summary.skillId,
-        description: summary.description,
-        installs: summary.installs,
-        curatedOwner: summary.curatedOwner,
-        worstAuditStatus: summary.worstAuditStatus,
-        worstAuditRiskLevel: summary.worstAuditRiskLevel,
-      };
-      const { score: variantScore, matchedPackages } = computeScore(
-        summary,
-        result._score,
-      );
-
-      const existing = groupsByName.get(summary.name);
-      if (existing === undefined) {
-        groupsByName.set(summary.name, {
-          name: summary.name,
-          score: variantScore,
-          matchedPackages: new Set(matchedPackages),
-          variants: [variant],
-        });
-      } else {
-        existing.variants.push(variant);
-        for (const pkg of matchedPackages) existing.matchedPackages.add(pkg);
-        // Group inherits the best score across all its variants.
-        if (variantScore > existing.score) {
-          existing.score = variantScore;
-        }
-      }
-    }
-
-    // Sort groups by score descending and take the top RESULT_LIMIT.
-    const sortedGroups = Array.from(groupsByName.values()).sort(
-      (a, b) => b.score - a.score,
-    );
-    const topGroups = sortedGroups.slice(0, RESULT_LIMIT);
-
-    // Within each group, sort variants by install count descending and cap.
-    const recommendations: GroupedRecommendation[] = topGroups.map((group) => {
-      const sortedVariants = group.variants
-        .slice()
-        .sort((a, b) => b.installs - a.installs);
-      return {
-        name: group.name,
-        variantCount: sortedVariants.length,
-        variants: sortedVariants.slice(0, MAX_VARIANTS_PER_GROUP),
-        // Cap the user-facing match reason at 3 — one is a lot already.
-        matchedPackages: Array.from(group.matchedPackages).slice(0, 3),
-      };
-    });
-
-    mark("Grouping + scoring");
-
-    // Cache recommendations so repeat analyses skip the vector search.
-    debugLog(
-      `[analyzeRepo] Saving ${recommendations.length} recommendations to cache`,
-    );
-    await ctx.runMutation(internal.recommendations.setCachedRecommendations, {
+    await ctx.runMutation(internal.recommendations.setCachedFingerprint, {
       cacheKey,
-      recommendations,
+      fingerprint,
+      embedding: queryEmbedding,
     });
-    mark("Save recommendations cache");
-    debugLog(`[analyzeRepo] Total: ${Date.now() - t0}ms`);
+    mark("Save fingerprint cache");
+  }
 
+  // Vector search over the skillEmbeddings table. Returns embedding-row
+  // IDs paired with cosine-similarity scores. We translate those IDs back
+  // to summary metadata via the by_skillEmbeddingId index — never reading
+  // the heavy embedding rows themselves.
+  debugLog(`[analyzeRepo] Running vector search against skillEmbeddings...`);
+  const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
+    vector: queryEmbedding,
+    limit: SEARCH_LIMIT,
+    filter: (q) => q.eq("isDelisted", false),
+  });
+  debugLog(
+    `[analyzeRepo] Vector search returned ${results.length} candidates`,
+  );
+  mark("Vector search");
+
+  if (results.length === 0) {
     return {
       error: null,
       repoName,
       fingerprint,
-      recommendations,
+      recommendations: [],
     };
   }
+
+  // Load summary metadata for each ranked embedding. The summaries table
+  // has a `skillEmbeddingId` back-reference so we can look up summaries
+  // directly from the embedding IDs returned by vector search, without
+  // ever reading the embedding rows themselves (each is ~12 KB).
+  const embeddingIds = results.map((r) => r._id as Id<"skillEmbeddings">);
+  const entries = await ctx.runQuery(
+    internal.skills.getSummariesByEmbeddingIds,
+    { ids: embeddingIds },
+  );
+  mark("Summary lookups");
+
+  // Index summaries by their corresponding skillEmbedding _id so we can
+  // preserve the vector-search ranking when looping over results below.
+  const summaryByEmbeddingId = new Map(
+    entries.map((e) => [e.skillEmbeddingId, e.summary]),
+  );
+
+  // ---------------------------------------------------------------------
+  // Grouping pass — collapse same-name variants into one row each
+  // ---------------------------------------------------------------------
+  // Popular skills are forked verbatim into many repos' agent-skills
+  // folders, producing 10-20+ rows in the database with the same name from
+  // different sources. Without grouping, those variants each take a slot in
+  // the top RESULT_LIMIT, crowding out genuinely different skills.
+  //
+  // Strategy: group every candidate by exact name. Each group becomes one
+  // row in the final list, with all variants accessible behind a
+  // collapsible UI. Singletons (groups of 1) render as normal rows.
+  //
+  // Score handling: a group inherits the MAX composite score across all
+  // its variants. We compute the composite score (vector similarity +
+  // package bonus + popularity bonus) for every variant and use the
+  // highest. This means a group is ranked by whichever variant scored
+  // best by any metric — so a group benefits from BOTH its best
+  // vector-similarity match AND its most popular member.
+  //
+  // Variant ordering inside a group: install count descending. Once the
+  // user has decided "I want this concept," install count is the most
+  // useful trust signal for picking which version to install.
+  //
+  // Variant cap: MAX_VARIANTS_PER_GROUP. Beyond this, the long tail isn't
+  // useful. The frontend can show "showing N of M" using `variantCount`.
+  const packageSet = fingerprint.packages.map((p) => p.toLowerCase());
+
+  // Helper: compute the composite score for a single variant.
+  //
+  // Uses multiplicative bonuses so everything scales with the underlying
+  // vector relevance. An off-topic skill can't vault over relevant skills
+  // no matter how many packages it mentions or how popular it is — its
+  // low vector score keeps it low even after multipliers.
+  //
+  // Package multiplier — rewards skills whose name/description mentions
+  // exact packages from the repo. Log-scaled so matches have diminishing
+  // returns (1 match is a lot, 10th match is barely extra):
+  //   1 match   → 1.03x
+  //   3 matches → 1.06x
+  //   7 matches → 1.09x
+  //   15 matches→ 1.12x
+  //   30 matches→ 1.15x
+  //
+  // Popularity multiplier — rewards skills with higher install counts:
+  //   100 installs    → 1.10x
+  //   1,000 installs  → 1.15x
+  //   10,000 installs → 1.20x
+  //   100,000 installs→ 1.25x
+  function computeScore(
+    summary: (typeof entries)[number]["summary"],
+    vectorScore: number,
+  ): { score: number; matchedPackages: string[] } {
+    const haystack =
+      `${summary.name} ${summary.description ?? ""}`.toLowerCase();
+    // Collect the actual matching package names (not just a count) — they
+    // double as the row's user-facing "matches: …" reason.
+    const matchedPackages: string[] = [];
+    for (const pkg of packageSet) {
+      if (pkg.length >= 4 && haystack.includes(pkg)) matchedPackages.push(pkg);
+    }
+    const packageMultiplier =
+      1 + 0.03 * Math.log2(matchedPackages.length + 1);
+    const popMultiplier = 1 + 0.05 * Math.log10(summary.installs + 1);
+    return {
+      score: vectorScore * packageMultiplier * popMultiplier,
+      matchedPackages,
+    };
+  }
+
+  interface PendingGroup {
+    name: string;
+    // The MAX composite score across all variants in this group.
+    // Determines the group's position in the final result list.
+    score: number;
+    // Union of every variant's lexical package matches (insertion-ordered).
+    matchedPackages: Set<string>;
+    variants: Array<{
+      source: string;
+      skillId: string;
+      description?: string;
+      installs: number;
+      curatedOwner?: string;
+      worstAuditStatus?: string;
+      worstAuditRiskLevel?: string;
+    }>;
+  }
+
+  const groupsByName = new Map<string, PendingGroup>();
+
+  for (const result of results) {
+    const summary = summaryByEmbeddingId.get(
+      result._id as Id<"skillEmbeddings">,
+    );
+    if (!summary) continue;
+    // Drop fork/copy duplicates from recommendation results — the user
+    // expects to see the canonical skill, not a re-uploaded clone of it.
+    if (summary.isDuplicate) continue;
+
+    const variant = {
+      source: summary.source,
+      skillId: summary.skillId,
+      description: summary.description,
+      installs: summary.installs,
+      curatedOwner: summary.curatedOwner,
+      worstAuditStatus: summary.worstAuditStatus,
+      worstAuditRiskLevel: summary.worstAuditRiskLevel,
+    };
+    const { score: variantScore, matchedPackages } = computeScore(
+      summary,
+      result._score,
+    );
+
+    const existing = groupsByName.get(summary.name);
+    if (existing === undefined) {
+      groupsByName.set(summary.name, {
+        name: summary.name,
+        score: variantScore,
+        matchedPackages: new Set(matchedPackages),
+        variants: [variant],
+      });
+    } else {
+      existing.variants.push(variant);
+      for (const pkg of matchedPackages) existing.matchedPackages.add(pkg);
+      // Group inherits the best score across all its variants.
+      if (variantScore > existing.score) {
+        existing.score = variantScore;
+      }
+    }
+  }
+
+  // Sort groups by score descending and take the top RESULT_LIMIT.
+  const sortedGroups = Array.from(groupsByName.values()).sort(
+    (a, b) => b.score - a.score,
+  );
+  const topGroups = sortedGroups.slice(0, RESULT_LIMIT);
+
+  // Within each group, sort variants by install count descending and cap.
+  const recommendations: GroupedRecommendation[] = topGroups.map((group) => {
+    const sortedVariants = group.variants
+      .slice()
+      .sort((a, b) => b.installs - a.installs);
+    return {
+      name: group.name,
+      variantCount: sortedVariants.length,
+      variants: sortedVariants.slice(0, MAX_VARIANTS_PER_GROUP),
+      // Cap the user-facing match reason at 3 — one is a lot already.
+      matchedPackages: Array.from(group.matchedPackages).slice(0, 3),
+    };
+  });
+
+  mark("Grouping + scoring");
+
+  // Cache recommendations so repeat analyses skip the vector search.
+  debugLog(
+    `[analyzeRepo] Saving ${recommendations.length} recommendations to cache`,
+  );
+  await ctx.runMutation(internal.recommendations.setCachedRecommendations, {
+    cacheKey,
+    recommendations,
+  });
+  mark("Save recommendations cache");
+  debugLog(`[analyzeRepo] Total: ${Date.now() - t0}ms`);
+
+  return {
+    error: null,
+    repoName,
+    fingerprint,
+    recommendations,
+  };
 }

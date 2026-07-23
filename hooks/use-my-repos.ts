@@ -18,8 +18,8 @@ import { useUserPlan } from "@/hooks/use-user-plan";
  */
 export function useMyRepos() {
   const convex = useConvex();
-  const { user, isLoaded } = useUser();
-  const { limits, isLoading: planLoading, isPlanError } = useUserPlan();
+  const { user } = useUser();
+  const { limits } = useUserPlan();
   const isPro = limits?.canAutoDetect ?? false;
 
   const account = user?.externalAccounts?.find(
@@ -55,8 +55,6 @@ export function useMyRepos() {
   const repos: MyRepo[] = result?.status === "ok" ? result.repos : [];
 
   return {
-    user,
-    isLoaded,
     account,
     failedAccount,
     hasRepoScope,

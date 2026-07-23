@@ -5,7 +5,7 @@
  */
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { ConvexError } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { getGithubOauthToken } from "./lib/clerkGithub";
 import { PRO_REQUIRED } from "../lib/repo-match";
 
@@ -56,6 +56,24 @@ function toMyRepo(r: GitHubRepoJson): MyRepo | null {
  */
 export const listMyRepos = action({
   args: {},
+  returns: v.union(
+    v.object({ status: v.literal("not_connected") }),
+    v.object({ status: v.literal("missing_scope") }),
+    v.object({ status: v.literal("token_invalid") }),
+    v.object({ status: v.literal("error") }),
+    v.object({
+      status: v.literal("ok"),
+      repos: v.array(
+        v.object({
+          fullName: v.string(),
+          private: v.boolean(),
+          pushedAt: v.union(v.string(), v.null()),
+          description: v.union(v.string(), v.null()),
+          language: v.union(v.string(), v.null()),
+        }),
+      ),
+    }),
+  ),
   handler: async (ctx): Promise<ListMyReposResult> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {

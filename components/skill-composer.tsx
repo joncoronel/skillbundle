@@ -142,6 +142,13 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   // text" can't both fire from one keypress.
   const highlightedRepoRef = useRef<MyRepo | null>(null);
 
+  // Whether the suggestion popup is open, for the Escape handler. A ref
+  // (not state) because it's only read inside keydown: Base UI dismisses
+  // the popup from a document-level listener that runs AFTER our
+  // root-attached React handler, so `e.defaultPrevented` can never tell us
+  // Escape was spent on closing the popup — this flag can.
+  const suggestionsOpenRef = useRef(false);
+
   // Anchor the suggestion popup to the whole InputGroup, not the bare input —
   // otherwise --anchor-width is the input element's width (minus both addons)
   // and the popup renders narrower than the field it belongs to. Same fix as
@@ -239,11 +246,11 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
       handleRepoSubmit();
     }
     // Esc on an empty repo input backs out to search (same as "Search
-    // skills"). defaultPrevented = Base UI consumed it to close the
-    // suggestion popup — that keypress isn't also an exit.
+    // skills") — but an Esc spent closing the suggestion popup is not also
+    // an exit, so it takes two presses from an open popup.
     if (
       e.key === "Escape" &&
-      !e.defaultPrevented &&
+      !suggestionsOpenRef.current &&
       !repoDraft.trim()
     ) {
       setParams({ mode: "text" });
@@ -465,6 +472,9 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           onItemHighlighted={(repo) => {
             highlightedRepoRef.current = repo ?? null;
           }}
+          onOpenChange={(open) => {
+            suggestionsOpenRef.current = open;
+          }}
         >
           <InputGroup
             ref={setSuggestionsAnchor}
@@ -499,12 +509,17 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                             {repo.fullName}
                           </span>
                           {repo.private && (
-                            <HugeiconsIcon
-                              icon={SquareLock02Icon}
-                              strokeWidth={2}
-                              className="ml-1.5 size-3.5 shrink-0 text-muted-foreground"
-                              aria-label="Private repository"
-                            />
+                            <>
+                              <HugeiconsIcon
+                                icon={SquareLock02Icon}
+                                strokeWidth={2}
+                                className="ml-1.5 size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                              {/* Screen readers skip aria-label on a bare
+                                  svg; real (hidden) text always announces. */}
+                              <span className="sr-only">private</span>
+                            </>
                           )}
                           {repo.language && (
                             <span className="ml-auto shrink-0 pl-3 text-xs text-muted-foreground">
