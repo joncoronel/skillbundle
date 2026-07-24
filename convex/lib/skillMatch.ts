@@ -46,5 +46,11 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
  */
 export function canonicalSlug(fmName: string): string | null {
   const slug = kebabCase(fmName.trim());
-  return /^[a-z0-9._-]+$/.test(slug) ? slug : null;
+  if (!/^[a-z0-9._-]+$/.test(slug)) return null;
+  // The charset alone still admits ".", ".." and "---" — path-traversal
+  // shapes, not names. `.` also survives encodeURIComponent, so ".." would
+  // normalise a segment away in the skills.sh request path. Require at least
+  // one alphanumeric so the guard can't hand back something that is only
+  // separators.
+  return /[a-z0-9]/.test(slug) ? slug : null;
 }

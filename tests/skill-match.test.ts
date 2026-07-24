@@ -58,6 +58,21 @@ describe("canonicalSlug — refuses (would write an unroutable row)", () => {
     expect(canonicalSlug("   ")).toBeNull();
   });
 
+  test.each([["."], [".."], ["..."], ["-"], ["---"], ["_"], ["._-"]])(
+    "separators only, with no name in them: %s",
+    (name) => {
+      // These pass the charset test, so they need their own rule. ".." is the
+      // one that bites: encodeURIComponent leaves "." alone, so it would
+      // normalise a segment away in the skills.sh request path.
+      expect(canonicalSlug(name)).toBeNull();
+    },
+  );
+
+  test("a single alphanumeric is enough to make it a name", () => {
+    expect(canonicalSlug("v2")).toBe("v2");
+    expect(canonicalSlug("-x-")).toBe("-x-");
+  });
+
   test("everything it refuses, kebabCase would have happily returned", () => {
     // The point of the split: kebabCase is a comparator that never writes, so
     // it is deliberately permissive. Locking this in stops anyone "simplifying"

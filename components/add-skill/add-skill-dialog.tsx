@@ -47,7 +47,11 @@ export function AddSkillDialog({
           setOpen(next);
         }}
       >
-        <DialogContent variant="inset">
+        {/* The close button goes with the blocked dismissal rather than
+            sitting there enabled and inert — an X that visibly does nothing is
+            worse than no X. The flow's own aria-live region announces the step
+            in progress, so the state is still reported. */}
+        <DialogContent variant="inset" showCloseButton={!pending}>
           <DialogHeader>
             <DialogTitle className="font-display font-medium">
               Add a skill

@@ -73,10 +73,20 @@ link doesn't repair it either: the row is live, so `terminalFor` answers
 
 Not built because there's nothing to repair yet — checked the live catalog for
 the repo that surfaced the bug (`vercel-labs/agent-skills`) and every
-folder-slug URL 404s, i.e. no such row was ever confirmed. If one ever appears,
-the fix is a one-off `/dev` action that walks `isGitHubOnly` rows, re-resolves
-each SKILL.md, and reports (not silently rewrites) any row whose
-`canonicalSlug(frontmatter name)` differs from its stored `skillId`.
+folder-slug URL 404s, i.e. no such row was ever confirmed.
+
+"Nothing yet" is not "nothing ever", though: the alias is only adopted when
+`aliasBindsSameFile` holds, and that is deliberately `false` whenever the repo
+tree couldn't be listed (`githubOnly.ts`, the `tree_unavailable` probe
+fallback). So a namespaced, genuinely-GitHub-only skill confirmed while
+GitHub's tree API is rate-limiting still falls back to the folder slug and
+writes exactly the row described above. That's the right tradeoff — guessing an
+alias we couldn't verify is worse — but it means this repair pass has a live
+source, not just a historical one.
+
+If one appears, the fix is a one-off `/dev` action that walks `isGitHubOnly`
+rows, re-resolves each SKILL.md, and reports (not silently rewrites) any row
+whose `canonicalSlug(frontmatter name)` differs from its stored `skillId`.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 

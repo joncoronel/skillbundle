@@ -359,9 +359,10 @@ type Precheck = {
  * applied per candidate slug. Returns a terminal preview, or null meaning the
  * slug is unclaimed and available for a GitHub-only add.
  *
- * `listing` is a thunk, not a value: a lower-priority check's FAILURE must not
- * mask a higher-priority success, so the listing result stays un-unwrapped
- * until the catalog answer has had its say.
+ * `listing` is a thunk, not a value: a listing FAILURE must never mask an
+ * answer the catalog can give on its own, so it stays un-unwrapped until the
+ * catalog has had its say — and when the catalog's answer doesn't depend on it
+ * at all, the failure is swallowed rather than thrown.
  *
  * The GitHub-only exception mirrors `manualAddCore` in skills.ts: a live
  * GitHub-only row must not short-circuit ahead of the listing check, because
@@ -377,18 +378,40 @@ function terminalFor(
   isAlias: boolean,
 ): GitHubPreview | null {
   const exists = precheck !== null && !precheck.isDelisted;
-  if (exists && !precheck.isGitHubOnly) {
-    return { status: "already_exists", name: precheck.name, source, skillId: slug };
+  const alreadyExists = (): GitHubPreview => ({
+    status: "already_exists",
+    name: precheck!.name,
+    source,
+    skillId: slug,
+  });
+
+  if (exists && !precheck.isGitHubOnly) return alreadyExists();
+
+  // Past here the row is either absent/delisted, or live-but-GitHub-only. The
+  // two cases treat a broken listing check very differently:
+  //
+  //   - Live GitHub-only row: the answer is `already_exists` whether or not
+  //     skills.sh answers. The listing only decides whether the nicer
+  //     ADOPTION path can be offered instead, so a rate-limit blip must not
+  //     turn a definitive "it's already in your catalog" into an error.
+  //   - Anything else: the listing is load-bearing. Swallowing a failure here
+  //     would let a blip present a LISTED skill as GitHub-only, which is the
+  //     mis-insert this whole module exists to prevent — so it propagates.
+  let listed: boolean;
+  try {
+    listed = listing() === "listed";
+  } catch (err) {
+    if (!exists) throw err;
+    listed = false;
   }
-  if (listing() === "listed") {
+
+  if (listed) {
     return isAlias
       ? { status: "on_skills_sh_as_alias", source, skillId: slug }
       : { status: "on_skills_sh" };
   }
   // GitHub-only and still not listed — nothing left to upgrade it to.
-  if (exists) {
-    return { status: "already_exists", name: precheck.name, source, skillId: slug };
-  }
+  if (exists) return alreadyExists();
   return null;
 }
 
