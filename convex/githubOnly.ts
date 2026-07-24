@@ -23,7 +23,7 @@
  */
 
 import { v, ConvexError } from "convex/values";
-import { action } from "./_generated/server";
+import { action, query } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -738,6 +738,114 @@ export const addSkillFromGitHub = action({
   }> => {
     await assertAdmin(ctx);
     return addGitHubCore(ctx, input);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Slug audit (read-only diagnostic)
+//
+// Before the frontmatter-name fix, a GitHub-only add took its `skillId` from
+// the SKILL.md's FOLDER name, so a namespaced repo could land a row under a
+// slug skills.sh will never emit. Such a row is stuck: adoption matches on
+// `source` + `skillId` so it can never be upgraded, reconcile skips it, and if
+// the real slug later reaches the leaderboard `syncSkills` inserts a second
+// row beside it. Re-pasting the link doesn't repair it either — the row is
+// live, so `terminalFor` answers `already_exists` before the alias pass runs.
+//
+// The fix closed the common path but not every path: `aliasBindsSameFile` is
+// deliberately false when the repo tree couldn't be listed, so an add
+// confirmed while GitHub's tree API is rate-limiting still falls back to the
+// folder slug. This audit is how such a row gets FOUND. It deliberately only
+// reports: re-slugging a row means moving its public URL and rewriting the
+// summary, embedding and search doc, which is a decision for a human with the
+// specific row in front of them, not a bulk action behind a button.
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a row can't be judged. Kept distinct from "mismatch" for the same reason
+ * the resolver separates `tree_unavailable` from `no_skill_md`: "we couldn't
+ * look" must never be reported as "we looked and it's wrong".
+ */
+const AUDIT_UNKNOWN_REASON = {
+  noContent: "SKILL.md not fetched yet",
+  noFrontmatterName: "SKILL.md has no frontmatter `name`",
+  unusableName: "frontmatter `name` can't be a slug",
+} as const;
+
+export const auditGitHubOnlySlugs = query({
+  args: {},
+  returns: v.object({
+    checked: v.number(),
+    mismatches: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        expectedSkillId: v.string(),
+        name: v.string(),
+        isDelisted: v.boolean(),
+      }),
+    ),
+    unknown: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        reason: v.string(),
+      }),
+    ),
+  }),
+  handler: async (ctx) => {
+    await assertAdmin(ctx);
+    const rows = await ctx.db
+      .query("skills")
+      .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
+      .collect();
+
+    const mismatches = [];
+    const unknown = [];
+    for (const row of rows) {
+      // `content` is the stored SKILL.md body, so the audit needs no network
+      // and can be a query rather than an action — the frontmatter name the
+      // pipeline already fetched is exactly what skills.sh derives its slug
+      // from.
+      if (!row.content) {
+        unknown.push({
+          source: row.source,
+          skillId: row.skillId,
+          reason: AUDIT_UNKNOWN_REASON.noContent,
+        });
+        continue;
+      }
+      const fmName = extractSkillMdName(row.content);
+      if (!fmName) {
+        unknown.push({
+          source: row.source,
+          skillId: row.skillId,
+          reason: AUDIT_UNKNOWN_REASON.noFrontmatterName,
+        });
+        continue;
+      }
+      const expected = canonicalSlug(fmName);
+      if (expected === null) {
+        // The name can't be a slug at all, so there is nothing to compare
+        // against — and nothing this row could be re-slugged TO either.
+        unknown.push({
+          source: row.source,
+          skillId: row.skillId,
+          reason: AUDIT_UNKNOWN_REASON.unusableName,
+        });
+        continue;
+      }
+      if (expected !== row.skillId) {
+        mismatches.push({
+          source: row.source,
+          skillId: row.skillId,
+          expectedSkillId: expected,
+          name: row.name,
+          isDelisted: row.isDelisted === true,
+        });
+      }
+    }
+    return { checked: rows.length, mismatches, unknown };
   },
 });
 

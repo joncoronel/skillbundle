@@ -43,50 +43,20 @@ skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
 tighten one caller without the others (that's the drift the shared matcher
 exists to prevent).
 
-### Add-skill: extract the branch-1/branch-2 protocol into one hook
+### Add-skill: re-slug a mis-slugged GitHub-only row
 
-`components/add-skill/add-skill-flow.tsx` (public) and
-`app/(main)/dev/add-skill/add-skill-form.tsx` (admin) run the same sequence
-against the same server contract — try `addSkillManually*`, fall through to
-`previewGitHubSkill*` on `not_on_skills_sh`, re-run the add under a corrected
-slug on `on_skills_sh_as_alias`, confirm via `addSkillFromGitHub*` — with
-`phase`/`candidate` state duplicated in both. The genuinely per-component part
-is only the reporting sink (aria-live notice vs toast) and the card markup.
-Shape: `useAddSkillFlow({ addManually, previewGitHub, addFromGitHub, report })`.
+The *detection* half is done — `githubOnly.auditGitHubOnlySlugs` plus the
+"GitHub-only slug audit" card on `/dev/add-skill` list any GitHub-only row
+whose stored `skillId` disagrees with `canonicalSlug(frontmatter name)`. What
+doesn't exist is a repair: such a row can never be adopted (adoption matches
+`source` + `skillId`), and reconcile skips it.
 
-Deferred from the slug-alias PR (Jul 2026): the copy table was the part
-actually drifting and it's now shared (`lib/add-skill-copy.ts`), so what's left
-is duplicated *state wiring*, which is a real refactor across an admin page and
-a public component with different actions and different card UIs — too much
-regression surface to ride along on a bugfix. Do it the next time either flow
-gains a step; three copies of the sequencing would be the point of no return.
-
-### Add-skill: repair pass for folder-slugged GitHub-only rows
-
-Before the slug-alias fix (Jul 2026), a GitHub-only add derived its `skillId`
-from the SKILL.md's folder name, so a namespaced repo could land a row under a
-slug skills.sh will never emit. Such a row can't be adopted (adoption matches
-`source` + `skillId`), reconcile skips it, and if the real slug later reaches
-the leaderboard `syncSkills` inserts a second row beside it. Re-pasting the
-link doesn't repair it either: the row is live, so `terminalFor` answers
-`already_exists` under the typed slug before the alias pass runs.
-
-Not built because there's nothing to repair yet — checked the live catalog for
-the repo that surfaced the bug (`vercel-labs/agent-skills`) and every
-folder-slug URL 404s, i.e. no such row was ever confirmed.
-
-"Nothing yet" is not "nothing ever", though: the alias is only adopted when
-`aliasBindsSameFile` holds, and that is deliberately `false` whenever the repo
-tree couldn't be listed (`githubOnly.ts`, the `tree_unavailable` probe
-fallback). So a namespaced, genuinely-GitHub-only skill confirmed while
-GitHub's tree API is rate-limiting still falls back to the folder slug and
-writes exactly the row described above. That's the right tradeoff — guessing an
-alias we couldn't verify is worse — but it means this repair pass has a live
-source, not just a historical one.
-
-If one appears, the fix is a one-off `/dev` action that walks `isGitHubOnly`
-rows, re-resolves each SKILL.md, and reports (not silently rewrites) any row
-whose `canonicalSlug(frontmatter name)` differs from its stored `skillId`.
+Deliberately not automated. Re-slugging moves the skill's public URL and has to
+rewrite the summary, embedding and Typesense doc in step, and the right call
+depends on the row — a delisted one can simply be left, a live one with
+installs may want a redirect. Left as a per-row human decision with the audit
+card as the way to find them. Revisit if the audit ever lists more than a
+couple.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 

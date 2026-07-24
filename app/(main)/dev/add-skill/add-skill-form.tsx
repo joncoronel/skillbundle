@@ -272,7 +272,109 @@ export function AddSkillForm() {
       )}
 
       {lastAdded && <LastAddedCard result={lastAdded} />}
+
+      <SlugAuditCard />
     </div>
+  );
+}
+
+/**
+ * Finds GitHub-only rows whose stored slug disagrees with their SKILL.md's
+ * frontmatter name — the shape of row the pre-fix add could write, and that a
+ * confirm during a GitHub tree-API rate limit can still write today.
+ *
+ * Reports only. Re-slugging moves a skill's public URL and rewrites its
+ * summary, embedding and search doc, so it's a per-row human decision rather
+ * than a bulk action behind a button.
+ */
+function SlugAuditCard() {
+  const { data, isPending, error } = useQuery(
+    convexQuery(api.githubOnly.auditGitHubOnlySlugs, {}),
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>GitHub-only slug audit</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <p className="text-muted-foreground">
+          skills.sh derives a slug from the SKILL.md&apos;s frontmatter{" "}
+          <code>name</code>. A row stored under a different slug can never be
+          adopted, and reconcile skips it.
+        </p>
+
+        {isPending && <p className="text-muted-foreground">Checking…</p>}
+        {error && (
+          <p className="text-destructive">
+            Couldn&apos;t run the audit: {error.message}
+          </p>
+        )}
+
+        {data && (
+          <>
+            <p className="text-muted-foreground">
+              Checked {data.checked} GitHub-only{" "}
+              {data.checked === 1 ? "row" : "rows"}.
+            </p>
+
+            {data.mismatches.length === 0 ? (
+              <p className="font-medium">No mis-slugged rows.</p>
+            ) : (
+              <div className="space-y-2">
+                <p className="font-medium text-destructive">
+                  {data.mismatches.length} mis-slugged{" "}
+                  {data.mismatches.length === 1 ? "row" : "rows"}:
+                </p>
+                <ul className="space-y-2">
+                  {data.mismatches.map((m) => (
+                    <li
+                      key={`${m.source}/${m.skillId}`}
+                      className="rounded-md border p-3"
+                    >
+                      <p className="font-medium">{m.name}</p>
+                      <p className="font-mono text-xs break-all">
+                        {m.source}/{m.skillId}
+                        {m.isDelisted && " (delisted)"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Its SKILL.md is named{" "}
+                        <code className="font-mono">{m.expectedSkillId}</code>,
+                        so skills.sh would list it as{" "}
+                        <code className="font-mono">
+                          {m.source}/{m.expectedSkillId}
+                        </code>
+                        .
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {data.unknown.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-muted-foreground">
+                  {data.unknown.length}{" "}
+                  {data.unknown.length === 1 ? "row" : "rows"} couldn&apos;t be
+                  judged — not the same as being wrong:
+                </p>
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {data.unknown.map((u) => (
+                    <li key={`${u.source}/${u.skillId}`}>
+                      <span className="font-mono break-all">
+                        {u.source}/{u.skillId}
+                      </span>{" "}
+                      — {u.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -136,6 +136,18 @@ segment. All four must hold:
 Failing any gate keeps the typed slug, which is always safe because discovery's
 folder pass binds it by construction.
 
+**Finding the ones that slipped through.** `githubOnly.auditGitHubOnlySlugs` (a
+read-only admin query, surfaced as the "GitHub-only slug audit" card on
+`/dev/add-skill`) walks the `by_isGitHubOnly` index and flags every row whose
+stored `skillId` differs from `canonicalSlug(frontmatter name)`. It reads the
+already-fetched `content`, so it needs no network. Two populations it exists
+for: rows written before the alias fix, and rows written *after* it whenever
+`aliasBindsSameFile` was false because the tree API was rate-limited at confirm
+time. Rows it can't judge (no content yet, no frontmatter `name`, a name that
+isn't sluggable) are reported separately from mismatches — "we couldn't look"
+must not read as "we looked and it's wrong". It only reports; re-slugging is a
+per-row human decision (see TODO.md).
+
 The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
 SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
 the preview binds the same file post-insert discovery would. The lifecycle

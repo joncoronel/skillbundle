@@ -136,7 +136,11 @@ export default defineSchema({
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_isDelisted", ["isDelisted"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
-    .index("by_needsEmbedding", ["needsEmbedding"]),
+    .index("by_needsEmbedding", ["needsEmbedding"])
+    // GitHub-only rows, for the slug audit in githubOnly.ts. A small set (the
+    // fallback path is quota-limited), but it has to be reachable without
+    // scanning every skill just to find the handful.
+    .index("by_isGitHubOnly", ["isGitHubOnly"]),
 
   // Embedding vectors live in their own table to keep `skills` row reads
   // cheap. A skill row averages ~13 KB without the embedding vs ~25 KB with
