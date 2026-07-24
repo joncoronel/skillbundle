@@ -116,7 +116,10 @@ Adopting the alias as a row's **stored identity** is gated harder than merely
 checking it, because a `skillId` is permanent and is also a single URL path
 segment. All four must hold:
 
-- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9._-]+$`.
+- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9._-]+$`
+  **plus at least one alphanumeric**, so `.`, `..` and `---` are rejected too
+  (the charset alone admits them, and `encodeURIComponent` leaves `.` intact,
+  so `..` would normalise a segment away in the skills.sh request path).
   `kebabCase` is a comparator that only lowercases and collapses whitespace, so
   `/`, `&`, `(` and friends survive it; persisting one writes a row whose
   detail page 404s forever and whose install command is dropped.
