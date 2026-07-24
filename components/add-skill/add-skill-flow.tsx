@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction, useConvexAuth } from "convex/react";
@@ -8,7 +8,17 @@ import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
-import { previewFailureCopy, typedSlugOf } from "@/lib/add-skill-copy";
+import {
+  aliasRetryNote,
+  previewFailureCopy,
+  typedSlugOf,
+} from "@/lib/add-skill-copy";
+import {
+  useAddSkillFlow,
+  type AddSkillOutcome,
+  type Candidate,
+  type ReportHelpers,
+} from "@/hooks/use-add-skill-flow";
 import { skillHref } from "@/lib/skill-urls";
 import { signInUrl } from "@/components/auth/shared";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -24,13 +34,12 @@ import { UpgradeBanner } from "@/components/upgrade-banner";
 
 // Derived from the server's return validator so the client can't drift from
 // what the action actually sends (the review's finding on hand-declared
-// shapes). `input` is carried alongside so the confirm call re-sends exactly
-// what produced this preview; the action re-verifies server-side regardless.
+// shapes).
 type PreviewResult = FunctionReturnType<
   typeof api.githubOnly.previewGitHubSkillPublic
 >;
 type PreviewOk = Extract<PreviewResult, { status: "ok" }>;
-type GitHubCandidate = PreviewOk & { input: string };
+type GitHubCandidate = Candidate<PreviewOk>;
 
 // The outcome of a completed add, for the success card. `note` explains a
 // non-obvious outcome — currently only the corrected-slug retry, where the
@@ -53,20 +62,6 @@ type Notice = {
   link?: { source: string; skillId: string };
 };
 
-// One async step in flight at a time; the phase names it so the button says
-// what's actually happening. `retrying` is the corrected-slug re-run: it is a
-// distinct phase rather than a reuse of `adding` so one submit's labels only
-// ever move forward — going back to "Checking…" reads as a stall on what is
-// already the slowest path in the flow.
-type Phase = "idle" | "adding" | "previewing" | "retrying" | "confirming";
-
-const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
-  adding: "Checking…",
-  previewing: "Checking GitHub…",
-  retrying: "Adding under its listed name…",
-  confirming: "Adding…",
-};
-
 export function AddSkillFlow({
   initialInput = "",
   autoFocus,
@@ -85,182 +80,141 @@ export function AddSkillFlow({
   const previewGitHub = useAction(api.githubOnly.previewGitHubSkillPublic);
   const addFromGitHub = useAction(api.githubOnly.addSkillFromGitHubPublic);
 
-  const [input, setInput] = useState(initialInput);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [candidate, setCandidate] = useState<GitHubCandidate | null>(null);
   const [added, setAdded] = useState<Added | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  const pending = phase !== "idle";
-  useEffect(() => {
-    onPendingChange?.(pending);
-  }, [pending, onPendingChange]);
   // The form is the permanent shell: signed-out visitors keep the input (and
   // anything they've typed/pasted) and only the submit affordance swaps to a
   // sign-in button. Swapping the whole tree after auth resolves would destroy
   // an autofocused field mid-typing.
   const signedOut = !authLoading && !isAuthenticated;
 
+  // Every terminal point of the protocol, rendered as this surface's inline
+  // aria-live notice / success card. The sequencing that produces these lives
+  // in the hook; only the presentation is here.
+  const report = useCallback((
+    outcome: AddSkillOutcome<PreviewOk>,
+    { patchCandidate }: ReportHelpers<PreviewOk>,
+  ) => {
+    switch (outcome.kind) {
+      case "submitting":
+        setNotice(null);
+        setAdded(null);
+        return;
+      case "added":
+        setNotice(null);
+        setAdded({
+          kind: "skillssh",
+          source: outcome.result.source,
+          skillId: outcome.result.skillId,
+          name: outcome.result.name,
+          note: outcome.viaAlias
+            ? aliasRetryNote(outcome.viaAlias.skillId)
+            : undefined,
+        });
+        return;
+      case "github_added":
+        setNotice(null);
+        setAdded({
+          kind: "github",
+          source: outcome.result.source,
+          skillId: outcome.result.skillId,
+          name: outcome.result.name,
+        });
+        return;
+      case "already_exists":
+        setNotice({
+          tone: "info",
+          text: `${outcome.name} is already in the catalog.`,
+          link: { source: outcome.source, skillId: outcome.skillId },
+        });
+        return;
+      case "candidate":
+        // The card renders off `candidate`; nothing to announce separately.
+        return;
+      case "preview_failed":
+        setNotice({ tone: "error", text: previewFailureCopy(outcome.preview) });
+        return;
+      // This surface doesn't distinguish a GitHub-side failure from any other:
+      // both reach the same notice with the same friendly text. The admin form
+      // does, which is why the hook reports them separately.
+      case "preview_threw":
+      case "failed": {
+        const err = outcome.error;
+        if (isQuotaError(err)) {
+          // Race backstop: the server enforces the quota atomically inside the
+          // insert. When it rejects a stale confirm, flip the candidate's own
+          // snapshot too so the card swaps to its upgrade state instead of
+          // leaving an enabled button that keeps failing. wasDelisted flips
+          // with it: relists never hit the gate, so a quota error PROVES the
+          // insert was genuine and any relist marker from preview time is stale.
+          patchCandidate((c) => ({
+            ...c,
+            wasDelisted: false,
+            quota: { ...c.quota, atLimit: true },
+          }));
+          setNotice({ tone: "error", text: quotaErrorText(err) });
+          return;
+        }
+        setNotice({ tone: "error", text: friendlyError(errText(err)) });
+        return;
+      }
+    }
+  }, []);
+
+  const {
+    input,
+    changeInput,
+    phase,
+    pending,
+    label,
+    candidate,
+    clearCandidate,
+    submit,
+    confirmGitHub,
+  } = useAddSkillFlow<PreviewOk>({
+    initialInput,
+    addManually,
+    previewGitHub,
+    addFromGitHub,
+    report,
+  });
+
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
+
   function focusInput() {
     document.getElementById("add-skill-input")?.focus();
   }
 
-  function succeed(a: Added) {
-    setAdded(a);
-    setInput("");
-    setCandidate(null);
-    setNotice(null);
-  }
-
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const trimmed = input.trim();
-    // The auth guards mirror the button state. A signed-out Enter-press takes
-    // the same path as clicking the visible "Sign in to add" button; while
-    // auth is still resolving nothing fires (an action called before the
-    // token lands would error even for a signed-in user).
+    // The auth guards mirror the button state, and come first: a signed-out
+    // Enter-press takes the same path as clicking the visible "Sign in to add"
+    // button even with an empty field. While auth is still resolving nothing
+    // fires — an action called before the token lands errors even for a
+    // signed-in user.
     if (signedOut) {
       const path = window.location.pathname + window.location.search;
       router.push(signInUrl(path));
       return;
     }
-    if (!trimmed || pending || authLoading || !isAuthenticated) return;
-    // The candidate card for this exact input is already on screen — nothing
-    // to re-fetch. (Not a cache: any change to the input invalidates the
-    // candidate in onChange, and confirm re-verifies server-side regardless.)
-    if (candidate?.input === trimmed) return;
+    if (authLoading || !isAuthenticated) return;
 
+    const trimmed = input.trim();
     // Validate the input shape client-side before hitting the action, so a
     // typo never reaches the server (Convex forwards server throws to the dev
     // console). The action re-validates as defense-in-depth.
-    try {
-      parseSkillInput(trimmed);
-    } catch (err) {
-      setNotice({ tone: "error", text: friendlyError(errText(err)) });
-      return;
-    }
-
-    setCandidate(null);
-    setNotice(null);
-    setAdded(null);
-    setPhase("adding");
-    try {
-      // Branch 1: try the normal add first. It resolves against the skills.sh
-      // detail endpoint, so a skill that's on skills.sh but not yet in our
-      // catalog lands as a proper skill here. No quota spent.
-      if (await runManualAdd(trimmed)) return;
-      // Branch 2: skills.sh doesn't know that slug. Resolve the SKILL.md in
-      // its GitHub repo — which can also reveal that skills.sh knows the skill
-      // under a different slug — and let the user confirm before we add a
-      // GitHub-only row.
-      setPhase("previewing");
-      await offerGitHubFallback(trimmed);
-    } catch (err) {
-      setNotice({ tone: "error", text: friendlyError(errText(err)) });
-    } finally {
-      setPhase("idle");
-    }
-  }
-
-  // Branch 1, extracted so the GitHub preview can re-run it under a corrected
-  // slug. Returns false only for `not_on_skills_sh` — the caller's cue to fall
-  // through to the GitHub branch; every other outcome is settled here.
-  async function runManualAdd(
-    candidateInput: string,
-    note?: string,
-  ): Promise<boolean> {
-    const result = await addManually({ input: candidateInput });
-    const { status } = result;
-    if (status === "not_on_skills_sh") return false;
-    if (status === "already_exists") {
-      setNotice({
-        tone: "info",
-        text: `${result.name} is already in the catalog.`,
-        link: { source: result.source, skillId: result.skillId },
-      });
-      return true;
-    }
-    succeed({
-      kind: "skillssh",
-      source: result.source,
-      skillId: result.skillId,
-      name: result.name,
-      note,
-    });
-    return true;
-  }
-
-  async function offerGitHubFallback(trimmed: string) {
-    const preview = await previewGitHub({ input: trimmed });
-    if (preview.status === "ok") {
-      setCandidate({ ...preview, input: trimmed });
-      return;
-    }
-    // The preview reads the SKILL.md, so it sees the frontmatter `name` — the
-    // string skills.sh derives its slug from. A GitHub link only carries the
-    // FOLDER name, and repos that namespace their skills make those differ, so
-    // both of these mean Branch 1 asked about the wrong slug rather than that
-    // the skill is missing.
-    if (preview.status === "already_exists") {
-      setNotice({
-        tone: "info",
-        text: previewFailureCopy(preview),
-        link: { source: preview.source, skillId: preview.skillId },
-      });
-      return;
-    }
-    if (preview.status === "on_skills_sh_as_alias") {
-      // Re-run the normal add under the slug that actually resolves instead of
-      // telling the user to retry the input that just failed. The server only
-      // sends this status when the pasted link pointed at that exact folder,
-      // so the skill being added is the one they named — but it lands under a
-      // different slug than the link showed, so the success card says so
-      // rather than letting the substitution pass unremarked.
-      setPhase("retrying");
-      const settled = await runManualAdd(
-        `${preview.source}/${preview.skillId}`,
-        `skills.sh lists it as "${preview.skillId}" — the name in its SKILL.md frontmatter, not the folder name in your link.`,
-      );
-      if (settled) return;
-    }
-    setNotice({ tone: "error", text: previewFailureCopy(preview) });
-  }
-
-  async function handleConfirmGitHub() {
-    if (!candidate || pending) return;
-    setPhase("confirming");
-    try {
-      const result = await addFromGitHub({ input: candidate.input });
-      succeed({
-        kind: "github",
-        source: result.source,
-        skillId: result.skillId,
-        name: result.name,
-      });
-    } catch (err) {
-      // Race backstop: the server enforces the quota atomically inside the
-      // insert. When it rejects a stale confirm, flip the candidate's own
-      // snapshot too so the card swaps to its upgrade state instead of
-      // leaving an enabled button that keeps failing. wasDelisted flips with
-      // it: relists never hit the gate, so a quota error PROVES the insert
-      // was genuine and any relist marker from preview time is stale.
-      if (isQuotaError(err)) {
-        setCandidate((c) =>
-          c
-            ? {
-                ...c,
-                wasDelisted: false,
-                quota: { ...c.quota, atLimit: true },
-              }
-            : c,
-        );
-        setNotice({ tone: "error", text: quotaErrorText(err) });
-      } else {
+    if (trimmed) {
+      try {
+        parseSkillInput(trimmed);
+      } catch (err) {
         setNotice({ tone: "error", text: friendlyError(errText(err)) });
+        return;
       }
-    } finally {
-      setPhase("idle");
     }
+    await submit(trimmed);
   }
 
   return (
@@ -273,15 +227,11 @@ export function AddSkillFlow({
           placeholder="github.com/owner/repo/skills/my-skill"
           value={input}
           onChange={(e) => {
-            const value = e.target.value;
-            setInput(value);
-            // Retyping a different skill invalidates a pending candidate so its
-            // Confirm can't add the previous input.
-            setCandidate((prev) =>
-              prev && value.trim() !== prev.input ? null : prev,
-            );
+            // changeInput also invalidates a pending candidate so its Confirm
+            // can't add the previous input.
+            changeInput(e.target.value);
             if (notice) setNotice(null);
-            // …and clears the previous success card, which otherwise keeps
+            // …and clear the previous success card, which otherwise keeps
             // announcing skill A inside the same live region that is about to
             // report on skill B.
             if (added) setAdded(null);
@@ -317,7 +267,7 @@ export function AddSkillFlow({
               disabled={!input.trim() || pending || authLoading}
               className="shrink-0"
             >
-              {phase === "idle" ? "Add skill" : PHASE_LABEL[phase]}
+              {label ?? "Add skill"}
             </Button>
           )}
         </div>
@@ -331,7 +281,7 @@ export function AddSkillFlow({
             on a disabled, unfocused control — never announced. One submit can
             run three sequential round-trips, so without this a screen-reader
             user gets silence for the whole thing. */}
-        {pending && <p className="sr-only">{PHASE_LABEL[phase]}</p>}
+        {label && <p className="sr-only">{label}</p>}
         <p
           id="add-skill-notice"
           className={
@@ -364,9 +314,9 @@ export function AddSkillFlow({
           candidate={candidate}
           confirming={phase === "confirming"}
           disabled={pending}
-          onConfirm={handleConfirmGitHub}
+          onConfirm={confirmGitHub}
           onCancel={() => {
-            setCandidate(null);
+            clearCandidate();
             // The focused Cancel button unmounts with the card; put focus
             // somewhere useful instead of letting it fall to <body>.
             focusInput();

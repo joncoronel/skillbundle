@@ -65,3 +65,13 @@ export function typedSlugOf(input: string): string | null {
     return null;
   }
 }
+
+/**
+ * Explains a corrected-slug retry: the add succeeded, but under a slug the
+ * user never typed. Shown on the success card / appended to the admin toast so
+ * the substitution isn't silent — the flow deliberately re-runs the add
+ * without a confirm step, so this sentence is the only place it's disclosed.
+ */
+export function aliasRetryNote(skillId: string): string {
+  return `skills.sh lists it as "${skillId}" — the name in its SKILL.md frontmatter, not the folder name in the link.`;
+}
