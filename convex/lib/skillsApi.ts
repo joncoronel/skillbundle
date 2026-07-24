@@ -155,7 +155,18 @@ export async function getSkillDetail(
   source: string,
   slug: string,
 ): Promise<V1SkillDetail> {
-  return request(`/skills/${source}/${encodeURIComponent(slug)}`);
+  return request(`/skills/${encodeSource(source)}/${encodeURIComponent(slug)}`);
+}
+
+/**
+ * Percent-encode a source's segments while keeping the "owner/repo" separator.
+ * `source` reaches here from user input (`parseSkillInput` splits on "/" and
+ * validates nothing else), so an unencoded "?" or "#" in it would terminate
+ * the path and turn the rest of the request into a query string or fragment —
+ * a different endpoint than the caller asked for.
+ */
+function encodeSource(source: string): string {
+  return source.split("/").map(encodeURIComponent).join("/");
 }
 
 /**
@@ -226,5 +237,7 @@ export async function getSkillAudits(
   source: string,
   slug: string,
 ): Promise<V1AuditResponse> {
-  return request(`/skills/audit/${source}/${encodeURIComponent(slug)}`);
+  return request(
+    `/skills/audit/${encodeSource(source)}/${encodeURIComponent(slug)}`,
+  );
 }

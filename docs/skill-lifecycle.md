@@ -101,15 +101,37 @@ slug from its SKILL.md frontmatter `name`, but a pasted GitHub deep link only
 carries the SKILL.md's **folder** name — and repos that namespace their skills
 make the two differ (`vercel-labs/agent-skills` ships
 `skills/react-view-transitions/SKILL.md` named `vercel-react-view-transitions`).
-So `previewGitHubCore` runs its checks twice: once under the typed slug, then —
-only when the resolved file's frontmatter name kebab-cases to something else —
-again under that alias. The alias pass can return `already_exists` (naming the
-real row so the UI links it) or `on_skills_sh` with a `retryInput`, which the
-clients use to re-run Branch 1 under the slug that actually resolves. Without
-it, a listed skill reads as "not on skills.sh" and confirming inserts a
-duplicate row under a slug skills.sh will never emit — one reconcile skips and
-adoption (which matches on `source` + `skillId`) can never claim. When the skill
-really is GitHub-only, the insert uses the **alias** slug for that same reason.
+So `previewGitHubCore` applies its priority rule twice: once under the typed
+slug, then — only when the resolved file's frontmatter name canonicalises to
+something else — again under that alias. The rule itself lives in ONE place
+(`terminalFor`), so the two passes cannot drift; it mirrors `manualAddCore`'s
+ordering, including the exception that a live **GitHub-only** row must not
+short-circuit ahead of the listing check (that row is exactly what the adoption
+path exists to upgrade). The alias pass can return `already_exists` (naming the
+real row so the UI links it) or `on_skills_sh_as_alias`, which the clients use
+to re-run Branch 1 under the slug that actually resolves. Without it, a listed
+skill reads as "not on skills.sh".
+
+Adopting the alias as a row's **stored identity** is gated harder than merely
+checking it, because a `skillId` is permanent and is also a single URL path
+segment. All four must hold:
+
+- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9._-]+$`.
+  `kebabCase` is a comparator that only lowercases and collapses whitespace, so
+  `/`, `&`, `(` and friends survive it; persisting one writes a row whose
+  detail page 404s forever and whose install command is dropped.
+- The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
+  caller pointed at this exact skill. `matchesSkillId`'s loose `startsWith` arm
+  must never name a skill on a write.
+- **Nothing claims the typed slug.** A delisted row there gets RELISTED (free,
+  no quota) rather than orphaned beside a fresh alias row.
+- Discovery will still bind the previewed file (`aliasBindsSameFile`) — its
+  pass 1 is `skillMdByDir.get(skillId)`, so a different SKILL.md in a folder
+  named like the alias would win instead, and the card would have vouched for a
+  file the pipeline never fetches. False whenever the tree wasn't listed.
+
+Failing any gate keeps the typed slug, which is always safe because discovery's
+folder pass binds it by construction.
 
 The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
 SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so

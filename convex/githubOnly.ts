@@ -41,7 +41,7 @@ import {
   SkillsApiRateLimitError,
   withTransientRetry,
 } from "./lib/skillsApi";
-import { kebabCase, matchesSkillId } from "./lib/skillMatch";
+import { canonicalSlug, matchesSkillId } from "./lib/skillMatch";
 import {
   GITHUB_LEADERBOARD,
   gitHubQuotaValidator,
@@ -135,6 +135,21 @@ type GitHubSkillResolution =
       // fire on a value that wasn't in the file.
       fmName?: string;
       description?: string;
+      // How this file earned the match. `"dir"` means a folder named exactly
+      // like the slug — i.e. the caller pointed at THIS skill. `"frontmatter"`
+      // means the loose `matchesSkillId` rule bound it, which includes a bare
+      // `startsWith` prefix hit (slug "next" matching "Next JS Development").
+      // previewGitHubCore only trusts the frontmatter name as a slug on the
+      // `"dir"` path, so a prefix guess can never drive a write.
+      matchedBy: "dir" | "frontmatter";
+      // Would storing `canonicalSlug(fmName)` as the row's slug still make
+      // post-insert discovery bind THIS file? Discovery's pass 1 is
+      // `skillMdByDir.get(skillId)` (skills.ts), so a *different* SKILL.md
+      // sitting in a folder named like the alias would win instead — the
+      // preview would vouch for one file and the pipeline would fetch
+      // another. False whenever that can't be ruled out, including when the
+      // tree was unavailable and we never saw the folder list.
+      aliasBindsSameFile: boolean;
     }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
@@ -173,8 +188,22 @@ async function resolveGitHubSkillMd(
     branch: string,
     path: string,
     contents: string,
+    matchedBy: "dir" | "frontmatter",
+    // Folder-name → SKILL.md map from the repo tree, or null when the tree was
+    // never listed (the probe fallback) — in which case the alias can't be
+    // cleared and is treated as unsafe.
+    byDir: Map<string, string> | null,
   ): GitHubSkillResolution => {
     const fmName = extractSkillMdName(contents);
+    const alias = fmName ? canonicalSlug(fmName) : null;
+    // Safe when there is no alias to adopt, when it's the slug we already
+    // have, when no folder claims it (discovery falls through to the
+    // frontmatter pass and lands back on this file), or when the folder that
+    // claims it holds this very file.
+    const aliasBindsSameFile =
+      alias === null ||
+      alias === skillId ||
+      (byDir !== null && (byDir.get(alias) ?? path) === path);
     return {
       status: "ok",
       skillMdUrl: rawUrl(branch, path),
@@ -182,6 +211,8 @@ async function resolveGitHubSkillMd(
       name: fmName ?? humanizeSlug(skillId),
       ...(fmName && { fmName }),
       description: extractFrontmatterDescription(contents) ?? undefined,
+      matchedBy,
+      aliasBindsSameFile,
     };
   };
 
@@ -220,10 +251,18 @@ async function resolveGitHubSkillMd(
       // A root SKILL.md must earn the match via frontmatter name, same rule
       // as pass 2 below — otherwise any repo with a root SKILL.md would
       // "resolve" every slug typed at it whenever the tree is down.
-      if (path !== "SKILL.md") return okResult(meta.defaultBranch, path, contents);
+      if (path !== "SKILL.md") {
+        return okResult(meta.defaultBranch, path, contents, "dir", null);
+      }
       const fmName = extractSkillMdName(contents);
       if (fmName && matchesSkillId(fmName, skillId)) {
-        return okResult(meta.defaultBranch, path, contents);
+        return okResult(
+          meta.defaultBranch,
+          path,
+          contents,
+          "frontmatter",
+          null,
+        );
       }
     }
     return { status: "tree_unavailable" };
@@ -246,7 +285,9 @@ async function resolveGitHubSkillMd(
   const dirMatch = byDir.get(skillId);
   if (dirMatch) {
     const contents = await fetchText(rawUrl(tree.branch, dirMatch));
-    if (contents !== null) return okResult(tree.branch, dirMatch, contents);
+    if (contents !== null) {
+      return okResult(tree.branch, dirMatch, contents, "dir", byDir);
+    }
     // The tree said the file exists but raw serves an error — transient CDN
     // trouble, not proof of absence.
     return { status: "tree_unavailable" };
@@ -268,7 +309,7 @@ async function resolveGitHubSkillMd(
       if (contents === null) continue;
       const fmName = extractSkillMdName(contents);
       if (fmName && matchesSkillId(fmName, skillId)) {
-        return okResult(tree.branch, wave[j], contents);
+        return okResult(tree.branch, wave[j], contents, "frontmatter", byDir);
       }
     }
   }
@@ -281,11 +322,13 @@ async function resolveGitHubSkillMd(
 
 type GitHubPreview =
   | { status: "not_github" }
-  // `retryInput` is set only when the listing was found under a DIFFERENT slug
-  // than the caller typed (the frontmatter-name alias below). It's the exact
-  // input string that would succeed, so the client can re-run the normal add
-  // instead of telling the user to retry something that just failed.
-  | { status: "on_skills_sh"; retryInput?: string }
+  | { status: "on_skills_sh" }
+  // skills.sh lists this SKILL.md, but under the slug its frontmatter `name`
+  // implies rather than the folder name the caller's URL carried. Its own
+  // status rather than an optional field on `on_skills_sh`: the two need
+  // different copy (one says "retry", the other has already been retried) and
+  // a `status` check beats a presence check the clients can forget.
+  | { status: "on_skills_sh_as_alias"; source: string; skillId: string }
   // source/skillId identify the row that already exists — which is not
   // necessarily the slug the caller typed, so the UI can link to the real one.
   | { status: "already_exists"; name: string; source: string; skillId: string }
@@ -310,6 +353,64 @@ type Precheck = {
   isDelisted: boolean;
   isGitHubOnly: boolean;
 } | null;
+
+/**
+ * "Does anything already claim this (source, slug)?" — the ONE priority rule,
+ * applied per candidate slug. Returns a terminal preview, or null meaning the
+ * slug is unclaimed and available for a GitHub-only add.
+ *
+ * `listing` is a thunk, not a value: a lower-priority check's FAILURE must not
+ * mask a higher-priority success, so the listing result stays un-unwrapped
+ * until the catalog answer has had its say.
+ *
+ * The GitHub-only exception mirrors `manualAddCore` in skills.ts: a live
+ * GitHub-only row must not short-circuit ahead of the listing check, because
+ * that is exactly the row the documented "retry the normal add once skills.sh
+ * lists it" adoption path exists to upgrade. Skipping the check would make
+ * that recovery a dead end for anyone who reaches it via the alias.
+ */
+function terminalFor(
+  source: string,
+  slug: string,
+  precheck: Precheck,
+  listing: () => "listed" | "not_listed",
+  isAlias: boolean,
+): GitHubPreview | null {
+  const exists = precheck !== null && !precheck.isDelisted;
+  if (exists && !precheck.isGitHubOnly) {
+    return { status: "already_exists", name: precheck.name, source, skillId: slug };
+  }
+  if (listing() === "listed") {
+    return isAlias
+      ? { status: "on_skills_sh_as_alias", source, skillId: slug }
+      : { status: "on_skills_sh" };
+  }
+  // GitHub-only and still not listed — nothing left to upgrade it to.
+  if (exists) {
+    return { status: "already_exists", name: precheck.name, source, skillId: slug };
+  }
+  return null;
+}
+
+/** The same two lookups, run under a second candidate slug. */
+async function checkAliasSlug(
+  ctx: ActionCtx,
+  source: string,
+  alias: string,
+): Promise<{ precheck: Precheck; terminal: GitHubPreview | null }> {
+  const [precheckR, listingR] = await Promise.allSettled([
+    ctx.runQuery(internal.skills.getManualAddPrecheck, {
+      source,
+      skillId: alias,
+    }) as Promise<Precheck>,
+    checkSkillsShListing(source, alias),
+  ]);
+  const precheck = unwrap(precheckR);
+  return {
+    precheck,
+    terminal: terminalFor(source, alias, precheck, () => unwrap(listingR), true),
+  };
+}
 
 /**
  * The read-only "what would we add?" probe, shared by the admin and public
@@ -343,17 +444,14 @@ async function previewGitHubCore(
   ]);
 
   const precheck = unwrap(precheckR);
-  if (precheck && !precheck.isDelisted) {
-    return {
-      status: "already_exists",
-      name: precheck.name,
-      source,
-      skillId,
-    };
-  }
-  // If skills.sh does know the skill, the ordinary manual add is the right
-  // path — it yields a real install count and a normal lifecycle.
-  if (unwrap(listingR) === "listed") return { status: "on_skills_sh" };
+  const typedTerminal = terminalFor(
+    source,
+    skillId,
+    precheck,
+    () => unwrap(listingR),
+    false,
+  );
+  if (typedTerminal) return typedTerminal;
 
   const resolved = unwrap(resolvedR);
   if (resolved.status !== "ok") return { status: resolved.status };
@@ -366,53 +464,48 @@ async function previewGitHubCore(
   // `skills/react-view-transitions/SKILL.md` named
   // `vercel-react-view-transitions`, so every check above ran against a slug
   // skills.sh has never heard of. Left unhandled that produces a confident
-  // "not on skills.sh" for a listed skill, and confirming it inserts a
-  // duplicate row under the folder slug — one that reconcile skips and that
-  // the adoption path (which matches on source+skillId) can never claim.
+  // "not on skills.sh" for a listed skill.
   //
-  // Only runs on a genuine mismatch, so the common case pays nothing. It is
-  // deliberately AFTER the folder-slug checks: the slug the user typed wins
-  // when it resolves to something real.
-  const alias = resolved.fmName ? kebabCase(resolved.fmName) : null;
-  let addSkillId = skillId;
-  let addPrecheck = precheck;
-  if (alias && alias !== skillId) {
-    const [aliasPrecheckR, aliasListingR] = await Promise.allSettled([
-      ctx.runQuery(internal.skills.getManualAddPrecheck, {
-        source,
-        skillId: alias,
-      }) as Promise<Precheck>,
-      checkSkillsShListing(source, alias),
-    ]);
-    const aliasPrecheck = unwrap(aliasPrecheckR);
-    if (aliasPrecheck && !aliasPrecheck.isDelisted) {
-      return {
-        status: "already_exists",
-        name: aliasPrecheck.name,
-        source,
-        skillId: alias,
-      };
-    }
-    if (unwrap(aliasListingR) === "listed") {
-      return { status: "on_skills_sh", retryInput: `${source}/${alias}` };
-    }
-    // Genuinely GitHub-only. Insert under the frontmatter-derived slug — the
-    // one skills.sh would assign if it ever lists the skill — so adoption can
-    // match it later instead of stranding a folder-slugged row beside it.
-    addSkillId = alias;
-    addPrecheck = aliasPrecheck;
-  }
+  // Restricted to `matchedBy === "dir"`: only there did the caller point at
+  // this exact folder, so its frontmatter name is a statement about the skill
+  // they meant. A `"frontmatter"` match can come from the loose `startsWith`
+  // rule, and letting a prefix guess name the skill would put a slug the user
+  // never typed on the end of a write with no confirmation step.
+  //
+  // Runs only on a genuine mismatch, and deliberately AFTER the typed-slug
+  // checks: the slug the caller gave wins whenever it resolves to something.
+  const alias = resolved.fmName ? canonicalSlug(resolved.fmName) : null;
+  const aliasPass =
+    alias !== null && alias !== skillId && resolved.matchedBy === "dir"
+      ? await checkAliasSlug(ctx, source, alias)
+      : null;
+  if (aliasPass?.terminal) return aliasPass.terminal;
+
+  // Adopt the alias as the row's identity only when all three hold:
+  //   - the alias pass ran and found the slug unclaimed (`aliasPass`);
+  //   - NOTHING claims the typed slug either (`precheck === null`) — a
+  //     delisted row under the typed slug must be RELISTED, not orphaned
+  //     beside a fresh alias row that also costs the user a quota slot;
+  //   - discovery will still bind the previewed file (`aliasBindsSameFile`),
+  //     so the card can't vouch for one SKILL.md while the pipeline fetches
+  //     another.
+  // Otherwise keep the typed slug — the pre-alias behaviour, which is always
+  // safe because discovery's folder pass binds it by construction.
+  const add =
+    aliasPass && precheck === null && resolved.aliasBindsSameFile
+      ? { skillId: alias as string, precheck: aliasPass.precheck }
+      : { skillId, precheck };
 
   return {
     status: "ok",
     source,
-    skillId: addSkillId,
+    skillId: add.skillId,
     path: resolved.path,
     name: resolved.name,
     description: resolved.description,
-    // Past the already_exists checks, a non-null precheck (for whichever slug
-    // we settled on) can only be a delisted row.
-    wasDelisted: addPrecheck !== null,
+    // Past terminalFor, a non-null precheck (for whichever slug we settled on)
+    // can only be a delisted row.
+    wasDelisted: add.precheck !== null,
   };
 }
 
@@ -439,9 +532,11 @@ function previewFailureError(
     // feed would then only recover via the manual adoption path.
     case "on_skills_sh":
       return new ConvexError(
-        preview.retryInput
-          ? `That SKILL.md is listed on skills.sh as "${preview.retryInput}" (its frontmatter name, not its folder name). Add it with that and it comes in the normal way.`
-          : `${source}/${skillId} is listed on skills.sh. Run the add again to bring it in the normal way.`,
+        `${source}/${skillId} is listed on skills.sh. Run the add again to bring it in the normal way.`,
+      );
+    case "on_skills_sh_as_alias":
+      return new ConvexError(
+        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Add it with that and it comes in the normal way.`,
       );
     case "no_repo":
       // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
@@ -534,33 +629,45 @@ async function addGitHubCore(
   };
 }
 
+/**
+ * The non-`ok` arms and the `ok` fields, declared once. The admin and public
+ * previews return the SAME union apart from `quota`, and nothing type-checks
+ * one hand-written copy against the other — a drifted arm surfaces only as a
+ * runtime return-validation error in production, so they're composed rather
+ * than duplicated.
+ */
+const previewTerminalArms = [
+  v.object({ status: v.literal("not_github") }),
+  v.object({ status: v.literal("on_skills_sh") }),
+  v.object({
+    status: v.literal("on_skills_sh_as_alias"),
+    source: v.string(),
+    skillId: v.string(),
+  }),
+  v.object({
+    status: v.literal("already_exists"),
+    name: v.string(),
+    source: v.string(),
+    skillId: v.string(),
+  }),
+  v.object({ status: v.literal("no_repo") }),
+  v.object({ status: v.literal("no_skill_md") }),
+  v.object({ status: v.literal("tree_unavailable") }),
+] as const;
+
+const previewOkFields = {
+  status: v.literal("ok"),
+  source: v.string(),
+  skillId: v.string(),
+  path: v.string(),
+  name: v.string(),
+  description: v.optional(v.string()),
+  wasDelisted: v.boolean(),
+};
+
 export const previewGitHubSkill = action({
   args: { input: v.string() },
-  returns: v.union(
-    v.object({ status: v.literal("not_github") }),
-    v.object({
-      status: v.literal("on_skills_sh"),
-      retryInput: v.optional(v.string()),
-    }),
-    v.object({
-      status: v.literal("already_exists"),
-      name: v.string(),
-      source: v.string(),
-      skillId: v.string(),
-    }),
-    v.object({ status: v.literal("no_repo") }),
-    v.object({ status: v.literal("no_skill_md") }),
-    v.object({ status: v.literal("tree_unavailable") }),
-    v.object({
-      status: v.literal("ok"),
-      source: v.string(),
-      skillId: v.string(),
-      path: v.string(),
-      name: v.string(),
-      description: v.optional(v.string()),
-      wasDelisted: v.boolean(),
-    }),
-  ),
+  returns: v.union(...previewTerminalArms, v.object(previewOkFields)),
   handler: async (ctx, { input }): Promise<GitHubPreview> => {
     await assertAdmin(ctx);
     return previewGitHubCore(ctx, input);
@@ -642,30 +749,8 @@ type GitHubPreviewPublic =
 export const previewGitHubSkillPublic = action({
   args: { input: v.string() },
   returns: v.union(
-    v.object({ status: v.literal("not_github") }),
-    v.object({
-      status: v.literal("on_skills_sh"),
-      retryInput: v.optional(v.string()),
-    }),
-    v.object({
-      status: v.literal("already_exists"),
-      name: v.string(),
-      source: v.string(),
-      skillId: v.string(),
-    }),
-    v.object({ status: v.literal("no_repo") }),
-    v.object({ status: v.literal("no_skill_md") }),
-    v.object({ status: v.literal("tree_unavailable") }),
-    v.object({
-      status: v.literal("ok"),
-      source: v.string(),
-      skillId: v.string(),
-      path: v.string(),
-      name: v.string(),
-      description: v.optional(v.string()),
-      wasDelisted: v.boolean(),
-      quota: gitHubQuotaValidator,
-    }),
+    ...previewTerminalArms,
+    v.object({ ...previewOkFields, quota: gitHubQuotaValidator }),
   ),
   handler: async (ctx, { input }): Promise<GitHubPreviewPublic> => {
     // Doubles as the auth gate: getGitHubAddQuota throws if not signed in.

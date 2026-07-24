@@ -23,3 +23,28 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
   const kebab = kebabCase(fmName);
   return fmName === skillId || kebab === skillId || kebab.startsWith(skillId);
 }
+
+/**
+ * The slug a frontmatter `name` corresponds to, or `null` when that name
+ * cannot be one.
+ *
+ * `kebabCase` above is a COMPARATOR: it feeds `matchesSkillId`, where an odd
+ * character just means "no match" and nothing is written. This is the WRITE
+ * side — the result can become a row's permanent `skillId`, which is also a
+ * single URL path segment (`/[org]/[repo]/[skillId]`) and has to satisfy
+ * `SAFE_SEGMENT` in lib/install-commands.ts or the detail page 404s forever
+ * and the install command is silently dropped.
+ *
+ * So anything outside `[a-z0-9._-]` is REJECTED rather than mangled. Two
+ * reasons it must be a rejection: `kebabCase` only lowercases and collapses
+ * whitespace, so `/`, `&`, `(`, `)` and friends survive it intact; and the
+ * module comment above is explicit that skills.sh derives slugs "in
+ * non-obvious ways", so a name this transform can't handle cleanly is exactly
+ * the case where guessing writes an unroutable row nothing can repair.
+ * Callers treat `null` as "no alias" and fall back to the slug they were
+ * given.
+ */
+export function canonicalSlug(fmName: string): string | null {
+  const slug = kebabCase(fmName.trim());
+  return /^[a-z0-9._-]+$/.test(slug) ? slug : null;
+}
