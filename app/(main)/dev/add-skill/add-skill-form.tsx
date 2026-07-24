@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { useAction } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
+import { previewFailureCopy } from "@/lib/add-skill-copy";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import {
@@ -22,24 +24,37 @@ type AddResult = {
   source: string;
   skillId: string;
   name: string;
+  // Appended to the toast when the outcome needs explaining — currently only
+  // the corrected-slug retry, which lands a differently-named skill than the
+  // link that was pasted.
+  note?: string;
 };
 
-// A resolved GitHub-only candidate awaiting the admin's confirmation. `input` is
+// A resolved GitHub-only candidate awaiting the admin's confirmation. Derived
+// from the action's return type rather than hand-declared, so a new preview
+// field can't be spread into state with no type record of it. `input` is
 // carried alongside so the confirm call re-sends exactly what produced this
 // preview (the action re-resolves server-side rather than trusting these fields).
-type GitHubCandidate = {
-  input: string;
-  source: string;
-  skillId: string;
-  path: string;
-  name: string;
-  description?: string;
-};
+type GitHubCandidate = Extract<
+  FunctionReturnType<typeof api.githubOnly.previewGitHubSkill>,
+  { status: "ok" }
+> & { input: string };
 
 // One async flow is in flight at a time; the phase names it honestly so the
 // button can say what is actually happening ("Checking GitHub…" during the
 // preview, not a misleading "Adding…"). Every await site sets its own phase.
-type Phase = "idle" | "adding" | "previewing" | "confirming";
+// `retrying` is the corrected-slug re-run — its own phase so one submit's
+// labels only ever move forward.
+type Phase = "idle" | "adding" | "previewing" | "retrying" | "confirming";
+
+const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
+  // "Checking…", not "Adding…": this first step is a skills.sh lookup that is
+  // often about to 404 into the GitHub branch. Nothing is being added yet.
+  adding: "Checking…",
+  previewing: "Checking GitHub…",
+  retrying: "Adding under its listed name…",
+  confirming: "Adding…",
+};
 
 export function AddSkillForm() {
   const { data: admin } = useQuery(convexQuery(api.devStats.isAdmin, {}));
@@ -66,23 +81,31 @@ export function AddSkillForm() {
     setLastAdded(result);
     setInput("");
     setCandidate(null);
+    const withNote = (text: string) =>
+      result.note ? `${text} ${result.note}` : text;
     switch (result.status) {
       case "inserted":
         toast.success({
           title: "Skill added",
-          description: `${result.name} is now in the catalog. SKILL.md will fill in shortly.`,
+          description: withNote(
+            `${result.name} is now in the catalog. SKILL.md will fill in shortly.`,
+          ),
         });
         break;
       case "relisted":
         toast.success({
           title: "Skill relisted",
-          description: `${result.name} was previously delisted and is now active again.`,
+          description: withNote(
+            `${result.name} was previously delisted and is now active again.`,
+          ),
         });
         break;
       case "adopted":
         toast.success({
           title: "Skill adopted",
-          description: `${result.name} is now listed on skills.sh — upgraded from GitHub-only to a normal catalog entry with its real install count.`,
+          description: withNote(
+            `${result.name} is now listed on skills.sh — upgraded from GitHub-only to a normal catalog entry with its real install count.`,
+          ),
         });
         break;
       case "already_exists":
@@ -119,22 +142,15 @@ export function AddSkillForm() {
     setPhase("adding");
     setCandidate(null);
     try {
-      const result = await addSkill({ input: trimmed });
+      if (await runManualAdd(trimmed)) return;
       // Not on skills.sh at all — a TYPED status, not an error. (It must not be
       // signaled by throwing: prod Convex redacts non-ConvexError messages to a
       // generic "Server Error", so any message-sniffing branch would be dead in
       // production.) Rather than dead-ending, look for the skill in its GitHub
       // repo and let the admin confirm what we found. Confirmation is
       // deliberate: a mistyped slug should be visible before anything is written.
-      // Destructured so the narrowing survives into the else branch (status is
-      // a union-typed property, not a discriminant).
-      const { status } = result;
-      if (status === "not_on_skills_sh") {
-        setPhase("previewing");
-        await offerGitHubFallback(trimmed);
-      } else {
-        announce({ ...result, status });
-      }
+      setPhase("previewing");
+      await offerGitHubFallback(trimmed);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error({
@@ -146,31 +162,83 @@ export function AddSkillForm() {
     }
   }
 
+  // The normal skills.sh add, extracted so the GitHub preview can re-run it
+  // under a corrected slug. Returns false only for `not_on_skills_sh`; every
+  // other outcome is announced here. Destructuring `status` keeps the
+  // narrowing alive into announce() — it's a union-typed property, not a
+  // discriminant.
+  async function runManualAdd(
+    candidateInput: string,
+    note?: string,
+  ): Promise<boolean> {
+    const result = await addSkill({ input: candidateInput });
+    const { status } = result;
+    if (status === "not_on_skills_sh") return false;
+    announce({ ...result, status, note });
+    return true;
+  }
+
   async function offerGitHubFallback(trimmed: string) {
+    // Only the preview call is wrapped: everything after it talks to
+    // skills.sh, not GitHub, and a rate limit there carries its own actionable
+    // message ("skills.sh is rate-limiting requests…") that must not be
+    // re-titled as a GitHub problem. Those throws belong to handleSubmit's
+    // catch, which is the one written for add failures.
+    let preview;
     try {
-      const preview = await previewGitHub({ input: trimmed });
-      if (preview.status === "ok") {
-        setCandidate({ input: trimmed, ...preview });
-        // The confirmation card mounts silently below the form; without this,
-        // a keyboard/screen-reader user hears the pending label end and gets
-        // no signal that a confirmation step now exists further down the page.
-        toast.info({
-          title: "Not on skills.sh",
-          description: `Found ${preview.path} on GitHub — review and confirm below.`,
-        });
-        return;
-      }
-      toast.error({
-        title: "Not on skills.sh",
-        description: previewError(preview.status),
-      });
+      preview = await previewGitHub({ input: trimmed });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error({
         title: "Couldn't check GitHub",
         description: friendlyError(message),
       });
+      return;
     }
+
+    if (preview.status === "ok") {
+      setCandidate({ input: trimmed, ...preview });
+      // The confirmation card mounts silently below the form; without this,
+      // a keyboard/screen-reader user hears the pending label end and gets
+      // no signal that a confirmation step now exists further down the page.
+      toast.info({
+        title: "Not on skills.sh",
+        description: `Found ${preview.path} on GitHub — review and confirm below.`,
+      });
+      return;
+    }
+    // The preview reads the SKILL.md, so it sees the frontmatter `name` —
+    // the string skills.sh derives its slug from. A GitHub link only carries
+    // the FOLDER name, and repos that namespace their skills make those
+    // differ, so both of these mean the add above asked about the wrong slug
+    // rather than that the skill is missing.
+    if (preview.status === "already_exists") {
+      announce({
+        status: "already_exists",
+        source: preview.source,
+        skillId: preview.skillId,
+        name: preview.name,
+      });
+      return;
+    }
+    if (preview.status === "on_skills_sh_as_alias") {
+      setPhase("retrying");
+      const settled = await runManualAdd(
+        `${preview.source}/${preview.skillId}`,
+        `Added as "${preview.skillId}" — the name in its SKILL.md frontmatter, not the folder name in the link.`,
+      );
+      if (settled) return;
+    }
+    toast.error({
+      // Derived, not hardcoded: an "on_skills_sh…" status under a
+      // "Not on skills.sh" title makes one toast contradict itself.
+      title:
+        preview.status === "on_skills_sh" ||
+        preview.status === "on_skills_sh_as_alias"
+          ? "Couldn't add skill"
+          : "Not on skills.sh",
+      description: previewFailureCopy(preview),
+    });
   }
 
   async function handleConfirmGitHub() {
@@ -225,11 +293,7 @@ export function AddSkillForm() {
                 repo instead.
               </p>
               <Button type="submit" disabled={!input.trim() || pending}>
-                {phase === "adding"
-                  ? "Adding…"
-                  : phase === "previewing"
-                    ? "Checking GitHub…"
-                    : "Add to catalog"}
+                {phase === "idle" ? "Add to catalog" : PHASE_LABEL[phase]}
               </Button>
             </div>
           </form>
@@ -353,32 +417,6 @@ function skillDetailHref(source: string, skillId: string): string {
   return isGitHub
     ? `/${source}/${skillId}`
     : `/site/${source}/${skillId}`;
-}
-
-// Why the GitHub fallback couldn't offer anything, in terms the admin can act on.
-function previewError(
-  status:
-    | "not_github"
-    | "on_skills_sh"
-    | "already_exists"
-    | "no_repo"
-    | "no_skill_md"
-    | "tree_unavailable",
-): string {
-  switch (status) {
-    case "not_github":
-      return "Only GitHub repos can be added without a skills.sh listing.";
-    case "on_skills_sh":
-      return "skills.sh does list this skill — retry the normal add.";
-    case "already_exists":
-      return "This skill is already in the catalog.";
-    case "no_repo":
-      return "Couldn't find a public GitHub repo at that owner/repo (or GitHub rate-limited the lookup — try again in a minute).";
-    case "no_skill_md":
-      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name) — check the slug.";
-    case "tree_unavailable":
-      return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
-  }
 }
 
 // Convert raw error strings from the Convex action into something the admin

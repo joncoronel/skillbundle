@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction, useConvexAuth } from "convex/react";
@@ -8,6 +8,7 @@ import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
+import { previewFailureCopy, typedSlugOf } from "@/lib/add-skill-copy";
 import { skillHref } from "@/lib/skill-urls";
 import { signInUrl } from "@/components/auth/shared";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -31,12 +32,15 @@ type PreviewResult = FunctionReturnType<
 type PreviewOk = Extract<PreviewResult, { status: "ok" }>;
 type GitHubCandidate = PreviewOk & { input: string };
 
-// The outcome of a completed add, for the success card.
+// The outcome of a completed add, for the success card. `note` explains a
+// non-obvious outcome — currently only the corrected-slug retry, where the
+// skill that landed is named differently from the link that was pasted.
 type Added = {
   kind: "skillssh" | "github";
   source: string;
   skillId: string;
   name: string;
+  note?: string;
 };
 
 // An inline message shown under the form (already-in-catalog,
@@ -50,15 +54,30 @@ type Notice = {
 };
 
 // One async step in flight at a time; the phase names it so the button says
-// what's actually happening.
-type Phase = "idle" | "adding" | "previewing" | "confirming";
+// what's actually happening. `retrying` is the corrected-slug re-run: it is a
+// distinct phase rather than a reuse of `adding` so one submit's labels only
+// ever move forward — going back to "Checking…" reads as a stall on what is
+// already the slowest path in the flow.
+type Phase = "idle" | "adding" | "previewing" | "retrying" | "confirming";
+
+const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
+  adding: "Checking…",
+  previewing: "Checking GitHub…",
+  retrying: "Adding under its listed name…",
+  confirming: "Adding…",
+};
 
 export function AddSkillFlow({
   initialInput = "",
   autoFocus,
+  onPendingChange,
 }: {
   initialInput?: string;
   autoFocus?: boolean;
+  // Reported so a container can refuse to unmount the flow mid-write. The
+  // dialog uses it: dismissing after "Add to catalog" would otherwise complete
+  // the insert and spend a quota slot with the confirmation thrown away.
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
@@ -73,6 +92,9 @@ export function AddSkillFlow({
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const pending = phase !== "idle";
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
   // The form is the permanent shell: signed-out visitors keep the input (and
   // anything they've typed/pasted) and only the submit affordance swaps to a
   // sign-in button. Swapping the whole tree after auth resolves would destroy
@@ -126,32 +148,46 @@ export function AddSkillFlow({
       // Branch 1: try the normal add first. It resolves against the skills.sh
       // detail endpoint, so a skill that's on skills.sh but not yet in our
       // catalog lands as a proper skill here. No quota spent.
-      const result = await addManually({ input: trimmed });
-      const { status } = result;
-      if (status === "not_on_skills_sh") {
-        // Branch 2: not on skills.sh at all. Resolve it in its GitHub repo and
-        // let the user confirm before we add a GitHub-only row.
-        setPhase("previewing");
-        await offerGitHubFallback(trimmed);
-      } else if (status === "already_exists") {
-        setNotice({
-          tone: "info",
-          text: `${result.name} is already in the catalog.`,
-          link: { source: result.source, skillId: result.skillId },
-        });
-      } else {
-        succeed({
-          kind: "skillssh",
-          source: result.source,
-          skillId: result.skillId,
-          name: result.name,
-        });
-      }
+      if (await runManualAdd(trimmed)) return;
+      // Branch 2: skills.sh doesn't know that slug. Resolve the SKILL.md in
+      // its GitHub repo — which can also reveal that skills.sh knows the skill
+      // under a different slug — and let the user confirm before we add a
+      // GitHub-only row.
+      setPhase("previewing");
+      await offerGitHubFallback(trimmed);
     } catch (err) {
       setNotice({ tone: "error", text: friendlyError(errText(err)) });
     } finally {
       setPhase("idle");
     }
+  }
+
+  // Branch 1, extracted so the GitHub preview can re-run it under a corrected
+  // slug. Returns false only for `not_on_skills_sh` — the caller's cue to fall
+  // through to the GitHub branch; every other outcome is settled here.
+  async function runManualAdd(
+    candidateInput: string,
+    note?: string,
+  ): Promise<boolean> {
+    const result = await addManually({ input: candidateInput });
+    const { status } = result;
+    if (status === "not_on_skills_sh") return false;
+    if (status === "already_exists") {
+      setNotice({
+        tone: "info",
+        text: `${result.name} is already in the catalog.`,
+        link: { source: result.source, skillId: result.skillId },
+      });
+      return true;
+    }
+    succeed({
+      kind: "skillssh",
+      source: result.source,
+      skillId: result.skillId,
+      name: result.name,
+      note,
+    });
+    return true;
   }
 
   async function offerGitHubFallback(trimmed: string) {
@@ -160,7 +196,34 @@ export function AddSkillFlow({
       setCandidate({ ...preview, input: trimmed });
       return;
     }
-    setNotice({ tone: "error", text: previewError(preview.status) });
+    // The preview reads the SKILL.md, so it sees the frontmatter `name` — the
+    // string skills.sh derives its slug from. A GitHub link only carries the
+    // FOLDER name, and repos that namespace their skills make those differ, so
+    // both of these mean Branch 1 asked about the wrong slug rather than that
+    // the skill is missing.
+    if (preview.status === "already_exists") {
+      setNotice({
+        tone: "info",
+        text: previewFailureCopy(preview),
+        link: { source: preview.source, skillId: preview.skillId },
+      });
+      return;
+    }
+    if (preview.status === "on_skills_sh_as_alias") {
+      // Re-run the normal add under the slug that actually resolves instead of
+      // telling the user to retry the input that just failed. The server only
+      // sends this status when the pasted link pointed at that exact folder,
+      // so the skill being added is the one they named — but it lands under a
+      // different slug than the link showed, so the success card says so
+      // rather than letting the substitution pass unremarked.
+      setPhase("retrying");
+      const settled = await runManualAdd(
+        `${preview.source}/${preview.skillId}`,
+        `skills.sh lists it as "${preview.skillId}" — the name in its SKILL.md frontmatter, not the folder name in your link.`,
+      );
+      if (settled) return;
+    }
+    setNotice({ tone: "error", text: previewFailureCopy(preview) });
   }
 
   async function handleConfirmGitHub() {
@@ -218,6 +281,10 @@ export function AddSkillFlow({
               prev && value.trim() !== prev.input ? null : prev,
             );
             if (notice) setNotice(null);
+            // …and clears the previous success card, which otherwise keeps
+            // announcing skill A inside the same live region that is about to
+            // report on skill B.
+            if (added) setAdded(null);
           }}
           // readOnly, not disabled: a disabled input drops keyboard focus to
           // <body> on every Enter-submit. The button carries the disabled state.
@@ -250,11 +317,7 @@ export function AddSkillFlow({
               disabled={!input.trim() || pending || authLoading}
               className="shrink-0"
             >
-              {phase === "adding"
-                ? "Checking…"
-                : phase === "previewing"
-                  ? "Checking GitHub…"
-                  : "Add skill"}
+              {phase === "idle" ? "Add skill" : PHASE_LABEL[phase]}
             </Button>
           )}
         </div>
@@ -264,6 +327,11 @@ export function AddSkillFlow({
           announced to screen readers instead of appearing silently after the
           button re-enables. */}
       <div role="status" aria-live="polite" className="space-y-5">
+        {/* The submit button's label is the only progress signal, and it sits
+            on a disabled, unfocused control — never announced. One submit can
+            run three sequential round-trips, so without this a screen-reader
+            user gets silence for the whole thing. */}
+        {pending && <p className="sr-only">{PHASE_LABEL[phase]}</p>}
         <p
           id="add-skill-notice"
           className={
@@ -326,6 +394,13 @@ function GitHubCandidateCard({
   // Relists consume no quota (the row already exists, delisted), so the
   // upgrade wall only applies to a genuine new insert.
   const blocked = quota.atLimit && !wasDelisted;
+  // The slug is the one field the server can change out from under the pasted
+  // link (it prefers the SKILL.md's frontmatter name over the folder name), so
+  // the card names it and explains any swap. Without this the only
+  // identifier-shaped row shown is File — which advertises the folder name
+  // that will NOT be used.
+  const typedSlug = typedSlugOf(candidate.input);
+  const slugChanged = typedSlug !== null && typedSlug !== candidate.skillId;
   return (
     <Card>
       <CardHeader>
@@ -343,6 +418,8 @@ function GitHubCandidateCard({
           <dd className="font-medium">{candidate.name}</dd>
           <dt className="text-muted-foreground">Repo</dt>
           <dd className="truncate font-mono text-xs">{candidate.source}</dd>
+          <dt className="text-muted-foreground">Slug</dt>
+          <dd className="truncate font-mono text-xs">{candidate.skillId}</dd>
           <dt className="text-muted-foreground">File</dt>
           <dd className="truncate font-mono text-xs">{candidate.path}</dd>
           {candidate.description && (
@@ -352,6 +429,13 @@ function GitHubCandidateCard({
             </>
           )}
         </dl>
+        {slugChanged && (
+          <p className="text-xs text-muted-foreground">
+            The slug comes from the name inside the SKILL.md, not the{" "}
+            <code className="font-mono">{typedSlug}</code> folder in the link
+            you pasted — that&apos;s the name skills.sh would give it too.
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
           It joins the catalog with a &ldquo;GitHub-only&rdquo; badge and shows
           0 installs with no security audit until it appears on skills.sh, at
@@ -400,6 +484,9 @@ function SuccessCard({ added }: { added: Added }) {
               ? "Added as a GitHub-only skill."
               : "Added from skills.sh."}
           </p>
+          {added.note && (
+            <p className="text-xs text-muted-foreground">{added.note}</p>
+          )}
         </div>
         <Button
           nativeButton={false}
@@ -446,32 +533,6 @@ function quotaErrorText(err: unknown): string {
     msg ??
     "You've used all your free GitHub-only adds. Upgrade to Pro for unlimited."
   );
-}
-
-// Why the GitHub fallback couldn't offer anything, in terms the user can act on.
-function previewError(
-  status:
-    | "not_github"
-    | "on_skills_sh"
-    | "already_exists"
-    | "no_repo"
-    | "no_skill_md"
-    | "tree_unavailable",
-): string {
-  switch (status) {
-    case "not_github":
-      return "Only GitHub repos can be added without a skills.sh listing.";
-    case "on_skills_sh":
-      return "skills.sh does list this skill. Try adding it again.";
-    case "already_exists":
-      return "This skill is already in the catalog.";
-    case "no_repo":
-      return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
-    case "no_skill_md":
-      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name). Check the slug.";
-    case "tree_unavailable":
-      return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
-  }
 }
 
 function friendlyError(raw: string): string {

@@ -25,6 +25,7 @@ export function AddSkillDialog({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
   return (
     <>
       <Button
@@ -35,8 +36,22 @@ export function AddSkillDialog({
       >
         Add a skill
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent variant="inset">
+      {/* Escape and backdrop clicks are ignored while a step is in flight.
+          The actions are not cancellable, so dismissing mid-add doesn't stop
+          the write — it just throws away the only confirmation the user gets,
+          after a GitHub-only add has already spent a quota slot. */}
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && pending) return;
+          setOpen(next);
+        }}
+      >
+        {/* The close button goes with the blocked dismissal rather than
+            sitting there enabled and inert — an X that visibly does nothing is
+            worse than no X. The flow's own aria-live region announces the step
+            in progress, so the state is still reported. */}
+        <DialogContent variant="inset" showCloseButton={!pending}>
           <DialogHeader>
             <DialogTitle className="font-display font-medium">
               Add a skill
@@ -47,7 +62,11 @@ export function AddSkillDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <AddSkillFlow initialInput={initialInput} autoFocus />
+            <AddSkillFlow
+              initialInput={initialInput}
+              autoFocus
+              onPendingChange={setPending}
+            />
           </DialogBody>
         </DialogContent>
       </Dialog>
