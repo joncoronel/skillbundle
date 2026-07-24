@@ -126,27 +126,13 @@ export function AddSkillFlow({
       // Branch 1: try the normal add first. It resolves against the skills.sh
       // detail endpoint, so a skill that's on skills.sh but not yet in our
       // catalog lands as a proper skill here. No quota spent.
-      const result = await addManually({ input: trimmed });
-      const { status } = result;
-      if (status === "not_on_skills_sh") {
-        // Branch 2: not on skills.sh at all. Resolve it in its GitHub repo and
-        // let the user confirm before we add a GitHub-only row.
-        setPhase("previewing");
-        await offerGitHubFallback(trimmed);
-      } else if (status === "already_exists") {
-        setNotice({
-          tone: "info",
-          text: `${result.name} is already in the catalog.`,
-          link: { source: result.source, skillId: result.skillId },
-        });
-      } else {
-        succeed({
-          kind: "skillssh",
-          source: result.source,
-          skillId: result.skillId,
-          name: result.name,
-        });
-      }
+      if (await runManualAdd(trimmed)) return;
+      // Branch 2: skills.sh doesn't know that slug. Resolve the SKILL.md in
+      // its GitHub repo — which can also reveal that skills.sh knows the skill
+      // under a different slug — and let the user confirm before we add a
+      // GitHub-only row.
+      setPhase("previewing");
+      await offerGitHubFallback(trimmed);
     } catch (err) {
       setNotice({ tone: "error", text: friendlyError(errText(err)) });
     } finally {
@@ -154,11 +140,54 @@ export function AddSkillFlow({
     }
   }
 
+  // Branch 1, extracted so the GitHub preview can re-run it under a corrected
+  // slug. Returns false only for `not_on_skills_sh` — the caller's cue to fall
+  // through to the GitHub branch; every other outcome is settled here.
+  async function runManualAdd(candidateInput: string): Promise<boolean> {
+    const result = await addManually({ input: candidateInput });
+    const { status } = result;
+    if (status === "not_on_skills_sh") return false;
+    if (status === "already_exists") {
+      setNotice({
+        tone: "info",
+        text: `${result.name} is already in the catalog.`,
+        link: { source: result.source, skillId: result.skillId },
+      });
+      return true;
+    }
+    succeed({
+      kind: "skillssh",
+      source: result.source,
+      skillId: result.skillId,
+      name: result.name,
+    });
+    return true;
+  }
+
   async function offerGitHubFallback(trimmed: string) {
     const preview = await previewGitHub({ input: trimmed });
     if (preview.status === "ok") {
       setCandidate({ ...preview, input: trimmed });
       return;
+    }
+    // The preview reads the SKILL.md, so it sees the frontmatter `name` — the
+    // string skills.sh derives its slug from. A GitHub link only carries the
+    // FOLDER name, and repos that namespace their skills make those differ, so
+    // both of these mean Branch 1 asked about the wrong slug rather than that
+    // the skill is missing.
+    if (preview.status === "already_exists") {
+      setNotice({
+        tone: "info",
+        text: `${preview.name} is already in the catalog.`,
+        link: { source: preview.source, skillId: preview.skillId },
+      });
+      return;
+    }
+    if (preview.status === "on_skills_sh" && preview.retryInput) {
+      // Re-run the normal add under the slug that actually resolves instead of
+      // telling the user to retry the input that just failed.
+      setPhase("adding");
+      if (await runManualAdd(preview.retryInput)) return;
     }
     setNotice({ tone: "error", text: previewError(preview.status) });
   }

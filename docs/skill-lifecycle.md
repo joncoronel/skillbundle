@@ -96,6 +96,21 @@ empty-state dialog). The public actions share the admin cores — they only swap
   action also pre-checks via `getGitHubAddQuota` for a clean early error and the
   preview's "N of M used" indicator.
 
+**Slug aliasing (folder name vs frontmatter name).** skills.sh derives a skill's
+slug from its SKILL.md frontmatter `name`, but a pasted GitHub deep link only
+carries the SKILL.md's **folder** name — and repos that namespace their skills
+make the two differ (`vercel-labs/agent-skills` ships
+`skills/react-view-transitions/SKILL.md` named `vercel-react-view-transitions`).
+So `previewGitHubCore` runs its checks twice: once under the typed slug, then —
+only when the resolved file's frontmatter name kebab-cases to something else —
+again under that alias. The alias pass can return `already_exists` (naming the
+real row so the UI links it) or `on_skills_sh` with a `retryInput`, which the
+clients use to re-run Branch 1 under the slug that actually resolves. Without
+it, a listed skill reads as "not on skills.sh" and confirming inserts a
+duplicate row under a slug skills.sh will never emit — one reconcile skips and
+adoption (which matches on `source` + `skillId`) can never claim. When the skill
+really is GitHub-only, the insert uses the **alias** slug for that same reason.
+
 The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
 SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
 the preview binds the same file post-insert discovery would. The lifecycle

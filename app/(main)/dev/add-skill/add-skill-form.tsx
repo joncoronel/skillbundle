@@ -119,22 +119,15 @@ export function AddSkillForm() {
     setPhase("adding");
     setCandidate(null);
     try {
-      const result = await addSkill({ input: trimmed });
+      if (await runManualAdd(trimmed)) return;
       // Not on skills.sh at all — a TYPED status, not an error. (It must not be
       // signaled by throwing: prod Convex redacts non-ConvexError messages to a
       // generic "Server Error", so any message-sniffing branch would be dead in
       // production.) Rather than dead-ending, look for the skill in its GitHub
       // repo and let the admin confirm what we found. Confirmation is
       // deliberate: a mistyped slug should be visible before anything is written.
-      // Destructured so the narrowing survives into the else branch (status is
-      // a union-typed property, not a discriminant).
-      const { status } = result;
-      if (status === "not_on_skills_sh") {
-        setPhase("previewing");
-        await offerGitHubFallback(trimmed);
-      } else {
-        announce({ ...result, status });
-      }
+      setPhase("previewing");
+      await offerGitHubFallback(trimmed);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error({
@@ -144,6 +137,19 @@ export function AddSkillForm() {
     } finally {
       setPhase("idle");
     }
+  }
+
+  // The normal skills.sh add, extracted so the GitHub preview can re-run it
+  // under a corrected slug. Returns false only for `not_on_skills_sh`; every
+  // other outcome is announced here. Destructuring `status` keeps the
+  // narrowing alive into announce() — it's a union-typed property, not a
+  // discriminant.
+  async function runManualAdd(candidateInput: string): Promise<boolean> {
+    const result = await addSkill({ input: candidateInput });
+    const { status } = result;
+    if (status === "not_on_skills_sh") return false;
+    announce({ ...result, status });
+    return true;
   }
 
   async function offerGitHubFallback(trimmed: string) {
@@ -159,6 +165,24 @@ export function AddSkillForm() {
           description: `Found ${preview.path} on GitHub — review and confirm below.`,
         });
         return;
+      }
+      // The preview reads the SKILL.md, so it sees the frontmatter `name` —
+      // the string skills.sh derives its slug from. A GitHub link only carries
+      // the FOLDER name, and repos that namespace their skills make those
+      // differ, so both of these mean the add above asked about the wrong slug
+      // rather than that the skill is missing.
+      if (preview.status === "already_exists") {
+        announce({
+          status: "already_exists",
+          source: preview.source,
+          skillId: preview.skillId,
+          name: preview.name,
+        });
+        return;
+      }
+      if (preview.status === "on_skills_sh" && preview.retryInput) {
+        setPhase("adding");
+        if (await runManualAdd(preview.retryInput)) return;
       }
       toast.error({
         title: "Not on skills.sh",
