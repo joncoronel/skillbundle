@@ -135,8 +135,9 @@ segment. All four must hold:
 - The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
   caller pointed at this exact skill. A frontmatter match must never name a
   skill on a write. Since the resolver moved to `matchesSkillIdExactly` this
-  gate is belt-and-braces for the write (an exact frontmatter match means the
-  name already equals the typed slug), but it still governs whether
+  gate is belt-and-braces for the SEPARATOR case (an exact frontmatter match
+  means the name equals the separator-folded typed slug; a CASE difference still
+  reaches `aliasCandidate` and must), and it still governs whether
   `on_skills_sh_as_alias` may fire, and that status re-runs the add with no
   confirmation.
 - **Nothing claims the typed slug.** A delisted row there gets RELISTED (free,
@@ -450,12 +451,10 @@ the two-`slides`-folders case above for a repo where it would matter.
 
 **What the CLI does NOT tell us.** How skills.sh turns a name into a registry
 slug. That is server-side and not in this repo, and the audit's evidence says it
-is not a pure function of the name: prefixes get stripped
-(`webflow-mcp:site-activity` → `site-activity`), punctuation collapses
-(`Update Pub/Sub Emulator` → `update-pubsub-emulator`), and sometimes the slug
-comes from the folder instead (`tailwind` → `tailwind-css`). Treat "the slug is
-derived from the name" as a good default for the ADD path, where we invent the
-slug, and not as an identity check on existing rows.
+is not a pure function of the name — see the derivation list above, which this
+section deliberately does not restate. Treat "the slug is derived from the name"
+as a good default for the ADD path, where we invent the slug, and not as an
+identity check on existing rows.
 
 ## Content states (independent of delisting)
 

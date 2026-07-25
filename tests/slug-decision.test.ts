@@ -28,6 +28,19 @@ describe("aliasCandidate — separator folding is not a rename", () => {
     ).toBeNull();
   });
 
+  test("a CASE difference still produces an alias — it is a rename", () => {
+    // The counterpart to the separator case. Folding case here would have kept
+    // the raw `MySkill` as a permanent slug; skills.sh emits `myskill`, so the
+    // alias has to fire for adoption to ever match.
+    expect(
+      aliasCandidate({
+        typedSkillId: "MySkill",
+        canonicalFmName: "myskill",
+        matchedBy: "dir",
+      }),
+    ).toBe("myskill");
+  });
+
   test("a genuine rename still produces an alias", () => {
     expect(
       aliasCandidate({

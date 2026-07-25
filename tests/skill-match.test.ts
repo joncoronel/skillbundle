@@ -172,5 +172,38 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
     // Still strict where it matters: a partial name is not a match.
     expect(matchesSkillIdExactly("panel-review", "panel")).toBe(false);
   });
+
+  test("folds separators but NOT case — the hole that reopened twice", () => {
+    // A repo `MySkill` with a root SKILL.md named `MySkill`. `canonicalSlug`
+    // says the slug should be `myskill`; storing `MySkill` gives a row skills.sh
+    // can never adopt, and there is no repair tool by design.
+    //
+    // This has now been closed twice. First by removing the raw-identity arm.
+    // Then reopened by folding BOTH sides with `kebabCase`, which lowercases —
+    // shipped green because nothing pinned it. Case is the signal the mis-slug
+    // guard reads; separators are noise. Do not "simplify" the slug side back to
+    // `kebabCase`.
+    expect(matchesSkillIdExactly("MySkill", "MySkill")).toBe(false);
+    expect(matchesSkillIdExactly("My_Skill", "My_Skill")).toBe(false);
+    // …while the separator fold this pair of commits exists for still works.
+    expect(matchesSkillIdExactly("my_skill", "my-skill")).toBe(true);
+  });
+
+  test("stays a subset of the loose matcher", () => {
+    // The module header frames these as loose vs strict, which only holds if
+    // every exact match is also a loose one. Folding the slug side in one and
+    // not the other broke that, and `bindAudit` judges binds with the loose rule
+    // — so it flagged rows the binder had just bound.
+    for (const [name, slug] of [
+      ["agent_skills", "agent_skills"],
+      ["http_mcp_headers", "http-mcp-headers"],
+      ["Foo_Bar", "foo_bar"],
+      ["my_skill", "my-skill"],
+    ] as const) {
+      if (matchesSkillIdExactly(name, slug)) {
+        expect(matchesSkillId(name, slug)).toBe(true);
+      }
+    }
+  });
 });
 

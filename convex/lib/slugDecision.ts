@@ -11,11 +11,11 @@
  *
  * Pure so the policy is unit-testable — the alternative is only exercising it by
  * making GitHub's tree API fail mid-add, which is not something a test can
- * arrange. It imports `kebabCase` (also pure) so that "is this the same slug?"
- * is answered by the one comparator, rather than by a second-guess at it here.
+ * arrange. It imports `foldSeparators` (also pure) so that "is this the same
+ * slug?" is answered by the one comparator, rather than by a second-guess here.
  */
 
-import { kebabCase } from "./skillMatch";
+import { foldSeparators } from "./skillMatch";
 
 /** What the caller should do with the slug. */
 export type SlugDecision<TAlias = never> =
@@ -53,15 +53,18 @@ export type SlugDecision<TAlias = never> =
  * Which slug, if any, is worth a second look.
  *
  * `null` means "no alias" — either the SKILL.md carried no usable name, or the
- * name already agrees with the typed slug once both are folded.
+ * name already agrees with the typed slug once separators are folded (case is
+ * not folded — a case difference IS a rename, see `foldSeparators`).
  *
  * Gated on `matchedBy === "dir"` because only there did the caller point at this
  * exact folder, making its frontmatter a statement about the skill they meant.
  * That gate used to be the only thing standing between a partial-name match and
  * a permanent slug; now that the resolver matches frontmatter names exactly
- * (`matchesSkillIdExactly`), a `"frontmatter"` match implies the name ALREADY
- * equals the typed slug, so the check above returns null first and this one is
- * unreachable for the write.
+ * (`matchesSkillIdExactly`), a `"frontmatter"` match implies the name equals the
+ * SEPARATOR-FOLDED typed slug — so for a slug that differs only by `_` vs `-`
+ * the check above returns null first and this one is unreachable. A CASE
+ * difference still reaches it, which is the point: `MySkill` must adopt
+ * `myskill`, because that is the slug skills.sh emits.
  *
  * It stays because it is still load-bearing elsewhere: the alias also decides
  * whether `on_skills_sh_as_alias` is returned, and that status makes the client
@@ -87,13 +90,15 @@ export function aliasCandidate({
   matchedBy: "dir" | "frontmatter";
 }): string | null {
   if (canonicalFmName === null) return null;
-  // Folded on both sides. `canonicalFmName` has been through `kebabCase`, so
-  // comparing it to a RAW typed slug reported a rename whenever the two differed
-  // only by a separator: typing `foo_bar` for a file named `foo_bar` derived the
-  // alias `foo-bar` and adopted it, silently changing a permanent identity, and
-  // on the tree-unavailable path refused the add outright because no folder could
-  // be shown to claim the alias. Same skill, same intent, different punctuation.
-  if (canonicalFmName === kebabCase(typedSkillId)) return null;
+  // Separator-folded, NOT `kebabCase`d. Comparing against a RAW typed slug
+  // reported a rename whenever the two differed only by punctuation: typing
+  // `foo_bar` for a file named `foo_bar` derived the alias `foo-bar` and adopted
+  // it, silently changing a permanent identity, and on the tree-unavailable path
+  // refused the add outright. But folding CASE too would swallow the one
+  // difference that must still fire — typed `MySkill` with a file named
+  // `MySkill` has to adopt `myskill`, because that is the slug skills.sh emits
+  // and the only one adoption can ever match.
+  if (canonicalFmName === foldSeparators(typedSkillId)) return null;
   if (matchedBy !== "dir") return null;
   return canonicalFmName;
 }

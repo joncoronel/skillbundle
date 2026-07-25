@@ -60,7 +60,7 @@
 import { v } from "convex/values";
 import { internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { matchesSkillId, kebabCase } from "./lib/skillMatch";
+import { matchesSkillId, kebabCase, foldSeparators } from "./lib/skillMatch";
 import { parseSkillMdName } from "./lib/github";
 import { isGitHubSource } from "./lib/source";
 import {
@@ -225,6 +225,59 @@ export const auditSkillMdBinds = internalAction({
       cursor: page.cursor,
       mismatches,
       unknown,
+    };
+  },
+});
+
+/**
+ * Census: how many stored slugs contain a separator that now folds, and do any
+ * two rows in one repo collapse to the same folded key?
+ *
+ * The second question is the one that matters. Folding separators on the slug
+ * side means `my_skill` and `my-skill` become the same key, so both rows match
+ * the same candidate in discovery's exact phase and whichever loses is left with
+ * no file. That shape has never been observed; this counts it rather than
+ * guessing, which is the gate the review asked for before this reaches a
+ * `syncSkills` run.
+ *
+ *   npx convex run --prod bindAudit:censusSeparatorSlugs '{"cursor":null}'
+ *
+ * Read-only, CLI-run, and cheap: one paginated table scan, no GitHub calls.
+ */
+export const censusSeparatorSlugs = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  returns: v.object({
+    read: v.number(),
+    withSeparator: v.array(v.string()),
+    collisions: v.array(v.string()),
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("skillSummaries")
+      .paginate({ numItems: 2000, cursor });
+    const withSeparator: string[] = [];
+    // Folded key -> the raw slugs in that repo that produced it. Page-local, so
+    // a collision split across a page boundary is missed; the folded key is
+    // reported alongside so successive pages can be diffed if it ever matters.
+    const byFolded = new Map<string, string[]>();
+    for (const r of page.page) {
+      const folded = foldSeparators(r.skillId);
+      if (folded !== r.skillId) withSeparator.push(`${r.source}/${r.skillId}`);
+      const key = `${r.source}/${folded}`;
+      const seen = byFolded.get(key) ?? [];
+      seen.push(r.skillId);
+      byFolded.set(key, seen);
+    }
+    const collisions: string[] = [];
+    for (const [key, slugs] of byFolded) {
+      if (slugs.length > 1) collisions.push(`${key} <- ${slugs.join(", ")}`);
+    }
+    return {
+      read: page.page.length,
+      withSeparator,
+      collisions,
+      cursor: page.isDone ? null : page.continueCursor,
     };
   },
 });

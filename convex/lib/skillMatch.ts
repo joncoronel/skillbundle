@@ -35,9 +35,33 @@ export function kebabCase(name: string): string {
   return name.toLowerCase().replace(/[\s_]+/g, "-");
 }
 
+/**
+ * Fold separator runs to `-`, WITHOUT lowercasing.
+ *
+ * For the slug side of a comparison. `kebabCase` is the right transform for a
+ * frontmatter NAME (it reproduces the CLI's `normalizeSkillName`), but applying
+ * it to a slug throws away case — and case is exactly the signal the mis-slug
+ * guard reads. Folding both sides with `kebabCase` made
+ * `matchesSkillIdExactly("MySkill", "MySkill")` true again, reopening the hole
+ * that removing the raw-identity arm had closed: a row stored as `MySkill`,
+ * which skills.sh (emitting `myskill`) can never adopt.
+ *
+ * So: separators are noise and fold; case is signal and does not.
+ */
+export function foldSeparators(slug: string): string {
+  return slug.replace(/[\s_]+/g, "-");
+}
+
 export function matchesSkillId(fmName: string, skillId: string): boolean {
   const kebab = kebabCase(fmName);
-  return fmName === skillId || kebab === skillId || kebab.startsWith(skillId);
+  // The slug side folds separators too, so `matchesSkillIdExactly` stays a
+  // SUBSET of this — which the loose/strict framing above assumes, and which
+  // `bindAudit` depends on when it judges a bind the binder made. Without it the
+  // strict matcher accepted pairs the loose one rejected, and the audit flagged
+  // rows the binder had just bound. Widening only ever adds matches here; it
+  // cannot unbind anything.
+  const slug = foldSeparators(skillId);
+  return fmName === skillId || kebab === slug || kebab.startsWith(slug);
 }
 
 /**
@@ -78,22 +102,28 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
  * come first in the loop".
  *
  * A consequence worth knowing: a match here means `kebabCase(fmName) ===
- * kebabCase(skillId)` — the FOLDED forms agree, not necessarily the raw ones. So
- * `canonicalSlug(fmName)` equals the folded typed slug, or is null (it also
- * enforces a charset). `aliasCandidate` compares against the folded slug for
- * exactly this reason: the two can differ by a separator while naming the same
- * skill, and that difference must not read as a rename.
+ * foldSeparators(skillId)` — the SEPARATOR-folded forms agree, so the two may
+ * differ by `_` vs `-` but never by case. `canonicalSlug(fmName)` therefore
+ * equals `foldSeparators(typedSlug)`, or is null (it also enforces a charset),
+ * and `aliasCandidate` compares against that same folded form: a separator
+ * difference must not read as a rename, while a case difference must.
  */
 export function matchesSkillIdExactly(
   fmName: string,
   skillId: string,
 ): boolean {
-  // BOTH sides are folded. Folding only the name was a real regression the
-  // moment `kebabCase` learned to fold `_`: a repo `owner/agent_skills` with a
-  // root SKILL.md named `agent_skills` compared "agent-skills" against the raw
-  // typed "agent_skills" and refused to match a file whose name is
-  // character-for-character what the caller typed. Comparing a normalised value
-  // against an unnormalised one is the bug, not the strictness.
+  // Both sides fold SEPARATORS; only the name side folds case.
+  //
+  // Folding neither was a regression: a repo `owner/agent_skills` with a root
+  // SKILL.md named `agent_skills` compared "agent-skills" against the raw typed
+  // "agent_skills" and refused a file whose name is character-for-character what
+  // the caller typed.
+  //
+  // Folding BOTH with `kebabCase` was a worse one, and it is the reason
+  // `foldSeparators` exists: `kebabCase` lowercases, so `("MySkill","MySkill")`
+  // matched again and the row stored `MySkill` — a slug skills.sh (which emits
+  // `myskill`) can never adopt. That is the hole removing the raw-identity arm
+  // had closed. Case difference is the signal; separator difference is noise.
   // Kebab comparison ONLY. A raw `fmName === skillId` arm used to sit in front
   // of this and quietly reopened the mis-slug hole: a repo `MySkill` with a root
   // SKILL.md named `MySkill` matched on identity, `canonicalSlug("MySkill")` is
@@ -103,7 +133,7 @@ export function matchesSkillIdExactly(
   // everything downstream reads off this function. A folder match reaches the
   // same place by a different route: `aliasCandidate` sees the canonical name
   // differs and adopts or refuses it.
-  return kebabCase(fmName) === kebabCase(skillId);
+  return kebabCase(fmName) === foldSeparators(skillId);
 }
 
 /**
