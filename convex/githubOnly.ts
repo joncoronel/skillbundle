@@ -42,6 +42,7 @@ import {
   withTransientRetry,
 } from "./lib/skillsApi";
 import { canonicalSlug, matchesSkillId } from "./lib/skillMatch";
+import { aliasCandidate, decideSlug } from "./lib/slugDecision";
 import {
   GITHUB_LEADERBOARD,
   gitHubQuotaValidator,
@@ -514,44 +515,36 @@ async function previewGitHubCore(
   //
   // Runs only on a genuine mismatch, and deliberately AFTER the typed-slug
   // checks: the slug the caller gave wins whenever it resolves to something.
-  const alias = resolved.fmName ? canonicalSlug(resolved.fmName) : null;
-  const aliasPass =
-    alias !== null && alias !== skillId && resolved.matchedBy === "dir"
-      ? await checkAliasSlug(ctx, source, alias)
-      : null;
+  const alias = aliasCandidate({
+    typedSkillId: skillId,
+    canonicalFmName: resolved.fmName ? canonicalSlug(resolved.fmName) : null,
+    matchedBy: resolved.matchedBy,
+  });
+  const aliasPass = alias ? await checkAliasSlug(ctx, source, alias) : null;
+  // A claimed alias is terminal here and never reaches decideSlug.
   if (aliasPass?.terminal) return aliasPass.terminal;
 
-  // We know the right slug (`alias`) but can't safely store it: discovery
-  // would bind a different file, or we never got the folder list to check.
-  // Refuse rather than insert under the typed slug.
-  //
-  // Storing the typed slug WOULD work — discovery's folder pass binds it by
-  // construction — but it's a slug skills.sh will never emit, so the row can
-  // never be adopted (adoption matches `source` + `skillId`) and reconcile
-  // skips it. Writing that silently produces a permanently stuck row whose
-  // only repair is a manual re-slug; refusing produces an error the user can
-  // act on, and the realistic cause (a rate limit or a GitHub blip) clears on
-  // its own. See docs/skill-lifecycle.md.
-  //
-  // Not refused when a delisted row already sits on the typed slug: relisting
-  // an existing row beats both writing a new one and erroring out.
-  if (aliasPass && precheck === null && !resolved.aliasBindsSameFile) {
+  // The write policy lives in lib/slugDecision.ts — pure, and unit-tested,
+  // because the refusal branch can otherwise only be reached by making
+  // GitHub's tree API fail mid-add.
+  const decision = decideSlug({
+    alias,
+    typedRowExists: precheck !== null,
+    aliasBindsSameFile: resolved.aliasBindsSameFile,
+    treeListed: resolved.treeListed,
+  });
+  if (decision.kind === "refuse") {
     return {
       status: "alias_unverifiable",
       source,
       skillId,
-      expectedSkillId: alias as string,
-      // A conflict we SAW won't resolve by waiting; a tree we never got may.
-      retryable: !resolved.treeListed,
+      expectedSkillId: decision.expectedSkillId,
+      retryable: decision.retryable,
     };
   }
-
-  // Adopt the alias as the row's identity when the alias pass ran, found the
-  // slug unclaimed, and discovery will still bind the previewed file. The
-  // remaining fallback to the typed slug is the delisted-relist case above.
   const add =
-    aliasPass && precheck === null
-      ? { skillId: alias as string, precheck: aliasPass.precheck }
+    decision.kind === "adopt_alias"
+      ? { skillId: decision.alias, precheck: aliasPass?.precheck ?? null }
       : { skillId, precheck };
 
   return {

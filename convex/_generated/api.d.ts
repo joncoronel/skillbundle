@@ -38,6 +38,7 @@ import type * as lib_revalidate from "../lib/revalidate.js";
 import type * as lib_skillHealth from "../lib/skillHealth.js";
 import type * as lib_skillMatch from "../lib/skillMatch.js";
 import type * as lib_skillsApi from "../lib/skillsApi.js";
+import type * as lib_slugDecision from "../lib/slugDecision.js";
 import type * as lib_source from "../lib/source.js";
 import type * as lib_typesense from "../lib/typesense.js";
 import type * as plans from "../plans.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillHealth": typeof lib_skillHealth;
   "lib/skillMatch": typeof lib_skillMatch;
   "lib/skillsApi": typeof lib_skillsApi;
+  "lib/slugDecision": typeof lib_slugDecision;
   "lib/source": typeof lib_source;
   "lib/typesense": typeof lib_typesense;
   plans: typeof plans;
