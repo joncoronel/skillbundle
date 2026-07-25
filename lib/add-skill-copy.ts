@@ -28,11 +28,13 @@ export type PreviewFailure = Exclude<
 >;
 
 /**
- * NOTE: a second prose table for this same status union lives server-side in
- * `previewFailureError` (convex/githubOnly.ts), because the CONFIRM action
- * throws where the preview returns. A new status needs an arm in both. Merging
- * them means having confirm return a `PreviewFailure` instead of throwing —
- * see TODO.md.
+ * The ONLY prose table for this status union.
+ *
+ * There used to be a second one server-side, because the confirm action threw
+ * its refusals where the preview returned them — and it drifted, exactly as
+ * predicted: one round rewrote the wording here and missed the twin. Confirm
+ * now returns preview failures too, so every status has one sentence in one
+ * place, and a new arm here is the whole change.
  */
 export function previewFailureCopy(preview: PreviewFailure): string {
   switch (preview.status) {
@@ -47,6 +49,11 @@ export function previewFailureCopy(preview: PreviewFailure): string {
       // slug and it still failed, so "try again" would point at something that
       // has now failed twice. Name the slug the listing uses instead — it's
       // the one thing this whole path exists to compute.
+      //
+      // "Only after" holds for BOTH steps that can produce this status: the
+      // confirm re-check routes through the same `handlePreviewFailure` as the
+      // preview, so the re-add is attempted either way. It stopped being true
+      // for one step once before, when confirm reported its refusals directly.
       return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
     case "already_exists":
       return alreadyInCatalogCopy(preview);
@@ -94,10 +101,13 @@ export function typedSlugOf(input: string): string | null {
  * Any thrown add-skill failure, as one sentence a user can act on.
  *
  * Shared because the two surfaces had drifted halves of this and only one of
- * them unwrapped `ConvexError.data` — so a structured server refusal
- * (`previewFailureError` puts its prose there) reached the admin toast as a
- * stacktrace-flavoured `err.message` with the stringified data inside it. The
- * page whose job is diagnosing those failures had the worst rendering of them.
+ * them unwrapped `ConvexError.data` — so a structured server refusal reached the
+ * admin toast as a stacktrace-flavoured `err.message` with the stringified data
+ * inside it, on the page whose job is diagnosing those failures.
+ *
+ * Still needed now that preview refusals are RETURNED rather than thrown: quota
+ * rejections and rate limits are genuinely exceptional and still throw, and both
+ * put their prose in `ConvexError.data`.
  *
  * Unwrap first, then normalise: the `[Request ID: …]` strip only helps once the
  * real message has been extracted.
@@ -161,11 +171,23 @@ export function alreadyInCatalogCopy(row: {
  *
  * A hand-maintained `status === a || status === b` chain at the call site is the
  * drift this module exists to prevent: a new status defaults to the wrong title
- * and compiles clean. An exhaustive switch makes it a type error instead. The
- * `on_skills_sh*` and `alias_unverifiable` arms are add failures — titling them
- * "Not on skills.sh" makes one toast contradict itself.
+ * and compiles clean. An exhaustive switch makes it a type error instead.
+ *
+ * `step` matters because the confirm re-check returns this same union, and the
+ * four resolution statuses mean different things depending on who asked. At
+ * PREVIEW time `tree_unavailable` is why we can't say whether skills.sh lists
+ * the skill, so "Not on skills.sh" is the headline. At CONFIRM time the user has
+ * already been shown the file and pressed the button, so the only news is that
+ * the add didn't happen — and titling that "Not on skills.sh" both buries it and
+ * repeats a verdict they were given a step ago. The other four arms are add
+ * failures from either step; titling them "Not on skills.sh" would make one
+ * toast contradict itself.
  */
-export function previewFailureTitle(preview: PreviewFailure): string {
+export function previewFailureTitle(
+  preview: PreviewFailure,
+  step: "preview" | "confirm",
+): string {
+  if (step === "confirm") return "Couldn't add skill";
   switch (preview.status) {
     case "on_skills_sh":
     case "on_skills_sh_as_alias":

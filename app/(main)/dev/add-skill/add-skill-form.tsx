@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
@@ -52,9 +52,33 @@ type AddResult = (
 type GitHubPreviewOk = PreviewOkOf<typeof api.githubOnly.previewGitHubSkill>;
 type GitHubCandidate = Candidate<GitHubPreviewOk>;
 
-type AuditResult = FunctionReturnType<
+/** ONE page of the slug audit. The card walks several and merges them. */
+type AuditPage = FunctionReturnType<
   typeof api.githubOnlyAudit.auditGitHubOnlySlugs
 >;
+
+/**
+ * Every page audited so far, as one value shaped like a single page.
+ *
+ * Counts sum, lists concatenate, and `cursor` is the LAST page's, because that
+ * is what continues the walk. Structurally identical to one page, so the
+ * server's per-page field docs ("rows THIS page read") have to be read as "so
+ * far" here — which is exactly why the accumulation is one named function
+ * instead of five lines inside a state updater.
+ *
+ * Annotated as returning a page so a new field on the server's result is a type
+ * error here rather than a field silently missing from the merged report.
+ */
+function mergeAuditPages(pages: AuditPage[]): AuditPage | null {
+  if (pages.length === 0) return null;
+  return pages.reduce((acc, page) => ({
+    judged: acc.judged + page.judged,
+    read: acc.read + page.read,
+    cursor: page.cursor,
+    mismatches: [...acc.mismatches, ...page.mismatches],
+    unknown: [...acc.unknown, ...page.unknown],
+  }));
+}
 
 export function AddSkillForm() {
   const { data: admin } = useQuery(convexQuery(api.devStats.isAdmin, {}));
@@ -63,6 +87,14 @@ export function AddSkillForm() {
   const addFromGitHub = useAction(api.githubOnly.addSkillFromGitHub);
 
   const [lastAdded, setLastAdded] = useState<AddResult | null>(null);
+
+  // The candidate card unmounts on two paths (Cancel, and an `already_exists`
+  // that drops it), each time taking the button the admin just pressed with it.
+  // A ref rather than the public flow's `getElementById`, since this input has
+  // no id to look up and inventing one to find it from three lines away would
+  // be the worse of the two.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const focusInput = useCallback(() => inputRef.current?.focus(), []);
 
   const addFailed = useCallback((err: unknown) => {
     toast.error({
@@ -155,6 +187,10 @@ export function AddSkillForm() {
             skillId: outcome.skillId,
             name: outcome.name,
           });
+          // Only when this outcome dropped the confirm card, whose button the
+          // admin had just pressed. Not on the plain submit path, where the
+          // button they used is still mounted and moving focus would be theft.
+          if (outcome.candidateDismissed) focusInput();
           return;
         case "candidate":
           // The confirmation card mounts silently below the form; without
@@ -172,7 +208,12 @@ export function AddSkillForm() {
             // preview status is a type error there rather than a wrong title
             // here. This used to be a hand-maintained OR-chain and had already
             // needed a third arm.
-            title: previewFailureTitle(outcome.preview),
+            //
+            // `step` is what keeps a confirm-time refusal titled as an add
+            // failure. This page's job is naming which upstream is degraded, so
+            // a rate-limited GitHub at confirm time reading "Not on skills.sh"
+            // points at the wrong one.
+            title: previewFailureTitle(outcome.preview, outcome.step),
             description: previewFailureCopy(outcome.preview),
           });
           return;
@@ -196,13 +237,13 @@ export function AddSkillForm() {
           outcome satisfies never;
       }
     },
-    [announce, addFailed],
+    [announce, addFailed, focusInput],
   );
 
   const {
     input,
     changeInput,
-    phase,
+    confirming,
     pending,
     label,
     submitBlocked,
@@ -254,6 +295,7 @@ export function AddSkillForm() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
+              ref={inputRef}
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
               value={input}
@@ -282,10 +324,16 @@ export function AddSkillForm() {
       {candidate && (
         <GitHubCandidateCard
           candidate={candidate}
-          confirming={phase === "confirming"}
+          confirming={confirming}
           disabled={pending}
           onConfirm={confirmGitHub}
-          onCancel={clearCandidate}
+          onCancel={() => {
+            clearCandidate();
+            // The focused Cancel button unmounts with the card. This surface had
+            // no recovery at all, while the public flow has had one since the
+            // card was written; same defect, so same handling.
+            focusInput();
+          }}
         />
       )}
 
@@ -310,30 +358,60 @@ export function AddSkillForm() {
  */
 function SlugAuditCard() {
   const runAudit = useAction(api.githubOnlyAudit.auditGitHubOnlySlugs);
-  const [data, setData] = useState<AuditResult | null>(null);
+  // Pages rather than a pre-merged report: "is this a fresh run?" is then
+  // expressed once (replace the array vs append to it) instead of being
+  // re-derived from the cursor at each merged field, and the merge itself is a
+  // pure function rather than five hand-written lines in a state updater.
+  const [pages, setPages] = useState<AuditPage[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Tracked separately from `data`, which `run()` clears up front: deriving the
-  // label from "do we have results" makes a failed re-run say "Run audit" as
-  // though nothing had executed, right beside the error from the run that did.
+  // Tracked separately from the pages, which a fresh run clears up front:
+  // deriving the label from "do we have results" makes a failed re-run say
+  // "Run audit" as though nothing had executed, right beside the error from the
+  // run that did.
   const [hasRun, setHasRun] = useState(false);
 
-  // Button-triggered, not a live query: the frontmatter `name` isn't in the
-  // database (the pipeline strips it before storing the body), so each row
-  // costs a GitHub fetch. That shouldn't fire on every page load.
-  async function run() {
+  /**
+   * Guards a second activation of the same cursor.
+   *
+   * `running` is render state, so a handler reading it reads the value captured
+   * when it was created — the same staleness `useAddSkillFlow`'s `inFlight` ref
+   * exists for. Two activations of one cursor would append the identical page
+   * twice: `read` and `judged` would double-count and every row in it would be
+   * listed twice, both lists being keyed on `source/skillId`.
+   */
+  const inFlight = useRef(false);
+
+  const report = mergeAuditPages(pages);
+
+  /**
+   * Button-triggered, not a live query: the frontmatter `name` isn't in the
+   * database (the pipeline strips it before storing the body), so each row costs
+   * a GitHub fetch. That shouldn't fire on every page load.
+   *
+   * One call audits one page. Passing the previous result's `cursor` continues
+   * and ACCUMULATES into the same report, so the counts and both lists describe
+   * everything audited so far rather than just the last page — a per-page report
+   * would make "no mis-slugged rows" true of a slice and read as true of the
+   * catalog.
+   */
+  async function run(cursor: string | null) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setRunning(true);
     setHasRun(true);
     setError(null);
-    // Drop the previous report rather than leaving it under a fresh error —
-    // this answers "is that row still mis-slugged right now", so a stale
-    // result presented as current is the wrong default.
-    setData(null);
+    // A fresh run drops the previous report rather than leaving it under a new
+    // error: this answers "is that row still mis-slugged right now", so a stale
+    // result presented as current is the wrong default. Continuing keeps it.
+    if (cursor === null) setPages([]);
     try {
-      setData(await runAudit({}));
+      const next = await runAudit({ cursor });
+      setPages((prev) => (cursor === null ? [next] : [...prev, next]));
     } catch (err) {
       setError(addSkillErrorText(err));
     } finally {
+      inFlight.current = false;
       setRunning(false);
     }
   }
@@ -351,14 +429,43 @@ function SlugAuditCard() {
           from GitHub.
         </p>
 
-        <Button
-          variant="outline"
-          onClick={run}
-          disabled={running}
-          aria-busy={running}
-        >
-          {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Same focus strategy as its sibling below, deliberately: a plain
+              disabled button also drops focus to <body>, and a page fetch is
+              ~200 GitHub round trips to stand there for. Two controls in one row
+              with two strategies was the half-answer the review flagged. */}
+          <Button
+            variant="outline"
+            onClick={() => run(null)}
+            disabled={running}
+            focusableWhenDisabled
+            aria-busy={running}
+          >
+            {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
+          </Button>
+          {/* Lets the admin cover the whole population without the server
+              persisting where it got to. Stays MOUNTED for the length of the
+              walk rather than being conditional on there being a next page: a
+              control that unmounts on its own click drops keyboard focus to
+              <body>, and paging is a deliberate multi-click workflow — up to
+              ~20 clicks, so that would be ~20 trips back from the top of the
+              page. `focusableWhenDisabled` is what holds focus through the
+              disabled states; the component sets it only for `loading`, and a
+              passed prop wins over that. The exhausted label is also the only
+              in-place signal that the walk is done. */}
+          {report && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (report.cursor) run(report.cursor);
+              }}
+              disabled={running || !report.cursor}
+              focusableWhenDisabled
+            >
+              {report.cursor ? "Check the next page" : "No more pages"}
+            </Button>
+          )}
+        </div>
 
         {/* The button's label is the only progress signal and it sits on a
             disabled control, so it is never announced — and a run is up to
@@ -375,33 +482,44 @@ function SlugAuditCard() {
             </p>
           )}
 
-          {data && (
+          {report && (
             <>
               <p className="text-muted-foreground">
-                {data.truncated
-                  ? `Judged ${data.judged} of the ${data.read} newest GitHub-only rows. More exist than this run read.`
-                  : `Judged ${data.judged} of ${data.read} GitHub-only ${
-                      data.read === 1 ? "row" : "rows"
-                    }.`}
+                {`Judged ${report.judged} of ${report.read} GitHub-only ${
+                  report.read === 1 ? "row" : "rows"
+                }, walking newest first.`}
+                {/* "Reached the oldest row", not "that is the whole
+                    population": each page is its own transaction with ~200
+                    GitHub fetches between them, and newest-first means a row
+                    created mid-walk sorts ahead of where the walk started and
+                    is never visited. What the data supports is where the walk
+                    ended, which stays true either way. */}
+                {report.cursor
+                  ? " More pages remain."
+                  : " That reached the oldest row."}
               </p>
 
-              {data.mismatches.length === 0 ? (
-                // Qualified when some rows couldn't be read: an unqualified
-                // "none" over a pile of unjudged rows is the false negative
-                // this whole card exists to avoid.
+              {report.mismatches.length === 0 ? (
+                // Qualified whenever coverage is incomplete — rows that
+                // couldn't be read, or pages not read yet. An unqualified
+                // "none" over a partial walk is the false negative this whole
+                // card exists to avoid, and paging makes a partial walk the
+                // NORMAL first state rather than an edge case. A failed
+                // continuation leaves the cursor in place, so its verdict stays
+                // qualified too instead of standing clean beside the error.
                 <p className="font-medium">
-                  {data.unknown.length > 0
-                    ? `No mis-slugged rows among the ${data.judged} judged.`
+                  {report.unknown.length > 0 || report.cursor
+                    ? `No mis-slugged rows among the ${report.judged} judged.`
                     : "No mis-slugged rows."}
                 </p>
               ) : (
                 <div className="space-y-2">
                   <p className="font-medium text-destructive">
-                    {data.mismatches.length} mis-slugged{" "}
-                    {data.mismatches.length === 1 ? "row" : "rows"}:
+                    {report.mismatches.length} mis-slugged{" "}
+                    {report.mismatches.length === 1 ? "row" : "rows"}:
                   </p>
                   <ul className="space-y-2">
-                    {data.mismatches.map((m) => (
+                    {report.mismatches.map((m) => (
                       <li
                         key={`${m.source}/${m.skillId}`}
                         className="rounded-md border p-3"
@@ -434,15 +552,15 @@ function SlugAuditCard() {
                 </div>
               )}
 
-              {data.unknown.length > 0 && (
+              {report.unknown.length > 0 && (
                 <div className="space-y-1">
                   <p className="text-muted-foreground">
-                    {data.unknown.length}{" "}
-                    {data.unknown.length === 1 ? "row" : "rows"} couldn&apos;t
+                    {report.unknown.length}{" "}
+                    {report.unknown.length === 1 ? "row" : "rows"} couldn&apos;t
                     be judged. That is not the same as being wrong:
                   </p>
                   <ul className="space-y-1 text-xs text-muted-foreground">
-                    {data.unknown.map((u) => (
+                    {report.unknown.map((u) => (
                       <li key={`${u.source}/${u.skillId}`}>
                         <Link
                           href={skillDetailHref(u.source, u.skillId)}

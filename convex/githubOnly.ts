@@ -572,67 +572,32 @@ async function previewGitHubCore(
 }
 
 /**
- * One home for translating a failed preview status into the user-facing
- * ConvexError the confirm path throws. Kept beside previewGitHubCore so the
- * check logic and its failure copy can't drift between preview and confirm.
+ * A confirm that actually wrote something.
  *
- * NOTE: this is the SECOND prose table over the same status union — the client
- * has `previewFailureCopy` (lib/add-skill-copy.ts) for the returned statuses.
- * A new status needs an arm in both. It exists only because confirm THROWS
- * where preview returns; having confirm return a `PreviewFailure` instead would
- * delete this whole function. See TODO.md.
+ * Two arms rather than one with `status: "inserted" | "relisted"`, matching the
+ * validator: this type is what `FunctionReturnType` hands the client (the
+ * handler annotation wins over the validator there), and a union-typed
+ * discriminant inside a single arm is not narrowable — the client could not
+ * separate a written row from a refusal without a cast.
  */
-function previewFailureError(
-  preview: Exclude<GitHubPreview, { status: "ok" }>,
-  source: string,
-  skillId: string,
-): ConvexError<string> {
-  switch (preview.status) {
-    case "not_github":
-      return new ConvexError(
-        `"${source}" isn't a GitHub source. Only GitHub repos can be added without a skills.sh listing.`,
-      );
-    case "already_exists":
-      return new ConvexError(`${preview.name} is already in the catalog.`);
-    // Re-verified at confirm time — not just the repo. Without this, a LISTED
-    // skill could be inserted as GitHub-only with installs 0, and since
-    // reconcile skips GitHub-only rows, a skill absent from the leaderboard
-    // feed would then only recover via the manual adoption path.
-    case "on_skills_sh":
-      return new ConvexError(
-        `${source}/${skillId} is listed on skills.sh. Run the add again to bring it in the normal way.`,
-      );
-    case "on_skills_sh_as_alias":
-      return new ConvexError(
-        // Wording kept in step with the client twin in lib/add-skill-copy.ts:
-        // this message reaches a real visitor, because the public confirm throws
-        // it and the flow renders it through `addSkillErrorText`.
-        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Add it with that and it comes in the normal way.`,
-      );
-    case "alias_unverifiable":
-      return new ConvexError(
-        preview.cause === "unlisted"
-          ? // Hedged deliberately: "unlisted" is either a rate limit or a tree
-            // too large to list, and fetchRepoTree can't tell us which.
-            `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files (rate-limited, or the repo is too large to list), so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Worth retrying shortly; if it keeps failing, add it once skills.sh lists it.`
-          : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written. This one needs the repo fixed, or add it once skills.sh lists it.`,
-      );
-    case "no_repo":
-      // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
-      // don't claim certainty.
-      return new ConvexError(
-        `Couldn't find a public GitHub repo at "${source}" (or GitHub rate-limited the lookup). Try again in a minute.`,
-      );
-    case "tree_unavailable":
-      return new ConvexError(
-        `Couldn't list the files in ${source} (repo too large or GitHub rate-limited). The conventional SKILL.md paths were probed directly with no match. Try again shortly.`,
-      );
-    case "no_skill_md":
-      return new ConvexError(
-        `No SKILL.md for "${skillId}" in ${source} (matched by folder name and frontmatter name). Check the slug.`,
-      );
-  }
-}
+type GitHubAddSuccess =
+  | { status: "inserted"; source: string; skillId: string; name: string }
+  | { status: "relisted"; source: string; skillId: string; name: string };
+
+/** Every preview arm except `ok` — what a REFUSAL is, from either step. */
+type GitHubPreviewFailure = Exclude<GitHubPreview, { status: "ok" }>;
+
+/**
+ * What a confirm returns: a written row, or the re-check's refusal.
+ *
+ * Named because this is the half of the contract the CLIENT reads — a Convex
+ * action's `FunctionReturnType` comes from the handler's return annotation, not
+ * from its `returns:` validator. So the three handler signatures below are what
+ * `useAddSkillFlow` derives its types from, and spelling the union out at each
+ * one meant widening it required finding all three with nothing failing if one
+ * was missed. The validator half was already single-sourced (`gitHubAddReturns`).
+ */
+type GitHubAddResult = GitHubAddSuccess | GitHubPreviewFailure;
 
 /**
  * Insert a skill straight from its GitHub repo, shared by the admin and public
@@ -641,6 +606,19 @@ function previewFailureError(
  * adder (public flow); `opts.enforceGitHubQuotaFor` makes upsertSkillsBatch
  * enforce the free-tier cap atomically with the insert (genuine inserts only —
  * relists consume no quota). Callers own the auth gate.
+ *
+ * A failed re-check is RETURNED, not thrown: confirm re-runs
+ * `previewGitHubCore`, so its refusals are literally preview failures and
+ * belong in the same status union the preview returns. Throwing them meant a
+ * second prose table server-side (`previewFailureError`, now deleted) that had
+ * to be kept in step with `lib/add-skill-copy.ts` by hand — and it wasn't:
+ * a review round rewrote one side's wording and missed the twin.
+ *
+ * Quota and transient failures still THROW, deliberately. The public client's
+ * at-limit backstop keys on `isQuotaError(err)` in a catch block, and a
+ * rate-limited upstream is not a verdict about this skill the way a preview
+ * status is. So the contract is: preview refusals return, everything else
+ * throws.
  */
 async function addGitHubCore(
   ctx: ActionCtx,
@@ -649,18 +627,9 @@ async function addGitHubCore(
     addedBy?: Id<"users">;
     enforceGitHubQuotaFor?: { userId: Id<"users">; limit: number };
   },
-): Promise<{
-  status: "inserted" | "relisted";
-  source: string;
-  skillId: string;
-  name: string;
-}> {
-  const { source, skillId } = parseAdminInput(input);
-
+): Promise<GitHubAddResult> {
   const preview = await previewGitHubCore(ctx, input);
-  if (preview.status !== "ok") {
-    throw previewFailureError(preview, source, skillId);
-  }
+  if (preview.status !== "ok") return preview;
   // The preview owns the slug from here on, not the parse: when the SKILL.md's
   // frontmatter name disagrees with the folder the URL pointed at, it settles
   // on the frontmatter-derived one. Re-deriving it from `input` here would
@@ -760,22 +729,38 @@ export const previewGitHubSkill = action({
   },
 });
 
-/**
- * Shared by the admin and public confirm actions, the way `manualAddReturns`
- * is shared by the two manual adds.
- *
- * One const, not two inline copies: the client hook derives its `github_added`
- * outcome from the PUBLIC action's return type and hands it to both surfaces,
- * so a field added to one validator and not the other would break the admin
- * form with a type error pointing at an action it never calls. Sharing the
- * validator makes that divergence impossible rather than merely unlikely.
- */
-const gitHubAddReturns = v.object({
-  status: v.union(v.literal("inserted"), v.literal("relisted")),
+/** The success payload, spread into both success arms below. */
+const gitHubAddSuccessFields = {
   source: v.string(),
   skillId: v.string(),
   name: v.string(),
-});
+};
+
+/**
+ * Either the confirm wrote something, or it re-checked and refused — and a
+ * refusal is one of the same statuses the preview returns, so it reuses
+ * `previewTerminalArms` rather than a parallel set of thrown messages.
+ *
+ * Shared by the admin and public confirm actions, the way `manualAddReturns` is
+ * shared by the two manual adds. One const, not two inline copies: the client
+ * hook derives its `github_added` outcome from the PUBLIC action's return type
+ * and hands it to both surfaces, so a field added to one validator and not the
+ * other would break the admin form with a type error pointing at an action it
+ * never calls. Sharing the validator makes that divergence impossible rather
+ * than merely unlikely.
+ *
+ * The two success statuses are separate arms rather than one arm with a
+ * `v.union` status, so every arm of this union carries exactly one literal.
+ * That is what makes it a discriminated union TS can narrow: with a
+ * union-typed discriminant in a single arm, neither `status === "inserted" ||
+ * status === "relisted"` nor its negation narrows the arm away, and consumers
+ * cannot separate a written row from a refusal without a cast.
+ */
+const gitHubAddReturns = v.union(
+  ...previewTerminalArms,
+  v.object({ ...gitHubAddSuccessFields, status: v.literal("inserted") }),
+  v.object({ ...gitHubAddSuccessFields, status: v.literal("relisted") }),
+);
 
 /**
  * Insert a skill straight from its GitHub repo, with no skills.sh presence.
@@ -805,12 +790,7 @@ export const addSkillFromGitHub = action({
   handler: async (
     ctx,
     { input },
-  ): Promise<{
-    status: "inserted" | "relisted";
-    source: string;
-    skillId: string;
-    name: string;
-  }> => {
+  ): Promise<GitHubAddResult> => {
     await assertAdmin(ctx);
     return addGitHubCore(ctx, input);
   },
@@ -837,53 +817,62 @@ export const addSkillFromGitHub = action({
  * Reads `skillSummaries`, not `skills`: every field the audit needs is
  * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrl`,
  * `isGitHubOnly` at insert and on adoption) at ~200 B/row instead of the
- * ~13-25 KB a `skills` document costs, which `content` dominates. `limit` is
- * required rather than optional so the caller's fetch budget and this read are
- * governed by one number — an unbounded `.collect()` here would blow the
- * transaction read limit at a row count far below the fetch cap, i.e. it would
- * start failing exactly when the population became worth auditing.
+ * ~13-25 KB a `skills` document costs, which `content` dominates.
  *
- * `.order("desc")` is load-bearing, not cosmetic. An index walk is
- * deterministically ordered, so a capped ascending read returns the SAME oldest
- * rows on every run and everything added past the cap would never be audited —
- * not "later", never.
+ * Paginated, so the audit can walk the WHOLE population rather than a fixed
+ * window. `cursor` is the caller's to hold — the admin card passes the last one
+ * back to continue — so nothing has to persist audit progress anywhere. `limit`
+ * is the caller's fetch budget, and it is what bounds a page: the DB read is the
+ * cheap half (`embeddingCoverageStatsBatch` in skills.ts pages this same table
+ * 1000 at a time, ≈200 KB against a 16 MB budget), while every row returned
+ * costs the audit a GitHub fetch inside an action that has a time limit. So the
+ * binding constraint is the fetch loop, not the read.
  *
- * The argument for descending is which blind spot is bounded, NOT that old rows
- * are likelier to be fine (they aren't: the legacy mis-slugged population is
- * precisely the oldest rows). Ascending loses an unbounded, permanently growing
- * tail; descending loses a bounded one that earlier runs already covered while
- * the population was still under the cap. Paging the whole population across
- * runs is the real answer if it ever outgrows one read; see TODO.md.
+ * Cursor-nullable rather than the `{ nextCursor, isDone }` shape its sibling
+ * paginated readers use: the two facts are one fact here (null MEANS done), and
+ * a caller cannot then pass a cursor that doesn't advance. Not `v.optional` on
+ * top of that — three states for a two-state concept, and no caller omits it.
+ *
+ * `.order("desc")` puts the newest rows first so the first page covers what a
+ * partial audit most wants to see. Note the ordering argument is about which
+ * end you reach first, NOT that old rows are likelier to be fine — they aren't,
+ * since the legacy mis-slugged population is precisely the oldest rows.
  */
 export const listGitHubOnlyRows = internalQuery({
-  args: { limit: v.number() },
-  returns: v.array(
-    v.object({
-      source: v.string(),
-      skillId: v.string(),
-      name: v.string(),
-      isDelisted: v.boolean(),
-      skillMdUrl: v.optional(v.string()),
-    }),
-  ),
-  handler: async (ctx, { limit }) => {
-    const rows = await ctx.db
+  args: { limit: v.number(), cursor: v.union(v.string(), v.null()) },
+  returns: v.object({
+    rows: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        name: v.string(),
+        isDelisted: v.boolean(),
+        skillMdUrl: v.optional(v.string()),
+      }),
+    ),
+    /** Pass back as `cursor` to continue. Null when this page is the last. */
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { limit, cursor }) => {
+    const page = await ctx.db
       .query("skillSummaries")
       .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
       .order("desc")
-      .take(limit);
-    return rows.map((r) => ({
-      source: r.source,
-      skillId: r.skillId,
-      name: r.name,
-      isDelisted: r.isDelisted,
-      // Empty string means discovery ran and found nothing — same as absent
-      // for our purposes, so normalise it away.
-      ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
-    }));
+      .paginate({ numItems: limit, cursor });
+    return {
+      rows: page.page.map((r) => ({
+        source: r.source,
+        skillId: r.skillId,
+        name: r.name,
+        isDelisted: r.isDelisted,
+        // Empty string means discovery ran and found nothing — same as absent
+        // for our purposes, so normalise it away.
+        ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
+      })),
+      cursor: page.isDone ? null : page.continueCursor,
+    };
   },
 });
-
 
 // ---------------------------------------------------------------------------
 // Public add flow (Branch 2 — the GitHub-only fallback)
@@ -901,7 +890,7 @@ const PUBLIC_ADD_FALLBACK_ERROR =
   "Something went wrong talking to GitHub or skills.sh. Try again in a minute.";
 
 type GitHubPreviewPublic =
-  | Exclude<GitHubPreview, { status: "ok" }>
+  | GitHubPreviewFailure
   | (Extract<GitHubPreview, { status: "ok" }> & {
       quota: GitHubAddQuotaStatus;
     });
@@ -959,12 +948,7 @@ export const addSkillFromGitHubPublic = action({
   handler: async (
     ctx,
     { input },
-  ): Promise<{
-    status: "inserted" | "relisted";
-    source: string;
-    skillId: string;
-    name: string;
-  }> => {
+  ): Promise<GitHubAddResult> => {
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
     await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
       userId: quota.userId,

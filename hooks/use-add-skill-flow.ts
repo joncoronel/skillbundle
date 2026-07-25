@@ -80,8 +80,25 @@ export type SettledAddResult = ManualAddResult & {
   >;
 };
 
+/**
+ * The confirm action returns EITHER a written row or a preview failure: its
+ * re-check runs the same `previewGitHubCore` the preview does, so a refusal is
+ * one of the same statuses rather than a separate thrown message.
+ *
+ * Two types because they serve opposite directions. The action *parameter* must
+ * accept everything the action can return; the `github_added` outcome carries
+ * only the success arm, so consumers rendering "X was added" cannot be handed a
+ * refusal. Refusals go to `handlePreviewFailure`, which fans out to three
+ * different arms depending on the status — not all of them failures, since an
+ * alias refusal can settle as `added`.
+ */
 type GitHubAddResult = FunctionReturnType<
   typeof api.githubOnly.addSkillFromGitHubPublic
+>;
+
+type GitHubAddSuccess = Extract<
+  GitHubAddResult,
+  { status: "inserted" | "relisted" }
 >;
 
 /**
@@ -133,14 +150,39 @@ export type AddSkillOutcome<TOk extends PreviewOkBase> =
    *  fired, i.e. the slug that landed is NOT the one in the pasted link. */
   | { kind: "added"; result: SettledAddResult; viaAlias?: AliasRef }
   /** A GitHub-only confirm succeeded. */
-  | { kind: "github_added"; result: GitHubAddResult }
-  /** The row is already in the catalog — possibly under a different slug than
-   *  the caller typed, which is why the identifiers are carried. */
-  | { kind: "already_exists"; source: string; skillId: string; name: string }
+  | { kind: "github_added"; result: GitHubAddSuccess }
+  /**
+   * The row is already in the catalog — possibly under a different slug than
+   * the caller typed, which is why the identifiers are carried.
+   *
+   * `candidateDismissed` means a confirm card was on screen and has just been
+   * dropped, so the surface should put focus somewhere useful: the control the
+   * user activated unmounted under them, and the hook can't know what to focus
+   * instead. False on the paths where nothing was mounted, so a consumer acting
+   * on it never steals focus from a control that is still there.
+   */
+  | {
+      kind: "already_exists";
+      source: string;
+      skillId: string;
+      name: string;
+      candidateDismissed: boolean;
+    }
   /** The repo resolved; `candidate` is now set and awaits confirm. */
   | { kind: "candidate"; preview: TOk }
-  /** The preview answered, but with nothing addable. */
-  | { kind: "preview_failed"; preview: PreviewFailure }
+  /**
+   * A preview status answered with nothing addable. `step` names which call
+   * produced it, because the confirm re-check returns the SAME statuses as the
+   * preview and the two mean different things to a reader: at preview time
+   * `tree_unavailable` is why we can't tell whether the skill is on skills.sh,
+   * at confirm time it is why the add didn't happen. The admin surface titles
+   * those differently; the public one doesn't, and ignores the field.
+   */
+  | {
+      kind: "preview_failed";
+      preview: PreviewFailure;
+      step: "preview" | "confirm";
+    }
   /** The preview CALL threw — a GitHub-side failure, which the admin surface
    *  deliberately titles differently from an add failure. */
   | { kind: "preview_threw"; error: unknown }
@@ -263,6 +305,8 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
           source: result.source,
           skillId: result.skillId,
           name: result.name,
+          // This path drops no card, so there is nothing to move focus off.
+          candidateDismissed: false,
         });
         return true;
       }
@@ -271,6 +315,67 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
       return true;
     },
     [addManually, emit, reset],
+  );
+
+  /**
+   * Every non-`ok` preview status, dispatched once for BOTH steps that can
+   * produce one.
+   *
+   * The confirm action re-runs `previewGitHubCore`, so it returns the same
+   * statuses the preview does — and while confirm handled them separately, two
+   * drifted immediately: `already_exists` reached the UI as a linkless error
+   * instead of the notice that links the row it names, and an alias refusal
+   * skipped the step-3 re-add below while rendering copy that says the re-add
+   * had already been tried and failed.
+   *
+   * `step` is passed through to the consumer's copy and nothing else. The
+   * dispatch is identical for both, which is the point.
+   */
+  const handlePreviewFailure = useCallback(
+    async (preview: PreviewFailure, step: "preview" | "confirm") => {
+      // The preview reads the SKILL.md, so it sees the frontmatter `name` —
+      // the string skills.sh derives its slug from. A GitHub link only carries
+      // the FOLDER name, and repos that namespace their skills make those
+      // differ, so both of the next two mean the lookup asked about the wrong
+      // slug rather than that the skill is missing.
+      if (preview.status === "already_exists") {
+        // Drop the candidate card. Every other refusal leaves it up because the
+        // explanation refers to the file it shows and a retry may yet work, but
+        // this one says the row is already there: its Confirm can only fetch the
+        // same answer again, and the notice names and links the real row, so the
+        // card is a dead affordance rather than context. `setCandidate`, not
+        // `reset` — the input deliberately survives "already in the catalog".
+        // No-op on the preview path, where no candidate exists yet.
+        setCandidate(null);
+        emit({
+          kind: "already_exists",
+          source: preview.source,
+          skillId: preview.skillId,
+          name: preview.name,
+          // Equivalent to "a card was mounted", without reading `candidate` and
+          // rebuilding this callback on every patch: `confirmGitHub` returns
+          // early unless a candidate exists, and `submit` nulls it before the
+          // preview runs, so a confirm always had one and a preview never did.
+          candidateDismissed: step === "confirm",
+        });
+        return;
+      }
+      if (preview.status === "on_skills_sh_as_alias") {
+        // Step 3: re-run the normal add under the slug that actually resolves,
+        // instead of telling the user to retry the input that just failed. The
+        // server only sends this status when the pasted link pointed at that
+        // exact folder, so the skill being added is the one they named — but it
+        // lands under a different slug, which `viaAlias` carries so the
+        // consumer can say so rather than let the substitution pass unremarked.
+        setPhase("retrying");
+        const alias = { source: preview.source, skillId: preview.skillId };
+        if (await runManualAdd(`${alias.source}/${alias.skillId}`, alias)) {
+          return;
+        }
+      }
+      emit({ kind: "preview_failed", preview, step });
+    },
+    [emit, runManualAdd],
   );
 
   /** Steps 2–4. */
@@ -293,36 +398,9 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
         emit({ kind: "candidate", preview });
         return;
       }
-      // The preview reads the SKILL.md, so it sees the frontmatter `name` —
-      // the string skills.sh derives its slug from. A GitHub link only carries
-      // the FOLDER name, and repos that namespace their skills make those
-      // differ, so both of the next two mean step 1 asked about the wrong slug
-      // rather than that the skill is missing.
-      if (preview.status === "already_exists") {
-        emit({
-          kind: "already_exists",
-          source: preview.source,
-          skillId: preview.skillId,
-          name: preview.name,
-        });
-        return;
-      }
-      if (preview.status === "on_skills_sh_as_alias") {
-        // Step 3: re-run the normal add under the slug that actually resolves,
-        // instead of telling the user to retry the input that just failed. The
-        // server only sends this status when the pasted link pointed at that
-        // exact folder, so the skill being added is the one they named — but it
-        // lands under a different slug, which `viaAlias` carries so the
-        // consumer can say so rather than let the substitution pass unremarked.
-        setPhase("retrying");
-        const alias = { source: preview.source, skillId: preview.skillId };
-        if (await runManualAdd(`${alias.source}/${alias.skillId}`, alias)) {
-          return;
-        }
-      }
-      emit({ kind: "preview_failed", preview });
+      await handlePreviewFailure(preview, "preview");
     },
-    [previewGitHub, emit, runManualAdd],
+    [previewGitHub, emit, handlePreviewFailure],
   );
 
   /**
@@ -369,15 +447,30 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     setPhase("confirming");
     try {
       const result = await addFromGitHub({ input: candidate.input });
-      reset();
-      emit({ kind: "github_added", result });
+      // The server re-checks at confirm time and can refuse — a preview status,
+      // not an error, so it goes through the SAME dispatch the preview's own
+      // refusals use, down to re-running the alias add. The candidate stays on
+      // screen for every arm that ends there EXCEPT `already_exists`: a refusal
+      // explains why this file can't be added and dropping the card would take
+      // away the context it refers to, whereas "the row is already there" makes
+      // the card's Confirm dead (see `handlePreviewFailure`).
+      //
+      // Both directions narrow, because the success type is two arms of one
+      // literal status each (see `GitHubAddSuccess` in convex/githubOnly.ts) —
+      // the positive form is just the one that reads as what it means.
+      if (result.status === "inserted" || result.status === "relisted") {
+        reset();
+        emit({ kind: "github_added", result });
+        return;
+      }
+      await handlePreviewFailure(result, "confirm");
     } catch (error) {
       emit({ kind: "failed", error });
     } finally {
       inFlight.current = false;
       setPhase("idle");
     }
-  }, [candidate, addFromGitHub, emit, reset]);
+  }, [candidate, addFromGitHub, emit, reset, handlePreviewFailure]);
 
   /**
    * Retyping a different skill invalidates a pending candidate so its Confirm
@@ -406,8 +499,22 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
      * exists to prevent. A doc comment is a weaker guard than absence.
      */
     changeInput,
-    phase,
+    // `phase` itself is deliberately NOT returned. Nothing outside needs the
+    // name of the step, and returning it invites a consumer to re-derive
+    // `phase === "confirming"` — the comparison the two outputs below exist to
+    // centralise, and which got the `retrying` case wrong when it was inlined.
     pending,
+    /**
+     * A confirm-initiated step is in flight, for the candidate card's button.
+     *
+     * Covers `retrying` as well as `confirming`, because a confirm can spawn the
+     * step-3 alias re-add and the card is still mounted through it. Reading
+     * `phase === "confirming"` alone made the button fall back to its resting
+     * label mid-operation, while staying disabled — the backwards label move the
+     * phase doc above argues against. Derived here rather than in both consumers,
+     * which each had that comparison written out.
+     */
+    confirming: phase === "confirming" || phase === "retrying",
     label: phase === "idle" ? null : ADD_SKILL_PHASE_LABEL[phase],
     /**
      * True when `submit` would be a no-op for the current input: a step is in

@@ -43,30 +43,33 @@ skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
 tighten one caller without the others (that's the drift the shared matcher
 exists to prevent).
 
-### Add-skill: have the confirm action return failures instead of throwing
+### Submit buttons drop keyboard focus for the length of every request
 
-There are two prose tables over one status union: `previewFailureCopy`
-(`lib/add-skill-copy.ts`) for statuses the preview RETURNS, and
-`previewFailureError` (`convex/githubOnly.ts`) for the `ConvexError` the confirm
-action THROWS. A new preview status needs an arm in both, and the same hedging
-rationale had to be written twice for `alias_unverifiable`.
+Both add-skill surfaces disable the submit button while a step is in flight
+(`disabled={submitBlocked}` in `app/(main)/dev/add-skill/add-skill-form.tsx`,
+`disabled={submitBlocked || authLoading}` in
+`components/add-skill/add-skill-flow.tsx`). A natively disabled element cannot
+hold focus, so the browser drops it to `<body>` on every submit and a keyboard
+user tabs back from the top of the page. One submit can be three sequential
+round trips, so the window is seconds, not milliseconds.
 
-The confirm action re-runs `previewGitHubCore` and its failures are literally
-preview failures, so `addSkillFromGitHub*` could return
-`PreviewFailure | { status: "inserted" | "relisted", … }` and route failures
-through the hook's existing `preview_failed` arm. That deletes
-`previewFailureError` (~50 lines plus a whole prose duplicate) and removes the
-error-string round-trip that `addSkillErrorText` exists to clean up.
+Confirmed in the browser (Jul 2026), on the admin form: focus was on `<body>`
+after a submit settled. It is the same defect the public flow's input already
+works around by using `readOnly` instead of `disabled`, and the same one the
+audit card's two buttons were given `focusableWhenDisabled` for.
 
-Not done on the slug-alias follow-up branch: it changes a public action's
-contract and both surfaces' handling of it, which is a wider blast radius than
-the review round that surfaced it. Both tables now cross-reference each other so
-a new status finds both.
+The fix looks like that one prop, but is NOT a copy of it: those audit buttons
+sit outside the `<form>` and Base UI forces them to `type="button"`, whereas
+`focusableWhenDisabled` on a real submit button drops the native `disabled`
+attribute that is currently also what stops a second form submit. So it needs
+verifying that `useAddSkillFlow`'s `inFlight` ref latch alone holds under a
+double Enter-press before the prop goes on. Probably fine — the latch exists for
+exactly that and is read synchronously — but "probably" is why this is its own
+change.
 
-Also parked here (same area, same reason): the audit reads a bounded window of
-GitHub-only rows, newest first, with no cursor. If the population ever outgrows
-one read, `listGitHubOnlyRows` needs `paginationOpts` and the action needs to
-page until its fetch budget is spent.
+Deferred from the confirm-returns PR (Jul 2026): pre-existing on both surfaces,
+outside anything that branch touched, and each late in-scope addition on that
+branch produced a new review finding of its own.
 
 ### Add-skill: re-slug a mis-slugged GitHub-only row
 

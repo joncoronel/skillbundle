@@ -112,6 +112,15 @@ real row so the UI links it) or `on_skills_sh_as_alias`, which the clients use
 to re-run Branch 1 under the slug that actually resolves. Without it, a listed
 skill reads as "not on skills.sh".
 
+The **confirm** action re-runs the whole probe, so it can return any of those
+same statuses (the listing can appear in the seconds between preview and
+confirm, which is what the re-check is for). It RETURNS them rather than
+throwing, and the client routes them through one dispatch shared with the
+preview — so a refusal at confirm time gets the same alias re-add and the same
+sentence as the identical refusal a step earlier. Quota rejections and rate
+limits still throw: those aren't verdicts about the skill, and the public flow's
+at-limit backstop catches them.
+
 Adopting the alias as a row's **stored identity** is gated harder than merely
 checking it, because a `skillId` is permanent and is also a single URL path
 segment. All four must hold:
@@ -159,13 +168,17 @@ rather than picking the other slug.
 **Finding the ones that slipped through.** `githubOnlyAudit.auditGitHubOnlySlugs` (a
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
 walks the `by_isGitHubOnly` index on `skillSummaries` and flags rows whose stored
-`skillId` differs from `canonicalSlug(frontmatter name)`. It reads a **bounded
-window, newest first** (`FETCH_CAP`, currently 200) rather than the whole
-population: one constant governs the read and the SKILL.md fetch budget, and a
-capped run says so through `truncated`. Newest-first because an index walk is
-deterministic, so a capped ascending read would return the same oldest rows on
-every run and everything past the cap would never be audited at all. Cursor
-paging is the real answer if the population outgrows one read; see TODO.md.
+`skillId` differs from `canonicalSlug(frontmatter name)`. It is **paginated,
+newest first**: one call audits up to `AUDIT_PAGE_SIZE` (200) rows and returns a
+`cursor`, and the card offers "check the next page" until the cursor comes back
+null, accumulating into one report. So the whole population is reachable while
+each call stays bounded, and what bounds it is the **fetch loop**: every row
+costs a GitHub round trip inside an action that has a time limit. The DB read is
+the cheap half (`skillSummaries` rows are ~200 B, and `embeddingCoverageStatsBatch`
+pages the same table 1000 at a time). The cursor lives on the client rather than
+being persisted: an audit answers "is anything wrong right now", so resuming a
+run from hours ago would be a stranger contract than continuing the one in front
+of you.
 
 Two ways such a row exists, and only the first is closed:
 

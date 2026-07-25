@@ -89,6 +89,14 @@ export function AddSkillFlow({
   // an autofocused field mid-typing.
   const signedOut = !authLoading && !isAuthenticated;
 
+  // Declared ABOVE `report`, which calls it. As a `function` below it this was a
+  // lint error ("cannot access variable before it is declared") even though a
+  // declaration would hoist — the same temporal-dead-zone shape that bit the
+  // quota backstop when it tried to close over the hook's return value.
+  const focusInput = useCallback(() => {
+    document.getElementById("add-skill-input")?.focus();
+  }, []);
+
   // Every terminal point of the protocol, rendered as this surface's inline
   // aria-live notice / success card. The sequencing that produces these lives
   // in the hook; only the presentation is here.
@@ -130,6 +138,11 @@ export function AddSkillFlow({
           text: alreadyInCatalogCopy(outcome),
           link: { source: outcome.source, skillId: outcome.skillId },
         });
+        // Same reason as the Cancel handler below: when this outcome drops the
+        // confirm card, the button the user just pressed unmounts with it. Only
+        // when it actually dropped one — otherwise this would yank focus off a
+        // submit button that is still sitting there.
+        if (outcome.candidateDismissed) focusInput();
         return;
       case "candidate":
         // The card mounts as a sibling OUTSIDE the live region, so without a
@@ -174,12 +187,12 @@ export function AddSkillFlow({
         // here instead of a terminal point that silently renders nothing.
         outcome satisfies never;
     }
-  }, []);
+  }, [focusInput]);
 
   const {
     input,
     changeInput,
-    phase,
+    confirming,
     pending,
     label,
     submitBlocked,
@@ -198,10 +211,6 @@ export function AddSkillFlow({
   useEffect(() => {
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
-
-  function focusInput() {
-    document.getElementById("add-skill-input")?.focus();
-  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -327,7 +336,7 @@ export function AddSkillFlow({
       {candidate && (
         <GitHubCandidateCard
           candidate={candidate}
-          confirming={phase === "confirming"}
+          confirming={confirming}
           disabled={pending}
           onConfirm={confirmGitHub}
           onCancel={() => {
