@@ -40,8 +40,8 @@ import {
 } from "./lib/github";
 import {
   claimedByOtherSkill,
-  kebabCase,
   matchesSkillId,
+  matchesSkillIdExactly,
 } from "./lib/skillMatch";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
@@ -1003,8 +1003,12 @@ export const discoverSkillMdUrls = internalAction({
     // serves the other skill's SKILL.md and nothing errors.
     //
     // So each candidate is opened and rejected if its own `name` is some OTHER
-    // skill's slug: a file that says what it is belongs to that skill, whatever
-    // folder it sits in, and pass 2 will place it there.
+    // skill's slug: a file that says what it is does not belong to whichever
+    // folder it happens to sit in. Pass 2 may place it on the skill it names, if
+    // that skill is still unbound — but in the motivating shape that skill
+    // matched its own folder in pass 1 and has already left `remaining`, so the
+    // file is placed nowhere and the rejected skill ends up contentless rather
+    // than wrong. `rejected` below is what stops pass 2 handing it back.
     //
     // Deliberately NOT "verify every match against its own slug". `kebabCase`
     // cannot reproduce every skills.sh slug derivation — that is why
@@ -1091,15 +1095,27 @@ export const discoverSkillMdUrls = internalAction({
       // vouches for z-ai while this pass bound a-sdk on the prefix rule. The
       // row then served a file the confirm card never showed.
       //
-      // So: fetch a wave, try EXACT on everything seen so far, and only once
-      // every candidate has had its exact chance does the loose pass run. The
-      // early exit survives — a skill whose name matches exactly still stops
-      // the walk — and the loose pass costs no extra requests because it reuses
-      // the bodies this loop already read.
+      // So: fetch a wave, try EXACT on this wave's entries, and only once every
+      // candidate has had its exact chance does the loose pass run. The loose
+      // pass costs no extra requests because it reuses the bodies this loop
+      // already read.
+      //
+      // The cost that DID change: a skill matching only loosely no longer stops
+      // the walk, because every candidate must be read before the loose phase
+      // can start. Exact matches still exit early, and the worst case (nothing
+      // matches) is what it always was. Bounded either way — 500 skills of one
+      // source per invocation, `unmatchedMdPaths` is repo-bounded, and these are
+      // now fetched 10-wide where they used to be serial, so wall-clock likely
+      // improved even where request count rose.
       const named: { path: string; name: string }[] = [];
       for (let i = 0; i < unmatchedMdPaths.length; i += DISCOVERY_WAVE_SIZE) {
         if (remaining.size === 0) break;
         const wave = unmatchedMdPaths.slice(i, i + DISCOVERY_WAVE_SIZE);
+        // Where this wave's entries START in `named`. Length-tracked, because
+        // `named` only receives candidates that fetched AND carried a `name:`,
+        // so `slice(-wave.length)` reached back into earlier waves whenever a
+        // wave contributed fewer entries than it had paths.
+        const startOfWave = named.length;
         const bodies = await Promise.all(
           wave.map((path) => fetchRawText(rawUrlFor(path))),
         );
@@ -1109,11 +1125,27 @@ export const discoverSkillMdUrls = internalAction({
           const name = parseSkillMdName(body);
           if (name) named.push({ path: wave[j], name });
         }
-        for (const { path, name } of named.slice(-wave.length)) {
+        for (const { path, name } of named.slice(startOfWave)) {
           if (remaining.size === 0) break;
-          const skill = remaining.get(name) ?? remaining.get(kebabCase(name));
-          if (skill && !rejected.has(rejectionKey(path, skill.skillId))) {
-            await bind(skill, path);
+          // Guard the path as the loose phase does. Without it a re-offered path
+          // could bind twice across waves; the old per-path loop made that
+          // structurally impossible and this restores the property.
+          if (matchedPaths.has(path)) continue;
+          for (const [skillId, skill] of remaining) {
+            if (rejected.has(rejectionKey(path, skillId))) continue;
+            // `matchesSkillIdExactly`, not two map lookups. The lookups were
+            // `remaining.get(name) ?? remaining.get(kebabCase(name))`, whose
+            // first arm is the raw-identity comparison deliberately removed from
+            // the shared matcher (it does not imply `kebabCase(name) === slug`).
+            // Worse, `??` short-circuits: a rejected pair on the identity arm
+            // skipped the kebab arm entirely and stranded the path. The
+            // invariant that this phase reaches whatever the strict preview
+            // binds has to rest on the preview's own comparator, not a
+            // second-guess at it.
+            if (matchesSkillIdExactly(name, skillId)) {
+              await bind(skill, path);
+              break;
+            }
           }
         }
       }
@@ -3514,7 +3546,7 @@ const MANUAL_LEADERBOARD = "manual";
 // really just bad input. The action below still calls parseSkillInput as
 // defense-in-depth (and wraps thrown Error → ConvexError for production).
 
-// Mirror the loose regex used by the discovery path (~line 734): "name: X",
+// Fence-strict, unlike discovery's `parseSkillMdName` (convex/lib/github.ts): "name: X",
 // optionally quoted. Restricted to the YAML frontmatter block so we don't
 // accidentally pick up a "name:" line in the body.
 export function extractSkillMdName(content: string): string | null {

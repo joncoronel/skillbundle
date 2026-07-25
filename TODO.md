@@ -27,6 +27,48 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
+### Skill discovery: extract the placement decisions so they can be tested
+
+`discoverSkillMdUrls` (`convex/skills.ts`) decides which SKILL.md a row is named
+after, in three ordered stages (folder name, exact names across all candidates,
+loose rule over the rest) plus a `rejected` set that stops a file pass 1 refused
+from being handed back by pass 2. **None of it is reachable by a test.** Deleting
+the `rejected` set entirely leaves the suite green.
+
+That is not hypothetical: a panel round found the guard was a no-op in its own
+motivating case (pass 2's prefix arm re-bound exactly what pass 1 rejected), and a
+later round found a slice-window bug in the exact phase. Both live inside those
+untested blocks. `tests/skill-match.test.ts` covers the pure predicates around
+them, which is what let the first bug ship green.
+
+The shape that works here already exists: `convex/lib/slugDecision.ts` is pure and
+unit-tested precisely because its refusal branch can otherwise only be reached by
+making GitHub's tree API fail mid-add. Do the same — a pure function over
+`(ordered candidate paths, batch slugs, names, rejections)` returning the
+placement, and one over `(pathHint, skillId, fmName)` for the resolver's hinted
+shortcut.
+
+Worth doing BEFORE the next change in this area, not after. Deferred from the
+exact-match branch (Jul 2026) only because it would have meant restructuring code
+that had already been restructured twice in one sitting, on top of two blocker
+fixes.
+
+### Split convex/githubOnly.ts (over the 1000-line threshold again)
+
+1023 lines, against the ~968 it started the exact-match branch at. That file was
+split once before for exactly this reason — `convex/githubOnlyAudit.ts` exists
+because it "had grown past 1000 lines" — so it is back over the line that
+justified the last split.
+
+The obvious cut is the same one as last time: the module is "resolver + preview +
+confirm + the public wrappers", and the resolver (`resolveGitHubSkillMd` plus its
+tree/probe/pass machinery) is the self-contained half. Shared helpers already moved
+to `convex/lib/github.ts`, so the seam is cleaner than it was.
+
+Deferred from the exact-match branch (Jul 2026): the branch was already large and
+a file split at the end of it would have made the diff harder to review than the
+correctness fixes it carried.
+
 ### Tighten SKILL.md slug matching to whole-word prefixes
 
 `convex/lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the

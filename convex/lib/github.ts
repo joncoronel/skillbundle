@@ -297,8 +297,3 @@ export function indexSkillMds(entries: { type: string; path: string }[]): {
   return { candidates, byDir };
 }
 
-/** The folder a SKILL.md sits in, or "" for one at the repo root. */
-export function parentDirOf(path: string): string {
-  const parts = path.split("/");
-  return parts.length >= 2 ? parts[parts.length - 2] : "";
-}

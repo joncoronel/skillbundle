@@ -33,6 +33,7 @@ import { isGitHubSource } from "./lib/source";
 import {
   fetchRepoMetadata,
   fetchRepoTree,
+  fetchRawText,
   indexSkillMds,
   rawGitHubUrl,
   NOT_MODIFIED,
@@ -179,24 +180,6 @@ type GitHubSkillResolution =
   | { status: "tree_unavailable" };
 
 /**
- * Network-level throws (DNS, reset) are treated like a non-ok response
- * everywhere in the resolver: the fetch reports null and the caller decides,
- * instead of the throw escaping as a redacted "Server Error".
- *
- * Module scope rather than a closure — it captures nothing, so nesting it only
- * meant the rule could be restated. The audit (githubOnlyAudit.ts) needs
- * stricter semantics than this (host pinning, a 404 split, a retry) and has its
- * own; that difference is deliberate, not drift.
- */
-async function fetchText(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
@@ -205,10 +188,14 @@ async function fetchText(url: string): Promise<string | null> {
  * discovery's rule minus the prefix arm. Deliberately STRICTER than discovery,
  * not different for its own sake: this path invents the row's permanent slug
  * from what the caller typed, so a partial name must not bind a file and get
- * stored as though it were the name. Strictness only ever refuses where
- * discovery would have matched, so the two can still never vouch for different
- * files — see that function's doc for why the asymmetry is safe in this
- * direction and not the other.
+ * stored as though it were the name.
+ *
+ * Strictness alone does NOT make the two agree — that was the original argument
+ * here and it was wrong. Skipping a candidate in a first-match-wins scan selects
+ * a LATER file rather than ending the walk, so a stricter side can bind something
+ * different rather than merely refusing. What makes them agree is that
+ * discovery's pass 2 tries exact matches across EVERY candidate before offering
+ * any of them to its loose rule. See `matchesSkillIdExactly`'s doc.
  *
  * This function exists separately because discovery is batch-oriented and writes
  * straight to the DB, whereas this must report a result before any row exists.
@@ -275,7 +262,7 @@ async function resolveGitHubSkillMd(
       "SKILL.md",
     ];
     const bodies = await Promise.all(
-      probePaths.map((path) => fetchText(rawUrl(meta.defaultBranch, path))),
+      probePaths.map((path) => fetchRawText(rawUrl(meta.defaultBranch, path))),
     );
     for (let i = 0; i < probePaths.length; i++) {
       const contents = bodies[i];
@@ -309,7 +296,7 @@ async function resolveGitHubSkillMd(
   // contents are needed for the name/description either way.
   const dirMatch = byDir.get(skillId);
   if (dirMatch) {
-    const contents = await fetchText(rawUrl(tree.branch, dirMatch));
+    const contents = await fetchRawText(rawUrl(tree.branch, dirMatch));
     if (contents !== null) {
       return okResult(tree.branch, dirMatch, contents, "dir", byDir);
     }
@@ -318,11 +305,20 @@ async function resolveGitHubSkillMd(
     return { status: "tree_unavailable" };
   }
 
-  // Hinted shortcut past pass 2. The input named a SKILL.md, so if the tree
-  // agrees that file exists, try it before downloading up to RESOLVE_PASS2_CAP
-  // others hunting for the same thing. This is where the real cost is: a
-  // root-level SKILL.md or any repo whose folders don't match its slugs used to
-  // pay the full scan.
+  // Hinted shortcut past pass 2: if the tree agrees the named file exists, try it
+  // before downloading up to RESOLVE_PASS2_CAP others hunting for the same thing.
+  //
+  // Reachable in ONE shape, which is worth knowing before relying on it. For any
+  // nested link `parentDirOf(pathHint) === skillId` by construction (both come
+  // from the same URL segment), so if the hinted path is in the tree then `byDir`
+  // has the slug and pass 1 above has already returned. This only ever fires for
+  // a ROOT-LEVEL SKILL.md link in a repo with no folder named like the repo — the
+  // case that used to pay the full scan, and the reason `path` earns its keep.
+  //
+  // Residual: with two files claiming the same name (a root SKILL.md plus an
+  // earlier candidate named after the repo) this returns the root file while
+  // discovery's exact stage takes the first in tree order. Narrow, and much
+  // narrower than the pre-tree version this replaced, but not zero.
   //
   // Deliberately AFTER pass 1 and gated on the tree, which is what keeps it
   // equivalent. An earlier version ran before the tree was fetched and decided
@@ -334,7 +330,7 @@ async function resolveGitHubSkillMd(
   if (pathHint && byDir.get(skillId) === undefined) {
     const hinted = candidates.find((p) => p === pathHint);
     if (hinted) {
-      const contents = await fetchText(rawUrl(tree.branch, hinted));
+      const contents = await fetchRawText(rawUrl(tree.branch, hinted));
       const fmName = contents === null ? null : extractSkillMdName(contents);
       if (contents !== null && fmName && matchesSkillIdExactly(fmName, skillId)) {
         return okResult(tree.branch, hinted, contents, "frontmatter", byDir);
@@ -351,7 +347,7 @@ async function resolveGitHubSkillMd(
   for (let i = 0; i < capped.length; i += PASS2_WAVE_SIZE) {
     const wave = capped.slice(i, i + PASS2_WAVE_SIZE);
     const bodies = await Promise.all(
-      wave.map((path) => fetchText(rawUrl(tree.branch, path))),
+      wave.map((path) => fetchRawText(rawUrl(tree.branch, path))),
     );
     for (let j = 0; j < wave.length; j++) {
       const contents = bodies[j];
@@ -829,10 +825,13 @@ const gitHubAddReturns = v.union(
  *
  * The two no longer share a matcher — this path uses `matchesSkillIdExactly`
  * while discovery keeps the loose prefix rule — so "same code, same answer" is
- * NOT the reason they agree. They agree because of order: discovery tries a
- * folder named like the slug, then an exact name lookup, and only then its loose
- * loop, and this path only ever binds on one of the first two. Keep that order
- * if `discoverSkillMdUrls` is refactored.
+ * NOT the reason they agree. They agree because discovery resolves in three
+ * ordered stages: the folder name, then exact names across ALL candidates, then
+ * the loose rule over whatever is left. This path only ever binds on one of the
+ * first two, so an earlier stage always reaches it. The invariant to preserve if
+ * `discoverSkillMdUrls` is refactored is that the exact stage is GLOBAL — an
+ * earlier version ran both rules inside one per-file loop, which let a loose hit
+ * on an early file beat an exact hit on a later one.
  *
  * Seeding the URL would not remove the need for the alias check either. A 404 on
  * any later content fetch clears `skillMdUrl` and re-flags `needsDiscovery`

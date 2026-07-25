@@ -405,14 +405,25 @@ The check is deliberately **one-directional**, and this is the part not to
 `kebabCase` cannot reproduce every skills.sh slug derivation — that looseness is
 why `matchesSkillId` exists — so a name like `Next.js` (kebab `next.js`) against
 slug `nextjs` would fail a self-check and unbind a healthy file, catalog-wide. It
-reacts only to a positive claim on someone else's slug. Worst case is a missed
-collision; the alternative's worst case is content stripped from working skills.
+reacts only to a positive claim on someone else's slug.
+
+Two failure modes, not one. A **missed collision** when `kebabCase` cannot
+reproduce the claimed slug, which is where we already were. And a **lost bind**
+when two batch siblings collide under `kebabCase`: skill `panel-review-v2` whose
+file is named "Panel Review" kebabs to another batch slug, so its healthy folder
+match is refused, pass 2 cannot place it either, and the row ends up contentless.
+So content CAN be stripped from a healthy skill; batch-scoping is what bounds how
+often. Still the better trade than a self-check, which would refuse on every
+derivation `kebabCase` can't reproduce rather than only on a collision.
 
 Known narrowing: "someone else" means the slugs in the batch being resolved, so a
 collision with a skill discovered in an earlier run isn't caught.
 
 Cost: pass 1 previously fetched nothing (it read only the tree), and now fetches
-one raw file per folder-matched skill, in concurrent waves. Those are
+one raw file per folder-matched skill, in concurrent waves. Pass 2 changed too: a
+skill matching only LOOSELY no longer ends the scan, because every candidate must
+be read before the loose phase can begin (exact matches still exit early). Those
+are
 CDN-backed, outside the GitHub API rate limit, and the content pipeline downloads
 the same files moments later anyway.
 

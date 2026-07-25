@@ -228,5 +228,5 @@ export function previewFailureTitle(
  * without a confirm step, so this sentence is the only place it's disclosed.
  */
 export function aliasRetryNote(skillId: string): string {
-  return `skills.sh lists it as "${skillId}", using the name in its SKILL.md frontmatter rather than the folder name in the link.`;
+  return `skills.sh lists it as "${skillId}", using the name set inside its SKILL.md rather than the folder name in the link.`;
 }

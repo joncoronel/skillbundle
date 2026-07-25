@@ -195,8 +195,12 @@ describe("claimedByOtherSkill — discovery pass 1's folder-match guard", () => 
     // The original suite asserted this with `recap`, which is not a prefix of
     // `panel-review`. That made the guard look watertight while discovery's
     // pass 2 quietly re-bound the rejected file through `matchesSkillId`'s
-    // prefix arm — a no-op fix in the exact case it was written for. Keep a
-    // prefix pair here so a regression in the rejection handoff is visible.
+    // prefix arm — a no-op fix in the exact case it was written for.
+    //
+    // Note what this does NOT cover: the handoff itself lives in
+    // `discoverSkillMdUrls` (the `rejected` set), which no test reaches — delete
+    // that set and the suite still passes. This asserts only that the two pure
+    // functions disagree in the way the handoff has to bridge.
     const pair = new Set(["panel", "panel-review"]);
     expect(claimedByOtherSkill("panel-review", "panel", pair)).toBe(true);
     // The arm that made it re-bindable, asserted so the coupling is on record.
