@@ -159,13 +159,15 @@ rather than picking the other slug.
 **Finding the ones that slipped through.** `githubOnlyAudit.auditGitHubOnlySlugs` (a
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
 walks the `by_isGitHubOnly` index on `skillSummaries` and flags rows whose stored
-`skillId` differs from `canonicalSlug(frontmatter name)`. It reads a **bounded
-window, newest first** (`FETCH_CAP`, currently 200) rather than the whole
-population: one constant governs the read and the SKILL.md fetch budget, and a
-capped run says so through `truncated`. Newest-first because an index walk is
-deterministic, so a capped ascending read would return the same oldest rows on
-every run and everything past the cap would never be audited at all. Cursor
-paging is the real answer if the population outgrows one read; see TODO.md.
+`skillId` differs from `canonicalSlug(frontmatter name)`. It is **paginated,
+newest first**: one call audits up to `FETCH_CAP` (200) rows and returns a
+`cursor`, and the card offers "check the next page" until the cursor comes back
+null, accumulating into one report. So the whole population is reachable while
+each call stays bounded — every row costs a GitHub fetch, and an unbounded DB
+read would blow the transaction read limit at a row count far below the fetch
+budget. The cursor lives on the client rather than being persisted: an audit
+answers "is anything wrong right now", so resuming a run from hours ago would be
+a stranger contract than continuing the one in front of you.
 
 Two ways such a row exists, and only the first is closed:
 

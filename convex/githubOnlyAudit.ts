@@ -66,16 +66,15 @@ const UNKNOWN_REASON = {
 } as const;
 
 /**
- * Bound on rows read AND SKILL.mds downloaded per run — one constant for both,
- * so the read can't quietly outgrow the fetch budget. The GitHub-only
- * population is small (a quota-limited fallback path), so this is a runaway
- * guard rather than an expected limit.
+ * Rows read AND SKILL.mds downloaded per PAGE — one constant for both, so the
+ * read can never outgrow the fetch budget.
  *
- * Anything past it is not read at all, and the result says so through
- * `truncated` rather than by enumerating a remainder it never saw. Listing one
- * placeholder row for an unbounded tail was the earlier behaviour and it
- * misstated the scale: "1 row couldn't be judged" for 5,000 unread rows reads
- * as a near-complete audit.
+ * This is a page size, not a ceiling on what the audit can cover: the result
+ * carries a `cursor` and the caller asks for the next page, so the whole
+ * population is reachable. It stays bounded per call because each row costs a
+ * GitHub fetch (an action has a time limit) and because an unbounded DB read
+ * would blow the transaction read limit — at a row count far below the fetch
+ * budget, i.e. it would fail exactly when the population became worth auditing.
  */
 const FETCH_CAP = 200;
 const WAVE_SIZE = 10;
@@ -99,16 +98,25 @@ type GitHubOnlyRow = {
 };
 
 type SlugAuditResult = {
-  /** Rows that produced a real comparison. */
+  /** Rows that produced a real comparison, in THIS page. */
   judged: number;
   /**
-   * Rows this run READ — not the population. Named `read` rather than `total`
-   * because the query is capped: with 5,000 GitHub-only rows a `total` of 201
-   * would read as a near-complete audit of a population it never saw.
+   * Rows this page READ — not the population. Named `read` rather than `total`
+   * so a partial audit can't read as a complete one: with 5,000 GitHub-only
+   * rows, a `total` of 200 would look like a near-complete audit of a
+   * population it never saw.
    */
   read: number;
-  /** More rows exist than `read`. The remainder is not enumerated. */
-  truncated: boolean;
+  /**
+   * Pass back as `cursor` to audit the next page. Null when this page reached
+   * the end, i.e. the whole population has now been covered.
+   *
+   * The caller holds it rather than the server persisting progress: an audit is
+   * admin-triggered and its useful answer is "is anything wrong right now", so
+   * resuming a run from hours ago would be a stranger contract than continuing
+   * one you're looking at.
+   */
+  cursor: string | null;
   mismatches: Array<{
     source: string;
     skillId: string;
@@ -190,14 +198,14 @@ async function fetchSkillMd(
 }
 
 export const auditGitHubOnlySlugs = action({
-  args: {},
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
   returns: v.object({
     // Rows actually compared, kept distinct from `read` on purpose: reporting
     // rows we merely looked at as "checked" is how a run where nothing could be
     // fetched still prints a clean bill of health.
     judged: v.number(),
     read: v.number(),
-    truncated: v.boolean(),
+    cursor: v.union(v.string(), v.null()),
     mismatches: v.array(
       v.object({
         source: v.string(),
@@ -215,25 +223,18 @@ export const auditGitHubOnlySlugs = action({
       }),
     ),
   }),
-  handler: async (ctx): Promise<SlugAuditResult> => {
+  handler: async (ctx, { cursor }): Promise<SlugAuditResult> => {
     await assertAdmin(ctx);
-    // One extra row is the overflow probe: getting it back means more exist
-    // than we're willing to read in one pass.
     // Annotated, not `as`-cast: the handler's own return annotation is what
     // breaks the inference cycle, so the assertion bought nothing here and
     // silently opted out of the one check that keeps this shape and the query's
     // return validator agreeing. An annotation is checked.
-    const rows: GitHubOnlyRow[] = await ctx.runQuery(
-      internal.githubOnly.listGitHubOnlyRows,
-      { limit: FETCH_CAP + 1 },
-    );
-    // The extra row is only a probe that more exist; it is not itself
-    // interesting and is dropped rather than filed as one unchecked row —
-    // "1 row couldn't be judged" standing in for an unbounded remainder
-    // misstates the scale rather than under-reporting it. `truncated` carries
-    // the fact honestly.
-    const truncated = rows.length > FETCH_CAP;
-    const readable = rows.slice(0, FETCH_CAP);
+    const page: { rows: GitHubOnlyRow[]; cursor: string | null } =
+      await ctx.runQuery(internal.githubOnly.listGitHubOnlyRows, {
+        limit: FETCH_CAP,
+        cursor,
+      });
+    const readable = page.rows;
 
     const mismatches: SlugAuditResult["mismatches"] = [];
     const unknown: SlugAuditResult["unknown"] = [];
@@ -289,6 +290,12 @@ export const auditGitHubOnlySlugs = action({
         }
       }
     }
-    return { judged, read: readable.length, truncated, mismatches, unknown };
+    return {
+      judged,
+      read: readable.length,
+      cursor: page.cursor,
+      mismatches,
+      unknown,
+    };
   },
 });

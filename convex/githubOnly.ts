@@ -810,44 +810,51 @@ export const addSkillFromGitHub = action({
  * transaction read limit at a row count far below the fetch cap, i.e. it would
  * start failing exactly when the population became worth auditing.
  *
- * `.order("desc")` is load-bearing, not cosmetic. An index walk is
- * deterministically ordered, so a capped ascending read returns the SAME oldest
- * rows on every run and everything added past the cap would never be audited —
- * not "later", never.
+ * Paginated, so the audit can walk the WHOLE population rather than a fixed
+ * window. `cursor` is the caller's to hold — the admin card passes the last one
+ * back to continue — so nothing has to persist audit progress anywhere. A
+ * single unbounded read isn't an option: it would blow the transaction read
+ * limit at a row count far below the fetch budget, i.e. fail exactly when the
+ * population became worth auditing.
  *
- * The argument for descending is which blind spot is bounded, NOT that old rows
- * are likelier to be fine (they aren't: the legacy mis-slugged population is
- * precisely the oldest rows). Ascending loses an unbounded, permanently growing
- * tail; descending loses a bounded one that earlier runs already covered while
- * the population was still under the cap. Paging the whole population across
- * runs is the real answer if it ever outgrows one read; see TODO.md.
+ * `.order("desc")` puts the newest rows first so the first page covers what a
+ * partial audit most wants to see. Note the ordering argument is about which
+ * end you reach first, NOT that old rows are likelier to be fine — they aren't,
+ * since the legacy mis-slugged population is precisely the oldest rows.
  */
 export const listGitHubOnlyRows = internalQuery({
-  args: { limit: v.number() },
-  returns: v.array(
-    v.object({
-      source: v.string(),
-      skillId: v.string(),
-      name: v.string(),
-      isDelisted: v.boolean(),
-      skillMdUrl: v.optional(v.string()),
-    }),
-  ),
-  handler: async (ctx, { limit }) => {
-    const rows = await ctx.db
+  args: { limit: v.number(), cursor: v.optional(v.union(v.string(), v.null())) },
+  returns: v.object({
+    rows: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        name: v.string(),
+        isDelisted: v.boolean(),
+        skillMdUrl: v.optional(v.string()),
+      }),
+    ),
+    /** Pass back as `cursor` to continue. Null when this page is the last. */
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { limit, cursor }) => {
+    const page = await ctx.db
       .query("skillSummaries")
       .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
       .order("desc")
-      .take(limit);
-    return rows.map((r) => ({
-      source: r.source,
-      skillId: r.skillId,
-      name: r.name,
-      isDelisted: r.isDelisted,
-      // Empty string means discovery ran and found nothing — same as absent
-      // for our purposes, so normalise it away.
-      ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
-    }));
+      .paginate({ numItems: limit, cursor: cursor ?? null });
+    return {
+      rows: page.page.map((r) => ({
+        source: r.source,
+        skillId: r.skillId,
+        name: r.name,
+        isDelisted: r.isDelisted,
+        // Empty string means discovery ran and found nothing — same as absent
+        // for our purposes, so normalise it away.
+        ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
+      })),
+      cursor: page.isDone ? null : page.continueCursor,
+    };
   },
 });
 

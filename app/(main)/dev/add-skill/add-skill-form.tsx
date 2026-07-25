@@ -313,24 +313,43 @@ function SlugAuditCard() {
   const [data, setData] = useState<AuditResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Tracked separately from `data`, which `run()` clears up front: deriving the
-  // label from "do we have results" makes a failed re-run say "Run audit" as
+  // Tracked separately from `data`, which a fresh run clears up front: deriving
+  // the label from "do we have results" makes a failed re-run say "Run audit" as
   // though nothing had executed, right beside the error from the run that did.
   const [hasRun, setHasRun] = useState(false);
 
-  // Button-triggered, not a live query: the frontmatter `name` isn't in the
-  // database (the pipeline strips it before storing the body), so each row
-  // costs a GitHub fetch. That shouldn't fire on every page load.
-  async function run() {
+  /**
+   * Button-triggered, not a live query: the frontmatter `name` isn't in the
+   * database (the pipeline strips it before storing the body), so each row costs
+   * a GitHub fetch. That shouldn't fire on every page load.
+   *
+   * One call audits one page. Passing the previous result's `cursor` continues
+   * and ACCUMULATES into the same report, so the counts and both lists describe
+   * everything audited so far rather than just the last page — a per-page report
+   * would make "no mis-slugged rows" true of a slice and read as true of the
+   * catalog.
+   */
+  async function run(cursor: string | null) {
     setRunning(true);
     setHasRun(true);
     setError(null);
-    // Drop the previous report rather than leaving it under a fresh error —
-    // this answers "is that row still mis-slugged right now", so a stale
-    // result presented as current is the wrong default.
-    setData(null);
+    // A fresh run drops the previous report rather than leaving it under a new
+    // error: this answers "is that row still mis-slugged right now", so a stale
+    // result presented as current is the wrong default. Continuing keeps it.
+    if (cursor === null) setData(null);
     try {
-      setData(await runAudit({}));
+      const next = await runAudit({ cursor });
+      setData((prev) =>
+        prev && cursor !== null
+          ? {
+              judged: prev.judged + next.judged,
+              read: prev.read + next.read,
+              cursor: next.cursor,
+              mismatches: [...prev.mismatches, ...next.mismatches],
+              unknown: [...prev.unknown, ...next.unknown],
+            }
+          : next,
+      );
     } catch (err) {
       setError(addSkillErrorText(err));
     } finally {
@@ -351,14 +370,24 @@ function SlugAuditCard() {
           from GitHub.
         </p>
 
-        <Button
-          variant="outline"
-          onClick={run}
-          disabled={running}
-          aria-busy={running}
-        >
-          {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => run(null)}
+            disabled={running}
+            aria-busy={running}
+          >
+            {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
+          </Button>
+          {/* Only offered when a page ended with more to go, so the admin can
+              cover the whole population without the server persisting where it
+              got to. Results accumulate into the report above. */}
+          {data?.cursor && !running && (
+            <Button variant="ghost" onClick={() => run(data.cursor)}>
+              Check the next page
+            </Button>
+          )}
+        </div>
 
         {/* The button's label is the only progress signal and it sits on a
             disabled control, so it is never announced — and a run is up to
@@ -378,11 +407,12 @@ function SlugAuditCard() {
           {data && (
             <>
               <p className="text-muted-foreground">
-                {data.truncated
-                  ? `Judged ${data.judged} of the ${data.read} newest GitHub-only rows. More exist than this run read.`
-                  : `Judged ${data.judged} of ${data.read} GitHub-only ${
-                      data.read === 1 ? "row" : "rows"
-                    }.`}
+                {`Judged ${data.judged} of ${data.read} GitHub-only ${
+                  data.read === 1 ? "row" : "rows"
+                }`}
+                {data.cursor
+                  ? ", newest first. More remain unread."
+                  : ". That is the whole population."}
               </p>
 
               {data.mismatches.length === 0 ? (
