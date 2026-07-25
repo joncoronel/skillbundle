@@ -64,6 +64,14 @@ export type SlugDecision<TAlias = never> =
  * whether `on_skills_sh_as_alias` is returned, and that status makes the client
  * re-run the add with NO confirmation step. Nothing the caller did not
  * explicitly point at may reach an unconfirmed write.
+ *
+ * That is also why the obvious UX improvement here is not a small change.
+ * Pre-filling the confirm card with the corrected slug ("did you mean
+ * `panel-review`?") is nicer than refusing, and the display side already exists
+ * (`components/add-skill/slug-swap-note.tsx`). But letting an inferred name
+ * produce an alias hands it to the unconfirmed re-add above, so it needs a
+ * two-tier trust model separating "may pre-fill a card" from "may drive a write
+ * nobody confirmed". The UI is the easy half.
  */
 export function aliasCandidate({
   typedSkillId,
