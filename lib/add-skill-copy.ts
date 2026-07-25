@@ -76,12 +76,19 @@ export function previewFailureCopy(preview: PreviewFailure): string {
     case "no_repo":
       return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":
-      // Says what the slug has to BE, because the most likely way to land here
-      // is a shortened name. Typing "panel" for a skill named "panel-review"
-      // used to bind the file and store the row as "panel", which skills.sh
-      // could never adopt. It now finds nothing instead, so this sentence is
-      // where that user gets told why. "Exact" is the load-bearing word.
-      return "No SKILL.md in that repo matches that slug. It has to be either the folder the file sits in, or the exact name set inside the file. A shortened name won't match.";
+      // Says what to type, because the most likely way to land here is a
+      // shortened name. Typing "panel" for a skill named "panel-review" used to
+      // bind the file and store the row as "panel", which skills.sh could never
+      // adopt; it now finds nothing, so this sentence is where that user learns
+      // why. "Exact" is load-bearing.
+      //
+      // Leads with the NAME on purpose. An earlier version offered "the folder
+      // or the exact name" as equals, which reads as though a folder name were a
+      // legitimate slug. It isn't: both are accepted as ways to FIND the skill,
+      // but only the name is ever stored, and a folder match gets corrected to
+      // the name before any write. Presenting them as interchangeable is the
+      // search-key-vs-identity conflation this whole area's bugs come from.
+      return "No SKILL.md in that repo matches that slug. Use the exact name set inside the file, which is the slug skills.sh uses; the folder it sits in also works. A shortened name won't match.";
     case "tree_unavailable":
       return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
   }
