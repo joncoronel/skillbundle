@@ -24,7 +24,7 @@ export function SlugSwapNote({
   if (typedSlug === null || typedSlug === slugId) return null;
   return (
     <p className="text-xs text-muted-foreground">
-      The slug comes from the name inside the SKILL.md, not the{" "}
+      The slug comes from the name set inside the SKILL.md, not the{" "}
       <code className="font-mono">{typedSlug}</code> folder in the link. That is
       the name skills.sh would give it too.
     </p>

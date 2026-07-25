@@ -1,19 +1,24 @@
 /**
- * The one place the "does this SKILL.md frontmatter `name` correspond to this
- * catalog slug?" rule lives. Used by BOTH the background discovery pipeline
- * (skills.ts, discoverSkillMdUrls pass 2) and the admin-facing GitHub-only
- * resolver (githubOnly.ts, pass 2 + the root-file probe), which must bind the
- * same file for the same slug — a preview that matched a different file than
- * post-insert discovery would silently rebind the skill after the admin
- * confirmed it.
+ * The "does this SKILL.md frontmatter `name` correspond to this catalog slug?"
+ * question, in TWO rules over one comparator.
  *
- * Matching is deliberately loose (exact name, exact kebab, kebab prefix)
+ * `matchesSkillId` is discovery's (skills.ts): loose, because it hunts for the
+ * file behind a slug skills.sh already assigned. `matchesSkillIdExactly` is the
+ * GitHub-only resolver's (githubOnly.ts): strict, because it invents a permanent
+ * slug. They must still bind the SAME file for the same slug — a preview that
+ * matched a different file than post-insert discovery would silently rebind the
+ * skill after the admin confirmed it — which is a property of ORDER, spelled out
+ * on `matchesSkillIdExactly` below.
+ *
+ * `matchesSkillId`'s looseness (exact name, exact kebab, kebab prefix) exists
  * because skills.sh derives slugs from names in non-obvious ways. Known
- * looseness, parked in TODO.md: bare `startsWith` has no word boundary, so
- * slug "test" matches a file named "Testing Library Helper"
- * (testing-library-helper). Tightening to `skillId + "-"` is a
- * behavior change for the whole existing catalog, so it happens here, once,
- * as its own change — never in just one caller.
+ * looseness, parked in TODO.md: bare `startsWith` has no word boundary, so slug
+ * "test" matches a file named "Testing Library Helper". Tightening it to
+ * `skillId + "-"` is a behaviour change for the whole existing catalog and
+ * happens here, once — but it is now DISCOVERY-only, so it no longer touches a
+ * slug-inventing write path.
+ *
+ * Read `matchesSkillIdExactly`'s doc before making the two agree again.
  */
 export function kebabCase(name: string): string {
   return name.toLowerCase().replace(/\s+/g, "-");
@@ -22,6 +27,64 @@ export function kebabCase(name: string): string {
 export function matchesSkillId(fmName: string, skillId: string): boolean {
   const kebab = kebabCase(fmName);
   return fmName === skillId || kebab === skillId || kebab.startsWith(skillId);
+}
+
+/**
+ * The same question WITHOUT the prefix arm, for the GitHub-only add.
+ *
+ * The two callers are asking different questions, which is why the strictness
+ * differs:
+ *
+ *   - **Discovery** (skills.ts) has a slug skills.sh already assigned and is
+ *     hunting for the file behind it. skills.sh derives slugs from names in
+ *     non-obvious ways, so a loose match is the safety net. A wrong guess there
+ *     binds the wrong file's URL to the row and the content pipeline serves that
+ *     file's body, which is a real bug — but a REPAIRABLE one: tighten the rule,
+ *     re-run discovery, and the row rebinds. Nothing about the row's identity
+ *     changes.
+ *   - **The GitHub-only add** (githubOnly.ts) has no upstream slug at all. It is
+ *     INVENTING the row's permanent identity from what the caller typed. There
+ *     is nothing to be lenient towards, and a wrong guess is unrepairable: type
+ *     `panel`, bind the SKILL.md named `panel-review`, and the row is stored as
+ *     `panel` forever. skills.sh can then never adopt it (adoption matches
+ *     `source` + `skillId`) and the daily sync inserts a SECOND row under the
+ *     real slug. See TODO.md, "re-slug a mis-slugged GitHub-only row".
+ *
+ * What makes the two agree is ORDER, and it took a wrong argument to find that
+ * out. The original claim here was "a stricter preview can only refuse where
+ * discovery would have matched, so a refusal writes no row to disagree about".
+ * That is false in a first-match-wins scan over an ordered candidate list:
+ * skipping a candidate the loose rule would have taken does not end the walk, it
+ * selects a LATER file. Given `a-sdk/SKILL.md` (name `vercel-ai-sdk`) listed
+ * before `z-ai/SKILL.md` (name `vercel-ai`), a preview for slug `vercel-ai`
+ * vouches for z-ai while a loose scan binds a-sdk on the prefix rule — two
+ * different files, no refusal anywhere.
+ *
+ * So discovery's pass 2 was restructured to try EXACT across every candidate
+ * before ANY candidate is offered to the loose rule (skills.ts). With that,
+ * whatever the strict preview binds, discovery's exact phase reaches first. The
+ * invariant to preserve is that global two-phase ordering, not "exact lookups
+ * come first in the loop".
+ *
+ * A consequence worth knowing: a match here means `kebabCase(fmName) === skillId`,
+ * so `canonicalSlug(fmName)` is either that same slug or null (it also enforces a
+ * charset). Either way the frontmatter path cannot produce a row whose stored
+ * slug disagrees with its own SKILL.md.
+ */
+export function matchesSkillIdExactly(
+  fmName: string,
+  skillId: string,
+): boolean {
+  // Kebab comparison ONLY. A raw `fmName === skillId` arm used to sit in front
+  // of this and quietly reopened the mis-slug hole: a repo `MySkill` with a root
+  // SKILL.md named `MySkill` matched on identity, `canonicalSlug("MySkill")` is
+  // `myskill` which is NOT the typed slug, so the row stored `MySkill` — a slug
+  // skills.sh (which emits `myskill`) can never adopt. Requiring the kebab form
+  // means a match implies `kebabCase(fmName) === skillId`, which is the property
+  // everything downstream reads off this function. A folder match reaches the
+  // same place by a different route: `aliasCandidate` sees the canonical name
+  // differs and adopts or refuses it.
+  return kebabCase(fmName) === skillId;
 }
 
 /**

@@ -39,6 +39,18 @@
 export function parseSkillInput(input: string): {
   source: string;
   skillId: string;
+  /**
+   * The SKILL.md path the input already named, when it named one, e.g.
+   * `skills/my-skill/SKILL.md`. GitHub links only — a skills.sh link or the
+   * `source/slug` form has no path, and this is absent for them.
+   *
+   * A HINT, never an authority: the resolver fetches it on the repo's default
+   * branch and falls back to the full walk if it isn't there (wrong branch,
+   * moved file, or a `tree` URL pointing at a container folder rather than a
+   * skill). It exists so a direct link doesn't pay a repo-tree listing to
+   * rediscover the path it was handed.
+   */
+  path?: string;
 } {
   let raw = input.trim();
   // If it parses as a URL, use the pathname. Strips host (incl. www.), query
@@ -107,11 +119,19 @@ export function parseSkillInput(input: string): {
  * SKILL.md's parent folder when the link points at the file, otherwise the
  * deepest path segment — so a branch name containing slashes can't corrupt
  * it (it only pads the middle of the path, never the tail).
+ *
+ * The returned `path` gets no such protection, and can't: only one branch
+ * segment is dropped, so a slashed branch (`tree/feat/new-stuff/...`) leaves its
+ * remainder glued to the front, and GitHub's URL shape gives no way to tell a
+ * branch segment from a directory without asking the API. That is why `path` is
+ * documented as a hint — a wrong one 404s on the default branch and the resolver
+ * falls through to the full tree walk, costing one cheap request rather than a
+ * wrong answer. See the slashed-branch case in tests/parse-skill-input.test.ts.
  */
 function parseGitHubUrl(
   host: string,
   pathname: string,
-): { source: string; skillId: string } {
+): { source: string; skillId: string; path?: string } {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length < 2) {
     throw new Error(
@@ -157,5 +177,17 @@ function parseGitHubUrl(
       `That GitHub URL points at the repo, not a specific skill. Link the skill's folder (e.g. .../tree/main/skills/my-skill) or use the "owner/repo/skill-name" form.`,
     );
   }
-  return { source, skillId };
+  // The SKILL.md path this URL implies, handed on so the resolver doesn't have
+  // to list the whole repo tree to rediscover it. `rest` is already stripped of
+  // host, branch and the SKILL.md filename, so it IS the containing directory:
+  // append the filename back. A `tree` link (folder, no filename) gets the same
+  // treatment, which is a convention rather than a certainty — the resolver
+  // verifies by fetching and falls back if it 404s.
+  //
+  // The BRANCH is deliberately not carried. Every stored `skillMdUrl` is built
+  // on the repo's default branch, and discovery re-derives it there too, so
+  // honouring a link's branch would let the preview vouch for a file the
+  // pipeline never fetches.
+  const path = [...rest, "SKILL.md"].join("/");
+  return { source, skillId, path };
 }

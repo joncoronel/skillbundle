@@ -133,8 +133,12 @@ segment. All four must hold:
   `/`, `&`, `(` and friends survive it; persisting one writes a row whose
   detail page 404s forever and whose install command is dropped.
 - The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
-  caller pointed at this exact skill. `matchesSkillId`'s loose `startsWith` arm
-  must never name a skill on a write.
+  caller pointed at this exact skill. A frontmatter match must never name a
+  skill on a write. Since the resolver moved to `matchesSkillIdExactly` this
+  gate is belt-and-braces for the write (an exact frontmatter match means the
+  name already equals the typed slug), but it still governs whether
+  `on_skills_sh_as_alias` may fire, and that status re-runs the add with no
+  confirmation.
 - **Nothing claims the typed slug.** A delisted row there gets RELISTED (free,
   no quota) rather than orphaned beside a fresh alias row.
 - Discovery will still bind the previewed file (`aliasBindsSameFile`) — its
@@ -142,7 +146,7 @@ segment. All four must hold:
   named like the alias would win instead, and the card would have vouched for a
   file the pipeline never fetches. False whenever the tree wasn't listed.
 
-Failing the first two gates keeps the typed slug, which is always safe because
+Failing the first two gates keeps the typed slug, which is safe because
 discovery's folder pass binds it by construction.
 
 Failing the LAST gate **refuses the add** (`alias_unverifiable`) instead. This
@@ -180,21 +184,35 @@ being persisted: an audit answers "is anything wrong right now", so resuming a
 run from hours ago would be a stranger contract than continuing the one in front
 of you.
 
-Two ways such a row exists, and only the first is closed:
+Two ways such a row got written, **both now closed at the source**:
 
-- It predates the alias fix, when the add took the folder slug outright. (The
-  path that kept producing these — an unverifiable alias falling back to the
-  folder slug — now refuses instead: `alias_unverifiable`, above.)
-- Its SKILL.md was bound by `matchesSkillId`'s loose **prefix** arm, so
-  `matchedBy` is `"frontmatter"`, `aliasCandidate` deliberately declines to
-  fire, and the typed slug is kept. Narrow — the typed slug has to be a strict
-  prefix of the kebab'd name with no folder of that name — but live. Do not
-  read the audit as historical-only; a fresh mismatch can be a new row.
+- The add took the folder slug outright, before the alias pass existed. The path
+  that kept producing these (an unverifiable alias falling back to the folder
+  slug) now refuses instead: `alias_unverifiable`, above.
+- A **partial** name bound the file through `matchesSkillId`'s prefix arm while
+  the typed slug was kept, so typing `owner/repo/panel` for a skill named
+  `panel-review` wrote the row as `panel`. The resolver now uses
+  `matchesSkillIdExactly`, so a partial name resolves to nothing and the caller
+  gets told the slug must be the folder or the exact name from the file.
+
+So the audit is now looking for history plus insurance against a regression,
+rather than for a live leak. Production audited clean in Jul 2026 (zero
+mismatches).
+
+The prefix arm itself is untouched for **discovery**, where a loose match is the
+safety net for skills.sh's non-obvious slug derivation. A wrong guess there is not
+free: it binds the wrong file's URL and the content pipeline serves that body. But
+it is **repairable** (tighten the rule, re-run discovery, the row rebinds) and it
+never touches the row's identity, which is what made the same looseness
+unacceptable on the add path. The two callers are deliberately different; see
+`matchesSkillIdExactly`'s doc for why stricter-here is safe and looser-here would
+not be.
 
 Rows it can't judge (no discovered URL, fetch failed, gone (404), no frontmatter
 `name`, a name that isn't sluggable) are reported separately from mismatches —
 "we couldn't look" must not read as "we looked and it's wrong". It only reports;
-re-slugging is a per-row human decision (see TODO.md).
+re-slugging is a per-row human decision, and `githubOnlyAudit.ts`'s header
+records why there is deliberately no fix button.
 
 **Why it's an action and not a query.** `skills.content` is NOT the SKILL.md —
 `extractBodyContent` strips the YAML frontmatter before storing, so `content` is
@@ -210,8 +228,14 @@ name decides the slug.
 The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm),
 with the slug audit in **`convex/githubOnlyAudit.ts`** and the write policy it
 shares with the preview in **`convex/lib/slugDecision.ts`** (pure, unit-tested).
-SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
-the preview binds the same file post-insert discovery would. The lifecycle
+SKILL.md-to-slug matching lives in `lib/skillMatch.ts`, but the two callers there
+are deliberately different: the preview uses `matchesSkillIdExactly` (it invents a
+permanent slug), discovery keeps the loose `matchesSkillId` (it hunts for the file
+behind a slug skills.sh already assigned). They still bind the same file, by ORDER rather than by sharing a rule: discovery
+tries the folder, then exact names across EVERY candidate, and only then its
+loose loop. The global two-phase shape is the invariant — an earlier version ran
+both rules inside one per-file loop, so a loose hit on an early file beat an
+exact hit on a later one and the two sides could select different files. The lifecycle
 consequences of the flag stay where the lifecycle lives: `skills.ts`
 (heartbeat + adoption + cap exemption), `reconcile.ts` (skip), `devStats.ts`
 (diagnostics exclusions).
@@ -326,6 +350,68 @@ same frozen number for weeks, then a step). The **detail** endpoint is live and
 exact, so curated-only counts come from there, weekly, to bound per-skill cost.
 Re-check `generatedAt` periodically: if skills.sh starts regenerating curated
 daily, using it directly could become viable.
+
+## How a skill's SKILL.md gets found (`discoverSkillMdUrls`)
+
+A row stores `source` + `skillId` + name. It does **not** store the file's path,
+so the location is re-derived from the slug — at insert, whenever a content fetch
+404s (which clears `skillMdUrl` and re-flags `needsDiscovery`), and on the
+rediscovery cadence. Any reasoning of the form "we resolved the right file once,
+so we're safe" is therefore wrong: the lookup runs repeatedly over a row's life.
+
+Two passes over the repo tree, plus a probe fallback when the tree can't be
+listed:
+
+1. **Folder name matches the slug.** Bound straight from the tree, without
+   opening the file.
+2. **Exact frontmatter name across EVERY remaining candidate**, then and only
+   then **the loose `matchesSkillId`** over what is left. The two phases are
+   global, not per-file: running both rules inside one per-path loop let a loose
+   hit on an early file beat an exact hit on a later one, which is how discovery
+   and the (exact-only) preview could bind different files. The loose phase costs
+   no extra requests — it reuses the bodies the exact phase already read.
+
+The **tree-unavailable fallback** (409 too large, rate limit) probes the
+conventional paths with a HEAD and binds the first that answers.
+
+**A verification step in pass 1 was tried and reverted (Jul 2026), and the
+measurement is worth keeping.** It opened each folder-matched file and refused the
+bind when the file's own `name` was a *different* known skill's slug, to catch a
+folder holding the wrong skill's file. `bindAudit.ts` then asked the same question
+across production: of **13,080 judged rows, ZERO** had a confirmable wrong bind,
+and **12** would have had a healthy bind refused.
+
+The clearest is `nextlevelbuilder/ui-ux-pro-max-skill`, which has two folders
+named `slides` holding two different skills — and both files call themselves
+`slides`. The check would have detached the file under `.claude/skills/slides`
+from `ckm:slides` (~32k installs) on the strength of a name that does not identify
+its owner.
+
+**So the durable lesson is about the `name` field, not about the check.** A
+SKILL.md's `name` is not a reliable identity claim:
+
+- skills.sh derives slugs from it in ways `kebabCase` cannot reproduce — prefixes
+  stripped (`webflow-mcp:site-activity` → `site-activity`), underscores converted
+  (`http_mcp_headers` → `http-mcp-headers`), punctuation collapsed
+  (`Update Pub/Sub Emulator` → `update-pubsub-emulator`).
+- Sometimes the slug is not derived from the name at all — `tailwind` →
+  `tailwind-css` can only have come from the folder. The rule stated elsewhere in
+  this document as "skills.sh derives a slug from the frontmatter name" is a
+  partial truth, reliable enough for the ADD path (where we invent the slug) and
+  not reliable as an identity check on existing rows.
+- Repos reuse the same name across folders.
+
+A name/slug mismatch is therefore normal — 50 of those 13,080 rows — and is not
+evidence that the wrong file is attached. Detection now lives in `bindAudit.ts`,
+run on demand, rather than in the nightly path.
+
+Cost: pass 1 fetches nothing (it reads only the tree), as it always did — the
+verification step that added a fetch per folder-matched skill was reverted with
+the check itself. Pass 2 changed: a skill matching only LOOSELY no longer ends the scan, because
+every candidate must be read before the loose phase can begin. Exact matches still
+exit early, and the worst case (nothing matches) is what it always was. Bounded
+either way, and these are now fetched 10-wide where they used to be serial, so
+wall-clock likely improved even where the request count rose.
 
 ## Content states (independent of delisting)
 

@@ -27,6 +27,48 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
+### Skill discovery: extract the placement decisions so they can be tested
+
+`discoverSkillMdUrls` (`convex/skills.ts`) decides which SKILL.md a row is named
+after, in three ordered stages (folder name, exact names across all candidates,
+loose rule over the rest) plus a `rejected` set that stops a file pass 1 refused
+from being handed back by pass 2. **None of it is reachable by a test.** Deleting
+the `rejected` set entirely leaves the suite green.
+
+That is not hypothetical. A panel round found a pass-1 guard was a no-op in its own
+motivating case, and a later round found a slice-window bug in the exact phase.
+Both lived inside those untested blocks. Then `bindAudit.ts` measured the guard
+against production and it was reverted entirely — 12 false positives, zero true
+ones. Three rounds of review and a revert, on code no test could reach.
+
+The shape that works here already exists: `convex/lib/slugDecision.ts` is pure and
+unit-tested precisely because its refusal branch can otherwise only be reached by
+making GitHub's tree API fail mid-add. Do the same — a pure function over
+`(ordered candidate paths, slugs, names)` returning the placement, and one over
+`(pathHint, skillId, fmName)` for the resolver's hinted shortcut.
+
+Worth doing BEFORE the next change in this area, not after. Deferred from the
+exact-match branch (Jul 2026) only because it would have meant restructuring code
+that had already been restructured twice in one sitting, on top of two blocker
+fixes.
+
+### Split convex/githubOnly.ts (over the 1000-line threshold again)
+
+1023 lines, against the ~968 it started the exact-match branch at (1022 after
+the round-3 helper removal; the trend is down but the threshold is still breached). That file was
+split once before for exactly this reason — `convex/githubOnlyAudit.ts` exists
+because it "had grown past 1000 lines" — so it is back over the line that
+justified the last split.
+
+The obvious cut is the same one as last time: the module is "resolver + preview +
+confirm + the public wrappers", and the resolver (`resolveGitHubSkillMd` plus its
+tree/probe/pass machinery) is the self-contained half. Shared helpers already moved
+to `convex/lib/github.ts`, so the seam is cleaner than it was.
+
+Deferred from the exact-match branch (Jul 2026): the branch was already large and
+a file split at the end of it would have made the diff harder to review than the
+correctness fixes it carried.
+
 ### Tighten SKILL.md slug matching to whole-word prefixes
 
 `convex/lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the
@@ -39,9 +81,22 @@ named "Testing Library Helper" (`testing-library-helper`). The tightening is
 Deferred from the GitHub-only PR (Jul 2026) because it changes matching
 behavior for the entire existing catalog's discovery pipeline, not just the new
 feature — it needs its own change with a look at whether any currently-matched
-skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
-tighten one caller without the others (that's the drift the shared matcher
-exists to prevent).
+skill would unbind. When done, it's a one-line edit in `matchesSkillId`.
+
+Scope note (Jul 2026): this is now **discovery-only**. The GitHub-only add moved
+off this function to `matchesSkillIdExactly`, because it invents a permanent slug
+rather than finding the file behind one skills.sh already assigned. The old
+warning about never tightening one caller without the others no longer applies to
+that caller. What still holds is the direction rule: the preview may be stricter
+than discovery, never looser.
+
+What that does and does not change about the value here. It no longer guards a
+row's **identity**, which is what made this urgent: a bad match can no longer
+write a permanent, unrepairable slug. It still guards a row's **content** —
+discovery calls `updateSkillMdUrl` on a match (`skills.ts`), so a wrong guess
+binds the wrong file and the content pipeline serves that body. Repairable
+(tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
+worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
 ### Submit buttons drop keyboard focus for the length of every request
 
@@ -70,31 +125,6 @@ change.
 Deferred from the confirm-returns PR (Jul 2026): pre-existing on both surfaces,
 outside anything that branch touched, and each late in-scope addition on that
 branch produced a new review finding of its own.
-
-### Add-skill: re-slug a mis-slugged GitHub-only row
-
-The *detection* half is done — `githubOnlyAudit.auditGitHubOnlySlugs` plus the
-"GitHub-only slug audit" card on `/dev/add-skill` list any GitHub-only row
-whose stored `skillId` disagrees with `canonicalSlug(frontmatter name)`. What
-doesn't exist is a repair: such a row can never be adopted (adoption matches
-`source` + `skillId`), and reconcile skips it.
-
-Deliberately not automated. Re-slugging moves the skill's public URL and has to
-rewrite the summary, embedding and Typesense doc in step, and the right call
-depends on the row — a delisted one can simply be left, a live one with
-installs may want a redirect. Left as a per-row human decision with the audit
-card as the way to find them.
-
-Low priority but NOT closed. The main path that wrote such a row (an alias we
-couldn't verify, falling back to the folder slug) now refuses the add instead —
-`alias_unverifiable` in `githubOnly.ts`. One narrow path remains: a SKILL.md
-bound by `matchesSkillId`'s loose prefix arm has `matchedBy: "frontmatter"`, so
-`aliasCandidate` deliberately declines to fire and the typed slug is kept. That
-needs the typed slug to be a strict prefix of the kebab'd name with no folder of
-that name, so it is rare — but it means a mismatch the audit reports may be
-NEW, not historical. Tightening the prefix arm (see the whole-word-prefix entry
-above) would close it. No known instances either way; worth building the repair
-only if a production audit turns some up.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
@@ -284,6 +314,12 @@ matched your repo" properly.
     page.
 
 ## Parked decisions (context lives elsewhere)
+
+- **Re-slugging a mis-slugged GitHub-only row** — no repair tool, deliberately. Full
+  context in `convex/githubOnlyAudit.ts`'s header (why there is a find button and no fix
+  button) and `docs/skill-lifecycle.md`. Both paths that could write such a row are closed
+  (`alias_unverifiable`, and `matchesSkillIdExactly` for partial names), and production
+  audited clean Jul 2026 at zero. Only revisit if the audit card ever reports a mismatch.
 
 - **Fast-delete for dead-but-installable skills ("Fix 2")** — deferred. Full context in
   `docs/skill-lifecycle.md` ("Dead-but-installable skills & the Fix 2 decision") and the

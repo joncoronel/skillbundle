@@ -8,6 +8,18 @@
  *   1. Try the normal add (`addSkillManually*`). It resolves against the
  *      skills.sh detail endpoint, so a skill that's listed but not yet in our
  *      catalog lands as a proper skill here and costs no quota.
+ *
+ *      Step 1 runs FIRST even though the slug may be one we have reason to
+ *      doubt — a GitHub link only carries a folder name — which is why a link
+ *      whose folder disagrees with its `name` costs two skills.sh calls (here,
+ *      then again under the alias in step 3). Reading the file first to ask one
+ *      authoritative question would be cleaner and was considered. It is not
+ *      done because this one cheap call serves ALL THREE input forms (skills.sh
+ *      URL, GitHub link, typed `source/slug`), and only a link has a file to
+ *      read up front, so the protocol would fork by input type. The vast
+ *      majority of adds are skills already on skills.sh, which this answers in
+ *      a single request. Revisit if GitHub rate limits on the add path ever
+ *      become a real complaint.
  *   2. On `not_on_skills_sh`, resolve the SKILL.md in its GitHub repo
  *      (`previewGitHubSkill*`).
  *   3. That preview can come back `on_skills_sh_as_alias` — skills.sh DOES

@@ -33,6 +33,9 @@ import { isGitHubSource } from "./lib/source";
 import {
   fetchRepoMetadata,
   fetchRepoTree,
+  fetchRawText,
+  indexSkillMds,
+  rawGitHubUrl,
   NOT_MODIFIED,
 } from "./lib/github";
 import {
@@ -41,7 +44,7 @@ import {
   SkillsApiRateLimitError,
   withTransientRetry,
 } from "./lib/skillsApi";
-import { canonicalSlug, matchesSkillId } from "./lib/skillMatch";
+import { canonicalSlug, matchesSkillIdExactly } from "./lib/skillMatch";
 import { aliasCandidate, decideSlug } from "./lib/slugDecision";
 import {
   GITHUB_LEADERBOARD,
@@ -78,7 +81,11 @@ const PASS2_WAVE_SIZE = 10;
 // ---------------------------------------------------------------------------
 
 /** parseSkillInput with its plain Error wrapped so prod preserves the message. */
-function parseAdminInput(input: string): { source: string; skillId: string } {
+function parseAdminInput(input: string): {
+  source: string;
+  skillId: string;
+  path?: string;
+} {
   try {
     return parseSkillInput(input);
   } catch (err) {
@@ -138,10 +145,16 @@ type GitHubSkillResolution =
       description?: string;
       // How this file earned the match. `"dir"` means a folder named exactly
       // like the slug — i.e. the caller pointed at THIS skill. `"frontmatter"`
-      // means the loose `matchesSkillId` rule bound it, which includes a bare
-      // `startsWith` prefix hit (slug "next" matching "Next JS Development").
-      // previewGitHubCore only trusts the frontmatter name as a slug on the
-      // `"dir"` path, so a prefix guess can never drive a write.
+      // means the file's own `name` matched it, EXACTLY: since the resolver
+      // moved to `matchesSkillIdExactly`, a partial name no longer binds, so
+      // this arm now implies `canonicalSlug(fmName)` already equals the typed
+      // slug and there is no substitution to make.
+      //
+      // previewGitHubCore still only trusts the frontmatter name as a slug on
+      // the `"dir"` path. That guard is now belt-and-braces for the write, but
+      // it stays load-bearing for the AUTO re-add: `on_skills_sh_as_alias` makes
+      // the client re-run the add with no confirm step, so nothing inferred may
+      // reach it.
       matchedBy: "dir" | "frontmatter";
       // Would storing `canonicalSlug(fmName)` as the row's slug still make
       // post-insert discovery bind THIS file? Discovery's pass 1 is
@@ -167,39 +180,31 @@ type GitHubSkillResolution =
   | { status: "tree_unavailable" };
 
 /**
- * Network-level throws (DNS, reset) are treated like a non-ok response
- * everywhere in the resolver: the fetch reports null and the caller decides,
- * instead of the throw escaping as a redacted "Server Error".
- *
- * Module scope rather than a closure — it captures nothing, so nesting it only
- * meant the rule could be restated. The audit (githubOnlyAudit.ts) needs
- * stricter semantics than this (host pinning, a 404 split, a retry) and has its
- * own; that difference is deliberate, not drift.
- */
-async function fetchText(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
  *
- * Matching goes through the shared `matchesSkillId` (lib/skillMatch.ts) — the
- * same rule the post-insert discovery pipeline uses — so the file the admin
- * confirms in the preview is the file discovery binds after insert. This
- * function exists separately because discovery is batch-oriented and writes
- * straight to the DB, whereas this must report a result before any row
- * exists. When the tree is unavailable it mirrors discovery's fallback and
- * probes the conventional paths directly.
+ * Matching goes through `matchesSkillIdExactly` (lib/skillMatch.ts), which is
+ * discovery's rule minus the prefix arm. Deliberately STRICTER than discovery,
+ * not different for its own sake: this path invents the row's permanent slug
+ * from what the caller typed, so a partial name must not bind a file and get
+ * stored as though it were the name.
+ *
+ * Strictness alone does NOT make the two agree — that was the original argument
+ * here and it was wrong. Skipping a candidate in a first-match-wins scan selects
+ * a LATER file rather than ending the walk, so a stricter side can bind something
+ * different rather than merely refusing. What makes them agree is that
+ * discovery's pass 2 tries exact matches across EVERY candidate before offering
+ * any of them to its loose rule. See `matchesSkillIdExactly`'s doc.
+ *
+ * This function exists separately because discovery is batch-oriented and writes
+ * straight to the DB, whereas this must report a result before any row exists.
+ * When the tree is unavailable it mirrors discovery's fallback and probes the
+ * conventional paths directly.
  */
 async function resolveGitHubSkillMd(
   source: string,
   skillId: string,
+  /** See `parseSkillInput`'s `path`. A hint to try before walking the tree. */
+  pathHint?: string,
 ): Promise<GitHubSkillResolution> {
   const [owner, repo] = source.split("/");
   const meta = await fetchRepoMetadata(owner, repo);
@@ -208,7 +213,7 @@ async function resolveGitHubSkillMd(
   if (!meta) return { status: "no_repo" };
 
   const rawUrl = (branch: string, path: string) =>
-    `https://raw.githubusercontent.com/${source}/${branch}/${path}`;
+    rawGitHubUrl(source, branch, path);
 
   const okResult = (
     branch: string,
@@ -255,7 +260,7 @@ async function resolveGitHubSkillMd(
       "SKILL.md",
     ];
     const bodies = await Promise.all(
-      probePaths.map((path) => fetchText(rawUrl(meta.defaultBranch, path))),
+      probePaths.map((path) => fetchRawText(rawUrl(meta.defaultBranch, path))),
     );
     for (let i = 0; i < probePaths.length; i++) {
       const contents = bodies[i];
@@ -269,7 +274,7 @@ async function resolveGitHubSkillMd(
         return okResult(meta.defaultBranch, path, contents, "dir", null);
       }
       const fmName = extractSkillMdName(contents);
-      if (fmName && matchesSkillId(fmName, skillId)) {
+      if (fmName && matchesSkillIdExactly(fmName, skillId)) {
         return okResult(
           meta.defaultBranch,
           path,
@@ -282,23 +287,14 @@ async function resolveGitHubSkillMd(
     return { status: "tree_unavailable" };
   }
 
-  const candidates: string[] = [];
-  const byDir = new Map<string, string>();
-  for (const entry of tree.entries) {
-    if (entry.type !== "blob") continue;
-    const lower = entry.path.toLowerCase();
-    if (lower !== "skill.md" && !lower.endsWith("/skill.md")) continue;
-    candidates.push(entry.path);
-    const parts = entry.path.split("/");
-    if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
-  }
+  const { candidates, byDir } = indexSkillMds(tree.entries);
   if (candidates.length === 0) return { status: "no_skill_md" };
 
   // Pass 1: a directory named exactly like the slug. Fetch it once here — its
   // contents are needed for the name/description either way.
   const dirMatch = byDir.get(skillId);
   if (dirMatch) {
-    const contents = await fetchText(rawUrl(tree.branch, dirMatch));
+    const contents = await fetchRawText(rawUrl(tree.branch, dirMatch));
     if (contents !== null) {
       return okResult(tree.branch, dirMatch, contents, "dir", byDir);
     }
@@ -307,7 +303,42 @@ async function resolveGitHubSkillMd(
     return { status: "tree_unavailable" };
   }
 
-  // Pass 2: frontmatter `name` via the shared matcher. Covers a root-level
+  // Hinted shortcut past pass 2: if the tree agrees the named file exists, try it
+  // before downloading up to RESOLVE_PASS2_CAP others hunting for the same thing.
+  //
+  // Reachable in ONE shape, which is worth knowing before relying on it. For any
+  // nested link the hint's parent segment IS the slug by construction — the
+  // parser takes the slug from the path tail and builds the hint from that same
+  // tail plus "SKILL.md" (lib/parse-skill-input.ts) — and `indexSkillMds` keys
+  // `byDir` on exactly that segment. So if the hinted path is in the tree at all,
+  // `byDir` has the slug and pass 1 above has already returned. This only ever fires for
+  // a ROOT-LEVEL SKILL.md link in a repo with no folder named like the repo — the
+  // case that used to pay the full scan, and the reason `path` earns its keep.
+  //
+  // Residual: with two files claiming the same name (a root SKILL.md plus an
+  // earlier candidate named after the repo) this returns the root file while
+  // discovery's exact stage takes the first in tree order. Narrow, and much
+  // narrower than the pre-tree version this replaced, but not zero.
+  //
+  // Deliberately AFTER pass 1 and gated on the tree, which is what keeps it
+  // equivalent. An earlier version ran before the tree was fetched and decided
+  // `matchedBy` from the hint's own parent folder — so it could bind a different
+  // copy than `byDir` would when two folders share a leaf name, and could return
+  // a root file where pass 1 would have preferred a folder. Both showed up as
+  // the preview vouching for a file discovery never binds. The hint now only
+  // ever REORDERS pass 2; it can no longer outvote the folder rule.
+  if (pathHint && byDir.get(skillId) === undefined) {
+    const hinted = candidates.find((p) => p === pathHint);
+    if (hinted) {
+      const contents = await fetchRawText(rawUrl(tree.branch, hinted));
+      const fmName = contents === null ? null : extractSkillMdName(contents);
+      if (contents !== null && fmName && matchesSkillIdExactly(fmName, skillId)) {
+        return okResult(tree.branch, hinted, contents, "frontmatter", byDir);
+      }
+    }
+  }
+
+  // Pass 2: frontmatter `name` via the exact matcher. Covers a root-level
   // SKILL.md (no parent dir to match on) and repos whose folder names don't
   // line up with the slug. Downloads run in concurrent waves; within a wave,
   // results are checked in candidate order so first-match-wins semantics are
@@ -316,13 +347,13 @@ async function resolveGitHubSkillMd(
   for (let i = 0; i < capped.length; i += PASS2_WAVE_SIZE) {
     const wave = capped.slice(i, i + PASS2_WAVE_SIZE);
     const bodies = await Promise.all(
-      wave.map((path) => fetchText(rawUrl(tree.branch, path))),
+      wave.map((path) => fetchRawText(rawUrl(tree.branch, path))),
     );
     for (let j = 0; j < wave.length; j++) {
       const contents = bodies[j];
       if (contents === null) continue;
       const fmName = extractSkillMdName(contents);
-      if (fmName && matchesSkillId(fmName, skillId)) {
+      if (fmName && matchesSkillIdExactly(fmName, skillId)) {
         return okResult(tree.branch, wave[j], contents, "frontmatter", byDir);
       }
     }
@@ -360,7 +391,10 @@ type GitHubPreview =
       cause: "unlisted" | "conflict";
     }
   | { status: "no_repo" }
-  | { status: "no_skill_md" }
+  // Carries the slug it looked for: the copy names it, and it is usually
+  // DERIVED (a URL tail, or the repo name for a root SKILL.md) rather than
+  // typed, so the user has often never seen the string that failed.
+  | { status: "no_skill_md"; skillId: string }
   | { status: "tree_unavailable" }
   | {
       status: "ok";
@@ -479,7 +513,7 @@ async function previewGitHubCore(
   ctx: ActionCtx,
   input: string,
 ): Promise<GitHubPreview> {
-  const { source, skillId } = parseAdminInput(input);
+  const { source, skillId, path: pathHint } = parseAdminInput(input);
 
   // Well-known sources have no repo to read a SKILL.md out of.
   if (!isGitHubSource(source)) return { status: "not_github" };
@@ -490,7 +524,7 @@ async function previewGitHubCore(
       skillId,
     }) as Promise<Precheck>,
     checkSkillsShListing(source, skillId),
-    resolveGitHubSkillMd(source, skillId),
+    resolveGitHubSkillMd(source, skillId, pathHint),
   ]);
 
   const precheck = unwrap(precheckR);
@@ -504,6 +538,9 @@ async function previewGitHubCore(
   if (typedTerminal) return typedTerminal;
 
   const resolved = unwrap(resolvedR);
+  if (resolved.status === "no_skill_md") {
+    return { status: "no_skill_md", skillId };
+  }
   if (resolved.status !== "ok") return { status: resolved.status };
 
   // Second pass under the SLUG ALIAS.
@@ -516,11 +553,13 @@ async function previewGitHubCore(
   // skills.sh has never heard of. Left unhandled that produces a confident
   // "not on skills.sh" for a listed skill.
   //
-  // Restricted to `matchedBy === "dir"`: only there did the caller point at
-  // this exact folder, so its frontmatter name is a statement about the skill
-  // they meant. A `"frontmatter"` match can come from the loose `startsWith`
-  // rule, and letting a prefix guess name the skill would put a slug the user
-  // never typed on the end of a write with no confirmation step.
+  // Restricted to `matchedBy === "dir"`: only there did the caller point at this
+  // exact folder, so its frontmatter name is a statement about the skill they
+  // meant. Since the resolver went exact-only, a `"frontmatter"` match implies
+  // the name already equals the typed slug, so this gate is belt-and-braces for
+  // the WRITE — but it stays load-bearing for the auto re-add, because
+  // `on_skills_sh_as_alias` makes the client re-run the add with no confirm step
+  // and nothing inferred may reach an unconfirmed write.
   //
   // Runs only on a genuine mismatch, and deliberately AFTER the typed-slug
   // checks: the slug the caller gave wins whenever it resolves to something.
@@ -706,7 +745,7 @@ const previewTerminalArms = [
     cause: v.union(v.literal("unlisted"), v.literal("conflict")),
   }),
   v.object({ status: v.literal("no_repo") }),
-  v.object({ status: v.literal("no_skill_md") }),
+  v.object({ status: v.literal("no_skill_md"), skillId: v.string() }),
   v.object({ status: v.literal("tree_unavailable") }),
 ] as const;
 
@@ -779,10 +818,25 @@ const gitHubAddReturns = v.union(
  * invocation or a preview→confirm race can neither insert a duplicate nor
  * mis-mark a skill that skills.sh actually lists.
  *
- * Discovery is left to the normal pipeline rather than seeding the URL
- * resolved here: it re-derives the same path with fully-exercised code (same
- * shared matcher), and correctly handles a repo that moved the file between
- * preview and confirm.
+ * Discovery is left to the normal pipeline rather than seeding the URL resolved
+ * here. Only `source` + `skillId` + name are stored; the file's location is
+ * re-derived from the slug afterwards, which handles a repo that moved the file
+ * between preview and confirm.
+ *
+ * The two no longer share a matcher — this path uses `matchesSkillIdExactly`
+ * while discovery keeps the loose prefix rule — so "same code, same answer" is
+ * NOT the reason they agree. They agree because discovery resolves in three
+ * ordered stages: the folder name, then exact names across ALL candidates, then
+ * the loose rule over whatever is left. This path only ever binds on one of the
+ * first two, so an earlier stage always reaches it. The invariant to preserve if
+ * `discoverSkillMdUrls` is refactored is that the exact stage is GLOBAL — an
+ * earlier version ran both rules inside one per-file loop, which let a loose hit
+ * on an early file beat an exact hit on a later one.
+ *
+ * Seeding the URL would not remove the need for the alias check either. A 404 on
+ * any later content fetch clears `skillMdUrl` and re-flags `needsDiscovery`
+ * (skills.ts), so the path gets re-derived from the slug over the row's whole
+ * life. A seeded URL defers that, it doesn't own it.
  */
 export const addSkillFromGitHub = action({
   args: { input: v.string() },

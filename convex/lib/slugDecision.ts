@@ -50,11 +50,28 @@ export type SlugDecision<TAlias = never> =
  * Which slug, if any, is worth a second look.
  *
  * `null` means "no alias" — either the SKILL.md carried no usable name, or the
- * name already agrees with the typed slug. Gated on `matchedBy === "dir"`
- * because only there did the caller point at this exact folder, making its
- * frontmatter a statement about the skill they meant; a `"frontmatter"` match
- * can come from `matchesSkillId`'s loose prefix arm, and a prefix guess must
- * never name a row.
+ * name already agrees with the typed slug.
+ *
+ * Gated on `matchedBy === "dir"` because only there did the caller point at this
+ * exact folder, making its frontmatter a statement about the skill they meant.
+ * That gate used to be the only thing standing between a partial-name match and
+ * a permanent slug; now that the resolver matches frontmatter names exactly
+ * (`matchesSkillIdExactly`), a `"frontmatter"` match implies the name ALREADY
+ * equals the typed slug, so the check above returns null first and this one is
+ * unreachable for the write.
+ *
+ * It stays because it is still load-bearing elsewhere: the alias also decides
+ * whether `on_skills_sh_as_alias` is returned, and that status makes the client
+ * re-run the add with NO confirmation step. Nothing the caller did not
+ * explicitly point at may reach an unconfirmed write.
+ *
+ * That is also why the obvious UX improvement here is not a small change.
+ * Pre-filling the confirm card with the corrected slug ("did you mean
+ * `panel-review`?") is nicer than refusing, and the display side already exists
+ * (`components/add-skill/slug-swap-note.tsx`). But letting an inferred name
+ * produce an alias hands it to the unconfirmed re-add above, so it needs a
+ * two-tier trust model separating "may pre-fill a card" from "may drive a write
+ * nobody confirmed". The UI is the easy half.
  */
 export function aliasCandidate({
   typedSkillId,

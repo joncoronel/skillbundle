@@ -13,19 +13,34 @@
  *
  *   - It predates the frontmatter-name fix, when a GitHub-only add took its
  *     slug from the SKILL.md's folder name outright.
- *   - Its SKILL.md was bound by `matchesSkillId`'s loose prefix arm rather than
- *     by folder name, so `aliasCandidate` (lib/slugDecision.ts) deliberately
- *     declines to fire and the typed slug is kept. Narrow — the typed slug has
- *     to be a strict prefix of the kebab'd name with no folder of that name —
- *     but live. The prefix looseness itself is parked in TODO.md.
+ *   - It predates the exact-match fix: a partial name used to bind a file via
+ *     `matchesSkillId`'s prefix arm while the typed slug was kept, so typing
+ *     `panel` for a skill named `panel-review` wrote a row as `panel`.
  *
- * The path that USED to keep producing these — an alias we couldn't verify,
- * falling back to the folder slug — now refuses the add instead
- * (`alias_unverifiable` in githubOnly.ts).
+ * Both of those are now closed at the source rather than detected here. The
+ * unverifiable-alias path refuses the add (`alias_unverifiable` in
+ * githubOnly.ts), and the resolver matches frontmatter names exactly
+ * (`matchesSkillIdExactly` in lib/skillMatch.ts), so a partial name resolves to
+ * nothing instead of to a misnamed row.
  *
- * Reports only. Re-slugging moves a skill's public URL and has to rewrite the
- * summary, embedding and search doc in step, and the right call depends on the
- * row, so it stays a per-row human decision. See TODO.md.
+ * So this audit is now looking for HISTORY, plus insurance against a future
+ * regression. Production audited clean in Jul 2026.
+ *
+ * REPORTS ONLY, deliberately. There is a find button and no fix button, and this
+ * is the record of why — the decision lives here rather than in TODO.md because
+ * it is not pending work, it is a standing answer:
+ *
+ * Re-slugging moves the skill's public URL, so every link anyone shared breaks,
+ * and the slug is copied into the summary row, the embedding and the Typesense
+ * doc, which all have to change in the same step. Whether it is even wanted
+ * depends on the row: a delisted one can simply be left alone, while a live one
+ * with installs probably needs a redirect rather than a rename. That is a
+ * judgement call per row, not a batch operation, and automating it for a
+ * population that has never been non-empty would be building the risky half of
+ * the feature for no one.
+ *
+ * Revisit only if a run here ever reports a mismatch. See TODO.md's parked
+ * decisions for the one-line pointer.
  *
  * Separate module from `githubOnly.ts` because that file is scoped to
  * "resolver + preview + confirm" and had grown past 1000 lines. The list query
@@ -55,7 +70,7 @@ import { extractSkillMdName } from "./skills";
  * reason the resolver separates `tree_unavailable` from `no_skill_md`: "we
  * couldn't look" must never be reported as "we looked and it's wrong".
  */
-const UNKNOWN_REASON = {
+export const UNKNOWN_REASON = {
   noUrl: "no SKILL.md URL discovered yet",
   badHost: "SKILL.md URL is not on raw.githubusercontent.com",
   redirectedOffHost: "SKILL.md URL redirected off raw.githubusercontent.com",
@@ -75,8 +90,8 @@ const UNKNOWN_REASON = {
  * inside an action that has a time limit. The DB read is the cheap half (see
  * `listGitHubOnlyRows`).
  */
-const AUDIT_PAGE_SIZE = 200;
-const WAVE_SIZE = 10;
+export const AUDIT_PAGE_SIZE = 200;
+export const WAVE_SIZE = 10;
 
 /**
  * The only host a stored `skillMdUrl` may point at. Every writer constructs
@@ -145,7 +160,8 @@ const FETCH_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 500;
 
 /**
- * Fetch one SKILL.md. Deliberately stronger than the resolver's `fetchText`:
+ * Fetch one SKILL.md. Deliberately stronger than the shared `fetchRawText`
+ * (convex/lib/github.ts) that the resolver and discovery use:
  * it pins the scheme and host, splits a permanent 404 from a transient failure
  * (a dead row is actionable; an unlucky one isn't), and retries with a pause,
  * because the content pipeline retries these same URLs up to 3 times and an
@@ -159,7 +175,7 @@ const RETRY_DELAY_MS = 500;
  * follows redirects, fetches the file fine. Re-asserting the host on `res.url`
  * keeps the SSRF guard intact without throwing away the status.
  */
-async function fetchSkillMd(
+export async function fetchSkillMd(
   url: string,
 ): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
   // Scheme as well as host: a stored `http://` URL would otherwise be fetched

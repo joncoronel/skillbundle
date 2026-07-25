@@ -54,7 +54,7 @@ export function previewFailureCopy(preview: PreviewFailure): string {
       // confirm re-check routes through the same `handlePreviewFailure` as the
       // preview, so the re-add is attempted either way. It stopped being true
       // for one step once before, when confirm reported its refusals directly.
-      return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
+      return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}", using the name set inside the SKILL.md rather than the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
     case "already_exists":
       return alreadyInCatalogCopy(preview);
     case "alias_unverifiable":
@@ -76,7 +76,26 @@ export function previewFailureCopy(preview: PreviewFailure): string {
     case "no_repo":
       return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":
-      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name). Check the slug.";
+      // Hedged on purpose. This one status has two causes: the repo contains no
+      // SKILL.md AT ALL (githubOnly.ts, `candidates.length === 0`), or it has
+      // some and none matched. The likeliest public route is the first — paste
+      // any folder URL of an ordinary repo and a slug gets derived from the URL
+      // tail — so an unconditional "use the exact name from inside the file" is
+      // a naming lecture about a file that isn't there, and the user retypes
+      // names forever. "If the repo has one" covers both without needing the
+      // server to split the status.
+      //
+      // Deliberately does NOT say the name is "the slug skills.sh uses". That
+      // asserts the exact equivalence `matchesSkillId`'s prefix arm exists
+      // because skills.sh does NOT guarantee (a name of "Next.js Development"
+      // kebabs to `next.js-development`, not `next-js-development`), and it asks
+      // a visitor to reason about a listing that by construction doesn't exist —
+      // this status is titled "Not on skills.sh".
+      //
+      // Names the slug, like every neighbouring arm: it is usually DERIVED from
+      // a URL tail rather than typed, so "a shortened name won't match" is
+      // otherwise advice about a string the user never saw.
+      return `No SKILL.md in that repo matches "${preview.skillId}". If the repo has one, use the exact name set inside it, or the folder it sits in. A shortened name won't match.`;
     case "tree_unavailable":
       return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
   }
@@ -209,5 +228,5 @@ export function previewFailureTitle(
  * without a confirm step, so this sentence is the only place it's disclosed.
  */
 export function aliasRetryNote(skillId: string): string {
-  return `skills.sh lists it as "${skillId}", using the name in its SKILL.md frontmatter rather than the folder name in the link.`;
+  return `skills.sh lists it as "${skillId}", using the name set inside its SKILL.md rather than the folder name in the link.`;
 }
