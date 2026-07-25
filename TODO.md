@@ -93,8 +93,13 @@ bound by `matchesSkillId`'s loose prefix arm has `matchedBy: "frontmatter"`, so
 needs the typed slug to be a strict prefix of the kebab'd name with no folder of
 that name, so it is rare — but it means a mismatch the audit reports may be
 NEW, not historical. Tightening the prefix arm (see the whole-word-prefix entry
-above) would close it. No known instances either way; worth building the repair
-only if a production audit turns some up.
+above) would close it.
+
+**Production audited Jul 2026: zero mis-slugged rows** (2 GitHub-only rows, both
+judged, none reported). So the repair stays unbuilt against a measured zero
+rather than an assumption. Build it if a later audit turns some up; until then
+the audit card is the whole feature, and its value is catching a future row
+rather than anything already in the catalog.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
