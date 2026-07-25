@@ -11,9 +11,12 @@
  * SKILL.md to a skill purely because the folder was named like the slug, without
  * opening the file. So a repo holding one skill's folder named like ANOTHER
  * skill's name would bind the wrong file, and the content pipeline would then
- * serve that file's body under the first skill's name, silently. Pass 1 now
- * verifies before binding (`claimedByOtherSkill`, lib/skillMatch.ts), but that
- * only stops NEW bad binds. Nothing has ever checked for existing ones.
+ * serve that file's body under the first skill's name, silently.
+ *
+ * A verification step in pass 1 was tried and reverted once this audit measured
+ * the problem: zero confirmable wrong binds in 13,080 production rows, against 12
+ * healthy binds it would have refused. Detection lives here instead, on demand,
+ * where a false positive costs a line of output rather than a skill's content.
  *
  * **Why the loose matcher and not the strict one.** `matchesSkillId`, not
  * `canonicalSlug` equality. These slugs came from skills.sh, which derives them
@@ -22,14 +25,15 @@
  * `next-js-development`). A strict comparison would report a large fraction of a
  * healthy catalog. Reporting only where even the LOOSE rule fails means a hit is
  * a file that does not plausibly correspond to its slug at all — which is the
- * signal, and it is the same asymmetry `claimedByOtherSkill` is built on: prefer
- * a missed case to a false accusation.
+ * signal. Prefer a missed case to a false accusation — which is precisely the
+ * lesson the reverted pass-1 check taught at the cost of two review rounds.
  *
- * **Reports only.** It does not re-bind anything. A confirmed mis-bind is fixed
- * by clearing the row's `skillMdUrl` so discovery re-runs against the verifying
- * pass 1 — but whether the stale `content` should also be cleared is an open
- * question (see docs/skill-lifecycle.md), and this audit exists to tell us
- * whether that question needs answering at all.
+ * **Reports only, and that is now the whole design rather than a first step.** A
+ * hit needs a human: of the 50 flagged in the first production run, 38 were
+ * skills.sh slug derivations `kebabCase` cannot reproduce and 12 were repos
+ * reusing one name across folders. None was a wrong bind. Acting automatically on
+ * this signal is what the reverted pass-1 check did, and it was wrong 12 times
+ * out of 12.
  *
  * **Run it from the CLI**, not a dev card: it is a one-off backward-looking check
  * over ~9.5k rows, not something to leave a button for.

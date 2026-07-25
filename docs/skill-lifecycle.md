@@ -147,10 +147,7 @@ segment. All four must hold:
   file the pipeline never fetches. False whenever the tree wasn't listed.
 
 Failing the first two gates keeps the typed slug, which is safe because
-discovery's folder pass binds it — with one exception since that pass began
-verifying: if the folder-matched file's own name is another batch skill's slug,
-the bind is refused and the row ends up contentless rather than wrong. See the
-discovery section below.
+discovery's folder pass binds it by construction.
 
 Failing the LAST gate **refuses the add** (`alias_unverifiable`) instead. This
 is the one case where we know the right slug and can't store it, and writing the
@@ -365,12 +362,8 @@ so we're safe" is therefore wrong: the lookup runs repeatedly over a row's life.
 Two passes over the repo tree, plus a probe fallback when the tree can't be
 listed:
 
-1. **Folder name matches the slug**, then the candidate is **opened and checked**.
-   It is rejected only if its own `name` is a *different* known skill's slug
-   (`claimedByOtherSkill`, lib/skillMatch.ts). A rejection is **recorded as a
-   `(path, slug)` pair** that pass 2 must honour — without that, pass 2's prefix
-   arm re-bound the very file pass 1 refused (`matchesSkillId("panel-review",
-   "panel")` is true), making the guard a no-op in the exact shape it exists for.
+1. **Folder name matches the slug.** Bound straight from the tree, without
+   opening the file.
 2. **Exact frontmatter name across EVERY remaining candidate**, then and only
    then **the loose `matchesSkillId`** over what is left. The two phases are
    global, not per-file: running both rules inside one per-path loop let a loose
@@ -379,52 +372,42 @@ listed:
    no extra requests — it reuses the bodies the exact phase already read.
 
 The **tree-unavailable fallback** (409 too large, rate limit) probes the
-conventional paths and runs the same check: it fetches the body rather than
-issuing a HEAD, because the repos whose trees fail to list are the large
-monorepos most likely to hold a leftover folder, and a HEAD cannot read a name.
+conventional paths with a HEAD and binds the first that answers.
 
-**What a rejection costs.** The file is not bound to that skill. If nothing else
-claims the skill, it ends at `skillMdUrl: ""` — `hasContentFetchError`, an
-"Install may fail" badge, a counted discovery failure, and a weekly retry. For a
-row that was ALREADY mis-bound, the stale `content` from the other skill's file
-is left in place (only the URL is cleared), so the detail page keeps serving it
-until a successful re-bind. Clearing content on rejection is not yet done; it
-needs a decision about skills legitimately renamed upstream.
+**A verification step in pass 1 was tried and reverted (Jul 2026), and the
+measurement is worth keeping.** It opened each folder-matched file and refused the
+bind when the file's own `name` was a *different* known skill's slug, to catch a
+folder holding the wrong skill's file. `bindAudit.ts` then asked the same question
+across production: of **13,080 judged rows, ZERO** had a confirmable wrong bind,
+and **12** would have had a healthy bind refused.
 
-Pass 1 used to bind on the folder name alone, without opening the file. That is
-wrong whenever one skill's FOLDER is named like a DIFFERENT skill's NAME — which a
-repo produces by renaming a skill's folder to match its name and leaving the old
-folder behind. The row then serves the other skill's content under a real skill's
-name, silently. `vercel-labs/agent-skills` is the near miss: slug
-`vercel-react-view-transitions` is bound to `skills/react-view-transitions/SKILL.md`
-because pass 1 found no folder of that name and pass 2 verified by name. Had such
-a folder existed, pass 1 would have taken it blind.
+The clearest is `nextlevelbuilder/ui-ux-pro-max-skill`, which has two folders
+named `slides` holding two different skills — and both files call themselves
+`slides`. The check would have detached the file under `.claude/skills/slides`
+from `ckm:slides` (~32k installs) on the strength of a name that does not identify
+its owner.
 
-The check is deliberately **one-directional**, and this is the part not to
-"simplify". It does not ask "does this file's name match the slug I expect?"
-`kebabCase` cannot reproduce every skills.sh slug derivation — that looseness is
-why `matchesSkillId` exists — so a name like `Next.js` (kebab `next.js`) against
-slug `nextjs` would fail a self-check and unbind a healthy file, catalog-wide. It
-reacts only to a positive claim on someone else's slug.
+**So the durable lesson is about the `name` field, not about the check.** A
+SKILL.md's `name` is not a reliable identity claim:
 
-Two failure modes, not one. A **missed collision** when `kebabCase` cannot
-reproduce the claimed slug, which is where we already were. And a **lost bind**
-when two batch siblings collide under `kebabCase`: skill `panel-review-v2` whose
-file is named "Panel Review" kebabs to another batch slug, so its healthy folder
-match is refused, pass 2 cannot place it either, and the row ends up contentless.
-So content CAN be stripped from a healthy skill; batch-scoping is what bounds how
-often. Still the better trade than a self-check, which would refuse on every
-derivation `kebabCase` can't reproduce rather than only on a collision.
+- skills.sh derives slugs from it in ways `kebabCase` cannot reproduce — prefixes
+  stripped (`webflow-mcp:site-activity` → `site-activity`), underscores converted
+  (`http_mcp_headers` → `http-mcp-headers`), punctuation collapsed
+  (`Update Pub/Sub Emulator` → `update-pubsub-emulator`).
+- Sometimes the slug is not derived from the name at all — `tailwind` →
+  `tailwind-css` can only have come from the folder. The rule stated elsewhere in
+  this document as "skills.sh derives a slug from the frontmatter name" is a
+  partial truth, reliable enough for the ADD path (where we invent the slug) and
+  not reliable as an identity check on existing rows.
+- Repos reuse the same name across folders.
 
-Known narrowing: "someone else" means the slugs in the batch being resolved, so a
-collision with a skill discovered in an earlier run isn't caught.
+A name/slug mismatch is therefore normal — 50 of those 13,080 rows — and is not
+evidence that the wrong file is attached. Detection now lives in `bindAudit.ts`,
+run on demand, rather than in the nightly path.
 
-Cost: pass 1 previously fetched nothing (it read only the tree), and now fetches
-one raw file per folder-matched skill, in concurrent waves. Those reads are
-CDN-backed, outside the GitHub API rate limit, and the content pipeline downloads
-the same files moments later anyway.
-
-Pass 2 changed too: a skill matching only LOOSELY no longer ends the scan, because
+Cost: pass 1 fetches nothing (it reads only the tree), as it always did — the
+verification step that added a fetch per folder-matched skill was reverted with
+the check itself. Pass 2 changed: a skill matching only LOOSELY no longer ends the scan, because
 every candidate must be read before the loose phase can begin. Exact matches still
 exit early, and the worst case (nothing matches) is what it always was. Bounded
 either way, and these are now fetched 10-wide where they used to be serial, so

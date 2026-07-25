@@ -35,18 +35,17 @@ loose rule over the rest) plus a `rejected` set that stops a file pass 1 refused
 from being handed back by pass 2. **None of it is reachable by a test.** Deleting
 the `rejected` set entirely leaves the suite green.
 
-That is not hypothetical: a panel round found the guard was a no-op in its own
-motivating case (pass 2's prefix arm re-bound exactly what pass 1 rejected), and a
-later round found a slice-window bug in the exact phase. Both live inside those
-untested blocks. `tests/skill-match.test.ts` covers the pure predicates around
-them, which is what let the first bug ship green.
+That is not hypothetical. A panel round found a pass-1 guard was a no-op in its own
+motivating case, and a later round found a slice-window bug in the exact phase.
+Both lived inside those untested blocks. Then `bindAudit.ts` measured the guard
+against production and it was reverted entirely — 12 false positives, zero true
+ones. Three rounds of review and a revert, on code no test could reach.
 
 The shape that works here already exists: `convex/lib/slugDecision.ts` is pure and
 unit-tested precisely because its refusal branch can otherwise only be reached by
 making GitHub's tree API fail mid-add. Do the same — a pure function over
-`(ordered candidate paths, batch slugs, names, rejections)` returning the
-placement, and one over `(pathHint, skillId, fmName)` for the resolver's hinted
-shortcut.
+`(ordered candidate paths, slugs, names)` returning the placement, and one over
+`(pathHint, skillId, fmName)` for the resolver's hinted shortcut.
 
 Worth doing BEFORE the next change in this area, not after. Deferred from the
 exact-match branch (Jul 2026) only because it would have meant restructuring code

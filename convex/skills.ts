@@ -38,11 +38,7 @@ import {
   parseSkillMdName,
   rawGitHubUrl,
 } from "./lib/github";
-import {
-  claimedByOtherSkill,
-  matchesSkillId,
-  matchesSkillIdExactly,
-} from "./lib/skillMatch";
+import { matchesSkillId, matchesSkillIdExactly } from "./lib/skillMatch";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 import { getCurrentUser } from "./users";
@@ -901,11 +897,6 @@ export const listSourcesNeedingDiscovery = internalQuery({
  */
 const DISCOVERY_WAVE_SIZE = 10;
 
-/** Key for the "this file lost this slug in pass 1" set. JSON rather than a
- *  separator character, so no path or slug can forge a collision. */
-const rejectionKey = (path: string, skillId: string) =>
-  JSON.stringify([path, skillId]);
-
 export const discoverSkillMdUrls = internalAction({
   args: {
     source: v.string(),
@@ -936,10 +927,6 @@ export const discoverSkillMdUrls = internalAction({
     const tree = treeResult === NOT_MODIFIED ? null : treeResult;
     const resolvedBranch = tree?.branch ?? defaultBranch;
 
-    // Every slug in this batch, for the "does this file claim someone else?"
-    // check used by the fallback below and by pass 1.
-    const batchSlugs = new Set(skills.map((s) => s.skillId));
-
     // Fallback: tree fetch failed (404 / 409 too large / rate limited). Try
     // direct path guessing for each skill.
     if (!tree) {
@@ -955,26 +942,22 @@ export const discoverSkillMdUrls = internalAction({
         ];
         for (const path of paths) {
           const rawUrl = rawGitHubUrl(source, resolvedBranch, path);
-          // GET, not HEAD: this probes the same folder-name convention pass 1
-          // does, so it needs the same verification, and a HEAD never reads a
-          // body. Without it the guard has a hole exactly the size of "how
-          // often fetchRepoTree fails" — which is largest for the huge
-          // monorepos most likely to hold a leftover folder. The body is not
-          // wasted: the content pipeline fetches this file moments later.
-          const body = await fetchRawText(rawUrl);
-          if (body === null) continue;
-          if (claimedByOtherSkill(parseSkillMdName(body), s.skillId, batchSlugs)) {
-            console.log(
-              `discovery (no tree): ${source}/${path} claims another skill in this batch — not binding it to ${s.skillId}`,
-            );
+          // HEAD, not GET: this only needs to know the file exists. It briefly
+          // fetched bodies to run the same name check pass 1 did; that check is
+          // gone (see pass 1) and with it the reason to transfer a body here.
+          try {
+            const res = await fetch(rawUrl, { method: "HEAD" });
+            if (res.ok) {
+              await ctx.runMutation(internal.skills.updateSkillMdUrl, {
+                docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
+                skillMdUrl: rawUrl,
+              });
+              matchedSkillIds.add(s.skillId);
+              break;
+            }
+          } catch {
             continue;
           }
-          await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-            docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-            skillMdUrl: rawUrl,
-          });
-          matchedSkillIds.add(s.skillId);
-          break;
         }
       }
       const unmatched = skills.filter((s) => !matchedSkillIds.has(s.skillId));
@@ -994,70 +977,43 @@ export const discoverSkillMdUrls = internalAction({
       tree.entries,
     );
 
-    // Pass 1: directory name matches the skillId.
+    // Pass 1: directory name matches the skillId. Bound from the tree, without
+    // opening the file.
     //
-    // A folder name alone used to be enough to bind content here, with the file
-    // never opened. That is wrong when one skill's FOLDER is named like a
-    // DIFFERENT skill's name — which happens when a repo renames a skill's
-    // folder to match its name and leaves the old one behind. The row then
-    // serves the other skill's SKILL.md and nothing errors.
+    // A verification step lived here briefly (Jul 2026): open each candidate and
+    // refuse the bind if its own `name` was some OTHER skill's slug, to catch a
+    // folder holding the wrong skill's file. It was reverted after being
+    // measured, and the measurement is the reason — see `bindAudit.ts`, which
+    // asks the same question over the whole catalog instead.
     //
-    // So each candidate is opened and rejected if its own `name` is some OTHER
-    // skill's slug: a file that says what it is does not belong to whichever
-    // folder it happens to sit in. Pass 2 may place it on the skill it names, if
-    // that skill is still unbound — but in the motivating shape that skill
-    // matched its own folder in pass 1 and has already left `remaining`, so the
-    // file is placed nowhere and the rejected skill ends up contentless rather
-    // than wrong. `rejected` below is what stops pass 2 handing it back.
+    // Across 13,080 judged production rows: ZERO confirmed wrong binds, and 12
+    // rows where that check would have refused a healthy one. The clearest is
+    // `nextlevelbuilder/ui-ux-pro-max-skill`, which has two folders named
+    // `slides` holding two different skills, and BOTH files call themselves
+    // `slides`. The check would have concluded that the file under
+    // `.claude/skills/slides` belongs to the row `slides` and detached it from
+    // `ckm:slides` — a row with ~32k installs — on the strength of a name that
+    // does not actually identify its owner.
     //
-    // Deliberately NOT "verify every match against its own slug". `kebabCase`
-    // cannot reproduce every skills.sh slug derivation — that is why
-    // `matchesSkillId` is loose — so a name like "Next.js" (kebab `next.js`)
-    // against slug `nextjs` would fail a self-check and unbind a perfectly good
-    // file. Rejecting only on a positive claim by another skill can't misfire
-    // that way: worst case a genuine collision goes unnoticed, which is where we
-    // already were.
+    // The lesson worth keeping: a SKILL.md's `name` is not a reliable identity
+    // claim. skills.sh derives slugs from it in ways `kebabCase` cannot
+    // reproduce (prefixes stripped, underscores converted, or the slug taken
+    // from the folder instead), and repos reuse the same name across folders. So
+    // a mismatch between name and slug is normal — 50 of those 13,080 rows — and
+    // is not evidence that the wrong file is attached.
     const matchedSkillIds = new Set<string>();
     const matchedPaths = new Set<string>();
     const rawUrlFor = (path: string) =>
       rawGitHubUrl(source, resolvedBranch, path);
-    // (path, skillId) pairs pass 1 refused. Pass 2 must honour them: its loose
-    // prefix arm would otherwise re-bind the very file pass 1 just rejected —
-    // `matchesSkillId("panel-review", "panel")` is true — making the whole guard
-    // a no-op in exactly the leftover-folder shape it exists for.
-    const rejected = new Set<string>();
-    const dirCandidates = skills.flatMap((s) => {
+    for (const s of skills) {
       const path = skillMdByDir.get(s.skillId);
-      return path ? [{ s, path }] : [];
-    });
-
-    for (let i = 0; i < dirCandidates.length; i += DISCOVERY_WAVE_SIZE) {
-      const wave = dirCandidates.slice(i, i + DISCOVERY_WAVE_SIZE);
-      const bodies = await Promise.all(
-        wave.map((c) => fetchRawText(rawUrlFor(c.path))),
-      );
-      for (let j = 0; j < wave.length; j++) {
-        const { s, path } = wave[j];
-        const body = bodies[j];
-        const fmName = body === null ? null : parseSkillMdName(body);
-        // Only a name that IS another skill's slug blocks the bind. A fetch
-        // failure or a file with no `name` leaves the folder match standing —
-        // transient raw trouble must not cost a skill its content. See
-        // `claimedByOtherSkill` for why this isn't a self-check.
-        if (claimedByOtherSkill(fmName, s.skillId, batchSlugs)) {
-          rejected.add(rejectionKey(path, s.skillId));
-          console.log(
-            `discovery: ${source}/${path} is named "${fmName}", not ${s.skillId} — not binding it to ${s.skillId}`,
-          );
-          continue;
-        }
-        await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-          docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-          skillMdUrl: rawUrlFor(path),
-        });
-        matchedSkillIds.add(s.skillId);
-        matchedPaths.add(path);
-      }
+      if (!path) continue;
+      await ctx.runMutation(internal.skills.updateSkillMdUrl, {
+        docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
+        skillMdUrl: rawUrlFor(path),
+      });
+      matchedSkillIds.add(s.skillId);
+      matchedPaths.add(path);
     }
 
     // Pass 2: for unmatched skills, fetch unmatched SKILL.md files and check
@@ -1132,7 +1088,6 @@ export const discoverSkillMdUrls = internalAction({
           // structurally impossible and this restores the property.
           if (matchedPaths.has(path)) continue;
           for (const [skillId, skill] of remaining) {
-            if (rejected.has(rejectionKey(path, skillId))) continue;
             // `matchesSkillIdExactly`, not two map lookups. The lookups were
             // `remaining.get(name) ?? remaining.get(kebabCase(name))`, whose
             // first arm is the raw-identity comparison deliberately removed from
@@ -1156,7 +1111,6 @@ export const discoverSkillMdUrls = internalAction({
         if (remaining.size === 0) break;
         if (matchedPaths.has(path)) continue;
         for (const [skillId, skill] of remaining) {
-          if (rejected.has(rejectionKey(path, skillId))) continue;
           if (matchesSkillId(name, skillId)) {
             await bind(skill, path);
             break;

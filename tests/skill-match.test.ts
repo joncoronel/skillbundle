@@ -15,7 +15,6 @@ import {
   kebabCase,
   matchesSkillId,
   matchesSkillIdExactly,
-  claimedByOtherSkill,
 } from "../convex/lib/skillMatch";
 
 describe("canonicalSlug — accepts", () => {
@@ -145,70 +144,3 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
   });
 });
 
-/**
- * Discovery's pass-1 guard. Every case names the consequence, because the
- * asymmetry here is the whole design: a false positive strips content from a
- * healthy skill across the catalog, a false negative just leaves us where we
- * already were.
- */
-describe("claimedByOtherSkill — discovery pass 1's folder-match guard", () => {
-  const slugs = new Set(["panel-review", "recap", "nextjs"]);
-
-  test("blocks the bind when the file says it is ANOTHER known skill", () => {
-    // The collision: a folder named `recap` holding panel-review's file, which
-    // happens when a repo renames a folder and leaves the old one behind.
-    // Binding it would serve panel-review's content under recap's name.
-    expect(claimedByOtherSkill("panel-review", "recap", slugs)).toBe(true);
-  });
-
-  test("allows the bind when the file agrees with the folder", () => {
-    expect(claimedByOtherSkill("panel-review", "panel-review", slugs)).toBe(false);
-  });
-
-  test("allows a name whose kebab form agrees", () => {
-    expect(claimedByOtherSkill("Panel Review", "panel-review", slugs)).toBe(false);
-  });
-
-  test("allows an unreproducible slug derivation — the false positive that must not happen", () => {
-    // "Next.js" kebabs to `next.js`, which is neither `nextjs` nor a prefix of
-    // it. A self-check would unbind this healthy file. Because the guard only
-    // reacts to a positive claim on ANOTHER slug, and `next.js` is nobody's
-    // slug, the bind stands.
-    expect(claimedByOtherSkill("Next.js", "nextjs", slugs)).toBe(false);
-  });
-
-  test("allows a name claiming a slug nobody in the batch owns", () => {
-    // Not our business: no known skill loses out, so there is nothing to protect.
-    expect(claimedByOtherSkill("Some Other Thing", "recap", slugs)).toBe(false);
-  });
-
-  test("allows a file with no frontmatter name", () => {
-    // Can't disprove the folder, so don't. Same for a failed fetch, which the
-    // caller passes through as null.
-    expect(claimedByOtherSkill(null, "recap", slugs)).toBe(false);
-  });
-
-  test("blocks a PREFIX collision — the pair that hid a real bug", () => {
-    // The doc's own motivating shape: folder `panel/` left behind after a rename
-    // to `panel-review/`, so `panel/SKILL.md` is named `panel-review`.
-    //
-    // The original suite asserted this with `recap`, which is not a prefix of
-    // `panel-review`. That made the guard look watertight while discovery's
-    // pass 2 quietly re-bound the rejected file through `matchesSkillId`'s
-    // prefix arm — a no-op fix in the exact case it was written for.
-    //
-    // Note what this does NOT cover: the handoff itself lives in
-    // `discoverSkillMdUrls` (the `rejected` set), which no test reaches — delete
-    // that set and the suite still passes. This asserts only that the two pure
-    // functions disagree in the way the handoff has to bridge.
-    const pair = new Set(["panel", "panel-review"]);
-    expect(claimedByOtherSkill("panel-review", "panel", pair)).toBe(true);
-    // The arm that made it re-bindable, asserted so the coupling is on record.
-    expect(matchesSkillId("panel-review", "panel")).toBe(true);
-  });
-
-  test("allows everything when the batch has one skill", () => {
-    // Nobody else to be confused with, so the guard is inert.
-    expect(claimedByOtherSkill("panel-review", "recap", new Set(["recap"]))).toBe(false);
-  });
-});
