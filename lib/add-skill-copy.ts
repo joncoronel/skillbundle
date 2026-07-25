@@ -76,7 +76,12 @@ export function previewFailureCopy(preview: PreviewFailure): string {
     case "no_repo":
       return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":
-      return "No matching SKILL.md in that repo (matched by folder name and frontmatter name). Check the slug.";
+      // Says what the slug has to BE, because the most likely way to land here
+      // is a shortened name. Typing "panel" for a skill named "panel-review"
+      // used to bind the file and store the row as "panel", which skills.sh
+      // could never adopt. It now finds nothing instead, so this sentence is
+      // where that user gets told why. "Exact" is the load-bearing word.
+      return "No SKILL.md in that repo matches that slug. It has to be either the folder the file sits in, or the exact name set inside the file. A shortened name won't match.";
     case "tree_unavailable":
       return "Couldn't list the repo's files (too large or GitHub rate-limited); the conventional SKILL.md paths were probed with no match. Try again shortly.";
   }

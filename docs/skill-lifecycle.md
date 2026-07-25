@@ -133,8 +133,12 @@ segment. All four must hold:
   `/`, `&`, `(` and friends survive it; persisting one writes a row whose
   detail page 404s forever and whose install command is dropped.
 - The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
-  caller pointed at this exact skill. `matchesSkillId`'s loose `startsWith` arm
-  must never name a skill on a write.
+  caller pointed at this exact skill. A frontmatter match must never name a
+  skill on a write. Since the resolver moved to `matchesSkillIdExactly` this
+  gate is belt-and-braces for the write (an exact frontmatter match means the
+  name already equals the typed slug), but it still governs whether
+  `on_skills_sh_as_alias` may fire, and that status re-runs the add with no
+  confirmation.
 - **Nothing claims the typed slug.** A delisted row there gets RELISTED (free,
   no quota) rather than orphaned beside a fresh alias row.
 - Discovery will still bind the previewed file (`aliasBindsSameFile`) — its
@@ -180,16 +184,24 @@ being persisted: an audit answers "is anything wrong right now", so resuming a
 run from hours ago would be a stranger contract than continuing the one in front
 of you.
 
-Two ways such a row exists, and only the first is closed:
+Two ways such a row got written, **both now closed at the source**:
 
-- It predates the alias fix, when the add took the folder slug outright. (The
-  path that kept producing these — an unverifiable alias falling back to the
-  folder slug — now refuses instead: `alias_unverifiable`, above.)
-- Its SKILL.md was bound by `matchesSkillId`'s loose **prefix** arm, so
-  `matchedBy` is `"frontmatter"`, `aliasCandidate` deliberately declines to
-  fire, and the typed slug is kept. Narrow — the typed slug has to be a strict
-  prefix of the kebab'd name with no folder of that name — but live. Do not
-  read the audit as historical-only; a fresh mismatch can be a new row.
+- The add took the folder slug outright, before the alias pass existed. The path
+  that kept producing these (an unverifiable alias falling back to the folder
+  slug) now refuses instead: `alias_unverifiable`, above.
+- A **partial** name bound the file through `matchesSkillId`'s prefix arm while
+  the typed slug was kept, so typing `owner/repo/panel` for a skill named
+  `panel-review` wrote the row as `panel`. The resolver now uses
+  `matchesSkillIdExactly`, so a partial name resolves to nothing and the caller
+  gets told the slug must be the folder or the exact name from the file.
+
+So the audit is now looking for history plus insurance against a regression,
+rather than for a live leak. Production audited clean in Jul 2026 (zero
+mismatches). Note the prefix arm itself is untouched for **discovery**, where a
+loose match is the safety net for skills.sh's non-obvious slug derivation and a
+wrong guess costs only a content fetch. The two callers are deliberately
+different; see `matchesSkillIdExactly`'s doc for why stricter-here is safe and
+looser-here would not be.
 
 Rows it can't judge (no discovered URL, fetch failed, gone (404), no frontmatter
 `name`, a name that isn't sluggable) are reported separately from mismatches —

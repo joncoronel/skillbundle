@@ -39,9 +39,14 @@ named "Testing Library Helper" (`testing-library-helper`). The tightening is
 Deferred from the GitHub-only PR (Jul 2026) because it changes matching
 behavior for the entire existing catalog's discovery pipeline, not just the new
 feature — it needs its own change with a look at whether any currently-matched
-skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
-tighten one caller without the others (that's the drift the shared matcher
-exists to prevent).
+skill would unbind. When done, it's a one-line edit in `matchesSkillId`.
+
+Scope note (Jul 2026): this is now **discovery-only**. The GitHub-only add moved
+off this function to `matchesSkillIdExactly`, because it invents a permanent slug
+rather than finding the file behind one skills.sh already assigned. So tightening
+here no longer affects any write path, and the old warning about never tightening
+one caller without the others no longer applies to that caller. What still holds
+is the direction rule: the preview may be stricter than discovery, never looser.
 
 ### Submit buttons drop keyboard focus for the length of every request
 
@@ -92,28 +97,24 @@ both judged, none reported), so this is deferred against a measured zero rather
 than a guess. The add path that used to create these now refuses instead of
 guessing a slug (`alias_unverifiable` in `githubOnly.ts`).
 
-**One path is still open, and it is reachable today.** The alias only fires when
-the FOLDER name matched what the caller typed (`matchedBy === "dir"`). When the
-file was found by frontmatter instead, `aliasCandidate` declines and the typed
-slug is kept — and `matchesSkillId` accepts a bare prefix, so typing
-`owner/repo/panel` binds the SKILL.md named `panel-review` and stores the row as
-`panel`. skills.sh calls it `panel-review`. That is a mis-slugged row created new,
-by nothing more exotic than someone typing a shortened slug. (Traced through the
-code, not reproduced.)
+**Both write paths are now closed.** The last one open was: `matchesSkillId`
+accepted a bare prefix, so typing `owner/repo/panel` bound the SKILL.md named
+`panel-review` while keeping the typed slug, writing a row as `panel`. Fixed by
+giving the GitHub-only resolver its own exact matcher
+(`matchesSkillIdExactly`), so a partial name resolves to nothing and the caller
+is told the slug must be the folder or the exact name from the file.
 
-So any row the audit reports may be **new rather than historical**, which is the
-main reason this entry stays open.
+Note what did NOT fix it, since an earlier version of this entry claimed it
+would: tightening the shared matcher to whole-word prefixes. `panel-review` still
+starts with `panel-`, so that only drops matches with no hyphen boundary
+(`test` vs `testing-library-helper`).
 
-Note the whole-word-prefix entry above does **not** close this, despite earlier
-versions of this entry claiming it did: tightening `startsWith(skillId)` to
-`startsWith(skillId + "-")` still matches, because `panel-review` starts with
-`panel-`. It only drops matches with no hyphen boundary (`test` vs
-`testing-library-helper`). The real fix is to REFUSE the add when a frontmatter
-match implies a slug different from the typed one, the same way
-`alias_unverifiable` already refuses an alias it can't verify. Adopting the
-frontmatter slug instead was considered and rejected: a bare prefix guess must not
-name a permanent row (see the `matchedBy === "dir"` restriction in
-`previewGitHubCore`).
+Also considered and rejected: pre-filling the confirm card with the corrected
+slug ("did you mean panel-review?"). Better UX, but the same alias also decides
+whether `on_skills_sh_as_alias` fires, and that status makes the client re-run the
+add with **no confirm step** — so allowing an inferred name there needs a two-tier
+trust model separating "may pre-fill a card" from "may drive an unconfirmed
+write". Worth building only if the extra paste turns out to annoy anyone.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 

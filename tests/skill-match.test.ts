@@ -14,6 +14,7 @@ import {
   canonicalSlug,
   kebabCase,
   matchesSkillId,
+  matchesSkillIdExactly,
 } from "../convex/lib/skillMatch";
 
 describe("canonicalSlug — accepts", () => {
@@ -93,5 +94,52 @@ describe("matchesSkillId — unchanged by the canonicalSlug split", () => {
 
   test("an unrelated name still misses", () => {
     expect(matchesSkillId("Deploy To Vercel", "react-best-practices")).toBe(false);
+  });
+});
+
+/**
+ * The GitHub-only resolver's matcher. Each case names the consequence it
+ * protects, because the whole point of this function is that a match here can
+ * become a row's permanent, unrepairable slug.
+ */
+describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
+  test("accepts an exact frontmatter name", () => {
+    expect(matchesSkillIdExactly("panel-review", "panel-review")).toBe(true);
+  });
+
+  test("accepts a spaced name whose kebab form is the slug", () => {
+    expect(matchesSkillIdExactly("Next JS Development", "next-js-development")).toBe(true);
+  });
+
+  test("REFUSES a shortened name — the mis-slug this exists to prevent", () => {
+    // The failure it replaces: this bound the file, the row was then stored as
+    // "panel", skills.sh could never adopt it, and the sync inserted a second
+    // row under "panel-review". `matchesSkillId` still accepts it, which is
+    // what makes the two callers genuinely different rather than duplicated.
+    expect(matchesSkillIdExactly("panel-review", "panel")).toBe(false);
+    expect(matchesSkillId("panel-review", "panel")).toBe(true);
+  });
+
+  test("REFUSES a prefix with no word boundary", () => {
+    // The case the whole-word-prefix TODO is about. It never reaches a write on
+    // this path now, whichever way that entry is eventually resolved.
+    expect(matchesSkillIdExactly("Testing Library Helper", "test")).toBe(false);
+  });
+
+  test("REFUSES a name the slug merely extends", () => {
+    // The reverse direction: nothing here is a prefix rule in either direction.
+    expect(matchesSkillIdExactly("panel", "panel-review")).toBe(false);
+  });
+
+  test("REFUSES surrounding whitespace, keeping the canonicalSlug invariant", () => {
+    // Load-bearing: `kebabCase` does not trim but `canonicalSlug` does, so a
+    // padded name matching here would break the property the resolver now
+    // relies on (a frontmatter match implies canonicalSlug(fmName) === slug).
+    expect(matchesSkillIdExactly(" panel-review ", "panel-review")).toBe(false);
+    expect(canonicalSlug(" panel-review ")).toBe("panel-review");
+  });
+
+  test("an unrelated name still misses", () => {
+    expect(matchesSkillIdExactly("Deploy To Vercel", "react-best-practices")).toBe(false);
   });
 });

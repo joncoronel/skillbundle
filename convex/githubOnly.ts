@@ -41,7 +41,7 @@ import {
   SkillsApiRateLimitError,
   withTransientRetry,
 } from "./lib/skillsApi";
-import { canonicalSlug, matchesSkillId } from "./lib/skillMatch";
+import { canonicalSlug, matchesSkillIdExactly } from "./lib/skillMatch";
 import { aliasCandidate, decideSlug } from "./lib/slugDecision";
 import {
   GITHUB_LEADERBOARD,
@@ -138,10 +138,16 @@ type GitHubSkillResolution =
       description?: string;
       // How this file earned the match. `"dir"` means a folder named exactly
       // like the slug — i.e. the caller pointed at THIS skill. `"frontmatter"`
-      // means the loose `matchesSkillId` rule bound it, which includes a bare
-      // `startsWith` prefix hit (slug "next" matching "Next JS Development").
-      // previewGitHubCore only trusts the frontmatter name as a slug on the
-      // `"dir"` path, so a prefix guess can never drive a write.
+      // means the file's own `name` matched it, EXACTLY: since the resolver
+      // moved to `matchesSkillIdExactly`, a partial name no longer binds, so
+      // this arm now implies `canonicalSlug(fmName)` already equals the typed
+      // slug and there is no substitution to make.
+      //
+      // previewGitHubCore still only trusts the frontmatter name as a slug on
+      // the `"dir"` path. That guard is now belt-and-braces for the write, but
+      // it stays load-bearing for the AUTO re-add: `on_skills_sh_as_alias` makes
+      // the client re-run the add with no confirm step, so nothing inferred may
+      // reach it.
       matchedBy: "dir" | "frontmatter";
       // Would storing `canonicalSlug(fmName)` as the row's slug still make
       // post-insert discovery bind THIS file? Discovery's pass 1 is
@@ -189,13 +195,19 @@ async function fetchText(url: string): Promise<string | null> {
 /**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
  *
- * Matching goes through the shared `matchesSkillId` (lib/skillMatch.ts) — the
- * same rule the post-insert discovery pipeline uses — so the file the admin
- * confirms in the preview is the file discovery binds after insert. This
- * function exists separately because discovery is batch-oriented and writes
- * straight to the DB, whereas this must report a result before any row
- * exists. When the tree is unavailable it mirrors discovery's fallback and
- * probes the conventional paths directly.
+ * Matching goes through `matchesSkillIdExactly` (lib/skillMatch.ts), which is
+ * discovery's rule minus the prefix arm. Deliberately STRICTER than discovery,
+ * not different for its own sake: this path invents the row's permanent slug
+ * from what the caller typed, so a partial name must not bind a file and get
+ * stored as though it were the name. Strictness only ever refuses where
+ * discovery would have matched, so the two can still never vouch for different
+ * files — see that function's doc for why the asymmetry is safe in this
+ * direction and not the other.
+ *
+ * This function exists separately because discovery is batch-oriented and writes
+ * straight to the DB, whereas this must report a result before any row exists.
+ * When the tree is unavailable it mirrors discovery's fallback and probes the
+ * conventional paths directly.
  */
 async function resolveGitHubSkillMd(
   source: string,
@@ -269,7 +281,7 @@ async function resolveGitHubSkillMd(
         return okResult(meta.defaultBranch, path, contents, "dir", null);
       }
       const fmName = extractSkillMdName(contents);
-      if (fmName && matchesSkillId(fmName, skillId)) {
+      if (fmName && matchesSkillIdExactly(fmName, skillId)) {
         return okResult(
           meta.defaultBranch,
           path,
@@ -322,7 +334,7 @@ async function resolveGitHubSkillMd(
       const contents = bodies[j];
       if (contents === null) continue;
       const fmName = extractSkillMdName(contents);
-      if (fmName && matchesSkillId(fmName, skillId)) {
+      if (fmName && matchesSkillIdExactly(fmName, skillId)) {
         return okResult(tree.branch, wave[j], contents, "frontmatter", byDir);
       }
     }

@@ -13,15 +13,18 @@
  *
  *   - It predates the frontmatter-name fix, when a GitHub-only add took its
  *     slug from the SKILL.md's folder name outright.
- *   - Its SKILL.md was bound by `matchesSkillId`'s loose prefix arm rather than
- *     by folder name, so `aliasCandidate` (lib/slugDecision.ts) deliberately
- *     declines to fire and the typed slug is kept. Narrow — the typed slug has
- *     to be a strict prefix of the kebab'd name with no folder of that name —
- *     but live. The prefix looseness itself is parked in TODO.md.
+ *   - It predates the exact-match fix: a partial name used to bind a file via
+ *     `matchesSkillId`'s prefix arm while the typed slug was kept, so typing
+ *     `panel` for a skill named `panel-review` wrote a row as `panel`.
  *
- * The path that USED to keep producing these — an alias we couldn't verify,
- * falling back to the folder slug — now refuses the add instead
- * (`alias_unverifiable` in githubOnly.ts).
+ * Both of those are now closed at the source rather than detected here. The
+ * unverifiable-alias path refuses the add (`alias_unverifiable` in
+ * githubOnly.ts), and the resolver matches frontmatter names exactly
+ * (`matchesSkillIdExactly` in lib/skillMatch.ts), so a partial name resolves to
+ * nothing instead of to a misnamed row.
+ *
+ * So this audit is now looking for HISTORY, plus insurance against a future
+ * regression. Production audited clean in Jul 2026.
  *
  * Reports only. Re-slugging moves a skill's public URL and has to rewrite the
  * summary, embedding and search doc in step, and the right call depends on the

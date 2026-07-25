@@ -14,6 +14,12 @@
  * (testing-library-helper). Tightening to `skillId + "-"` is a
  * behavior change for the whole existing catalog, so it happens here, once,
  * as its own change — never in just one caller.
+ *
+ * That looseness is for DISCOVERY only. The GitHub-only resolver uses
+ * `matchesSkillIdExactly` below, because it is inventing a permanent slug rather
+ * than finding the file behind one skills.sh already assigned. Read that
+ * function's doc before making these two agree again: they are deliberately
+ * different, and the direction of the difference is what makes it safe.
  */
 export function kebabCase(name: string): string {
   return name.toLowerCase().replace(/\s+/g, "-");
@@ -22,6 +28,42 @@ export function kebabCase(name: string): string {
 export function matchesSkillId(fmName: string, skillId: string): boolean {
   const kebab = kebabCase(fmName);
   return fmName === skillId || kebab === skillId || kebab.startsWith(skillId);
+}
+
+/**
+ * The same question WITHOUT the prefix arm, for the GitHub-only add.
+ *
+ * The two callers are asking different questions, which is why the strictness
+ * differs:
+ *
+ *   - **Discovery** (skills.ts) has a slug skills.sh already assigned and is
+ *     hunting for the file behind it. skills.sh derives slugs from names in
+ *     non-obvious ways, so a loose match is the safety net, and a wrong guess
+ *     costs a content fetch.
+ *   - **The GitHub-only add** (githubOnly.ts) has no upstream slug at all. It is
+ *     INVENTING the row's permanent identity from what the caller typed. There
+ *     is nothing to be lenient towards, and a wrong guess is unrepairable: type
+ *     `panel`, bind the SKILL.md named `panel-review`, and the row is stored as
+ *     `panel` forever. skills.sh can then never adopt it (adoption matches
+ *     `source` + `skillId`) and the daily sync inserts a SECOND row under the
+ *     real slug. See TODO.md, "re-slug a mis-slugged GitHub-only row".
+ *
+ * Asymmetry is safe in THIS direction only. The shared matcher exists so the
+ * file the preview vouches for is the file discovery later binds; a preview that
+ * is STRICTER can only refuse where discovery would have matched, and a refusal
+ * writes no row for discovery to disagree with. The dangerous direction is a
+ * looser preview, which vouches for one file while discovery binds another.
+ *
+ * A consequence worth knowing: when this matcher is what bound the file,
+ * `kebabCase(fmName) === skillId`, so `canonicalSlug(fmName)` equals the typed
+ * slug and there is no alias left to adopt. The frontmatter path can no longer
+ * produce a row whose stored slug disagrees with its own SKILL.md.
+ */
+export function matchesSkillIdExactly(
+  fmName: string,
+  skillId: string,
+): boolean {
+  return fmName === skillId || kebabCase(fmName) === skillId;
 }
 
 /**
