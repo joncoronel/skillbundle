@@ -108,7 +108,9 @@ export function addSkillErrorText(err: unknown): string {
   if (/URL must be from skills\.sh/i.test(cleaned)) {
     return "That URL isn't from skills.sh or GitHub. Paste one of those, or an owner/repo/slug.";
   }
-  if (/Sign in/i.test(cleaned)) return "Sign in to add a skill.";
+  if (/Sign in|[Nn]ot authenticated/.test(cleaned)) {
+    return "Sign in to add a skill.";
+  }
   if (/[Nn]ot authorized/.test(cleaned)) {
     return "You don't have access to do that.";
   }

@@ -604,7 +604,10 @@ function previewFailureError(
       );
     case "on_skills_sh_as_alias":
       return new ConvexError(
-        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Add it with that and it comes in the normal way.`,
+        // Wording kept in step with the client twin in lib/add-skill-copy.ts:
+        // this message reaches a real visitor, because the public confirm throws
+        // it and the flow renders it through `addSkillErrorText`.
+        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Add it with that and it comes in the normal way.`,
       );
     case "alias_unverifiable":
       return new ConvexError(
@@ -758,6 +761,23 @@ export const previewGitHubSkill = action({
 });
 
 /**
+ * Shared by the admin and public confirm actions, the way `manualAddReturns`
+ * is shared by the two manual adds.
+ *
+ * One const, not two inline copies: the client hook derives its `github_added`
+ * outcome from the PUBLIC action's return type and hands it to both surfaces,
+ * so a field added to one validator and not the other would break the admin
+ * form with a type error pointing at an action it never calls. Sharing the
+ * validator makes that divergence impossible rather than merely unlikely.
+ */
+const gitHubAddReturns = v.object({
+  status: v.union(v.literal("inserted"), v.literal("relisted")),
+  source: v.string(),
+  skillId: v.string(),
+  name: v.string(),
+});
+
+/**
  * Insert a skill straight from its GitHub repo, with no skills.sh presence.
  *
  * Seeds `installs: 0` (nothing upstream to read a count from) and marks the
@@ -779,23 +799,6 @@ export const previewGitHubSkill = action({
  * shared matcher), and correctly handles a repo that moved the file between
  * preview and confirm.
  */
-/**
- * Shared by the admin and public confirm actions, the way `manualAddReturns`
- * is shared by the two manual adds.
- *
- * One const, not two inline copies: the client hook derives its `github_added`
- * outcome from the PUBLIC action's return type and hands it to both surfaces,
- * so a field added to one validator and not the other would break the admin
- * form with a type error pointing at an action it never calls. Sharing the
- * validator makes that divergence impossible rather than merely unlikely.
- */
-const gitHubAddReturns = v.object({
-  status: v.union(v.literal("inserted"), v.literal("relisted")),
-  source: v.string(),
-  skillId: v.string(),
-  name: v.string(),
-});
-
 export const addSkillFromGitHub = action({
   args: { input: v.string() },
   returns: gitHubAddReturns,
@@ -843,9 +846,13 @@ export const addSkillFromGitHub = action({
  * `.order("desc")` is load-bearing, not cosmetic. An index walk is
  * deterministically ordered, so a capped ascending read returns the SAME oldest
  * rows on every run and everything added past the cap would never be audited —
- * not "later", never — while the rows the audit exists for are the newest ones
- * (a mismatch can still arrive via the loose prefix arm). Newest-first means a
- * capped run covers the interesting end. Paging the whole population across
+ * not "later", never.
+ *
+ * The argument for descending is which blind spot is bounded, NOT that old rows
+ * are likelier to be fine (they aren't: the legacy mis-slugged population is
+ * precisely the oldest rows). Ascending loses an unbounded, permanently growing
+ * tail; descending loses a bounded one that earlier runs already covered while
+ * the population was still under the cap. Paging the whole population across
  * runs is the real answer if it ever outgrows one read; see TODO.md.
  */
 export const listGitHubOnlyRows = internalQuery({

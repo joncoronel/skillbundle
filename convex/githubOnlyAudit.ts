@@ -58,6 +58,7 @@ import { extractSkillMdName } from "./skills";
 const UNKNOWN_REASON = {
   noUrl: "no SKILL.md URL discovered yet",
   badHost: "SKILL.md URL is not on raw.githubusercontent.com",
+  redirectedOffHost: "SKILL.md URL redirected off raw.githubusercontent.com",
   gone: "SKILL.md is no longer at that URL (404)",
   fetchFailed: "SKILL.md couldn't be fetched from GitHub",
   noFrontmatterName: "SKILL.md has no frontmatter `name`",
@@ -68,8 +69,13 @@ const UNKNOWN_REASON = {
  * Bound on rows read AND SKILL.mds downloaded per run — one constant for both,
  * so the read can't quietly outgrow the fetch budget. The GitHub-only
  * population is small (a quota-limited fallback path), so this is a runaway
- * guard rather than an expected limit; anything past it is reported as
- * unchecked, never as sound.
+ * guard rather than an expected limit.
+ *
+ * Anything past it is not read at all, and the result says so through
+ * `truncated` rather than by enumerating a remainder it never saw. Listing one
+ * placeholder row for an unbounded tail was the earlier behaviour and it
+ * misstated the scale: "1 row couldn't be judged" for 5,000 unread rows reads
+ * as a near-complete audit.
  */
 const FETCH_CAP = 200;
 const WAVE_SIZE = 10;
@@ -113,6 +119,17 @@ type SlugAuditResult = {
   unknown: Array<{ source: string; skillId: string; reason: string }>;
 };
 
+/** HTTPS on the one allowed host, and nothing else. Unparseable counts as not
+ *  allowed. Used both before the request and again on the URL it landed on. */
+function isAllowedUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === ALLOWED_HOST;
+  } catch {
+    return false;
+  }
+}
+
 /** Attempts per URL, and the pause before a retry. Mirrors the linear backoff
  *  in `withTransientRetry` (lib/skillsApi.ts) — a zero-delay second attempt
  *  lands inside the same throttle window as the first and fails identically,
@@ -138,16 +155,10 @@ const RETRY_DELAY_MS = 500;
 async function fetchSkillMd(
   url: string,
 ): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { ok: false, reason: UNKNOWN_REASON.badHost };
-  }
   // Scheme as well as host: a stored `http://` URL would otherwise be fetched
   // in cleartext, exposing which rows an admin is diagnosing and letting a
   // network attacker tamper with the frontmatter this then parses.
-  if (parsed.protocol !== "https:" || parsed.hostname !== ALLOWED_HOST) {
+  if (!isAllowedUrl(url)) {
     return { ok: false, reason: UNKNOWN_REASON.badHost };
   }
   for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt++) {
@@ -156,9 +167,15 @@ async function fetchSkillMd(
     }
     try {
       const res = await fetch(url);
-      const landed = new URL(res.url);
-      if (landed.protocol !== "https:" || landed.hostname !== ALLOWED_HOST) {
-        return { ok: false, reason: UNKNOWN_REASON.badHost };
+      // `res.url` empty means the runtime gave us no redirect information, not
+      // that we were redirected — parsing it unguarded would throw into the
+      // catch below and degrade EVERY row to `fetchFailed`. Absent info means
+      // no redirect happened, which the pre-fetch check above already cleared.
+      if (res.url && !isAllowedUrl(res.url)) {
+        // Its own reason, not `badHost`: the STORED url is on the allowed host
+        // in this case, so saying otherwise would assert something untrue about
+        // the row the card names.
+        return { ok: false, reason: UNKNOWN_REASON.redirectedOffHost };
       }
       if (res.ok) return { ok: true, body: await res.text() };
       // Permanent: the file moved or the repo went away. Don't retry, and
@@ -175,9 +192,9 @@ async function fetchSkillMd(
 export const auditGitHubOnlySlugs = action({
   args: {},
   returns: v.object({
-    // Rows we actually compared. Distinct from `total` on purpose: reporting
-    // the population as "checked" is how a run where nothing could be read
-    // still prints a clean bill of health.
+    // Rows actually compared, kept distinct from `read` on purpose: reporting
+    // rows we merely looked at as "checked" is how a run where nothing could be
+    // fetched still prints a clean bill of health.
     judged: v.number(),
     read: v.number(),
     truncated: v.boolean(),

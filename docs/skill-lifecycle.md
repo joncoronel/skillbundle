@@ -158,9 +158,16 @@ rather than picking the other slug.
 
 **Finding the ones that slipped through.** `githubOnlyAudit.auditGitHubOnlySlugs` (a
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
-walks the `by_isGitHubOnly` index and flags every row whose stored `skillId`
-differs from `canonicalSlug(frontmatter name)`. Two ways such a row exists, and
-only the first is closed:
+walks the `by_isGitHubOnly` index on `skillSummaries` and flags rows whose stored
+`skillId` differs from `canonicalSlug(frontmatter name)`. It reads a **bounded
+window, newest first** (`FETCH_CAP`, currently 200) rather than the whole
+population: one constant governs the read and the SKILL.md fetch budget, and a
+capped run says so through `truncated`. Newest-first because an index walk is
+deterministic, so a capped ascending read would return the same oldest rows on
+every run and everything past the cap would never be audited at all. Cursor
+paging is the real answer if the population outgrows one read; see TODO.md.
+
+Two ways such a row exists, and only the first is closed:
 
 - It predates the alias fix, when the add took the folder slug outright. (The
   path that kept producing these — an unverifiable alias falling back to the

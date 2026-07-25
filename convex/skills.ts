@@ -1819,6 +1819,13 @@ export const updateSkillFromDetail = internalMutation({
       contentFetchedAt: now,
       needsContentFetch: false,
       hasContentFetchError: false,
+      // Belt and braces. This path is well-known-sources only (its work set
+      // filters GitHub sources out) and a GitHub-only row is a GitHub source by
+      // construction, so the field should never matter here — but this call can
+      // INSERT a summary, and the insert branch writes `isGitHubOnly` straight
+      // through. Passing it means the mirror stays correct without depending on
+      // a source filter two functions away.
+      isGitHubOnly: skill.isGitHubOnly,
     });
   },
 });
