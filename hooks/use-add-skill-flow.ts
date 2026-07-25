@@ -45,6 +45,17 @@ import type { FunctionReference, FunctionReturnType } from "convex/server";
 import type { api } from "@/convex/_generated/api";
 import type { PreviewFailure } from "@/lib/add-skill-copy";
 
+/**
+ * The three action-result slots below all derive from the PUBLIC actions, even
+ * though the admin surface passes admin actions in. That is safe by
+ * construction rather than by luck: each pair shares ONE return validator
+ * server-side — `manualAddReturns` (skills.ts) for the manual adds,
+ * `gitHubAddReturns` (githubOnly.ts) for the confirms, and `previewTerminalArms`
+ * for every preview failure — so neither half of a pair can gain a field
+ * without the other. If one is ever un-shared, the admin form breaks with a
+ * type error pointing at an action it never calls, which is the same trap
+ * `PreviewOkBase` below is hand-written to avoid; keep the validators shared.
+ */
 type ManualAddResult = FunctionReturnType<
   typeof api.skills.addSkillManuallyPublic
 >;
@@ -198,15 +209,32 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
    */
   const inFlight = useRef(false);
 
+  const candidateInput = candidate?.input ?? null;
+
   const patchCandidate = useCallback(
     (fn: (c: Candidate<TOk>) => Candidate<TOk>) =>
       setCandidate((c) => (c ? fn(c) : c)),
     [],
   );
 
-  /** Every report goes through here so `helpers` can't be forgotten. */
+  /**
+   * Every report goes through here so `helpers` can't be forgotten.
+   *
+   * A throwing reporter is contained here rather than allowed to escape. The
+   * terminal `emit` calls sit inside the protocol's own `try`, so without this
+   * a reporter that throws — and `report` is arbitrary consumer code, reaching
+   * `toast` and `setState` — would be caught by that `catch` and re-reported as
+   * `{ kind: "failed" }`, announcing a failure for a write that succeeded. A
+   * reporter fault is not a protocol failure.
+   */
   const emit = useCallback(
-    (outcome: AddSkillOutcome<TOk>) => report(outcome, { patchCandidate }),
+    (outcome: AddSkillOutcome<TOk>) => {
+      try {
+        report(outcome, { patchCandidate });
+      } catch (err) {
+        console.error("add-skill reporter threw", err);
+      }
+    },
     [report, patchCandidate],
   );
 
@@ -309,7 +337,11 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
       // The candidate card for this exact input is already on screen — nothing
       // to re-fetch. Not a cache: any change to the input invalidates the
       // candidate, and confirm re-verifies server-side regardless.
-      if (candidate?.input === trimmed) return;
+      //
+      // Callers must mirror this in the submit button's `disabled` via
+      // `submitBlocked` below; an enabled button whose click does nothing at
+      // all is worse than no button.
+      if (candidateInput === trimmed) return;
 
       inFlight.current = true;
       setCandidate(null);
@@ -326,7 +358,9 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
         setPhase("idle");
       }
     },
-    [candidate, emit, runManualAdd, offerGitHubFallback],
+    // `candidateInput`, not `candidate`: this only ever reads the input, so
+    // depending on the whole object rebuilt `submit` on every `patchCandidate`.
+    [candidateInput, emit, runManualAdd, offerGitHubFallback],
   );
 
   const confirmGitHub = useCallback(async () => {
@@ -357,6 +391,12 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     );
   }, []);
 
+  // Named, not inlined into the returned object literal: a `useCallback` in
+  // there is legal only while the return is unconditional, so an early return
+  // added above would silently change hook order at runtime, and it reads as an
+  // object property where nobody thinks to check the rule.
+  const clearCandidate = useCallback(() => setCandidate(null), []);
+
   return {
     input,
     /**
@@ -369,8 +409,18 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     phase,
     pending,
     label: phase === "idle" ? null : ADD_SKILL_PHASE_LABEL[phase],
+    /**
+     * True when `submit` would be a no-op for the current input: a step is in
+     * flight, the field is empty, or the candidate card already answers this
+     * exact input. Fold it into the submit button's `disabled` so the
+     * affordance matches the guard — otherwise an enabled primary button
+     * produces no toast, no label change and no state change at all, and the
+     * admin card's own advice to "re-run the normal add" reads as broken.
+     */
+    submitBlocked:
+      pending || !input.trim() || candidate?.input === input.trim(),
     candidate,
-    clearCandidate: useCallback(() => setCandidate(null), []),
+    clearCandidate,
     submit,
     confirmGitHub,
   };

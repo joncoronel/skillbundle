@@ -43,9 +43,34 @@ skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
 tighten one caller without the others (that's the drift the shared matcher
 exists to prevent).
 
+### Add-skill: have the confirm action return failures instead of throwing
+
+There are two prose tables over one status union: `previewFailureCopy`
+(`lib/add-skill-copy.ts`) for statuses the preview RETURNS, and
+`previewFailureError` (`convex/githubOnly.ts`) for the `ConvexError` the confirm
+action THROWS. A new preview status needs an arm in both, and the same hedging
+rationale had to be written twice for `alias_unverifiable`.
+
+The confirm action re-runs `previewGitHubCore` and its failures are literally
+preview failures, so `addSkillFromGitHub*` could return
+`PreviewFailure | { status: "inserted" | "relisted", … }` and route failures
+through the hook's existing `preview_failed` arm. That deletes
+`previewFailureError` (~50 lines plus a whole prose duplicate) and removes the
+error-string round-trip that `addSkillErrorText` exists to clean up.
+
+Not done on the slug-alias follow-up branch: it changes a public action's
+contract and both surfaces' handling of it, which is a wider blast radius than
+the review round that surfaced it. Both tables now cross-reference each other so
+a new status finds both.
+
+Also parked here (same area, same reason): the audit reads a bounded window of
+GitHub-only rows, newest first, with no cursor. If the population ever outgrows
+one read, `listGitHubOnlyRows` needs `paginationOpts` and the action needs to
+page until its fetch budget is spent.
+
 ### Add-skill: re-slug a mis-slugged GitHub-only row
 
-The *detection* half is done — `githubOnly.auditGitHubOnlySlugs` plus the
+The *detection* half is done — `githubOnlyAudit.auditGitHubOnlySlugs` plus the
 "GitHub-only slug audit" card on `/dev/add-skill` list any GitHub-only row
 whose stored `skillId` disagrees with `canonicalSlug(frontmatter name)`. What
 doesn't exist is a repair: such a row can never be adopted (adoption matches

@@ -3139,6 +3139,15 @@ export const backfillSkillSummariesBatch = internalMutation({
         hasContentFetchError: s.hasContentFetchError,
         discoveryFailCount: s.discoveryFailCount,
         hasSkillMdUrl: !!s.skillMdUrl && s.skillMdUrl !== "",
+        // Mirror the marker, same as saveSkillContent. This call INSERTS when
+        // the summary is missing, which is the whole point of a backfill, and
+        // the insert branch of upsertSkillSummary writes `fields.isGitHubOnly`
+        // straight through — so omitting it here silently clears the flag on
+        // the mirror while the skills row keeps it. That costs more than a
+        // reporting gap: `adopting` and `gitHubOnlyMarkerPatch` in
+        // upsertSkillsBatch both read `summary.isGitHubOnly`, so adoption
+        // could never fire and reconcile would skip the row forever.
+        isGitHubOnly: s.isGitHubOnly,
       });
     }
 

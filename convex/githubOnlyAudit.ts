@@ -62,7 +62,6 @@ const UNKNOWN_REASON = {
   fetchFailed: "SKILL.md couldn't be fetched from GitHub",
   noFrontmatterName: "SKILL.md has no frontmatter `name`",
   unusableName: "frontmatter `name` can't be a slug",
-  overCap: "not checked (audit cap reached)",
 } as const;
 
 /**
@@ -94,8 +93,15 @@ type GitHubOnlyRow = {
 };
 
 type SlugAuditResult = {
+  /** Rows that produced a real comparison. */
   judged: number;
-  total: number;
+  /**
+   * Rows this run READ — not the population. Named `read` rather than `total`
+   * because the query is capped: with 5,000 GitHub-only rows a `total` of 201
+   * would read as a near-complete audit of a population it never saw.
+   */
+  read: number;
+  /** More rows exist than `read`. The remainder is not enumerated. */
   truncated: boolean;
   mismatches: Array<{
     source: string;
@@ -107,31 +113,53 @@ type SlugAuditResult = {
   unknown: Array<{ source: string; skillId: string; reason: string }>;
 };
 
+/** Attempts per URL, and the pause before a retry. Mirrors the linear backoff
+ *  in `withTransientRetry` (lib/skillsApi.ts) — a zero-delay second attempt
+ *  lands inside the same throttle window as the first and fails identically,
+ *  which is the one case the retry exists for. */
+const FETCH_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 500;
+
 /**
  * Fetch one SKILL.md. Deliberately stronger than the resolver's `fetchText`:
- * it pins the host, splits a permanent 404 from a transient failure (a dead
- * row is actionable; an unlucky one isn't), and retries once, because the
- * content pipeline retries these same URLs up to 3 times and an audit that
- * judges "the file the pipeline fetches" shouldn't have weaker semantics than
- * the pipeline.
+ * it pins the scheme and host, splits a permanent 404 from a transient failure
+ * (a dead row is actionable; an unlucky one isn't), and retries with a pause,
+ * because the content pipeline retries these same URLs up to 3 times and an
+ * audit that judges "the file the pipeline fetches" shouldn't have weaker
+ * semantics than the pipeline.
+ *
+ * Redirects are FOLLOWED and the host re-checked afterwards, rather than
+ * refused. Under `redirect: "manual"` a 3xx arrives as an opaque response with
+ * `status: 0`, so the 404 split above it could never fire for a redirected URL
+ * and every redirect would be filed as transient — while the pipeline, which
+ * follows redirects, fetches the file fine. Re-asserting the host on `res.url`
+ * keeps the SSRF guard intact without throwing away the status.
  */
 async function fetchSkillMd(
   url: string,
-): Promise<
-  { ok: true; body: string } | { ok: false; reason: string }
-> {
-  let host: string;
+): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
+  let parsed: URL;
   try {
-    host = new URL(url).hostname;
+    parsed = new URL(url);
   } catch {
     return { ok: false, reason: UNKNOWN_REASON.badHost };
   }
-  if (host !== ALLOWED_HOST) {
+  // Scheme as well as host: a stored `http://` URL would otherwise be fetched
+  // in cleartext, exposing which rows an admin is diagnosing and letting a
+  // network attacker tamper with the frontmatter this then parses.
+  if (parsed.protocol !== "https:" || parsed.hostname !== ALLOWED_HOST) {
     return { ok: false, reason: UNKNOWN_REASON.badHost };
   }
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
     try {
-      const res = await fetch(url, { redirect: "manual" });
+      const res = await fetch(url);
+      const landed = new URL(res.url);
+      if (landed.protocol !== "https:" || landed.hostname !== ALLOWED_HOST) {
+        return { ok: false, reason: UNKNOWN_REASON.badHost };
+      }
       if (res.ok) return { ok: true, body: await res.text() };
       // Permanent: the file moved or the repo went away. Don't retry, and
       // don't file it beside a throttled request.
@@ -151,8 +179,7 @@ export const auditGitHubOnlySlugs = action({
     // the population as "checked" is how a run where nothing could be read
     // still prints a clean bill of health.
     judged: v.number(),
-    total: v.number(),
-    /** More GitHub-only rows exist than this run read. */
+    read: v.number(),
     truncated: v.boolean(),
     mismatches: v.array(
       v.object({
@@ -175,9 +202,19 @@ export const auditGitHubOnlySlugs = action({
     await assertAdmin(ctx);
     // One extra row is the overflow probe: getting it back means more exist
     // than we're willing to read in one pass.
-    const rows = (await ctx.runQuery(internal.githubOnly.listGitHubOnlyRows, {
-      limit: FETCH_CAP + 1,
-    })) as GitHubOnlyRow[];
+    // Annotated, not `as`-cast: the handler's own return annotation is what
+    // breaks the inference cycle, so the assertion bought nothing here and
+    // silently opted out of the one check that keeps this shape and the query's
+    // return validator agreeing. An annotation is checked.
+    const rows: GitHubOnlyRow[] = await ctx.runQuery(
+      internal.githubOnly.listGitHubOnlyRows,
+      { limit: FETCH_CAP + 1 },
+    );
+    // The extra row is only a probe that more exist; it is not itself
+    // interesting and is dropped rather than filed as one unchecked row —
+    // "1 row couldn't be judged" standing in for an unbounded remainder
+    // misstates the scale rather than under-reporting it. `truncated` carries
+    // the fact honestly.
     const truncated = rows.length > FETCH_CAP;
     const readable = rows.slice(0, FETCH_CAP);
 
@@ -187,12 +224,6 @@ export const auditGitHubOnlySlugs = action({
       row: { source: string; skillId: string },
       reason: string,
     ) => unknown.push({ source: row.source, skillId: row.skillId, reason });
-
-    if (truncated) {
-      for (const row of rows.slice(FETCH_CAP)) {
-        skip(row, UNKNOWN_REASON.overCap);
-      }
-    }
 
     // Narrowed on the way in, so the fetch loop needs no cast for the URL.
     const fetchable: Array<GitHubOnlyRow & { skillMdUrl: string }> = [];
@@ -241,6 +272,6 @@ export const auditGitHubOnlySlugs = action({
         }
       }
     }
-    return { judged, total: rows.length, truncated, mismatches, unknown };
+    return { judged, read: readable.length, truncated, mismatches, unknown };
   },
 });

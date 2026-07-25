@@ -156,7 +156,7 @@ exist and stamping `skillMdUrl: ""` — a contentless row. Keeping the typed slu
 is genuinely the only thing that *works* there, which is why the gate refuses
 rather than picking the other slug.
 
-**Finding the ones that slipped through.** `githubOnly.auditGitHubOnlySlugs` (a
+**Finding the ones that slipped through.** `githubOnlyAudit.auditGitHubOnlySlugs` (a
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
 walks the `by_isGitHubOnly` index and flags every row whose stored `skillId`
 differs from `canonicalSlug(frontmatter name)`. Two ways such a row exists, and
@@ -187,7 +187,9 @@ re-fetches each row's stored `skillMdUrl` — the URL discovery already bound,
 which means it judges the same file the content pipeline fetches, the one whose
 name decides the slug.
 
-The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
+The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm),
+with the slug audit in **`convex/githubOnlyAudit.ts`** and the write policy it
+shares with the preview in **`convex/lib/slugDecision.ts`** (pure, unit-tested).
 SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
 the preview binds the same file post-insert discovery would. The lifecycle
 consequences of the flag stay where the lifecycle lives: `skills.ts`

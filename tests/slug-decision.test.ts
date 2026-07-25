@@ -60,8 +60,12 @@ describe("aliasCandidate — when is a second slug worth considering", () => {
 });
 
 describe("decideSlug — refuse rather than store a knowingly-wrong slug", () => {
+  // A sentinel payload: the caller's alias lookup travels with the slug and is
+  // handed back on adopt_alias. Asserting it round-trips is what replaced the
+  // runtime throw that used to defend the same invariant.
+  const PASS = { precheck: null } as const;
   const base = {
-    alias: "vendor-foo",
+    alias: { slug: "vendor-foo", payload: PASS },
     typedRowExists: false,
     aliasBindsSameFile: true,
     treeListed: true,
@@ -73,6 +77,7 @@ describe("decideSlug — refuse rather than store a knowingly-wrong slug", () =>
     expect(decideSlug(base)).toEqual({
       kind: "adopt_alias",
       alias: "vendor-foo",
+      payload: PASS,
     });
   });
 
@@ -132,7 +137,7 @@ describe("decideSlug — the full matrix has no surprises", () => {
   // Belt and braces: every combination, asserted as a table, so a future edit
   // that reorders the branches fails loudly rather than subtly.
   const cases: Array<{
-    alias: string | null;
+    alias: { slug: string; payload: null } | null;
     typedRowExists: boolean;
     aliasBindsSameFile: boolean;
     treeListed: boolean;
@@ -140,16 +145,16 @@ describe("decideSlug — the full matrix has no surprises", () => {
   }> = [
     { alias: null, typedRowExists: false, aliasBindsSameFile: true, treeListed: true, expected: "keep_typed" },
     { alias: null, typedRowExists: true, aliasBindsSameFile: false, treeListed: false, expected: "keep_typed" },
-    { alias: "a", typedRowExists: true, aliasBindsSameFile: true, treeListed: true, expected: "keep_typed" },
-    { alias: "a", typedRowExists: true, aliasBindsSameFile: false, treeListed: true, expected: "keep_typed" },
-    { alias: "a", typedRowExists: false, aliasBindsSameFile: true, treeListed: true, expected: "adopt_alias" },
-    { alias: "a", typedRowExists: false, aliasBindsSameFile: true, treeListed: false, expected: "adopt_alias" },
-    { alias: "a", typedRowExists: false, aliasBindsSameFile: false, treeListed: true, expected: "refuse" },
-    { alias: "a", typedRowExists: false, aliasBindsSameFile: false, treeListed: false, expected: "refuse" },
+    { alias: { slug: "a", payload: null }, typedRowExists: true, aliasBindsSameFile: true, treeListed: true, expected: "keep_typed" },
+    { alias: { slug: "a", payload: null }, typedRowExists: true, aliasBindsSameFile: false, treeListed: true, expected: "keep_typed" },
+    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: true, treeListed: true, expected: "adopt_alias" },
+    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: true, treeListed: false, expected: "adopt_alias" },
+    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: false, treeListed: true, expected: "refuse" },
+    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: false, treeListed: false, expected: "refuse" },
   ];
 
   test.each(cases)(
-    "alias=$alias existing=$typedRowExists binds=$aliasBindsSameFile tree=$treeListed -> $expected",
+    "alias=$alias.slug existing=$typedRowExists binds=$aliasBindsSameFile tree=$treeListed -> $expected",
     ({ expected, ...input }) => {
       expect(decideSlug(input).kind).toBe(expected);
     },
@@ -161,11 +166,11 @@ describe("decideSlug — the full matrix has no surprises", () => {
     // missing, so an extra check here would be dead code hiding a real branch.
     expect(
       decideSlug({
-        alias: "a",
+        alias: { slug: "a", payload: null },
         typedRowExists: false,
         aliasBindsSameFile: true,
         treeListed: false,
       }),
-    ).toEqual({ kind: "adopt_alias", alias: "a" });
+    ).toEqual({ kind: "adopt_alias", alias: "a", payload: null });
   });
 });

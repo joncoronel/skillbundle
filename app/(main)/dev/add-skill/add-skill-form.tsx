@@ -9,6 +9,7 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
 import {
+  addSkillErrorText,
   aliasRetryNote,
   alreadyInCatalogCopy,
   previewFailureCopy,
@@ -31,6 +32,7 @@ import {
   CardContent,
 } from "@/components/ui/cubby-ui/card";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
 
 // Derived, not re-typed: a new server-side status shows up as a compiler-guided
 // update to `announce` rather than as drift nobody notices. Broader than the
@@ -63,10 +65,9 @@ export function AddSkillForm() {
   const [lastAdded, setLastAdded] = useState<AddResult | null>(null);
 
   const addFailed = useCallback((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
     toast.error({
       title: "Couldn't add skill",
-      description: friendlyError(message),
+      description: addSkillErrorText(err),
     });
   }, []);
 
@@ -109,6 +110,12 @@ export function AddSkillForm() {
           description: `${alreadyInCatalogCopy(result)} No changes made.`,
         });
         break;
+      default:
+        // The comment on AddResult claims a new server-side status becomes a
+        // compiler-guided update here. This line is what makes that true — a
+        // void-returning switch gets no exhaustiveness check on its own, so
+        // without it a sixth status would set `lastAdded` and fire no toast.
+        result satisfies never;
     }
   }, []);
 
@@ -156,7 +163,7 @@ export function AddSkillForm() {
           // down the page.
           toast.info({
             title: "Not on skills.sh",
-            description: `Found ${outcome.preview.path} on GitHub — review and confirm below.`,
+            description: `Found ${outcome.preview.path} on GitHub. Review and confirm below.`,
           });
           return;
         case "preview_failed":
@@ -174,13 +181,9 @@ export function AddSkillForm() {
           // to skills.sh, and a rate limit there carries its own actionable
           // message that must not be re-titled as a GitHub problem. Which
           // upstream is degraded is the question this page exists to answer.
-          const message =
-            outcome.error instanceof Error
-              ? outcome.error.message
-              : String(outcome.error);
           toast.error({
             title: "Couldn't check GitHub",
-            description: friendlyError(message),
+            description: addSkillErrorText(outcome.error),
           });
           return;
         }
@@ -202,6 +205,7 @@ export function AddSkillForm() {
     phase,
     pending,
     label,
+    submitBlocked,
     candidate,
     clearCandidate,
     submit,
@@ -267,7 +271,7 @@ export function AddSkillForm() {
                 isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
                 repo instead.
               </p>
-              <Button type="submit" disabled={!input.trim() || pending}>
+              <Button type="submit" disabled={submitBlocked}>
                 {label ?? "Add to catalog"}
               </Button>
             </div>
@@ -309,12 +313,17 @@ function SlugAuditCard() {
   const [data, setData] = useState<AuditResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tracked separately from `data`, which `run()` clears up front: deriving the
+  // label from "do we have results" makes a failed re-run say "Run audit" as
+  // though nothing had executed, right beside the error from the run that did.
+  const [hasRun, setHasRun] = useState(false);
 
   // Button-triggered, not a live query: the frontmatter `name` isn't in the
   // database (the pipeline strips it before storing the body), so each row
   // costs a GitHub fetch. That shouldn't fire on every page load.
   async function run() {
     setRunning(true);
+    setHasRun(true);
     setError(null);
     // Drop the previous report rather than leaving it under a fresh error —
     // this answers "is that row still mis-slugged right now", so a stale
@@ -323,9 +332,7 @@ function SlugAuditCard() {
     try {
       setData(await runAudit({}));
     } catch (err) {
-      setError(
-        friendlyError(err instanceof Error ? err.message : String(err)),
-      );
+      setError(addSkillErrorText(err));
     } finally {
       setRunning(false);
     }
@@ -350,7 +357,7 @@ function SlugAuditCard() {
           disabled={running}
           aria-busy={running}
         >
-          {running ? "Checking…" : data ? "Re-run audit" : "Run audit"}
+          {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
         </Button>
 
         {/* The button's label is the only progress signal and it sits on a
@@ -371,9 +378,11 @@ function SlugAuditCard() {
           {data && (
             <>
               <p className="text-muted-foreground">
-                Judged {data.judged} of {data.total} GitHub-only{" "}
-                {data.total === 1 ? "row" : "rows"}
-                {data.truncated && " (more exist than this run read)"}.
+                {data.truncated
+                  ? `Judged ${data.judged} of the ${data.read} newest GitHub-only rows. More exist than this run read.`
+                  : `Judged ${data.judged} of ${data.read} GitHub-only ${
+                      data.read === 1 ? "row" : "rows"
+                    }.`}
               </p>
 
               {data.mismatches.length === 0 ? (
@@ -430,7 +439,7 @@ function SlugAuditCard() {
                   <p className="text-muted-foreground">
                     {data.unknown.length}{" "}
                     {data.unknown.length === 1 ? "row" : "rows"} couldn&apos;t
-                    be judged — not the same as being wrong:
+                    be judged. That is not the same as being wrong:
                   </p>
                   <ul className="space-y-1 text-xs text-muted-foreground">
                     {data.unknown.map((u) => (
@@ -441,8 +450,8 @@ function SlugAuditCard() {
                           className="font-mono break-all underline underline-offset-2 hover:no-underline"
                         >
                           {u.source}/{u.skillId}
-                        </Link>{" "}
-                        — {u.reason}
+                        </Link>
+                        {`: ${u.reason}`}
                       </li>
                     ))}
                   </ul>
@@ -473,7 +482,6 @@ function GitHubCandidateCard({
   // link, and this page is where slug mismatches get diagnosed — so it is the
   // last place the swap should go unexplained.
   const typedSlug = typedSlugOf(candidate.input);
-  const slugChanged = typedSlug !== null && typedSlug !== candidate.skillId;
   return (
     <Card>
       <CardHeader>
@@ -500,13 +508,9 @@ function GitHubCandidateCard({
             </>
           )}
         </dl>
-        {slugChanged && (
-          <p className="mt-4 text-xs text-muted-foreground">
-            The slug comes from the name inside the SKILL.md, not the{" "}
-            <code className="font-mono">{typedSlug}</code> folder in the link —
-            that&apos;s the name skills.sh would give it too.
-          </p>
-        )}
+        <div className="mt-4">
+          <SlugSwapNote typedSlug={typedSlug} slugId={candidate.skillId} />
+        </div>
         <p className="mt-4 text-xs text-muted-foreground">
           It will show 0 installs and no security audit until it appears on
           skills.sh — at which point the daily sync adopts it automatically, or
@@ -572,22 +576,3 @@ function skillDetailHref(source: string, skillId: string): string {
     : `/site/${source}/${skillId}`;
 }
 
-// Convert raw error strings from the Convex action into something the admin
-// can actually act on. Avoids surfacing internal stack-trace prefixes
-// (e.g. "[Request ID: ...]") in toasts.
-function friendlyError(raw: string): string {
-  const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
-  if (/URL must be from skills\.sh/i.test(cleaned)) {
-    return "That URL isn't from skills.sh or GitHub. Paste one of those, or a source/slug.";
-  }
-  if (/looks like a domain/i.test(cleaned)) {
-    return cleaned;
-  }
-  if (/not authorized/i.test(cleaned) || /not authenticated/i.test(cleaned)) {
-    return "You don't have permission to add skills.";
-  }
-  if (/Slug is missing|Invalid skill input|Skill input is empty/i.test(cleaned)) {
-    return cleaned;
-  }
-  return cleaned || "Unknown error.";
-}

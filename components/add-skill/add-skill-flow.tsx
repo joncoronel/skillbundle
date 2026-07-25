@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
-import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
 import {
+  addSkillErrorText,
   aliasRetryNote,
   alreadyInCatalogCopy,
   previewFailureCopy,
@@ -33,6 +33,7 @@ import {
   CardContent,
 } from "@/components/ui/cubby-ui/card";
 import { UpgradeBanner } from "@/components/upgrade-banner";
+import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
 
 // Derived from the server's return validator so the client can't drift from
 // what the action actually sends (the review's finding on hand-declared
@@ -136,7 +137,7 @@ export function AddSkillFlow({
         // silence — with no signal that a confirmation step now gates the flow.
         setNotice({
           tone: "info",
-          text: `Found ${outcome.preview.path} in the repo — review and confirm below.`,
+          text: `Found ${outcome.preview.path} in the repo. Review and confirm below.`,
         });
         return;
       case "preview_failed":
@@ -163,7 +164,7 @@ export function AddSkillFlow({
           setNotice({ tone: "error", text: quotaErrorText(err) });
           return;
         }
-        setNotice({ tone: "error", text: friendlyError(errText(err)) });
+        setNotice({ tone: "error", text: addSkillErrorText(err) });
         return;
       }
       default:
@@ -181,6 +182,7 @@ export function AddSkillFlow({
     phase,
     pending,
     label,
+    submitBlocked,
     candidate,
     clearCandidate,
     submit,
@@ -223,7 +225,7 @@ export function AddSkillFlow({
       try {
         parseSkillInput(trimmed);
       } catch (err) {
-        setNotice({ tone: "error", text: friendlyError(errText(err)) });
+        setNotice({ tone: "error", text: addSkillErrorText(err) });
         return;
       }
     }
@@ -277,7 +279,7 @@ export function AddSkillFlow({
           ) : (
             <Button
               type="submit"
-              disabled={!input.trim() || pending || authLoading}
+              disabled={submitBlocked || authLoading}
               className="shrink-0"
             >
               {label ?? "Add skill"}
@@ -363,7 +365,6 @@ function GitHubCandidateCard({
   // identifier-shaped row shown is File — which advertises the folder name
   // that will NOT be used.
   const typedSlug = typedSlugOf(candidate.input);
-  const slugChanged = typedSlug !== null && typedSlug !== candidate.skillId;
   return (
     <Card>
       <CardHeader>
@@ -392,13 +393,7 @@ function GitHubCandidateCard({
             </>
           )}
         </dl>
-        {slugChanged && (
-          <p className="text-xs text-muted-foreground">
-            The slug comes from the name inside the SKILL.md, not the{" "}
-            <code className="font-mono">{typedSlug}</code> folder in the link
-            you pasted — that&apos;s the name skills.sh would give it too.
-          </p>
-        )}
+        <SlugSwapNote typedSlug={typedSlug} slugId={candidate.skillId} />
         <p className="text-xs text-muted-foreground">
           It joins the catalog with a &ldquo;GitHub-only&rdquo; badge and shows
           0 installs with no security audit until it appears on skills.sh, at
@@ -469,15 +464,6 @@ function SuccessCard({ added }: { added: Added }) {
 // Error helpers
 // ---------------------------------------------------------------------------
 
-function errText(err: unknown): string {
-  if (err instanceof ConvexError) {
-    return typeof err.data === "string"
-      ? err.data
-      : ((err.data as { message?: string })?.message ?? "Something went wrong.");
-  }
-  return err instanceof Error ? err.message : String(err);
-}
-
 function isQuotaError(err: unknown): boolean {
   return (
     err instanceof ConvexError &&
@@ -498,18 +484,3 @@ function quotaErrorText(err: unknown): string {
   );
 }
 
-function friendlyError(raw: string): string {
-  const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
-  if (/URL must be from skills\.sh/i.test(cleaned)) {
-    return "That URL isn't from skills.sh or GitHub. Paste one of those, or an owner/repo/slug.";
-  }
-  if (/Sign in/i.test(cleaned)) return "Sign in to add a skill.";
-  if (
-    /Slug is missing|Invalid skill input|Skill input is empty|looks like a domain/i.test(
-      cleaned,
-    )
-  ) {
-    return cleaned;
-  }
-  return cleaned || "Something went wrong.";
-}

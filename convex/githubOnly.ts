@@ -537,7 +537,9 @@ async function previewGitHubCore(
   // because the refusal branch can otherwise only be reached by making
   // GitHub's tree API fail mid-add.
   const decision = decideSlug({
-    alias,
+    // The alias and its lookup travel together, so `adopt_alias` hands the
+    // lookup back and the caller never re-derives it.
+    alias: alias && aliasPass ? { slug: alias, payload: aliasPass } : null,
     typedRowExists: precheck !== null,
     aliasBindsSameFile: resolved.aliasBindsSameFile,
     treeListed: resolved.treeListed,
@@ -551,18 +553,10 @@ async function previewGitHubCore(
       cause: decision.cause,
     };
   }
-  const add = ((): { skillId: string; precheck: Precheck } => {
-    if (decision.kind !== "adopt_alias") return { skillId, precheck };
-    // `adopt_alias` requires a non-null alias, which is the same condition
-    // that produced `aliasPass` — so this is an invariant, not a fallback.
-    // Asserted rather than defaulted to null: substituting null would flip
-    // `wasDelisted` for a delisted alias row, reporting a relist as an insert
-    // and charging a quota slot for it.
-    if (!aliasPass) {
-      throw new Error("adopt_alias reached without an alias pass");
-    }
-    return { skillId: decision.alias, precheck: aliasPass.precheck };
-  })();
+  const add =
+    decision.kind === "adopt_alias"
+      ? { skillId: decision.alias, precheck: decision.payload.precheck }
+      : { skillId, precheck };
 
   return {
     status: "ok",
@@ -581,6 +575,12 @@ async function previewGitHubCore(
  * One home for translating a failed preview status into the user-facing
  * ConvexError the confirm path throws. Kept beside previewGitHubCore so the
  * check logic and its failure copy can't drift between preview and confirm.
+ *
+ * NOTE: this is the SECOND prose table over the same status union — the client
+ * has `previewFailureCopy` (lib/add-skill-copy.ts) for the returned statuses.
+ * A new status needs an arm in both. It exists only because confirm THROWS
+ * where preview returns; having confirm return a `PreviewFailure` instead would
+ * delete this whole function. See TODO.md.
  */
 function previewFailureError(
   preview: Exclude<GitHubPreview, { status: "ok" }>,
@@ -612,7 +612,7 @@ function previewFailureError(
           ? // Hedged deliberately: "unlisted" is either a rate limit or a tree
             // too large to list, and fetchRepoTree can't tell us which.
             `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files (rate-limited, or the repo is too large to list), so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Worth retrying shortly; if it keeps failing, add it once skills.sh lists it.`
-          : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written — this one needs the repo fixed, or add it once skills.sh lists it.`,
+          : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written. This one needs the repo fixed, or add it once skills.sh lists it.`,
       );
     case "no_repo":
       // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
@@ -779,14 +779,26 @@ export const previewGitHubSkill = action({
  * shared matcher), and correctly handles a repo that moved the file between
  * preview and confirm.
  */
+/**
+ * Shared by the admin and public confirm actions, the way `manualAddReturns`
+ * is shared by the two manual adds.
+ *
+ * One const, not two inline copies: the client hook derives its `github_added`
+ * outcome from the PUBLIC action's return type and hands it to both surfaces,
+ * so a field added to one validator and not the other would break the admin
+ * form with a type error pointing at an action it never calls. Sharing the
+ * validator makes that divergence impossible rather than merely unlikely.
+ */
+const gitHubAddReturns = v.object({
+  status: v.union(v.literal("inserted"), v.literal("relisted")),
+  source: v.string(),
+  skillId: v.string(),
+  name: v.string(),
+});
+
 export const addSkillFromGitHub = action({
   args: { input: v.string() },
-  returns: v.object({
-    status: v.union(v.literal("inserted"), v.literal("relisted")),
-    source: v.string(),
-    skillId: v.string(),
-    name: v.string(),
-  }),
+  returns: gitHubAddReturns,
   handler: async (
     ctx,
     { input },
@@ -806,14 +818,18 @@ export const addSkillFromGitHub = action({
 //
 // The audit itself lives in githubOnlyAudit.ts (see that module for why such a
 // row can exist and why it is only ever reported, never repaired). Only its
-// list query is here, and deliberately so: an action that reaches its own
-// module through `internal.*` makes TS inference circular, so keeping the
-// query on this side of the boundary is what lets the action infer its result
-// with no hand-declared row type and no cast.
+// list query is here, so the DB read and the fetch loop sit either side of the
+// query/action boundary they actually straddle, and so this file keeps its
+// stated scope (resolver + preview + confirm) plus one small support query.
+//
+// It buys nothing type-wise: the audit still declares its row and result types
+// by hand, because the generated `internal` object is ONE type spanning every
+// module, so a function that both reads `internal.*` and is reachable through
+// it is self-referential wherever it lives. See githubOnlyAudit.ts's header.
 // ---------------------------------------------------------------------------
 
 /**
- * GitHub-only rows, slim enough to hand to an action.
+ * GitHub-only rows, slim enough to hand to an action, newest first.
  *
  * Reads `skillSummaries`, not `skills`: every field the audit needs is
  * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrl`,
@@ -823,6 +839,14 @@ export const addSkillFromGitHub = action({
  * governed by one number — an unbounded `.collect()` here would blow the
  * transaction read limit at a row count far below the fetch cap, i.e. it would
  * start failing exactly when the population became worth auditing.
+ *
+ * `.order("desc")` is load-bearing, not cosmetic. An index walk is
+ * deterministically ordered, so a capped ascending read returns the SAME oldest
+ * rows on every run and everything added past the cap would never be audited —
+ * not "later", never — while the rows the audit exists for are the newest ones
+ * (a mismatch can still arrive via the loose prefix arm). Newest-first means a
+ * capped run covers the interesting end. Paging the whole population across
+ * runs is the real answer if it ever outgrows one read; see TODO.md.
  */
 export const listGitHubOnlyRows = internalQuery({
   args: { limit: v.number() },
@@ -839,6 +863,7 @@ export const listGitHubOnlyRows = internalQuery({
     const rows = await ctx.db
       .query("skillSummaries")
       .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
+      .order("desc")
       .take(limit);
     return rows.map((r) => ({
       source: r.source,
@@ -923,12 +948,7 @@ export const previewGitHubSkillPublic = action({
  */
 export const addSkillFromGitHubPublic = action({
   args: { input: v.string() },
-  returns: v.object({
-    status: v.union(v.literal("inserted"), v.literal("relisted")),
-    source: v.string(),
-    skillId: v.string(),
-    name: v.string(),
-  }),
+  returns: gitHubAddReturns,
   handler: async (
     ctx,
     { input },

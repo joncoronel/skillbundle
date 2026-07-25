@@ -14,6 +14,7 @@
  * sink (an aria-live notice vs a toast) stays with each component.
  */
 import type { FunctionReturnType } from "convex/server";
+import { ConvexError } from "convex/values";
 import type { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
 
@@ -26,6 +27,13 @@ export type PreviewFailure = Exclude<
   { status: "ok" }
 >;
 
+/**
+ * NOTE: a second prose table for this same status union lives server-side in
+ * `previewFailureError` (convex/githubOnly.ts), because the CONFIRM action
+ * throws where the preview returns. A new status needs an arm in both. Merging
+ * them means having confirm return a `PreviewFailure` instead of throwing —
+ * see TODO.md.
+ */
 export function previewFailureCopy(preview: PreviewFailure): string {
   switch (preview.status) {
     case "not_github":
@@ -39,7 +47,7 @@ export function previewFailureCopy(preview: PreviewFailure): string {
       // slug and it still failed, so "try again" would point at something that
       // has now failed twice. Name the slug the listing uses instead — it's
       // the one thing this whole path exists to compute.
-      return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
+      return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
     case "already_exists":
       return alreadyInCatalogCopy(preview);
     case "alias_unverifiable":
@@ -52,12 +60,12 @@ export function previewFailureCopy(preview: PreviewFailure): string {
         ? // Hedged: "unlisted" is either a rate limit or a repo whose file tree
           // is permanently too large to list, and the server can't tell which,
           // so this must not promise that waiting fixes it.
-          `This skill calls itself "${preview.expectedSkillId}", but GitHub wouldn't list the repo's files, so we couldn't confirm it's safe to add it under that name. Nothing was added — worth trying again shortly, or once skills.sh lists it.`
+          `This skill calls itself "${preview.expectedSkillId}", but GitHub wouldn't list the repo's files, so we couldn't confirm it's safe to add it under that name. Nothing was added. Try again shortly, or once skills.sh lists it.`
         : // Ends with a way out, like the other arm does. This is the one
           // arm of the status a user cannot simply wait out, so a refusal with
           // no recourse would read as a bug rather than the deliberate safety
           // behaviour it is.
-          `This skill calls itself "${preview.expectedSkillId}", but another folder in the repo already uses that name, so adding it would attach the wrong file. Nothing was added — it can be added once skills.sh lists it.`;
+          `This skill calls itself "${preview.expectedSkillId}", but another folder in the repo already uses that name, so adding it would attach the wrong file. Nothing was added. It can be added once skills.sh lists it.`;
     case "no_repo":
       return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":
@@ -80,6 +88,49 @@ export function typedSlugOf(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Any thrown add-skill failure, as one sentence a user can act on.
+ *
+ * Shared because the two surfaces had drifted halves of this and only one of
+ * them unwrapped `ConvexError.data` — so a structured server refusal
+ * (`previewFailureError` puts its prose there) reached the admin toast as a
+ * stacktrace-flavoured `err.message` with the stringified data inside it. The
+ * page whose job is diagnosing those failures had the worst rendering of them.
+ *
+ * Unwrap first, then normalise: the `[Request ID: …]` strip only helps once the
+ * real message has been extracted.
+ */
+export function addSkillErrorText(err: unknown): string {
+  const raw = convexErrorText(err);
+  const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
+  if (/URL must be from skills\.sh/i.test(cleaned)) {
+    return "That URL isn't from skills.sh or GitHub. Paste one of those, or an owner/repo/slug.";
+  }
+  if (/Sign in/i.test(cleaned)) return "Sign in to add a skill.";
+  if (/[Nn]ot authorized/.test(cleaned)) {
+    return "You don't have access to do that.";
+  }
+  // Input-shape complaints from parseSkillInput are already written for a human.
+  if (
+    /Slug is missing|Invalid skill input|Skill input is empty|looks like a domain/i.test(
+      cleaned,
+    )
+  ) {
+    return cleaned;
+  }
+  return cleaned || "Something went wrong.";
+}
+
+/** The message a Convex failure actually carries, `data` before `message`. */
+function convexErrorText(err: unknown): string {
+  if (err instanceof ConvexError) {
+    return typeof err.data === "string"
+      ? err.data
+      : ((err.data as { message?: string })?.message ?? "Something went wrong.");
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -129,5 +180,5 @@ export function previewFailureTitle(preview: PreviewFailure): string {
  * without a confirm step, so this sentence is the only place it's disclosed.
  */
 export function aliasRetryNote(skillId: string): string {
-  return `skills.sh lists it as "${skillId}" — the name in its SKILL.md frontmatter, not the folder name in the link.`;
+  return `skills.sh lists it as "${skillId}", using the name in its SKILL.md frontmatter rather than the folder name in the link.`;
 }
