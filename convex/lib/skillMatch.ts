@@ -77,15 +77,23 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
  * invariant to preserve is that global two-phase ordering, not "exact lookups
  * come first in the loop".
  *
- * A consequence worth knowing: a match here means `kebabCase(fmName) === skillId`,
- * so `canonicalSlug(fmName)` is either that same slug or null (it also enforces a
- * charset). Either way the frontmatter path cannot produce a row whose stored
- * slug disagrees with its own SKILL.md.
+ * A consequence worth knowing: a match here means `kebabCase(fmName) ===
+ * kebabCase(skillId)` — the FOLDED forms agree, not necessarily the raw ones. So
+ * `canonicalSlug(fmName)` equals the folded typed slug, or is null (it also
+ * enforces a charset). `aliasCandidate` compares against the folded slug for
+ * exactly this reason: the two can differ by a separator while naming the same
+ * skill, and that difference must not read as a rename.
  */
 export function matchesSkillIdExactly(
   fmName: string,
   skillId: string,
 ): boolean {
+  // BOTH sides are folded. Folding only the name was a real regression the
+  // moment `kebabCase` learned to fold `_`: a repo `owner/agent_skills` with a
+  // root SKILL.md named `agent_skills` compared "agent-skills" against the raw
+  // typed "agent_skills" and refused to match a file whose name is
+  // character-for-character what the caller typed. Comparing a normalised value
+  // against an unnormalised one is the bug, not the strictness.
   // Kebab comparison ONLY. A raw `fmName === skillId` arm used to sit in front
   // of this and quietly reopened the mis-slug hole: a repo `MySkill` with a root
   // SKILL.md named `MySkill` matched on identity, `canonicalSlug("MySkill")` is
@@ -95,7 +103,7 @@ export function matchesSkillIdExactly(
   // everything downstream reads off this function. A folder match reaches the
   // same place by a different route: `aliasCandidate` sees the canonical name
   // differs and adopts or refuses it.
-  return kebabCase(fmName) === skillId;
+  return kebabCase(fmName) === kebabCase(skillId);
 }
 
 /**
@@ -111,7 +119,7 @@ export function matchesSkillIdExactly(
  *
  * So anything outside `[a-z0-9._-]` is REJECTED rather than mangled. Two
  * reasons it must be a rejection: `kebabCase` only lowercases and collapses
- * whitespace, so `/`, `&`, `(`, `)` and friends survive it intact; and the
+ * `[\s_]+` runs, so `/`, `&`, `(`, `)` and friends survive it intact; and the
  * module comment above is explicit that skills.sh derives slugs "in
  * non-obvious ways", so a name this transform can't handle cleanly is exactly
  * the case where guessing writes an unroutable row nothing can repair.
@@ -120,7 +128,13 @@ export function matchesSkillIdExactly(
  */
 export function canonicalSlug(fmName: string): string | null {
   const slug = kebabCase(fmName.trim());
-  if (!/^[a-z0-9._-]+$/.test(slug)) return null;
+  // No `_` in the charset: `kebabCase` folds every underscore into `-`, so a
+  // canonical slug can never contain one and allowing it here would be a dead
+  // branch encoding an undecided invariant. This is only about what a NAME can
+  // produce — `SAFE_SEGMENT` (lib/install-commands.ts) must keep `_`, because
+  // slugs also arrive from the skills.sh sync and from `parseSkillInput` without
+  // passing through here, and some of those genuinely contain one.
+  if (!/^[a-z0-9.-]+$/.test(slug)) return null;
   // The charset alone still admits ".", ".." and "---" — path-traversal
   // shapes, not names. `.` also survives encodeURIComponent, so ".." would
   // normalise a segment away in the skills.sh request path. Require at least

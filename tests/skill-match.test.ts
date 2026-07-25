@@ -6,7 +6,7 @@
  * `canonicalSlug` is the write-side guard: its output can become a row's
  * permanent `skillId` AND a single URL path segment, so the interesting cases
  * are the ones it must REFUSE rather than mangle. `kebabCase` only lowercases
- * and collapses whitespace, so every other punctuation character survives it
+ * and collapses `[\s_]+` runs, so every other punctuation character survives it
  * intact and would otherwise be persisted.
  */
 import { test, expect, describe } from "vitest";
@@ -30,6 +30,17 @@ describe("canonicalSlug — accepts", () => {
 
   test("surrounding and repeated whitespace", () => {
     expect(canonicalSlug("  Deploy   To Vercel  ")).toBe("deploy-to-vercel");
+  });
+
+  test("underscores fold like the official CLI does", () => {
+    // vercel-labs/skills, src/skills.ts: normalizeSkillName is
+    // `name.toLowerCase().replace(/[\s_]+/g, "-")`. Ours omitted `_` until a
+    // production bind audit flagged a real skill (github/gh-aw) whose file is
+    // named `http_mcp_headers` against slug `http-mcp-headers`.
+    expect(kebabCase("http_mcp_headers")).toBe("http-mcp-headers");
+    expect(canonicalSlug("http_mcp_headers")).toBe("http-mcp-headers");
+    // Mixed and repeated separators collapse to one dash, as the CLI does.
+    expect(kebabCase("Deploy _ To__Vercel")).toBe("deploy-to-vercel");
   });
 
   test("dots and digits survive; underscores normalise to dashes", () => {
@@ -78,18 +89,6 @@ describe("canonicalSlug — refuses (would write an unroutable row)", () => {
   test("a single alphanumeric is enough to make it a name", () => {
     expect(canonicalSlug("v2")).toBe("v2");
     expect(canonicalSlug("-x-")).toBe("-x-");
-  });
-
-  test("underscores normalise like the official CLI does", () => {
-    // vercel-labs/skills, src/skills.ts: normalizeSkillName is
-    // `name.toLowerCase().replace(/[\s_]+/g, "-")`. Ours omitted `_` until a
-    // production bind audit flagged a real skill (github/gh-aw) whose file is
-    // named `http_mcp_headers` against slug `http-mcp-headers`.
-    expect(kebabCase("http_mcp_headers")).toBe("http-mcp-headers");
-    expect(canonicalSlug("http_mcp_headers")).toBe("http-mcp-headers");
-    expect(matchesSkillId("http_mcp_headers", "http-mcp-headers")).toBe(true);
-    // Mixed and repeated separators collapse to one dash, as the CLI does.
-    expect(kebabCase("Deploy _ To__Vercel")).toBe("deploy-to-vercel");
   });
 
   test("everything it refuses, kebabCase would have happily returned", () => {
@@ -159,6 +158,19 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
 
   test("an unrelated name still misses", () => {
     expect(matchesSkillIdExactly("Deploy To Vercel", "react-best-practices")).toBe(false);
+  });
+
+  test("folds BOTH sides — the regression that shipped when only one was folded", () => {
+    // A repo `owner/agent_skills` with a root SKILL.md named `agent_skills`.
+    // Folding only the name compared "agent-skills" against the raw typed
+    // "agent_skills" and refused a file whose name is exactly what was typed.
+    expect(matchesSkillIdExactly("agent_skills", "agent_skills")).toBe(true);
+    // The case the fold exists for still works.
+    expect(matchesSkillIdExactly("http_mcp_headers", "http-mcp-headers")).toBe(true);
+    // And mixed case, which previously failed all three arms of both matchers.
+    expect(matchesSkillIdExactly("Foo_Bar", "foo_bar")).toBe(true);
+    // Still strict where it matters: a partial name is not a match.
+    expect(matchesSkillIdExactly("panel-review", "panel")).toBe(false);
   });
 });
 

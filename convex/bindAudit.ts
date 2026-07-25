@@ -29,9 +29,13 @@
  * lesson the reverted pass-1 check taught at the cost of two review rounds.
  *
  * **Reports only, and that is now the whole design rather than a first step.** A
- * hit needs a human: of the 50 flagged in the first production run, 38 were
- * skills.sh slug derivations `kebabCase` cannot reproduce and 12 were repos
- * reusing one name across folders. None was a wrong bind. Acting automatically on
+ * hit needs a human: of the 50 flagged in the first production run (Jul 2026,
+ * BEFORE `kebabCase` was aligned to fold `_`), 38 were skills.sh slug derivations
+ * `kebabCase` cannot reproduce and 12 were repos reusing one name across folders.
+ * None was a wrong bind. A re-run should report FEWER than 50 — at minimum
+ * `github/gh-aw/http-mcp-headers` drops out, since its file is named
+ * `http_mcp_headers` and that now folds to the slug. Treat a lower number as the
+ * alignment working, not as drift. Acting automatically on
  * this signal is what the reverted pass-1 check did, and it was wrong 12 times
  * out of 12.
  *

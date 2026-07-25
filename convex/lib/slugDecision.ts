@@ -9,10 +9,13 @@
  * key adoption matches on, so choosing it wrongly is not recoverable without a
  * manual re-slug.
  *
- * Pure and dependency-free so the policy is unit-testable — the alternative is
- * only exercising it by making GitHub's tree API fail mid-add, which is not
- * something a test can arrange.
+ * Pure so the policy is unit-testable — the alternative is only exercising it by
+ * making GitHub's tree API fail mid-add, which is not something a test can
+ * arrange. It imports `kebabCase` (also pure) so that "is this the same slug?"
+ * is answered by the one comparator, rather than by a second-guess at it here.
  */
+
+import { kebabCase } from "./skillMatch";
 
 /** What the caller should do with the slug. */
 export type SlugDecision<TAlias = never> =
@@ -50,7 +53,7 @@ export type SlugDecision<TAlias = never> =
  * Which slug, if any, is worth a second look.
  *
  * `null` means "no alias" — either the SKILL.md carried no usable name, or the
- * name already agrees with the typed slug.
+ * name already agrees with the typed slug once both are folded.
  *
  * Gated on `matchedBy === "dir"` because only there did the caller point at this
  * exact folder, making its frontmatter a statement about the skill they meant.
@@ -84,7 +87,13 @@ export function aliasCandidate({
   matchedBy: "dir" | "frontmatter";
 }): string | null {
   if (canonicalFmName === null) return null;
-  if (canonicalFmName === typedSkillId) return null;
+  // Folded on both sides. `canonicalFmName` has been through `kebabCase`, so
+  // comparing it to a RAW typed slug reported a rename whenever the two differed
+  // only by a separator: typing `foo_bar` for a file named `foo_bar` derived the
+  // alias `foo-bar` and adopted it, silently changing a permanent identity, and
+  // on the tree-unavailable path refused the add outright because no folder could
+  // be shown to claim the alias. Same skill, same intent, different punctuation.
+  if (canonicalFmName === kebabCase(typedSkillId)) return null;
   if (matchedBy !== "dir") return null;
   return canonicalFmName;
 }

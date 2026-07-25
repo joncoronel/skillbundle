@@ -997,9 +997,9 @@ export const discoverSkillMdUrls = internalAction({
     //
     // The lesson worth keeping: a SKILL.md's `name` is not a reliable identity
     // claim. skills.sh derives slugs from it in ways `kebabCase` cannot
-    // reproduce (prefixes stripped, underscores converted, or the slug taken
+    // reproduce (prefixes stripped, punctuation collapsed, or the slug taken
     // from the folder instead), and repos reuse the same name across folders. So
-    // a mismatch between name and slug is normal — 50 of those 13,080 rows — and
+    // a mismatch between name and slug is normal — 50 of those 13,080 rows, measured BEFORE the `kebabCase` underscore alignment — and
     // is not evidence that the wrong file is attached.
     const matchedSkillIds = new Set<string>();
     const matchedPaths = new Set<string>();

@@ -129,7 +129,7 @@ segment. All four must hold:
   **plus at least one alphanumeric**, so `.`, `..` and `---` are rejected too
   (the charset alone admits them, and `encodeURIComponent` leaves `.` intact,
   so `..` would normalise a segment away in the skills.sh request path).
-  `kebabCase` is a comparator that only lowercases and collapses whitespace, so
+  `kebabCase` is a comparator that only lowercases and collapses `[\s_]+` runs, so
   `/`, `&`, `(` and friends survive it; persisting one writes a row whose
   detail page 404s forever and whose install command is dropped.
 - The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
@@ -391,9 +391,10 @@ its owner.
 SKILL.md's `name` is not a reliable identity claim:
 
 - skills.sh derives slugs from it in ways `kebabCase` cannot reproduce — prefixes
-  stripped (`webflow-mcp:site-activity` → `site-activity`), underscores converted
-  (`http_mcp_headers` → `http-mcp-headers`), punctuation collapsed
-  (`Update Pub/Sub Emulator` → `update-pubsub-emulator`).
+  stripped (`webflow-mcp:site-activity` → `site-activity`), punctuation collapsed
+  (`Update Pub/Sub Emulator` → `update-pubsub-emulator`). Underscore conversion
+  used to be on this list; it is not, because `kebabCase` now folds `_` like the
+  official CLI does.
 - Sometimes the slug is not derived from the name at all — `tailwind` →
   `tailwind-css` can only have come from the folder. The rule stated elsewhere in
   this document as "skills.sh derives a slug from the frontmatter name" is a
@@ -401,7 +402,7 @@ SKILL.md's `name` is not a reliable identity claim:
   not reliable as an identity check on existing rows.
 - Repos reuse the same name across folders.
 
-A name/slug mismatch is therefore normal — 50 of those 13,080 rows — and is not
+A name/slug mismatch is therefore normal — 50 of those 13,080 rows, measured BEFORE the `kebabCase` underscore alignment — and is not
 evidence that the wrong file is attached. Detection now lives in `bindAudit.ts`,
 run on demand, rather than in the nightly path.
 
@@ -443,15 +444,9 @@ the repo root (depth 1), then `skills/`, `skills/.curated/`,
 `skills/.experimental/`, `skills/.system/`, then ~20 agent dirs (`.claude/skills`,
 `.agents/skills`, …) — the containers two levels deep — and only falls back to a
 recursive depth-5 scan. Our discovery walks the whole tree and takes any
-`*/SKILL.md`, resolving a duplicate folder name by tree order (last wins).
-
-That difference explains a real case. `nextlevelbuilder/ui-ux-pro-max-skill` has
-two folders named `slides`: `.claude/skills/slides` (a priority dir) and
-`cli/assets/skills/slides` (reachable only by the fallback). The CLI would prefer
-the first and dedupe the second away as the same name — it sees ONE skill.
-skills.sh lists TWO (`ckm:slides` and `slides`). We are not obliged to match
-either, but if a `byDir` tie ever needs breaking, this priority order is the
-defensible rule rather than tree order.
+`*/SKILL.md`, resolving a duplicate folder name by tree order (last wins). If a
+`byDir` tie ever needs breaking, that priority order is the defensible rule; see
+the two-`slides`-folders case above for a repo where it would matter.
 
 **What the CLI does NOT tell us.** How skills.sh turns a name into a registry
 slug. That is server-side and not in this repo, and the audit's evidence says it
