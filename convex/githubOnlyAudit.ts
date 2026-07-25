@@ -70,7 +70,7 @@ import { extractSkillMdName } from "./skills";
  * reason the resolver separates `tree_unavailable` from `no_skill_md`: "we
  * couldn't look" must never be reported as "we looked and it's wrong".
  */
-const UNKNOWN_REASON = {
+export const UNKNOWN_REASON = {
   noUrl: "no SKILL.md URL discovered yet",
   badHost: "SKILL.md URL is not on raw.githubusercontent.com",
   redirectedOffHost: "SKILL.md URL redirected off raw.githubusercontent.com",
@@ -90,8 +90,8 @@ const UNKNOWN_REASON = {
  * inside an action that has a time limit. The DB read is the cheap half (see
  * `listGitHubOnlyRows`).
  */
-const AUDIT_PAGE_SIZE = 200;
-const WAVE_SIZE = 10;
+export const AUDIT_PAGE_SIZE = 200;
+export const WAVE_SIZE = 10;
 
 /**
  * The only host a stored `skillMdUrl` may point at. Every writer constructs
@@ -175,7 +175,7 @@ const RETRY_DELAY_MS = 500;
  * follows redirects, fetches the file fine. Re-asserting the host on `res.url`
  * keeps the SSRF guard intact without throwing away the status.
  */
-async function fetchSkillMd(
+export async function fetchSkillMd(
   url: string,
 ): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
   // Scheme as well as host: a stored `http://` URL would otherwise be fetched
