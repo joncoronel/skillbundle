@@ -55,8 +55,13 @@ Deliberately not automated. Re-slugging moves the skill's public URL and has to
 rewrite the summary, embedding and Typesense doc in step, and the right call
 depends on the row — a delisted one can simply be left, a live one with
 installs may want a redirect. Left as a per-row human decision with the audit
-card as the way to find them. Revisit if the audit ever lists more than a
-couple.
+card as the way to find them.
+
+Low priority, because the population can only shrink: the one path that could
+still write such a row (an alias we couldn't verify, falling back to the folder
+slug) now refuses the add instead — `alias_unverifiable` in `githubOnly.ts`. So
+this is cleanup for rows that predate the fix, and there are no known ones.
+Worth building only if a production audit actually turns some up.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 

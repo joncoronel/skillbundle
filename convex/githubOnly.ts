@@ -150,6 +150,11 @@ type GitHubSkillResolution =
       // another. False whenever that can't be ruled out, including when the
       // tree was unavailable and we never saw the folder list.
       aliasBindsSameFile: boolean;
+      // Did we actually get the repo's file list? Separates the two reasons
+      // `aliasBindsSameFile` can be false: a conflict we SAW (retrying changes
+      // nothing) versus never having looked (retrying may well work). Only the
+      // wording shown to the user depends on this.
+      treeListed: boolean;
     }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
@@ -213,6 +218,7 @@ async function resolveGitHubSkillMd(
       description: extractFrontmatterDescription(contents) ?? undefined,
       matchedBy,
       aliasBindsSameFile,
+      treeListed: byDir !== null,
     };
   };
 
@@ -332,6 +338,17 @@ type GitHubPreview =
   // source/skillId identify the row that already exists — which is not
   // necessarily the slug the caller typed, so the UI can link to the real one.
   | { status: "already_exists"; name: string; source: string; skillId: string }
+  // We know which slug this SKILL.md should have, and can't safely store it.
+  // Refused rather than written, because a row under the wrong slug can never
+  // be adopted and only a manual re-slug repairs it. `retryable` is false when
+  // the obstruction is a real conflict in the repo rather than a failed lookup.
+  | {
+      status: "alias_unverifiable";
+      source: string;
+      skillId: string;
+      expectedSkillId: string;
+      retryable: boolean;
+    }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
   | { status: "tree_unavailable" }
@@ -504,18 +521,36 @@ async function previewGitHubCore(
       : null;
   if (aliasPass?.terminal) return aliasPass.terminal;
 
-  // Adopt the alias as the row's identity only when all three hold:
-  //   - the alias pass ran and found the slug unclaimed (`aliasPass`);
-  //   - NOTHING claims the typed slug either (`precheck === null`) — a
-  //     delisted row under the typed slug must be RELISTED, not orphaned
-  //     beside a fresh alias row that also costs the user a quota slot;
-  //   - discovery will still bind the previewed file (`aliasBindsSameFile`),
-  //     so the card can't vouch for one SKILL.md while the pipeline fetches
-  //     another.
-  // Otherwise keep the typed slug — the pre-alias behaviour, which is always
-  // safe because discovery's folder pass binds it by construction.
+  // We know the right slug (`alias`) but can't safely store it: discovery
+  // would bind a different file, or we never got the folder list to check.
+  // Refuse rather than insert under the typed slug.
+  //
+  // Storing the typed slug WOULD work — discovery's folder pass binds it by
+  // construction — but it's a slug skills.sh will never emit, so the row can
+  // never be adopted (adoption matches `source` + `skillId`) and reconcile
+  // skips it. Writing that silently produces a permanently stuck row whose
+  // only repair is a manual re-slug; refusing produces an error the user can
+  // act on, and the realistic cause (a rate limit or a GitHub blip) clears on
+  // its own. See docs/skill-lifecycle.md.
+  //
+  // Not refused when a delisted row already sits on the typed slug: relisting
+  // an existing row beats both writing a new one and erroring out.
+  if (aliasPass && precheck === null && !resolved.aliasBindsSameFile) {
+    return {
+      status: "alias_unverifiable",
+      source,
+      skillId,
+      expectedSkillId: alias as string,
+      // A conflict we SAW won't resolve by waiting; a tree we never got may.
+      retryable: !resolved.treeListed,
+    };
+  }
+
+  // Adopt the alias as the row's identity when the alias pass ran, found the
+  // slug unclaimed, and discovery will still bind the previewed file. The
+  // remaining fallback to the typed slug is the delisted-relist case above.
   const add =
-    aliasPass && precheck === null && resolved.aliasBindsSameFile
+    aliasPass && precheck === null
       ? { skillId: alias as string, precheck: aliasPass.precheck }
       : { skillId, precheck };
 
@@ -560,6 +595,12 @@ function previewFailureError(
     case "on_skills_sh_as_alias":
       return new ConvexError(
         `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Add it with that and it comes in the normal way.`,
+      );
+    case "alias_unverifiable":
+      return new ConvexError(
+        preview.retryable
+          ? `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Try again in a minute.`
+          : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written — this one needs the repo fixed, or add it once skills.sh lists it.`,
       );
     case "no_repo":
       // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
@@ -672,6 +713,13 @@ const previewTerminalArms = [
     name: v.string(),
     source: v.string(),
     skillId: v.string(),
+  }),
+  v.object({
+    status: v.literal("alias_unverifiable"),
+    source: v.string(),
+    skillId: v.string(),
+    expectedSkillId: v.string(),
+    retryable: v.boolean(),
   }),
   v.object({ status: v.literal("no_repo") }),
   v.object({ status: v.literal("no_skill_md") }),

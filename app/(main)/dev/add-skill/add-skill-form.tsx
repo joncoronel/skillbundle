@@ -157,7 +157,8 @@ export function AddSkillForm() {
             // "Not on skills.sh" title makes one toast contradict itself.
             title:
               outcome.preview.status === "on_skills_sh" ||
-              outcome.preview.status === "on_skills_sh_as_alias"
+              outcome.preview.status === "on_skills_sh_as_alias" ||
+              outcome.preview.status === "alias_unverifiable"
                 ? "Couldn't add skill"
                 : "Not on skills.sh",
             description: previewFailureCopy(outcome.preview),

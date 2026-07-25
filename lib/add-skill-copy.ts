@@ -42,6 +42,15 @@ export function previewFailureCopy(preview: PreviewFailure): string {
       return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
     case "already_exists":
       return `${preview.name} is already in the catalog as "${preview.source}/${preview.skillId}".`;
+    case "alias_unverifiable":
+      // Deliberately says nothing was added. This is the one failure where the
+      // add COULD have gone through — under the wrong slug, producing a row
+      // skills.sh can never adopt and only a manual fix repairs. Refusing is
+      // the feature, so the copy has to make the refusal read as deliberate
+      // rather than as a glitch.
+      return preview.retryable
+        ? `This skill calls itself "${preview.expectedSkillId}", but GitHub wouldn't list the repo's files, so we couldn't confirm it's safe to add it under that name. Nothing was added — try again in a minute.`
+        : `This skill calls itself "${preview.expectedSkillId}", but another folder in the repo already uses that name, so adding it would attach the wrong file. Nothing was added.`;
     case "no_repo":
       return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":

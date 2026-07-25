@@ -133,16 +133,36 @@ segment. All four must hold:
   named like the alias would win instead, and the card would have vouched for a
   file the pipeline never fetches. False whenever the tree wasn't listed.
 
-Failing any gate keeps the typed slug, which is always safe because discovery's
-folder pass binds it by construction.
+Failing the first two gates keeps the typed slug, which is always safe because
+discovery's folder pass binds it by construction.
+
+Failing the LAST gate **refuses the add** (`alias_unverifiable`) instead. This
+is the one case where we know the right slug and can't store it, and writing the
+typed slug anyway would work in the narrow sense — discovery binds it — while
+producing a slug skills.sh never emits, so the row could never be adopted and
+reconcile would skip it forever. A permanently stuck row repairable only by
+hand is worse than an error, especially since the realistic cause (a rate limit
+or a GitHub blip) clears on its own. The refusal carries `retryable`, false only
+when the obstruction is a real folder conflict in the repo that waiting won't
+fix. A delisted row already on the typed slug is exempt: relisting it beats both
+writing a new row and erroring out.
+
+Note the asymmetry with discovery this closes: discovery's own no-tree fallback
+probes `skills/<skillId>/SKILL.md` from the STORED slug, so adopting an alias
+without a verified folder list would leave discovery probing a path that doesn't
+exist and stamping `skillMdUrl: ""` — a contentless row. Keeping the typed slug
+is genuinely the only thing that *works* there, which is why the gate refuses
+rather than picking the other slug.
 
 **Finding the ones that slipped through.** `githubOnly.auditGitHubOnlySlugs` (a
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
 walks the `by_isGitHubOnly` index and flags every row whose stored `skillId`
-differs from `canonicalSlug(frontmatter name)`. Two populations it exists for:
-rows written before the alias fix, and rows written *after* it whenever
-`aliasBindsSameFile` was false because the tree API was rate-limited at confirm
-time. Rows it can't judge (no discovered URL, fetch failed, no frontmatter
+differs from `canonicalSlug(frontmatter name)`. Its population is **historical
+only**: rows written before the alias fix. The path that used to keep producing
+new ones — an unverifiable alias falling back to the folder slug — now refuses
+the add instead (`alias_unverifiable`, above), so the audit is a backstop for
+what already exists rather than a monitor for what keeps arriving. Rows it can't
+judge (no discovered URL, fetch failed, no frontmatter
 `name`, a name that isn't sluggable) are reported separately from mismatches —
 "we couldn't look" must not read as "we looked and it's wrong". It only reports;
 re-slugging is a per-row human decision (see TODO.md).
