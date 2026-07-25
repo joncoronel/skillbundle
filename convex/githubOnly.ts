@@ -861,10 +861,22 @@ const gitHubAddReturns = v.union(
  * invocation or a preview→confirm race can neither insert a duplicate nor
  * mis-mark a skill that skills.sh actually lists.
  *
- * Discovery is left to the normal pipeline rather than seeding the URL
- * resolved here: it re-derives the same path with fully-exercised code (same
- * shared matcher), and correctly handles a repo that moved the file between
- * preview and confirm.
+ * Discovery is left to the normal pipeline rather than seeding the URL resolved
+ * here. Only `source` + `skillId` + name are stored; the file's location is
+ * re-derived from the slug afterwards, which handles a repo that moved the file
+ * between preview and confirm.
+ *
+ * The two no longer share a matcher — this path uses `matchesSkillIdExactly`
+ * while discovery keeps the loose prefix rule — so "same code, same answer" is
+ * NOT the reason they agree. They agree because of order: discovery tries a
+ * folder named like the slug, then an exact name lookup, and only then its loose
+ * loop, and this path only ever binds on one of the first two. Keep that order
+ * if `discoverSkillMdUrls` is refactored.
+ *
+ * Seeding the URL would not remove the need for the alias check either. A 404 on
+ * any later content fetch clears `skillMdUrl` and re-flags `needsDiscovery`
+ * (skills.ts), so the path gets re-derived from the slug over the row's whole
+ * life. A seeded URL defers that, it doesn't own it.
  */
 export const addSkillFromGitHub = action({
   args: { input: v.string() },
