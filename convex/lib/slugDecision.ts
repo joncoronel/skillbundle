@@ -102,8 +102,10 @@ export function aliasCandidate({
  *    erroring out, and is why this outranks the refusal below.
  * 3. Adopting the alias would make discovery bind a different file, or we
  *    never got the folder list to check → REFUSE. Storing the typed slug here
- *    would "work" (discovery's folder pass binds it) but produces a slug
- *    skills.sh never emits, so the row can never be adopted and reconcile
+ *    would usually "work" (discovery's folder pass binds it, unless that file
+ *    claims another batch skill's slug — see `claimedByOtherSkill` — in which
+ *    case the bind is refused and the row ends up contentless) but produces a
+ *    slug skills.sh never emits, so the row can never be adopted and reconcile
  *    skips it — a permanently stuck row, written silently. An error the user
  *    can retry is strictly better, and the realistic cause clears on its own.
  * 4. Otherwise the alias is verified safe → adopt it, so a future listing can

@@ -221,3 +221,84 @@ export async function fetchRepoTree(
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// raw.githubusercontent helpers + SKILL.md tree indexing
+//
+// These live here rather than in skills.ts / githubOnly.ts because those two
+// modules' entire safety argument is that they resolve the SAME file for the
+// same slug. Expressing the folder rule twice is what let their fast path and
+// their tree walk drift apart; one definition removes the class.
+// ---------------------------------------------------------------------------
+
+/** The raw URL for a path in a repo. One template, so no caller re-spells it. */
+export function rawGitHubUrl(
+  source: string,
+  branch: string,
+  path: string,
+): string {
+  return `https://raw.githubusercontent.com/${source}/${branch}/${path}`;
+}
+
+/**
+ * GET a raw URL, reporting null for anything that isn't a 200 body.
+ *
+ * A network throw is a miss rather than an exception, so one dead file can't
+ * abort a whole repo's discovery.
+ */
+export async function fetchRawText(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A SKILL.md's frontmatter `name`, by the LOOSE rule discovery has always used:
+ * the first `name:` line anywhere in the file, quotes stripped.
+ *
+ * Deliberately not `extractSkillMdName` (skills.ts), which requires a real
+ * `---` fence. That one is right for the resolver and the audit, which ask "what
+ * does this file declare itself to be?" about a file they are about to trust.
+ * Discovery asks the same question of ~9.5k existing rows, and tightening it
+ * would unbind every fence-less file that binds today — a catalog-wide content
+ * change smuggled in as a cleanup. Both passes of discovery use THIS one, so the
+ * two at least agree with each other.
+ */
+export function parseSkillMdName(body: string): string | null {
+  const m = body.match(/^name:\s*(.+)$/m);
+  return m ? m[1].trim().replace(/^["']|["']$/g, "") : null;
+}
+
+/**
+ * Every SKILL.md in a repo tree, plus a containing-folder-name → path map.
+ *
+ * `byDir` is what answers "does a folder of this name hold this exact file?".
+ * Keyed on the immediate parent only, and LAST ENTRY WINS on a duplicate leaf
+ * name — both callers depend on the identical keying, which is why this is one
+ * function and not two.
+ */
+export function indexSkillMds(entries: { type: string; path: string }[]): {
+  candidates: string[];
+  byDir: Map<string, string>;
+} {
+  const candidates: string[] = [];
+  const byDir = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.type !== "blob") continue;
+    const lower = entry.path.toLowerCase();
+    if (lower !== "skill.md" && !lower.endsWith("/skill.md")) continue;
+    candidates.push(entry.path);
+    const parts = entry.path.split("/");
+    if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
+  }
+  return { candidates, byDir };
+}
+
+/** The folder a SKILL.md sits in, or "" for one at the repo root. */
+export function parentDirOf(path: string): string {
+  const parts = path.split("/");
+  return parts.length >= 2 ? parts[parts.length - 2] : "";
+}

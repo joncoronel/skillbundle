@@ -33,6 +33,8 @@ import { isGitHubSource } from "./lib/source";
 import {
   fetchRepoMetadata,
   fetchRepoTree,
+  indexSkillMds,
+  rawGitHubUrl,
   NOT_MODIFIED,
 } from "./lib/github";
 import {
@@ -213,36 +215,6 @@ async function fetchText(url: string): Promise<string | null> {
  * When the tree is unavailable it mirrors discovery's fallback and probes the
  * conventional paths directly.
  */
-/**
- * Every SKILL.md in a repo tree, plus a containing-folder-name → path map.
- *
- * `byDir` is what answers "does a folder of this name hold this exact file?",
- * which is the whole basis of `aliasBindsSameFile`. Keyed on the immediate
- * parent only, matching discovery's `skillMdByDir` so the two agree.
- */
-function indexSkillMds(entries: { type: string; path: string }[]): {
-  candidates: string[];
-  byDir: Map<string, string>;
-} {
-  const candidates: string[] = [];
-  const byDir = new Map<string, string>();
-  for (const entry of entries) {
-    if (entry.type !== "blob") continue;
-    const lower = entry.path.toLowerCase();
-    if (lower !== "skill.md" && !lower.endsWith("/skill.md")) continue;
-    candidates.push(entry.path);
-    const parts = entry.path.split("/");
-    if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
-  }
-  return { candidates, byDir };
-}
-
-/** The folder a SKILL.md sits in, or "" for one at the repo root. */
-function parentDirOf(path: string): string {
-  const parts = path.split("/");
-  return parts.length >= 2 ? parts[parts.length - 2] : "";
-}
-
 async function resolveGitHubSkillMd(
   source: string,
   skillId: string,
@@ -256,7 +228,7 @@ async function resolveGitHubSkillMd(
   if (!meta) return { status: "no_repo" };
 
   const rawUrl = (branch: string, path: string) =>
-    `https://raw.githubusercontent.com/${source}/${branch}/${path}`;
+    rawGitHubUrl(source, branch, path);
 
   const okResult = (
     branch: string,
@@ -290,49 +262,6 @@ async function resolveGitHubSkillMd(
       treeListed: byDir !== null,
     };
   };
-
-  // Fast path: the input already named a SKILL.md, so fetch that instead of
-  // listing the repo to rediscover it. One unauthenticated raw request in place
-  // of an authenticated tree call, on a token budget shared with the sync
-  // pipeline. Any miss falls through to the full walk below, so this can only
-  // save work, never change the answer.
-  if (pathHint) {
-    const contents = await fetchText(rawUrl(meta.defaultBranch, pathHint));
-    if (contents !== null) {
-      const fmName = extractSkillMdName(contents);
-      // The same two rules the tree walk applies, in the same order: a folder
-      // named like the slug wins, otherwise the file's own name has to earn it.
-      // The root-SKILL.md guard rides along for free — its parent dir is "",
-      // which can never equal a slug, so it must match on the name.
-      const matchedBy: "dir" | "frontmatter" | null =
-        parentDirOf(pathHint) === skillId
-          ? "dir"
-          : fmName && matchesSkillIdExactly(fmName, skillId)
-            ? "frontmatter"
-            : null;
-      if (matchedBy) {
-        // The tree is still needed, but ONLY to vet an alias: `byDir` exists to
-        // answer "would storing `alias` as the slug make discovery bind THIS
-        // file, or a different one in a folder of that name?". With no alias, or
-        // one equal to the slug we already have, there is nothing to vet and
-        // `aliasBindsSameFile` is true regardless — so the listing is skipped
-        // entirely. Skipping it when it IS needed would be a bug, not a saving:
-        // a null `byDir` reads as "we never looked", which correctly refuses
-        // (`alias_unverifiable`, cause "unlisted").
-        const alias = fmName ? canonicalSlug(fmName) : null;
-        let byDir: Map<string, string> | null = null;
-        if (alias !== null && alias !== skillId) {
-          const aliasTree = await fetchRepoTree(owner, repo, [
-            meta.defaultBranch,
-          ]);
-          if (aliasTree && aliasTree !== NOT_MODIFIED && !aliasTree.truncated) {
-            byDir = indexSkillMds(aliasTree.entries).byDir;
-          }
-        }
-        return okResult(meta.defaultBranch, pathHint, contents, matchedBy, byDir);
-      }
-    }
-  }
 
   const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
   // Tree unavailable (too large / rate limited / transient) or truncated:
@@ -389,7 +318,31 @@ async function resolveGitHubSkillMd(
     return { status: "tree_unavailable" };
   }
 
-  // Pass 2: frontmatter `name` via the shared matcher. Covers a root-level
+  // Hinted shortcut past pass 2. The input named a SKILL.md, so if the tree
+  // agrees that file exists, try it before downloading up to RESOLVE_PASS2_CAP
+  // others hunting for the same thing. This is where the real cost is: a
+  // root-level SKILL.md or any repo whose folders don't match its slugs used to
+  // pay the full scan.
+  //
+  // Deliberately AFTER pass 1 and gated on the tree, which is what keeps it
+  // equivalent. An earlier version ran before the tree was fetched and decided
+  // `matchedBy` from the hint's own parent folder — so it could bind a different
+  // copy than `byDir` would when two folders share a leaf name, and could return
+  // a root file where pass 1 would have preferred a folder. Both showed up as
+  // the preview vouching for a file discovery never binds. The hint now only
+  // ever REORDERS pass 2; it can no longer outvote the folder rule.
+  if (pathHint && byDir.get(skillId) === undefined) {
+    const hinted = candidates.find((p) => p === pathHint);
+    if (hinted) {
+      const contents = await fetchText(rawUrl(tree.branch, hinted));
+      const fmName = contents === null ? null : extractSkillMdName(contents);
+      if (contents !== null && fmName && matchesSkillIdExactly(fmName, skillId)) {
+        return okResult(tree.branch, hinted, contents, "frontmatter", byDir);
+      }
+    }
+  }
+
+  // Pass 2: frontmatter `name` via the exact matcher. Covers a root-level
   // SKILL.md (no parent dir to match on) and repos whose folder names don't
   // line up with the slug. Downloads run in concurrent waves; within a wave,
   // results are checked in candidate order so first-match-wins semantics are
@@ -442,7 +395,10 @@ type GitHubPreview =
       cause: "unlisted" | "conflict";
     }
   | { status: "no_repo" }
-  | { status: "no_skill_md" }
+  // Carries the slug it looked for: the copy names it, and it is usually
+  // DERIVED (a URL tail, or the repo name for a root SKILL.md) rather than
+  // typed, so the user has often never seen the string that failed.
+  | { status: "no_skill_md"; skillId: string }
   | { status: "tree_unavailable" }
   | {
       status: "ok";
@@ -586,6 +542,9 @@ async function previewGitHubCore(
   if (typedTerminal) return typedTerminal;
 
   const resolved = unwrap(resolvedR);
+  if (resolved.status === "no_skill_md") {
+    return { status: "no_skill_md", skillId };
+  }
   if (resolved.status !== "ok") return { status: resolved.status };
 
   // Second pass under the SLUG ALIAS.
@@ -598,11 +557,13 @@ async function previewGitHubCore(
   // skills.sh has never heard of. Left unhandled that produces a confident
   // "not on skills.sh" for a listed skill.
   //
-  // Restricted to `matchedBy === "dir"`: only there did the caller point at
-  // this exact folder, so its frontmatter name is a statement about the skill
-  // they meant. A `"frontmatter"` match can come from the loose `startsWith`
-  // rule, and letting a prefix guess name the skill would put a slug the user
-  // never typed on the end of a write with no confirmation step.
+  // Restricted to `matchedBy === "dir"`: only there did the caller point at this
+  // exact folder, so its frontmatter name is a statement about the skill they
+  // meant. Since the resolver went exact-only, a `"frontmatter"` match implies
+  // the name already equals the typed slug, so this gate is belt-and-braces for
+  // the WRITE — but it stays load-bearing for the auto re-add, because
+  // `on_skills_sh_as_alias` makes the client re-run the add with no confirm step
+  // and nothing inferred may reach an unconfirmed write.
   //
   // Runs only on a genuine mismatch, and deliberately AFTER the typed-slug
   // checks: the slug the caller gave wins whenever it resolves to something.
@@ -788,7 +749,7 @@ const previewTerminalArms = [
     cause: v.union(v.literal("unlisted"), v.literal("conflict")),
   }),
   v.object({ status: v.literal("no_repo") }),
-  v.object({ status: v.literal("no_skill_md") }),
+  v.object({ status: v.literal("no_skill_md"), skillId: v.string() }),
   v.object({ status: v.literal("tree_unavailable") }),
 ] as const;
 

@@ -146,8 +146,11 @@ segment. All four must hold:
   named like the alias would win instead, and the card would have vouched for a
   file the pipeline never fetches. False whenever the tree wasn't listed.
 
-Failing the first two gates keeps the typed slug, which is always safe because
-discovery's folder pass binds it by construction.
+Failing the first two gates keeps the typed slug, which is safe because
+discovery's folder pass binds it — with one exception since that pass began
+verifying: if the folder-matched file's own name is another batch skill's slug,
+the bind is refused and the row ends up contentless rather than wrong. See the
+discovery section below.
 
 Failing the LAST gate **refuses the add** (`alias_unverifiable`) instead. This
 is the one case where we know the right slug and can't store it, and writing the
@@ -231,9 +234,11 @@ shares with the preview in **`convex/lib/slugDecision.ts`** (pure, unit-tested).
 SKILL.md-to-slug matching lives in `lib/skillMatch.ts`, but the two callers there
 are deliberately different: the preview uses `matchesSkillIdExactly` (it invents a
 permanent slug), discovery keeps the loose `matchesSkillId` (it hunts for the file
-behind a slug skills.sh already assigned). They still bind the same file, by
-ORDER rather than by sharing a rule — discovery tries folder, then exact name,
-then its loose loop, and the preview only ever binds on one of the first two. The lifecycle
+behind a slug skills.sh already assigned). They still bind the same file, by ORDER rather than by sharing a rule: discovery
+tries the folder, then exact names across EVERY candidate, and only then its
+loose loop. The global two-phase shape is the invariant — an earlier version ran
+both rules inside one per-file loop, so a loose hit on an early file beat an
+exact hit on a later one and the two sides could select different files. The lifecycle
 consequences of the flag stay where the lifecycle lives: `skills.ts`
 (heartbeat + adoption + cap exemption), `reconcile.ts` (skip), `devStats.ts`
 (diagnostics exclusions).
@@ -362,11 +367,29 @@ listed:
 
 1. **Folder name matches the slug**, then the candidate is **opened and checked**.
    It is rejected only if its own `name` is a *different* known skill's slug
-   (`claimedByOtherSkill`, lib/skillMatch.ts), in which case it is left for pass 2
-   to place correctly.
-2. **Frontmatter name**, via the loose `matchesSkillId`, for whatever pass 1
-   didn't claim. Covers a root-level SKILL.md and repos whose folders don't line
-   up with their slugs.
+   (`claimedByOtherSkill`, lib/skillMatch.ts). A rejection is **recorded as a
+   `(path, slug)` pair** that pass 2 must honour — without that, pass 2's prefix
+   arm re-bound the very file pass 1 refused (`matchesSkillId("panel-review",
+   "panel")` is true), making the guard a no-op in the exact shape it exists for.
+2. **Exact frontmatter name across EVERY remaining candidate**, then and only
+   then **the loose `matchesSkillId`** over what is left. The two phases are
+   global, not per-file: running both rules inside one per-path loop let a loose
+   hit on an early file beat an exact hit on a later one, which is how discovery
+   and the (exact-only) preview could bind different files. The loose phase costs
+   no extra requests — it reuses the bodies the exact phase already read.
+
+The **tree-unavailable fallback** (409 too large, rate limit) probes the
+conventional paths and runs the same check: it fetches the body rather than
+issuing a HEAD, because the repos whose trees fail to list are the large
+monorepos most likely to hold a leftover folder, and a HEAD cannot read a name.
+
+**What a rejection costs.** The file is not bound to that skill. If nothing else
+claims the skill, it ends at `skillMdUrl: ""` — `hasContentFetchError`, an
+"Install may fail" badge, a counted discovery failure, and a weekly retry. For a
+row that was ALREADY mis-bound, the stale `content` from the other skill's file
+is left in place (only the URL is cleared), so the detail page keeps serving it
+until a successful re-bind. Clearing content on rejection is not yet done; it
+needs a decision about skills legitimately renamed upstream.
 
 Pass 1 used to bind on the folder name alone, without opening the file. That is
 wrong whenever one skill's FOLDER is named like a DIFFERENT skill's NAME — which a

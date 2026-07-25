@@ -33,6 +33,12 @@ import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
 import {
+  fetchRawText,
+  indexSkillMds,
+  parseSkillMdName,
+  rawGitHubUrl,
+} from "./lib/github";
+import {
   claimedByOtherSkill,
   kebabCase,
   matchesSkillId,
@@ -895,17 +901,10 @@ export const listSourcesNeedingDiscovery = internalQuery({
  */
 const DISCOVERY_WAVE_SIZE = 10;
 
-/** GET a raw URL, reporting null for anything that isn't a 200 body. Mirrors
- *  githubOnly.ts's `fetchText`: a network throw is a miss, not an exception, so
- *  one dead file can't abort a whole repo's discovery. */
-async function fetchTextOrNull(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    return res.ok ? await res.text() : null;
-  } catch {
-    return null;
-  }
-}
+/** Key for the "this file lost this slug in pass 1" set. JSON rather than a
+ *  separator character, so no path or slug can forge a collision. */
+const rejectionKey = (path: string, skillId: string) =>
+  JSON.stringify([path, skillId]);
 
 export const discoverSkillMdUrls = internalAction({
   args: {
@@ -937,6 +936,10 @@ export const discoverSkillMdUrls = internalAction({
     const tree = treeResult === NOT_MODIFIED ? null : treeResult;
     const resolvedBranch = tree?.branch ?? defaultBranch;
 
+    // Every slug in this batch, for the "does this file claim someone else?"
+    // check used by the fallback below and by pass 1.
+    const batchSlugs = new Set(skills.map((s) => s.skillId));
+
     // Fallback: tree fetch failed (404 / 409 too large / rate limited). Try
     // direct path guessing for each skill.
     if (!tree) {
@@ -951,20 +954,27 @@ export const discoverSkillMdUrls = internalAction({
           `SKILL.md`,
         ];
         for (const path of paths) {
-          const rawUrl = `https://raw.githubusercontent.com/${source}/${resolvedBranch}/${path}`;
-          try {
-            const res = await fetch(rawUrl, { method: "HEAD" });
-            if (res.ok) {
-              await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-                docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-                skillMdUrl: rawUrl,
-              });
-              matchedSkillIds.add(s.skillId);
-              break;
-            }
-          } catch {
+          const rawUrl = rawGitHubUrl(source, resolvedBranch, path);
+          // GET, not HEAD: this probes the same folder-name convention pass 1
+          // does, so it needs the same verification, and a HEAD never reads a
+          // body. Without it the guard has a hole exactly the size of "how
+          // often fetchRepoTree fails" — which is largest for the huge
+          // monorepos most likely to hold a leftover folder. The body is not
+          // wasted: the content pipeline fetches this file moments later.
+          const body = await fetchRawText(rawUrl);
+          if (body === null) continue;
+          if (claimedByOtherSkill(parseSkillMdName(body), s.skillId, batchSlugs)) {
+            console.log(
+              `discovery (no tree): ${source}/${path} claims another skill in this batch — not binding it to ${s.skillId}`,
+            );
             continue;
           }
+          await ctx.runMutation(internal.skills.updateSkillMdUrl, {
+            docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
+            skillMdUrl: rawUrl,
+          });
+          matchedSkillIds.add(s.skillId);
+          break;
         }
       }
       const unmatched = skills.filter((s) => !matchedSkillIds.has(s.skillId));
@@ -978,22 +988,11 @@ export const discoverSkillMdUrls = internalAction({
     }
 
     // Collect every SKILL.md (case-insensitive) in the tree, indexed by the
-    // immediate parent directory name.
-    const allSkillMdPaths: string[] = [];
-    const skillMdByDir = new Map<string, string>();
-    for (const entry of tree.entries) {
-      if (entry.type !== "blob") continue;
-      const lowerPath = entry.path.toLowerCase();
-      if (lowerPath !== "skill.md" && !lowerPath.endsWith("/skill.md"))
-        continue;
-
-      allSkillMdPaths.push(entry.path);
-      const parts = entry.path.split("/");
-      if (parts.length >= 2) {
-        const parentDir = parts[parts.length - 2];
-        skillMdByDir.set(parentDir, entry.path);
-      }
-    }
+    // immediate parent directory name. Shared with the GitHub-only resolver
+    // (lib/github.ts) so the two cannot key it differently.
+    const { candidates: allSkillMdPaths, byDir: skillMdByDir } = indexSkillMds(
+      tree.entries,
+    );
 
     // Pass 1: directory name matches the skillId.
     //
@@ -1017,8 +1016,12 @@ export const discoverSkillMdUrls = internalAction({
     const matchedSkillIds = new Set<string>();
     const matchedPaths = new Set<string>();
     const rawUrlFor = (path: string) =>
-      `https://raw.githubusercontent.com/${source}/${resolvedBranch}/${path}`;
-    const batchSlugs = new Set(skills.map((s) => s.skillId));
+      rawGitHubUrl(source, resolvedBranch, path);
+    // (path, skillId) pairs pass 1 refused. Pass 2 must honour them: its loose
+    // prefix arm would otherwise re-bind the very file pass 1 just rejected —
+    // `matchesSkillId("panel-review", "panel")` is true — making the whole guard
+    // a no-op in exactly the leftover-folder shape it exists for.
+    const rejected = new Set<string>();
     const dirCandidates = skills.flatMap((s) => {
       const path = skillMdByDir.get(s.skillId);
       return path ? [{ s, path }] : [];
@@ -1027,19 +1030,20 @@ export const discoverSkillMdUrls = internalAction({
     for (let i = 0; i < dirCandidates.length; i += DISCOVERY_WAVE_SIZE) {
       const wave = dirCandidates.slice(i, i + DISCOVERY_WAVE_SIZE);
       const bodies = await Promise.all(
-        wave.map((c) => fetchTextOrNull(rawUrlFor(c.path))),
+        wave.map((c) => fetchRawText(rawUrlFor(c.path))),
       );
       for (let j = 0; j < wave.length; j++) {
         const { s, path } = wave[j];
         const body = bodies[j];
-        const fmName = body === null ? null : extractSkillMdName(body);
+        const fmName = body === null ? null : parseSkillMdName(body);
         // Only a name that IS another skill's slug blocks the bind. A fetch
         // failure or a file with no `name` leaves the folder match standing —
         // transient raw trouble must not cost a skill its content. See
         // `claimedByOtherSkill` for why this isn't a self-check.
         if (claimedByOtherSkill(fmName, s.skillId, batchSlugs)) {
+          rejected.add(rejectionKey(path, s.skillId));
           console.log(
-            `discovery: ${source}/${path} is named "${fmName}", not ${s.skillId} — leaving it for pass 2`,
+            `discovery: ${source}/${path} is named "${fmName}", not ${s.skillId} — not binding it to ${s.skillId}`,
           );
           continue;
         }
@@ -1064,45 +1068,67 @@ export const discoverSkillMdUrls = internalAction({
 
     if (unmatchedSkills.length > 0 && unmatchedMdPaths.length > 0) {
       const remaining = new Map(unmatchedSkills.map((s) => [s.skillId, s]));
-      for (const mdPath of unmatchedMdPaths) {
+      const bind = async (
+        skill: { docId: string; skillId: string },
+        path: string,
+      ) => {
+        await ctx.runMutation(internal.skills.updateSkillMdUrl, {
+          docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
+          skillMdUrl: rawUrlFor(path),
+        });
+        matchedSkillIds.add(skill.skillId);
+        matchedPaths.add(path);
+        remaining.delete(skill.skillId);
+      };
+
+      // Exact before loose ACROSS FILES, not within one.
+      //
+      // This used to be one loop per path with both rules inside it, so the
+      // loose arm on an early file beat the exact arm on a later one. That is
+      // what made the preview and this pass diverge once the preview went
+      // exact-only: given `a-sdk/SKILL.md` (name `vercel-ai-sdk`) before
+      // `z-ai/SKILL.md` (name `vercel-ai`), a preview for slug `vercel-ai`
+      // vouches for z-ai while this pass bound a-sdk on the prefix rule. The
+      // row then served a file the confirm card never showed.
+      //
+      // So: fetch a wave, try EXACT on everything seen so far, and only once
+      // every candidate has had its exact chance does the loose pass run. The
+      // early exit survives — a skill whose name matches exactly still stops
+      // the walk — and the loose pass costs no extra requests because it reuses
+      // the bodies this loop already read.
+      const named: { path: string; name: string }[] = [];
+      for (let i = 0; i < unmatchedMdPaths.length; i += DISCOVERY_WAVE_SIZE) {
         if (remaining.size === 0) break;
-        const rawUrl = `https://raw.githubusercontent.com/${source}/${resolvedBranch}/${mdPath}`;
-        try {
-          const res = await fetch(rawUrl);
-          if (!res.ok) continue;
-          const text = await res.text();
-          const nameMatch = text.match(/^name:\s*(.+)$/m);
-          if (!nameMatch) continue;
-          const name = nameMatch[1].trim().replace(/^["']|["']$/g, "");
-          // Exact matches first (cheap map lookups), then the loose rule from
-          // lib/skillMatch.ts.
-          //
-          // The GitHub-only resolver no longer shares that loose rule (it uses
-          // `matchesSkillIdExactly`), so "same matcher" is no longer why preview
-          // and post-insert discovery can't bind different files for one slug.
-          // The reason now is ORDER: the preview only ever binds on an exact
-          // name, and the two exact lookups on the line below run before the
-          // loose loop, so they reproduce the preview's choice before looseness
-          // gets a say. Keep the exact lookups first if this is ever refactored.
-          let skill = remaining.get(name) ?? remaining.get(kebabCase(name));
-          if (!skill) {
-            for (const [skillId, s] of remaining) {
-              if (matchesSkillId(name, skillId)) {
-                skill = s;
-                break;
-              }
-            }
+        const wave = unmatchedMdPaths.slice(i, i + DISCOVERY_WAVE_SIZE);
+        const bodies = await Promise.all(
+          wave.map((path) => fetchRawText(rawUrlFor(path))),
+        );
+        for (let j = 0; j < wave.length; j++) {
+          const body = bodies[j];
+          if (body === null) continue;
+          const name = parseSkillMdName(body);
+          if (name) named.push({ path: wave[j], name });
+        }
+        for (const { path, name } of named.slice(-wave.length)) {
+          if (remaining.size === 0) break;
+          const skill = remaining.get(name) ?? remaining.get(kebabCase(name));
+          if (skill && !rejected.has(rejectionKey(path, skill.skillId))) {
+            await bind(skill, path);
           }
-          if (skill) {
-            await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-              docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
-              skillMdUrl: rawUrl,
-            });
-            matchedSkillIds.add(skill.skillId);
-            remaining.delete(skill.skillId);
+        }
+      }
+
+      // Loose pass, over what the exact pass left. Reached only when no exact
+      // match existed, which is also when every candidate has been read.
+      for (const { path, name } of named) {
+        if (remaining.size === 0) break;
+        if (matchedPaths.has(path)) continue;
+        for (const [skillId, skill] of remaining) {
+          if (rejected.has(rejectionKey(path, skillId))) continue;
+          if (matchesSkillId(name, skillId)) {
+            await bind(skill, path);
+            break;
           }
-        } catch {
-          continue;
         }
       }
     }

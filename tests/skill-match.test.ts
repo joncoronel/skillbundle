@@ -188,6 +188,21 @@ describe("claimedByOtherSkill — discovery pass 1's folder-match guard", () => 
     expect(claimedByOtherSkill(null, "recap", slugs)).toBe(false);
   });
 
+  test("blocks a PREFIX collision — the pair that hid a real bug", () => {
+    // The doc's own motivating shape: folder `panel/` left behind after a rename
+    // to `panel-review/`, so `panel/SKILL.md` is named `panel-review`.
+    //
+    // The original suite asserted this with `recap`, which is not a prefix of
+    // `panel-review`. That made the guard look watertight while discovery's
+    // pass 2 quietly re-bound the rejected file through `matchesSkillId`'s
+    // prefix arm — a no-op fix in the exact case it was written for. Keep a
+    // prefix pair here so a regression in the rejection handoff is visible.
+    const pair = new Set(["panel", "panel-review"]);
+    expect(claimedByOtherSkill("panel-review", "panel", pair)).toBe(true);
+    // The arm that made it re-bindable, asserted so the coupling is on record.
+    expect(matchesSkillId("panel-review", "panel")).toBe(true);
+  });
+
   test("allows everything when the batch has one skill", () => {
     // Nobody else to be confused with, so the guard is inert.
     expect(claimedByOtherSkill("panel-review", "recap", new Set(["recap"]))).toBe(false);
