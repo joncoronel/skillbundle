@@ -180,8 +180,6 @@ type GitHubSkillResolution =
   | { status: "tree_unavailable" };
 
 /**
-
-/**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
  *
  * Matching goes through `matchesSkillIdExactly` (lib/skillMatch.ts), which is
@@ -309,9 +307,11 @@ async function resolveGitHubSkillMd(
   // before downloading up to RESOLVE_PASS2_CAP others hunting for the same thing.
   //
   // Reachable in ONE shape, which is worth knowing before relying on it. For any
-  // nested link `parentDirOf(pathHint) === skillId` by construction (both come
-  // from the same URL segment), so if the hinted path is in the tree then `byDir`
-  // has the slug and pass 1 above has already returned. This only ever fires for
+  // nested link the hint's parent segment IS the slug by construction — the
+  // parser takes the slug from the path tail and builds the hint from that same
+  // tail plus "SKILL.md" (lib/parse-skill-input.ts) — and `indexSkillMds` keys
+  // `byDir` on exactly that segment. So if the hinted path is in the tree at all,
+  // `byDir` has the slug and pass 1 above has already returned. This only ever fires for
   // a ROOT-LEVEL SKILL.md link in a repo with no folder named like the repo — the
   // case that used to pay the full scan, and the reason `path` earns its keep.
   //

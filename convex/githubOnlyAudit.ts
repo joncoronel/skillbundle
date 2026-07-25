@@ -160,7 +160,8 @@ const FETCH_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 500;
 
 /**
- * Fetch one SKILL.md. Deliberately stronger than the resolver's `fetchText`:
+ * Fetch one SKILL.md. Deliberately stronger than the shared `fetchRawText`
+ * (convex/lib/github.ts) that the resolver and discovery use:
  * it pins the scheme and host, splits a permanent 404 from a transient failure
  * (a dead row is actionable; an unlucky one isn't), and retries with a pause,
  * because the content pipeline retries these same URLs up to 3 times and an

@@ -55,7 +55,8 @@ fixes.
 
 ### Split convex/githubOnly.ts (over the 1000-line threshold again)
 
-1023 lines, against the ~968 it started the exact-match branch at. That file was
+1023 lines, against the ~968 it started the exact-match branch at (1022 after
+the round-3 helper removal; the trend is down but the threshold is still breached). That file was
 split once before for exactly this reason — `convex/githubOnlyAudit.ts` exists
 because it "had grown past 1000 lines" — so it is back over the line that
 justified the last split.

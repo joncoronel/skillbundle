@@ -420,12 +420,15 @@ Known narrowing: "someone else" means the slugs in the batch being resolved, so 
 collision with a skill discovered in an earlier run isn't caught.
 
 Cost: pass 1 previously fetched nothing (it read only the tree), and now fetches
-one raw file per folder-matched skill, in concurrent waves. Pass 2 changed too: a
-skill matching only LOOSELY no longer ends the scan, because every candidate must
-be read before the loose phase can begin (exact matches still exit early). Those
-are
+one raw file per folder-matched skill, in concurrent waves. Those reads are
 CDN-backed, outside the GitHub API rate limit, and the content pipeline downloads
 the same files moments later anyway.
+
+Pass 2 changed too: a skill matching only LOOSELY no longer ends the scan, because
+every candidate must be read before the loose phase can begin. Exact matches still
+exit early, and the worst case (nothing matches) is what it always was. Bounded
+either way, and these are now fetched 10-wide where they used to be serial, so
+wall-clock likely improved even where the request count rose.
 
 ## Content states (independent of delisting)
 
