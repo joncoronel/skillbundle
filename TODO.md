@@ -92,12 +92,28 @@ both judged, none reported), so this is deferred against a measured zero rather
 than a guess. The add path that used to create these now refuses instead of
 guessing a slug (`alias_unverifiable` in `githubOnly.ts`).
 
-One rare path is still open, which matters only because it means a row the audit
-reports in future may be **new rather than historical**: when `matchesSkillId`'s
-loose prefix rule binds the file, `aliasCandidate` deliberately declines to fire
-and the typed slug is kept. It needs the typed slug to be a strict prefix of the
-kebab'd name with no folder of that name, so it is unlikely. The whole-word-prefix
-entry above would close it.
+**One path is still open, and it is reachable today.** The alias only fires when
+the FOLDER name matched what the caller typed (`matchedBy === "dir"`). When the
+file was found by frontmatter instead, `aliasCandidate` declines and the typed
+slug is kept — and `matchesSkillId` accepts a bare prefix, so typing
+`owner/repo/panel` binds the SKILL.md named `panel-review` and stores the row as
+`panel`. skills.sh calls it `panel-review`. That is a mis-slugged row created new,
+by nothing more exotic than someone typing a shortened slug. (Traced through the
+code, not reproduced.)
+
+So any row the audit reports may be **new rather than historical**, which is the
+main reason this entry stays open.
+
+Note the whole-word-prefix entry above does **not** close this, despite earlier
+versions of this entry claiming it did: tightening `startsWith(skillId)` to
+`startsWith(skillId + "-")` still matches, because `panel-review` starts with
+`panel-`. It only drops matches with no hyphen boundary (`test` vs
+`testing-library-helper`). The real fix is to REFUSE the add when a frontmatter
+match implies a slug different from the typed one, the same way
+`alias_unverifiable` already refuses an alias it can't verify. Adopting the
+frontmatter slug instead was considered and rejected: a bare prefix guess must not
+name a permanent row (see the `matchedBy === "dir"` restriction in
+`previewGitHubCore`).
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
