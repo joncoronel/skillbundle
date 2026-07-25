@@ -108,10 +108,15 @@ export function addSkillErrorText(err: unknown): string {
   if (/URL must be from skills\.sh/i.test(cleaned)) {
     return "That URL isn't from skills.sh or GitHub. Paste one of those, or an owner/repo/slug.";
   }
-  if (/Sign in|[Nn]ot authenticated/.test(cleaned)) {
+  // Every arm here is case-insensitive on purpose: this function sniffs message
+  // text it does not own (thrown from three different modules), so a narrowed
+  // matcher fails silently the first time a caller capitalises differently.
+  // Folding a second alternative into a `/i` pattern without keeping the flag is
+  // exactly how that happens.
+  if (/sign in|not authenticated/i.test(cleaned)) {
     return "Sign in to add a skill.";
   }
-  if (/[Nn]ot authorized/.test(cleaned)) {
+  if (/not authorized/i.test(cleaned)) {
     return "You don't have access to do that.";
   }
   // Input-shape complaints from parseSkillInput are already written for a human.
