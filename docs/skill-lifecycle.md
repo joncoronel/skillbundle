@@ -142,10 +142,12 @@ typed slug anyway would work in the narrow sense — discovery binds it — whil
 producing a slug skills.sh never emits, so the row could never be adopted and
 reconcile would skip it forever. A permanently stuck row repairable only by
 hand is worse than an error, especially since the realistic cause (a rate limit
-or a GitHub blip) clears on its own. The refusal carries `retryable`, false only
-when the obstruction is a real folder conflict in the repo that waiting won't
-fix. A delisted row already on the typed slug is exempt: relisting it beats both
-writing a new row and erroring out.
+or a GitHub blip) clears on its own. The refusal carries `cause`, naming the
+obstruction rather than the remedy: `"conflict"` is a folder we SAW claim the
+alias; `"unlisted"` is a file listing we never got, which `fetchRepoTree` cannot
+distinguish between a transient rate limit and a permanently too-large tree — so
+the copy hedges instead of promising a retry works. A delisted row already on the
+typed slug is exempt: relisting it beats both writing a new row and erroring out.
 
 Note the asymmetry with discovery this closes: discovery's own no-tree fallback
 probes `skills/<skillId>/SKILL.md` from the STORED slug, so adopting an alias
@@ -157,12 +159,19 @@ rather than picking the other slug.
 **Finding the ones that slipped through.** `githubOnly.auditGitHubOnlySlugs` (a
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
 walks the `by_isGitHubOnly` index and flags every row whose stored `skillId`
-differs from `canonicalSlug(frontmatter name)`. Its population is **historical
-only**: rows written before the alias fix. The path that used to keep producing
-new ones — an unverifiable alias falling back to the folder slug — now refuses
-the add instead (`alias_unverifiable`, above), so the audit is a backstop for
-what already exists rather than a monitor for what keeps arriving. Rows it can't
-judge (no discovered URL, fetch failed, no frontmatter
+differs from `canonicalSlug(frontmatter name)`. Two ways such a row exists, and
+only the first is closed:
+
+- It predates the alias fix, when the add took the folder slug outright. (The
+  path that kept producing these — an unverifiable alias falling back to the
+  folder slug — now refuses instead: `alias_unverifiable`, above.)
+- Its SKILL.md was bound by `matchesSkillId`'s loose **prefix** arm, so
+  `matchedBy` is `"frontmatter"`, `aliasCandidate` deliberately declines to
+  fire, and the typed slug is kept. Narrow — the typed slug has to be a strict
+  prefix of the kebab'd name with no folder of that name — but live. Do not
+  read the audit as historical-only; a fresh mismatch can be a new row.
+
+Rows it can't judge (no discovered URL, fetch failed, gone (404), no frontmatter
 `name`, a name that isn't sluggable) are reported separately from mismatches —
 "we couldn't look" must not read as "we looked and it's wrong". It only reports;
 re-slugging is a per-row human decision (see TODO.md).

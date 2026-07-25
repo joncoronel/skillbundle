@@ -80,27 +80,28 @@ describe("decideSlug — refuse rather than store a knowingly-wrong slug", () =>
     expect(decideSlug({ ...base, alias: null })).toEqual({ kind: "keep_typed" });
   });
 
-  test("refuses when we never got the folder list, and says retrying may help", () => {
-    // The realistic cause: a rate limit or a GitHub blip. Writing the typed
-    // slug here would leave a row skills.sh can never adopt.
+  test("refuses when we never got the folder list, cause 'unlisted'", () => {
+    // Either a rate limit or a tree too large to list — indistinguishable from
+    // here, which is why the cause names the obstruction and not the remedy.
+    // Writing the typed slug would leave a row skills.sh can never adopt.
     expect(
       decideSlug({ ...base, aliasBindsSameFile: false, treeListed: false }),
     ).toEqual({
       kind: "refuse",
       expectedSkillId: "vendor-foo",
-      retryable: true,
+      cause: "unlisted",
     });
   });
 
-  test("refuses a real folder conflict, and does NOT promise retrying helps", () => {
-    // We saw the listing and another folder owns that name. Waiting changes
-    // nothing, so the copy must not tell the user to try again.
+  test("refuses a real folder conflict, cause 'conflict'", () => {
+    // We saw the listing and another folder owns that name. This is the only
+    // definite refusal, and the only one whose copy must not suggest waiting.
     expect(
       decideSlug({ ...base, aliasBindsSameFile: false, treeListed: true }),
     ).toEqual({
       kind: "refuse",
       expectedSkillId: "vendor-foo",
-      retryable: false,
+      cause: "conflict",
     });
   });
 
@@ -155,9 +156,9 @@ describe("decideSlug — the full matrix has no surprises", () => {
   );
 
   test("a verified alias is adopted even when the tree was never listed", () => {
-    // treeListed only shapes the refusal copy. It must not become a gate of its
-    // own: aliasBindsSameFile is already false whenever the tree was missing,
-    // so an extra check here would be dead code hiding a real branch.
+    // treeListed only shapes the refusal's `cause`. It must not become a gate
+    // of its own: aliasBindsSameFile is already false whenever the tree was
+    // missing, so an extra check here would be dead code hiding a real branch.
     expect(
       decideSlug({
         alias: "a",

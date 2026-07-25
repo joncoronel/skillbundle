@@ -27,15 +27,21 @@
  * So the hook owns the sequence and the state it runs on (`input`, `phase`,
  * `candidate`), and hands every terminal point to ONE `report` callback as a
  * discriminated union. Reporting is where the two genuinely differ — an
- * aria-live notice with a "View skill" link vs a toast — and a union keeps that
- * difference exhaustive-checked instead of duplicated.
+ * aria-live notice with a "View skill" link vs a toast — and a union lets that
+ * difference be exhaustive-checked instead of duplicated.
+ *
+ * "Lets" is load-bearing: TS does NOT check a `switch` for exhaustiveness
+ * inside a void-returning function, so each consumer has to close its own
+ * switch with a `default` that assigns `outcome` to `never`. Without that line,
+ * adding an arm here compiles clean and both surfaces silently do nothing at
+ * that terminal point. See either consumer's `report`.
  *
  * Generic over the preview's `ok` shape because the public action adds `quota`
  * to it and the admin action doesn't.
  */
 
-import { useCallback, useState } from "react";
-import type { FunctionReturnType } from "convex/server";
+import { useCallback, useRef, useState } from "react";
+import type { FunctionReference, FunctionReturnType } from "convex/server";
 import type { api } from "@/convex/_generated/api";
 import type { PreviewFailure } from "@/lib/add-skill-copy";
 
@@ -43,31 +49,54 @@ type ManualAddResult = FunctionReturnType<
   typeof api.skills.addSkillManuallyPublic
 >;
 
-/** A settled manual add — every status except the fall-through signal. */
-export type SettledAddResult = Exclude<
-  ManualAddResult,
-  { status: "not_on_skills_sh" }
-> & { status: Exclude<ManualAddResult["status"], "not_on_skills_sh"> };
+/**
+ * A manual add that actually changed something.
+ *
+ * `not_on_skills_sh` is the fall-through signal, and `already_exists` gets its
+ * own outcome arm before this type is ever constructed — so excluding both
+ * makes `outcome.result.status === "already_exists"` inside the `added` arm
+ * unrepresentable rather than merely unreachable. (It would have rendered
+ * "X was added" for a row that wasn't.)
+ *
+ * Note `ManualAddResult` is ONE object with a union-typed `status`, not a union
+ * of objects, so an outer `Exclude<...>` on it does nothing; the intersection
+ * below is what narrows.
+ */
+export type SettledAddResult = ManualAddResult & {
+  status: Exclude<
+    ManualAddResult["status"],
+    "not_on_skills_sh" | "already_exists"
+  >;
+};
 
 type GitHubAddResult = FunctionReturnType<
   typeof api.githubOnly.addSkillFromGitHubPublic
 >;
 
 /**
- * The fields both preview actions' `ok` arms share. The admin action returns
- * exactly this; the public one returns it plus `quota`.
+ * All the hook needs of a preview's `ok` arm — it never reads a field, only
+ * checks `status` and passes the object through.
+ *
+ * Deliberately NOT derived from either action's return type. Deriving it from
+ * the admin action would make the PUBLIC consumer's type have to structurally
+ * extend an action it never calls, so an admin-only field added to that `ok`
+ * arm would break the public flow with an error pointing somewhere it has no
+ * business looking. They happen to agree today only because both validators
+ * share one `previewOkFields` object server-side.
  */
-export type PreviewOkBase = Extract<
-  FunctionReturnType<typeof api.githubOnly.previewGitHubSkill>,
-  { status: "ok" }
->;
+export type PreviewOkBase = { status: "ok" };
+
+/** Extract a preview action's `ok` arm, so consumers don't hand-roll it. */
+export type PreviewOkOf<
+  A extends FunctionReference<"action", "public" | "internal">,
+> = Extract<FunctionReturnType<A>, { status: "ok" }>;
 
 /** A resolved candidate plus the input that produced it, so confirm re-sends
  *  exactly what the preview saw (the action re-verifies regardless). */
 export type Candidate<TOk extends PreviewOkBase> = TOk & { input: string };
 
 /** Identifies the slug a corrected-slug retry actually used. */
-export type AliasRef = { source: string; skillId: string };
+type AliasRef = { source: string; skillId: string };
 
 /**
  * Passed to `report` as a second argument rather than read off the hook's
@@ -114,14 +143,14 @@ export type AddSkillOutcome<TOk extends PreviewOkBase> =
  * forward. Going back to "Checking…" reads as a stall on what is already the
  * slowest path in the flow.
  */
-export type AddSkillPhase =
+type AddSkillPhase =
   | "idle"
   | "adding"
   | "previewing"
   | "retrying"
   | "confirming";
 
-export const ADD_SKILL_PHASE_LABEL: Record<
+const ADD_SKILL_PHASE_LABEL: Record<
   Exclude<AddSkillPhase, "idle">,
   string
 > = {
@@ -154,6 +183,20 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
   const [candidate, setCandidate] = useState<Candidate<TOk> | null>(null);
 
   const pending = phase !== "idle";
+
+  /**
+   * The double-submit latch, deliberately a ref and not `phase`.
+   *
+   * `phase` is render state, so a guard reading it reads a value captured when
+   * the callback was created. That holds while callers reach `submit`
+   * synchronously inside one event — but the contract below invites them to run
+   * their own gates first, and one `await` in a gate is enough: the captured
+   * value goes stale, the `setPhase` no longer batches with the click, and two
+   * rapid submits both pass. The second would win the phase while the first's
+   * `finally` cleared the latch mid-request. A ref is read and written
+   * synchronously, so it can't drift. `phase` stays purely for labels.
+   */
+  const inFlight = useRef(false);
 
   const patchCandidate = useCallback(
     (fn: (c: Candidate<TOk>) => Candidate<TOk>) =>
@@ -262,12 +305,13 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
    */
   const submit = useCallback(
     async (trimmed: string) => {
-      if (!trimmed || pending) return;
+      if (!trimmed || inFlight.current) return;
       // The candidate card for this exact input is already on screen — nothing
       // to re-fetch. Not a cache: any change to the input invalidates the
       // candidate, and confirm re-verifies server-side regardless.
       if (candidate?.input === trimmed) return;
 
+      inFlight.current = true;
       setCandidate(null);
       emit({ kind: "submitting" });
       setPhase("adding");
@@ -278,14 +322,16 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
       } catch (error) {
         emit({ kind: "failed", error });
       } finally {
+        inFlight.current = false;
         setPhase("idle");
       }
     },
-    [pending, candidate, emit, runManualAdd, offerGitHubFallback],
+    [candidate, emit, runManualAdd, offerGitHubFallback],
   );
 
   const confirmGitHub = useCallback(async () => {
-    if (!candidate || pending) return;
+    if (!candidate || inFlight.current) return;
+    inFlight.current = true;
     setPhase("confirming");
     try {
       const result = await addFromGitHub({ input: candidate.input });
@@ -294,9 +340,10 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     } catch (error) {
       emit({ kind: "failed", error });
     } finally {
+      inFlight.current = false;
       setPhase("idle");
     }
-  }, [candidate, pending, addFromGitHub, emit, reset]);
+  }, [candidate, addFromGitHub, emit, reset]);
 
   /**
    * Retyping a different skill invalidates a pending candidate so its Confirm
@@ -312,15 +359,18 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
 
   return {
     input,
-    setInput,
-    /** Use instead of `setInput` on user typing — also invalidates the card. */
+    /**
+     * The only way to write the field. `setInput` is deliberately NOT returned:
+     * it would skip the candidate invalidation below, leaving a stale card
+     * whose Confirm adds the previous input — the mis-add the confirm step
+     * exists to prevent. A doc comment is a weaker guard than absence.
+     */
     changeInput,
     phase,
     pending,
     label: phase === "idle" ? null : ADD_SKILL_PHASE_LABEL[phase],
     candidate,
     clearCandidate: useCallback(() => setCandidate(null), []),
-    reset,
     submit,
     confirmGitHub,
   };

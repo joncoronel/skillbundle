@@ -22,6 +22,7 @@ import type * as github from "../github.js";
 import type * as githubAccount from "../githubAccount.js";
 import type * as githubCache from "../githubCache.js";
 import type * as githubOnly from "../githubOnly.js";
+import type * as githubOnlyAudit from "../githubOnlyAudit.js";
 import type * as http from "../http.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_appDay from "../lib/appDay.js";
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   githubAccount: typeof githubAccount;
   githubCache: typeof githubCache;
   githubOnly: typeof githubOnly;
+  githubOnlyAudit: typeof githubOnlyAudit;
   http: typeof http;
   leaderboards: typeof leaderboards;
   "lib/appDay": typeof lib_appDay;

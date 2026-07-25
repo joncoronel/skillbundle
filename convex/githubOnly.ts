@@ -167,6 +167,26 @@ type GitHubSkillResolution =
   | { status: "tree_unavailable" };
 
 /**
+ * Network-level throws (DNS, reset) are treated like a non-ok response
+ * everywhere in the resolver: the fetch reports null and the caller decides,
+ * instead of the throw escaping as a redacted "Server Error".
+ *
+ * Module scope rather than a closure — it captures nothing, so nesting it only
+ * meant the rule could be restated. The audit (githubOnlyAudit.ts) needs
+ * stricter semantics than this (host pinning, a 404 split, a retry) and has its
+ * own; that difference is deliberate, not drift.
+ */
+async function fetchText(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
  *
  * Matching goes through the shared `matchesSkillId` (lib/skillMatch.ts) — the
@@ -221,19 +241,6 @@ async function resolveGitHubSkillMd(
       aliasBindsSameFile,
       treeListed: byDir !== null,
     };
-  };
-
-  // Network-level throws (DNS, reset) are treated like a non-ok response
-  // everywhere in this resolver: the fetch reports null and the caller
-  // decides, instead of the throw escaping as a redacted "Server Error".
-  const fetchText = async (url: string): Promise<string | null> => {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      return await res.text();
-    } catch {
-      return null;
-    }
   };
 
   const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
@@ -341,14 +348,16 @@ type GitHubPreview =
   | { status: "already_exists"; name: string; source: string; skillId: string }
   // We know which slug this SKILL.md should have, and can't safely store it.
   // Refused rather than written, because a row under the wrong slug can never
-  // be adopted and only a manual re-slug repairs it. `retryable` is false when
-  // the obstruction is a real conflict in the repo rather than a failed lookup.
+  // be adopted and only a manual re-slug repairs it. `cause` names the
+  // obstruction: `"conflict"` is a folder we SAW claim the alias, `"unlisted"`
+  // is a file listing we never got — which may be a transient rate limit or a
+  // permanently too-large tree, indistinguishable from here.
   | {
       status: "alias_unverifiable";
       source: string;
       skillId: string;
       expectedSkillId: string;
-      retryable: boolean;
+      cause: "unlisted" | "conflict";
     }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
@@ -539,13 +548,21 @@ async function previewGitHubCore(
       source,
       skillId,
       expectedSkillId: decision.expectedSkillId,
-      retryable: decision.retryable,
+      cause: decision.cause,
     };
   }
-  const add =
-    decision.kind === "adopt_alias"
-      ? { skillId: decision.alias, precheck: aliasPass?.precheck ?? null }
-      : { skillId, precheck };
+  const add = ((): { skillId: string; precheck: Precheck } => {
+    if (decision.kind !== "adopt_alias") return { skillId, precheck };
+    // `adopt_alias` requires a non-null alias, which is the same condition
+    // that produced `aliasPass` — so this is an invariant, not a fallback.
+    // Asserted rather than defaulted to null: substituting null would flip
+    // `wasDelisted` for a delisted alias row, reporting a relist as an insert
+    // and charging a quota slot for it.
+    if (!aliasPass) {
+      throw new Error("adopt_alias reached without an alias pass");
+    }
+    return { skillId: decision.alias, precheck: aliasPass.precheck };
+  })();
 
   return {
     status: "ok",
@@ -591,8 +608,10 @@ function previewFailureError(
       );
     case "alias_unverifiable":
       return new ConvexError(
-        preview.retryable
-          ? `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Try again in a minute.`
+        preview.cause === "unlisted"
+          ? // Hedged deliberately: "unlisted" is either a rate limit or a tree
+            // too large to list, and fetchRepoTree can't tell us which.
+            `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files (rate-limited, or the repo is too large to list), so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Worth retrying shortly; if it keeps failing, add it once skills.sh lists it.`
           : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written — this one needs the repo fixed, or add it once skills.sh lists it.`,
       );
     case "no_repo":
@@ -712,7 +731,7 @@ const previewTerminalArms = [
     source: v.string(),
     skillId: v.string(),
     expectedSkillId: v.string(),
-    retryable: v.boolean(),
+    cause: v.union(v.literal("unlisted"), v.literal("conflict")),
   }),
   v.object({ status: v.literal("no_repo") }),
   v.object({ status: v.literal("no_skill_md") }),
@@ -783,76 +802,30 @@ export const addSkillFromGitHub = action({
 });
 
 // ---------------------------------------------------------------------------
-// Slug audit (read-only diagnostic)
+// Slug audit support
 //
-// Before the frontmatter-name fix, a GitHub-only add took its `skillId` from
-// the SKILL.md's FOLDER name, so a namespaced repo could land a row under a
-// slug skills.sh will never emit. Such a row is stuck: adoption matches on
-// `source` + `skillId` so it can never be upgraded, reconcile skips it, and if
-// the real slug later reaches the leaderboard `syncSkills` inserts a second
-// row beside it. Re-pasting the link doesn't repair it either — the row is
-// live, so `terminalFor` answers `already_exists` before the alias pass runs.
-//
-// The fix closed the common path but not every path: `aliasBindsSameFile` is
-// deliberately false when the repo tree couldn't be listed, so an add
-// confirmed while GitHub's tree API is rate-limiting still falls back to the
-// folder slug. This audit is how such a row gets FOUND. It deliberately only
-// reports: re-slugging a row means moving its public URL and rewriting the
-// summary, embedding and search doc, which is a decision for a human with the
-// specific row in front of them, not a bulk action behind a button.
+// The audit itself lives in githubOnlyAudit.ts (see that module for why such a
+// row can exist and why it is only ever reported, never repaired). Only its
+// list query is here, and deliberately so: an action that reaches its own
+// module through `internal.*` makes TS inference circular, so keeping the
+// query on this side of the boundary is what lets the action infer its result
+// with no hand-declared row type and no cast.
 // ---------------------------------------------------------------------------
 
 /**
- * Why a row can't be judged. Kept distinct from "mismatch" for the same reason
- * the resolver separates `tree_unavailable` from `no_skill_md`: "we couldn't
- * look" must never be reported as "we looked and it's wrong".
+ * GitHub-only rows, slim enough to hand to an action.
+ *
+ * Reads `skillSummaries`, not `skills`: every field the audit needs is
+ * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrl`,
+ * `isGitHubOnly` at insert and on adoption) at ~200 B/row instead of the
+ * ~13-25 KB a `skills` document costs, which `content` dominates. `limit` is
+ * required rather than optional so the caller's fetch budget and this read are
+ * governed by one number — an unbounded `.collect()` here would blow the
+ * transaction read limit at a row count far below the fetch cap, i.e. it would
+ * start failing exactly when the population became worth auditing.
  */
-const AUDIT_UNKNOWN_REASON = {
-  noUrl: "no SKILL.md URL discovered yet",
-  fetchFailed: "SKILL.md couldn't be fetched from GitHub",
-  noFrontmatterName: "SKILL.md has no frontmatter `name`",
-  unusableName: "frontmatter `name` can't be a slug",
-  overCap: "not checked (audit cap reached)",
-} as const;
-
-/**
- * Bound on SKILL.md downloads per run. The GitHub-only population is small (a
- * quota-limited fallback path), so this is a runaway guard rather than an
- * expected limit — anything past it is reported as unchecked, never as sound.
- */
-const AUDIT_FETCH_CAP = 200;
-const AUDIT_WAVE_SIZE = 10;
-
-/**
- * Declared rather than inferred: the action below reaches its own module
- * through `internal.githubOnly`, so letting TS infer either the runQuery result
- * or the handler's return type is a circular reference. It resolves to `any`,
- * which poisons the generated `api` type and shows up as errors in unrelated
- * files. Same reason `Precheck` is spelled out for `getManualAddPrecheck`.
- */
-type GitHubOnlyRow = {
-  source: string;
-  skillId: string;
-  name: string;
-  isDelisted: boolean;
-  skillMdUrl?: string;
-};
-
-type SlugAuditResult = {
-  checked: number;
-  mismatches: Array<{
-    source: string;
-    skillId: string;
-    expectedSkillId: string;
-    name: string;
-    isDelisted: boolean;
-  }>;
-  unknown: Array<{ source: string; skillId: string; reason: string }>;
-};
-
-/** The GitHub-only rows, slim enough to hand to an action. */
 export const listGitHubOnlyRows = internalQuery({
-  args: {},
+  args: { limit: v.number() },
   returns: v.array(
     v.object({
       source: v.string(),
@@ -862,16 +835,16 @@ export const listGitHubOnlyRows = internalQuery({
       skillMdUrl: v.optional(v.string()),
     }),
   ),
-  handler: async (ctx) => {
+  handler: async (ctx, { limit }) => {
     const rows = await ctx.db
-      .query("skills")
+      .query("skillSummaries")
       .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
-      .collect();
+      .take(limit);
     return rows.map((r) => ({
       source: r.source,
       skillId: r.skillId,
       name: r.name,
-      isDelisted: r.isDelisted === true,
+      isDelisted: r.isDelisted,
       // Empty string means discovery ran and found nothing — same as absent
       // for our purposes, so normalise it away.
       ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
@@ -879,133 +852,6 @@ export const listGitHubOnlyRows = internalQuery({
   },
 });
 
-/**
- * An ACTION, not a query, because the frontmatter `name` is not in the
- * database.
- *
- * `skills.content` looks like it should serve — it's the SKILL.md — but
- * `extractBodyContent` (skills.ts) STRIPS the frontmatter before storing, so
- * `content` is the markdown body alone. An audit built on it finds no `name`
- * on any row, reports every one as unjudgeable, and still prints "no
- * mismatches" — a false negative that reads like a clean bill of health. That
- * was the first cut of this function; a run against a real deployment caught
- * it. Nothing in the DB records the frontmatter name, so the file has to be
- * re-read.
- *
- * It re-reads the stored `skillMdUrl` rather than re-resolving through the
- * repo tree: discovery already bound that URL, and using it means the audit
- * judges the file the pipeline actually fetches, which is the file whose name
- * decides the slug.
- */
-export const auditGitHubOnlySlugs = action({
-  args: {},
-  returns: v.object({
-    checked: v.number(),
-    mismatches: v.array(
-      v.object({
-        source: v.string(),
-        skillId: v.string(),
-        expectedSkillId: v.string(),
-        name: v.string(),
-        isDelisted: v.boolean(),
-      }),
-    ),
-    unknown: v.array(
-      v.object({
-        source: v.string(),
-        skillId: v.string(),
-        reason: v.string(),
-      }),
-    ),
-  }),
-  handler: async (ctx): Promise<SlugAuditResult> => {
-    await assertAdmin(ctx);
-    const rows = (await ctx.runQuery(
-      internal.githubOnly.listGitHubOnlyRows,
-      {},
-    )) as GitHubOnlyRow[];
-
-    const mismatches: SlugAuditResult["mismatches"] = [];
-    const unknown: SlugAuditResult["unknown"] = [];
-
-    const fetchable: GitHubOnlyRow[] = [];
-    for (const row of rows) {
-      if (!row.skillMdUrl) {
-        unknown.push({
-          source: row.source,
-          skillId: row.skillId,
-          reason: AUDIT_UNKNOWN_REASON.noUrl,
-        });
-        continue;
-      }
-      fetchable.push(row);
-    }
-    for (const row of fetchable.slice(AUDIT_FETCH_CAP)) {
-      unknown.push({
-        source: row.source,
-        skillId: row.skillId,
-        reason: AUDIT_UNKNOWN_REASON.overCap,
-      });
-    }
-
-    const capped = fetchable.slice(0, AUDIT_FETCH_CAP);
-    for (let i = 0; i < capped.length; i += AUDIT_WAVE_SIZE) {
-      const wave = capped.slice(i, i + AUDIT_WAVE_SIZE);
-      const bodies = await Promise.all(
-        wave.map(async (row) => {
-          try {
-            const res = await fetch(row.skillMdUrl as string);
-            return res.ok ? await res.text() : null;
-          } catch {
-            return null;
-          }
-        }),
-      );
-      for (let j = 0; j < wave.length; j++) {
-        const row = wave[j];
-        const raw = bodies[j];
-        if (raw === null) {
-          unknown.push({
-            source: row.source,
-            skillId: row.skillId,
-            reason: AUDIT_UNKNOWN_REASON.fetchFailed,
-          });
-          continue;
-        }
-        const fmName = extractSkillMdName(raw);
-        if (!fmName) {
-          unknown.push({
-            source: row.source,
-            skillId: row.skillId,
-            reason: AUDIT_UNKNOWN_REASON.noFrontmatterName,
-          });
-          continue;
-        }
-        const expected = canonicalSlug(fmName);
-        if (expected === null) {
-          // The name can't be a slug at all, so there is nothing to compare
-          // against — and nothing this row could be re-slugged TO either.
-          unknown.push({
-            source: row.source,
-            skillId: row.skillId,
-            reason: AUDIT_UNKNOWN_REASON.unusableName,
-          });
-          continue;
-        }
-        if (expected !== row.skillId) {
-          mismatches.push({
-            source: row.source,
-            skillId: row.skillId,
-            expectedSkillId: expected,
-            name: row.name,
-            isDelisted: row.isDelisted,
-          });
-        }
-      }
-    }
-    return { checked: rows.length, mismatches, unknown };
-  },
-});
 
 // ---------------------------------------------------------------------------
 // Public add flow (Branch 2 — the GitHub-only fallback)

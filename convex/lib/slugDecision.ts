@@ -23,8 +23,18 @@ export type SlugDecision =
   /**
    * Write nothing. We know the right slug and can't safely store it, and
    * storing the typed one would leave a row skills.sh can never adopt.
+   *
+   * `cause` says WHAT blocked us, not whether waiting helps — deliberately,
+   * because "unlisted" covers both a transient rate limit and a repo whose
+   * tree is permanently too large to list, and `fetchRepoTree` returns the
+   * same `null` for both. A boolean called `retryable` claimed a certainty
+   * neither the caller nor this module has.
    */
-  | { kind: "refuse"; expectedSkillId: string; retryable: boolean };
+  | {
+      kind: "refuse";
+      expectedSkillId: string;
+      cause: "unlisted" | "conflict";
+    };
 
 /**
  * Which slug, if any, is worth a second look.
@@ -93,8 +103,9 @@ export function decideSlug({
     return {
       kind: "refuse",
       expectedSkillId: alias,
-      // A conflict we SAW won't resolve by waiting. A listing we never got may.
-      retryable: !treeListed,
+      // We either saw a folder claim the alias, or never got the listing at
+      // all. Only the first is definite.
+      cause: treeListed ? "conflict" : "unlisted",
     };
   }
   return { kind: "adopt_alias", alias };

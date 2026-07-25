@@ -57,11 +57,16 @@ depends on the row — a delisted one can simply be left, a live one with
 installs may want a redirect. Left as a per-row human decision with the audit
 card as the way to find them.
 
-Low priority, because the population can only shrink: the one path that could
-still write such a row (an alias we couldn't verify, falling back to the folder
-slug) now refuses the add instead — `alias_unverifiable` in `githubOnly.ts`. So
-this is cleanup for rows that predate the fix, and there are no known ones.
-Worth building only if a production audit actually turns some up.
+Low priority but NOT closed. The main path that wrote such a row (an alias we
+couldn't verify, falling back to the folder slug) now refuses the add instead —
+`alias_unverifiable` in `githubOnly.ts`. One narrow path remains: a SKILL.md
+bound by `matchesSkillId`'s loose prefix arm has `matchedBy: "frontmatter"`, so
+`aliasCandidate` deliberately declines to fire and the typed slug is kept. That
+needs the typed slug to be a strict prefix of the kebab'd name with no folder of
+that name, so it is rare — but it means a mismatch the audit reports may be
+NEW, not historical. Tightening the prefix arm (see the whole-word-prefix entry
+above) would close it. No known instances either way; worth building the repair
+only if a production audit turns some up.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 

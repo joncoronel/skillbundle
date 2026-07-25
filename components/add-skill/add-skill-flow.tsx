@@ -10,6 +10,7 @@ import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
 import {
   aliasRetryNote,
+  alreadyInCatalogCopy,
   previewFailureCopy,
   typedSlugOf,
 } from "@/lib/add-skill-copy";
@@ -17,6 +18,7 @@ import {
   useAddSkillFlow,
   type AddSkillOutcome,
   type Candidate,
+  type PreviewOkOf,
   type ReportHelpers,
 } from "@/hooks/use-add-skill-flow";
 import { skillHref } from "@/lib/skill-urls";
@@ -35,10 +37,7 @@ import { UpgradeBanner } from "@/components/upgrade-banner";
 // Derived from the server's return validator so the client can't drift from
 // what the action actually sends (the review's finding on hand-declared
 // shapes).
-type PreviewResult = FunctionReturnType<
-  typeof api.githubOnly.previewGitHubSkillPublic
->;
-type PreviewOk = Extract<PreviewResult, { status: "ok" }>;
+type PreviewOk = PreviewOkOf<typeof api.githubOnly.previewGitHubSkillPublic>;
 type GitHubCandidate = Candidate<PreviewOk>;
 
 // The outcome of a completed add, for the success card. `note` explains a
@@ -123,14 +122,22 @@ export function AddSkillFlow({
         });
         return;
       case "already_exists":
+        // Names the slug it lives under, which on the alias path is NOT the one
+        // that was typed. Shared with the admin surface so the two can't drift.
         setNotice({
           tone: "info",
-          text: `${outcome.name} is already in the catalog.`,
+          text: alreadyInCatalogCopy(outcome),
           link: { source: outcome.source, skillId: outcome.skillId },
         });
         return;
       case "candidate":
-        // The card renders off `candidate`; nothing to announce separately.
+        // The card mounts as a sibling OUTSIDE the live region, so without a
+        // notice a screen-reader user hears the pending label stop and then
+        // silence — with no signal that a confirmation step now gates the flow.
+        setNotice({
+          tone: "info",
+          text: `Found ${outcome.preview.path} in the repo — review and confirm below.`,
+        });
         return;
       case "preview_failed":
         setNotice({ tone: "error", text: previewFailureCopy(outcome.preview) });
@@ -159,6 +166,12 @@ export function AddSkillFlow({
         setNotice({ tone: "error", text: friendlyError(errText(err)) });
         return;
       }
+      default:
+        // TS checks a switch for exhaustiveness only against a declared type;
+        // a void-returning function with bare `return`s gets no check at all.
+        // This line is what makes a new AddSkillOutcome arm a compile error
+        // here instead of a terminal point that silently renders nothing.
+        outcome satisfies never;
     }
   }, []);
 

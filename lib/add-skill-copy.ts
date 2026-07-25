@@ -41,16 +41,23 @@ export function previewFailureCopy(preview: PreviewFailure): string {
       // the one thing this whole path exists to compute.
       return `skills.sh lists that SKILL.md as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Adding it under that name just failed too, so the listing and the add disagree right now. Try again shortly.`;
     case "already_exists":
-      return `${preview.name} is already in the catalog as "${preview.source}/${preview.skillId}".`;
+      return alreadyInCatalogCopy(preview);
     case "alias_unverifiable":
       // Deliberately says nothing was added. This is the one failure where the
       // add COULD have gone through — under the wrong slug, producing a row
       // skills.sh can never adopt and only a manual fix repairs. Refusing is
       // the feature, so the copy has to make the refusal read as deliberate
       // rather than as a glitch.
-      return preview.retryable
-        ? `This skill calls itself "${preview.expectedSkillId}", but GitHub wouldn't list the repo's files, so we couldn't confirm it's safe to add it under that name. Nothing was added — try again in a minute.`
-        : `This skill calls itself "${preview.expectedSkillId}", but another folder in the repo already uses that name, so adding it would attach the wrong file. Nothing was added.`;
+      return preview.cause === "unlisted"
+        ? // Hedged: "unlisted" is either a rate limit or a repo whose file tree
+          // is permanently too large to list, and the server can't tell which,
+          // so this must not promise that waiting fixes it.
+          `This skill calls itself "${preview.expectedSkillId}", but GitHub wouldn't list the repo's files, so we couldn't confirm it's safe to add it under that name. Nothing was added — worth trying again shortly, or once skills.sh lists it.`
+        : // Ends with a way out, like the other arm does. This is the one
+          // arm of the status a user cannot simply wait out, so a refusal with
+          // no recourse would read as a bug rather than the deliberate safety
+          // behaviour it is.
+          `This skill calls itself "${preview.expectedSkillId}", but another folder in the repo already uses that name, so adding it would attach the wrong file. Nothing was added — it can be added once skills.sh lists it.`;
     case "no_repo":
       return "Couldn't find a public GitHub repo there (or GitHub rate-limited the lookup). Try again in a minute.";
     case "no_skill_md":
@@ -72,6 +79,46 @@ export function typedSlugOf(input: string): string | null {
     return parseSkillInput(input).skillId;
   } catch {
     return null;
+  }
+}
+
+/**
+ * "X is already in the catalog", naming the slug it actually lives under.
+ *
+ * Naming it matters most on the alias path, which is exactly when the existing
+ * row sits under a slug the caller never typed — so "X is already in the
+ * catalog" alone reads as a wrong match, and the real slug would survive only
+ * inside a "View skill" link a screen reader never announces.
+ */
+export function alreadyInCatalogCopy(row: {
+  name: string;
+  source: string;
+  skillId: string;
+}): string {
+  return `${row.name} is already in the catalog as "${row.source}/${row.skillId}".`;
+}
+
+/**
+ * The toast title for a failed preview, paired with `previewFailureCopy`.
+ *
+ * A hand-maintained `status === a || status === b` chain at the call site is the
+ * drift this module exists to prevent: a new status defaults to the wrong title
+ * and compiles clean. An exhaustive switch makes it a type error instead. The
+ * `on_skills_sh*` and `alias_unverifiable` arms are add failures — titling them
+ * "Not on skills.sh" makes one toast contradict itself.
+ */
+export function previewFailureTitle(preview: PreviewFailure): string {
+  switch (preview.status) {
+    case "on_skills_sh":
+    case "on_skills_sh_as_alias":
+    case "alias_unverifiable":
+    case "already_exists":
+      return "Couldn't add skill";
+    case "not_github":
+    case "no_repo":
+    case "no_skill_md":
+    case "tree_unavailable":
+      return "Not on skills.sh";
   }
 }
 

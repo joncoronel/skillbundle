@@ -8,11 +8,19 @@ import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
-import { aliasRetryNote, previewFailureCopy } from "@/lib/add-skill-copy";
+import {
+  aliasRetryNote,
+  alreadyInCatalogCopy,
+  previewFailureCopy,
+  previewFailureTitle,
+  typedSlugOf,
+} from "@/lib/add-skill-copy";
 import {
   useAddSkillFlow,
   type AddSkillOutcome,
   type Candidate,
+  type PreviewOkOf,
+  type SettledAddResult,
 } from "@/hooks/use-add-skill-flow";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
@@ -24,28 +32,26 @@ import {
 } from "@/components/ui/cubby-ui/card";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 
-type AddResult = {
-  status: "inserted" | "relisted" | "already_exists" | "adopted";
-  source: string;
-  skillId: string;
-  name: string;
-  // Appended to the toast when the outcome needs explaining — currently only
-  // the corrected-slug retry, which lands a differently-named skill than the
-  // link that was pasted.
-  note?: string;
-};
+// Derived, not re-typed: a new server-side status shows up as a compiler-guided
+// update to `announce` rather than as drift nobody notices. Broader than the
+// hook's `SettledAddResult` by exactly one status — `already_exists` reaches
+// `announce` through its own outcome arm rather than inside `added`. `note` is
+// appended to the toast when the outcome needs explaining, currently only the
+// corrected-slug retry, which lands a differently-named skill than the link.
+type ManualAdd = FunctionReturnType<typeof api.skills.addSkillManually>;
+type AddResult = (
+  | SettledAddResult
+  | (ManualAdd & { status: "already_exists" })
+) & { note?: string };
 
 // Derived from the action's return type rather than hand-declared, so a new
 // preview field can't be spread into state with no type record of it. The
 // admin action's `ok` arm carries no `quota` — that's the public one.
-type GitHubPreviewOk = Extract<
-  FunctionReturnType<typeof api.githubOnly.previewGitHubSkill>,
-  { status: "ok" }
->;
+type GitHubPreviewOk = PreviewOkOf<typeof api.githubOnly.previewGitHubSkill>;
 type GitHubCandidate = Candidate<GitHubPreviewOk>;
 
 type AuditResult = FunctionReturnType<
-  typeof api.githubOnly.auditGitHubOnlySlugs
+  typeof api.githubOnlyAudit.auditGitHubOnlySlugs
 >;
 
 export function AddSkillForm() {
@@ -98,7 +104,9 @@ export function AddSkillForm() {
       case "already_exists":
         toast.info({
           title: "Already in catalog",
-          description: `${result.name} is already listed. No changes made.`,
+          // Names the slug, which on the alias path is not the one that was
+          // typed. Shared with the public flow so the two can't drift.
+          description: `${alreadyInCatalogCopy(result)} No changes made.`,
         });
         break;
     }
@@ -153,14 +161,11 @@ export function AddSkillForm() {
           return;
         case "preview_failed":
           toast.error({
-            // Derived, not hardcoded: an "on_skills_sh…" status under a
-            // "Not on skills.sh" title makes one toast contradict itself.
-            title:
-              outcome.preview.status === "on_skills_sh" ||
-              outcome.preview.status === "on_skills_sh_as_alias" ||
-              outcome.preview.status === "alias_unverifiable"
-                ? "Couldn't add skill"
-                : "Not on skills.sh",
+            // Both derived from the status in lib/add-skill-copy.ts, so a new
+            // preview status is a type error there rather than a wrong title
+            // here. This used to be a hand-maintained OR-chain and had already
+            // needed a third arm.
+            title: previewFailureTitle(outcome.preview),
             description: previewFailureCopy(outcome.preview),
           });
           return;
@@ -182,6 +187,10 @@ export function AddSkillForm() {
         case "failed":
           addFailed(outcome.error);
           return;
+        default:
+          // See the public flow's `report`: without this, a new
+          // AddSkillOutcome arm compiles clean and toasts nothing.
+          outcome satisfies never;
       }
     },
     [announce, addFailed],
@@ -285,15 +294,18 @@ export function AddSkillForm() {
 
 /**
  * Finds GitHub-only rows whose stored slug disagrees with their SKILL.md's
- * frontmatter name — the shape of row the pre-fix add could write, and that a
- * confirm during a GitHub tree-API rate limit can still write today.
+ * frontmatter name. Two ways such a row exists: it predates the
+ * frontmatter-name fix, or its SKILL.md was bound by the loose prefix arm of
+ * `matchesSkillId` so the alias gate deliberately declined to fire. The path
+ * that used to keep producing them — an unverifiable alias falling back to the
+ * folder slug — now refuses the add instead.
  *
  * Reports only. Re-slugging moves a skill's public URL and rewrites its
  * summary, embedding and search doc, so it's a per-row human decision rather
  * than a bulk action behind a button.
  */
 function SlugAuditCard() {
-  const runAudit = useAction(api.githubOnly.auditGitHubOnlySlugs);
+  const runAudit = useAction(api.githubOnlyAudit.auditGitHubOnlySlugs);
   const [data, setData] = useState<AuditResult | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -304,10 +316,16 @@ function SlugAuditCard() {
   async function run() {
     setRunning(true);
     setError(null);
+    // Drop the previous report rather than leaving it under a fresh error —
+    // this answers "is that row still mis-slugged right now", so a stale
+    // result presented as current is the wrong default.
+    setData(null);
     try {
       setData(await runAudit({}));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(
+        friendlyError(err instanceof Error ? err.message : String(err)),
+      );
     } finally {
       setRunning(false);
     }
@@ -326,76 +344,113 @@ function SlugAuditCard() {
           from GitHub.
         </p>
 
-        <Button variant="outline" onClick={run} disabled={running}>
+        <Button
+          variant="outline"
+          onClick={run}
+          disabled={running}
+          aria-busy={running}
+        >
           {running ? "Checking…" : data ? "Re-run audit" : "Run audit"}
         </Button>
 
-        {error && (
-          <p className="text-destructive">Couldn&apos;t run the audit: {error}</p>
-        )}
+        {/* The button's label is the only progress signal and it sits on a
+            disabled control, so it is never announced — and a run is up to
+            ~20 serial round trips. Results and errors land in here too, so
+            completion isn't silent. */}
+        <div role="status" aria-live="polite" className="space-y-4">
+          {running && (
+            <p className="sr-only">Checking GitHub-only slugs…</p>
+          )}
 
-        {data && (
-          <>
-            <p className="text-muted-foreground">
-              Checked {data.checked} GitHub-only{" "}
-              {data.checked === 1 ? "row" : "rows"}.
+          {error && (
+            <p className="text-destructive">
+              Couldn&apos;t run the audit: {error}
             </p>
+          )}
 
-            {data.mismatches.length === 0 ? (
-              <p className="font-medium">No mis-slugged rows.</p>
-            ) : (
-              <div className="space-y-2">
-                <p className="font-medium text-destructive">
-                  {data.mismatches.length} mis-slugged{" "}
-                  {data.mismatches.length === 1 ? "row" : "rows"}:
-                </p>
-                <ul className="space-y-2">
-                  {data.mismatches.map((m) => (
-                    <li
-                      key={`${m.source}/${m.skillId}`}
-                      className="rounded-md border p-3"
-                    >
-                      <p className="font-medium">{m.name}</p>
-                      <p className="font-mono text-xs break-all">
-                        {m.source}/{m.skillId}
-                        {m.isDelisted && " (delisted)"}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Its SKILL.md is named{" "}
-                        <code className="font-mono">{m.expectedSkillId}</code>,
-                        so skills.sh would list it as{" "}
-                        <code className="font-mono">
-                          {m.source}/{m.expectedSkillId}
-                        </code>
-                        .
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          {data && (
+            <>
+              <p className="text-muted-foreground">
+                Judged {data.judged} of {data.total} GitHub-only{" "}
+                {data.total === 1 ? "row" : "rows"}
+                {data.truncated && " (more exist than this run read)"}.
+              </p>
 
-            {data.unknown.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-muted-foreground">
-                  {data.unknown.length}{" "}
-                  {data.unknown.length === 1 ? "row" : "rows"} couldn&apos;t be
-                  judged — not the same as being wrong:
+              {data.mismatches.length === 0 ? (
+                // Qualified when some rows couldn't be read: an unqualified
+                // "none" over a pile of unjudged rows is the false negative
+                // this whole card exists to avoid.
+                <p className="font-medium">
+                  {data.unknown.length > 0
+                    ? `No mis-slugged rows among the ${data.judged} judged.`
+                    : "No mis-slugged rows."}
                 </p>
-                <ul className="space-y-1 text-xs text-muted-foreground">
-                  {data.unknown.map((u) => (
-                    <li key={`${u.source}/${u.skillId}`}>
-                      <span className="font-mono break-all">
-                        {u.source}/{u.skillId}
-                      </span>{" "}
-                      — {u.reason}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        )}
+              ) : (
+                <div className="space-y-2">
+                  <p className="font-medium text-destructive">
+                    {data.mismatches.length} mis-slugged{" "}
+                    {data.mismatches.length === 1 ? "row" : "rows"}:
+                  </p>
+                  <ul className="space-y-2">
+                    {data.mismatches.map((m) => (
+                      <li
+                        key={`${m.source}/${m.skillId}`}
+                        className="rounded-md border p-3"
+                      >
+                        <p className="font-medium">{m.name}</p>
+                        <p className="font-mono text-xs break-all">
+                          <Link
+                            href={skillDetailHref(m.source, m.skillId)}
+                            target="_blank"
+                            className="underline underline-offset-2 hover:no-underline"
+                          >
+                            {m.source}/{m.skillId}
+                          </Link>
+                          {m.isDelisted && " (delisted)"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Its SKILL.md is named{" "}
+                          <code className="font-mono">
+                            {m.expectedSkillId}
+                          </code>
+                          , so skills.sh would list it as{" "}
+                          <code className="font-mono">
+                            {m.source}/{m.expectedSkillId}
+                          </code>
+                          .
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {data.unknown.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">
+                    {data.unknown.length}{" "}
+                    {data.unknown.length === 1 ? "row" : "rows"} couldn&apos;t
+                    be judged — not the same as being wrong:
+                  </p>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    {data.unknown.map((u) => (
+                      <li key={`${u.source}/${u.skillId}`}>
+                        <Link
+                          href={skillDetailHref(u.source, u.skillId)}
+                          target="_blank"
+                          className="font-mono break-all underline underline-offset-2 hover:no-underline"
+                        >
+                          {u.source}/{u.skillId}
+                        </Link>{" "}
+                        — {u.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -414,6 +469,11 @@ function GitHubCandidateCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // The slug is the one field the server can change out from under the pasted
+  // link, and this page is where slug mismatches get diagnosed — so it is the
+  // last place the swap should go unexplained.
+  const typedSlug = typedSlugOf(candidate.input);
+  const slugChanged = typedSlug !== null && typedSlug !== candidate.skillId;
   return (
     <Card>
       <CardHeader>
@@ -440,6 +500,13 @@ function GitHubCandidateCard({
             </>
           )}
         </dl>
+        {slugChanged && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            The slug comes from the name inside the SKILL.md, not the{" "}
+            <code className="font-mono">{typedSlug}</code> folder in the link —
+            that&apos;s the name skills.sh would give it too.
+          </p>
+        )}
         <p className="mt-4 text-xs text-muted-foreground">
           It will show 0 installs and no security audit until it appears on
           skills.sh — at which point the daily sync adopts it automatically, or
