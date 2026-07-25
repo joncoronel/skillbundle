@@ -571,7 +571,6 @@ async function previewGitHubCore(
   };
 }
 
-
 /**
  * A confirm that actually wrote something.
  *
@@ -584,6 +583,21 @@ async function previewGitHubCore(
 type GitHubAddSuccess =
   | { status: "inserted"; source: string; skillId: string; name: string }
   | { status: "relisted"; source: string; skillId: string; name: string };
+
+/** Every preview arm except `ok` — what a REFUSAL is, from either step. */
+type GitHubPreviewFailure = Exclude<GitHubPreview, { status: "ok" }>;
+
+/**
+ * What a confirm returns: a written row, or the re-check's refusal.
+ *
+ * Named because this is the half of the contract the CLIENT reads — a Convex
+ * action's `FunctionReturnType` comes from the handler's return annotation, not
+ * from its `returns:` validator. So the three handler signatures below are what
+ * `useAddSkillFlow` derives its types from, and spelling the union out at each
+ * one meant widening it required finding all three with nothing failing if one
+ * was missed. The validator half was already single-sourced (`gitHubAddReturns`).
+ */
+type GitHubAddResult = GitHubAddSuccess | GitHubPreviewFailure;
 
 /**
  * Insert a skill straight from its GitHub repo, shared by the admin and public
@@ -613,7 +627,7 @@ async function addGitHubCore(
     addedBy?: Id<"users">;
     enforceGitHubQuotaFor?: { userId: Id<"users">; limit: number };
   },
-): Promise<GitHubAddSuccess | Exclude<GitHubPreview, { status: "ok" }>> {
+): Promise<GitHubAddResult> {
   const preview = await previewGitHubCore(ctx, input);
   if (preview.status !== "ok") return preview;
   // The preview owns the slug from here on, not the parse: when the SKILL.md's
@@ -715,16 +729,7 @@ export const previewGitHubSkill = action({
   },
 });
 
-/**
- * Shared by the admin and public confirm actions, the way `manualAddReturns`
- * is shared by the two manual adds.
- *
- * One const, not two inline copies: the client hook derives its `github_added`
- * outcome from the PUBLIC action's return type and hands it to both surfaces,
- * so a field added to one validator and not the other would break the admin
- * form with a type error pointing at an action it never calls. Sharing the
- * validator makes that divergence impossible rather than merely unlikely.
- */
+/** The success payload, spread into both success arms below. */
 const gitHubAddSuccessFields = {
   source: v.string(),
   skillId: v.string(),
@@ -735,6 +740,14 @@ const gitHubAddSuccessFields = {
  * Either the confirm wrote something, or it re-checked and refused — and a
  * refusal is one of the same statuses the preview returns, so it reuses
  * `previewTerminalArms` rather than a parallel set of thrown messages.
+ *
+ * Shared by the admin and public confirm actions, the way `manualAddReturns` is
+ * shared by the two manual adds. One const, not two inline copies: the client
+ * hook derives its `github_added` outcome from the PUBLIC action's return type
+ * and hands it to both surfaces, so a field added to one validator and not the
+ * other would break the admin form with a type error pointing at an action it
+ * never calls. Sharing the validator makes that divergence impossible rather
+ * than merely unlikely.
  *
  * The two success statuses are separate arms rather than one arm with a
  * `v.union` status, so every arm of this union carries exactly one literal.
@@ -777,7 +790,7 @@ export const addSkillFromGitHub = action({
   handler: async (
     ctx,
     { input },
-  ): Promise<GitHubAddSuccess | Exclude<GitHubPreview, { status: "ok" }>> => {
+  ): Promise<GitHubAddResult> => {
     await assertAdmin(ctx);
     return addGitHubCore(ctx, input);
   },
@@ -804,18 +817,21 @@ export const addSkillFromGitHub = action({
  * Reads `skillSummaries`, not `skills`: every field the audit needs is
  * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrl`,
  * `isGitHubOnly` at insert and on adoption) at ~200 B/row instead of the
- * ~13-25 KB a `skills` document costs, which `content` dominates. `limit` is
- * required rather than optional so the caller's fetch budget and this read are
- * governed by one number — an unbounded `.collect()` here would blow the
- * transaction read limit at a row count far below the fetch cap, i.e. it would
- * start failing exactly when the population became worth auditing.
+ * ~13-25 KB a `skills` document costs, which `content` dominates.
  *
  * Paginated, so the audit can walk the WHOLE population rather than a fixed
  * window. `cursor` is the caller's to hold — the admin card passes the last one
- * back to continue — so nothing has to persist audit progress anywhere. A
- * single unbounded read isn't an option: it would blow the transaction read
- * limit at a row count far below the fetch budget, i.e. fail exactly when the
- * population became worth auditing.
+ * back to continue — so nothing has to persist audit progress anywhere. `limit`
+ * is the caller's fetch budget, and it is what bounds a page: the DB read is the
+ * cheap half (`embeddingCoverageStatsBatch` in skills.ts pages this same table
+ * 1000 at a time, ≈200 KB against a 16 MB budget), while every row returned
+ * costs the audit a GitHub fetch inside an action that has a time limit. So the
+ * binding constraint is the fetch loop, not the read.
+ *
+ * Cursor-nullable rather than the `{ nextCursor, isDone }` shape its sibling
+ * paginated readers use: the two facts are one fact here (null MEANS done), and
+ * a caller cannot then pass a cursor that doesn't advance. Not `v.optional` on
+ * top of that — three states for a two-state concept, and no caller omits it.
  *
  * `.order("desc")` puts the newest rows first so the first page covers what a
  * partial audit most wants to see. Note the ordering argument is about which
@@ -823,7 +839,7 @@ export const addSkillFromGitHub = action({
  * since the legacy mis-slugged population is precisely the oldest rows.
  */
 export const listGitHubOnlyRows = internalQuery({
-  args: { limit: v.number(), cursor: v.optional(v.union(v.string(), v.null())) },
+  args: { limit: v.number(), cursor: v.union(v.string(), v.null()) },
   returns: v.object({
     rows: v.array(
       v.object({
@@ -842,7 +858,7 @@ export const listGitHubOnlyRows = internalQuery({
       .query("skillSummaries")
       .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
       .order("desc")
-      .paginate({ numItems: limit, cursor: cursor ?? null });
+      .paginate({ numItems: limit, cursor });
     return {
       rows: page.page.map((r) => ({
         source: r.source,
@@ -857,7 +873,6 @@ export const listGitHubOnlyRows = internalQuery({
     };
   },
 });
-
 
 // ---------------------------------------------------------------------------
 // Public add flow (Branch 2 — the GitHub-only fallback)
@@ -875,7 +890,7 @@ const PUBLIC_ADD_FALLBACK_ERROR =
   "Something went wrong talking to GitHub or skills.sh. Try again in a minute.";
 
 type GitHubPreviewPublic =
-  | Exclude<GitHubPreview, { status: "ok" }>
+  | GitHubPreviewFailure
   | (Extract<GitHubPreview, { status: "ok" }> & {
       quota: GitHubAddQuotaStatus;
     });
@@ -933,7 +948,7 @@ export const addSkillFromGitHubPublic = action({
   handler: async (
     ctx,
     { input },
-  ): Promise<GitHubAddSuccess | Exclude<GitHubPreview, { status: "ok" }>> => {
+  ): Promise<GitHubAddResult> => {
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
     await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
       userId: quota.userId,

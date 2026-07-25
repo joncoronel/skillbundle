@@ -66,17 +66,16 @@ const UNKNOWN_REASON = {
 } as const;
 
 /**
- * Rows read AND SKILL.mds downloaded per PAGE — one constant for both, so the
+ * Rows read AND SKILL.mds downloaded per page — one constant for both, so the
  * read can never outgrow the fetch budget.
  *
- * This is a page size, not a ceiling on what the audit can cover: the result
- * carries a `cursor` and the caller asks for the next page, so the whole
- * population is reachable. It stays bounded per call because each row costs a
- * GitHub fetch (an action has a time limit) and because an unbounded DB read
- * would blow the transaction read limit — at a row count far below the fetch
- * budget, i.e. it would fail exactly when the population became worth auditing.
+ * A page size, not a ceiling on coverage: the result carries a `cursor` and the
+ * caller asks for the next page, so the whole population is reachable. What
+ * bounds a page is the fetch loop, since every row costs a GitHub round trip
+ * inside an action that has a time limit. The DB read is the cheap half (see
+ * `listGitHubOnlyRows`).
  */
-const FETCH_CAP = 200;
+const AUDIT_PAGE_SIZE = 200;
 const WAVE_SIZE = 10;
 
 /**
@@ -198,7 +197,10 @@ async function fetchSkillMd(
 }
 
 export const auditGitHubOnlySlugs = action({
-  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  // Required, not optional: null already means "start from the beginning", so an
+  // optional cursor would be a third state meaning the same thing as one of the
+  // two. Matches `listGitHubOnlyRows`, which this passes straight through to.
+  args: { cursor: v.union(v.string(), v.null()) },
   returns: v.object({
     // Rows actually compared, kept distinct from `read` on purpose: reporting
     // rows we merely looked at as "checked" is how a run where nothing could be
@@ -231,7 +233,7 @@ export const auditGitHubOnlySlugs = action({
     // return validator agreeing. An annotation is checked.
     const page: { rows: GitHubOnlyRow[]; cursor: string | null } =
       await ctx.runQuery(internal.githubOnly.listGitHubOnlyRows, {
-        limit: FETCH_CAP,
+        limit: AUDIT_PAGE_SIZE,
         cursor,
       });
     const readable = page.rows;

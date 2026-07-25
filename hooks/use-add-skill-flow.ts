@@ -155,8 +155,19 @@ export type AddSkillOutcome<TOk extends PreviewOkBase> =
   | { kind: "already_exists"; source: string; skillId: string; name: string }
   /** The repo resolved; `candidate` is now set and awaits confirm. */
   | { kind: "candidate"; preview: TOk }
-  /** The preview answered, but with nothing addable. */
-  | { kind: "preview_failed"; preview: PreviewFailure }
+  /**
+   * A preview status answered with nothing addable. `step` names which call
+   * produced it, because the confirm re-check returns the SAME statuses as the
+   * preview and the two mean different things to a reader: at preview time
+   * `tree_unavailable` is why we can't tell whether the skill is on skills.sh,
+   * at confirm time it is why the add didn't happen. The admin surface titles
+   * those differently; the public one doesn't, and ignores the field.
+   */
+  | {
+      kind: "preview_failed";
+      preview: PreviewFailure;
+      step: "preview" | "confirm";
+    }
   /** The preview CALL threw — a GitHub-side failure, which the admin surface
    *  deliberately titles differently from an add failure. */
   | { kind: "preview_threw"; error: unknown }
@@ -289,31 +300,27 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     [addManually, emit, reset],
   );
 
-  /** Steps 2–4. */
-  const offerGitHubFallback = useCallback(
-    async (trimmed: string) => {
-      // Only the preview call is wrapped. Everything after it talks to
-      // skills.sh, not GitHub, and those failures carry their own actionable
-      // messages that must not be re-titled as a GitHub problem — they belong
-      // to the caller's catch.
-      let preview: PreviewFailure | TOk;
-      try {
-        preview = await previewGitHub({ input: trimmed });
-      } catch (error) {
-        emit({ kind: "preview_threw", error });
-        return;
-      }
-
-      if (preview.status === "ok") {
-        setCandidate({ ...preview, input: trimmed });
-        emit({ kind: "candidate", preview });
-        return;
-      }
+  /**
+   * Every non-`ok` preview status, dispatched once for BOTH steps that can
+   * produce one.
+   *
+   * The confirm action re-runs `previewGitHubCore`, so it returns the same
+   * statuses the preview does — and while confirm handled them separately, two
+   * drifted immediately: `already_exists` reached the UI as a linkless error
+   * instead of the notice that links the row it names, and an alias refusal
+   * skipped the step-3 re-add below while rendering copy that says the re-add
+   * had already been tried and failed.
+   *
+   * `step` is passed through to the consumer's copy and nothing else. The
+   * dispatch is identical for both, which is the point.
+   */
+  const handlePreviewFailure = useCallback(
+    async (preview: PreviewFailure, step: "preview" | "confirm") => {
       // The preview reads the SKILL.md, so it sees the frontmatter `name` —
       // the string skills.sh derives its slug from. A GitHub link only carries
       // the FOLDER name, and repos that namespace their skills make those
-      // differ, so both of the next two mean step 1 asked about the wrong slug
-      // rather than that the skill is missing.
+      // differ, so both of the next two mean the lookup asked about the wrong
+      // slug rather than that the skill is missing.
       if (preview.status === "already_exists") {
         emit({
           kind: "already_exists",
@@ -336,9 +343,34 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
           return;
         }
       }
-      emit({ kind: "preview_failed", preview });
+      emit({ kind: "preview_failed", preview, step });
     },
-    [previewGitHub, emit, runManualAdd],
+    [emit, runManualAdd],
+  );
+
+  /** Steps 2–4. */
+  const offerGitHubFallback = useCallback(
+    async (trimmed: string) => {
+      // Only the preview call is wrapped. Everything after it talks to
+      // skills.sh, not GitHub, and those failures carry their own actionable
+      // messages that must not be re-titled as a GitHub problem — they belong
+      // to the caller's catch.
+      let preview: PreviewFailure | TOk;
+      try {
+        preview = await previewGitHub({ input: trimmed });
+      } catch (error) {
+        emit({ kind: "preview_threw", error });
+        return;
+      }
+
+      if (preview.status === "ok") {
+        setCandidate({ ...preview, input: trimmed });
+        emit({ kind: "candidate", preview });
+        return;
+      }
+      await handlePreviewFailure(preview, "preview");
+    },
+    [previewGitHub, emit, handlePreviewFailure],
   );
 
   /**
@@ -386,26 +418,28 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     try {
       const result = await addFromGitHub({ input: candidate.input });
       // The server re-checks at confirm time and can refuse — a preview status,
-      // not an error, so it renders through the same arm the preview's own
-      // refusals use. The candidate stays on screen: the refusal explains why
-      // this file can't be added, and dropping the card would take away the
-      // context that explanation refers to.
+      // not an error, so it goes through the SAME dispatch the preview's own
+      // refusals use, down to re-running the alias add. The candidate stays on
+      // screen for the arms that end there: the refusal explains why this file
+      // can't be added, and dropping the card would take away the context that
+      // explanation refers to.
       //
-      // Narrowed positively. Excluding the two success statuses instead does
-      // NOT narrow, because the success arm's `status` is itself a union.
+      // Both directions narrow, because the success type is two arms of one
+      // literal status each (see `GitHubAddSuccess` in convex/githubOnly.ts) —
+      // the positive form is just the one that reads as what it means.
       if (result.status === "inserted" || result.status === "relisted") {
         reset();
         emit({ kind: "github_added", result });
         return;
       }
-      emit({ kind: "preview_failed", preview: result });
+      await handlePreviewFailure(result, "confirm");
     } catch (error) {
       emit({ kind: "failed", error });
     } finally {
       inFlight.current = false;
       setPhase("idle");
     }
-  }, [candidate, addFromGitHub, emit, reset]);
+  }, [candidate, addFromGitHub, emit, reset, handlePreviewFailure]);
 
   /**
    * Retyping a different skill invalidates a pending candidate so its Confirm

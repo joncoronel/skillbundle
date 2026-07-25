@@ -112,6 +112,15 @@ real row so the UI links it) or `on_skills_sh_as_alias`, which the clients use
 to re-run Branch 1 under the slug that actually resolves. Without it, a listed
 skill reads as "not on skills.sh".
 
+The **confirm** action re-runs the whole probe, so it can return any of those
+same statuses (the listing can appear in the seconds between preview and
+confirm, which is what the re-check is for). It RETURNS them rather than
+throwing, and the client routes them through one dispatch shared with the
+preview — so a refusal at confirm time gets the same alias re-add and the same
+sentence as the identical refusal a step earlier. Quota rejections and rate
+limits still throw: those aren't verdicts about the skill, and the public flow's
+at-limit backstop catches them.
+
 Adopting the alias as a row's **stored identity** is gated harder than merely
 checking it, because a `skillId` is permanent and is also a single URL path
 segment. All four must hold:
