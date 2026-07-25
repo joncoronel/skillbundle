@@ -73,33 +73,31 @@ branch produced a new review finding of its own.
 
 ### Add-skill: re-slug a mis-slugged GitHub-only row
 
-The *detection* half is done — `githubOnlyAudit.auditGitHubOnlySlugs` plus the
-"GitHub-only slug audit" card on `/dev/add-skill` list any GitHub-only row
-whose stored `skillId` disagrees with `canonicalSlug(frontmatter name)`. What
-doesn't exist is a repair: such a row can never be adopted (adoption matches
-`source` + `skillId`), and reconcile skips it.
+**The problem.** skills.sh identifies a skill by the `name` inside its SKILL.md.
+If we stored the row under any other slug, it is stuck permanently: adoption
+matches on `source` + `skillId`, so skills.sh can never claim it, and reconcile
+skips it.
 
-Deliberately not automated. Re-slugging moves the skill's public URL and has to
-rewrite the summary, embedding and Typesense doc in step, and the right call
-depends on the row — a delisted one can simply be left, a live one with
-installs may want a redirect. Left as a per-row human decision with the audit
-card as the way to find them.
+**What exists.** The "GitHub-only slug audit" card on `/dev/add-skill`
+(`githubOnlyAudit.auditGitHubOnlySlugs`) finds rows in that state.
 
-Low priority but NOT closed. The main path that wrote such a row (an alias we
-couldn't verify, falling back to the folder slug) now refuses the add instead —
-`alias_unverifiable` in `githubOnly.ts`. One narrow path remains: a SKILL.md
-bound by `matchesSkillId`'s loose prefix arm has `matchedBy: "frontmatter"`, so
-`aliasCandidate` deliberately declines to fire and the typed slug is kept. That
-needs the typed slug to be a strict prefix of the kebab'd name with no folder of
-that name, so it is rare — but it means a mismatch the audit reports may be
-NEW, not historical. Tightening the prefix arm (see the whole-word-prefix entry
-above) would close it.
+**What doesn't: a repair.** Renaming a slug moves the skill's public URL and has
+to rewrite its summary, embedding and Typesense doc in the same step, and whether
+it is even wanted depends on the row. A delisted one can be left alone; a live
+one with installs probably needs a redirect. So it stays a human decision per
+row, with the audit as the way to find candidates.
 
-**Production audited Jul 2026: zero mis-slugged rows** (2 GitHub-only rows, both
-judged, none reported). So the repair stays unbuilt against a measured zero
-rather than an assumption. Build it if a later audit turns some up; until then
-the audit card is the whole feature, and its value is catching a future row
-rather than anything already in the catalog.
+**Status: none exist.** Production audited clean in Jul 2026 (2 GitHub-only rows,
+both judged, none reported), so this is deferred against a measured zero rather
+than a guess. The add path that used to create these now refuses instead of
+guessing a slug (`alias_unverifiable` in `githubOnly.ts`).
+
+One rare path is still open, which matters only because it means a row the audit
+reports in future may be **new rather than historical**: when `matchesSkillId`'s
+loose prefix rule binds the file, `aliasCandidate` deliberately declines to fire
+and the typed slug is kept. It needs the typed slug to be a strict prefix of the
+kebab'd name with no folder of that name, so it is unlikely. The whole-word-prefix
+entry above would close it.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
