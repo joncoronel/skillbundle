@@ -26,9 +26,21 @@
  * So this audit is now looking for HISTORY, plus insurance against a future
  * regression. Production audited clean in Jul 2026.
  *
- * Reports only. Re-slugging moves a skill's public URL and has to rewrite the
- * summary, embedding and search doc in step, and the right call depends on the
- * row, so it stays a per-row human decision. See TODO.md.
+ * REPORTS ONLY, deliberately. There is a find button and no fix button, and this
+ * is the record of why — the decision lives here rather than in TODO.md because
+ * it is not pending work, it is a standing answer:
+ *
+ * Re-slugging moves the skill's public URL, so every link anyone shared breaks,
+ * and the slug is copied into the summary row, the embedding and the Typesense
+ * doc, which all have to change in the same step. Whether it is even wanted
+ * depends on the row: a delisted one can simply be left alone, while a live one
+ * with installs probably needs a redirect rather than a rename. That is a
+ * judgement call per row, not a batch operation, and automating it for a
+ * population that has never been non-empty would be building the risky half of
+ * the feature for no one.
+ *
+ * Revisit only if a run here ever reports a mismatch. See TODO.md's parked
+ * decisions for the one-line pointer.
  *
  * Separate module from `githubOnly.ts` because that file is scoped to
  * "resolver + preview + confirm" and had grown past 1000 lines. The list query

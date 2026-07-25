@@ -206,7 +206,8 @@ looser-here would not be.
 Rows it can't judge (no discovered URL, fetch failed, gone (404), no frontmatter
 `name`, a name that isn't sluggable) are reported separately from mismatches —
 "we couldn't look" must not read as "we looked and it's wrong". It only reports;
-re-slugging is a per-row human decision (see TODO.md).
+re-slugging is a per-row human decision, and `githubOnlyAudit.ts`'s header
+records why there is deliberately no fix button.
 
 **Why it's an action and not a query.** `skills.content` is NOT the SKILL.md —
 `extractBodyContent` strips the YAML frontmatter before storing, so `content` is

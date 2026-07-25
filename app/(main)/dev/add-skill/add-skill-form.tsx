@@ -346,15 +346,14 @@ export function AddSkillForm() {
 
 /**
  * Finds GitHub-only rows whose stored slug disagrees with their SKILL.md's
- * frontmatter name. Two ways such a row exists: it predates the
- * frontmatter-name fix, or its SKILL.md was bound by the loose prefix arm of
- * `matchesSkillId` so the alias gate deliberately declined to fire. The path
- * that used to keep producing them — an unverifiable alias falling back to the
- * folder slug — now refuses the add instead.
+ * frontmatter name. Both paths that could write one are now closed: an
+ * unverifiable alias refuses the add rather than falling back to the folder
+ * slug, and the resolver matches frontmatter names exactly, so a partial name
+ * resolves to nothing instead of to a misnamed row. So this looks for history
+ * and guards against a regression; production audited clean at zero.
  *
- * Reports only. Re-slugging moves a skill's public URL and rewrites its
- * summary, embedding and search doc, so it's a per-row human decision rather
- * than a bulk action behind a button.
+ * Reports only, deliberately. `convex/githubOnlyAudit.ts`'s header is the record
+ * of why there is a find button and no fix button.
  */
 function SlugAuditCard() {
   const runAudit = useAction(api.githubOnlyAudit.auditGitHubOnlySlugs);

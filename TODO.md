@@ -76,46 +76,6 @@ Deferred from the confirm-returns PR (Jul 2026): pre-existing on both surfaces,
 outside anything that branch touched, and each late in-scope addition on that
 branch produced a new review finding of its own.
 
-### Add-skill: re-slug a mis-slugged GitHub-only row
-
-**The problem.** skills.sh identifies a skill by the `name` inside its SKILL.md.
-If we stored the row under any other slug, it is stuck permanently: adoption
-matches on `source` + `skillId`, so skills.sh can never claim it, and reconcile
-skips it.
-
-**What exists.** The "GitHub-only slug audit" card on `/dev/add-skill`
-(`githubOnlyAudit.auditGitHubOnlySlugs`) finds rows in that state.
-
-**What doesn't: a repair.** Renaming a slug moves the skill's public URL and has
-to rewrite its summary, embedding and Typesense doc in the same step, and whether
-it is even wanted depends on the row. A delisted one can be left alone; a live
-one with installs probably needs a redirect. So it stays a human decision per
-row, with the audit as the way to find candidates.
-
-**Status: none exist.** Production audited clean in Jul 2026 (2 GitHub-only rows,
-both judged, none reported), so this is deferred against a measured zero rather
-than a guess. The add path that used to create these now refuses instead of
-guessing a slug (`alias_unverifiable` in `githubOnly.ts`).
-
-**Both write paths are now closed.** The last one open was: `matchesSkillId`
-accepted a bare prefix, so typing `owner/repo/panel` bound the SKILL.md named
-`panel-review` while keeping the typed slug, writing a row as `panel`. Fixed by
-giving the GitHub-only resolver its own exact matcher
-(`matchesSkillIdExactly`), so a partial name resolves to nothing and the caller
-is told the slug must be the folder or the exact name from the file.
-
-Note what did NOT fix it, since an earlier version of this entry claimed it
-would: tightening the shared matcher to whole-word prefixes. `panel-review` still
-starts with `panel-`, so that only drops matches with no hyphen boundary
-(`test` vs `testing-library-helper`).
-
-Also considered and rejected: pre-filling the confirm card with the corrected
-slug ("did you mean panel-review?"). Better UX, but the same alias also decides
-whether `on_skills_sh_as_alias` fires, and that status makes the client re-run the
-add with **no confirm step** — so allowing an inferred name there needs a two-tier
-trust model separating "may pre-fill a card" from "may drive an unconfirmed
-write". Worth building only if the extra paste turns out to annoy anyone.
-
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
 `loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`
@@ -304,6 +264,12 @@ matched your repo" properly.
     page.
 
 ## Parked decisions (context lives elsewhere)
+
+- **Re-slugging a mis-slugged GitHub-only row** — no repair tool, deliberately. Full
+  context in `convex/githubOnlyAudit.ts`'s header (why there is a find button and no fix
+  button) and `docs/skill-lifecycle.md`. Both paths that could write such a row are closed
+  (`alias_unverifiable`, and `matchesSkillIdExactly` for partial names), and production
+  audited clean Jul 2026 at zero. Only revisit if the audit card ever reports a mismatch.
 
 - **Fast-delete for dead-but-installable skills ("Fix 2")** — deferred. Full context in
   `docs/skill-lifecycle.md` ("Dead-but-installable skills & the Fix 2 decision") and the
