@@ -70,6 +70,40 @@ export function matchesSkillIdExactly(
 }
 
 /**
+ * Does this SKILL.md's own `name` declare it to be a DIFFERENT known skill?
+ *
+ * Used by discovery's pass 1, which finds a file by the folder it sits in. A
+ * folder name is a decent guess and a poor proof: when a repo renames a skill's
+ * folder to match its name and leaves the old folder behind, the old folder's
+ * name is now some other skill's slug, and binding on the folder alone serves
+ * the wrong SKILL.md under a real skill's name with no error anywhere.
+ *
+ * The check is deliberately one-directional. It does NOT ask "does this file's
+ * name match the slug I expect?" — `kebabCase` cannot reproduce every skills.sh
+ * slug derivation (that looseness is why `matchesSkillId` exists), so a name like
+ * "Next.js" (kebab `next.js`) against slug `nextjs` would fail a self-check and
+ * unbind a perfectly good file, catalog-wide. It only reacts to a POSITIVE claim:
+ * this file says it is `x`, and `x` is a slug we know belongs to someone else.
+ *
+ * Worst case is therefore a missed collision, which is where we already were,
+ * rather than content stripped from a healthy skill.
+ *
+ * `knownSlugs` bounds what "someone else" means. Discovery passes the slugs in
+ * the batch it is resolving, so a collision with a skill discovered in an earlier
+ * run is not caught — a narrowing worth knowing about, not a reason to widen it
+ * into a self-check.
+ */
+export function claimedByOtherSkill(
+  fmName: string | null,
+  skillId: string,
+  knownSlugs: ReadonlySet<string>,
+): boolean {
+  if (!fmName) return false;
+  const claimed = kebabCase(fmName);
+  return claimed !== skillId && knownSlugs.has(claimed);
+}
+
+/**
  * The slug a frontmatter `name` corresponds to, or `null` when that name
  * cannot be one.
  *

@@ -15,6 +15,7 @@ import {
   kebabCase,
   matchesSkillId,
   matchesSkillIdExactly,
+  claimedByOtherSkill,
 } from "../convex/lib/skillMatch";
 
 describe("canonicalSlug — accepts", () => {
@@ -141,5 +142,54 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
 
   test("an unrelated name still misses", () => {
     expect(matchesSkillIdExactly("Deploy To Vercel", "react-best-practices")).toBe(false);
+  });
+});
+
+/**
+ * Discovery's pass-1 guard. Every case names the consequence, because the
+ * asymmetry here is the whole design: a false positive strips content from a
+ * healthy skill across the catalog, a false negative just leaves us where we
+ * already were.
+ */
+describe("claimedByOtherSkill — discovery pass 1's folder-match guard", () => {
+  const slugs = new Set(["panel-review", "recap", "nextjs"]);
+
+  test("blocks the bind when the file says it is ANOTHER known skill", () => {
+    // The collision: a folder named `recap` holding panel-review's file, which
+    // happens when a repo renames a folder and leaves the old one behind.
+    // Binding it would serve panel-review's content under recap's name.
+    expect(claimedByOtherSkill("panel-review", "recap", slugs)).toBe(true);
+  });
+
+  test("allows the bind when the file agrees with the folder", () => {
+    expect(claimedByOtherSkill("panel-review", "panel-review", slugs)).toBe(false);
+  });
+
+  test("allows a name whose kebab form agrees", () => {
+    expect(claimedByOtherSkill("Panel Review", "panel-review", slugs)).toBe(false);
+  });
+
+  test("allows an unreproducible slug derivation — the false positive that must not happen", () => {
+    // "Next.js" kebabs to `next.js`, which is neither `nextjs` nor a prefix of
+    // it. A self-check would unbind this healthy file. Because the guard only
+    // reacts to a positive claim on ANOTHER slug, and `next.js` is nobody's
+    // slug, the bind stands.
+    expect(claimedByOtherSkill("Next.js", "nextjs", slugs)).toBe(false);
+  });
+
+  test("allows a name claiming a slug nobody in the batch owns", () => {
+    // Not our business: no known skill loses out, so there is nothing to protect.
+    expect(claimedByOtherSkill("Some Other Thing", "recap", slugs)).toBe(false);
+  });
+
+  test("allows a file with no frontmatter name", () => {
+    // Can't disprove the folder, so don't. Same for a failed fetch, which the
+    // caller passes through as null.
+    expect(claimedByOtherSkill(null, "recap", slugs)).toBe(false);
+  });
+
+  test("allows everything when the batch has one skill", () => {
+    // Nobody else to be confused with, so the guard is inert.
+    expect(claimedByOtherSkill("panel-review", "recap", new Set(["recap"]))).toBe(false);
   });
 });

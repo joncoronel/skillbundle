@@ -32,7 +32,11 @@ import {
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
-import { kebabCase, matchesSkillId } from "./lib/skillMatch";
+import {
+  claimedByOtherSkill,
+  kebabCase,
+  matchesSkillId,
+} from "./lib/skillMatch";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 import { getCurrentUser } from "./users";
@@ -880,6 +884,29 @@ export const listSourcesNeedingDiscovery = internalQuery({
   },
 });
 
+/**
+ * Pass-1 verification downloads run concurrently in waves of this size. Pass 1
+ * used to fetch nothing at all (it read only the tree), so this is new cost:
+ * one raw request per folder-matched skill. It buys the check that the file a
+ * folder name points at actually belongs to that skill. Cheap in the ways that
+ * matter — raw.githubusercontent is CDN-backed and outside the GitHub API rate
+ * limit, and the content pipeline downloads these same files moments later
+ * anyway.
+ */
+const DISCOVERY_WAVE_SIZE = 10;
+
+/** GET a raw URL, reporting null for anything that isn't a 200 body. Mirrors
+ *  githubOnly.ts's `fetchText`: a network throw is a miss, not an exception, so
+ *  one dead file can't abort a whole repo's discovery. */
+async function fetchTextOrNull(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
+  }
+}
+
 export const discoverSkillMdUrls = internalAction({
   args: {
     source: v.string(),
@@ -969,15 +996,56 @@ export const discoverSkillMdUrls = internalAction({
     }
 
     // Pass 1: directory name matches the skillId.
+    //
+    // A folder name alone used to be enough to bind content here, with the file
+    // never opened. That is wrong when one skill's FOLDER is named like a
+    // DIFFERENT skill's name — which happens when a repo renames a skill's
+    // folder to match its name and leaves the old one behind. The row then
+    // serves the other skill's SKILL.md and nothing errors.
+    //
+    // So each candidate is opened and rejected if its own `name` is some OTHER
+    // skill's slug: a file that says what it is belongs to that skill, whatever
+    // folder it sits in, and pass 2 will place it there.
+    //
+    // Deliberately NOT "verify every match against its own slug". `kebabCase`
+    // cannot reproduce every skills.sh slug derivation — that is why
+    // `matchesSkillId` is loose — so a name like "Next.js" (kebab `next.js`)
+    // against slug `nextjs` would fail a self-check and unbind a perfectly good
+    // file. Rejecting only on a positive claim by another skill can't misfire
+    // that way: worst case a genuine collision goes unnoticed, which is where we
+    // already were.
     const matchedSkillIds = new Set<string>();
     const matchedPaths = new Set<string>();
-    for (const s of skills) {
+    const rawUrlFor = (path: string) =>
+      `https://raw.githubusercontent.com/${source}/${resolvedBranch}/${path}`;
+    const batchSlugs = new Set(skills.map((s) => s.skillId));
+    const dirCandidates = skills.flatMap((s) => {
       const path = skillMdByDir.get(s.skillId);
-      if (path) {
-        const rawUrl = `https://raw.githubusercontent.com/${source}/${resolvedBranch}/${path}`;
+      return path ? [{ s, path }] : [];
+    });
+
+    for (let i = 0; i < dirCandidates.length; i += DISCOVERY_WAVE_SIZE) {
+      const wave = dirCandidates.slice(i, i + DISCOVERY_WAVE_SIZE);
+      const bodies = await Promise.all(
+        wave.map((c) => fetchTextOrNull(rawUrlFor(c.path))),
+      );
+      for (let j = 0; j < wave.length; j++) {
+        const { s, path } = wave[j];
+        const body = bodies[j];
+        const fmName = body === null ? null : extractSkillMdName(body);
+        // Only a name that IS another skill's slug blocks the bind. A fetch
+        // failure or a file with no `name` leaves the folder match standing —
+        // transient raw trouble must not cost a skill its content. See
+        // `claimedByOtherSkill` for why this isn't a self-check.
+        if (claimedByOtherSkill(fmName, s.skillId, batchSlugs)) {
+          console.log(
+            `discovery: ${source}/${path} is named "${fmName}", not ${s.skillId} — leaving it for pass 2`,
+          );
+          continue;
+        }
         await ctx.runMutation(internal.skills.updateSkillMdUrl, {
           docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-          skillMdUrl: rawUrl,
+          skillMdUrl: rawUrlFor(path),
         });
         matchedSkillIds.add(s.skillId);
         matchedPaths.add(path);

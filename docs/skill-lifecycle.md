@@ -228,8 +228,12 @@ name decides the slug.
 The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm),
 with the slug audit in **`convex/githubOnlyAudit.ts`** and the write policy it
 shares with the preview in **`convex/lib/slugDecision.ts`** (pure, unit-tested).
-SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
-the preview binds the same file post-insert discovery would. The lifecycle
+SKILL.md-to-slug matching lives in `lib/skillMatch.ts`, but the two callers there
+are deliberately different: the preview uses `matchesSkillIdExactly` (it invents a
+permanent slug), discovery keeps the loose `matchesSkillId` (it hunts for the file
+behind a slug skills.sh already assigned). They still bind the same file, by
+ORDER rather than by sharing a rule — discovery tries folder, then exact name,
+then its loose loop, and the preview only ever binds on one of the first two. The lifecycle
 consequences of the flag stay where the lifecycle lives: `skills.ts`
 (heartbeat + adoption + cap exemption), `reconcile.ts` (skip), `devStats.ts`
 (diagnostics exclusions).
@@ -344,6 +348,50 @@ same frozen number for weeks, then a step). The **detail** endpoint is live and
 exact, so curated-only counts come from there, weekly, to bound per-skill cost.
 Re-check `generatedAt` periodically: if skills.sh starts regenerating curated
 daily, using it directly could become viable.
+
+## How a skill's SKILL.md gets found (`discoverSkillMdUrls`)
+
+A row stores `source` + `skillId` + name. It does **not** store the file's path,
+so the location is re-derived from the slug — at insert, whenever a content fetch
+404s (which clears `skillMdUrl` and re-flags `needsDiscovery`), and on the
+rediscovery cadence. Any reasoning of the form "we resolved the right file once,
+so we're safe" is therefore wrong: the lookup runs repeatedly over a row's life.
+
+Two passes over the repo tree, plus a probe fallback when the tree can't be
+listed:
+
+1. **Folder name matches the slug**, then the candidate is **opened and checked**.
+   It is rejected only if its own `name` is a *different* known skill's slug
+   (`claimedByOtherSkill`, lib/skillMatch.ts), in which case it is left for pass 2
+   to place correctly.
+2. **Frontmatter name**, via the loose `matchesSkillId`, for whatever pass 1
+   didn't claim. Covers a root-level SKILL.md and repos whose folders don't line
+   up with their slugs.
+
+Pass 1 used to bind on the folder name alone, without opening the file. That is
+wrong whenever one skill's FOLDER is named like a DIFFERENT skill's NAME — which a
+repo produces by renaming a skill's folder to match its name and leaving the old
+folder behind. The row then serves the other skill's content under a real skill's
+name, silently. `vercel-labs/agent-skills` is the near miss: slug
+`vercel-react-view-transitions` is bound to `skills/react-view-transitions/SKILL.md`
+because pass 1 found no folder of that name and pass 2 verified by name. Had such
+a folder existed, pass 1 would have taken it blind.
+
+The check is deliberately **one-directional**, and this is the part not to
+"simplify". It does not ask "does this file's name match the slug I expect?"
+`kebabCase` cannot reproduce every skills.sh slug derivation — that looseness is
+why `matchesSkillId` exists — so a name like `Next.js` (kebab `next.js`) against
+slug `nextjs` would fail a self-check and unbind a healthy file, catalog-wide. It
+reacts only to a positive claim on someone else's slug. Worst case is a missed
+collision; the alternative's worst case is content stripped from working skills.
+
+Known narrowing: "someone else" means the slugs in the batch being resolved, so a
+collision with a skill discovered in an earlier run isn't caught.
+
+Cost: pass 1 previously fetched nothing (it read only the tree), and now fetches
+one raw file per folder-matched skill, in concurrent waves. Those are
+CDN-backed, outside the GitHub API rate limit, and the content pipeline downloads
+the same files moments later anyway.
 
 ## Content states (independent of delisting)
 
