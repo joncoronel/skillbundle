@@ -571,68 +571,19 @@ async function previewGitHubCore(
   };
 }
 
+
 /**
- * One home for translating a failed preview status into the user-facing
- * ConvexError the confirm path throws. Kept beside previewGitHubCore so the
- * check logic and its failure copy can't drift between preview and confirm.
+ * A confirm that actually wrote something.
  *
- * NOTE: this is the SECOND prose table over the same status union — the client
- * has `previewFailureCopy` (lib/add-skill-copy.ts) for the returned statuses.
- * A new status needs an arm in both. It exists only because confirm THROWS
- * where preview returns; having confirm return a `PreviewFailure` instead would
- * delete this whole function. See TODO.md.
+ * Two arms rather than one with `status: "inserted" | "relisted"`, matching the
+ * validator: this type is what `FunctionReturnType` hands the client (the
+ * handler annotation wins over the validator there), and a union-typed
+ * discriminant inside a single arm is not narrowable — the client could not
+ * separate a written row from a refusal without a cast.
  */
-function previewFailureError(
-  preview: Exclude<GitHubPreview, { status: "ok" }>,
-  source: string,
-  skillId: string,
-): ConvexError<string> {
-  switch (preview.status) {
-    case "not_github":
-      return new ConvexError(
-        `"${source}" isn't a GitHub source. Only GitHub repos can be added without a skills.sh listing.`,
-      );
-    case "already_exists":
-      return new ConvexError(`${preview.name} is already in the catalog.`);
-    // Re-verified at confirm time — not just the repo. Without this, a LISTED
-    // skill could be inserted as GitHub-only with installs 0, and since
-    // reconcile skips GitHub-only rows, a skill absent from the leaderboard
-    // feed would then only recover via the manual adoption path.
-    case "on_skills_sh":
-      return new ConvexError(
-        `${source}/${skillId} is listed on skills.sh. Run the add again to bring it in the normal way.`,
-      );
-    case "on_skills_sh_as_alias":
-      return new ConvexError(
-        // Wording kept in step with the client twin in lib/add-skill-copy.ts:
-        // this message reaches a real visitor, because the public confirm throws
-        // it and the flow renders it through `addSkillErrorText`.
-        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Add it with that and it comes in the normal way.`,
-      );
-    case "alias_unverifiable":
-      return new ConvexError(
-        preview.cause === "unlisted"
-          ? // Hedged deliberately: "unlisted" is either a rate limit or a tree
-            // too large to list, and fetchRepoTree can't tell us which.
-            `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files (rate-limited, or the repo is too large to list), so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Worth retrying shortly; if it keeps failing, add it once skills.sh lists it.`
-          : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written. This one needs the repo fixed, or add it once skills.sh lists it.`,
-      );
-    case "no_repo":
-      // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
-      // don't claim certainty.
-      return new ConvexError(
-        `Couldn't find a public GitHub repo at "${source}" (or GitHub rate-limited the lookup). Try again in a minute.`,
-      );
-    case "tree_unavailable":
-      return new ConvexError(
-        `Couldn't list the files in ${source} (repo too large or GitHub rate-limited). The conventional SKILL.md paths were probed directly with no match. Try again shortly.`,
-      );
-    case "no_skill_md":
-      return new ConvexError(
-        `No SKILL.md for "${skillId}" in ${source} (matched by folder name and frontmatter name). Check the slug.`,
-      );
-  }
-}
+type GitHubAddSuccess =
+  | { status: "inserted"; source: string; skillId: string; name: string }
+  | { status: "relisted"; source: string; skillId: string; name: string };
 
 /**
  * Insert a skill straight from its GitHub repo, shared by the admin and public
@@ -641,6 +592,19 @@ function previewFailureError(
  * adder (public flow); `opts.enforceGitHubQuotaFor` makes upsertSkillsBatch
  * enforce the free-tier cap atomically with the insert (genuine inserts only —
  * relists consume no quota). Callers own the auth gate.
+ *
+ * A failed re-check is RETURNED, not thrown: confirm re-runs
+ * `previewGitHubCore`, so its refusals are literally preview failures and
+ * belong in the same status union the preview returns. Throwing them meant a
+ * second prose table server-side (`previewFailureError`, now deleted) that had
+ * to be kept in step with `lib/add-skill-copy.ts` by hand — and it wasn't:
+ * a review round rewrote one side's wording and missed the twin.
+ *
+ * Quota and transient failures still THROW, deliberately. The public client's
+ * at-limit backstop keys on `isQuotaError(err)` in a catch block, and a
+ * rate-limited upstream is not a verdict about this skill the way a preview
+ * status is. So the contract is: preview refusals return, everything else
+ * throws.
  */
 async function addGitHubCore(
   ctx: ActionCtx,
@@ -649,18 +613,9 @@ async function addGitHubCore(
     addedBy?: Id<"users">;
     enforceGitHubQuotaFor?: { userId: Id<"users">; limit: number };
   },
-): Promise<{
-  status: "inserted" | "relisted";
-  source: string;
-  skillId: string;
-  name: string;
-}> {
-  const { source, skillId } = parseAdminInput(input);
-
+): Promise<GitHubAddSuccess | Exclude<GitHubPreview, { status: "ok" }>> {
   const preview = await previewGitHubCore(ctx, input);
-  if (preview.status !== "ok") {
-    throw previewFailureError(preview, source, skillId);
-  }
+  if (preview.status !== "ok") return preview;
   // The preview owns the slug from here on, not the parse: when the SKILL.md's
   // frontmatter name disagrees with the folder the URL pointed at, it settles
   // on the frontmatter-derived one. Re-deriving it from `input` here would
@@ -770,12 +725,29 @@ export const previewGitHubSkill = action({
  * form with a type error pointing at an action it never calls. Sharing the
  * validator makes that divergence impossible rather than merely unlikely.
  */
-const gitHubAddReturns = v.object({
-  status: v.union(v.literal("inserted"), v.literal("relisted")),
+const gitHubAddSuccessFields = {
   source: v.string(),
   skillId: v.string(),
   name: v.string(),
-});
+};
+
+/**
+ * Either the confirm wrote something, or it re-checked and refused — and a
+ * refusal is one of the same statuses the preview returns, so it reuses
+ * `previewTerminalArms` rather than a parallel set of thrown messages.
+ *
+ * The two success statuses are separate arms rather than one arm with a
+ * `v.union` status, so every arm of this union carries exactly one literal.
+ * That is what makes it a discriminated union TS can narrow: with a
+ * union-typed discriminant in a single arm, neither `status === "inserted" ||
+ * status === "relisted"` nor its negation narrows the arm away, and consumers
+ * cannot separate a written row from a refusal without a cast.
+ */
+const gitHubAddReturns = v.union(
+  ...previewTerminalArms,
+  v.object({ ...gitHubAddSuccessFields, status: v.literal("inserted") }),
+  v.object({ ...gitHubAddSuccessFields, status: v.literal("relisted") }),
+);
 
 /**
  * Insert a skill straight from its GitHub repo, with no skills.sh presence.
@@ -805,12 +777,7 @@ export const addSkillFromGitHub = action({
   handler: async (
     ctx,
     { input },
-  ): Promise<{
-    status: "inserted" | "relisted";
-    source: string;
-    skillId: string;
-    name: string;
-  }> => {
+  ): Promise<GitHubAddSuccess | Exclude<GitHubPreview, { status: "ok" }>> => {
     await assertAdmin(ctx);
     return addGitHubCore(ctx, input);
   },
@@ -959,12 +926,7 @@ export const addSkillFromGitHubPublic = action({
   handler: async (
     ctx,
     { input },
-  ): Promise<{
-    status: "inserted" | "relisted";
-    source: string;
-    skillId: string;
-    name: string;
-  }> => {
+  ): Promise<GitHubAddSuccess | Exclude<GitHubPreview, { status: "ok" }>> => {
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
     await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
       userId: quota.userId,

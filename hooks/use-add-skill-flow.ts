@@ -80,8 +80,24 @@ export type SettledAddResult = ManualAddResult & {
   >;
 };
 
+/**
+ * The confirm action returns EITHER a written row or a preview failure: its
+ * re-check runs the same `previewGitHubCore` the preview does, so a refusal is
+ * one of the same statuses rather than a separate thrown message.
+ *
+ * Two types because they serve opposite directions. The action *parameter* must
+ * accept everything the action can return; the `github_added` outcome carries
+ * only the success arm, so consumers rendering "X was added" cannot be handed a
+ * refusal. Failures route through `preview_failed`, which both surfaces already
+ * render.
+ */
 type GitHubAddResult = FunctionReturnType<
   typeof api.githubOnly.addSkillFromGitHubPublic
+>;
+
+type GitHubAddSuccess = Extract<
+  GitHubAddResult,
+  { status: "inserted" | "relisted" }
 >;
 
 /**
@@ -133,7 +149,7 @@ export type AddSkillOutcome<TOk extends PreviewOkBase> =
    *  fired, i.e. the slug that landed is NOT the one in the pasted link. */
   | { kind: "added"; result: SettledAddResult; viaAlias?: AliasRef }
   /** A GitHub-only confirm succeeded. */
-  | { kind: "github_added"; result: GitHubAddResult }
+  | { kind: "github_added"; result: GitHubAddSuccess }
   /** The row is already in the catalog — possibly under a different slug than
    *  the caller typed, which is why the identifiers are carried. */
   | { kind: "already_exists"; source: string; skillId: string; name: string }
@@ -369,8 +385,20 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     setPhase("confirming");
     try {
       const result = await addFromGitHub({ input: candidate.input });
-      reset();
-      emit({ kind: "github_added", result });
+      // The server re-checks at confirm time and can refuse — a preview status,
+      // not an error, so it renders through the same arm the preview's own
+      // refusals use. The candidate stays on screen: the refusal explains why
+      // this file can't be added, and dropping the card would take away the
+      // context that explanation refers to.
+      //
+      // Narrowed positively. Excluding the two success statuses instead does
+      // NOT narrow, because the success arm's `status` is itself a union.
+      if (result.status === "inserted" || result.status === "relisted") {
+        reset();
+        emit({ kind: "github_added", result });
+        return;
+      }
+      emit({ kind: "preview_failed", preview: result });
     } catch (error) {
       emit({ kind: "failed", error });
     } finally {

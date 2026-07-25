@@ -28,11 +28,13 @@ export type PreviewFailure = Exclude<
 >;
 
 /**
- * NOTE: a second prose table for this same status union lives server-side in
- * `previewFailureError` (convex/githubOnly.ts), because the CONFIRM action
- * throws where the preview returns. A new status needs an arm in both. Merging
- * them means having confirm return a `PreviewFailure` instead of throwing —
- * see TODO.md.
+ * The ONLY prose table for this status union.
+ *
+ * There used to be a second one server-side, because the confirm action threw
+ * its refusals where the preview returned them — and it drifted, exactly as
+ * predicted: one round rewrote the wording here and missed the twin. Confirm
+ * now returns preview failures too, so every status has one sentence in one
+ * place, and a new arm here is the whole change.
  */
 export function previewFailureCopy(preview: PreviewFailure): string {
   switch (preview.status) {
@@ -94,10 +96,13 @@ export function typedSlugOf(input: string): string | null {
  * Any thrown add-skill failure, as one sentence a user can act on.
  *
  * Shared because the two surfaces had drifted halves of this and only one of
- * them unwrapped `ConvexError.data` — so a structured server refusal
- * (`previewFailureError` puts its prose there) reached the admin toast as a
- * stacktrace-flavoured `err.message` with the stringified data inside it. The
- * page whose job is diagnosing those failures had the worst rendering of them.
+ * them unwrapped `ConvexError.data` — so a structured server refusal reached the
+ * admin toast as a stacktrace-flavoured `err.message` with the stringified data
+ * inside it, on the page whose job is diagnosing those failures.
+ *
+ * Still needed now that preview refusals are RETURNED rather than thrown: quota
+ * rejections and rate limits are genuinely exceptional and still throw, and both
+ * put their prose in `ConvexError.data`.
  *
  * Unwrap first, then normalise: the `[Request ID: …]` strip only helps once the
  * real message has been extracted.
