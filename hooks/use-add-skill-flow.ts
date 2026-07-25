@@ -151,9 +151,23 @@ export type AddSkillOutcome<TOk extends PreviewOkBase> =
   | { kind: "added"; result: SettledAddResult; viaAlias?: AliasRef }
   /** A GitHub-only confirm succeeded. */
   | { kind: "github_added"; result: GitHubAddSuccess }
-  /** The row is already in the catalog — possibly under a different slug than
-   *  the caller typed, which is why the identifiers are carried. */
-  | { kind: "already_exists"; source: string; skillId: string; name: string }
+  /**
+   * The row is already in the catalog — possibly under a different slug than
+   * the caller typed, which is why the identifiers are carried.
+   *
+   * `candidateDismissed` means a confirm card was on screen and has just been
+   * dropped, so the surface should put focus somewhere useful: the control the
+   * user activated unmounted under them, and the hook can't know what to focus
+   * instead. False on the paths where nothing was mounted, so a consumer acting
+   * on it never steals focus from a control that is still there.
+   */
+  | {
+      kind: "already_exists";
+      source: string;
+      skillId: string;
+      name: string;
+      candidateDismissed: boolean;
+    }
   /** The repo resolved; `candidate` is now set and awaits confirm. */
   | { kind: "candidate"; preview: TOk }
   /**
@@ -291,6 +305,8 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
           source: result.source,
           skillId: result.skillId,
           name: result.name,
+          // This path drops no card, so there is nothing to move focus off.
+          candidateDismissed: false,
         });
         return true;
       }
@@ -336,6 +352,11 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
           source: preview.source,
           skillId: preview.skillId,
           name: preview.name,
+          // Equivalent to "a card was mounted", without reading `candidate` and
+          // rebuilding this callback on every patch: `confirmGitHub` returns
+          // early unless a candidate exists, and `submit` nulls it before the
+          // preview runs, so a confirm always had one and a preview never did.
+          candidateDismissed: step === "confirm",
         });
         return;
       }
@@ -429,9 +450,10 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
       // The server re-checks at confirm time and can refuse — a preview status,
       // not an error, so it goes through the SAME dispatch the preview's own
       // refusals use, down to re-running the alias add. The candidate stays on
-      // screen for the arms that end there: the refusal explains why this file
-      // can't be added, and dropping the card would take away the context that
-      // explanation refers to.
+      // screen for every arm that ends there EXCEPT `already_exists`: a refusal
+      // explains why this file can't be added and dropping the card would take
+      // away the context it refers to, whereas "the row is already there" makes
+      // the card's Confirm dead (see `handlePreviewFailure`).
       //
       // Both directions narrow, because the success type is two arms of one
       // literal status each (see `GitHubAddSuccess` in convex/githubOnly.ts) —
@@ -477,7 +499,10 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
      * exists to prevent. A doc comment is a weaker guard than absence.
      */
     changeInput,
-    phase,
+    // `phase` itself is deliberately NOT returned. Nothing outside needs the
+    // name of the step, and returning it invites a consumer to re-derive
+    // `phase === "confirming"` — the comparison the two outputs below exist to
+    // centralise, and which got the `retrying` case wrong when it was inlined.
     pending,
     /**
      * A confirm-initiated step is in flight, for the candidate card's button.

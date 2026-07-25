@@ -88,6 +88,14 @@ export function AddSkillForm() {
 
   const [lastAdded, setLastAdded] = useState<AddResult | null>(null);
 
+  // The candidate card unmounts on two paths (Cancel, and an `already_exists`
+  // that drops it), each time taking the button the admin just pressed with it.
+  // A ref rather than the public flow's `getElementById`, since this input has
+  // no id to look up and inventing one to find it from three lines away would
+  // be the worse of the two.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const focusInput = useCallback(() => inputRef.current?.focus(), []);
+
   const addFailed = useCallback((err: unknown) => {
     toast.error({
       title: "Couldn't add skill",
@@ -179,6 +187,10 @@ export function AddSkillForm() {
             skillId: outcome.skillId,
             name: outcome.name,
           });
+          // Only when this outcome dropped the confirm card, whose button the
+          // admin had just pressed. Not on the plain submit path, where the
+          // button they used is still mounted and moving focus would be theft.
+          if (outcome.candidateDismissed) focusInput();
           return;
         case "candidate":
           // The confirmation card mounts silently below the form; without
@@ -225,7 +237,7 @@ export function AddSkillForm() {
           outcome satisfies never;
       }
     },
-    [announce, addFailed],
+    [announce, addFailed, focusInput],
   );
 
   const {
@@ -283,6 +295,7 @@ export function AddSkillForm() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
+              ref={inputRef}
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
               value={input}
@@ -314,7 +327,13 @@ export function AddSkillForm() {
           confirming={confirming}
           disabled={pending}
           onConfirm={confirmGitHub}
-          onCancel={clearCandidate}
+          onCancel={() => {
+            clearCandidate();
+            // The focused Cancel button unmounts with the card. This surface had
+            // no recovery at all, while the public flow has had one since the
+            // card was written; same defect, so same handling.
+            focusInput();
+          }}
         />
       )}
 
