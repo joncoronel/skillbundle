@@ -88,8 +88,9 @@ export type SettledAddResult = ManualAddResult & {
  * Two types because they serve opposite directions. The action *parameter* must
  * accept everything the action can return; the `github_added` outcome carries
  * only the success arm, so consumers rendering "X was added" cannot be handed a
- * refusal. Failures route through `preview_failed`, which both surfaces already
- * render.
+ * refusal. Refusals go to `handlePreviewFailure`, which fans out to three
+ * different arms depending on the status — not all of them failures, since an
+ * alias refusal can settle as `added`.
  */
 type GitHubAddResult = FunctionReturnType<
   typeof api.githubOnly.addSkillFromGitHubPublic
@@ -322,6 +323,14 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
       // differ, so both of the next two mean the lookup asked about the wrong
       // slug rather than that the skill is missing.
       if (preview.status === "already_exists") {
+        // Drop the candidate card. Every other refusal leaves it up because the
+        // explanation refers to the file it shows and a retry may yet work, but
+        // this one says the row is already there: its Confirm can only fetch the
+        // same answer again, and the notice names and links the real row, so the
+        // card is a dead affordance rather than context. `setCandidate`, not
+        // `reset` — the input deliberately survives "already in the catalog".
+        // No-op on the preview path, where no candidate exists yet.
+        setCandidate(null);
         emit({
           kind: "already_exists",
           source: preview.source,
@@ -470,6 +479,17 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
     changeInput,
     phase,
     pending,
+    /**
+     * A confirm-initiated step is in flight, for the candidate card's button.
+     *
+     * Covers `retrying` as well as `confirming`, because a confirm can spawn the
+     * step-3 alias re-add and the card is still mounted through it. Reading
+     * `phase === "confirming"` alone made the button fall back to its resting
+     * label mid-operation, while staying disabled — the backwards label move the
+     * phase doc above argues against. Derived here rather than in both consumers,
+     * which each had that comparison written out.
+     */
+    confirming: phase === "confirming" || phase === "retrying",
     label: phase === "idle" ? null : ADD_SKILL_PHASE_LABEL[phase],
     /**
      * True when `submit` would be a no-op for the current input: a step is in

@@ -179,7 +179,7 @@ export function AddSkillFlow({
   const {
     input,
     changeInput,
-    phase,
+    confirming,
     pending,
     label,
     submitBlocked,
@@ -327,7 +327,7 @@ export function AddSkillFlow({
       {candidate && (
         <GitHubCandidateCard
           candidate={candidate}
-          confirming={phase === "confirming"}
+          confirming={confirming}
           disabled={pending}
           onConfirm={confirmGitHub}
           onCancel={() => {

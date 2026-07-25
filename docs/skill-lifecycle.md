@@ -169,14 +169,16 @@ rather than picking the other slug.
 read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
 walks the `by_isGitHubOnly` index on `skillSummaries` and flags rows whose stored
 `skillId` differs from `canonicalSlug(frontmatter name)`. It is **paginated,
-newest first**: one call audits up to `FETCH_CAP` (200) rows and returns a
+newest first**: one call audits up to `AUDIT_PAGE_SIZE` (200) rows and returns a
 `cursor`, and the card offers "check the next page" until the cursor comes back
 null, accumulating into one report. So the whole population is reachable while
-each call stays bounded — every row costs a GitHub fetch, and an unbounded DB
-read would blow the transaction read limit at a row count far below the fetch
-budget. The cursor lives on the client rather than being persisted: an audit
-answers "is anything wrong right now", so resuming a run from hours ago would be
-a stranger contract than continuing the one in front of you.
+each call stays bounded, and what bounds it is the **fetch loop**: every row
+costs a GitHub round trip inside an action that has a time limit. The DB read is
+the cheap half (`skillSummaries` rows are ~200 B, and `embeddingCoverageStatsBatch`
+pages the same table 1000 at a time). The cursor lives on the client rather than
+being persisted: an audit answers "is anything wrong right now", so resuming a
+run from hours ago would be a stranger contract than continuing the one in front
+of you.
 
 Two ways such a row exists, and only the first is closed:
 

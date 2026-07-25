@@ -231,7 +231,7 @@ export function AddSkillForm() {
   const {
     input,
     changeInput,
-    phase,
+    confirming,
     pending,
     label,
     submitBlocked,
@@ -311,7 +311,7 @@ export function AddSkillForm() {
       {candidate && (
         <GitHubCandidateCard
           candidate={candidate}
-          confirming={phase === "confirming"}
+          confirming={confirming}
           disabled={pending}
           onConfirm={confirmGitHub}
           onCancel={clearCandidate}
@@ -411,10 +411,15 @@ function SlugAuditCard() {
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* Same focus strategy as its sibling below, deliberately: a plain
+              disabled button also drops focus to <body>, and a page fetch is
+              ~200 GitHub round trips to stand there for. Two controls in one row
+              with two strategies was the half-answer the review flagged. */}
           <Button
             variant="outline"
             onClick={() => run(null)}
             disabled={running}
+            focusableWhenDisabled
             aria-busy={running}
           >
             {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
