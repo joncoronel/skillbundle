@@ -32,8 +32,14 @@ describe("canonicalSlug — accepts", () => {
     expect(canonicalSlug("  Deploy   To Vercel  ")).toBe("deploy-to-vercel");
   });
 
-  test("dots, underscores and digits, which the route and install command allow", () => {
-    expect(canonicalSlug("next.js_16-beta2")).toBe("next.js_16-beta2");
+  test("dots and digits survive; underscores normalise to dashes", () => {
+    // The charset still PERMITS `_` (a skills.sh slug may contain one), but a
+    // name can no longer produce it: `kebabCase` folds `_` into `-` to match the
+    // CLI's `normalizeSkillName`. This assertion changed deliberately when that
+    // alignment landed — it is the one place the change alters slug GENERATION
+    // rather than just matching, so it is worth failing loudly if reverted.
+    expect(canonicalSlug("next.js_16-beta2")).toBe("next.js-16-beta2");
+    expect(canonicalSlug("v2.1.0")).toBe("v2.1.0");
   });
 });
 
@@ -72,6 +78,18 @@ describe("canonicalSlug — refuses (would write an unroutable row)", () => {
   test("a single alphanumeric is enough to make it a name", () => {
     expect(canonicalSlug("v2")).toBe("v2");
     expect(canonicalSlug("-x-")).toBe("-x-");
+  });
+
+  test("underscores normalise like the official CLI does", () => {
+    // vercel-labs/skills, src/skills.ts: normalizeSkillName is
+    // `name.toLowerCase().replace(/[\s_]+/g, "-")`. Ours omitted `_` until a
+    // production bind audit flagged a real skill (github/gh-aw) whose file is
+    // named `http_mcp_headers` against slug `http-mcp-headers`.
+    expect(kebabCase("http_mcp_headers")).toBe("http-mcp-headers");
+    expect(canonicalSlug("http_mcp_headers")).toBe("http-mcp-headers");
+    expect(matchesSkillId("http_mcp_headers", "http-mcp-headers")).toBe(true);
+    // Mixed and repeated separators collapse to one dash, as the CLI does.
+    expect(kebabCase("Deploy _ To__Vercel")).toBe("deploy-to-vercel");
   });
 
   test("everything it refuses, kebabCase would have happily returned", () => {

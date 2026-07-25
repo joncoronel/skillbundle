@@ -21,7 +21,18 @@
  * Read `matchesSkillIdExactly`'s doc before making the two agree again.
  */
 export function kebabCase(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, "-");
+  // Mirrors `normalizeSkillName` in the official CLI (vercel-labs/skills,
+  // src/skills.ts): `name.toLowerCase().replace(/[\s_]+/g, "-")`. This used to
+  // omit `_`, which was a near-copy missing one character class rather than a
+  // deliberate difference — and it showed up in the wild: the bind audit's first
+  // production run flagged `github/gh-aw/http-mcp-headers` as not corresponding
+  // to its own file, whose name is `http_mcp_headers`. Under the CLI's rule those
+  // are the same string.
+  //
+  // Keep this in step with the CLI rather than with intuition. It is the
+  // reference implementation of "what does this name normalise to", and the whole
+  // catalog is populated from an ecosystem that follows it.
+  return name.toLowerCase().replace(/[\s_]+/g, "-");
 }
 
 export function matchesSkillId(fmName: string, skillId: string): boolean {

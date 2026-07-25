@@ -413,6 +413,55 @@ exit early, and the worst case (nothing matches) is what it always was. Bounded
 either way, and these are now fetched 10-wide where they used to be serial, so
 wall-clock likely improved even where the request count rose.
 
+## What the official CLI actually specifies (vercel-labs/skills)
+
+Read from the source in Jul 2026, after a production bind audit showed 50 rows
+whose stored slug disagrees with their file's `name`. Recorded here because this
+repo had been reasoning from inference about rules that are written down.
+
+**Name normalisation.** `src/skills.ts`:
+
+```ts
+function normalizeSkillName(name: string): string {
+  return name.toLowerCase().replace(/[\s_]+/g, '-');
+}
+```
+
+Our `kebabCase` is now identical. It previously omitted `_`, which was a
+near-copy missing a character class rather than a decision, and it produced a
+real false mismatch (`github/gh-aw`, file named `http_mcp_headers`, slug
+`http-mcp-headers`).
+
+**Identity is the frontmatter `name`.** The CLI matches on it and dedupes on it,
+first-discovery-wins, with the directory basename only as a fallback when
+matching lock entries. The README specifies `name` as a "unique identifier
+(lowercase, hyphens allowed)" — so title-cased names like `Update Pub/Sub
+Emulator` are spec violations, which is why any normalisation is needed at all.
+
+**Search order is defined, and ours is not.** The CLI walks, in priority order:
+the repo root (depth 1), then `skills/`, `skills/.curated/`,
+`skills/.experimental/`, `skills/.system/`, then ~20 agent dirs (`.claude/skills`,
+`.agents/skills`, …) — the containers two levels deep — and only falls back to a
+recursive depth-5 scan. Our discovery walks the whole tree and takes any
+`*/SKILL.md`, resolving a duplicate folder name by tree order (last wins).
+
+That difference explains a real case. `nextlevelbuilder/ui-ux-pro-max-skill` has
+two folders named `slides`: `.claude/skills/slides` (a priority dir) and
+`cli/assets/skills/slides` (reachable only by the fallback). The CLI would prefer
+the first and dedupe the second away as the same name — it sees ONE skill.
+skills.sh lists TWO (`ckm:slides` and `slides`). We are not obliged to match
+either, but if a `byDir` tie ever needs breaking, this priority order is the
+defensible rule rather than tree order.
+
+**What the CLI does NOT tell us.** How skills.sh turns a name into a registry
+slug. That is server-side and not in this repo, and the audit's evidence says it
+is not a pure function of the name: prefixes get stripped
+(`webflow-mcp:site-activity` → `site-activity`), punctuation collapses
+(`Update Pub/Sub Emulator` → `update-pubsub-emulator`), and sometimes the slug
+comes from the folder instead (`tailwind` → `tailwind-css`). Treat "the slug is
+derived from the name" as a good default for the ADD path, where we invent the
+slug, and not as an identity check on existing rows.
+
 ## Content states (independent of delisting)
 
 | State | Meaning | In app? | Content |
