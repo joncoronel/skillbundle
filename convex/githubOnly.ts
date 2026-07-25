@@ -78,7 +78,11 @@ const PASS2_WAVE_SIZE = 10;
 // ---------------------------------------------------------------------------
 
 /** parseSkillInput with its plain Error wrapped so prod preserves the message. */
-function parseAdminInput(input: string): { source: string; skillId: string } {
+function parseAdminInput(input: string): {
+  source: string;
+  skillId: string;
+  path?: string;
+} {
   try {
     return parseSkillInput(input);
   } catch (err) {
@@ -209,9 +213,41 @@ async function fetchText(url: string): Promise<string | null> {
  * When the tree is unavailable it mirrors discovery's fallback and probes the
  * conventional paths directly.
  */
+/**
+ * Every SKILL.md in a repo tree, plus a containing-folder-name → path map.
+ *
+ * `byDir` is what answers "does a folder of this name hold this exact file?",
+ * which is the whole basis of `aliasBindsSameFile`. Keyed on the immediate
+ * parent only, matching discovery's `skillMdByDir` so the two agree.
+ */
+function indexSkillMds(entries: { type: string; path: string }[]): {
+  candidates: string[];
+  byDir: Map<string, string>;
+} {
+  const candidates: string[] = [];
+  const byDir = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.type !== "blob") continue;
+    const lower = entry.path.toLowerCase();
+    if (lower !== "skill.md" && !lower.endsWith("/skill.md")) continue;
+    candidates.push(entry.path);
+    const parts = entry.path.split("/");
+    if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
+  }
+  return { candidates, byDir };
+}
+
+/** The folder a SKILL.md sits in, or "" for one at the repo root. */
+function parentDirOf(path: string): string {
+  const parts = path.split("/");
+  return parts.length >= 2 ? parts[parts.length - 2] : "";
+}
+
 async function resolveGitHubSkillMd(
   source: string,
   skillId: string,
+  /** See `parseSkillInput`'s `path`. A hint to try before walking the tree. */
+  pathHint?: string,
 ): Promise<GitHubSkillResolution> {
   const [owner, repo] = source.split("/");
   const meta = await fetchRepoMetadata(owner, repo);
@@ -255,6 +291,49 @@ async function resolveGitHubSkillMd(
     };
   };
 
+  // Fast path: the input already named a SKILL.md, so fetch that instead of
+  // listing the repo to rediscover it. One unauthenticated raw request in place
+  // of an authenticated tree call, on a token budget shared with the sync
+  // pipeline. Any miss falls through to the full walk below, so this can only
+  // save work, never change the answer.
+  if (pathHint) {
+    const contents = await fetchText(rawUrl(meta.defaultBranch, pathHint));
+    if (contents !== null) {
+      const fmName = extractSkillMdName(contents);
+      // The same two rules the tree walk applies, in the same order: a folder
+      // named like the slug wins, otherwise the file's own name has to earn it.
+      // The root-SKILL.md guard rides along for free — its parent dir is "",
+      // which can never equal a slug, so it must match on the name.
+      const matchedBy: "dir" | "frontmatter" | null =
+        parentDirOf(pathHint) === skillId
+          ? "dir"
+          : fmName && matchesSkillIdExactly(fmName, skillId)
+            ? "frontmatter"
+            : null;
+      if (matchedBy) {
+        // The tree is still needed, but ONLY to vet an alias: `byDir` exists to
+        // answer "would storing `alias` as the slug make discovery bind THIS
+        // file, or a different one in a folder of that name?". With no alias, or
+        // one equal to the slug we already have, there is nothing to vet and
+        // `aliasBindsSameFile` is true regardless — so the listing is skipped
+        // entirely. Skipping it when it IS needed would be a bug, not a saving:
+        // a null `byDir` reads as "we never looked", which correctly refuses
+        // (`alias_unverifiable`, cause "unlisted").
+        const alias = fmName ? canonicalSlug(fmName) : null;
+        let byDir: Map<string, string> | null = null;
+        if (alias !== null && alias !== skillId) {
+          const aliasTree = await fetchRepoTree(owner, repo, [
+            meta.defaultBranch,
+          ]);
+          if (aliasTree && aliasTree !== NOT_MODIFIED && !aliasTree.truncated) {
+            byDir = indexSkillMds(aliasTree.entries).byDir;
+          }
+        }
+        return okResult(meta.defaultBranch, pathHint, contents, matchedBy, byDir);
+      }
+    }
+  }
+
   const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
   // Tree unavailable (too large / rate limited / transient) or truncated:
   // don't claim absence — fall back to probing the conventional layouts
@@ -294,16 +373,7 @@ async function resolveGitHubSkillMd(
     return { status: "tree_unavailable" };
   }
 
-  const candidates: string[] = [];
-  const byDir = new Map<string, string>();
-  for (const entry of tree.entries) {
-    if (entry.type !== "blob") continue;
-    const lower = entry.path.toLowerCase();
-    if (lower !== "skill.md" && !lower.endsWith("/skill.md")) continue;
-    candidates.push(entry.path);
-    const parts = entry.path.split("/");
-    if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
-  }
+  const { candidates, byDir } = indexSkillMds(tree.entries);
   if (candidates.length === 0) return { status: "no_skill_md" };
 
   // Pass 1: a directory named exactly like the slug. Fetch it once here — its
@@ -491,7 +561,7 @@ async function previewGitHubCore(
   ctx: ActionCtx,
   input: string,
 ): Promise<GitHubPreview> {
-  const { source, skillId } = parseAdminInput(input);
+  const { source, skillId, path: pathHint } = parseAdminInput(input);
 
   // Well-known sources have no repo to read a SKILL.md out of.
   if (!isGitHubSource(source)) return { status: "not_github" };
@@ -502,7 +572,7 @@ async function previewGitHubCore(
       skillId,
     }) as Promise<Precheck>,
     checkSkillsShListing(source, skillId),
-    resolveGitHubSkillMd(source, skillId),
+    resolveGitHubSkillMd(source, skillId, pathHint),
   ]);
 
   const precheck = unwrap(precheckR);

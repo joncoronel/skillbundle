@@ -93,7 +93,13 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://github.com/ibelick/ui-skills/tree/main/skills/improve-ui",
       ),
-    ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
+    ).toEqual({
+      source: "ibelick/ui-skills",
+      skillId: "improve-ui",
+      // A tree URL names the FOLDER, so the file path is conventional rather
+      // than certain. The resolver fetches it and falls back if it 404s.
+      path: "skills/improve-ui/SKILL.md",
+    });
   });
 
   test("GitHub blob URL to the SKILL.md file (slug = parent folder)", () => {
@@ -101,7 +107,12 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://github.com/ibelick/ui-skills/blob/main/skills/improve-ui/SKILL.md",
       ),
-    ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
+    ).toEqual({
+      source: "ibelick/ui-skills",
+      skillId: "improve-ui",
+      // Exactly the file the link named — the case the hint exists for.
+      path: "skills/improve-ui/SKILL.md",
+    });
   });
 
   test("GitHub blob URL to a ROOT-level SKILL.md (slug falls back to repo name)", () => {
@@ -113,7 +124,11 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://github.com/petergyang/no-ai-slop/blob/main/SKILL.md",
       ),
-    ).toEqual({ source: "petergyang/no-ai-slop", skillId: "no-ai-slop" });
+    ).toEqual({
+      source: "petergyang/no-ai-slop",
+      skillId: "no-ai-slop",
+      path: "SKILL.md",
+    });
   });
 
   test("raw.githubusercontent.com URL to a ROOT-level SKILL.md (repo-name slug)", () => {
@@ -121,7 +136,11 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://raw.githubusercontent.com/petergyang/no-ai-slop/main/SKILL.md",
       ),
-    ).toEqual({ source: "petergyang/no-ai-slop", skillId: "no-ai-slop" });
+    ).toEqual({
+      source: "petergyang/no-ai-slop",
+      skillId: "no-ai-slop",
+      path: "SKILL.md",
+    });
   });
 
   test("GitHub tree URL with a slashed branch name (tail-derived slug survives)", () => {
@@ -129,7 +148,21 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://github.com/ibelick/ui-skills/tree/feat/new-stuff/skills/improve-ui",
       ),
-    ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
+    ).toEqual({
+      source: "ibelick/ui-skills",
+      skillId: "improve-ui",
+      // The slug survives because it is the TAIL. The path does NOT: only
+      // "tree" and one branch segment are dropped, so the rest of a slashed
+      // branch name ("new-stuff") stays glued to the front. GitHub's URL shape
+      // makes this genuinely ambiguous — you cannot tell a branch segment from
+      // a directory without asking the API.
+      //
+      // Asserted as-is because the wrongness is contained by design: the hint
+      // is fetched on the default branch, a miss 404s, and the resolver falls
+      // through to the full tree walk. Costs one cheap request on an unusual
+      // URL rather than a wrong answer.
+      path: "new-stuff/skills/improve-ui/SKILL.md",
+    });
   });
 
   test("raw.githubusercontent.com URL to the SKILL.md", () => {
@@ -137,7 +170,11 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://raw.githubusercontent.com/ibelick/ui-skills/main/skills/improve-ui/SKILL.md",
       ),
-    ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
+    ).toEqual({
+      source: "ibelick/ui-skills",
+      skillId: "improve-ui",
+      path: "skills/improve-ui/SKILL.md",
+    });
   });
 
   test("raw.githubusercontent.com refs/heads form", () => {
@@ -145,7 +182,11 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://raw.githubusercontent.com/ibelick/ui-skills/refs/heads/main/skills/improve-ui/SKILL.md",
       ),
-    ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
+    ).toEqual({
+      source: "ibelick/ui-skills",
+      skillId: "improve-ui",
+      path: "skills/improve-ui/SKILL.md",
+    });
   });
 
   test("www.github.com URL", () => {
@@ -153,7 +194,11 @@ describe("parseSkillInput — accepts", () => {
       parseSkillInput(
         "https://www.github.com/ibelick/ui-skills/tree/main/skills/improve-ui",
       ),
-    ).toEqual({ source: "ibelick/ui-skills", skillId: "improve-ui" });
+    ).toEqual({
+      source: "ibelick/ui-skills",
+      skillId: "improve-ui",
+      path: "skills/improve-ui/SKILL.md",
+    });
   });
 });
 
