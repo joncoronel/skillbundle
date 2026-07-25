@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
@@ -8,7 +8,21 @@ import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
-import { previewFailureCopy } from "@/lib/add-skill-copy";
+import {
+  addSkillErrorText,
+  aliasRetryNote,
+  alreadyInCatalogCopy,
+  previewFailureCopy,
+  previewFailureTitle,
+  typedSlugOf,
+} from "@/lib/add-skill-copy";
+import {
+  useAddSkillFlow,
+  type AddSkillOutcome,
+  type Candidate,
+  type PreviewOkOf,
+  type SettledAddResult,
+} from "@/hooks/use-add-skill-flow";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import {
@@ -18,43 +32,29 @@ import {
   CardContent,
 } from "@/components/ui/cubby-ui/card";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
 
-type AddResult = {
-  status: "inserted" | "relisted" | "already_exists" | "adopted";
-  source: string;
-  skillId: string;
-  name: string;
-  // Appended to the toast when the outcome needs explaining — currently only
-  // the corrected-slug retry, which lands a differently-named skill than the
-  // link that was pasted.
-  note?: string;
-};
+// Derived, not re-typed: a new server-side status shows up as a compiler-guided
+// update to `announce` rather than as drift nobody notices. Broader than the
+// hook's `SettledAddResult` by exactly one status — `already_exists` reaches
+// `announce` through its own outcome arm rather than inside `added`. `note` is
+// appended to the toast when the outcome needs explaining, currently only the
+// corrected-slug retry, which lands a differently-named skill than the link.
+type ManualAdd = FunctionReturnType<typeof api.skills.addSkillManually>;
+type AddResult = (
+  | SettledAddResult
+  | (ManualAdd & { status: "already_exists" })
+) & { note?: string };
 
-// A resolved GitHub-only candidate awaiting the admin's confirmation. Derived
-// from the action's return type rather than hand-declared, so a new preview
-// field can't be spread into state with no type record of it. `input` is
-// carried alongside so the confirm call re-sends exactly what produced this
-// preview (the action re-resolves server-side rather than trusting these fields).
-type GitHubCandidate = Extract<
-  FunctionReturnType<typeof api.githubOnly.previewGitHubSkill>,
-  { status: "ok" }
-> & { input: string };
+// Derived from the action's return type rather than hand-declared, so a new
+// preview field can't be spread into state with no type record of it. The
+// admin action's `ok` arm carries no `quota` — that's the public one.
+type GitHubPreviewOk = PreviewOkOf<typeof api.githubOnly.previewGitHubSkill>;
+type GitHubCandidate = Candidate<GitHubPreviewOk>;
 
-// One async flow is in flight at a time; the phase names it honestly so the
-// button can say what is actually happening ("Checking GitHub…" during the
-// preview, not a misleading "Adding…"). Every await site sets its own phase.
-// `retrying` is the corrected-slug re-run — its own phase so one submit's
-// labels only ever move forward.
-type Phase = "idle" | "adding" | "previewing" | "retrying" | "confirming";
-
-const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
-  // "Checking…", not "Adding…": this first step is a skills.sh lookup that is
-  // often about to 404 into the GitHub branch. Nothing is being added yet.
-  adding: "Checking…",
-  previewing: "Checking GitHub…",
-  retrying: "Adding under its listed name…",
-  confirming: "Adding…",
-};
+type AuditResult = FunctionReturnType<
+  typeof api.githubOnlyAudit.auditGitHubOnlySlugs
+>;
 
 export function AddSkillForm() {
   const { data: admin } = useQuery(convexQuery(api.devStats.isAdmin, {}));
@@ -62,25 +62,19 @@ export function AddSkillForm() {
   const previewGitHub = useAction(api.githubOnly.previewGitHubSkill);
   const addFromGitHub = useAction(api.githubOnly.addSkillFromGitHub);
 
-  const [input, setInput] = useState("");
-  const [phase, setPhase] = useState<Phase>("idle");
   const [lastAdded, setLastAdded] = useState<AddResult | null>(null);
-  const [candidate, setCandidate] = useState<GitHubCandidate | null>(null);
 
-  const pending = phase !== "idle";
+  const addFailed = useCallback((err: unknown) => {
+    toast.error({
+      title: "Couldn't add skill",
+      description: addSkillErrorText(err),
+    });
+  }, []);
 
-  if (admin === false) {
-    return (
-      <p className="py-12 text-center text-sm text-muted-foreground">
-        You don&apos;t have access to this page.
-      </p>
-    );
-  }
-
-  function announce(result: AddResult) {
+  /** The "Last added" card plus its toast. `note` explains a corrected-slug
+   *  retry, where the skill that landed is named differently from the link. */
+  const announce = useCallback((result: AddResult) => {
     setLastAdded(result);
-    setInput("");
-    setCandidate(null);
     const withNote = (text: string) =>
       result.note ? `${text} ${result.note}` : text;
     switch (result.status) {
@@ -111,16 +105,130 @@ export function AddSkillForm() {
       case "already_exists":
         toast.info({
           title: "Already in catalog",
-          description: `${result.name} is already listed. No changes made.`,
+          // Names the slug, which on the alias path is not the one that was
+          // typed. Shared with the public flow so the two can't drift.
+          description: `${alreadyInCatalogCopy(result)} No changes made.`,
         });
         break;
+      default:
+        // The comment on AddResult claims a new server-side status becomes a
+        // compiler-guided update here. This line is what makes that true — a
+        // void-returning switch gets no exhaustiveness check on its own, so
+        // without it a sixth status would set `lastAdded` and fire no toast.
+        result satisfies never;
     }
+  }, []);
+
+  // Every terminal point of the protocol, rendered as this surface's toasts.
+  // The sequencing that produces them lives in `useAddSkillFlow`; only the
+  // presentation is here, which is the one thing that genuinely differs from
+  // the public flow.
+  const report = useCallback(
+    (outcome: AddSkillOutcome<GitHubPreviewOk>) => {
+      switch (outcome.kind) {
+        case "submitting":
+          // The "Last added" card deliberately survives a new submit — it's a
+          // running log for the admin, not a per-submit result.
+          return;
+        case "added":
+          announce({
+            ...outcome.result,
+            note: outcome.viaAlias
+              ? aliasRetryNote(outcome.viaAlias.skillId)
+              : undefined,
+          });
+          return;
+        case "github_added":
+          // The action's status ("inserted" | "relisted") is a subset of
+          // AddResult's — pass it through rather than assuming, so a relist
+          // reports as one.
+          announce(outcome.result);
+          return;
+        case "already_exists":
+          // NOTE: this used to clear the input too. It no longer does — the
+          // hook clears only on an actual add, and the field now behaves the
+          // same here as on the public flow, where keeping what you typed
+          // beside "already in the catalog" is the more useful default.
+          announce({
+            status: "already_exists",
+            source: outcome.source,
+            skillId: outcome.skillId,
+            name: outcome.name,
+          });
+          return;
+        case "candidate":
+          // The confirmation card mounts silently below the form; without
+          // this, a keyboard/screen-reader user hears the pending label end
+          // and gets no signal that a confirmation step now exists further
+          // down the page.
+          toast.info({
+            title: "Not on skills.sh",
+            description: `Found ${outcome.preview.path} on GitHub. Review and confirm below.`,
+          });
+          return;
+        case "preview_failed":
+          toast.error({
+            // Both derived from the status in lib/add-skill-copy.ts, so a new
+            // preview status is a type error there rather than a wrong title
+            // here. This used to be a hand-maintained OR-chain and had already
+            // needed a third arm.
+            title: previewFailureTitle(outcome.preview),
+            description: previewFailureCopy(outcome.preview),
+          });
+          return;
+        case "preview_threw": {
+          // Kept distinct from `failed`: everything else in the sequence talks
+          // to skills.sh, and a rate limit there carries its own actionable
+          // message that must not be re-titled as a GitHub problem. Which
+          // upstream is degraded is the question this page exists to answer.
+          toast.error({
+            title: "Couldn't check GitHub",
+            description: addSkillErrorText(outcome.error),
+          });
+          return;
+        }
+        case "failed":
+          addFailed(outcome.error);
+          return;
+        default:
+          // See the public flow's `report`: without this, a new
+          // AddSkillOutcome arm compiles clean and toasts nothing.
+          outcome satisfies never;
+      }
+    },
+    [announce, addFailed],
+  );
+
+  const {
+    input,
+    changeInput,
+    phase,
+    pending,
+    label,
+    submitBlocked,
+    candidate,
+    clearCandidate,
+    submit,
+    confirmGitHub,
+  } = useAddSkillFlow<GitHubPreviewOk>({
+    addManually: addSkill,
+    previewGitHub,
+    addFromGitHub,
+    report,
+  });
+
+  if (admin === false) {
+    return (
+      <p className="py-12 text-center text-sm text-muted-foreground">
+        You don&apos;t have access to this page.
+      </p>
+    );
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || pending) return;
+    if (!trimmed) return;
 
     // Validate the input shape client-side BEFORE calling the action. Convex
     // intentionally forwards all server-side throws to the browser console in
@@ -131,132 +239,10 @@ export function AddSkillForm() {
     try {
       parseSkillInput(trimmed);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error({
-        title: "Couldn't add skill",
-        description: friendlyError(message),
-      });
+      addFailed(err);
       return;
     }
-
-    setPhase("adding");
-    setCandidate(null);
-    try {
-      if (await runManualAdd(trimmed)) return;
-      // Not on skills.sh at all — a TYPED status, not an error. (It must not be
-      // signaled by throwing: prod Convex redacts non-ConvexError messages to a
-      // generic "Server Error", so any message-sniffing branch would be dead in
-      // production.) Rather than dead-ending, look for the skill in its GitHub
-      // repo and let the admin confirm what we found. Confirmation is
-      // deliberate: a mistyped slug should be visible before anything is written.
-      setPhase("previewing");
-      await offerGitHubFallback(trimmed);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error({
-        title: "Couldn't add skill",
-        description: friendlyError(message),
-      });
-    } finally {
-      setPhase("idle");
-    }
-  }
-
-  // The normal skills.sh add, extracted so the GitHub preview can re-run it
-  // under a corrected slug. Returns false only for `not_on_skills_sh`; every
-  // other outcome is announced here. Destructuring `status` keeps the
-  // narrowing alive into announce() — it's a union-typed property, not a
-  // discriminant.
-  async function runManualAdd(
-    candidateInput: string,
-    note?: string,
-  ): Promise<boolean> {
-    const result = await addSkill({ input: candidateInput });
-    const { status } = result;
-    if (status === "not_on_skills_sh") return false;
-    announce({ ...result, status, note });
-    return true;
-  }
-
-  async function offerGitHubFallback(trimmed: string) {
-    // Only the preview call is wrapped: everything after it talks to
-    // skills.sh, not GitHub, and a rate limit there carries its own actionable
-    // message ("skills.sh is rate-limiting requests…") that must not be
-    // re-titled as a GitHub problem. Those throws belong to handleSubmit's
-    // catch, which is the one written for add failures.
-    let preview;
-    try {
-      preview = await previewGitHub({ input: trimmed });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error({
-        title: "Couldn't check GitHub",
-        description: friendlyError(message),
-      });
-      return;
-    }
-
-    if (preview.status === "ok") {
-      setCandidate({ input: trimmed, ...preview });
-      // The confirmation card mounts silently below the form; without this,
-      // a keyboard/screen-reader user hears the pending label end and gets
-      // no signal that a confirmation step now exists further down the page.
-      toast.info({
-        title: "Not on skills.sh",
-        description: `Found ${preview.path} on GitHub — review and confirm below.`,
-      });
-      return;
-    }
-    // The preview reads the SKILL.md, so it sees the frontmatter `name` —
-    // the string skills.sh derives its slug from. A GitHub link only carries
-    // the FOLDER name, and repos that namespace their skills make those
-    // differ, so both of these mean the add above asked about the wrong slug
-    // rather than that the skill is missing.
-    if (preview.status === "already_exists") {
-      announce({
-        status: "already_exists",
-        source: preview.source,
-        skillId: preview.skillId,
-        name: preview.name,
-      });
-      return;
-    }
-    if (preview.status === "on_skills_sh_as_alias") {
-      setPhase("retrying");
-      const settled = await runManualAdd(
-        `${preview.source}/${preview.skillId}`,
-        `Added as "${preview.skillId}" — the name in its SKILL.md frontmatter, not the folder name in the link.`,
-      );
-      if (settled) return;
-    }
-    toast.error({
-      // Derived, not hardcoded: an "on_skills_sh…" status under a
-      // "Not on skills.sh" title makes one toast contradict itself.
-      title:
-        preview.status === "on_skills_sh" ||
-        preview.status === "on_skills_sh_as_alias"
-          ? "Couldn't add skill"
-          : "Not on skills.sh",
-      description: previewFailureCopy(preview),
-    });
-  }
-
-  async function handleConfirmGitHub() {
-    if (!candidate || pending) return;
-    setPhase("confirming");
-    try {
-      // The action's status ("inserted" | "relisted") is a subset of AddResult's
-      // — pass it through rather than assuming, so a relist reports as one.
-      announce(await addFromGitHub({ input: candidate.input }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast.error({
-        title: "Couldn't add skill",
-        description: friendlyError(message),
-      });
-    } finally {
-      setPhase("idle");
-    }
+    await submit(trimmed);
   }
 
   return (
@@ -271,17 +257,10 @@ export function AddSkillForm() {
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
               value={input}
-              onChange={(e) => {
-                const value = e.target.value;
-                setInput(value);
-                // Retyping a different skill while the confirmation card is up
-                // would otherwise leave a stale card whose Confirm adds the OLD
-                // input — the exact mis-add the confirm step exists to prevent.
-                // Functional form: no stale closure over `candidate`.
-                setCandidate((prev) =>
-                  prev && value.trim() !== prev.input ? null : prev,
-                );
-              }}
+              // changeInput also drops a stale confirmation card, whose
+              // Confirm would otherwise add the OLD input — the exact mis-add
+              // the confirm step exists to prevent.
+              onChange={(e) => changeInput(e.target.value)}
               disabled={pending}
               autoFocus
             />
@@ -292,8 +271,8 @@ export function AddSkillForm() {
                 isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
                 repo instead.
               </p>
-              <Button type="submit" disabled={!input.trim() || pending}>
-                {phase === "idle" ? "Add to catalog" : PHASE_LABEL[phase]}
+              <Button type="submit" disabled={submitBlocked}>
+                {label ?? "Add to catalog"}
               </Button>
             </div>
           </form>
@@ -305,13 +284,184 @@ export function AddSkillForm() {
           candidate={candidate}
           confirming={phase === "confirming"}
           disabled={pending}
-          onConfirm={handleConfirmGitHub}
-          onCancel={() => setCandidate(null)}
+          onConfirm={confirmGitHub}
+          onCancel={clearCandidate}
         />
       )}
 
       {lastAdded && <LastAddedCard result={lastAdded} />}
+
+      <SlugAuditCard />
     </div>
+  );
+}
+
+/**
+ * Finds GitHub-only rows whose stored slug disagrees with their SKILL.md's
+ * frontmatter name. Two ways such a row exists: it predates the
+ * frontmatter-name fix, or its SKILL.md was bound by the loose prefix arm of
+ * `matchesSkillId` so the alias gate deliberately declined to fire. The path
+ * that used to keep producing them — an unverifiable alias falling back to the
+ * folder slug — now refuses the add instead.
+ *
+ * Reports only. Re-slugging moves a skill's public URL and rewrites its
+ * summary, embedding and search doc, so it's a per-row human decision rather
+ * than a bulk action behind a button.
+ */
+function SlugAuditCard() {
+  const runAudit = useAction(api.githubOnlyAudit.auditGitHubOnlySlugs);
+  const [data, setData] = useState<AuditResult | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Tracked separately from `data`, which `run()` clears up front: deriving the
+  // label from "do we have results" makes a failed re-run say "Run audit" as
+  // though nothing had executed, right beside the error from the run that did.
+  const [hasRun, setHasRun] = useState(false);
+
+  // Button-triggered, not a live query: the frontmatter `name` isn't in the
+  // database (the pipeline strips it before storing the body), so each row
+  // costs a GitHub fetch. That shouldn't fire on every page load.
+  async function run() {
+    setRunning(true);
+    setHasRun(true);
+    setError(null);
+    // Drop the previous report rather than leaving it under a fresh error —
+    // this answers "is that row still mis-slugged right now", so a stale
+    // result presented as current is the wrong default.
+    setData(null);
+    try {
+      setData(await runAudit({}));
+    } catch (err) {
+      setError(addSkillErrorText(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>GitHub-only slug audit</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <p className="text-muted-foreground">
+          skills.sh derives a slug from the SKILL.md&apos;s frontmatter{" "}
+          <code>name</code>. A row stored under a different slug can never be
+          adopted, and reconcile skips it. Re-reads each row&apos;s SKILL.md
+          from GitHub.
+        </p>
+
+        <Button
+          variant="outline"
+          onClick={run}
+          disabled={running}
+          aria-busy={running}
+        >
+          {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
+        </Button>
+
+        {/* The button's label is the only progress signal and it sits on a
+            disabled control, so it is never announced — and a run is up to
+            ~20 serial round trips. Results and errors land in here too, so
+            completion isn't silent. */}
+        <div role="status" aria-live="polite" className="space-y-4">
+          {running && (
+            <p className="sr-only">Checking GitHub-only slugs…</p>
+          )}
+
+          {error && (
+            <p className="text-destructive">
+              Couldn&apos;t run the audit: {error}
+            </p>
+          )}
+
+          {data && (
+            <>
+              <p className="text-muted-foreground">
+                {data.truncated
+                  ? `Judged ${data.judged} of the ${data.read} newest GitHub-only rows. More exist than this run read.`
+                  : `Judged ${data.judged} of ${data.read} GitHub-only ${
+                      data.read === 1 ? "row" : "rows"
+                    }.`}
+              </p>
+
+              {data.mismatches.length === 0 ? (
+                // Qualified when some rows couldn't be read: an unqualified
+                // "none" over a pile of unjudged rows is the false negative
+                // this whole card exists to avoid.
+                <p className="font-medium">
+                  {data.unknown.length > 0
+                    ? `No mis-slugged rows among the ${data.judged} judged.`
+                    : "No mis-slugged rows."}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="font-medium text-destructive">
+                    {data.mismatches.length} mis-slugged{" "}
+                    {data.mismatches.length === 1 ? "row" : "rows"}:
+                  </p>
+                  <ul className="space-y-2">
+                    {data.mismatches.map((m) => (
+                      <li
+                        key={`${m.source}/${m.skillId}`}
+                        className="rounded-md border p-3"
+                      >
+                        <p className="font-medium">{m.name}</p>
+                        <p className="font-mono text-xs break-all">
+                          <Link
+                            href={skillDetailHref(m.source, m.skillId)}
+                            target="_blank"
+                            className="underline underline-offset-2 hover:no-underline"
+                          >
+                            {m.source}/{m.skillId}
+                          </Link>
+                          {m.isDelisted && " (delisted)"}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Its SKILL.md is named{" "}
+                          <code className="font-mono">
+                            {m.expectedSkillId}
+                          </code>
+                          , so skills.sh would list it as{" "}
+                          <code className="font-mono">
+                            {m.source}/{m.expectedSkillId}
+                          </code>
+                          .
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {data.unknown.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">
+                    {data.unknown.length}{" "}
+                    {data.unknown.length === 1 ? "row" : "rows"} couldn&apos;t
+                    be judged. That is not the same as being wrong:
+                  </p>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    {data.unknown.map((u) => (
+                      <li key={`${u.source}/${u.skillId}`}>
+                        <Link
+                          href={skillDetailHref(u.source, u.skillId)}
+                          target="_blank"
+                          className="font-mono break-all underline underline-offset-2 hover:no-underline"
+                        >
+                          {u.source}/{u.skillId}
+                        </Link>
+                        {`: ${u.reason}`}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -328,6 +478,10 @@ function GitHubCandidateCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // The slug is the one field the server can change out from under the pasted
+  // link, and this page is where slug mismatches get diagnosed — so it is the
+  // last place the swap should go unexplained.
+  const typedSlug = typedSlugOf(candidate.input);
   return (
     <Card>
       <CardHeader>
@@ -354,6 +508,9 @@ function GitHubCandidateCard({
             </>
           )}
         </dl>
+        <div className="mt-4">
+          <SlugSwapNote typedSlug={typedSlug} slugId={candidate.skillId} />
+        </div>
         <p className="mt-4 text-xs text-muted-foreground">
           It will show 0 installs and no security audit until it appears on
           skills.sh — at which point the daily sync adopts it automatically, or
@@ -419,22 +576,3 @@ function skillDetailHref(source: string, skillId: string): string {
     : `/site/${source}/${skillId}`;
 }
 
-// Convert raw error strings from the Convex action into something the admin
-// can actually act on. Avoids surfacing internal stack-trace prefixes
-// (e.g. "[Request ID: ...]") in toasts.
-function friendlyError(raw: string): string {
-  const cleaned = raw.replace(/\[Request ID:.*?\]\s*/g, "").trim();
-  if (/URL must be from skills\.sh/i.test(cleaned)) {
-    return "That URL isn't from skills.sh or GitHub. Paste one of those, or a source/slug.";
-  }
-  if (/looks like a domain/i.test(cleaned)) {
-    return cleaned;
-  }
-  if (/not authorized/i.test(cleaned) || /not authenticated/i.test(cleaned)) {
-    return "You don't have permission to add skills.";
-  }
-  if (/Slug is missing|Invalid skill input|Skill input is empty/i.test(cleaned)) {
-    return cleaned;
-  }
-  return cleaned || "Unknown error.";
-}

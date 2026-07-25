@@ -281,6 +281,12 @@ export default defineSchema({
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_needsDiscovery", ["needsDiscovery"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
+    // GitHub-only rows, for the slug audit (githubOnlyAudit.ts). A small set —
+    // the fallback path is quota-limited — but it has to be reachable without
+    // scanning the catalog to find the handful. On summaries rather than
+    // `skills` so the audit reads ~200 B/row instead of a full ~13-25 KB
+    // document whose `content` it doesn't want.
+    .index("by_isGitHubOnly", ["isGitHubOnly"])
     .index("by_hasSkillMdUrl", ["hasSkillMdUrl"])
     .index("by_hasSkillMdUrl_discoveryFailCount", [
       "hasSkillMdUrl",

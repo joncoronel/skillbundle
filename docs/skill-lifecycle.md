@@ -133,10 +133,70 @@ segment. All four must hold:
   named like the alias would win instead, and the card would have vouched for a
   file the pipeline never fetches. False whenever the tree wasn't listed.
 
-Failing any gate keeps the typed slug, which is always safe because discovery's
-folder pass binds it by construction.
+Failing the first two gates keeps the typed slug, which is always safe because
+discovery's folder pass binds it by construction.
 
-The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm);
+Failing the LAST gate **refuses the add** (`alias_unverifiable`) instead. This
+is the one case where we know the right slug and can't store it, and writing the
+typed slug anyway would work in the narrow sense — discovery binds it — while
+producing a slug skills.sh never emits, so the row could never be adopted and
+reconcile would skip it forever. A permanently stuck row repairable only by
+hand is worse than an error, especially since the realistic cause (a rate limit
+or a GitHub blip) clears on its own. The refusal carries `cause`, naming the
+obstruction rather than the remedy: `"conflict"` is a folder we SAW claim the
+alias; `"unlisted"` is a file listing we never got, which `fetchRepoTree` cannot
+distinguish between a transient rate limit and a permanently too-large tree — so
+the copy hedges instead of promising a retry works. A delisted row already on the
+typed slug is exempt: relisting it beats both writing a new row and erroring out.
+
+Note the asymmetry with discovery this closes: discovery's own no-tree fallback
+probes `skills/<skillId>/SKILL.md` from the STORED slug, so adopting an alias
+without a verified folder list would leave discovery probing a path that doesn't
+exist and stamping `skillMdUrl: ""` — a contentless row. Keeping the typed slug
+is genuinely the only thing that *works* there, which is why the gate refuses
+rather than picking the other slug.
+
+**Finding the ones that slipped through.** `githubOnlyAudit.auditGitHubOnlySlugs` (a
+read-only admin **action**, behind a "Run audit" button on `/dev/add-skill`)
+walks the `by_isGitHubOnly` index on `skillSummaries` and flags rows whose stored
+`skillId` differs from `canonicalSlug(frontmatter name)`. It reads a **bounded
+window, newest first** (`FETCH_CAP`, currently 200) rather than the whole
+population: one constant governs the read and the SKILL.md fetch budget, and a
+capped run says so through `truncated`. Newest-first because an index walk is
+deterministic, so a capped ascending read would return the same oldest rows on
+every run and everything past the cap would never be audited at all. Cursor
+paging is the real answer if the population outgrows one read; see TODO.md.
+
+Two ways such a row exists, and only the first is closed:
+
+- It predates the alias fix, when the add took the folder slug outright. (The
+  path that kept producing these — an unverifiable alias falling back to the
+  folder slug — now refuses instead: `alias_unverifiable`, above.)
+- Its SKILL.md was bound by `matchesSkillId`'s loose **prefix** arm, so
+  `matchedBy` is `"frontmatter"`, `aliasCandidate` deliberately declines to
+  fire, and the typed slug is kept. Narrow — the typed slug has to be a strict
+  prefix of the kebab'd name with no folder of that name — but live. Do not
+  read the audit as historical-only; a fresh mismatch can be a new row.
+
+Rows it can't judge (no discovered URL, fetch failed, gone (404), no frontmatter
+`name`, a name that isn't sluggable) are reported separately from mismatches —
+"we couldn't look" must not read as "we looked and it's wrong". It only reports;
+re-slugging is a per-row human decision (see TODO.md).
+
+**Why it's an action and not a query.** `skills.content` is NOT the SKILL.md —
+`extractBodyContent` strips the YAML frontmatter before storing, so `content` is
+the markdown body alone and the frontmatter `name` is recorded nowhere in the
+database. An audit reading `content` therefore finds no `name` on any row,
+files every one as unjudgeable, and still reports zero mismatches: a false
+negative shaped exactly like a clean bill of health. (That was the first
+implementation; a run against a real deployment is what caught it.) So the audit
+re-fetches each row's stored `skillMdUrl` — the URL discovery already bound,
+which means it judges the same file the content pipeline fetches, the one whose
+name decides the slug.
+
+The feature lives in **`convex/githubOnly.ts`** (resolver + preview + confirm),
+with the slug audit in **`convex/githubOnlyAudit.ts`** and the write policy it
+shares with the preview in **`convex/lib/slugDecision.ts`** (pure, unit-tested).
 SKILL.md-to-slug matching goes through the shared `lib/skillMatch.ts` matcher so
 the preview binds the same file post-insert discovery would. The lifecycle
 consequences of the flag stay where the lifecycle lives: `skills.ts`

@@ -23,7 +23,7 @@
  */
 
 import { v, ConvexError } from "convex/values";
-import { action } from "./_generated/server";
+import { action, internalQuery } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -42,6 +42,7 @@ import {
   withTransientRetry,
 } from "./lib/skillsApi";
 import { canonicalSlug, matchesSkillId } from "./lib/skillMatch";
+import { aliasCandidate, decideSlug } from "./lib/slugDecision";
 import {
   GITHUB_LEADERBOARD,
   gitHubQuotaValidator,
@@ -150,6 +151,11 @@ type GitHubSkillResolution =
       // another. False whenever that can't be ruled out, including when the
       // tree was unavailable and we never saw the folder list.
       aliasBindsSameFile: boolean;
+      // Did we actually get the repo's file list? Separates the two reasons
+      // `aliasBindsSameFile` can be false: a conflict we SAW (retrying changes
+      // nothing) versus never having looked (retrying may well work). Only the
+      // wording shown to the user depends on this.
+      treeListed: boolean;
     }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
@@ -159,6 +165,26 @@ type GitHubSkillResolution =
   // never be reported to the admin as the definitive "we looked and it's not
   // there" — that reads as "check the slug" when the slug may be fine.
   | { status: "tree_unavailable" };
+
+/**
+ * Network-level throws (DNS, reset) are treated like a non-ok response
+ * everywhere in the resolver: the fetch reports null and the caller decides,
+ * instead of the throw escaping as a redacted "Server Error".
+ *
+ * Module scope rather than a closure — it captures nothing, so nesting it only
+ * meant the rule could be restated. The audit (githubOnlyAudit.ts) needs
+ * stricter semantics than this (host pinning, a 404 split, a retry) and has its
+ * own; that difference is deliberate, not drift.
+ */
+async function fetchText(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Locate one skill's SKILL.md inside a GitHub repo, writing nothing.
@@ -213,20 +239,8 @@ async function resolveGitHubSkillMd(
       description: extractFrontmatterDescription(contents) ?? undefined,
       matchedBy,
       aliasBindsSameFile,
+      treeListed: byDir !== null,
     };
-  };
-
-  // Network-level throws (DNS, reset) are treated like a non-ok response
-  // everywhere in this resolver: the fetch reports null and the caller
-  // decides, instead of the throw escaping as a redacted "Server Error".
-  const fetchText = async (url: string): Promise<string | null> => {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      return await res.text();
-    } catch {
-      return null;
-    }
   };
 
   const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
@@ -332,6 +346,19 @@ type GitHubPreview =
   // source/skillId identify the row that already exists — which is not
   // necessarily the slug the caller typed, so the UI can link to the real one.
   | { status: "already_exists"; name: string; source: string; skillId: string }
+  // We know which slug this SKILL.md should have, and can't safely store it.
+  // Refused rather than written, because a row under the wrong slug can never
+  // be adopted and only a manual re-slug repairs it. `cause` names the
+  // obstruction: `"conflict"` is a folder we SAW claim the alias, `"unlisted"`
+  // is a file listing we never got — which may be a transient rate limit or a
+  // permanently too-large tree, indistinguishable from here.
+  | {
+      status: "alias_unverifiable";
+      source: string;
+      skillId: string;
+      expectedSkillId: string;
+      cause: "unlisted" | "conflict";
+    }
   | { status: "no_repo" }
   | { status: "no_skill_md" }
   | { status: "tree_unavailable" }
@@ -497,26 +524,38 @@ async function previewGitHubCore(
   //
   // Runs only on a genuine mismatch, and deliberately AFTER the typed-slug
   // checks: the slug the caller gave wins whenever it resolves to something.
-  const alias = resolved.fmName ? canonicalSlug(resolved.fmName) : null;
-  const aliasPass =
-    alias !== null && alias !== skillId && resolved.matchedBy === "dir"
-      ? await checkAliasSlug(ctx, source, alias)
-      : null;
+  const alias = aliasCandidate({
+    typedSkillId: skillId,
+    canonicalFmName: resolved.fmName ? canonicalSlug(resolved.fmName) : null,
+    matchedBy: resolved.matchedBy,
+  });
+  const aliasPass = alias ? await checkAliasSlug(ctx, source, alias) : null;
+  // A claimed alias is terminal here and never reaches decideSlug.
   if (aliasPass?.terminal) return aliasPass.terminal;
 
-  // Adopt the alias as the row's identity only when all three hold:
-  //   - the alias pass ran and found the slug unclaimed (`aliasPass`);
-  //   - NOTHING claims the typed slug either (`precheck === null`) — a
-  //     delisted row under the typed slug must be RELISTED, not orphaned
-  //     beside a fresh alias row that also costs the user a quota slot;
-  //   - discovery will still bind the previewed file (`aliasBindsSameFile`),
-  //     so the card can't vouch for one SKILL.md while the pipeline fetches
-  //     another.
-  // Otherwise keep the typed slug — the pre-alias behaviour, which is always
-  // safe because discovery's folder pass binds it by construction.
+  // The write policy lives in lib/slugDecision.ts — pure, and unit-tested,
+  // because the refusal branch can otherwise only be reached by making
+  // GitHub's tree API fail mid-add.
+  const decision = decideSlug({
+    // The alias and its lookup travel together, so `adopt_alias` hands the
+    // lookup back and the caller never re-derives it.
+    alias: alias && aliasPass ? { slug: alias, payload: aliasPass } : null,
+    typedRowExists: precheck !== null,
+    aliasBindsSameFile: resolved.aliasBindsSameFile,
+    treeListed: resolved.treeListed,
+  });
+  if (decision.kind === "refuse") {
+    return {
+      status: "alias_unverifiable",
+      source,
+      skillId,
+      expectedSkillId: decision.expectedSkillId,
+      cause: decision.cause,
+    };
+  }
   const add =
-    aliasPass && precheck === null && resolved.aliasBindsSameFile
-      ? { skillId: alias as string, precheck: aliasPass.precheck }
+    decision.kind === "adopt_alias"
+      ? { skillId: decision.alias, precheck: decision.payload.precheck }
       : { skillId, precheck };
 
   return {
@@ -536,6 +575,12 @@ async function previewGitHubCore(
  * One home for translating a failed preview status into the user-facing
  * ConvexError the confirm path throws. Kept beside previewGitHubCore so the
  * check logic and its failure copy can't drift between preview and confirm.
+ *
+ * NOTE: this is the SECOND prose table over the same status union — the client
+ * has `previewFailureCopy` (lib/add-skill-copy.ts) for the returned statuses.
+ * A new status needs an arm in both. It exists only because confirm THROWS
+ * where preview returns; having confirm return a `PreviewFailure` instead would
+ * delete this whole function. See TODO.md.
  */
 function previewFailureError(
   preview: Exclude<GitHubPreview, { status: "ok" }>,
@@ -559,7 +604,18 @@ function previewFailureError(
       );
     case "on_skills_sh_as_alias":
       return new ConvexError(
-        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}" — its frontmatter name, not the folder name in the link. Add it with that and it comes in the normal way.`,
+        // Wording kept in step with the client twin in lib/add-skill-copy.ts:
+        // this message reaches a real visitor, because the public confirm throws
+        // it and the flow renders it through `addSkillErrorText`.
+        `That SKILL.md is listed on skills.sh as "${preview.source}/${preview.skillId}", using its frontmatter name rather than the folder name in the link. Add it with that and it comes in the normal way.`,
+      );
+    case "alias_unverifiable":
+      return new ConvexError(
+        preview.cause === "unlisted"
+          ? // Hedged deliberately: "unlisted" is either a rate limit or a tree
+            // too large to list, and fetchRepoTree can't tell us which.
+            `That SKILL.md is named "${preview.expectedSkillId}", but GitHub wouldn't list ${preview.source}'s files (rate-limited, or the repo is too large to list), so we couldn't confirm it's safe to store it under that name. Adding it as "${preview.skillId}" instead would leave a row skills.sh can never adopt, so nothing was written. Worth retrying shortly; if it keeps failing, add it once skills.sh lists it.`
+          : `That SKILL.md is named "${preview.expectedSkillId}", but ${preview.source} already has a different SKILL.md in a folder of that name, so storing it correctly would bind the wrong file. Nothing was written. This one needs the repo fixed, or add it once skills.sh lists it.`,
       );
     case "no_repo":
       // fetchRepoMetadata can't distinguish 404 from a GitHub rate limit, so
@@ -673,6 +729,13 @@ const previewTerminalArms = [
     source: v.string(),
     skillId: v.string(),
   }),
+  v.object({
+    status: v.literal("alias_unverifiable"),
+    source: v.string(),
+    skillId: v.string(),
+    expectedSkillId: v.string(),
+    cause: v.union(v.literal("unlisted"), v.literal("conflict")),
+  }),
   v.object({ status: v.literal("no_repo") }),
   v.object({ status: v.literal("no_skill_md") }),
   v.object({ status: v.literal("tree_unavailable") }),
@@ -695,6 +758,23 @@ export const previewGitHubSkill = action({
     await assertAdmin(ctx);
     return previewGitHubCore(ctx, input);
   },
+});
+
+/**
+ * Shared by the admin and public confirm actions, the way `manualAddReturns`
+ * is shared by the two manual adds.
+ *
+ * One const, not two inline copies: the client hook derives its `github_added`
+ * outcome from the PUBLIC action's return type and hands it to both surfaces,
+ * so a field added to one validator and not the other would break the admin
+ * form with a type error pointing at an action it never calls. Sharing the
+ * validator makes that divergence impossible rather than merely unlikely.
+ */
+const gitHubAddReturns = v.object({
+  status: v.union(v.literal("inserted"), v.literal("relisted")),
+  source: v.string(),
+  skillId: v.string(),
+  name: v.string(),
 });
 
 /**
@@ -721,12 +801,7 @@ export const previewGitHubSkill = action({
  */
 export const addSkillFromGitHub = action({
   args: { input: v.string() },
-  returns: v.object({
-    status: v.union(v.literal("inserted"), v.literal("relisted")),
-    source: v.string(),
-    skillId: v.string(),
-    name: v.string(),
-  }),
+  returns: gitHubAddReturns,
   handler: async (
     ctx,
     { input },
@@ -740,6 +815,75 @@ export const addSkillFromGitHub = action({
     return addGitHubCore(ctx, input);
   },
 });
+
+// ---------------------------------------------------------------------------
+// Slug audit support
+//
+// The audit itself lives in githubOnlyAudit.ts (see that module for why such a
+// row can exist and why it is only ever reported, never repaired). Only its
+// list query is here, so the DB read and the fetch loop sit either side of the
+// query/action boundary they actually straddle, and so this file keeps its
+// stated scope (resolver + preview + confirm) plus one small support query.
+//
+// It buys nothing type-wise: the audit still declares its row and result types
+// by hand, because the generated `internal` object is ONE type spanning every
+// module, so a function that both reads `internal.*` and is reachable through
+// it is self-referential wherever it lives. See githubOnlyAudit.ts's header.
+// ---------------------------------------------------------------------------
+
+/**
+ * GitHub-only rows, slim enough to hand to an action, newest first.
+ *
+ * Reads `skillSummaries`, not `skills`: every field the audit needs is
+ * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrl`,
+ * `isGitHubOnly` at insert and on adoption) at ~200 B/row instead of the
+ * ~13-25 KB a `skills` document costs, which `content` dominates. `limit` is
+ * required rather than optional so the caller's fetch budget and this read are
+ * governed by one number — an unbounded `.collect()` here would blow the
+ * transaction read limit at a row count far below the fetch cap, i.e. it would
+ * start failing exactly when the population became worth auditing.
+ *
+ * `.order("desc")` is load-bearing, not cosmetic. An index walk is
+ * deterministically ordered, so a capped ascending read returns the SAME oldest
+ * rows on every run and everything added past the cap would never be audited —
+ * not "later", never.
+ *
+ * The argument for descending is which blind spot is bounded, NOT that old rows
+ * are likelier to be fine (they aren't: the legacy mis-slugged population is
+ * precisely the oldest rows). Ascending loses an unbounded, permanently growing
+ * tail; descending loses a bounded one that earlier runs already covered while
+ * the population was still under the cap. Paging the whole population across
+ * runs is the real answer if it ever outgrows one read; see TODO.md.
+ */
+export const listGitHubOnlyRows = internalQuery({
+  args: { limit: v.number() },
+  returns: v.array(
+    v.object({
+      source: v.string(),
+      skillId: v.string(),
+      name: v.string(),
+      isDelisted: v.boolean(),
+      skillMdUrl: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx, { limit }) => {
+    const rows = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
+      .order("desc")
+      .take(limit);
+    return rows.map((r) => ({
+      source: r.source,
+      skillId: r.skillId,
+      name: r.name,
+      isDelisted: r.isDelisted,
+      // Empty string means discovery ran and found nothing — same as absent
+      // for our purposes, so normalise it away.
+      ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
+    }));
+  },
+});
+
 
 // ---------------------------------------------------------------------------
 // Public add flow (Branch 2 — the GitHub-only fallback)
@@ -811,12 +955,7 @@ export const previewGitHubSkillPublic = action({
  */
 export const addSkillFromGitHubPublic = action({
   args: { input: v.string() },
-  returns: v.object({
-    status: v.union(v.literal("inserted"), v.literal("relisted")),
-    source: v.string(),
-    skillId: v.string(),
-    name: v.string(),
-  }),
+  returns: gitHubAddReturns,
   handler: async (
     ctx,
     { input },

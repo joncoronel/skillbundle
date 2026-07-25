@@ -62,7 +62,9 @@ Modules, grouped by concern:
 - **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts` (+ `convex.config.ts` registers the `@convex-dev/polar` component).
 - **Admin / dev:** `devStats.ts` (the `/dev` dashboard stats), `devSeed.ts`,
   `githubOnly.ts` (admin add of skills that exist only on GitHub, not on
-  skills.sh — see docs/skill-lifecycle.md "GitHub-only skills").
+  skills.sh — see docs/skill-lifecycle.md "GitHub-only skills"),
+  `githubOnlyAudit.ts` (read-only diagnostic: GitHub-only rows whose stored
+  slug disagrees with their SKILL.md's frontmatter name).
 
 ### Crons (`crons.ts`)
 
