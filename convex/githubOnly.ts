@@ -23,7 +23,7 @@
  */
 
 import { v, ConvexError } from "convex/values";
-import { action, query } from "./_generated/server";
+import { action, internalQuery } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -767,12 +767,96 @@ export const addSkillFromGitHub = action({
  * look" must never be reported as "we looked and it's wrong".
  */
 const AUDIT_UNKNOWN_REASON = {
-  noContent: "SKILL.md not fetched yet",
+  noUrl: "no SKILL.md URL discovered yet",
+  fetchFailed: "SKILL.md couldn't be fetched from GitHub",
   noFrontmatterName: "SKILL.md has no frontmatter `name`",
   unusableName: "frontmatter `name` can't be a slug",
+  overCap: "not checked (audit cap reached)",
 } as const;
 
-export const auditGitHubOnlySlugs = query({
+/**
+ * Bound on SKILL.md downloads per run. The GitHub-only population is small (a
+ * quota-limited fallback path), so this is a runaway guard rather than an
+ * expected limit — anything past it is reported as unchecked, never as sound.
+ */
+const AUDIT_FETCH_CAP = 200;
+const AUDIT_WAVE_SIZE = 10;
+
+/**
+ * Declared rather than inferred: the action below reaches its own module
+ * through `internal.githubOnly`, so letting TS infer either the runQuery result
+ * or the handler's return type is a circular reference. It resolves to `any`,
+ * which poisons the generated `api` type and shows up as errors in unrelated
+ * files. Same reason `Precheck` is spelled out for `getManualAddPrecheck`.
+ */
+type GitHubOnlyRow = {
+  source: string;
+  skillId: string;
+  name: string;
+  isDelisted: boolean;
+  skillMdUrl?: string;
+};
+
+type SlugAuditResult = {
+  checked: number;
+  mismatches: Array<{
+    source: string;
+    skillId: string;
+    expectedSkillId: string;
+    name: string;
+    isDelisted: boolean;
+  }>;
+  unknown: Array<{ source: string; skillId: string; reason: string }>;
+};
+
+/** The GitHub-only rows, slim enough to hand to an action. */
+export const listGitHubOnlyRows = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      source: v.string(),
+      skillId: v.string(),
+      name: v.string(),
+      isDelisted: v.boolean(),
+      skillMdUrl: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("skills")
+      .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
+      .collect();
+    return rows.map((r) => ({
+      source: r.source,
+      skillId: r.skillId,
+      name: r.name,
+      isDelisted: r.isDelisted === true,
+      // Empty string means discovery ran and found nothing — same as absent
+      // for our purposes, so normalise it away.
+      ...(r.skillMdUrl ? { skillMdUrl: r.skillMdUrl } : {}),
+    }));
+  },
+});
+
+/**
+ * An ACTION, not a query, because the frontmatter `name` is not in the
+ * database.
+ *
+ * `skills.content` looks like it should serve — it's the SKILL.md — but
+ * `extractBodyContent` (skills.ts) STRIPS the frontmatter before storing, so
+ * `content` is the markdown body alone. An audit built on it finds no `name`
+ * on any row, reports every one as unjudgeable, and still prints "no
+ * mismatches" — a false negative that reads like a clean bill of health. That
+ * was the first cut of this function; a run against a real deployment caught
+ * it. Nothing in the DB records the frontmatter name, so the file has to be
+ * re-read.
+ *
+ * It re-reads the stored `skillMdUrl` rather than re-resolving through the
+ * repo tree: discovery already bound that URL, and using it means the audit
+ * judges the file the pipeline actually fetches, which is the file whose name
+ * decides the slug.
+ */
+export const auditGitHubOnlySlugs = action({
   args: {},
   returns: v.object({
     checked: v.number(),
@@ -793,56 +877,89 @@ export const auditGitHubOnlySlugs = query({
       }),
     ),
   }),
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<SlugAuditResult> => {
     await assertAdmin(ctx);
-    const rows = await ctx.db
-      .query("skills")
-      .withIndex("by_isGitHubOnly", (q) => q.eq("isGitHubOnly", true))
-      .collect();
+    const rows = (await ctx.runQuery(
+      internal.githubOnly.listGitHubOnlyRows,
+      {},
+    )) as GitHubOnlyRow[];
 
-    const mismatches = [];
-    const unknown = [];
+    const mismatches: SlugAuditResult["mismatches"] = [];
+    const unknown: SlugAuditResult["unknown"] = [];
+
+    const fetchable: GitHubOnlyRow[] = [];
     for (const row of rows) {
-      // `content` is the stored SKILL.md body, so the audit needs no network
-      // and can be a query rather than an action — the frontmatter name the
-      // pipeline already fetched is exactly what skills.sh derives its slug
-      // from.
-      if (!row.content) {
+      if (!row.skillMdUrl) {
         unknown.push({
           source: row.source,
           skillId: row.skillId,
-          reason: AUDIT_UNKNOWN_REASON.noContent,
+          reason: AUDIT_UNKNOWN_REASON.noUrl,
         });
         continue;
       }
-      const fmName = extractSkillMdName(row.content);
-      if (!fmName) {
-        unknown.push({
-          source: row.source,
-          skillId: row.skillId,
-          reason: AUDIT_UNKNOWN_REASON.noFrontmatterName,
-        });
-        continue;
-      }
-      const expected = canonicalSlug(fmName);
-      if (expected === null) {
-        // The name can't be a slug at all, so there is nothing to compare
-        // against — and nothing this row could be re-slugged TO either.
-        unknown.push({
-          source: row.source,
-          skillId: row.skillId,
-          reason: AUDIT_UNKNOWN_REASON.unusableName,
-        });
-        continue;
-      }
-      if (expected !== row.skillId) {
-        mismatches.push({
-          source: row.source,
-          skillId: row.skillId,
-          expectedSkillId: expected,
-          name: row.name,
-          isDelisted: row.isDelisted === true,
-        });
+      fetchable.push(row);
+    }
+    for (const row of fetchable.slice(AUDIT_FETCH_CAP)) {
+      unknown.push({
+        source: row.source,
+        skillId: row.skillId,
+        reason: AUDIT_UNKNOWN_REASON.overCap,
+      });
+    }
+
+    const capped = fetchable.slice(0, AUDIT_FETCH_CAP);
+    for (let i = 0; i < capped.length; i += AUDIT_WAVE_SIZE) {
+      const wave = capped.slice(i, i + AUDIT_WAVE_SIZE);
+      const bodies = await Promise.all(
+        wave.map(async (row) => {
+          try {
+            const res = await fetch(row.skillMdUrl as string);
+            return res.ok ? await res.text() : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (let j = 0; j < wave.length; j++) {
+        const row = wave[j];
+        const raw = bodies[j];
+        if (raw === null) {
+          unknown.push({
+            source: row.source,
+            skillId: row.skillId,
+            reason: AUDIT_UNKNOWN_REASON.fetchFailed,
+          });
+          continue;
+        }
+        const fmName = extractSkillMdName(raw);
+        if (!fmName) {
+          unknown.push({
+            source: row.source,
+            skillId: row.skillId,
+            reason: AUDIT_UNKNOWN_REASON.noFrontmatterName,
+          });
+          continue;
+        }
+        const expected = canonicalSlug(fmName);
+        if (expected === null) {
+          // The name can't be a slug at all, so there is nothing to compare
+          // against — and nothing this row could be re-slugged TO either.
+          unknown.push({
+            source: row.source,
+            skillId: row.skillId,
+            reason: AUDIT_UNKNOWN_REASON.unusableName,
+          });
+          continue;
+        }
+        if (expected !== row.skillId) {
+          mismatches.push({
+            source: row.source,
+            skillId: row.skillId,
+            expectedSkillId: expected,
+            name: row.name,
+            isDelisted: row.isDelisted,
+          });
+        }
       }
     }
     return { checked: rows.length, mismatches, unknown };

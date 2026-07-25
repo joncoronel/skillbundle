@@ -44,6 +44,10 @@ type GitHubPreviewOk = Extract<
 >;
 type GitHubCandidate = Candidate<GitHubPreviewOk>;
 
+type AuditResult = FunctionReturnType<
+  typeof api.githubOnly.auditGitHubOnlySlugs
+>;
+
 export function AddSkillForm() {
   const { data: admin } = useQuery(convexQuery(api.devStats.isAdmin, {}));
   const addSkill = useAction(api.skills.addSkillManually);
@@ -288,9 +292,25 @@ export function AddSkillForm() {
  * than a bulk action behind a button.
  */
 function SlugAuditCard() {
-  const { data, isPending, error } = useQuery(
-    convexQuery(api.githubOnly.auditGitHubOnlySlugs, {}),
-  );
+  const runAudit = useAction(api.githubOnly.auditGitHubOnlySlugs);
+  const [data, setData] = useState<AuditResult | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Button-triggered, not a live query: the frontmatter `name` isn't in the
+  // database (the pipeline strips it before storing the body), so each row
+  // costs a GitHub fetch. That shouldn't fire on every page load.
+  async function run() {
+    setRunning(true);
+    setError(null);
+    try {
+      setData(await runAudit({}));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+    }
+  }
 
   return (
     <Card>
@@ -301,14 +321,16 @@ function SlugAuditCard() {
         <p className="text-muted-foreground">
           skills.sh derives a slug from the SKILL.md&apos;s frontmatter{" "}
           <code>name</code>. A row stored under a different slug can never be
-          adopted, and reconcile skips it.
+          adopted, and reconcile skips it. Re-reads each row&apos;s SKILL.md
+          from GitHub.
         </p>
 
-        {isPending && <p className="text-muted-foreground">Checking…</p>}
+        <Button variant="outline" onClick={run} disabled={running}>
+          {running ? "Checking…" : data ? "Re-run audit" : "Run audit"}
+        </Button>
+
         {error && (
-          <p className="text-destructive">
-            Couldn&apos;t run the audit: {error.message}
-          </p>
+          <p className="text-destructive">Couldn&apos;t run the audit: {error}</p>
         )}
 
         {data && (
