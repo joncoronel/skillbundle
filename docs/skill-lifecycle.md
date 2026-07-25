@@ -197,11 +197,16 @@ Two ways such a row got written, **both now closed at the source**:
 
 So the audit is now looking for history plus insurance against a regression,
 rather than for a live leak. Production audited clean in Jul 2026 (zero
-mismatches). Note the prefix arm itself is untouched for **discovery**, where a
-loose match is the safety net for skills.sh's non-obvious slug derivation and a
-wrong guess costs only a content fetch. The two callers are deliberately
-different; see `matchesSkillIdExactly`'s doc for why stricter-here is safe and
-looser-here would not be.
+mismatches).
+
+The prefix arm itself is untouched for **discovery**, where a loose match is the
+safety net for skills.sh's non-obvious slug derivation. A wrong guess there is not
+free: it binds the wrong file's URL and the content pipeline serves that body. But
+it is **repairable** (tighten the rule, re-run discovery, the row rebinds) and it
+never touches the row's identity, which is what made the same looseness
+unacceptable on the add path. The two callers are deliberately different; see
+`matchesSkillIdExactly`'s doc for why stricter-here is safe and looser-here would
+not be.
 
 Rows it can't judge (no discovered URL, fetch failed, gone (404), no frontmatter
 `name`, a name that isn't sluggable) are reported separately from mismatches —

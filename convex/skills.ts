@@ -1006,10 +1006,16 @@ export const discoverSkillMdUrls = internalAction({
           const nameMatch = text.match(/^name:\s*(.+)$/m);
           if (!nameMatch) continue;
           const name = nameMatch[1].trim().replace(/^["']|["']$/g, "");
-          // Exact matches first (cheap map lookups), then the shared rule from
-          // lib/skillMatch.ts — the same matcher the admin-facing GitHub-only
-          // resolver uses, so preview and post-insert discovery can never bind
-          // different files for the same slug.
+          // Exact matches first (cheap map lookups), then the loose rule from
+          // lib/skillMatch.ts.
+          //
+          // The GitHub-only resolver no longer shares that loose rule (it uses
+          // `matchesSkillIdExactly`), so "same matcher" is no longer why preview
+          // and post-insert discovery can't bind different files for one slug.
+          // The reason now is ORDER: the preview only ever binds on an exact
+          // name, and the two exact lookups on the line below run before the
+          // loose loop, so they reproduce the preview's choice before looseness
+          // gets a say. Keep the exact lookups first if this is ever refactored.
           let skill = remaining.get(name) ?? remaining.get(kebabCase(name));
           if (!skill) {
             for (const [skillId, s] of remaining) {

@@ -43,10 +43,18 @@ skill would unbind. When done, it's a one-line edit in `matchesSkillId`.
 
 Scope note (Jul 2026): this is now **discovery-only**. The GitHub-only add moved
 off this function to `matchesSkillIdExactly`, because it invents a permanent slug
-rather than finding the file behind one skills.sh already assigned. So tightening
-here no longer affects any write path, and the old warning about never tightening
-one caller without the others no longer applies to that caller. What still holds
-is the direction rule: the preview may be stricter than discovery, never looser.
+rather than finding the file behind one skills.sh already assigned. The old
+warning about never tightening one caller without the others no longer applies to
+that caller. What still holds is the direction rule: the preview may be stricter
+than discovery, never looser.
+
+What that does and does not change about the value here. It no longer guards a
+row's **identity**, which is what made this urgent: a bad match can no longer
+write a permanent, unrepairable slug. It still guards a row's **content** —
+discovery calls `updateSkillMdUrl` on a match (`skills.ts`), so a wrong guess
+binds the wrong file and the content pipeline serves that body. Repairable
+(tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
+worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
 ### Submit buttons drop keyboard focus for the length of every request
 

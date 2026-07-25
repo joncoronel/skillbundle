@@ -38,8 +38,11 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
  *
  *   - **Discovery** (skills.ts) has a slug skills.sh already assigned and is
  *     hunting for the file behind it. skills.sh derives slugs from names in
- *     non-obvious ways, so a loose match is the safety net, and a wrong guess
- *     costs a content fetch.
+ *     non-obvious ways, so a loose match is the safety net. A wrong guess there
+ *     binds the wrong file's URL to the row and the content pipeline serves that
+ *     file's body, which is a real bug — but a REPAIRABLE one: tighten the rule,
+ *     re-run discovery, and the row rebinds. Nothing about the row's identity
+ *     changes.
  *   - **The GitHub-only add** (githubOnly.ts) has no upstream slug at all. It is
  *     INVENTING the row's permanent identity from what the caller typed. There
  *     is nothing to be lenient towards, and a wrong guess is unrepairable: type
