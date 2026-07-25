@@ -43,6 +43,34 @@ skill would unbind. When done, it's a one-line edit in `matchesSkillId`; never
 tighten one caller without the others (that's the drift the shared matcher
 exists to prevent).
 
+### Submit buttons drop keyboard focus for the length of every request
+
+Both add-skill surfaces disable the submit button while a step is in flight
+(`disabled={submitBlocked}` in `app/(main)/dev/add-skill/add-skill-form.tsx`,
+`disabled={submitBlocked || authLoading}` in
+`components/add-skill/add-skill-flow.tsx`). A natively disabled element cannot
+hold focus, so the browser drops it to `<body>` on every submit and a keyboard
+user tabs back from the top of the page. One submit can be three sequential
+round trips, so the window is seconds, not milliseconds.
+
+Confirmed in the browser (Jul 2026), on the admin form: focus was on `<body>`
+after a submit settled. It is the same defect the public flow's input already
+works around by using `readOnly` instead of `disabled`, and the same one the
+audit card's two buttons were given `focusableWhenDisabled` for.
+
+The fix looks like that one prop, but is NOT a copy of it: those audit buttons
+sit outside the `<form>` and Base UI forces them to `type="button"`, whereas
+`focusableWhenDisabled` on a real submit button drops the native `disabled`
+attribute that is currently also what stops a second form submit. So it needs
+verifying that `useAddSkillFlow`'s `inFlight` ref latch alone holds under a
+double Enter-press before the prop goes on. Probably fine — the latch exists for
+exactly that and is read synchronously — but "probably" is why this is its own
+change.
+
+Deferred from the confirm-returns PR (Jul 2026): pre-existing on both surfaces,
+outside anything that branch touched, and each late in-scope addition on that
+branch produced a new review finding of its own.
+
 ### Add-skill: re-slug a mis-slugged GitHub-only row
 
 The *detection* half is done — `githubOnlyAudit.auditGitHubOnlySlugs` plus the
