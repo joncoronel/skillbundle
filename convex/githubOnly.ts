@@ -147,9 +147,10 @@ type GitHubSkillResolution =
       // like the slug — i.e. the caller pointed at THIS skill. `"frontmatter"`
       // means the file's own `name` matched it, EXACTLY: since the resolver
       // moved to `matchesSkillIdExactly`, a partial name no longer binds, so
-      // this arm now implies `canonicalSlug(fmName)` already equals the
-      // SEPARATOR-FOLDED typed slug, so the only substitution it can still owe
-      // is a case one — which `aliasCandidate` does fire on, deliberately.
+      // this arm implies `canonicalSlug(fmName)` already equals the
+      // SEPARATOR-FOLDED typed slug — and, since only the name side folds case,
+      // that the slug is all-lowercase. The one substitution it can still owe is
+      // padding: `canonicalSlug` trims and `kebabCase` does not.
       //
       // previewGitHubCore still only trusts the frontmatter name as a slug on
       // the `"dir"` path. That guard is now belt-and-braces for the write, but
@@ -558,8 +559,9 @@ async function previewGitHubCore(
   // Restricted to `matchedBy === "dir"`: only there did the caller point at this
   // exact folder, so its frontmatter name is a statement about the skill they
   // meant. Since the resolver went exact-only, a `"frontmatter"` match implies
-  // the name equals the SEPARATOR-FOLDED typed slug — so a case difference can
-  // still reach here, and must. This gate is belt-and-braces for
+  // the name equals the SEPARATOR-FOLDED typed slug, which also forces the slug
+  // all-lowercase — leaving only padding (`canonicalSlug` trims, `kebabCase` does
+  // not) for this gate to refuse. It is belt-and-braces for
   // the WRITE — but it stays load-bearing for the auto re-add, because
   // `on_skills_sh_as_alias` makes the client re-run the add with no confirm step
   // and nothing inferred may reach an unconfirmed write.

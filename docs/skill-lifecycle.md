@@ -125,7 +125,7 @@ Adopting the alias as a row's **stored identity** is gated harder than merely
 checking it, because a `skillId` is permanent and is also a single URL path
 segment. All four must hold:
 
-- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9._-]+$`
+- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9.-]+$`
   **plus at least one alphanumeric**, so `.`, `..` and `---` are rejected too
   (the charset alone admits them, and `encodeURIComponent` leaves `.` intact,
   so `..` would normalise a segment away in the skills.sh request path).
@@ -135,9 +135,11 @@ segment. All four must hold:
 - The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
   caller pointed at this exact skill. A frontmatter match must never name a
   skill on a write. Since the resolver moved to `matchesSkillIdExactly` this
-  gate is belt-and-braces for the SEPARATOR case (an exact frontmatter match
-  means the name equals the separator-folded typed slug; a CASE difference still
-  reaches `aliasCandidate` and must), and it still governs whether
+  gate is belt-and-braces for most of the write (an exact frontmatter match means
+  the name equals the separator-folded typed slug, which also forces the slug
+  all-lowercase — the `MySkill` → `myskill` adoption happens on the `"dir"` arm,
+  not this one). What it still refuses here is padding: `canonicalSlug` trims and
+  `kebabCase` does not. It also still governs whether
   `on_skills_sh_as_alias` may fire, and that status re-runs the add with no
   confirmation.
 - **Nothing claims the typed slug.** A delisted row there gets RELISTED (free,

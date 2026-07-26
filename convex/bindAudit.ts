@@ -243,6 +243,28 @@ export const auditSkillMdBinds = internalAction({
  *   npx convex run --prod bindAudit:censusSeparatorSlugs '{"cursor":null}'
  *
  * Read-only, CLI-run, and cheap: one paginated table scan, no GitHub calls.
+ *
+ * FIRST RUN (dev, Jul 2026): 23,753 rows, 14 slugs with a folding separator, one
+ * collision — `everyinc/compound-engineering-plugin` holding both
+ * `resolve_pr_parallel` and `resolve-pr-parallel`. Both are delisted with
+ * `skillMdUrl: ""`, so the losing-row hazard has nothing to strand. Production
+ * has not been run.
+ *
+ * TWO THINGS THIS DOES NOT COUNT, either of which the production run should
+ * carry:
+ *
+ *   1. Collisions are detected PER PAGE (see below), so one split across a page
+ *      boundary is missed. Rows for a repo are usually written together, which
+ *      makes the blind spot small rather than zero.
+ *   2. The exact-key collision is not the only widening. Folding the slug side of
+ *      `matchesSkillId`'s PREFIX arm also newly matches across separator styles:
+ *      slug `foo_bar` now claims a file named `Foo Bar Baz`, and slug `foo-bar`
+ *      one named `Foo_Bar Baz` — both false before this branch, both true now.
+ *      (Not because the prefix arm was dead for underscores: the old `kebabCase`
+ *      left `_` in place, so `foo_bar` already matched `Foo_Bar Baz`. What
+ *      changed is that the two styles now cross.) Additive at the matcher, but
+ *      discovery's scan is first-match-wins, so a newly-matching row can take a
+ *      file another row would have had.
  */
 export const censusSeparatorSlugs = internalQuery({
   args: { cursor: v.union(v.string(), v.null()) },

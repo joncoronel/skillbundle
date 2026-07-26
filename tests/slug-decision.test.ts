@@ -13,11 +13,13 @@ import { test, expect, describe } from "vitest";
 import { aliasCandidate, decideSlug } from "../convex/lib/slugDecision";
 
 describe("aliasCandidate — separator folding is not a rename", () => {
-  // Both sides go through `kebabCase` before being compared. Without that, a
-  // typed `foo_bar` whose file is also named `foo_bar` derived the alias
-  // `foo-bar` and adopted it — silently rewriting a PERMANENT identity — and on
-  // the tree-unavailable path refused the add outright, because no folder could
-  // be shown to claim a slug that only differs by punctuation.
+  // The slug side goes through `foldSeparators` — separators only, NOT
+  // `kebabCase`, which would also fold case. Without any folding, a typed
+  // `foo_bar` whose file is also named `foo_bar` derived the alias `foo-bar` and
+  // adopted it — silently rewriting a PERMANENT identity — and on the
+  // tree-unavailable path refused the add outright, because no folder could be
+  // shown to claim a slug that only differs by punctuation. With case folded
+  // too, the `MySkill` case below would stop firing, which is the opposite bug.
   test("no alias when the two differ only by separator", () => {
     expect(
       aliasCandidate({

@@ -62,9 +62,16 @@ export type SlugDecision<TAlias = never> =
  * a permanent slug; now that the resolver matches frontmatter names exactly
  * (`matchesSkillIdExactly`), a `"frontmatter"` match implies the name equals the
  * SEPARATOR-FOLDED typed slug — so for a slug that differs only by `_` vs `-`
- * the check above returns null first and this one is unreachable. A CASE
- * difference still reaches it, which is the point: `MySkill` must adopt
- * `myskill`, because that is the slug skills.sh emits.
+ * the check above returns null first and this one is unreachable. Note a case
+ * difference cannot reach here either: `kebabCase` lowercases and
+ * `foldSeparators` does not, so an exact match forces an all-lowercase slug. The
+ * `MySkill` → `myskill` adoption this gate is often described by happens on the
+ * `"dir"` arm, not this one.
+ *
+ * What the gate still refuses on the `"frontmatter"` arm is padding: `kebabCase`
+ * does not trim and `canonicalSlug` does, so a name `" panel-review "` matches
+ * slug `"-panel-review-"` exactly while canonicalising to `panel-review` — a
+ * real alias, from a file the caller never pointed at.
  *
  * It stays because it is still load-bearing elsewhere: the alias also decides
  * whether `on_skills_sh_as_alias` is returned, and that status makes the client

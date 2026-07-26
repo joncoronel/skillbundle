@@ -44,11 +44,14 @@ describe("canonicalSlug — accepts", () => {
   });
 
   test("dots and digits survive; underscores normalise to dashes", () => {
-    // The charset still PERMITS `_` (a skills.sh slug may contain one), but a
-    // name can no longer produce it: `kebabCase` folds `_` into `-` to match the
-    // CLI's `normalizeSkillName`. This assertion changed deliberately when that
-    // alignment landed — it is the one place the change alters slug GENERATION
-    // rather than just matching, so it is worth failing loudly if reverted.
+    // A canonical slug never contains `_`: `kebabCase` folds it into `-` to match
+    // the CLI's `normalizeSkillName`, and the charset was narrowed to
+    // `[a-z0-9.-]` to stop encoding an invariant nothing could reach.
+    // (`SAFE_SEGMENT` in lib/install-commands.ts still permits `_`, because slugs
+    // also arrive from the sync without passing through here.) This assertion
+    // changed deliberately when that alignment landed — it is the one place the
+    // change alters slug GENERATION rather than just matching, so it is worth
+    // failing loudly if reverted.
     expect(canonicalSlug("next.js_16-beta2")).toBe("next.js-16-beta2");
     expect(canonicalSlug("v2.1.0")).toBe("v2.1.0");
   });
@@ -67,7 +70,7 @@ describe("canonicalSlug — refuses (would write an unroutable row)", () => {
     ["100% Coverage"],
     ["C#"],
     ["émoji ✨"],
-  ])("punctuation outside [a-z0-9._-]: %s", (name) => {
+  ])("punctuation outside [a-z0-9.-]: %s", (name) => {
     expect(canonicalSlug(name)).toBeNull();
   });
 
@@ -150,8 +153,11 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
 
   test("REFUSES surrounding whitespace, keeping the canonicalSlug invariant", () => {
     // Load-bearing: `kebabCase` does not trim but `canonicalSlug` does, so a
-    // padded name matching here would break the property the resolver now
-    // relies on (a frontmatter match implies canonicalSlug(fmName) === slug).
+    // padded name matching here weakens the property the resolver relies on (a
+    // frontmatter match implies canonicalSlug(fmName) === the separator-folded
+    // slug). It is not airtight — fmName " panel-review " still matches slug
+    // "-panel-review-" — which is why `aliasCandidate`'s `matchedBy === "dir"`
+    // gate stays; see convex/lib/slugDecision.ts.
     expect(matchesSkillIdExactly(" panel-review ", "panel-review")).toBe(false);
     expect(canonicalSlug(" panel-review ")).toBe("panel-review");
   });

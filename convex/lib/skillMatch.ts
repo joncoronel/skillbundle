@@ -58,8 +58,12 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
   // SUBSET of this — which the loose/strict framing above assumes, and which
   // `bindAudit` depends on when it judges a bind the binder made. Without it the
   // strict matcher accepted pairs the loose one rejected, and the audit flagged
-  // rows the binder had just bound. Widening only ever adds matches here; it
-  // cannot unbind anything.
+  // rows the binder had just bound.
+  //
+  // Widening only ever adds matches to THIS function — but discovery's scan is
+  // first-match-wins, so a newly-matching row can take a file another row would
+  // otherwise have had. See `censusSeparatorSlugs` (convex/bindAudit.ts) for what
+  // is and is not counted.
   const slug = foldSeparators(skillId);
   return fmName === skillId || kebab === slug || kebab.startsWith(slug);
 }
@@ -124,15 +128,9 @@ export function matchesSkillIdExactly(
   // matched again and the row stored `MySkill` — a slug skills.sh (which emits
   // `myskill`) can never adopt. That is the hole removing the raw-identity arm
   // had closed. Case difference is the signal; separator difference is noise.
-  // Kebab comparison ONLY. A raw `fmName === skillId` arm used to sit in front
-  // of this and quietly reopened the mis-slug hole: a repo `MySkill` with a root
-  // SKILL.md named `MySkill` matched on identity, `canonicalSlug("MySkill")` is
-  // `myskill` which is NOT the typed slug, so the row stored `MySkill` — a slug
-  // skills.sh (which emits `myskill`) can never adopt. Requiring the kebab form
-  // means a match implies `kebabCase(fmName) === skillId`, which is the property
-  // everything downstream reads off this function. A folder match reaches the
-  // same place by a different route: `aliasCandidate` sees the canonical name
-  // differs and adopts or refuses it.
+  //
+  // A folder match reaches the same place by a different route: `aliasCandidate`
+  // sees the canonical name differs and adopts or refuses it.
   return kebabCase(fmName) === foldSeparators(skillId);
 }
 
@@ -147,7 +145,8 @@ export function matchesSkillIdExactly(
  * `SAFE_SEGMENT` in lib/install-commands.ts or the detail page 404s forever
  * and the install command is silently dropped.
  *
- * So anything outside `[a-z0-9._-]` is REJECTED rather than mangled. Two
+ * So anything outside `[a-z0-9.-]` is REJECTED rather than mangled (no `_` —
+ * see the inline comment on the charset). Two
  * reasons it must be a rejection: `kebabCase` only lowercases and collapses
  * `[\s_]+` runs, so `/`, `&`, `(`, `)` and friends survive it intact; and the
  * module comment above is explicit that skills.sh derives slugs "in
