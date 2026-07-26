@@ -891,6 +891,14 @@ export const listSourcesNeedingDiscovery = internalQuery({
   },
 });
 
+/**
+ * How many rows one `updateSkillMdUrls` transaction settles. A source can supply
+ * 500 (the `listSourcesNeedingDiscovery` page cap) and each row costs a get, an
+ * indexed lookup and two patches, so this keeps a transaction comfortably small
+ * rather than sized by whatever the repo happened to contain.
+ */
+const DISCOVERY_WRITE_BATCH = 100;
+
 export const discoverSkillMdUrls = internalAction({
   args: {
     source: v.string(),
@@ -926,8 +934,19 @@ export const discoverSkillMdUrls = internalAction({
     const rawUrlFor = (path: string) =>
       rawGitHubUrl(source, resolvedBranch, path);
 
+    type Update = { docId: Id<"skills">; skillMdUrl: string };
+
+    /** One mutation per chunk, not per row. See `updateSkillMdUrls`. */
+    const writeUpdates = async (updates: Update[]) => {
+      for (let i = 0; i < updates.length; i += DISCOVERY_WRITE_BATCH) {
+        await ctx.runMutation(internal.skills.updateSkillMdUrls, {
+          updates: updates.slice(i, i + DISCOVERY_WRITE_BATCH),
+        });
+      }
+    };
+
     /**
-     * Apply one decision from lib/discoveryPlacement.ts. The only writer.
+     * Apply decisions from lib/discoveryPlacement.ts. The only writer.
      *
      * Deliberate delta: in the tree-unavailable fallback the write used to sit
      * inside the probe's `try`, so a failing mutation was swallowed and the row
@@ -936,24 +955,29 @@ export const discoverSkillMdUrls = internalAction({
      * row stays in the work set for the next sync rather than being recorded as
      * having no file on the strength of a failed write.
      */
-    const applyPlacement = async ({ skill, path }: Placement) => {
-      await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-        docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
-        skillMdUrl: rawUrlFor(path),
-      });
-      matchedSkillIds.add(skill.skillId);
-      matchedPaths.add(path);
+    const applyPlacements = async (placements: readonly Placement[]) => {
+      await writeUpdates(
+        placements.map(({ skill, path }) => ({
+          docId: skill.docId as Id<"skills">,
+          skillMdUrl: rawUrlFor(path),
+        })),
+      );
+      // After the write, so a throw leaves nothing marked matched.
+      for (const { skill, path } of placements) {
+        matchedSkillIds.add(skill.skillId);
+        matchedPaths.add(path);
+      }
     };
 
     /** Whatever neither branch could place is recorded as "no file found". */
     const markRestNotFound = async () => {
       const unmatched = skills.filter((s) => !matchedSkillIds.has(s.skillId));
-      for (const s of unmatched) {
-        await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-          docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
+      await writeUpdates(
+        unmatched.map((s) => ({
+          docId: s.docId as Id<"skills">,
           skillMdUrl: "",
-        });
-      }
+        })),
+      );
       return unmatched.length;
     };
 
@@ -978,7 +1002,7 @@ export const discoverSkillMdUrls = internalAction({
           }
         },
       });
-      for (const placement of placements) await applyPlacement(placement);
+      await applyPlacements(placements);
       await markRestNotFound();
       return;
     }
@@ -996,9 +1020,7 @@ export const discoverSkillMdUrls = internalAction({
     // are in docs/skill-lifecycle.md, under "How a skill's SKILL.md gets found".
     // The one-line version: a SKILL.md's `name` does not reliably identify its
     // owner, so disagreement with the slug is normal rather than evidence.
-    for (const placement of planDirPlacements(skills, skillMdByDir)) {
-      await applyPlacement(placement);
-    }
+    await applyPlacements(planDirPlacements(skills, skillMdByDir));
 
     // Pass 2: for unmatched skills, fetch unmatched SKILL.md files and check
     // the frontmatter `name` field (skills.sh sometimes derives skillIds from
@@ -1035,9 +1057,7 @@ export const discoverSkillMdUrls = internalAction({
         });
       },
     });
-    for (const placement of namePlacements) {
-      await applyPlacement(placement);
-    }
+    await applyPlacements(namePlacements);
 
     const notFound = await markRestNotFound();
     console.log(
@@ -1073,32 +1093,47 @@ export const clearDiscoveryForWellKnown = internalMutation({
   },
 });
 
-export const updateSkillMdUrl = internalMutation({
+/**
+ * Record what discovery found, for a batch of rows.
+ *
+ * Takes an array because one `discoverSkillMdUrls` invocation settles up to 500
+ * rows of a single source, each written exactly once with no cross-row dependency
+ * — so a mutation per row was 500 transactions and ~2000 document operations for
+ * work that has no ordering constraint at all. The caller chunks
+ * (`DISCOVERY_WRITE_BATCH`) rather than passing all 500, to stay well clear of the
+ * per-transaction ceilings.
+ *
+ * `skillMdUrl: ""` means "looked and found nothing", which is why the empty string
+ * is a value here and not a missing field.
+ */
+export const updateSkillMdUrls = internalMutation({
   args: {
-    docId: v.id("skills"),
-    skillMdUrl: v.string(),
+    updates: v.array(
+      v.object({ docId: v.id("skills"), skillMdUrl: v.string() }),
+    ),
   },
-  handler: async (ctx, { docId, skillMdUrl }) => {
-    const hasUrl = skillMdUrl !== "";
+  handler: async (ctx, { updates }) => {
     const now = Date.now();
-    const skill = await ctx.db.get(docId);
-    const newFailCount = hasUrl ? 0 : (skill?.discoveryFailCount ?? 0) + 1;
-    // Discovery failure surfaces the same "Install may fail" badge as
-    // content-fetch failure: the user-facing reality is identical (we have
-    // no SKILL.md, so `npx skills add` may install nothing useful), and the
-    // existing badge logic in components/skill-status-badge.tsx already
-    // keys off hasContentFetchError. Without this, low-install curated
-    // skills whose SKILL.md was deleted upstream (or never existed) render
-    // a bare skill page with no warning — see the Bitwarden case.
-    await ctx.db.patch(docId, {
-      skillMdUrl,
-      needsDiscovery: false,
-      needsContentFetch: hasUrl,
-      discoveryFailCount: newFailCount,
-      hasContentFetchError: !hasUrl,
-      ...(!hasUrl && { contentFetchedAt: now }),
-    });
-    if (skill) {
+    for (const { docId, skillMdUrl } of updates) {
+      const hasUrl = skillMdUrl !== "";
+      const skill = await ctx.db.get(docId);
+      const newFailCount = hasUrl ? 0 : (skill?.discoveryFailCount ?? 0) + 1;
+      // Discovery failure surfaces the same "Install may fail" badge as
+      // content-fetch failure: the user-facing reality is identical (we have
+      // no SKILL.md, so `npx skills add` may install nothing useful), and the
+      // existing badge logic in components/skill-status-badge.tsx already
+      // keys off hasContentFetchError. Without this, low-install curated
+      // skills whose SKILL.md was deleted upstream (or never existed) render
+      // a bare skill page with no warning — see the Bitwarden case.
+      await ctx.db.patch(docId, {
+        skillMdUrl,
+        needsDiscovery: false,
+        needsContentFetch: hasUrl,
+        discoveryFailCount: newFailCount,
+        hasContentFetchError: !hasUrl,
+        ...(!hasUrl && { contentFetchedAt: now }),
+      });
+      if (!skill) continue;
       const summary = await ctx.db
         .query("skillSummaries")
         .withIndex("by_source_skillId", (q) =>

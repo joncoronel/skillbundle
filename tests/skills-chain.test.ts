@@ -19,6 +19,7 @@
  */
 import { vi, test, expect, beforeEach } from "vitest";
 import { internal } from "../convex/_generated/api";
+import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
 
 beforeEach(() => {
@@ -244,7 +245,84 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
   expect(getSkillSyncData).toHaveBeenCalledWith("example.com", "needs-fetch");
 });
 
-test("updateSkillMdUrl: discovery failure sets hasContentFetchError on both rows", async () => {
+test("updateSkillMdUrls: settles a mixed batch in one transaction", async () => {
+  // The reason this mutation takes an array. One discovery invocation covers up
+  // to 500 rows of a single source and previously spent one transaction each.
+  // A batch mixes found and not-found rows, so this asserts they do not bleed
+  // into one another — the `now` timestamp and the fail-count are computed per
+  // row, and a shared one would set `contentFetchedAt` on the found row too.
+  const t = makeTest();
+  const now = Date.now();
+
+  const ids = await t.run(async (ctx) => {
+    const out: Record<string, Id<"skills">> = {};
+    for (const skillId of ["found-one", "missing-one", "found-two"]) {
+      const id = await ctx.db.insert("skills", {
+        source: "acme/skills",
+        skillId,
+        name: skillId,
+        installs: 1,
+        leaderboard: "curated",
+        lastSynced: now,
+        lastSeenInApi: now,
+        isDelisted: false,
+        needsDiscovery: true,
+        needsContentFetch: false,
+      });
+      await ctx.db.insert("skillSummaries", {
+        source: "acme/skills",
+        skillId,
+        name: skillId,
+        installs: 1,
+        lastSeenInApi: now,
+        skillDocId: id,
+        isDelisted: false,
+        needsDiscovery: true,
+        needsContentFetch: false,
+      });
+      out[skillId] = id;
+    }
+    return out;
+  });
+
+  await t.mutation(internal.skills.updateSkillMdUrls, {
+    updates: [
+      { docId: ids["found-one"], skillMdUrl: "https://raw.example/one" },
+      { docId: ids["missing-one"], skillMdUrl: "" },
+      { docId: ids["found-two"], skillMdUrl: "https://raw.example/two" },
+    ],
+  });
+
+  await t.run(async (ctx) => {
+    for (const skillId of ["found-one", "found-two"]) {
+      const skill = await ctx.db.get(ids[skillId]);
+      expect(skill!.needsDiscovery).toBe(false);
+      expect(skill!.needsContentFetch).toBe(true);
+      expect(skill!.hasContentFetchError).toBe(false);
+      expect(skill!.discoveryFailCount).toBe(0);
+      // Must NOT be stamped — that is the not-found row's marker.
+      expect(skill!.contentFetchedAt).toBeUndefined();
+    }
+    const missing = await ctx.db.get(ids["missing-one"]);
+    expect(missing!.skillMdUrl).toBe("");
+    expect(missing!.hasContentFetchError).toBe(true);
+    expect(missing!.discoveryFailCount).toBe(1);
+    expect(missing!.contentFetchedAt).toBeGreaterThan(0);
+
+    // Both tables move together, for every row in the batch.
+    const summaries = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) => q.eq("source", "acme/skills"))
+      .collect();
+    expect(summaries).toHaveLength(3);
+    expect(summaries.every((x) => x.needsDiscovery === false)).toBe(true);
+    expect(
+      summaries.filter((x) => x.hasSkillMdUrl === true).map((x) => x.skillId).sort(),
+    ).toEqual(["found-one", "found-two"]);
+  });
+});
+
+test("updateSkillMdUrls: discovery failure sets hasContentFetchError on both rows", async () => {
   const t = makeTest();
 
   // Pre-seed a GitHub-source row in the state it'd be in right after a
@@ -281,9 +359,8 @@ test("updateSkillMdUrl: discovery failure sets hasContentFetchError on both rows
 
   // Simulate the failure-callback that discoverSkillMdUrls makes when the
   // GitHub Tree walk turns up no SKILL.md anywhere.
-  await t.mutation(internal.skills.updateSkillMdUrl, {
-    docId: skillDocId,
-    skillMdUrl: "",
+  await t.mutation(internal.skills.updateSkillMdUrls, {
+    updates: [{ docId: skillDocId, skillMdUrl: "" }],
   });
 
   await t.run(async (ctx) => {
@@ -309,7 +386,7 @@ test("updateSkillMdUrl: discovery failure sets hasContentFetchError on both rows
   });
 });
 
-test("updateSkillMdUrl: rediscovery success clears hasContentFetchError on both rows", async () => {
+test("updateSkillMdUrls: rediscovery success clears hasContentFetchError on both rows", async () => {
   const t = makeTest();
 
   // Pre-seed a row in the "previously failed" state: error flag set, no URL.
@@ -349,9 +426,14 @@ test("updateSkillMdUrl: rediscovery success clears hasContentFetchError on both 
   });
 
   // Upstream put the SKILL.md back; discoverSkillMdUrls now finds it.
-  await t.mutation(internal.skills.updateSkillMdUrl, {
-    docId: skillDocId,
-    skillMdUrl: "https://raw.githubusercontent.com/example/repo/main/SKILL.md",
+  await t.mutation(internal.skills.updateSkillMdUrls, {
+    updates: [
+      {
+        docId: skillDocId,
+        skillMdUrl:
+          "https://raw.githubusercontent.com/example/repo/main/SKILL.md",
+      },
+    ],
   });
 
   await t.run(async (ctx) => {
