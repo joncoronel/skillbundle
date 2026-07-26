@@ -45,6 +45,7 @@ import {
   withTransientRetry,
 } from "./lib/skillsApi";
 import { canonicalSlug, matchesSkillIdExactly } from "./lib/skillMatch";
+import { probePathsFor } from "./lib/discoveryPlacement";
 import { aliasCandidate, decideSlug } from "./lib/slugDecision";
 import {
   GITHUB_LEADERBOARD,
@@ -254,14 +255,21 @@ async function resolveGitHubSkillMd(
   const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
   // Tree unavailable (too large / rate limited / transient) or truncated:
   // don't claim absence — fall back to probing the conventional layouts
-  // directly, the same escape hatch discoverSkillMdUrls uses. All three
-  // probes run concurrently; results are evaluated in priority order.
+  // directly, the same escape hatch discoverSkillMdUrls uses. All probes run
+  // concurrently; results are evaluated in priority order.
+  //
+  // The list comes from `probePathsFor` rather than being spelled again here.
+  // These two paths must bind the SAME file for the same slug
+  // (convex/lib/skillMatch.ts) and this side is the UNREPAIRABLE one — a wrong
+  // bind writes a permanent slug — so a shared decision expressed twice is the
+  // exact shape that let them drift before.
+  //
+  // A slug that cannot be a safe path segment yields just `SKILL.md`, so the walk
+  // below still runs — and the root arm makes that file earn the match through
+  // `matchesSkillIdExactly`, which is what keeps an odd slug from resolving to
+  // whatever happens to sit in the repo root.
   if (!tree || tree === NOT_MODIFIED || tree.truncated) {
-    const probePaths = [
-      `skills/${skillId}/SKILL.md`,
-      `.claude/skills/${skillId}/SKILL.md`,
-      "SKILL.md",
-    ];
+    const probePaths = probePathsFor(skillId);
     const bodies = await Promise.all(
       probePaths.map((path) => fetchRawText(rawUrl(meta.defaultBranch, path))),
     );

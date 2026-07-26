@@ -27,30 +27,42 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
-### Skill discovery: extract the placement decisions so they can be tested
+### Discovery: batch the per-row `updateSkillMdUrl` writes
 
-`discoverSkillMdUrls` (`convex/skills.ts`) decides which SKILL.md a row is named
-after, in three ordered stages (folder name, exact names across all candidates,
-loose rule over the rest) plus a `rejected` set that stops a file pass 1 refused
-from being handed back by pass 2. **None of it is reachable by a test.** Deleting
-the `rejected` set entirely leaves the suite green.
+`discoverSkillMdUrls` writes one row per `ctx.runMutation`, awaited serially, from
+all three placement paths. One invocation covers up to 500 rows of a single source,
+each written exactly once with no cross-row dependency, and each write does a
+`db.get`, an indexed `.unique()` on `skillSummaries` and two `patch`es — so up to
+500 transactions and ~2000 document ops for work that has no ordering constraint.
 
-That is not hypothetical. A panel round found a pass-1 guard was a no-op in its own
-motivating case, and a later round found a slice-window bug in the exact phase.
-Both lived inside those untested blocks. Then `bindAudit.ts` measured the guard
-against production and it was reverted entirely — 12 false positives, zero true
-ones. Three rounds of review and a revert, on code no test could reach.
+Pre-existing, but now cheap to fix: since the placement extraction (Jul 2026) every
+path produces a `Placement[]` before any write happens, so `applyPlacement` is the
+single seam. Add `internal.skills.updateSkillMdUrls` taking an array and loop inside
+the mutation, ~100 per batch to stay well under the per-transaction ceilings.
 
-The shape that works here already exists: `convex/lib/slugDecision.ts` is pure and
-unit-tested precisely because its refusal branch can otherwise only be reached by
-making GitHub's tree API fail mid-add. Do the same — a pure function over
-`(ordered candidate paths, slugs, names)` returning the placement, and one over
-`(pathHint, skillId, fmName)` for the resolver's hinted shortcut.
+Not urgent — the action is dominated by network waits, not by these writes.
 
-Worth doing BEFORE the next change in this area, not after. Deferred from the
-exact-match branch (Jul 2026) only because it would have meant restructuring code
-that had already been restructured twice in one sitting, on top of two blocker
-fixes.
+### Resolver: extract the hinted shortcut so it can be tested too
+
+The bigger half of this entry is DONE (Jul 2026): `discoverSkillMdUrls`'s placement
+decisions now live in `convex/lib/discoveryPlacement.ts`, covered by
+`tests/discovery-placement.test.ts`. The module decides — including how many bodies
+to read, through an injected `NameReader` — and the action supplies the reads and
+does the writes. Twelve deliberate mutations of the module were checked to confirm
+the tests fail when the behaviour breaks (phase order, either guard, the loop's
+early cut, pass 1 folding separators, the probe order and its `break`, the slug
+charset), plus one deliberately equivalent mutation that still passes as a control.
+
+What is still untested is `resolveGitHubSkillMd` in `convex/githubOnly.ts`, whose
+own placement decision — which candidate the `path` hint from a pasted URL
+promotes, and how that interacts with the two-phase order — is reachable only by
+making GitHub's tree API answer in a particular shape mid-add. Same treatment: a
+pure function over `(pathHint, orderedCandidates, skillId, names)` returning the
+choice.
+
+Lower urgency than the discovery half was, because the hint only reorders
+candidates within a phase and cannot change WHICH rule matched. Worth doing before
+the next change to the resolver.
 
 ### Split convex/githubOnly.ts (over the 1000-line threshold again)
 

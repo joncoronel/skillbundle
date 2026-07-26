@@ -29,6 +29,7 @@ import type * as leaderboards from "../leaderboards.js";
 import type * as lib_appDay from "../lib/appDay.js";
 import type * as lib_clerkGithub from "../lib/clerkGithub.js";
 import type * as lib_detailRefresh from "../lib/detailRefresh.js";
+import type * as lib_discoveryPlacement from "../lib/discoveryPlacement.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_github from "../lib/github.js";
 import type * as lib_githubQuota from "../lib/githubQuota.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "lib/appDay": typeof lib_appDay;
   "lib/clerkGithub": typeof lib_clerkGithub;
   "lib/detailRefresh": typeof lib_detailRefresh;
+  "lib/discoveryPlacement": typeof lib_discoveryPlacement;
   "lib/embeddings": typeof lib_embeddings;
   "lib/github": typeof lib_github;
   "lib/githubQuota": typeof lib_githubQuota;

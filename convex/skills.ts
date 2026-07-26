@@ -38,7 +38,12 @@ import {
   parseSkillMdName,
   rawGitHubUrl,
 } from "./lib/github";
-import { matchesSkillId, matchesSkillIdExactly } from "./lib/skillMatch";
+import type { Placement } from "./lib/discoveryPlacement";
+import {
+  planDirPlacements,
+  planNamePlacements,
+  planProbePlacements,
+} from "./lib/discoveryPlacement";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 import { getCurrentUser } from "./users";
@@ -886,17 +891,6 @@ export const listSourcesNeedingDiscovery = internalQuery({
   },
 });
 
-/**
- * Pass-1 verification downloads run concurrently in waves of this size. Pass 1
- * used to fetch nothing at all (it read only the tree), so this is new cost:
- * one raw request per folder-matched skill. It buys the check that the file a
- * folder name points at actually belongs to that skill. Cheap in the ways that
- * matter — raw.githubusercontent is CDN-backed and outside the GitHub API rate
- * limit, and the content pipeline downloads these same files moments later
- * anyway.
- */
-const DISCOVERY_WAVE_SIZE = 10;
-
 export const discoverSkillMdUrls = internalAction({
   args: {
     source: v.string(),
@@ -927,39 +921,32 @@ export const discoverSkillMdUrls = internalAction({
     const tree = treeResult === NOT_MODIFIED ? null : treeResult;
     const resolvedBranch = tree?.branch ?? defaultBranch;
 
-    // Fallback: tree fetch failed (404 / 409 too large / rate limited). Try
-    // direct path guessing for each skill.
-    if (!tree) {
-      console.log(
-        `Could not fetch tree for ${source} — trying direct path guessing`,
-      );
-      const matchedSkillIds = new Set<string>();
-      for (const s of skills) {
-        const paths = [
-          `skills/${s.skillId}/SKILL.md`,
-          `.claude/skills/${s.skillId}/SKILL.md`,
-          `SKILL.md`,
-        ];
-        for (const path of paths) {
-          const rawUrl = rawGitHubUrl(source, resolvedBranch, path);
-          // HEAD, not GET: this only needs to know the file exists. It briefly
-          // fetched bodies to run the same name check pass 1 did; that check is
-          // gone (see pass 1) and with it the reason to transfer a body here.
-          try {
-            const res = await fetch(rawUrl, { method: "HEAD" });
-            if (res.ok) {
-              await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-                docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-                skillMdUrl: rawUrl,
-              });
-              matchedSkillIds.add(s.skillId);
-              break;
-            }
-          } catch {
-            continue;
-          }
-        }
-      }
+    const matchedSkillIds = new Set<string>();
+    const matchedPaths = new Set<string>();
+    const rawUrlFor = (path: string) =>
+      rawGitHubUrl(source, resolvedBranch, path);
+
+    /**
+     * Apply one decision from lib/discoveryPlacement.ts. The only writer.
+     *
+     * Deliberate delta: in the tree-unavailable fallback the write used to sit
+     * inside the probe's `try`, so a failing mutation was swallowed and the row
+     * fell through to "unfound". Now only the probe is guarded and a write throw
+     * aborts the invocation — which is what pass 1 and pass 2 always did, and the
+     * row stays in the work set for the next sync rather than being recorded as
+     * having no file on the strength of a failed write.
+     */
+    const applyPlacement = async ({ skill, path }: Placement) => {
+      await ctx.runMutation(internal.skills.updateSkillMdUrl, {
+        docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
+        skillMdUrl: rawUrlFor(path),
+      });
+      matchedSkillIds.add(skill.skillId);
+      matchedPaths.add(path);
+    };
+
+    /** Whatever neither branch could place is recorded as "no file found". */
+    const markRestNotFound = async () => {
       const unmatched = skills.filter((s) => !matchedSkillIds.has(s.skillId));
       for (const s of unmatched) {
         await ctx.runMutation(internal.skills.updateSkillMdUrl, {
@@ -967,6 +954,32 @@ export const discoverSkillMdUrls = internalAction({
           skillMdUrl: "",
         });
       }
+      return unmatched.length;
+    };
+
+    // Fallback: tree fetch failed (404 / 409 too large / rate limited). Guess the
+    // conventional paths per skill; `planProbePlacements` owns the priority order
+    // and the first-hit rule.
+    if (!tree) {
+      console.log(
+        `Could not fetch tree for ${source} — trying direct path guessing`,
+      );
+      const placements = await planProbePlacements({
+        skills,
+        // HEAD, not GET: this only needs to know the file exists. It briefly
+        // fetched bodies to run the same name check pass 1 did; that check is
+        // gone (see pass 1) and with it the reason to transfer a body here.
+        probe: async (path) => {
+          try {
+            const res = await fetch(rawUrlFor(path), { method: "HEAD" });
+            return res.ok;
+          } catch {
+            return false;
+          }
+        },
+      });
+      for (const placement of placements) await applyPlacement(placement);
+      await markRestNotFound();
       return;
     }
 
@@ -977,44 +990,14 @@ export const discoverSkillMdUrls = internalAction({
       tree.entries,
     );
 
-    // Pass 1: directory name matches the skillId. Bound from the tree, without
-    // opening the file.
-    //
-    // A verification step lived here briefly (Jul 2026): open each candidate and
-    // refuse the bind if its own `name` was some OTHER skill's slug, to catch a
-    // folder holding the wrong skill's file. It was reverted after being
-    // measured, and the measurement is the reason — see `bindAudit.ts`, which
-    // asks the same question over the whole catalog instead.
-    //
-    // Across 13,080 judged production rows: ZERO confirmed wrong binds, and 12
-    // rows where that check would have refused a healthy one. The clearest is
-    // `nextlevelbuilder/ui-ux-pro-max-skill`, which has two folders named
-    // `slides` holding two different skills, and BOTH files call themselves
-    // `slides`. The check would have concluded that the file under
-    // `.claude/skills/slides` belongs to the row `slides` and detached it from
-    // `ckm:slides` — a row with ~32k installs — on the strength of a name that
-    // does not actually identify its owner.
-    //
-    // The lesson worth keeping: a SKILL.md's `name` is not a reliable identity
-    // claim. skills.sh derives slugs from it in ways `kebabCase` cannot
-    // reproduce (prefixes stripped, punctuation collapsed, or the slug taken
-    // from the folder instead), and repos reuse the same name across folders. So
-    // a mismatch between name and slug is normal — 49 of 13,080 judged rows in
-    // the latest production run (Jul 2026, after the `kebabCase` underscore
-    // alignment) — and is not evidence that the wrong file is attached.
-    const matchedSkillIds = new Set<string>();
-    const matchedPaths = new Set<string>();
-    const rawUrlFor = (path: string) =>
-      rawGitHubUrl(source, resolvedBranch, path);
-    for (const s of skills) {
-      const path = skillMdByDir.get(s.skillId);
-      if (!path) continue;
-      await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-        docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-        skillMdUrl: rawUrlFor(path),
-      });
-      matchedSkillIds.add(s.skillId);
-      matchedPaths.add(path);
+    // Pass 1: directory name matches the skillId, bound from the tree without
+    // opening the file. Do NOT add a name check here — one was tried and reverted
+    // in Jul 2026 after production measurement, and the reasoning plus the numbers
+    // are in docs/skill-lifecycle.md, under "How a skill's SKILL.md gets found".
+    // The one-line version: a SKILL.md's `name` does not reliably identify its
+    // owner, so disagreement with the slug is normal rather than evidence.
+    for (const placement of planDirPlacements(skills, skillMdByDir)) {
+      await applyPlacement(placement);
     }
 
     // Pass 2: for unmatched skills, fetch unmatched SKILL.md files and check
@@ -1027,111 +1010,38 @@ export const discoverSkillMdUrls = internalAction({
       (path) => !matchedPaths.has(path),
     );
 
-    if (unmatchedSkills.length > 0 && unmatchedMdPaths.length > 0) {
-      const remaining = new Map(unmatchedSkills.map((s) => [s.skillId, s]));
-      const bind = async (
-        skill: { docId: string; skillId: string },
-        path: string,
-      ) => {
-        await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-          docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
-          skillMdUrl: rawUrlFor(path),
-        });
-        matchedSkillIds.add(skill.skillId);
-        matchedPaths.add(path);
-        remaining.delete(skill.skillId);
-      };
-
-      // Exact before loose ACROSS FILES, not within one.
-      //
-      // This used to be one loop per path with both rules inside it, so the
-      // loose arm on an early file beat the exact arm on a later one. That is
-      // what made the preview and this pass diverge once the preview went
-      // exact-only: given `a-sdk/SKILL.md` (name `vercel-ai-sdk`) before
-      // `z-ai/SKILL.md` (name `vercel-ai`), a preview for slug `vercel-ai`
-      // vouches for z-ai while this pass bound a-sdk on the prefix rule. The
-      // row then served a file the confirm card never showed.
-      //
-      // So: fetch a wave, try EXACT on this wave's entries, and only once every
-      // candidate has had its exact chance does the loose pass run. The loose
-      // pass costs no extra requests because it reuses the bodies this loop
-      // already read.
-      //
-      // The cost that DID change: a skill matching only loosely no longer stops
-      // the walk, because every candidate must be read before the loose phase
-      // can start. Exact matches still exit early, and the worst case (nothing
-      // matches) is what it always was. Bounded either way — 500 skills of one
-      // source per invocation, `unmatchedMdPaths` is repo-bounded, and these are
-      // now fetched 10-wide where they used to be serial, so wall-clock likely
-      // improved even where request count rose.
-      const named: { path: string; name: string }[] = [];
-      for (let i = 0; i < unmatchedMdPaths.length; i += DISCOVERY_WAVE_SIZE) {
-        if (remaining.size === 0) break;
-        const wave = unmatchedMdPaths.slice(i, i + DISCOVERY_WAVE_SIZE);
-        // Where this wave's entries START in `named`. Length-tracked, because
-        // `named` only receives candidates that fetched AND carried a `name:`,
-        // so `slice(-wave.length)` reached back into earlier waves whenever a
-        // wave contributed fewer entries than it had paths.
-        const startOfWave = named.length;
+    // The whole decision — exact across every candidate before any loose one,
+    // each path and each row spent at most once, and how many bodies to read —
+    // lives in `planNamePlacements` (lib/discoveryPlacement.ts), where it is
+    // unit-tested. All that is left here is the read itself.
+    //
+    // Cost: a row matching only loosely does not stop the walk, because every
+    // candidate must be read before the loose phase can start; exact matches do
+    // still cut it short. Bounded either way — 500 rows of one source per
+    // invocation, `unmatchedMdPaths` is repo-bounded, and reads go 10-wide.
+    const namePlacements = await planNamePlacements({
+      remaining: unmatchedSkills,
+      candidates: unmatchedMdPaths,
+      usedPaths: matchedPaths,
+      readNames: async (paths) => {
         const bodies = await Promise.all(
-          wave.map((path) => fetchRawText(rawUrlFor(path))),
+          paths.map((path) => fetchRawText(rawUrlFor(path))),
         );
-        for (let j = 0; j < wave.length; j++) {
+        return paths.map((path, j) => {
           const body = bodies[j];
-          if (body === null) continue;
+          if (body === null) return null;
           const name = parseSkillMdName(body);
-          if (name) named.push({ path: wave[j], name });
-        }
-        for (const { path, name } of named.slice(startOfWave)) {
-          if (remaining.size === 0) break;
-          // Guard the path as the loose phase does. Without it a re-offered path
-          // could bind twice across waves; the old per-path loop made that
-          // structurally impossible and this restores the property.
-          if (matchedPaths.has(path)) continue;
-          for (const [skillId, skill] of remaining) {
-            // `matchesSkillIdExactly`, not two map lookups. The lookups were
-            // `remaining.get(name) ?? remaining.get(kebabCase(name))`, whose
-            // first arm is the raw-identity comparison deliberately removed from
-            // the shared matcher (it does not imply `kebabCase(name) === slug`).
-            // Worse, `??` short-circuits: a rejected pair on the identity arm
-            // skipped the kebab arm entirely and stranded the path. The
-            // invariant that this phase reaches whatever the strict preview
-            // binds has to rest on the preview's own comparator, not a
-            // second-guess at it.
-            if (matchesSkillIdExactly(name, skillId)) {
-              await bind(skill, path);
-              break;
-            }
-          }
-        }
-      }
-
-      // Loose pass, over what the exact pass left. Reached only when no exact
-      // match existed, which is also when every candidate has been read.
-      for (const { path, name } of named) {
-        if (remaining.size === 0) break;
-        if (matchedPaths.has(path)) continue;
-        for (const [skillId, skill] of remaining) {
-          if (matchesSkillId(name, skillId)) {
-            await bind(skill, path);
-            break;
-          }
-        }
-      }
+          return name ? { path, name } : null;
+        });
+      },
+    });
+    for (const placement of namePlacements) {
+      await applyPlacement(placement);
     }
 
-    // Mark the rest as not found.
-    const finalUnmatched = skills.filter(
-      (s) => !matchedSkillIds.has(s.skillId),
-    );
-    for (const s of finalUnmatched) {
-      await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-        docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-        skillMdUrl: "",
-      });
-    }
+    const notFound = await markRestNotFound();
     console.log(
-      `${source}: ${matchedSkillIds.size} matched, ${finalUnmatched.length} not found`,
+      `${source}: ${matchedSkillIds.size} matched, ${notFound} not found`,
     );
   },
 });
