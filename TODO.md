@@ -27,30 +27,26 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
-### Skill discovery: extract the placement decisions so they can be tested
+### Resolver: extract the hinted shortcut so it can be tested too
 
-`discoverSkillMdUrls` (`convex/skills.ts`) decides which SKILL.md a row is named
-after, in three ordered stages (folder name, exact names across all candidates,
-loose rule over the rest) plus a `rejected` set that stops a file pass 1 refused
-from being handed back by pass 2. **None of it is reachable by a test.** Deleting
-the `rejected` set entirely leaves the suite green.
+The bigger half of this entry is DONE (Jul 2026): `discoverSkillMdUrls`'s placement
+decisions now live in `convex/lib/discoveryPlacement.ts`, pure and covered by
+`tests/discovery-placement.test.ts`. The action fetches and writes; the module
+decides. Five deliberate mutations of that module were checked to make sure the
+tests actually fail when the behaviour breaks — swapping the phase order, dropping
+the `allNamedRead` gate, dropping either the path or the skill guard, and making
+pass 1 fold separators instead of matching the folder literally.
 
-That is not hypothetical. A panel round found a pass-1 guard was a no-op in its own
-motivating case, and a later round found a slice-window bug in the exact phase.
-Both lived inside those untested blocks. Then `bindAudit.ts` measured the guard
-against production and it was reverted entirely — 12 false positives, zero true
-ones. Three rounds of review and a revert, on code no test could reach.
+What is still untested is `resolveGitHubSkillMd` in `convex/githubOnly.ts`, whose
+own placement decision — which candidate the `path` hint from a pasted URL
+promotes, and how that interacts with the two-phase order — is reachable only by
+making GitHub's tree API answer in a particular shape mid-add. Same treatment: a
+pure function over `(pathHint, orderedCandidates, skillId, names)` returning the
+choice.
 
-The shape that works here already exists: `convex/lib/slugDecision.ts` is pure and
-unit-tested precisely because its refusal branch can otherwise only be reached by
-making GitHub's tree API fail mid-add. Do the same — a pure function over
-`(ordered candidate paths, slugs, names)` returning the placement, and one over
-`(pathHint, skillId, fmName)` for the resolver's hinted shortcut.
-
-Worth doing BEFORE the next change in this area, not after. Deferred from the
-exact-match branch (Jul 2026) only because it would have meant restructuring code
-that had already been restructured twice in one sitting, on top of two blocker
-fixes.
+Lower urgency than the discovery half was, because the hint only reorders
+candidates within a phase and cannot change WHICH rule matched. Worth doing before
+the next change to the resolver.
 
 ### Split convex/githubOnly.ts (over the 1000-line threshold again)
 

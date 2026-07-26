@@ -38,7 +38,12 @@ import {
   parseSkillMdName,
   rawGitHubUrl,
 } from "./lib/github";
-import { matchesSkillId, matchesSkillIdExactly } from "./lib/skillMatch";
+import type { NamedCandidate, Placement } from "./lib/discoveryPlacement";
+import {
+  planDirPlacements,
+  planNamePlacements,
+  probePathsFor,
+} from "./lib/discoveryPlacement";
 import { MAX_DISCOVERY_FAILURES, assertAdmin } from "./devStats";
 import { parseSkillInput } from "../lib/parse-skill-input";
 import { getCurrentUser } from "./users";
@@ -935,12 +940,7 @@ export const discoverSkillMdUrls = internalAction({
       );
       const matchedSkillIds = new Set<string>();
       for (const s of skills) {
-        const paths = [
-          `skills/${s.skillId}/SKILL.md`,
-          `.claude/skills/${s.skillId}/SKILL.md`,
-          `SKILL.md`,
-        ];
-        for (const path of paths) {
+        for (const path of probePathsFor(s.skillId)) {
           const rawUrl = rawGitHubUrl(source, resolvedBranch, path);
           // HEAD, not GET: this only needs to know the file exists. It briefly
           // fetched bodies to run the same name check pass 1 did; that check is
@@ -1006,15 +1006,19 @@ export const discoverSkillMdUrls = internalAction({
     const matchedPaths = new Set<string>();
     const rawUrlFor = (path: string) =>
       rawGitHubUrl(source, resolvedBranch, path);
-    for (const s of skills) {
-      const path = skillMdByDir.get(s.skillId);
-      if (!path) continue;
+
+    /** Apply one decision from lib/discoveryPlacement.ts. The only writer. */
+    const applyPlacement = async ({ skill, path }: Placement) => {
       await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-        docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
+        docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
         skillMdUrl: rawUrlFor(path),
       });
-      matchedSkillIds.add(s.skillId);
+      matchedSkillIds.add(skill.skillId);
       matchedPaths.add(path);
+    };
+
+    for (const placement of planDirPlacements(skills, skillMdByDir)) {
+      await applyPlacement(placement);
     }
 
     // Pass 2: for unmatched skills, fetch unmatched SKILL.md files and check
@@ -1028,51 +1032,28 @@ export const discoverSkillMdUrls = internalAction({
     );
 
     if (unmatchedSkills.length > 0 && unmatchedMdPaths.length > 0) {
+      // The DECISION — exact across every candidate before any loose one, each
+      // path spent at most once — lives in `planNamePlacements`
+      // (lib/discoveryPlacement.ts), which is pure and unit-tested. What stays
+      // here is the part that talks to the network: download a wave, parse the
+      // names out of it, hand everything read so far to the planner, apply what
+      // it decides.
+      //
+      // `allNamedRead` is what gates the loose phase, so it must be true exactly
+      // on the last wave: until then a later file might still claim a slug
+      // exactly, and the loose rule must not get in first.
+      //
+      // Cost note, unchanged by the extraction: a skill matching only loosely
+      // does not stop the walk, because every candidate has to be read before
+      // the loose phase can start. Exact matches still exit early via
+      // `remaining`. Bounded either way — 500 skills of one source per
+      // invocation, `unmatchedMdPaths` is repo-bounded, and the downloads go
+      // 10-wide.
       const remaining = new Map(unmatchedSkills.map((s) => [s.skillId, s]));
-      const bind = async (
-        skill: { docId: string; skillId: string },
-        path: string,
-      ) => {
-        await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-          docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
-          skillMdUrl: rawUrlFor(path),
-        });
-        matchedSkillIds.add(skill.skillId);
-        matchedPaths.add(path);
-        remaining.delete(skill.skillId);
-      };
-
-      // Exact before loose ACROSS FILES, not within one.
-      //
-      // This used to be one loop per path with both rules inside it, so the
-      // loose arm on an early file beat the exact arm on a later one. That is
-      // what made the preview and this pass diverge once the preview went
-      // exact-only: given `a-sdk/SKILL.md` (name `vercel-ai-sdk`) before
-      // `z-ai/SKILL.md` (name `vercel-ai`), a preview for slug `vercel-ai`
-      // vouches for z-ai while this pass bound a-sdk on the prefix rule. The
-      // row then served a file the confirm card never showed.
-      //
-      // So: fetch a wave, try EXACT on this wave's entries, and only once every
-      // candidate has had its exact chance does the loose pass run. The loose
-      // pass costs no extra requests because it reuses the bodies this loop
-      // already read.
-      //
-      // The cost that DID change: a skill matching only loosely no longer stops
-      // the walk, because every candidate must be read before the loose phase
-      // can start. Exact matches still exit early, and the worst case (nothing
-      // matches) is what it always was. Bounded either way — 500 skills of one
-      // source per invocation, `unmatchedMdPaths` is repo-bounded, and these are
-      // now fetched 10-wide where they used to be serial, so wall-clock likely
-      // improved even where request count rose.
-      const named: { path: string; name: string }[] = [];
+      const named: NamedCandidate[] = [];
       for (let i = 0; i < unmatchedMdPaths.length; i += DISCOVERY_WAVE_SIZE) {
         if (remaining.size === 0) break;
         const wave = unmatchedMdPaths.slice(i, i + DISCOVERY_WAVE_SIZE);
-        // Where this wave's entries START in `named`. Length-tracked, because
-        // `named` only receives candidates that fetched AND carried a `name:`,
-        // so `slice(-wave.length)` reached back into earlier waves whenever a
-        // wave contributed fewer entries than it had paths.
-        const startOfWave = named.length;
         const bodies = await Promise.all(
           wave.map((path) => fetchRawText(rawUrlFor(path))),
         );
@@ -1082,40 +1063,14 @@ export const discoverSkillMdUrls = internalAction({
           const name = parseSkillMdName(body);
           if (name) named.push({ path: wave[j], name });
         }
-        for (const { path, name } of named.slice(startOfWave)) {
-          if (remaining.size === 0) break;
-          // Guard the path as the loose phase does. Without it a re-offered path
-          // could bind twice across waves; the old per-path loop made that
-          // structurally impossible and this restores the property.
-          if (matchedPaths.has(path)) continue;
-          for (const [skillId, skill] of remaining) {
-            // `matchesSkillIdExactly`, not two map lookups. The lookups were
-            // `remaining.get(name) ?? remaining.get(kebabCase(name))`, whose
-            // first arm is the raw-identity comparison deliberately removed from
-            // the shared matcher (it does not imply `kebabCase(name) === slug`).
-            // Worse, `??` short-circuits: a rejected pair on the identity arm
-            // skipped the kebab arm entirely and stranded the path. The
-            // invariant that this phase reaches whatever the strict preview
-            // binds has to rest on the preview's own comparator, not a
-            // second-guess at it.
-            if (matchesSkillIdExactly(name, skillId)) {
-              await bind(skill, path);
-              break;
-            }
-          }
-        }
-      }
-
-      // Loose pass, over what the exact pass left. Reached only when no exact
-      // match existed, which is also when every candidate has been read.
-      for (const { path, name } of named) {
-        if (remaining.size === 0) break;
-        if (matchedPaths.has(path)) continue;
-        for (const [skillId, skill] of remaining) {
-          if (matchesSkillId(name, skillId)) {
-            await bind(skill, path);
-            break;
-          }
+        for (const placement of planNamePlacements({
+          remaining: Array.from(remaining.values()),
+          named,
+          usedPaths: Array.from(matchedPaths),
+          allNamedRead: i + DISCOVERY_WAVE_SIZE >= unmatchedMdPaths.length,
+        })) {
+          await applyPlacement(placement);
+          remaining.delete(placement.skill.skillId);
         }
       }
     }
