@@ -27,6 +27,21 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
+### Discovery: batch the per-row `updateSkillMdUrl` writes
+
+`discoverSkillMdUrls` writes one row per `ctx.runMutation`, awaited serially, from
+all three placement paths. One invocation covers up to 500 rows of a single source,
+each written exactly once with no cross-row dependency, and each write does a
+`db.get`, an indexed `.unique()` on `skillSummaries` and two `patch`es — so up to
+500 transactions and ~2000 document ops for work that has no ordering constraint.
+
+Pre-existing, but now cheap to fix: since the placement extraction (Jul 2026) every
+path produces a `Placement[]` before any write happens, so `applyPlacement` is the
+single seam. Add `internal.skills.updateSkillMdUrls` taking an array and loop inside
+the mutation, ~100 per batch to stay well under the per-transaction ceilings.
+
+Not urgent — the action is dominated by network waits, not by these writes.
+
 ### Resolver: extract the hinted shortcut so it can be tested too
 
 The bigger half of this entry is DONE (Jul 2026): `discoverSkillMdUrls`'s placement

@@ -423,6 +423,16 @@ exit early, and the worst case (nothing matches) is what it always was. Bounded
 either way, and these are now fetched 10-wide where they used to be serial, so
 wall-clock likely improved even where the request count rose.
 
+**Where this lives (Jul 2026).** The decision is `convex/lib/discoveryPlacement.ts`
+— `planDirPlacements` for pass 1, `planNamePlacements` for pass 2 — and it is
+unit-tested there. `discoverSkillMdUrls` supplies the reads and applies the result;
+it holds no part of the rule. Pass 2 takes its file reads as an injected
+`NameReader`, so a test can watch which batches it asks for, which is what makes
+"the loose phase waits for every candidate" and "an exact match cuts the walk
+short" observable instead of merely argued. One consequence worth knowing: pass 2's
+binds are applied after all reads finish, so a crash mid-walk persists none of them
+rather than some — the row keeps `needsDiscovery` and the next sync retries.
+
 ## What the official CLI actually specifies (vercel-labs/skills)
 
 Read from the source in Jul 2026, after a production bind audit showed 50 rows
