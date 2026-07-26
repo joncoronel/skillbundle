@@ -29,9 +29,13 @@
  * lesson the reverted pass-1 check taught at the cost of two review rounds.
  *
  * **Reports only, and that is now the whole design rather than a first step.** A
- * hit needs a human: of the 50 flagged in the first production run, 38 were
- * skills.sh slug derivations `kebabCase` cannot reproduce and 12 were repos
- * reusing one name across folders. None was a wrong bind. Acting automatically on
+ * hit needs a human: of the 50 flagged in the first production run (Jul 2026,
+ * BEFORE `kebabCase` was aligned to fold `_`), 38 were skills.sh slug derivations
+ * `kebabCase` cannot reproduce and 12 were repos reusing one name across folders.
+ * None was a wrong bind. A re-run should report FEWER than 50 — at minimum
+ * `github/gh-aw/http-mcp-headers` drops out, since its file is named
+ * `http_mcp_headers` and that now folds to the slug. Treat a lower number as the
+ * alignment working, not as drift. Acting automatically on
  * this signal is what the reverted pass-1 check did, and it was wrong 12 times
  * out of 12.
  *
@@ -56,7 +60,7 @@
 import { v } from "convex/values";
 import { internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { matchesSkillId, kebabCase } from "./lib/skillMatch";
+import { matchesSkillId, kebabCase, foldSeparators } from "./lib/skillMatch";
 import { parseSkillMdName } from "./lib/github";
 import { isGitHubSource } from "./lib/source";
 import {
@@ -221,6 +225,81 @@ export const auditSkillMdBinds = internalAction({
       cursor: page.cursor,
       mismatches,
       unknown,
+    };
+  },
+});
+
+/**
+ * Census: how many stored slugs contain a separator that now folds, and do any
+ * two rows in one repo collapse to the same folded key?
+ *
+ * The second question is the one that matters. Folding separators on the slug
+ * side means `my_skill` and `my-skill` become the same key, so both rows match
+ * the same candidate in discovery's exact phase and whichever loses is left with
+ * no file. That shape has never been observed; this counts it rather than
+ * guessing, which is the gate the review asked for before this reaches a
+ * `syncSkills` run.
+ *
+ *   npx convex run --prod bindAudit:censusSeparatorSlugs '{"cursor":null}'
+ *
+ * Read-only, CLI-run, and cheap: one paginated table scan, no GitHub calls.
+ *
+ * FIRST RUN (dev, Jul 2026): 23,753 rows, 14 slugs with a folding separator, one
+ * collision — `everyinc/compound-engineering-plugin` holding both
+ * `resolve_pr_parallel` and `resolve-pr-parallel`. Both are delisted with
+ * `skillMdUrl: ""`, so the losing-row hazard has nothing to strand. Production
+ * has not been run.
+ *
+ * TWO THINGS THIS DOES NOT COUNT, either of which the production run should
+ * carry:
+ *
+ *   1. Collisions are detected PER PAGE (see below), so one split across a page
+ *      boundary is missed. Rows for a repo are usually written together, which
+ *      makes the blind spot small rather than zero.
+ *   2. The exact-key collision is not the only widening. Folding the slug side of
+ *      `matchesSkillId`'s PREFIX arm also newly matches across separator styles:
+ *      slug `foo_bar` now claims a file named `Foo Bar Baz`, and slug `foo-bar`
+ *      one named `Foo_Bar Baz` — both false before this branch, both true now.
+ *      (Not because the prefix arm was dead for underscores: the old `kebabCase`
+ *      left `_` in place, so `foo_bar` already matched `Foo_Bar Baz`. What
+ *      changed is that the two styles now cross.) Additive at the matcher, but
+ *      discovery's scan is first-match-wins, so a newly-matching row can take a
+ *      file another row would have had.
+ */
+export const censusSeparatorSlugs = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  returns: v.object({
+    read: v.number(),
+    withSeparator: v.array(v.string()),
+    collisions: v.array(v.string()),
+    cursor: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("skillSummaries")
+      .paginate({ numItems: 2000, cursor });
+    const withSeparator: string[] = [];
+    // Folded key -> the raw slugs in that repo that produced it. Page-local, so
+    // a collision split across a page boundary is missed; the folded key is
+    // reported alongside so successive pages can be diffed if it ever matters.
+    const byFolded = new Map<string, string[]>();
+    for (const r of page.page) {
+      const folded = foldSeparators(r.skillId);
+      if (folded !== r.skillId) withSeparator.push(`${r.source}/${r.skillId}`);
+      const key = `${r.source}/${folded}`;
+      const seen = byFolded.get(key) ?? [];
+      seen.push(r.skillId);
+      byFolded.set(key, seen);
+    }
+    const collisions: string[] = [];
+    for (const [key, slugs] of byFolded) {
+      if (slugs.length > 1) collisions.push(`${key} <- ${slugs.join(", ")}`);
+    }
+    return {
+      read: page.page.length,
+      withSeparator,
+      collisions,
+      cursor: page.isDone ? null : page.continueCursor,
     };
   },
 });

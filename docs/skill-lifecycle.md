@@ -125,18 +125,21 @@ Adopting the alias as a row's **stored identity** is gated harder than merely
 checking it, because a `skillId` is permanent and is also a single URL path
 segment. All four must hold:
 
-- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9._-]+$`
+- `canonicalSlug` (convex/lib/skillMatch.ts) accepts it — `^[a-z0-9.-]+$`
   **plus at least one alphanumeric**, so `.`, `..` and `---` are rejected too
   (the charset alone admits them, and `encodeURIComponent` leaves `.` intact,
   so `..` would normalise a segment away in the skills.sh request path).
-  `kebabCase` is a comparator that only lowercases and collapses whitespace, so
+  `kebabCase` is a comparator that only lowercases and collapses `[\s_]+` runs, so
   `/`, `&`, `(` and friends survive it; persisting one writes a row whose
   detail page 404s forever and whose install command is dropped.
 - The file was bound by **folder name** (`matchedBy === "dir"`), i.e. the
   caller pointed at this exact skill. A frontmatter match must never name a
   skill on a write. Since the resolver moved to `matchesSkillIdExactly` this
-  gate is belt-and-braces for the write (an exact frontmatter match means the
-  name already equals the typed slug), but it still governs whether
+  gate is belt-and-braces for most of the write (an exact frontmatter match means
+  the name equals the separator-folded typed slug, which also forces the slug
+  all-lowercase — the `MySkill` → `myskill` adoption happens on the `"dir"` arm,
+  not this one). What it still refuses here is padding: `canonicalSlug` trims and
+  `kebabCase` does not. It also still governs whether
   `on_skills_sh_as_alias` may fire, and that status re-runs the add with no
   confirmation.
 - **Nothing claims the typed slug.** A delisted row there gets RELISTED (free,
@@ -391,9 +394,10 @@ its owner.
 SKILL.md's `name` is not a reliable identity claim:
 
 - skills.sh derives slugs from it in ways `kebabCase` cannot reproduce — prefixes
-  stripped (`webflow-mcp:site-activity` → `site-activity`), underscores converted
-  (`http_mcp_headers` → `http-mcp-headers`), punctuation collapsed
-  (`Update Pub/Sub Emulator` → `update-pubsub-emulator`).
+  stripped (`webflow-mcp:site-activity` → `site-activity`), punctuation collapsed
+  (`Update Pub/Sub Emulator` → `update-pubsub-emulator`). Underscore conversion
+  used to be on this list; it is not, because `kebabCase` now folds `_` like the
+  official CLI does.
 - Sometimes the slug is not derived from the name at all — `tailwind` →
   `tailwind-css` can only have come from the folder. The rule stated elsewhere in
   this document as "skills.sh derives a slug from the frontmatter name" is a
@@ -401,7 +405,7 @@ SKILL.md's `name` is not a reliable identity claim:
   not reliable as an identity check on existing rows.
 - Repos reuse the same name across folders.
 
-A name/slug mismatch is therefore normal — 50 of those 13,080 rows — and is not
+A name/slug mismatch is therefore normal — 50 of those 13,080 rows, measured BEFORE the `kebabCase` underscore alignment — and is not
 evidence that the wrong file is attached. Detection now lives in `bindAudit.ts`,
 run on demand, rather than in the nightly path.
 
@@ -412,6 +416,47 @@ every candidate must be read before the loose phase can begin. Exact matches sti
 exit early, and the worst case (nothing matches) is what it always was. Bounded
 either way, and these are now fetched 10-wide where they used to be serial, so
 wall-clock likely improved even where the request count rose.
+
+## What the official CLI actually specifies (vercel-labs/skills)
+
+Read from the source in Jul 2026, after a production bind audit showed 50 rows
+whose stored slug disagrees with their file's `name`. Recorded here because this
+repo had been reasoning from inference about rules that are written down.
+
+**Name normalisation.** `src/skills.ts`:
+
+```ts
+function normalizeSkillName(name: string): string {
+  return name.toLowerCase().replace(/[\s_]+/g, '-');
+}
+```
+
+Our `kebabCase` is now identical. It previously omitted `_`, which was a
+near-copy missing a character class rather than a decision, and it produced a
+real false mismatch (`github/gh-aw`, file named `http_mcp_headers`, slug
+`http-mcp-headers`).
+
+**Identity is the frontmatter `name`.** The CLI matches on it and dedupes on it,
+first-discovery-wins, with the directory basename only as a fallback when
+matching lock entries. The README specifies `name` as a "unique identifier
+(lowercase, hyphens allowed)" — so title-cased names like `Update Pub/Sub
+Emulator` are spec violations, which is why any normalisation is needed at all.
+
+**Search order is defined, and ours is not.** The CLI walks, in priority order:
+the repo root (depth 1), then `skills/`, `skills/.curated/`,
+`skills/.experimental/`, `skills/.system/`, then ~20 agent dirs (`.claude/skills`,
+`.agents/skills`, …) — the containers two levels deep — and only falls back to a
+recursive depth-5 scan. Our discovery walks the whole tree and takes any
+`*/SKILL.md`, resolving a duplicate folder name by tree order (last wins). If a
+`byDir` tie ever needs breaking, that priority order is the defensible rule; see
+the two-`slides`-folders case above for a repo where it would matter.
+
+**What the CLI does NOT tell us.** How skills.sh turns a name into a registry
+slug. That is server-side and not in this repo, and the audit's evidence says it
+is not a pure function of the name — see the derivation list above, which this
+section deliberately does not restate. Treat "the slug is derived from the name"
+as a good default for the ADD path, where we invent the slug, and not as an
+identity check on existing rows.
 
 ## Content states (independent of delisting)
 

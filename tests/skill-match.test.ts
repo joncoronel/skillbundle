@@ -6,7 +6,7 @@
  * `canonicalSlug` is the write-side guard: its output can become a row's
  * permanent `skillId` AND a single URL path segment, so the interesting cases
  * are the ones it must REFUSE rather than mangle. `kebabCase` only lowercases
- * and collapses whitespace, so every other punctuation character survives it
+ * and collapses `[\s_]+` runs, so every other punctuation character survives it
  * intact and would otherwise be persisted.
  */
 import { test, expect, describe } from "vitest";
@@ -32,8 +32,28 @@ describe("canonicalSlug — accepts", () => {
     expect(canonicalSlug("  Deploy   To Vercel  ")).toBe("deploy-to-vercel");
   });
 
-  test("dots, underscores and digits, which the route and install command allow", () => {
-    expect(canonicalSlug("next.js_16-beta2")).toBe("next.js_16-beta2");
+  test("underscores fold like the official CLI does", () => {
+    // vercel-labs/skills, src/skills.ts: normalizeSkillName is
+    // `name.toLowerCase().replace(/[\s_]+/g, "-")`. Ours omitted `_` until a
+    // production bind audit flagged a real skill (github/gh-aw) whose file is
+    // named `http_mcp_headers` against slug `http-mcp-headers`.
+    expect(kebabCase("http_mcp_headers")).toBe("http-mcp-headers");
+    expect(canonicalSlug("http_mcp_headers")).toBe("http-mcp-headers");
+    // Mixed and repeated separators collapse to one dash, as the CLI does.
+    expect(kebabCase("Deploy _ To__Vercel")).toBe("deploy-to-vercel");
+  });
+
+  test("dots and digits survive; underscores normalise to dashes", () => {
+    // A canonical slug never contains `_`: `kebabCase` folds it into `-` to match
+    // the CLI's `normalizeSkillName`, and the charset was narrowed to
+    // `[a-z0-9.-]` to stop encoding an invariant nothing could reach.
+    // (`SAFE_SEGMENT` in lib/install-commands.ts still permits `_`, because slugs
+    // also arrive from the sync without passing through here.) This assertion
+    // changed deliberately when that alignment landed — it is the one place the
+    // change alters slug GENERATION rather than just matching, so it is worth
+    // failing loudly if reverted.
+    expect(canonicalSlug("next.js_16-beta2")).toBe("next.js-16-beta2");
+    expect(canonicalSlug("v2.1.0")).toBe("v2.1.0");
   });
 });
 
@@ -50,7 +70,7 @@ describe("canonicalSlug — refuses (would write an unroutable row)", () => {
     ["100% Coverage"],
     ["C#"],
     ["émoji ✨"],
-  ])("punctuation outside [a-z0-9._-]: %s", (name) => {
+  ])("punctuation outside [a-z0-9.-]: %s", (name) => {
     expect(canonicalSlug(name)).toBeNull();
   });
 
@@ -133,14 +153,63 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
 
   test("REFUSES surrounding whitespace, keeping the canonicalSlug invariant", () => {
     // Load-bearing: `kebabCase` does not trim but `canonicalSlug` does, so a
-    // padded name matching here would break the property the resolver now
-    // relies on (a frontmatter match implies canonicalSlug(fmName) === slug).
+    // padded name matching here weakens the property the resolver relies on (a
+    // frontmatter match implies canonicalSlug(fmName) === the separator-folded
+    // slug). It is not airtight — fmName " panel-review " still matches slug
+    // "-panel-review-" — which is why `aliasCandidate`'s `matchedBy === "dir"`
+    // gate stays; see convex/lib/slugDecision.ts.
     expect(matchesSkillIdExactly(" panel-review ", "panel-review")).toBe(false);
     expect(canonicalSlug(" panel-review ")).toBe("panel-review");
   });
 
   test("an unrelated name still misses", () => {
     expect(matchesSkillIdExactly("Deploy To Vercel", "react-best-practices")).toBe(false);
+  });
+
+  test("folds BOTH sides — the regression that shipped when only one was folded", () => {
+    // A repo `owner/agent_skills` with a root SKILL.md named `agent_skills`.
+    // Folding only the name compared "agent-skills" against the raw typed
+    // "agent_skills" and refused a file whose name is exactly what was typed.
+    expect(matchesSkillIdExactly("agent_skills", "agent_skills")).toBe(true);
+    // The case the fold exists for still works.
+    expect(matchesSkillIdExactly("http_mcp_headers", "http-mcp-headers")).toBe(true);
+    // And mixed case, which previously failed all three arms of both matchers.
+    expect(matchesSkillIdExactly("Foo_Bar", "foo_bar")).toBe(true);
+    // Still strict where it matters: a partial name is not a match.
+    expect(matchesSkillIdExactly("panel-review", "panel")).toBe(false);
+  });
+
+  test("folds separators but NOT case — the hole that reopened twice", () => {
+    // A repo `MySkill` with a root SKILL.md named `MySkill`. `canonicalSlug`
+    // says the slug should be `myskill`; storing `MySkill` gives a row skills.sh
+    // can never adopt, and there is no repair tool by design.
+    //
+    // This has now been closed twice. First by removing the raw-identity arm.
+    // Then reopened by folding BOTH sides with `kebabCase`, which lowercases —
+    // shipped green because nothing pinned it. Case is the signal the mis-slug
+    // guard reads; separators are noise. Do not "simplify" the slug side back to
+    // `kebabCase`.
+    expect(matchesSkillIdExactly("MySkill", "MySkill")).toBe(false);
+    expect(matchesSkillIdExactly("My_Skill", "My_Skill")).toBe(false);
+    // …while the separator fold this pair of commits exists for still works.
+    expect(matchesSkillIdExactly("my_skill", "my-skill")).toBe(true);
+  });
+
+  test("stays a subset of the loose matcher", () => {
+    // The module header frames these as loose vs strict, which only holds if
+    // every exact match is also a loose one. Folding the slug side in one and
+    // not the other broke that, and `bindAudit` judges binds with the loose rule
+    // — so it flagged rows the binder had just bound.
+    for (const [name, slug] of [
+      ["agent_skills", "agent_skills"],
+      ["http_mcp_headers", "http-mcp-headers"],
+      ["Foo_Bar", "foo_bar"],
+      ["my_skill", "my-skill"],
+    ] as const) {
+      if (matchesSkillIdExactly(name, slug)) {
+        expect(matchesSkillId(name, slug)).toBe(true);
+      }
+    }
   });
 });
 

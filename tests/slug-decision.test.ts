@@ -12,6 +12,48 @@
 import { test, expect, describe } from "vitest";
 import { aliasCandidate, decideSlug } from "../convex/lib/slugDecision";
 
+describe("aliasCandidate — separator folding is not a rename", () => {
+  // The slug side goes through `foldSeparators` — separators only, NOT
+  // `kebabCase`, which would also fold case. Without any folding, a typed
+  // `foo_bar` whose file is also named `foo_bar` derived the alias `foo-bar` and
+  // adopted it — silently rewriting a PERMANENT identity — and on the
+  // tree-unavailable path refused the add outright, because no folder could be
+  // shown to claim a slug that only differs by punctuation. With case folded
+  // too, the `MySkill` case below would stop firing, which is the opposite bug.
+  test("no alias when the two differ only by separator", () => {
+    expect(
+      aliasCandidate({
+        typedSkillId: "foo_bar",
+        canonicalFmName: "foo-bar",
+        matchedBy: "dir",
+      }),
+    ).toBeNull();
+  });
+
+  test("a CASE difference still produces an alias — it is a rename", () => {
+    // The counterpart to the separator case. Folding case here would have kept
+    // the raw `MySkill` as a permanent slug; skills.sh emits `myskill`, so the
+    // alias has to fire for adoption to ever match.
+    expect(
+      aliasCandidate({
+        typedSkillId: "MySkill",
+        canonicalFmName: "myskill",
+        matchedBy: "dir",
+      }),
+    ).toBe("myskill");
+  });
+
+  test("a genuine rename still produces an alias", () => {
+    expect(
+      aliasCandidate({
+        typedSkillId: "react-view-transitions",
+        canonicalFmName: "vercel-react-view-transitions",
+        matchedBy: "dir",
+      }),
+    ).toBe("vercel-react-view-transitions");
+  });
+});
+
 describe("aliasCandidate — when is a second slug worth considering", () => {
   test("frontmatter name differs from the folder the link pointed at", () => {
     // The whole reason the alias logic exists: vercel-labs/agent-skills ships

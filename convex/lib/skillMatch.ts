@@ -21,12 +21,51 @@
  * Read `matchesSkillIdExactly`'s doc before making the two agree again.
  */
 export function kebabCase(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, "-");
+  // Mirrors `normalizeSkillName` in the official CLI (vercel-labs/skills,
+  // src/skills.ts): `name.toLowerCase().replace(/[\s_]+/g, "-")`. This used to
+  // omit `_`, which was a near-copy missing one character class rather than a
+  // deliberate difference — and it showed up in the wild: the bind audit's first
+  // production run flagged `github/gh-aw/http-mcp-headers` as not corresponding
+  // to its own file, whose name is `http_mcp_headers`. Under the CLI's rule those
+  // are the same string.
+  //
+  // Keep this in step with the CLI rather than with intuition. It is the
+  // reference implementation of "what does this name normalise to", and the whole
+  // catalog is populated from an ecosystem that follows it.
+  return name.toLowerCase().replace(/[\s_]+/g, "-");
+}
+
+/**
+ * Fold separator runs to `-`, WITHOUT lowercasing.
+ *
+ * For the slug side of a comparison. `kebabCase` is the right transform for a
+ * frontmatter NAME (it reproduces the CLI's `normalizeSkillName`), but applying
+ * it to a slug throws away case — and case is exactly the signal the mis-slug
+ * guard reads. Folding both sides with `kebabCase` made
+ * `matchesSkillIdExactly("MySkill", "MySkill")` true again, reopening the hole
+ * that removing the raw-identity arm had closed: a row stored as `MySkill`,
+ * which skills.sh (emitting `myskill`) can never adopt.
+ *
+ * So: separators are noise and fold; case is signal and does not.
+ */
+export function foldSeparators(slug: string): string {
+  return slug.replace(/[\s_]+/g, "-");
 }
 
 export function matchesSkillId(fmName: string, skillId: string): boolean {
   const kebab = kebabCase(fmName);
-  return fmName === skillId || kebab === skillId || kebab.startsWith(skillId);
+  // The slug side folds separators too, so `matchesSkillIdExactly` stays a
+  // SUBSET of this — which the loose/strict framing above assumes, and which
+  // `bindAudit` depends on when it judges a bind the binder made. Without it the
+  // strict matcher accepted pairs the loose one rejected, and the audit flagged
+  // rows the binder had just bound.
+  //
+  // Widening only ever adds matches to THIS function — but discovery's scan is
+  // first-match-wins, so a newly-matching row can take a file another row would
+  // otherwise have had. See `censusSeparatorSlugs` (convex/bindAudit.ts) for what
+  // is and is not counted.
+  const slug = foldSeparators(skillId);
+  return fmName === skillId || kebab === slug || kebab.startsWith(slug);
 }
 
 /**
@@ -66,25 +105,33 @@ export function matchesSkillId(fmName: string, skillId: string): boolean {
  * invariant to preserve is that global two-phase ordering, not "exact lookups
  * come first in the loop".
  *
- * A consequence worth knowing: a match here means `kebabCase(fmName) === skillId`,
- * so `canonicalSlug(fmName)` is either that same slug or null (it also enforces a
- * charset). Either way the frontmatter path cannot produce a row whose stored
- * slug disagrees with its own SKILL.md.
+ * A consequence worth knowing: a match here means `kebabCase(fmName) ===
+ * foldSeparators(skillId)` — the SEPARATOR-folded forms agree, so the two may
+ * differ by `_` vs `-` but never by case. `canonicalSlug(fmName)` therefore
+ * equals `foldSeparators(typedSlug)`, or is null (it also enforces a charset),
+ * and `aliasCandidate` compares against that same folded form: a separator
+ * difference must not read as a rename, while a case difference must.
  */
 export function matchesSkillIdExactly(
   fmName: string,
   skillId: string,
 ): boolean {
-  // Kebab comparison ONLY. A raw `fmName === skillId` arm used to sit in front
-  // of this and quietly reopened the mis-slug hole: a repo `MySkill` with a root
-  // SKILL.md named `MySkill` matched on identity, `canonicalSlug("MySkill")` is
-  // `myskill` which is NOT the typed slug, so the row stored `MySkill` — a slug
-  // skills.sh (which emits `myskill`) can never adopt. Requiring the kebab form
-  // means a match implies `kebabCase(fmName) === skillId`, which is the property
-  // everything downstream reads off this function. A folder match reaches the
-  // same place by a different route: `aliasCandidate` sees the canonical name
-  // differs and adopts or refuses it.
-  return kebabCase(fmName) === skillId;
+  // Both sides fold SEPARATORS; only the name side folds case.
+  //
+  // Folding neither was a regression: a repo `owner/agent_skills` with a root
+  // SKILL.md named `agent_skills` compared "agent-skills" against the raw typed
+  // "agent_skills" and refused a file whose name is character-for-character what
+  // the caller typed.
+  //
+  // Folding BOTH with `kebabCase` was a worse one, and it is the reason
+  // `foldSeparators` exists: `kebabCase` lowercases, so `("MySkill","MySkill")`
+  // matched again and the row stored `MySkill` — a slug skills.sh (which emits
+  // `myskill`) can never adopt. That is the hole removing the raw-identity arm
+  // had closed. Case difference is the signal; separator difference is noise.
+  //
+  // A folder match reaches the same place by a different route: `aliasCandidate`
+  // sees the canonical name differs and adopts or refuses it.
+  return kebabCase(fmName) === foldSeparators(skillId);
 }
 
 /**
@@ -98,18 +145,28 @@ export function matchesSkillIdExactly(
  * `SAFE_SEGMENT` in lib/install-commands.ts or the detail page 404s forever
  * and the install command is silently dropped.
  *
- * So anything outside `[a-z0-9._-]` is REJECTED rather than mangled. Two
- * reasons it must be a rejection: `kebabCase` only lowercases and collapses
- * whitespace, so `/`, `&`, `(`, `)` and friends survive it intact; and the
- * module comment above is explicit that skills.sh derives slugs "in
+ * `kebabCase` normalises exactly two things — case, and `[\s_]+` runs, which
+ * become `-`. Whatever it does NOT normalise and the charset does not admit is
+ * REJECTED rather than mangled, and the charset is `[a-z0-9.-]`: no `_`, because
+ * nothing surviving `kebabCase` can contain one (see the inline comment on the
+ * test itself).
+ *
+ * Two reasons the leftovers must be a rejection rather than a scrub: `/`, `&`,
+ * `(`, `)` and friends survive `kebabCase` intact, so there is a lot of leftover;
+ * and the module comment above is explicit that skills.sh derives slugs "in
  * non-obvious ways", so a name this transform can't handle cleanly is exactly
- * the case where guessing writes an unroutable row nothing can repair.
- * Callers treat `null` as "no alias" and fall back to the slug they were
- * given.
+ * the case where guessing writes an unroutable row nothing can repair. Callers
+ * treat `null` as "no alias" and fall back to the slug they were given.
  */
 export function canonicalSlug(fmName: string): string | null {
   const slug = kebabCase(fmName.trim());
-  if (!/^[a-z0-9._-]+$/.test(slug)) return null;
+  // No `_` in the charset: `kebabCase` folds every underscore into `-`, so a
+  // canonical slug can never contain one and allowing it here would be a dead
+  // branch encoding an undecided invariant. This is only about what a NAME can
+  // produce — `SAFE_SEGMENT` (lib/install-commands.ts) must keep `_`, because
+  // slugs also arrive from the skills.sh sync and from `parseSkillInput` without
+  // passing through here, and some of those genuinely contain one.
+  if (!/^[a-z0-9.-]+$/.test(slug)) return null;
   // The charset alone still admits ".", ".." and "---" — path-traversal
   // shapes, not names. `.` also survives encodeURIComponent, so ".." would
   // normalise a segment away in the skills.sh request path. Require at least

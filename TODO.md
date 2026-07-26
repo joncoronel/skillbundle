@@ -6,6 +6,23 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Run both bind-audit passes against production, after the kebab alignment deploys
+
+Two read-only CLI queries in `convex/bindAudit.ts`, neither run against prod
+since `kebabCase` was aligned with the official CLI's `normalizeSkillName`:
+
+- `auditSkillMdBinds` — the pre-alignment run flagged 50 of 13,080 rows, 38 of
+  them slug derivations `kebabCase` cannot reproduce and 12 repos reusing one
+  name across folders. None was a wrong bind. A re-run should report FEWER;
+  `github/gh-aw/http-mcp-headers` provably drops out. Lower is the alignment
+  working, not drift. The 50/38/12 figures quoted in the code and in
+  docs/skill-lifecycle.md should be restamped from it.
+- `censusSeparatorSlugs` — only dev has been measured (23,753 rows, 14 folding
+  slugs, one collision, inert). Its doc comment lists the two things the count
+  does not cover; carry both into whatever the production run concludes.
+
+Both are `npx convex run --prod`, no GitHub calls, safe to run any time.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
