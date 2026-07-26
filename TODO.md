@@ -27,28 +27,6 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
-### Resolver: extract the hinted shortcut so it can be tested too
-
-The bigger half of this entry is DONE (Jul 2026): `discoverSkillMdUrls`'s placement
-decisions now live in `convex/lib/discoveryPlacement.ts`, covered by
-`tests/discovery-placement.test.ts`. The module decides — including how many bodies
-to read, through an injected `NameReader` — and the action supplies the reads and
-does the writes. Twelve deliberate mutations of the module were checked to confirm
-the tests fail when the behaviour breaks (phase order, either guard, the loop's
-early cut, pass 1 folding separators, the probe order and its `break`, the slug
-charset), plus one deliberately equivalent mutation that still passes as a control.
-
-What is still untested is `resolveGitHubSkillMd` in `convex/githubOnly.ts`, whose
-own placement decision — which candidate the `path` hint from a pasted URL
-promotes, and how that interacts with the two-phase order — is reachable only by
-making GitHub's tree API answer in a particular shape mid-add. Same treatment: a
-pure function over `(pathHint, orderedCandidates, skillId, names)` returning the
-choice.
-
-Lower urgency than the discovery half was, because the hint only reorders
-candidates within a phase and cannot change WHICH rule matched. Worth doing before
-the next change to the resolver.
-
 ### Split convex/githubOnly.ts (over the 1000-line threshold again)
 
 1023 lines, against the ~968 it started the exact-match branch at (1022 after

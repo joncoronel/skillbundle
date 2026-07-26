@@ -46,6 +46,7 @@ import {
 } from "./lib/skillsApi";
 import { canonicalSlug, matchesSkillIdExactly } from "./lib/skillMatch";
 import { probePathsFor } from "./lib/discoveryPlacement";
+import { pickSkillMd } from "./lib/resolvePlacement";
 import { aliasCandidate, decideSlug } from "./lib/slugDecision";
 import {
   GITHUB_LEADERBOARD,
@@ -59,22 +60,6 @@ import {
   extractSkillMdName,
   humanizeSlug,
 } from "./skills";
-
-/**
- * Bound on how many SKILL.md candidates pass 2 will download. This runs
- * inside a user-facing action (the admin is watching a spinner), so a skills
- * monorepo with hundreds of SKILL.md files must not turn preview into a
- * multi-minute stall. Anything past the cap is treated as not-found — the
- * direct-path probes and pass 1 cover the conventional layouts regardless.
- */
-const RESOLVE_PASS2_CAP = 50;
-
-/**
- * Pass-2 downloads run in concurrent waves of this size (with early exit on
- * the first match) instead of strictly serially — worst case drops from ~50
- * sequential round-trips behind a spinner to ~5 waves.
- */
-const PASS2_WAVE_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // Shared plumbing (used by both preview and confirm — one pipeline, two
@@ -301,75 +286,38 @@ async function resolveGitHubSkillMd(
   const { candidates, byDir } = indexSkillMds(tree.entries);
   if (candidates.length === 0) return { status: "no_skill_md" };
 
-  // Pass 1: a directory named exactly like the slug. Fetch it once here — its
-  // contents are needed for the name/description either way.
-  const dirMatch = byDir.get(skillId);
-  if (dirMatch) {
-    const contents = await fetchRawText(rawUrl(tree.branch, dirMatch));
-    if (contents !== null) {
-      return okResult(tree.branch, dirMatch, contents, "dir", byDir);
-    }
-    // The tree said the file exists but raw serves an error — transient CDN
-    // trouble, not proof of absence.
-    return { status: "tree_unavailable" };
-  }
+  // Which file to bind, and in what order to look — folder rule, then the pasted
+  // URL's hint, then a capped scan — is `pickSkillMd` (lib/resolvePlacement.ts),
+  // where it is unit-tested. All that is left here is the download and mapping its
+  // answer onto this function's statuses.
+  const pick = await pickSkillMd({
+    skillId,
+    candidates,
+    byDir,
+    pathHint,
+    readBody: async (path) => {
+      const contents = await fetchRawText(rawUrl(tree.branch, path));
+      if (contents === null) return null;
+      return { contents, name: extractSkillMdName(contents) };
+    },
+  });
 
-  // Hinted shortcut past pass 2: if the tree agrees the named file exists, try it
-  // before downloading up to RESOLVE_PASS2_CAP others hunting for the same thing.
-  //
-  // Reachable in ONE shape, which is worth knowing before relying on it. For any
-  // nested link the hint's parent segment IS the slug by construction — the
-  // parser takes the slug from the path tail and builds the hint from that same
-  // tail plus "SKILL.md" (lib/parse-skill-input.ts) — and `indexSkillMds` keys
-  // `byDir` on exactly that segment. So if the hinted path is in the tree at all,
-  // `byDir` has the slug and pass 1 above has already returned. This only ever fires for
-  // a ROOT-LEVEL SKILL.md link in a repo with no folder named like the repo — the
-  // case that used to pay the full scan, and the reason `path` earns its keep.
-  //
-  // Residual: with two files claiming the same name (a root SKILL.md plus an
-  // earlier candidate named after the repo) this returns the root file while
-  // discovery's exact stage takes the first in tree order. Narrow, and much
-  // narrower than the pre-tree version this replaced, but not zero.
-  //
-  // Deliberately AFTER pass 1 and gated on the tree, which is what keeps it
-  // equivalent. An earlier version ran before the tree was fetched and decided
-  // `matchedBy` from the hint's own parent folder — so it could bind a different
-  // copy than `byDir` would when two folders share a leaf name, and could return
-  // a root file where pass 1 would have preferred a folder. Both showed up as
-  // the preview vouching for a file discovery never binds. The hint now only
-  // ever REORDERS pass 2; it can no longer outvote the folder rule.
-  if (pathHint && byDir.get(skillId) === undefined) {
-    const hinted = candidates.find((p) => p === pathHint);
-    if (hinted) {
-      const contents = await fetchRawText(rawUrl(tree.branch, hinted));
-      const fmName = contents === null ? null : extractSkillMdName(contents);
-      if (contents !== null && fmName && matchesSkillIdExactly(fmName, skillId)) {
-        return okResult(tree.branch, hinted, contents, "frontmatter", byDir);
-      }
-    }
+  switch (pick.status) {
+    case "found":
+      return okResult(
+        tree.branch,
+        pick.path,
+        pick.contents,
+        pick.matchedBy,
+        byDir,
+      );
+    case "dir_unreadable":
+      // The tree said the file exists but raw serves an error — transient CDN
+      // trouble, not proof of absence, so do not answer `no_skill_md`.
+      return { status: "tree_unavailable" };
+    case "none":
+      return { status: "no_skill_md" };
   }
-
-  // Pass 2: frontmatter `name` via the exact matcher. Covers a root-level
-  // SKILL.md (no parent dir to match on) and repos whose folder names don't
-  // line up with the slug. Downloads run in concurrent waves; within a wave,
-  // results are checked in candidate order so first-match-wins semantics are
-  // identical to a serial scan.
-  const capped = candidates.slice(0, RESOLVE_PASS2_CAP);
-  for (let i = 0; i < capped.length; i += PASS2_WAVE_SIZE) {
-    const wave = capped.slice(i, i + PASS2_WAVE_SIZE);
-    const bodies = await Promise.all(
-      wave.map((path) => fetchRawText(rawUrl(tree.branch, path))),
-    );
-    for (let j = 0; j < wave.length; j++) {
-      const contents = bodies[j];
-      if (contents === null) continue;
-      const fmName = extractSkillMdName(contents);
-      if (fmName && matchesSkillIdExactly(fmName, skillId)) {
-        return okResult(tree.branch, wave[j], contents, "frontmatter", byDir);
-      }
-    }
-  }
-  return { status: "no_skill_md" };
 }
 
 // ---------------------------------------------------------------------------
