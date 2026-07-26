@@ -405,9 +405,15 @@ SKILL.md's `name` is not a reliable identity claim:
   not reliable as an identity check on existing rows.
 - Repos reuse the same name across folders.
 
-A name/slug mismatch is therefore normal — 50 of those 13,080 rows, measured BEFORE the `kebabCase` underscore alignment — and is not
-evidence that the wrong file is attached. Detection now lives in `bindAudit.ts`,
-run on demand, rather than in the nightly path.
+A name/slug mismatch is therefore normal — **49 of 13,080 judged rows** in the
+latest production run (Jul 2026, after the `kebabCase` underscore alignment) —
+and is not evidence that the wrong file is attached. Detection now lives in
+`bindAudit.ts`, run on demand, rather than in the nightly path; its module header
+carries the breakdown of the 49.
+
+The alignment is confirmed by that run: the pre-alignment count was 50, exactly
+one row dropped out, and it is the one that motivated the change —
+`github/gh-aw/http-mcp-headers`, whose file is named `http_mcp_headers`.
 
 Cost: pass 1 fetches nothing (it reads only the tree), as it always did — the
 verification step that added a fetch per folder-matched skill was reverted with

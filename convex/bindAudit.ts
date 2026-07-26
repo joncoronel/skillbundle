@@ -29,15 +29,27 @@
  * lesson the reverted pass-1 check taught at the cost of two review rounds.
  *
  * **Reports only, and that is now the whole design rather than a first step.** A
- * hit needs a human: of the 50 flagged in the first production run (Jul 2026,
- * BEFORE `kebabCase` was aligned to fold `_`), 38 were skills.sh slug derivations
- * `kebabCase` cannot reproduce and 12 were repos reusing one name across folders.
- * None was a wrong bind. A re-run should report FEWER than 50 — at minimum
- * `github/gh-aw/http-mcp-headers` drops out, since its file is named
- * `http_mcp_headers` and that now folds to the slug. Treat a lower number as the
- * alignment working, not as drift. Acting automatically on
- * this signal is what the reverted pass-1 check did, and it was wrong 12 times
- * out of 12.
+ * hit needs a human. Latest production run (Jul 2026, AFTER `kebabCase` was
+ * aligned to fold `_`): 13,264 rows read, 13,080 judged, **49 flagged, none a
+ * wrong bind**, 184 unjudgeable (152 files now 404, 32 with no frontmatter
+ * `name`). The 49 are all skills.sh slug derivations `kebabCase` cannot
+ * reproduce:
+ *
+ *   - 30 namespace prefixes, in BOTH directions — file `webflow-mcp:site-activity`
+ *     against slug `site-activity` (12 of these), `n8n:` (10), `stitch::` (2), and
+ *     the reverse where the SLUG carries `ckm:` and the file's name is bare (6).
+ *   - 18 where the slug is more specific than the file's own name, because
+ *     skills.sh took it from the folder: `tailwind-css` ← `tailwind`,
+ *     `sqlalchemy-orm` ← `sqlalchemy`, `drizzle-orm` ← `drizzle`.
+ *   - 1 punctuation collapse: `Update Pub/Sub Emulator` → `update-pubsub-emulator`.
+ *
+ * The pre-alignment run flagged 50. Exactly one row dropped out, and it is the
+ * predicted one: `github/gh-aw/http-mcp-headers`, whose file is named
+ * `http_mcp_headers`. That is the alignment confirmed end to end — it is the row
+ * that motivated the change in the first place.
+ *
+ * Acting automatically on this signal is what the reverted pass-1 check did, and
+ * it was wrong 12 times out of 12.
  *
  * **Run it from the CLI**, not a dev card: it is a one-off backward-looking check
  * over ~9.5k rows, not something to leave a button for.
@@ -244,14 +256,17 @@ export const auditSkillMdBinds = internalAction({
  *
  * Read-only, CLI-run, and cheap: one paginated table scan, no GitHub calls.
  *
- * FIRST RUN (dev, Jul 2026): 23,753 rows, 14 slugs with a folding separator, one
- * collision — `everyinc/compound-engineering-plugin` holding both
- * `resolve_pr_parallel` and `resolve-pr-parallel`. Both are delisted with
- * `skillMdUrl: ""`, so the losing-row hazard has nothing to strand. Production
- * has not been run.
+ * PRODUCTION (Jul 2026): 15,442 rows, ONE slug with a folding separator
+ * (`meission/eastmoney` → `eastmoney_financial_data`), ZERO collisions. The shape
+ * this query was built to find does not exist in production at all.
  *
- * TWO THINGS THIS DOES NOT COUNT, either of which the production run should
- * carry:
+ * Dev, for contrast: 23,753 rows, 14 folding slugs, one collision
+ * (`everyinc/compound-engineering-plugin` holding both `resolve_pr_parallel` and
+ * `resolve-pr-parallel`, both delisted with `skillMdUrl: ""`, so inert). Dev
+ * carries seeded junk — reading it as the real population would have overstated
+ * the hazard 14×. Measure production before concluding anything from this.
+ *
+ * TWO THINGS THIS DOES NOT COUNT:
  *
  *   1. Collisions are detected PER PAGE (see below), so one split across a page
  *      boundary is missed. Rows for a repo are usually written together, which

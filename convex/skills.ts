@@ -999,8 +999,9 @@ export const discoverSkillMdUrls = internalAction({
     // claim. skills.sh derives slugs from it in ways `kebabCase` cannot
     // reproduce (prefixes stripped, punctuation collapsed, or the slug taken
     // from the folder instead), and repos reuse the same name across folders. So
-    // a mismatch between name and slug is normal — 50 of those 13,080 rows, measured BEFORE the `kebabCase` underscore alignment — and
-    // is not evidence that the wrong file is attached.
+    // a mismatch between name and slug is normal — 49 of 13,080 judged rows in
+    // the latest production run (Jul 2026, after the `kebabCase` underscore
+    // alignment) — and is not evidence that the wrong file is attached.
     const matchedSkillIds = new Set<string>();
     const matchedPaths = new Set<string>();
     const rawUrlFor = (path: string) =>
