@@ -175,6 +175,14 @@ export function AddSkillForm() {
           // AddResult's — pass it through rather than assuming, so a relist
           // reports as one.
           announce(outcome.result);
+          // Unconditional, unlike `already_exists` below, which has to ask
+          // whether a card was mounted. This outcome can ONLY come from
+          // `confirmGitHub`, which returns early without a candidate — so the
+          // confirm card was always on screen and the button just pressed always
+          // unmounted with it. Measured in the browser (Jul 2026): without this,
+          // `document.activeElement` is `<body>` right after a successful add,
+          // and a keyboard user tabs back from the top of the page.
+          focusInput();
           return;
         case "already_exists":
           // NOTE: this used to clear the input too. It no longer does — the
@@ -303,7 +311,15 @@ export function AddSkillForm() {
               // Confirm would otherwise add the OLD input — the exact mis-add
               // the confirm step exists to prevent.
               onChange={(e) => changeInput(e.target.value)}
-              disabled={pending}
+              // readOnly, not disabled — the same choice the public flow made and
+              // documented, which this surface had not adopted. A disabled
+              // element cannot hold or receive focus, so `disabled` here did two
+              // things: dropped focus to <body> on every Enter-submit for the
+              // length of the request, and silently defeated the `focusInput()`
+              // calls in `report`, since `pending` is still true when they run.
+              // The confirm-card fix does not work without this. The submit
+              // button carries the disabled state.
+              readOnly={pending}
               autoFocus
             />
             <div className="flex items-center justify-between gap-3">

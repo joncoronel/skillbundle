@@ -129,6 +129,13 @@ export function AddSkillFlow({
           skillId: outcome.result.skillId,
           name: outcome.result.name,
         });
+        // Same hazard the Cancel handler below already guards, on the other exit
+        // from the same card: the focused Confirm button unmounts with it.
+        // Unconditional, unlike `already_exists`, because this outcome can only
+        // come from `confirmGitHub` — which returns early without a candidate, so
+        // a card was always mounted. The input stays mounted above the success
+        // card, so it is the right place to land.
+        focusInput();
         return;
       case "already_exists":
         // Names the slug it lives under, which on the alias path is NOT the one

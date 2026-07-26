@@ -109,9 +109,24 @@ user tabs back from the top of the page. One submit can be three sequential
 round trips, so the window is seconds, not milliseconds.
 
 Confirmed in the browser (Jul 2026), on the admin form: focus was on `<body>`
-after a submit settled. It is the same defect the public flow's input already
-works around by using `readOnly` instead of `disabled`, and the same one the
-audit card's two buttons were given `focusableWhenDisabled` for.
+after a submit settled. Re-confirmed Jul 26 2026 while fixing the sibling
+confirm-card case below — the submit BUTTON is still the open half.
+
+Two related cases are now FIXED, and they narrow what is left here:
+
+- The confirm card's button unmounts on a successful GitHub-only add, so focus
+  fell to `<body>` with nothing restoring it. Both surfaces now call
+  `focusInput()` on the `github_added` outcome, unconditionally: that outcome can
+  only come from `confirmGitHub`, which returns early without a candidate, so a
+  card was always mounted. Verified in the browser on both surfaces.
+- The admin form's INPUT was `disabled={pending}`, where the public flow had long
+  since switched to `readOnly` and documented why. That silently defeated the
+  `focusInput()` calls above — `pending` is still true when they run, and a
+  disabled element cannot receive focus — so the confirm fix did nothing until the
+  input changed too. Now `readOnly` on both surfaces.
+
+What remains is only the submit button itself, which is the part that needs
+`focusableWhenDisabled` plus the double-submit check below.
 
 The fix looks like that one prop, but is NOT a copy of it: those audit buttons
 sit outside the `<form>` and Base UI forces them to `type="button"`, whereas

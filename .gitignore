@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Local review-panel output (not for the repo)
 reviews/
+
+# Playwright MCP scratch output (snapshots, console logs) — not for the repo
+.playwright-mcp/
