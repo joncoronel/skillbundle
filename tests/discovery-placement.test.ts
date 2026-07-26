@@ -65,16 +65,25 @@ describe("probePathsFor — the tree-unavailable fallback", () => {
     ]);
   });
 
-  test("refuses a slug that would escape the repo, rather than probing it", () => {
+  test("never interpolates a slug that would escape the repo", () => {
     // These become a raw.githubusercontent path by bare template concatenation,
     // and URL parsing resolves `..` — so this slug would probe (and then persist
     // as the row's content URL) a file in someone else's repo entirely.
-    expect(probePathsFor("../../../../evil-owner/evil-repo/main/x")).toEqual([]);
-    expect(probePathsFor("..")).toEqual([]);
-    expect(probePathsFor(".")).toEqual([]);
-    expect(probePathsFor("a/b")).toEqual([]);
-    expect(probePathsFor("")).toEqual([]);
-    // Everything a real skills.sh slug looks like still passes.
+    for (const unsafe of [
+      "../../../../evil-owner/evil-repo/main/x",
+      "..",
+      ".",
+      "a/b",
+      "",
+      "ckm:slides",
+    ]) {
+      // The root probe survives, and ONLY the root probe: it is a constant, so it
+      // cannot traverse. Dropping it too would withhold the one path that could
+      // still bind a row whose slug is merely unusual — `ckm:slides` is a real
+      // production row with ~32k installs, not a hypothetical.
+      expect(probePathsFor(unsafe)).toEqual(["SKILL.md"]);
+    }
+    // Everything a conventional slug reaches is still reached.
     expect(probePathsFor("next.js_16-beta2")).toHaveLength(3);
   });
 });
@@ -123,12 +132,27 @@ describe("planProbePlacements — the tree-unavailable fallback", () => {
     expect(asked).toHaveLength(3);
   });
 
-  test("an unsafe slug is not probed at all", async () => {
+  test("an unsafe slug asks only about the repo root", async () => {
     const { probe, asked } = fakeProbe(["SKILL.md"]);
     expect(
-      await planProbePlacements({ skills: [ref("../../evil/repo/main/x")], probe }),
-    ).toEqual([]);
-    expect(asked).toEqual([]);
+      pairs(
+        await planProbePlacements({
+          skills: [ref("../../evil/repo/main/x")],
+          probe,
+        }),
+      ),
+    ).toEqual(["../../evil/repo/main/x -> SKILL.md"]);
+    // The traversal was never even attempted.
+    expect(asked).toEqual(["SKILL.md"]);
+  });
+
+  test("waveSize is not part of this planner, but a zero one cannot hang it", async () => {
+    // Sibling guard to `planNamePlacements`'s: this planner has no batching, so
+    // there is nothing to floor. Asserted so a future batching change here has to
+    // think about it rather than inherit a spin.
+    const { probe, asked } = fakeProbe([]);
+    await planProbePlacements({ skills: [ref("a"), ref("b")], probe });
+    expect(asked).toHaveLength(6);
   });
 
   test("each row is decided independently", async () => {
@@ -294,6 +318,27 @@ describe("planNamePlacements — pass 2, frontmatter name against slug", () => {
       expect(batches.map((b) => b.map((p) => p.split("/")[0]))).toEqual(want);
     }
     expect(DISCOVERY_WAVE_SIZE).toBe(10);
+  });
+
+  test("a zero or negative waveSize is floored, not left to spin", async () => {
+    // `slice(i, i + 0)` is always empty, so `i` never advances and `open` never
+    // shrinks: an unkillable loop, since it awaits only resolved promises and so
+    // never yields to the timer queue. Test-only surface — production takes the
+    // default — but a hang is a bad failure mode for a parameter that exists for
+    // tests. This case would not terminate without the floor.
+    const { read, batches } = fakeReader({ "a/SKILL.md": "target" });
+    for (const waveSize of [0, -5, 0.5]) {
+      batches.length = 0;
+      const binds = await planNamePlacements({
+        remaining: [ref("target")],
+        candidates: ["a/SKILL.md"],
+        usedPaths: new Set(),
+        readNames: read,
+        waveSize,
+      });
+      expect(pairs(binds)).toEqual(["target -> a/SKILL.md"]);
+      expect(batches).toEqual([["a/SKILL.md"]]);
+    }
   });
 
   test("unreadable and name-less candidates drop out without shifting the rest", async () => {

@@ -24,9 +24,10 @@
  *
  * Discovery's looseness and the reverted pass-1 name check are the same subject
  * from two other angles; both are recorded in docs/skill-lifecycle.md, "Discovery:
- * which SKILL.md a row gets". This file does not restate the measurements — see
- * finding 10 of reviews/refactor-testable-discovery-placement-review.md for why
- * repeating them here is how they drift.
+ * which SKILL.md a row gets", together with the production measurements behind
+ * them. Deliberately not restated here: those numbers were re-stamped by hand
+ * across several files once already, and every extra copy is another place for them
+ * to drift.
  */
 import { matchesSkillId, matchesSkillIdExactly } from "./skillMatch";
 
@@ -70,25 +71,34 @@ const SAFE_SLUG = /^[A-Za-z0-9._-]+$/;
  * repo-root file last, because in a repo that also has `skills/` a root SKILL.md
  * is usually the plugin's own front matter rather than the skill being sought.
  *
- * Returns `[]` for a slug that cannot safely be a path segment. `skillId` arrives
- * from the skills.sh feed (`convex/skills.ts`, `skillId: s.slug`) and reaches
- * `rawGitHubUrl`, which is bare template concatenation — so `..` segments would
- * normalise out of our repo and into someone else's, and the resulting URL would
- * be persisted as this row's `skillMdUrl` and later rendered as its content. No
- * observed slug looks like that, and the charset is the same one `SAFE_SEGMENT`
- * (lib/install-commands.ts) already enforces on the install-command sink; this
- * closes the read sink to match.
+ * A slug that cannot safely be a path segment drops the two INTERPOLATED paths
+ * and keeps the root one. `skillId` arrives from the skills.sh feed
+ * (`convex/skills.ts`, `skillId: s.slug`) and reaches `rawGitHubUrl`, which is
+ * bare template concatenation — so `..` segments would normalise out of our repo
+ * and into someone else's, and the resulting URL would be persisted as this row's
+ * `skillMdUrl` and later rendered as its content. The charset is the one
+ * `SAFE_SEGMENT` (lib/install-commands.ts) already enforces on the
+ * install-command sink; this closes the read sink to match.
+ *
+ * Keeping `SKILL.md` matters: it is a constant, so it cannot traverse anywhere,
+ * and dropping it would withhold the one probe that could still bind a row whose
+ * slug is merely unusual. Real ones exist — `ckm:slides` is a production row with
+ * ~32k installs. Refusing to interpolate an unsafe slug is the security fix;
+ * refusing to look in the repo root would just be collateral.
  *
  * Both callers treat "no path matched" as a non-verdict rather than a failure —
  * `skills.ts` marks the row unfound and the next sync retries, `githubOnly.ts`
- * answers `tree_unavailable` — so an empty list here is safe, not silent.
+ * answers `tree_unavailable` — so a short list here is safe, not silent.
  */
 export function probePathsFor(skillId: string): string[] {
-  if (!SAFE_SLUG.test(skillId) || skillId === "." || skillId === "..") return [];
+  const root = `SKILL.md`;
+  if (!SAFE_SLUG.test(skillId) || skillId === "." || skillId === "..") {
+    return [root];
+  }
   return [
     `skills/${skillId}/SKILL.md`,
     `.claude/skills/${skillId}/SKILL.md`,
-    `SKILL.md`,
+    root,
   ];
 }
 
@@ -230,8 +240,13 @@ export async function planNamePlacements({
     }
   };
 
-  for (let i = 0; i < candidates.length && open.size > 0; i += waveSize) {
-    const read = await readNames(candidates.slice(i, i + waveSize));
+  // Floored at 1. `waveSize` exists for tests, and `0` would slice an empty batch
+  // forever without advancing `i` — an unkillable spin, since the loop awaits only
+  // resolved promises and so never yields to the timer queue.
+  const step = Math.max(1, Math.floor(waveSize));
+
+  for (let i = 0; i < candidates.length && open.size > 0; i += step) {
+    const read = await readNames(candidates.slice(i, i + step));
     const fresh = read.filter((r): r is NamedCandidate => r !== null);
     named.push(...fresh);
     offer(fresh, matchesSkillIdExactly);

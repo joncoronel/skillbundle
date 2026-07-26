@@ -926,7 +926,16 @@ export const discoverSkillMdUrls = internalAction({
     const rawUrlFor = (path: string) =>
       rawGitHubUrl(source, resolvedBranch, path);
 
-    /** Apply one decision from lib/discoveryPlacement.ts. The only writer. */
+    /**
+     * Apply one decision from lib/discoveryPlacement.ts. The only writer.
+     *
+     * Deliberate delta: in the tree-unavailable fallback the write used to sit
+     * inside the probe's `try`, so a failing mutation was swallowed and the row
+     * fell through to "unfound". Now only the probe is guarded and a write throw
+     * aborts the invocation — which is what pass 1 and pass 2 always did, and the
+     * row stays in the work set for the next sync rather than being recorded as
+     * having no file on the strength of a failed write.
+     */
     const applyPlacement = async ({ skill, path }: Placement) => {
       await ctx.runMutation(internal.skills.updateSkillMdUrl, {
         docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],

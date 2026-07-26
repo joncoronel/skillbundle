@@ -45,12 +45,13 @@ Not urgent — the action is dominated by network waits, not by these writes.
 ### Resolver: extract the hinted shortcut so it can be tested too
 
 The bigger half of this entry is DONE (Jul 2026): `discoverSkillMdUrls`'s placement
-decisions now live in `convex/lib/discoveryPlacement.ts`, pure and covered by
-`tests/discovery-placement.test.ts`. The action fetches and writes; the module
-decides. Five deliberate mutations of that module were checked to make sure the
-tests actually fail when the behaviour breaks — swapping the phase order, dropping
-the `allNamedRead` gate, dropping either the path or the skill guard, and making
-pass 1 fold separators instead of matching the folder literally.
+decisions now live in `convex/lib/discoveryPlacement.ts`, covered by
+`tests/discovery-placement.test.ts`. The module decides — including how many bodies
+to read, through an injected `NameReader` — and the action supplies the reads and
+does the writes. Twelve deliberate mutations of the module were checked to confirm
+the tests fail when the behaviour breaks (phase order, either guard, the loop's
+early cut, pass 1 folding separators, the probe order and its `break`, the slug
+charset), plus one deliberately equivalent mutation that still passes as a control.
 
 What is still untested is `resolveGitHubSkillMd` in `convex/githubOnly.ts`, whose
 own placement decision — which candidate the `path` hint from a pasted URL
