@@ -560,11 +560,11 @@ async function previewGitHubCore(
   // exact folder, so its frontmatter name is a statement about the skill they
   // meant. Since the resolver went exact-only, a `"frontmatter"` match implies
   // the name equals the SEPARATOR-FOLDED typed slug, which also forces the slug
-  // all-lowercase — leaving only padding (`canonicalSlug` trims, `kebabCase` does
-  // not) for this gate to refuse. It is belt-and-braces for
-  // the WRITE — but it stays load-bearing for the auto re-add, because
-  // `on_skills_sh_as_alias` makes the client re-run the add with no confirm step
-  // and nothing inferred may reach an unconfirmed write.
+  // all-lowercase — leaving only padding (`canonicalSlug` trims, `kebabCase`
+  // does not) for this gate to refuse. It is belt-and-braces for the WRITE, but
+  // it stays load-bearing for the auto re-add, because `on_skills_sh_as_alias`
+  // makes the client re-run the add with no confirm step and nothing inferred
+  // may reach an unconfirmed write.
   //
   // Runs only on a genuine mismatch, and deliberately AFTER the typed-slug
   // checks: the slug the caller gave wins whenever it resolves to something.

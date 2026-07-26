@@ -145,15 +145,18 @@ export function matchesSkillIdExactly(
  * `SAFE_SEGMENT` in lib/install-commands.ts or the detail page 404s forever
  * and the install command is silently dropped.
  *
- * So anything outside `[a-z0-9.-]` is REJECTED rather than mangled (no `_` —
- * see the inline comment on the charset). Two
- * reasons it must be a rejection: `kebabCase` only lowercases and collapses
- * `[\s_]+` runs, so `/`, `&`, `(`, `)` and friends survive it intact; and the
- * module comment above is explicit that skills.sh derives slugs "in
+ * `kebabCase` normalises exactly two things — case, and `[\s_]+` runs, which
+ * become `-`. Whatever it does NOT normalise and the charset does not admit is
+ * REJECTED rather than mangled, and the charset is `[a-z0-9.-]`: no `_`, because
+ * nothing surviving `kebabCase` can contain one (see the inline comment on the
+ * test itself).
+ *
+ * Two reasons the leftovers must be a rejection rather than a scrub: `/`, `&`,
+ * `(`, `)` and friends survive `kebabCase` intact, so there is a lot of leftover;
+ * and the module comment above is explicit that skills.sh derives slugs "in
  * non-obvious ways", so a name this transform can't handle cleanly is exactly
- * the case where guessing writes an unroutable row nothing can repair.
- * Callers treat `null` as "no alias" and fall back to the slug they were
- * given.
+ * the case where guessing writes an unroutable row nothing can repair. Callers
+ * treat `null` as "no alias" and fall back to the slug they were given.
  */
 export function canonicalSlug(fmName: string): string | null {
   const slug = kebabCase(fmName.trim());
