@@ -262,8 +262,12 @@ async function resolveGitHubSkillMd(
   // These two paths must bind the SAME file for the same slug
   // (convex/lib/skillMatch.ts) and this side is the UNREPAIRABLE one — a wrong
   // bind writes a permanent slug — so a shared decision expressed twice is the
-  // exact shape that let them drift before. Empty means the slug cannot be a
-  // safe path segment, which falls through to `tree_unavailable` below.
+  // exact shape that let them drift before.
+  //
+  // A slug that cannot be a safe path segment yields just `SKILL.md`, so the walk
+  // below still runs — and the root arm makes that file earn the match through
+  // `matchesSkillIdExactly`, which is what keeps an odd slug from resolving to
+  // whatever happens to sit in the repo root.
   if (!tree || tree === NOT_MODIFIED || tree.truncated) {
     const probePaths = probePathsFor(skillId);
     const bodies = await Promise.all(

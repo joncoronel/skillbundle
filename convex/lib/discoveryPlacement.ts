@@ -23,8 +23,8 @@
  *   3. A SKILL BINDS AT MOST ONCE, to the first candidate that claims it.
  *
  * Discovery's looseness and the reverted pass-1 name check are the same subject
- * from two other angles; both are recorded in docs/skill-lifecycle.md, "Discovery:
- * which SKILL.md a row gets", together with the production measurements behind
+ * from two other angles; both are recorded in docs/skill-lifecycle.md, under "How
+ * a skill's SKILL.md gets found", together with the production measurements behind
  * them. Deliberately not restated here: those numbers were re-stamped by hand
  * across several files once already, and every extra copy is another place for them
  * to drift.

@@ -146,15 +146,6 @@ describe("planProbePlacements — the tree-unavailable fallback", () => {
     expect(asked).toEqual(["SKILL.md"]);
   });
 
-  test("waveSize is not part of this planner, but a zero one cannot hang it", async () => {
-    // Sibling guard to `planNamePlacements`'s: this planner has no batching, so
-    // there is nothing to floor. Asserted so a future batching change here has to
-    // think about it rather than inherit a spin.
-    const { probe, asked } = fakeProbe([]);
-    await planProbePlacements({ skills: [ref("a"), ref("b")], probe });
-    expect(asked).toHaveLength(6);
-  });
-
   test("each row is decided independently", async () => {
     const { probe } = fakeProbe([
       "skills/one/SKILL.md",

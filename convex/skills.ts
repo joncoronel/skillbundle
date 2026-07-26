@@ -993,7 +993,7 @@ export const discoverSkillMdUrls = internalAction({
     // Pass 1: directory name matches the skillId, bound from the tree without
     // opening the file. Do NOT add a name check here — one was tried and reverted
     // in Jul 2026 after production measurement, and the reasoning plus the numbers
-    // are in docs/skill-lifecycle.md, "Discovery: which SKILL.md a row gets".
+    // are in docs/skill-lifecycle.md, under "How a skill's SKILL.md gets found".
     // The one-line version: a SKILL.md's `name` does not reliably identify its
     // owner, so disagreement with the slug is normal rather than evidence.
     for (const placement of planDirPlacements(skills, skillMdByDir)) {
