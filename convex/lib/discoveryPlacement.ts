@@ -3,7 +3,8 @@
  * injected.
  *
  * `discoverSkillMdUrls` (convex/skills.ts) used to hold all of this inline,
- * interleaved with tree fetches, raw downloads and `updateSkillMdUrl` mutations,
+ * interleaved with tree fetches, raw downloads and per-row `updateSkillMdUrl`
+ * mutations (since batched as `updateSkillMdUrls`),
  * so the only way to drive it was to make GitHub's Tree API answer in a
  * particular shape mid-action. The cost of that was not theoretical: three panel
  * rounds found bugs in those blocks, and one of them — a `rejected` set — could be

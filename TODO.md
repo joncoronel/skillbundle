@@ -6,6 +6,52 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Focus rings fail the 3:1 contrast threshold app-wide (design decision)
+
+Measured Jul 2026 while fixing a disabled-button focus ring, then re-measured
+against every surface token after a reviewer pointed out the first pass had only
+checked one backdrop. `app/globals.css`'s global
+`outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent)` against
+`--ring: oklch(0.55 0.2 250)`, per surface 1→5:
+
+    alpha 0.50 (today)  light  2.03 2.07 2.10 2.10 2.10
+                        dark   1.82 1.78 1.72 1.65 1.57
+    alpha 1.00          light  4.35 4.54 4.74 4.74 4.74   all pass
+                        dark   3.78 3.52 3.24 2.95 2.67   surfaces 4-5 STILL FAIL
+
+WCAG 2.2 asks 3:1 for non-text indicators, so every focus ring in the app is under
+it today. **Dropping the 50% mix is NOT sufficient on its own** — an earlier version
+of this entry said it was, having checked only `--surface-1`. Dark needs a lighter
+`--ring` as well, because the dark surfaces climb to `oklch(0.321)` while the ring
+sits at `0.55`.
+
+Not done here because it changes how focus looks on **every** focusable element in
+the app, which is a visual-identity call rather than a side effect of a backend
+branch. User's decision (Jul 2026): its own branch, with eyes on it.
+
+Note the disabled+focused case is already handled — `components/ui/cubby-ui/button.tsx`
+uses full ring alpha under `data-disabled` to compensate for `opacity-60`, since CSS
+opacity dims the outline too.
+
+### The two add-skill forms are hand-copied; extract the shared shell
+
+`app/(main)/dev/add-skill/add-skill-form.tsx` and
+`components/add-skill/add-skill-flow.tsx` share the state machine
+(`hooks/use-add-skill-flow.ts`) and the copy helpers, but each hand-rolls the same
+markup: input with `readOnly={pending}`, help paragraph, submit button rendering
+`label ?? …`, plus a candidate card with Confirm/Cancel.
+
+Three consecutive fixes have had to land twice, and the cost is not hypothetical:
+the admin input stayed `disabled` long after the public flow switched to `readOnly`,
+which silently defeated every `focusInput()` call in that file. Extract one
+`AddSkillField` (or form shell) owning the input + submit row and their focus/aria
+contract, parameterised on label/id, placeholder, help copy, the signed-out button
+slot and `className`.
+
+Deferred Jul 2026 by user decision, raised as a question rather than filed: it is a
+large move-diff and belongs on its own branch with its own review rather than riding
+along on eleven unrelated fixes.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
@@ -26,60 +72,6 @@ contains (the `githubOnly.ts` resolver already walks the tree and collects
 candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
-
-### Discovery: batch the per-row `updateSkillMdUrl` writes
-
-`discoverSkillMdUrls` writes one row per `ctx.runMutation`, awaited serially, from
-all three placement paths. One invocation covers up to 500 rows of a single source,
-each written exactly once with no cross-row dependency, and each write does a
-`db.get`, an indexed `.unique()` on `skillSummaries` and two `patch`es — so up to
-500 transactions and ~2000 document ops for work that has no ordering constraint.
-
-Pre-existing, but now cheap to fix: since the placement extraction (Jul 2026) every
-path produces a `Placement[]` before any write happens, so `applyPlacement` is the
-single seam. Add `internal.skills.updateSkillMdUrls` taking an array and loop inside
-the mutation, ~100 per batch to stay well under the per-transaction ceilings.
-
-Not urgent — the action is dominated by network waits, not by these writes.
-
-### Resolver: extract the hinted shortcut so it can be tested too
-
-The bigger half of this entry is DONE (Jul 2026): `discoverSkillMdUrls`'s placement
-decisions now live in `convex/lib/discoveryPlacement.ts`, covered by
-`tests/discovery-placement.test.ts`. The module decides — including how many bodies
-to read, through an injected `NameReader` — and the action supplies the reads and
-does the writes. Twelve deliberate mutations of the module were checked to confirm
-the tests fail when the behaviour breaks (phase order, either guard, the loop's
-early cut, pass 1 folding separators, the probe order and its `break`, the slug
-charset), plus one deliberately equivalent mutation that still passes as a control.
-
-What is still untested is `resolveGitHubSkillMd` in `convex/githubOnly.ts`, whose
-own placement decision — which candidate the `path` hint from a pasted URL
-promotes, and how that interacts with the two-phase order — is reachable only by
-making GitHub's tree API answer in a particular shape mid-add. Same treatment: a
-pure function over `(pathHint, orderedCandidates, skillId, names)` returning the
-choice.
-
-Lower urgency than the discovery half was, because the hint only reorders
-candidates within a phase and cannot change WHICH rule matched. Worth doing before
-the next change to the resolver.
-
-### Split convex/githubOnly.ts (over the 1000-line threshold again)
-
-1023 lines, against the ~968 it started the exact-match branch at (1022 after
-the round-3 helper removal; the trend is down but the threshold is still breached). That file was
-split once before for exactly this reason — `convex/githubOnlyAudit.ts` exists
-because it "had grown past 1000 lines" — so it is back over the line that
-justified the last split.
-
-The obvious cut is the same one as last time: the module is "resolver + preview +
-confirm + the public wrappers", and the resolver (`resolveGitHubSkillMd` plus its
-tree/probe/pass machinery) is the self-contained half. Shared helpers already moved
-to `convex/lib/github.ts`, so the seam is cleaner than it was.
-
-Deferred from the exact-match branch (Jul 2026): the branch was already large and
-a file split at the end of it would have made the diff harder to review than the
-correctness fixes it carried.
 
 ### Tighten SKILL.md slug matching to whole-word prefixes
 
@@ -105,53 +97,10 @@ than discovery, never looser.
 What that does and does not change about the value here. It no longer guards a
 row's **identity**, which is what made this urgent: a bad match can no longer
 write a permanent, unrepairable slug. It still guards a row's **content** —
-discovery calls `updateSkillMdUrl` on a match (`skills.ts`), so a wrong guess
+discovery calls `updateSkillMdUrls` on a match (`skills.ts`), so a wrong guess
 binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
-
-### Submit buttons drop keyboard focus for the length of every request
-
-Both add-skill surfaces disable the submit button while a step is in flight
-(`disabled={submitBlocked}` in `app/(main)/dev/add-skill/add-skill-form.tsx`,
-`disabled={submitBlocked || authLoading}` in
-`components/add-skill/add-skill-flow.tsx`). A natively disabled element cannot
-hold focus, so the browser drops it to `<body>` on every submit and a keyboard
-user tabs back from the top of the page. One submit can be three sequential
-round trips, so the window is seconds, not milliseconds.
-
-Confirmed in the browser (Jul 2026), on the admin form: focus was on `<body>`
-after a submit settled. Re-confirmed Jul 26 2026 while fixing the sibling
-confirm-card case below — the submit BUTTON is still the open half.
-
-Two related cases are now FIXED, and they narrow what is left here:
-
-- The confirm card's button unmounts on a successful GitHub-only add, so focus
-  fell to `<body>` with nothing restoring it. Both surfaces now call
-  `focusInput()` on the `github_added` outcome, unconditionally: that outcome can
-  only come from `confirmGitHub`, which returns early without a candidate, so a
-  card was always mounted. Verified in the browser on both surfaces.
-- The admin form's INPUT was `disabled={pending}`, where the public flow had long
-  since switched to `readOnly` and documented why. That silently defeated the
-  `focusInput()` calls above — `pending` is still true when they run, and a
-  disabled element cannot receive focus — so the confirm fix did nothing until the
-  input changed too. Now `readOnly` on both surfaces.
-
-What remains is only the submit button itself, which is the part that needs
-`focusableWhenDisabled` plus the double-submit check below.
-
-The fix looks like that one prop, but is NOT a copy of it: those audit buttons
-sit outside the `<form>` and Base UI forces them to `type="button"`, whereas
-`focusableWhenDisabled` on a real submit button drops the native `disabled`
-attribute that is currently also what stops a second form submit. So it needs
-verifying that `useAddSkillFlow`'s `inFlight` ref latch alone holds under a
-double Enter-press before the prop goes on. Probably fine — the latch exists for
-exactly that and is read synchronously — but "probably" is why this is its own
-change.
-
-Deferred from the confirm-returns PR (Jul 2026): pre-existing on both surfaces,
-outside anything that branch touched, and each late in-scope addition on that
-branch produced a new review finding of its own.
 
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 

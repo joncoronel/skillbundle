@@ -169,6 +169,9 @@ export function AddSkillForm() {
               ? aliasRetryNote(outcome.viaAlias.skillId)
               : undefined,
           });
+          // The step-3 alias re-add reached from a CONFIRM unmounts the card the
+          // admin was standing in; the plain-submit path never had one.
+          if (outcome.candidateDismissed) focusInput();
           return;
         case "github_added":
           // The action's status ("inserted" | "relisted") is a subset of
@@ -274,6 +277,16 @@ export function AddSkillForm() {
     );
   }
 
+  // The submit button is `focusableWhenDisabled`, so Tab reaches it even when it
+  // does nothing. `submitBlocked` conflates three reasons and only `pending`
+  // changes the label, so name the other two rather than leave a silent stop.
+  const submitReason =
+    !submitBlocked || pending
+      ? null
+      : !input.trim()
+        ? "Paste a skills.sh URL, a GitHub link, or source/slug first."
+        : "Review the file found below, then confirm it.";
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const trimmed = input.trim();
@@ -329,9 +342,49 @@ export function AddSkillForm() {
                 isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
                 repo instead.
               </p>
-              <Button type="submit" disabled={submitBlocked}>
+              {/*
+                `focusableWhenDisabled`, for the same reason the input above is
+                `readOnly` rather than `disabled`: a natively disabled element
+                cannot hold focus, so activating this button dropped focus to
+                `<body>` for the length of the request — one submit can be three
+                sequential round trips, so that window is seconds, and a keyboard
+                user then tabbed back from the top of the page.
+
+                Safe to drop the native attribute because it was never what
+                prevented a second submit: `useAddSkillFlow` latches on an
+                `inFlight` ref read synchronously before the first `await`, so a
+                double activation is refused whether or not the button is
+                clickable.
+
+                UNCONDITIONAL on purpose, not `focusableWhenDisabled={pending}`:
+                `reset()` clears the input when a request settles, so
+                `submitBlocked` stays true as `pending` goes false — a conditional
+                prop would snap the attribute back on and drop focus at the exact
+                moment the answer lands.
+
+                Two costs, both accepted. The button is a permanent tab stop even
+                at rest (hence `aria-describedby`), and Base UI `preventDefault`s
+                every key but Tab while `aria-disabled`, so Space/PageDown do not
+                scroll from here.
+              */}
+              <Button
+                type="submit"
+                disabled={submitBlocked}
+                focusableWhenDisabled
+                // Keyed to `pending`, not `submitBlocked`: two of the three
+                // things that block this button are not "busy".
+                aria-busy={pending}
+                aria-describedby={
+                  submitReason ? "admin-add-submit-reason" : undefined
+                }
+              >
                 {label ?? "Add to catalog"}
               </Button>
+              {submitReason && (
+                <p id="admin-add-submit-reason" className="sr-only">
+                  {submitReason}
+                </p>
+              )}
             </div>
           </form>
         </CardContent>
@@ -476,16 +529,21 @@ function SlugAuditCard() {
               }}
               disabled={running || !report.cursor}
               focusableWhenDisabled
+              // `running`, not the disabled expression: an exhausted walk is not
+              // busy, it is finished.
+              aria-busy={running}
             >
               {report.cursor ? "Check the next page" : "No more pages"}
             </Button>
           )}
         </div>
 
-        {/* The button's label is the only progress signal and it sits on a
-            disabled control, so it is never announced — and a run is up to
-            ~20 serial round trips. Results and errors land in here too, so
-            completion isn't silent. */}
+        {/* The button's label is the only progress signal, and a run is up to
+            ~20 serial round trips. This mirror covers the case where focus is
+            not on the button; the button itself carries
+            `focusableWhenDisabled`, so when it IS focused its changing name may
+            be announced alongside this region. Duplication beats silence.
+            Results and errors land in here too, so completion isn't silent. */}
         <div role="status" aria-live="polite" className="space-y-4">
           {running && (
             <p className="sr-only">Checking GitHub-only slugs…</p>
@@ -650,10 +708,26 @@ function GitHubCandidateCard({
           re-running the normal add adopts it on the spot.
         </p>
         <div className="mt-4 flex items-center gap-3">
-          <Button onClick={onConfirm} disabled={disabled}>
+          {/*
+            Same reason as the submit button, on the longer request: a Confirm
+            can spawn the step-3 alias re-add, so the card stays mounted across
+            two round trips with focus on a natively disabled control. The
+            double-activation guard is `useAddSkillFlow`'s `inFlight` ref.
+          */}
+          <Button
+            onClick={onConfirm}
+            disabled={disabled}
+            focusableWhenDisabled
+            aria-busy={confirming}
+          >
             {confirming ? "Adding…" : "Add as GitHub-only"}
           </Button>
-          <Button variant="outline" onClick={onCancel} disabled={disabled}>
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            disabled={disabled}
+            focusableWhenDisabled
+          >
             Cancel
           </Button>
         </div>

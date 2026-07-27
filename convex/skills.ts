@@ -182,7 +182,7 @@ export const syncSkills = internalAction({
  * rows into delisting). Deliberately scoped to GitHub-only rows — for
  * everything else `lastSeenInApi` must keep meaning "skills.sh still lists
  * this". (No discoveryFailCount reset here — it would be dead code: a row only
- * reaches a content fetch with a discovered URL, and updateSkillMdUrl zeroes
+ * reaches a content fetch with a discovered URL, and updateSkillMdUrls zeroes
  * the counter whenever it sets one, so "URL present ⇒ counter 0" already
  * holds. Discovery-exhaustion recovery lives in markStaleContentBatch's cap
  * exemption instead.)
@@ -868,9 +868,12 @@ export const listSourcesNeedingDiscovery = internalQuery({
       .paginate(paginationOpts);
 
     // Group skills by source repo so we hit each repo's Tree API once.
+    // `docId` stays `Id<"skills">` rather than widening to `string`: the only
+    // producer holds real ids (`skillDocId` is `v.id("skills")`) and the only
+    // consumer needs them back, so widening here just bought three casts.
     const bySource = new Map<
       string,
-      Array<{ docId: string; skillId: string }>
+      Array<{ docId: Id<"skills">; skillId: string }>
     >();
     for (const s of result.page) {
       const list = bySource.get(s.source) ?? [];
@@ -891,10 +894,18 @@ export const listSourcesNeedingDiscovery = internalQuery({
   },
 });
 
+/**
+ * How many rows one `updateSkillMdUrls` transaction settles. A source can supply
+ * 500 (the `listSourcesNeedingDiscovery` page cap) and each row costs a get, an
+ * indexed lookup and two patches, so this keeps a transaction comfortably small
+ * rather than sized by whatever the repo happened to contain.
+ */
+const DISCOVERY_WRITE_BATCH = 100;
+
 export const discoverSkillMdUrls = internalAction({
   args: {
     source: v.string(),
-    skills: v.array(v.object({ docId: v.string(), skillId: v.string() })),
+    skills: v.array(v.object({ docId: v.id("skills"), skillId: v.string() })),
   },
   handler: async (ctx, { source, skills }) => {
     // Well-known sources (mintlify.com, bun.sh, etc.) shouldn't be in this
@@ -904,7 +915,7 @@ export const discoverSkillMdUrls = internalAction({
     if (!isGitHubSource(source)) {
       for (const s of skills) {
         await ctx.runMutation(internal.skills.clearDiscoveryForWellKnown, {
-          docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
+          docId: s.docId,
         });
       }
       return;
@@ -927,7 +938,42 @@ export const discoverSkillMdUrls = internalAction({
       rawGitHubUrl(source, resolvedBranch, path);
 
     /**
-     * Apply one decision from lib/discoveryPlacement.ts. The only writer.
+     * One mutation per chunk, not per row. See `updateSkillMdUrls`.
+     *
+     * A chunk that fails is retried a row at a time before the error propagates.
+     * Batching otherwise trades a per-row failure for an all-or-nothing one, and
+     * that failure would repeat: chunk composition is stable across syncs (same
+     * source, same index order), and a write that throws never increments
+     * `discoveryFailCount`, so the exhaustion cap never trips and every daily run
+     * dies at the same chunk. Splitting restores the old "each row makes progress
+     * on its own" property; a row that still fails alone throws as it always did.
+     */
+    const writeUpdates = async (
+      updates: { docId: Id<"skills">; skillMdUrl: string }[],
+    ) => {
+      for (let i = 0; i < updates.length; i += DISCOVERY_WRITE_BATCH) {
+        const chunk = updates.slice(i, i + DISCOVERY_WRITE_BATCH);
+        try {
+          await ctx.runMutation(internal.skills.updateSkillMdUrls, {
+            updates: chunk,
+          });
+        } catch (err) {
+          if (chunk.length === 1) throw err;
+          console.warn(
+            `${source}: batched write of ${chunk.length} rows failed, retrying singly`,
+            err,
+          );
+          for (const one of chunk) {
+            await ctx.runMutation(internal.skills.updateSkillMdUrls, {
+              updates: [one],
+            });
+          }
+        }
+      }
+    };
+
+    /**
+     * Apply decisions from lib/discoveryPlacement.ts. The only writer.
      *
      * Deliberate delta: in the tree-unavailable fallback the write used to sit
      * inside the probe's `try`, so a failing mutation was swallowed and the row
@@ -936,24 +982,34 @@ export const discoverSkillMdUrls = internalAction({
      * row stays in the work set for the next sync rather than being recorded as
      * having no file on the strength of a failed write.
      */
-    const applyPlacement = async ({ skill, path }: Placement) => {
-      await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-        docId: skill.docId as ReturnType<typeof v.id<"skills">>["type"],
-        skillMdUrl: rawUrlFor(path),
-      });
-      matchedSkillIds.add(skill.skillId);
-      matchedPaths.add(path);
+    const applyPlacements = async (placements: readonly Placement[]) => {
+      await writeUpdates(
+        placements.map(({ skill, path }) => ({
+          docId: skill.docId as Id<"skills">,
+          skillMdUrl: rawUrlFor(path),
+        })),
+      );
+      // After the write, so a throw leaves nothing marked matched.
+      for (const { skill, path } of placements) {
+        matchedSkillIds.add(skill.skillId);
+        matchedPaths.add(path);
+      }
     };
+
+    // Each phase writes as it finishes rather than accumulating into one
+    // terminal write. The matched sets are pure in-memory state, so a single
+    // write at the end WOULD be correct and would cost fewer transactions — but
+    // pass 1 commits before pass 2's long network phase, and pass 2 is where this
+    // action can run out of time. Writing per phase means a timeout there keeps
+    // the folder matches instead of discarding them to be re-derived next sync.
+    // That durability is the reason for the extra transactions, not oversight.
 
     /** Whatever neither branch could place is recorded as "no file found". */
     const markRestNotFound = async () => {
       const unmatched = skills.filter((s) => !matchedSkillIds.has(s.skillId));
-      for (const s of unmatched) {
-        await ctx.runMutation(internal.skills.updateSkillMdUrl, {
-          docId: s.docId as ReturnType<typeof v.id<"skills">>["type"],
-          skillMdUrl: "",
-        });
-      }
+      await writeUpdates(
+        unmatched.map((s) => ({ docId: s.docId, skillMdUrl: "" })),
+      );
       return unmatched.length;
     };
 
@@ -978,7 +1034,7 @@ export const discoverSkillMdUrls = internalAction({
           }
         },
       });
-      for (const placement of placements) await applyPlacement(placement);
+      await applyPlacements(placements);
       await markRestNotFound();
       return;
     }
@@ -996,9 +1052,7 @@ export const discoverSkillMdUrls = internalAction({
     // are in docs/skill-lifecycle.md, under "How a skill's SKILL.md gets found".
     // The one-line version: a SKILL.md's `name` does not reliably identify its
     // owner, so disagreement with the slug is normal rather than evidence.
-    for (const placement of planDirPlacements(skills, skillMdByDir)) {
-      await applyPlacement(placement);
-    }
+    await applyPlacements(planDirPlacements(skills, skillMdByDir));
 
     // Pass 2: for unmatched skills, fetch unmatched SKILL.md files and check
     // the frontmatter `name` field (skills.sh sometimes derives skillIds from
@@ -1035,9 +1089,7 @@ export const discoverSkillMdUrls = internalAction({
         });
       },
     });
-    for (const placement of namePlacements) {
-      await applyPlacement(placement);
-    }
+    await applyPlacements(namePlacements);
 
     const notFound = await markRestNotFound();
     console.log(
@@ -1073,50 +1125,94 @@ export const clearDiscoveryForWellKnown = internalMutation({
   },
 });
 
-export const updateSkillMdUrl = internalMutation({
+/**
+ * Record what discovery found, for a batch of rows.
+ *
+ * Takes an array because one `discoverSkillMdUrls` invocation settles up to 500
+ * rows of a single source, each written exactly once with no cross-row dependency
+ * — so a mutation per row was 500 transactions for work with no ordering
+ * constraint at all.
+ *
+ * **Reads the SUMMARY, never the skills row.** The only things needed from the
+ * existing state are `discoveryFailCount` and the summary's id, and both live on
+ * the ~200 B summary — which is what that table is for ("to avoid reading full
+ * 30KB+ skill docs", schema.ts). A `skills` row carries `content`, so reading one
+ * per update would pull ~13 KB each and, batched, would make a docs-heavy source
+ * a large transaction to fetch one integer.
+ *
+ * Reading the counter off the summary is safe on two counts. Every writer that
+ * PATCHES it writes the same value to both tables (`upsertSkillsBatch`'s three
+ * arms, `devStats`' retry paths) — with one exception: the orphaned-row arm patches
+ * the skills row and then RECREATES the summary via `upsertSkillSummary` without
+ * passing the field, so it starts unset there. Bounded, and in the harmless
+ * direction — the counter restarts, so a stuck row gets at most
+ * `MAX_DISCOVERY_FAILURES` extra attempts rather than retiring early.
+ *
+ * The stronger reason is that every READER already consults the summary, not the
+ * skills row (`markStaleContentBatch` below, and both `devStats` gates). So this
+ * reads the row the exhaustion cap is actually judged on, which makes the summary
+ * the consistent source rather than merely an equivalent one.
+ *
+ * The batch size is bounded by BYTES WRITTEN, not operation count: a patch rewrites
+ * the row, and `skills` rows are the big ones. 100 rows is ~1.3 MB written at the
+ * schema's documented ~13 KB average, well inside the transaction limit, while the
+ * read side is now ~20 KB.
+ *
+ * `skillMdUrl: ""` means "looked and found nothing", which is why the empty string
+ * is a value here and not a missing field.
+ */
+export const updateSkillMdUrls = internalMutation({
   args: {
-    docId: v.id("skills"),
-    skillMdUrl: v.string(),
+    updates: v.array(
+      v.object({ docId: v.id("skills"), skillMdUrl: v.string() }),
+    ),
   },
-  handler: async (ctx, { docId, skillMdUrl }) => {
-    const hasUrl = skillMdUrl !== "";
+  returns: v.null(),
+  handler: async (ctx, { updates }) => {
+    // One value for the whole transaction, deliberately — and unavoidably: the
+    // Convex runtime pins `Date.now()` for a function execution. What keeps a
+    // found row from being stamped is the `!hasUrl` gate below, not the clock.
     const now = Date.now();
-    const skill = await ctx.db.get(docId);
-    const newFailCount = hasUrl ? 0 : (skill?.discoveryFailCount ?? 0) + 1;
-    // Discovery failure surfaces the same "Install may fail" badge as
-    // content-fetch failure: the user-facing reality is identical (we have
-    // no SKILL.md, so `npx skills add` may install nothing useful), and the
-    // existing badge logic in components/skill-status-badge.tsx already
-    // keys off hasContentFetchError. Without this, low-install curated
-    // skills whose SKILL.md was deleted upstream (or never existed) render
-    // a bare skill page with no warning — see the Bitwarden case.
-    await ctx.db.patch(docId, {
-      skillMdUrl,
-      needsDiscovery: false,
-      needsContentFetch: hasUrl,
-      discoveryFailCount: newFailCount,
-      hasContentFetchError: !hasUrl,
-      ...(!hasUrl && { contentFetchedAt: now }),
-    });
-    if (skill) {
-      const summary = await ctx.db
-        .query("skillSummaries")
-        .withIndex("by_source_skillId", (q) =>
-          q.eq("source", skill.source).eq("skillId", skill.skillId),
-        )
-        .unique();
-      if (summary) {
-        await ctx.db.patch(summary._id, {
+
+    const summaries = await Promise.all(
+      updates.map(({ docId }) =>
+        ctx.db
+          .query("skillSummaries")
+          .withIndex("by_skillDocId", (q) => q.eq("skillDocId", docId))
+          .unique(),
+      ),
+    );
+
+    await Promise.all(
+      updates.flatMap(({ docId, skillMdUrl }, i) => {
+        const hasUrl = skillMdUrl !== "";
+        const summary = summaries[i];
+        // Discovery failure surfaces the same "Install may fail" badge as
+        // content-fetch failure: the user-facing reality is identical (we have
+        // no SKILL.md, so `npx skills add` may install nothing useful), and the
+        // existing badge logic in components/skill-status-badge.tsx already
+        // keys off hasContentFetchError. Without this, low-install curated
+        // skills whose SKILL.md was deleted upstream (or never existed) render
+        // a bare skill page with no warning — see the Bitwarden case.
+        const fields = {
           skillMdUrl,
-          hasSkillMdUrl: hasUrl,
           needsDiscovery: false,
           needsContentFetch: hasUrl,
-          discoveryFailCount: newFailCount,
+          discoveryFailCount: hasUrl
+            ? 0
+            : (summary?.discoveryFailCount ?? 0) + 1,
           hasContentFetchError: !hasUrl,
           ...(!hasUrl && { contentFetchedAt: now }),
-        });
-      }
-    }
+        };
+        return [
+          ctx.db.patch(docId, fields),
+          ...(summary
+            ? [ctx.db.patch(summary._id, { ...fields, hasSkillMdUrl: hasUrl })]
+            : []),
+        ];
+      }),
+    );
+    return null;
   },
 });
 

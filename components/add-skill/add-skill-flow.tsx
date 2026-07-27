@@ -120,6 +120,11 @@ export function AddSkillFlow({
             ? aliasRetryNote(outcome.viaAlias.skillId)
             : undefined,
         });
+        // The step-3 alias re-add reached from a CONFIRM unmounts the card the
+        // user was standing in. Conditional for the same reason
+        // `already_exists` is: on the plain-submit path no card existed and the
+        // submit button is still mounted.
+        if (outcome.candidateDismissed) focusInput();
         return;
       case "github_added":
         setNotice(null);
@@ -182,6 +187,12 @@ export function AddSkillFlow({
             quota: { ...c.quota, atLimit: true },
           }));
           setNotice({ tone: "error", text: quotaErrorText(err) });
+          // `atLimit` flips `blocked`, which replaces the whole button row with
+          // the upgrade banner — so the Confirm the user just pressed unmounts
+          // and focus would fall to <body>. The sibling refusal path
+          // (`preview_failed`) needs no such call: it leaves the card mounted, so
+          // `focusableWhenDisabled` on Confirm holds focus where it already is.
+          focusInput();
           return;
         }
         setNotice({ tone: "error", text: addSkillErrorText(err) });
@@ -218,6 +229,22 @@ export function AddSkillFlow({
   useEffect(() => {
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
+
+  // The submit button is `focusableWhenDisabled`, so it is reachable by Tab even
+  // when it does nothing. `submitBlocked` conflates three unrelated reasons and
+  // only `pending` changes the label, so without this a keyboard user lands on
+  // "Add skill, unavailable" with no way to know which one applies.
+  const submitReason =
+    pending || !(submitBlocked || authLoading)
+      ? null
+      : authLoading && !submitBlocked
+        ? // Transient, and only reachable with a prefilled `initialInput` while
+          // Clerk resolves — but the button is `aria-disabled` for that window
+          // and would otherwise be a tab stop with no stated reason.
+          "Checking your sign-in…"
+        : !input.trim()
+          ? "Paste a skill link or source first."
+          : "Review the file found below, then confirm it.";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -296,22 +323,64 @@ export function AddSkillFlow({
             <Button
               type="submit"
               disabled={submitBlocked || authLoading}
+              // `focusableWhenDisabled`, for the same reason the input above is
+              // `readOnly` rather than `disabled`: a natively disabled element
+              // cannot hold focus, so activating this button dropped focus to
+              // `<body>` for the length of the request — up to three sequential
+              // round trips. The double-activation guard is `useAddSkillFlow`'s
+              // `inFlight` ref, read synchronously before the first `await`, not
+              // this attribute.
+              //
+              // UNCONDITIONAL on purpose, and NOT `focusableWhenDisabled={pending}`:
+              // `reset()` clears the input when a request settles, so
+              // `submitBlocked` stays true as `pending` goes false — a conditional
+              // prop would snap the native attribute back on and drop focus at the
+              // exact moment the answer lands.
+              //
+              // Two costs, both accepted. The button is a permanent tab stop even
+              // at rest (hence `aria-describedby`, so landing on it is not silent),
+              // and Base UI `preventDefault`s every key except Tab while
+              // `aria-disabled`, so Space/PageDown do not scroll from here.
+              focusableWhenDisabled
+              // Keyed to `pending`, not `submitBlocked`: two of the three things
+              // that block this button are not "busy". Same convention as the
+              // audit buttons on the admin surface.
+              aria-busy={pending}
+              aria-describedby={
+                submitReason ? "add-skill-submit-reason" : undefined
+              }
               className="shrink-0"
             >
               {label ?? "Add skill"}
             </Button>
           )}
         </div>
+        {/* Why the button is unavailable, for the tab stop it now always is.
+            Outside the live region below on purpose — this is a description of
+            a control, not an event to announce. */}
+        {submitReason && (
+          <p id="add-skill-submit-reason" className="sr-only">
+            {submitReason}
+          </p>
+        )}
       </form>
 
       {/* Persistent live region: async outcomes (errors, info, success) are
           announced to screen readers instead of appearing silently after the
           button re-enables. */}
       <div role="status" aria-live="polite" className="space-y-5">
-        {/* The submit button's label is the only progress signal, and it sits
-            on a disabled, unfocused control — never announced. One submit can
-            run three sequential round-trips, so without this a screen-reader
-            user gets silence for the whole thing. */}
+        {/* The submit button's label is the only progress signal, and one
+            submit can run three sequential round-trips. This mirror covers the
+            case where focus is NOT on the button — Enter from the readOnly
+            input leaves focus in the input, which is the common path — where
+            the label change would otherwise go unannounced entirely.
+
+            It used to say the button "sits on a disabled, unfocused control".
+            Half of that stopped being true when the button gained
+            `focusableWhenDisabled`: when it IS focused, its accessible name
+            walks the same phases this region announces, so some screen readers
+            will read each phase twice. That duplication is the accepted cost of
+            not going silent on the common path. */}
         {label && <p className="sr-only">{label}</p>}
         <p
           id="add-skill-notice"
@@ -422,10 +491,28 @@ function GitHubCandidateCard({
           />
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={onConfirm} disabled={disabled}>
+            {/*
+              Same reason as the submit button: a natively disabled control
+              cannot hold focus, and the user is standing ON this one when they
+              activate it. Confirm is the LONGER request of the two — it can
+              spawn the step-3 alias re-add, so two sequential round trips with
+              the card still mounted. `inFlight` is the double-activation guard,
+              not the attribute.
+            */}
+            <Button
+              onClick={onConfirm}
+              disabled={disabled}
+              focusableWhenDisabled
+              aria-busy={confirming}
+            >
               {confirming ? "Adding…" : "Add to catalog"}
             </Button>
-            <Button variant="outline" onClick={onCancel} disabled={disabled}>
+            <Button
+              variant="outline"
+              onClick={onCancel}
+              disabled={disabled}
+              focusableWhenDisabled
+            >
               Cancel
             </Button>
             {wasDelisted ? (

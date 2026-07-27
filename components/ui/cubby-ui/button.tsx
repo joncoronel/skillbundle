@@ -6,8 +6,17 @@ import { Button as BaseButton } from "@base-ui/react/button";
 import { cn } from "@/lib/utils";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 
+// `data-disabled:focus-visible:outline-ring` (full alpha, not the `/50` default)
+// is deliberate and only reachable via `focusableWhenDisabled`. CSS `opacity`
+// dims the outline too, so a disabled+focused button rendered its ring at
+// 0.5 × 0.6 ≈ 0.3 alpha — measured at 1.53:1 against the light background and
+// 1.35:1 against the dark one. Full alpha under the same dimming gives 2.44:1
+// and 2.16:1, i.e. slightly MORE visible than an ordinary focus ring, which is
+// the right way round for the one state where you most need to find focus.
+// Residual, and NOT from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1,
+// under the 3:1 non-text threshold, app-wide.
 const buttonVariants = cva(
-  "relative inline-flex items-center cursor-pointer justify-center whitespace-nowrap rounded-lg text-sm font-medium data-disabled:pointer-events-none data-disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color,scale,opacity,shadow,background-color,color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid active:shadow-none active:not-aria-[haspopup]:scale-[0.98]",
+  "relative inline-flex items-center cursor-pointer justify-center whitespace-nowrap rounded-lg text-sm font-medium data-disabled:pointer-events-none data-disabled:opacity-60 data-disabled:focus-visible:outline-ring [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color,scale,opacity,shadow,background-color,color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid active:shadow-none active:not-aria-[haspopup]:scale-[0.98]",
   {
     variants: {
       variant: {

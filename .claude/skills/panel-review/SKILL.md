@@ -298,6 +298,22 @@ you may and must edit source.
    by the fix sketch), `DISPUTED (<why the finding is wrong>)`, or
    `DEFERRED (<why not now>)`. Narrate each call in chat as you go so the
    user can override any of them.
+
+   **`DEFERRED` is the expensive option — treat it that way.** The default
+   is to fix it in this branch. A deferral costs the user a TODO entry, a
+   future branch, and another review cycle, so it has to buy more than it
+   costs. Test yourself with: *could I write a TODO entry precise enough
+   for someone to act on?* If yes, the fix is understood well enough to
+   just do, and the entry would take about as long. Reach for `DEFERRED`
+   only when it needs a product decision that isn't yours, lands in a
+   different subsystem than the diff, or is genuinely large (a migration, a
+   new surface). "Out of scope for this change" is not one of those — an
+   adjacent one-file fix is in scope by virtue of you already being there.
+
+   When you do defer, say so in chat as a **question**, not a filing:
+   name it, say why, and let the user overrule. Deferrals that appear only
+   as a TODO diff are how a branch that closes one item quietly spawns
+   three.
 3. If a later `## Fix review` section exists (a prior round's verdict),
    work THAT shortlist instead of re-processing the original findings —
    address PARTIALs, rejected disputes, regressions, and new findings.
