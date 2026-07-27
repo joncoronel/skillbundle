@@ -329,7 +329,22 @@ export function AddSkillForm() {
                 isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
                 repo instead.
               </p>
-              <Button type="submit" disabled={submitBlocked}>
+              {/*
+                `focusableWhenDisabled`, for the same reason the input above is
+                `readOnly` rather than `disabled`: a natively disabled element
+                cannot hold focus, so submitting by Enter dropped focus to
+                `<body>` for the length of the request — and one submit can be
+                three sequential round trips, so that window is seconds. A
+                keyboard user then tabbed back from the top of the page.
+
+                Safe to drop the native `disabled` attribute because it was never
+                what prevented a second submit: `useAddSkillFlow` latches on an
+                `inFlight` ref, read synchronously before the first `await`, so a
+                double Enter-press is refused whether or not the button is
+                clickable. Base UI keeps the button non-activatable and marks it
+                `aria-disabled`, so this changes focus behaviour only.
+              */}
+              <Button type="submit" disabled={submitBlocked} focusableWhenDisabled>
                 {label ?? "Add to catalog"}
               </Button>
             </div>

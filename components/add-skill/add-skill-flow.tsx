@@ -296,6 +296,12 @@ export function AddSkillFlow({
             <Button
               type="submit"
               disabled={submitBlocked || authLoading}
+              // Same reason the input above is `readOnly` rather than `disabled`:
+              // a natively disabled element cannot hold focus, so an Enter-submit
+              // dropped focus to `<body>` for the length of the request. The
+              // second-submit guard is `useAddSkillFlow`'s `inFlight` ref, read
+              // synchronously before the first `await`, not this attribute.
+              focusableWhenDisabled
               className="shrink-0"
             >
               {label ?? "Add skill"}

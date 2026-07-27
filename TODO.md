@@ -73,49 +73,6 @@ binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
-### Submit buttons drop keyboard focus for the length of every request
-
-Both add-skill surfaces disable the submit button while a step is in flight
-(`disabled={submitBlocked}` in `app/(main)/dev/add-skill/add-skill-form.tsx`,
-`disabled={submitBlocked || authLoading}` in
-`components/add-skill/add-skill-flow.tsx`). A natively disabled element cannot
-hold focus, so the browser drops it to `<body>` on every submit and a keyboard
-user tabs back from the top of the page. One submit can be three sequential
-round trips, so the window is seconds, not milliseconds.
-
-Confirmed in the browser (Jul 2026), on the admin form: focus was on `<body>`
-after a submit settled. Re-confirmed Jul 26 2026 while fixing the sibling
-confirm-card case below — the submit BUTTON is still the open half.
-
-Two related cases are now FIXED, and they narrow what is left here:
-
-- The confirm card's button unmounts on a successful GitHub-only add, so focus
-  fell to `<body>` with nothing restoring it. Both surfaces now call
-  `focusInput()` on the `github_added` outcome, unconditionally: that outcome can
-  only come from `confirmGitHub`, which returns early without a candidate, so a
-  card was always mounted. Verified in the browser on both surfaces.
-- The admin form's INPUT was `disabled={pending}`, where the public flow had long
-  since switched to `readOnly` and documented why. That silently defeated the
-  `focusInput()` calls above — `pending` is still true when they run, and a
-  disabled element cannot receive focus — so the confirm fix did nothing until the
-  input changed too. Now `readOnly` on both surfaces.
-
-What remains is only the submit button itself, which is the part that needs
-`focusableWhenDisabled` plus the double-submit check below.
-
-The fix looks like that one prop, but is NOT a copy of it: those audit buttons
-sit outside the `<form>` and Base UI forces them to `type="button"`, whereas
-`focusableWhenDisabled` on a real submit button drops the native `disabled`
-attribute that is currently also what stops a second form submit. So it needs
-verifying that `useAddSkillFlow`'s `inFlight` ref latch alone holds under a
-double Enter-press before the prop goes on. Probably fine — the latch exists for
-exactly that and is read synchronously — but "probably" is why this is its own
-change.
-
-Deferred from the confirm-returns PR (Jul 2026): pre-existing on both surfaces,
-outside anything that branch touched, and each late in-scope addition on that
-branch produced a new review finding of its own.
-
 ### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
 
 `loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`
