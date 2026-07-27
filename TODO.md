@@ -51,7 +51,7 @@ than discovery, never looser.
 What that does and does not change about the value here. It no longer guards a
 row's **identity**, which is what made this urgent: a bad match can no longer
 write a permanent, unrepairable slug. It still guards a row's **content** —
-discovery calls `updateSkillMdUrl` on a match (`skills.ts`), so a wrong guess
+discovery calls `updateSkillMdUrls` on a match (`skills.ts`), so a wrong guess
 binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".

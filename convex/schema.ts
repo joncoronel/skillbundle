@@ -60,7 +60,7 @@ export default defineSchema({
     syncHash: v.optional(v.string()),
     // GitHub-source skill needs SKILL.md path discovery via the Tree API.
     // Set true on first sync OR when content fetch fails twice (path likely
-    // moved). Cleared by updateSkillMdUrl after discovery runs (success or
+    // moved). Cleared by updateSkillMdUrls after discovery runs (success or
     // exhausted). Not used by well-known sources.
     needsDiscovery: v.optional(v.boolean()),
     // Skill needs its content downloaded. For GitHub: set after discovery

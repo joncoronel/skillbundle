@@ -249,8 +249,10 @@ test("updateSkillMdUrls: settles a mixed batch in one transaction", async () => 
   // The reason this mutation takes an array. One discovery invocation covers up
   // to 500 rows of a single source and previously spent one transaction each.
   // A batch mixes found and not-found rows, so this asserts they do not bleed
-  // into one another — the `now` timestamp and the fail-count are computed per
-  // row, and a shared one would set `contentFetchedAt` on the found row too.
+  // into one another: `contentFetchedAt` and the fail-count are gated per row on
+  // `!hasUrl`. `now` is deliberately ONE value for the transaction — and could
+  // not vary anyway, since the Convex runtime pins `Date.now()` per execution —
+  // so the gate is what keeps a found row unstamped, not the clock.
   const t = makeTest();
   const now = Date.now();
 

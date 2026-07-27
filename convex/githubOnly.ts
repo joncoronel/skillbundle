@@ -830,7 +830,7 @@ export const addSkillFromGitHub = action({
  * GitHub-only rows, slim enough to hand to an action, newest first.
  *
  * Reads `skillSummaries`, not `skills`: every field the audit needs is
- * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrl`,
+ * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrls`,
  * `isGitHubOnly` at insert and on adoption) at ~200 B/row instead of the
  * ~13-25 KB a `skills` document costs, which `content` dominates.
  *
