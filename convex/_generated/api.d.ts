@@ -37,6 +37,7 @@ import type * as lib_pagination from "../lib/pagination.js";
 import type * as lib_plans from "../lib/plans.js";
 import type * as lib_postAdd from "../lib/postAdd.js";
 import type * as lib_publicError from "../lib/publicError.js";
+import type * as lib_resolvePlacement from "../lib/resolvePlacement.js";
 import type * as lib_revalidate from "../lib/revalidate.js";
 import type * as lib_skillHealth from "../lib/skillHealth.js";
 import type * as lib_skillMatch from "../lib/skillMatch.js";
@@ -90,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   "lib/plans": typeof lib_plans;
   "lib/postAdd": typeof lib_postAdd;
   "lib/publicError": typeof lib_publicError;
+  "lib/resolvePlacement": typeof lib_resolvePlacement;
   "lib/revalidate": typeof lib_revalidate;
   "lib/skillHealth": typeof lib_skillHealth;
   "lib/skillMatch": typeof lib_skillMatch;
