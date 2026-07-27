@@ -6,6 +6,41 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Focus rings fail the 3:1 contrast threshold app-wide (design decision)
+
+Measured Jul 2026 while fixing a disabled-button focus ring. `app/globals.css`'s
+global `outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent)`
+against `--ring: oklch(0.55 0.2 250)` gives **2.08:1 in light, 1.83:1 in dark**.
+WCAG 2.2 asks 3:1 for non-text indicators. At full alpha the same colour measures
+4.61:1 / 4.09:1, so dropping the 50% mix is a one-token fix.
+
+Not done here because it changes how focus looks on **every** focusable element in
+the app, which is a visual-identity call rather than a side effect of a backend
+branch. User's decision (Jul 2026): its own branch, with eyes on it.
+
+Note the disabled+focused case is already handled — `components/ui/cubby-ui/button.tsx`
+uses full ring alpha under `data-disabled` to compensate for `opacity-60`, since CSS
+opacity dims the outline too.
+
+### The two add-skill forms are hand-copied; extract the shared shell
+
+`app/(main)/dev/add-skill/add-skill-form.tsx` and
+`components/add-skill/add-skill-flow.tsx` share the state machine
+(`hooks/use-add-skill-flow.ts`) and the copy helpers, but each hand-rolls the same
+markup: input with `readOnly={pending}`, help paragraph, submit button rendering
+`label ?? …`, plus a candidate card with Confirm/Cancel.
+
+Three consecutive fixes have had to land twice, and the cost is not hypothetical:
+the admin input stayed `disabled` long after the public flow switched to `readOnly`,
+which silently defeated every `focusInput()` call in that file. Extract one
+`AddSkillField` (or form shell) owning the input + submit row and their focus/aria
+contract, parameterised on label/id, placeholder, help copy, the signed-out button
+slot and `className`.
+
+Deferred Jul 2026 by user decision, raised as a question rather than filed: it is a
+large move-diff and belongs on its own branch with its own review rather than riding
+along on eleven unrelated fixes.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
