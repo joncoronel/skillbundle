@@ -14,6 +14,7 @@ import {
   previewFailureCopy,
   typedSlugOf,
 } from "@/lib/add-skill-copy";
+import { useAddSkillFieldA11y } from "@/hooks/use-add-skill-field-a11y";
 import {
   useAddSkillFlow,
   type AddSkillOutcome,
@@ -230,21 +231,23 @@ export function AddSkillFlow({
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
 
-  // The submit button is `focusableWhenDisabled`, so it is reachable by Tab even
-  // when it does nothing. `submitBlocked` conflates three unrelated reasons and
-  // only `pending` changes the label, so without this a keyboard user lands on
-  // "Add skill, unavailable" with no way to know which one applies.
-  const submitReason =
-    pending || !(submitBlocked || authLoading)
-      ? null
-      : authLoading && !submitBlocked
-        ? // Transient, and only reachable with a prefilled `initialInput` while
-          // Clerk resolves — but the button is `aria-disabled` for that window
-          // and would otherwise be a tab stop with no stated reason.
-          "Checking your sign-in…"
-        : !input.trim()
-          ? "Paste a skill link or source first."
-          : "Review the file found below, then confirm it.";
+  // `submitBlocked` conflates three unrelated reasons and only `pending` changes
+  // the button's label, so a keyboard user would otherwise land on "Add skill,
+  // unavailable" with no way to know which applies. The wording is this
+  // surface's; the contract that makes the button reachable at all is shared.
+  const { inputProps, submitProps, reason } = useAddSkillFieldA11y({
+    pending,
+    blocked: submitBlocked || authLoading,
+    idPrefix: "add-skill",
+    reasonText: authLoading
+      ? // Transient, and only reachable with a prefilled `initialInput` while
+        // Clerk resolves — but the button is `aria-disabled` for that window
+        // and would otherwise be a tab stop with no stated reason.
+        "Checking your sign-in…"
+      : !input.trim()
+        ? "Paste a skill link or source first."
+        : "Review the file found below, then confirm it.",
+  });
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -296,7 +299,7 @@ export function AddSkillFlow({
           }}
           // readOnly, not disabled: a disabled input drops keyboard focus to
           // <body> on every Enter-submit. The button carries the disabled state.
-          readOnly={pending}
+          {...inputProps}
           aria-invalid={notice?.tone === "error" || undefined}
           aria-describedby="add-skill-notice"
           autoFocus={autoFocus}
@@ -323,32 +326,7 @@ export function AddSkillFlow({
             <Button
               type="submit"
               disabled={submitBlocked || authLoading}
-              // `focusableWhenDisabled`, for the same reason the input above is
-              // `readOnly` rather than `disabled`: a natively disabled element
-              // cannot hold focus, so activating this button dropped focus to
-              // `<body>` for the length of the request — up to three sequential
-              // round trips. The double-activation guard is `useAddSkillFlow`'s
-              // `inFlight` ref, read synchronously before the first `await`, not
-              // this attribute.
-              //
-              // UNCONDITIONAL on purpose, and NOT `focusableWhenDisabled={pending}`:
-              // `reset()` clears the input when a request settles, so
-              // `submitBlocked` stays true as `pending` goes false — a conditional
-              // prop would snap the native attribute back on and drop focus at the
-              // exact moment the answer lands.
-              //
-              // Two costs, both accepted. The button is a permanent tab stop even
-              // at rest (hence `aria-describedby`, so landing on it is not silent),
-              // and Base UI `preventDefault`s every key except Tab while
-              // `aria-disabled`, so Space/PageDown do not scroll from here.
-              focusableWhenDisabled
-              // Keyed to `pending`, not `submitBlocked`: two of the three things
-              // that block this button are not "busy". Same convention as the
-              // audit buttons on the admin surface.
-              aria-busy={pending}
-              aria-describedby={
-                submitReason ? "add-skill-submit-reason" : undefined
-              }
+              {...submitProps}
               className="shrink-0"
             >
               {label ?? "Add skill"}
@@ -358,9 +336,9 @@ export function AddSkillFlow({
         {/* Why the button is unavailable, for the tab stop it now always is.
             Outside the live region below on purpose — this is a description of
             a control, not an event to announce. */}
-        {submitReason && (
-          <p id="add-skill-submit-reason" className="sr-only">
-            {submitReason}
+        {reason && (
+          <p id={reason.id} className="sr-only">
+            {reason.text}
           </p>
         )}
       </form>
