@@ -42,17 +42,22 @@ type ButtonA11y = Pick<
 >;
 
 /**
- * For any button that becomes unavailable while its own work is in flight.
+ * For any button that goes unavailable while work is in flight — its own, or a
+ * sibling's.
  *
- * The six such buttons in the add-skill flow — two submits, two card Confirms,
- * two audit controls — need points 2–4 above; only the submits also need a
- * reason, which is what `useAddSkillFieldA11y` layers on top. Split that way so
- * the plain ones can share the rule without inventing a `reasonText` they have no
- * use for.
+ * Applied at eight sites: the two submits (through `submitProps`), two card
+ * Confirms, two card Cancels and two audit controls. Only the submits also need a
+ * reason, which is what `useAddSkillFieldA11y` layers on top; splitting it this
+ * way lets the other six share the rule without inventing a `reasonText` they have
+ * no use for.
  *
- * `inFlight` is deliberately not the same thing as `disabled`: the audit's
- * next-page button is disabled when the walk is exhausted, and finished is not
- * busy.
+ * `inFlight` is deliberately NOT the same thing as `disabled`, and the two cases
+ * where they part are the reason this takes a parameter at all:
+ *
+ *   - a card's Cancel is unavailable because CONFIRM is working, so it passes
+ *     `false` — focusable for the same reason, but it is not itself busy;
+ *   - the audit's next-page button is disabled when the walk is exhausted, and
+ *     finished is not busy either.
  */
 export function busyButtonProps({
   inFlight,

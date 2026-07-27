@@ -494,8 +494,6 @@ function GitHubCandidateCard({
               variant="outline"
               onClick={onCancel}
               disabled={disabled}
-              // Cancel is never itself in flight; it goes unavailable because
-              // Confirm is. Focusable for the same reason, not busy.
               {...busyButtonProps({ inFlight: false })}
             >
               Cancel

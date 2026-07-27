@@ -95,9 +95,9 @@ export function AddSkillForm() {
 
   // The candidate card unmounts on two paths (Cancel, and an `already_exists`
   // that drops it), each time taking the button the admin just pressed with it.
-  // A ref rather than the public flow's `getElementById`, since this input has
-  // no id to look up and inventing one to find it from three lines away would
-  // be the worse of the two.
+  // A ref rather than the public flow's `getElementById`: the input does now
+  // carry an id (for its <Label>), but reaching it by document lookup from three
+  // lines away is still the worse of the two.
   const inputRef = useRef<HTMLInputElement>(null);
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
 
@@ -318,7 +318,10 @@ export function AddSkillForm() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Skill URL or source/slug</CardTitle>
+          {/* Names the SECTION, parallel to the audit card below. The field's
+              own name is the <Label>; these were the same string until a real
+              label existed, and stacking them read (and announced) twice. */}
+          <CardTitle>Add a skill</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
