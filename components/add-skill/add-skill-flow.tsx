@@ -15,6 +15,10 @@ import {
   typedSlugOf,
 } from "@/lib/add-skill-copy";
 import {
+  busyButtonProps,
+  useAddSkillFieldA11y,
+} from "@/hooks/use-add-skill-field-a11y";
+import {
   useAddSkillFlow,
   type AddSkillOutcome,
   type Candidate,
@@ -230,21 +234,26 @@ export function AddSkillFlow({
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
 
-  // The submit button is `focusableWhenDisabled`, so it is reachable by Tab even
-  // when it does nothing. `submitBlocked` conflates three unrelated reasons and
-  // only `pending` changes the label, so without this a keyboard user lands on
-  // "Add skill, unavailable" with no way to know which one applies.
-  const submitReason =
-    pending || !(submitBlocked || authLoading)
-      ? null
-      : authLoading && !submitBlocked
-        ? // Transient, and only reachable with a prefilled `initialInput` while
-          // Clerk resolves — but the button is `aria-disabled` for that window
-          // and would otherwise be a tab stop with no stated reason.
-          "Checking your sign-in…"
+  // `submitBlocked` conflates three unrelated reasons and only `pending` changes
+  // the button's label, so a keyboard user would otherwise land on "Add skill,
+  // unavailable" with no way to know which applies. The wording is this
+  // surface's; the contract that makes the button reachable at all is shared.
+  const { inputProps, submitProps, reasonProps } = useAddSkillFieldA11y({
+    pending,
+    blocked: submitBlocked || authLoading,
+    reasonText:
+      // `&& !submitBlocked` is load-bearing: `submitBlocked` is true whenever the
+      // field is empty and `authLoading` is true on every cold load, so without it
+      // the OPENING state of /add reads "Checking your sign-in…" instead of the
+      // actionable "Paste a skill link…", then swaps silently once Clerk resolves
+      // (an `aria-describedby` change on a focused element is not re-announced).
+      // The auth reason is only worth showing when it is the ONLY thing blocking.
+      authLoading && !submitBlocked
+        ? "Checking your sign-in…"
         : !input.trim()
           ? "Paste a skill link or source first."
-          : "Review the file found below, then confirm it.";
+          : "Review the file found below, then confirm it.",
+  });
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -294,15 +303,16 @@ export function AddSkillFlow({
             // report on skill B.
             if (added) setAdded(null);
           }}
-          // readOnly, not disabled: a disabled input drops keyboard focus to
-          // <body> on every Enter-submit. The button carries the disabled state.
-          readOnly={pending}
+          {...inputProps}
           aria-invalid={notice?.tone === "error" || undefined}
-          aria-describedby="add-skill-notice"
+          // Both, space-separated: the help paragraph states what the field
+          // accepts and was previously associated with nothing, so anyone tabbing
+          // straight to the field never heard the one sentence explaining it.
+          aria-describedby="add-skill-help add-skill-notice"
           autoFocus={autoFocus}
         />
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted-foreground">
+          <p id="add-skill-help" className="text-xs text-muted-foreground">
             Paste a skills.sh URL, a GitHub link to the skill&apos;s folder, or
             the <code className="font-mono">owner/repo/slug</code> form. If it
             isn&apos;t on skills.sh yet, we&apos;ll look in the GitHub repo.
@@ -322,33 +332,7 @@ export function AddSkillFlow({
           ) : (
             <Button
               type="submit"
-              disabled={submitBlocked || authLoading}
-              // `focusableWhenDisabled`, for the same reason the input above is
-              // `readOnly` rather than `disabled`: a natively disabled element
-              // cannot hold focus, so activating this button dropped focus to
-              // `<body>` for the length of the request — up to three sequential
-              // round trips. The double-activation guard is `useAddSkillFlow`'s
-              // `inFlight` ref, read synchronously before the first `await`, not
-              // this attribute.
-              //
-              // UNCONDITIONAL on purpose, and NOT `focusableWhenDisabled={pending}`:
-              // `reset()` clears the input when a request settles, so
-              // `submitBlocked` stays true as `pending` goes false — a conditional
-              // prop would snap the native attribute back on and drop focus at the
-              // exact moment the answer lands.
-              //
-              // Two costs, both accepted. The button is a permanent tab stop even
-              // at rest (hence `aria-describedby`, so landing on it is not silent),
-              // and Base UI `preventDefault`s every key except Tab while
-              // `aria-disabled`, so Space/PageDown do not scroll from here.
-              focusableWhenDisabled
-              // Keyed to `pending`, not `submitBlocked`: two of the three things
-              // that block this button are not "busy". Same convention as the
-              // audit buttons on the admin surface.
-              aria-busy={pending}
-              aria-describedby={
-                submitReason ? "add-skill-submit-reason" : undefined
-              }
+              {...submitProps}
               className="shrink-0"
             >
               {label ?? "Add skill"}
@@ -358,11 +342,11 @@ export function AddSkillFlow({
         {/* Why the button is unavailable, for the tab stop it now always is.
             Outside the live region below on purpose — this is a description of
             a control, not an event to announce. */}
-        {submitReason && (
-          <p id="add-skill-submit-reason" className="sr-only">
-            {submitReason}
-          </p>
-        )}
+        {/* Only in the signed-in branch: the signed-out one renders a "Sign in to
+            add" button instead, which carries no `aria-describedby` — so this
+            would be a description nothing references, telling a visitor to paste
+            a link that the sign-in redirect ignores anyway. */}
+        {!signedOut && reasonProps && <p {...reasonProps} />}
       </form>
 
       {/* Persistent live region: async outcomes (errors, info, success) are
@@ -502,8 +486,7 @@ function GitHubCandidateCard({
             <Button
               onClick={onConfirm}
               disabled={disabled}
-              focusableWhenDisabled
-              aria-busy={confirming}
+              {...busyButtonProps({ inFlight: confirming })}
             >
               {confirming ? "Adding…" : "Add to catalog"}
             </Button>
@@ -511,7 +494,7 @@ function GitHubCandidateCard({
               variant="outline"
               onClick={onCancel}
               disabled={disabled}
-              focusableWhenDisabled
+              {...busyButtonProps({ inFlight: false })}
             >
               Cancel
             </Button>

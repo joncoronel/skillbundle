@@ -17,6 +17,10 @@ import {
   typedSlugOf,
 } from "@/lib/add-skill-copy";
 import {
+  busyButtonProps,
+  useAddSkillFieldA11y,
+} from "@/hooks/use-add-skill-field-a11y";
+import {
   useAddSkillFlow,
   type AddSkillOutcome,
   type Candidate,
@@ -25,6 +29,7 @@ import {
 } from "@/hooks/use-add-skill-flow";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
+import { Label } from "@/components/ui/cubby-ui/label";
 import {
   Card,
   CardHeader,
@@ -90,9 +95,9 @@ export function AddSkillForm() {
 
   // The candidate card unmounts on two paths (Cancel, and an `already_exists`
   // that drops it), each time taking the button the admin just pressed with it.
-  // A ref rather than the public flow's `getElementById`, since this input has
-  // no id to look up and inventing one to find it from three lines away would
-  // be the worse of the two.
+  // A ref rather than the public flow's `getElementById`: the input does now
+  // carry an id (for its <Label>), but reaching it by document lookup from three
+  // lines away is still the worse of the two.
   const inputRef = useRef<HTMLInputElement>(null);
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
 
@@ -269,6 +274,18 @@ export function AddSkillForm() {
     report,
   });
 
+  // `submitBlocked` conflates three reasons and only `pending` changes the
+  // button's label, so name the other two rather than leave a silent tab stop.
+  // The wording is this surface's (it accepts a different input format); the
+  // contract that makes the button reachable at all is shared.
+  const { inputProps, submitProps, reasonProps } = useAddSkillFieldA11y({
+    pending,
+    blocked: submitBlocked,
+    reasonText: !input.trim()
+      ? "Paste a skills.sh URL, a GitHub link, or source/slug first."
+      : "Review the file found below, then confirm it.",
+  });
+
   if (admin === false) {
     return (
       <p className="py-12 text-center text-sm text-muted-foreground">
@@ -276,16 +293,6 @@ export function AddSkillForm() {
       </p>
     );
   }
-
-  // The submit button is `focusableWhenDisabled`, so Tab reaches it even when it
-  // does nothing. `submitBlocked` conflates three reasons and only `pending`
-  // changes the label, so name the other two rather than leave a silent stop.
-  const submitReason =
-    !submitBlocked || pending
-      ? null
-      : !input.trim()
-        ? "Paste a skills.sh URL, a GitHub link, or source/slug first."
-        : "Review the file found below, then confirm it.";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -311,11 +318,16 @@ export function AddSkillForm() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Skill URL or source/slug</CardTitle>
+          {/* Names the SECTION, parallel to the audit card below. The field's
+              own name is the <Label>; these were the same string until a real
+              label existed, and stacking them read (and announced) twice. */}
+          <CardTitle>Add a skill</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <Label htmlFor="admin-add-input">Skill URL or source/slug</Label>
             <Input
+              id="admin-add-input"
               ref={inputRef}
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
@@ -324,67 +336,21 @@ export function AddSkillForm() {
               // Confirm would otherwise add the OLD input — the exact mis-add
               // the confirm step exists to prevent.
               onChange={(e) => changeInput(e.target.value)}
-              // readOnly, not disabled — the same choice the public flow made and
-              // documented, which this surface had not adopted. A disabled
-              // element cannot hold or receive focus, so `disabled` here did two
-              // things: dropped focus to <body> on every Enter-submit for the
-              // length of the request, and silently defeated the `focusInput()`
-              // calls in `report`, since `pending` is still true when they run.
-              // The confirm-card fix does not work without this. The submit
-              // button carries the disabled state.
-              readOnly={pending}
+              {...inputProps}
+              aria-describedby="admin-add-help"
               autoFocus
             />
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
+              <p id="admin-add-help" className="text-xs text-muted-foreground">
                 Paste a skills.sh URL, a GitHub link to the skill&apos;s
                 folder, or the <code>source/slug</code> form. If the skill
                 isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
                 repo instead.
               </p>
-              {/*
-                `focusableWhenDisabled`, for the same reason the input above is
-                `readOnly` rather than `disabled`: a natively disabled element
-                cannot hold focus, so activating this button dropped focus to
-                `<body>` for the length of the request — one submit can be three
-                sequential round trips, so that window is seconds, and a keyboard
-                user then tabbed back from the top of the page.
-
-                Safe to drop the native attribute because it was never what
-                prevented a second submit: `useAddSkillFlow` latches on an
-                `inFlight` ref read synchronously before the first `await`, so a
-                double activation is refused whether or not the button is
-                clickable.
-
-                UNCONDITIONAL on purpose, not `focusableWhenDisabled={pending}`:
-                `reset()` clears the input when a request settles, so
-                `submitBlocked` stays true as `pending` goes false — a conditional
-                prop would snap the attribute back on and drop focus at the exact
-                moment the answer lands.
-
-                Two costs, both accepted. The button is a permanent tab stop even
-                at rest (hence `aria-describedby`), and Base UI `preventDefault`s
-                every key but Tab while `aria-disabled`, so Space/PageDown do not
-                scroll from here.
-              */}
-              <Button
-                type="submit"
-                disabled={submitBlocked}
-                focusableWhenDisabled
-                // Keyed to `pending`, not `submitBlocked`: two of the three
-                // things that block this button are not "busy".
-                aria-busy={pending}
-                aria-describedby={
-                  submitReason ? "admin-add-submit-reason" : undefined
-                }
-              >
+              <Button type="submit" {...submitProps}>
                 {label ?? "Add to catalog"}
               </Button>
-              {submitReason && (
-                <p id="admin-add-submit-reason" className="sr-only">
-                  {submitReason}
-                </p>
-              )}
+              {reasonProps && <p {...reasonProps} />}
             </div>
           </form>
         </CardContent>
@@ -506,8 +472,7 @@ function SlugAuditCard() {
             variant="outline"
             onClick={() => run(null)}
             disabled={running}
-            focusableWhenDisabled
-            aria-busy={running}
+            {...busyButtonProps({ inFlight: running })}
           >
             {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
           </Button>
@@ -528,10 +493,10 @@ function SlugAuditCard() {
                 if (report.cursor) run(report.cursor);
               }}
               disabled={running || !report.cursor}
-              focusableWhenDisabled
               // `running`, not the disabled expression: an exhausted walk is not
-              // busy, it is finished.
-              aria-busy={running}
+              // busy, it is finished. That distinction is why `busyButtonProps`
+              // takes `inFlight` separately.
+              {...busyButtonProps({ inFlight: running })}
             >
               {report.cursor ? "Check the next page" : "No more pages"}
             </Button>
@@ -717,8 +682,7 @@ function GitHubCandidateCard({
           <Button
             onClick={onConfirm}
             disabled={disabled}
-            focusableWhenDisabled
-            aria-busy={confirming}
+            {...busyButtonProps({ inFlight: confirming })}
           >
             {confirming ? "Adding…" : "Add as GitHub-only"}
           </Button>
@@ -726,7 +690,7 @@ function GitHubCandidateCard({
             variant="outline"
             onClick={onCancel}
             disabled={disabled}
-            focusableWhenDisabled
+            {...busyButtonProps({ inFlight: false })}
           >
             Cancel
           </Button>
