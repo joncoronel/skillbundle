@@ -27,23 +27,6 @@ candidates), and let the admin pick one. Real feature, not a parse fix —
 needs a picker UI state in the form and a "list skills in repo" action.
 Admin-only surface, so build it when the guidance error actually annoys.
 
-### Split convex/githubOnly.ts (over the 1000-line threshold again)
-
-1023 lines, against the ~968 it started the exact-match branch at (1022 after
-the round-3 helper removal; the trend is down but the threshold is still breached). That file was
-split once before for exactly this reason — `convex/githubOnlyAudit.ts` exists
-because it "had grown past 1000 lines" — so it is back over the line that
-justified the last split.
-
-The obvious cut is the same one as last time: the module is "resolver + preview +
-confirm + the public wrappers", and the resolver (`resolveGitHubSkillMd` plus its
-tree/probe/pass machinery) is the self-contained half. Shared helpers already moved
-to `convex/lib/github.ts`, so the seam is cleaner than it was.
-
-Deferred from the exact-match branch (Jul 2026): the branch was already large and
-a file split at the end of it would have made the diff harder to review than the
-correctness fixes it carried.
-
 ### Tighten SKILL.md slug matching to whole-word prefixes
 
 `convex/lib/skillMatch.ts` (`matchesSkillId`) is now the single home of the
