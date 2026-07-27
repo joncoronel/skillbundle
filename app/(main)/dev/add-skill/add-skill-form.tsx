@@ -16,7 +16,10 @@ import {
   previewFailureTitle,
   typedSlugOf,
 } from "@/lib/add-skill-copy";
-import { useAddSkillFieldA11y } from "@/hooks/use-add-skill-field-a11y";
+import {
+  busyButtonProps,
+  useAddSkillFieldA11y,
+} from "@/hooks/use-add-skill-field-a11y";
 import {
   useAddSkillFlow,
   type AddSkillOutcome,
@@ -26,6 +29,7 @@ import {
 } from "@/hooks/use-add-skill-flow";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
+import { Label } from "@/components/ui/cubby-ui/label";
 import {
   Card,
   CardHeader,
@@ -274,10 +278,9 @@ export function AddSkillForm() {
   // button's label, so name the other two rather than leave a silent tab stop.
   // The wording is this surface's (it accepts a different input format); the
   // contract that makes the button reachable at all is shared.
-  const { inputProps, submitProps, reason } = useAddSkillFieldA11y({
+  const { inputProps, submitProps, reasonProps } = useAddSkillFieldA11y({
     pending,
     blocked: submitBlocked,
-    idPrefix: "admin-add",
     reasonText: !input.trim()
       ? "Paste a skills.sh URL, a GitHub link, or source/slug first."
       : "Review the file found below, then confirm it.",
@@ -319,7 +322,9 @@ export function AddSkillForm() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <Label htmlFor="admin-add-input">Skill URL or source/slug</Label>
             <Input
+              id="admin-add-input"
               ref={inputRef}
               type="text"
               placeholder="vercel-labs/agent-skills/next-js-development"
@@ -329,27 +334,20 @@ export function AddSkillForm() {
               // the confirm step exists to prevent.
               onChange={(e) => changeInput(e.target.value)}
               {...inputProps}
+              aria-describedby="admin-add-help"
               autoFocus
             />
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
+              <p id="admin-add-help" className="text-xs text-muted-foreground">
                 Paste a skills.sh URL, a GitHub link to the skill&apos;s
                 folder, or the <code>source/slug</code> form. If the skill
                 isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
                 repo instead.
               </p>
-              <Button
-                type="submit"
-                disabled={submitBlocked}
-                {...submitProps}
-              >
+              <Button type="submit" {...submitProps}>
                 {label ?? "Add to catalog"}
               </Button>
-              {reason && (
-                <p id={reason.id} className="sr-only">
-                  {reason.text}
-                </p>
-              )}
+              {reasonProps && <p {...reasonProps} />}
             </div>
           </form>
         </CardContent>
@@ -471,8 +469,7 @@ function SlugAuditCard() {
             variant="outline"
             onClick={() => run(null)}
             disabled={running}
-            focusableWhenDisabled
-            aria-busy={running}
+            {...busyButtonProps({ inFlight: running })}
           >
             {running ? "Checking…" : hasRun ? "Re-run audit" : "Run audit"}
           </Button>
@@ -493,10 +490,10 @@ function SlugAuditCard() {
                 if (report.cursor) run(report.cursor);
               }}
               disabled={running || !report.cursor}
-              focusableWhenDisabled
               // `running`, not the disabled expression: an exhausted walk is not
-              // busy, it is finished.
-              aria-busy={running}
+              // busy, it is finished. That distinction is why `busyButtonProps`
+              // takes `inFlight` separately.
+              {...busyButtonProps({ inFlight: running })}
             >
               {report.cursor ? "Check the next page" : "No more pages"}
             </Button>
@@ -682,8 +679,7 @@ function GitHubCandidateCard({
           <Button
             onClick={onConfirm}
             disabled={disabled}
-            focusableWhenDisabled
-            aria-busy={confirming}
+            {...busyButtonProps({ inFlight: confirming })}
           >
             {confirming ? "Adding…" : "Add as GitHub-only"}
           </Button>
@@ -691,7 +687,7 @@ function GitHubCandidateCard({
             variant="outline"
             onClick={onCancel}
             disabled={disabled}
-            focusableWhenDisabled
+            {...busyButtonProps({ inFlight: false })}
           >
             Cancel
           </Button>

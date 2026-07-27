@@ -103,6 +103,10 @@ function Button({
       )}
       disabled={disabled || loading}
       focusableWhenDisabled={loading}
+      // `{...props}` must stay LAST. `hooks/use-add-skill-field-a11y.ts` relies
+      // on a caller-supplied `focusableWhenDisabled` beating the `loading`-only
+      // default above; move this line up and every add-skill control silently
+      // reverts to a natively disabled button, which cannot hold focus.
       {...props}
     >
       {buttonContent}
