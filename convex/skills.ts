@@ -1138,9 +1138,20 @@ export const clearDiscoveryForWellKnown = internalMutation({
  * the ~200 B summary — which is what that table is for ("to avoid reading full
  * 30KB+ skill docs", schema.ts). A `skills` row carries `content`, so reading one
  * per update would pull ~13 KB each and, batched, would make a docs-heavy source
- * a large transaction to fetch one integer. Every writer of `discoveryFailCount`
- * patches both tables with the same value (`upsertSkillsBatch`, `devStats`), so
- * the summary is an equivalent source for it.
+ * a large transaction to fetch one integer.
+ *
+ * Reading the counter off the summary is safe on two counts. Every writer that
+ * PATCHES it writes the same value to both tables (`upsertSkillsBatch`'s three
+ * arms, `devStats`' retry paths) — with one exception: the orphaned-row arm patches
+ * the skills row and then RECREATES the summary via `upsertSkillSummary` without
+ * passing the field, so it starts unset there. Bounded, and in the harmless
+ * direction — the counter restarts, so a stuck row gets at most
+ * `MAX_DISCOVERY_FAILURES` extra attempts rather than retiring early.
+ *
+ * The stronger reason is that every READER already consults the summary, not the
+ * skills row (`markStaleContentBatch` below, and both `devStats` gates). So this
+ * reads the row the exhaustion cap is actually judged on, which makes the summary
+ * the consistent source rather than merely an equivalent one.
  *
  * The batch size is bounded by BYTES WRITTEN, not operation count: a patch rewrites
  * the row, and `skills` rows are the big ones. 100 rows is ~1.3 MB written at the

@@ -169,6 +169,9 @@ export function AddSkillForm() {
               ? aliasRetryNote(outcome.viaAlias.skillId)
               : undefined,
           });
+          // The step-3 alias re-add reached from a CONFIRM unmounts the card the
+          // admin was standing in; the plain-submit path never had one.
+          if (outcome.candidateDismissed) focusInput();
           return;
         case "github_added":
           // The action's status ("inserted" | "relisted") is a subset of

@@ -8,11 +8,22 @@ delete them when shipped. Newest thinking near the top.
 
 ### Focus rings fail the 3:1 contrast threshold app-wide (design decision)
 
-Measured Jul 2026 while fixing a disabled-button focus ring. `app/globals.css`'s
-global `outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent)`
-against `--ring: oklch(0.55 0.2 250)` gives **2.08:1 in light, 1.83:1 in dark**.
-WCAG 2.2 asks 3:1 for non-text indicators. At full alpha the same colour measures
-4.61:1 / 4.09:1, so dropping the 50% mix is a one-token fix.
+Measured Jul 2026 while fixing a disabled-button focus ring, then re-measured
+against every surface token after a reviewer pointed out the first pass had only
+checked one backdrop. `app/globals.css`'s global
+`outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent)` against
+`--ring: oklch(0.55 0.2 250)`, per surface 1→5:
+
+    alpha 0.50 (today)  light  2.03 2.07 2.10 2.10 2.10
+                        dark   1.82 1.78 1.72 1.65 1.57
+    alpha 1.00          light  4.35 4.54 4.74 4.74 4.74   all pass
+                        dark   3.78 3.52 3.24 2.95 2.67   surfaces 4-5 STILL FAIL
+
+WCAG 2.2 asks 3:1 for non-text indicators, so every focus ring in the app is under
+it today. **Dropping the 50% mix is NOT sufficient on its own** — an earlier version
+of this entry said it was, having checked only `--surface-1`. Dark needs a lighter
+`--ring` as well, because the dark surfaces climb to `oklch(0.321)` while the ring
+sits at `0.55`.
 
 Not done here because it changes how focus looks on **every** focusable element in
 the app, which is a visual-identity call rather than a side effect of a backend

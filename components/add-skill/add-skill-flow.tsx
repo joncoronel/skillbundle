@@ -120,6 +120,11 @@ export function AddSkillFlow({
             ? aliasRetryNote(outcome.viaAlias.skillId)
             : undefined,
         });
+        // The step-3 alias re-add reached from a CONFIRM unmounts the card the
+        // user was standing in. Conditional for the same reason
+        // `already_exists` is: on the plain-submit path no card existed and the
+        // submit button is still mounted.
+        if (outcome.candidateDismissed) focusInput();
         return;
       case "github_added":
         setNotice(null);
@@ -230,11 +235,16 @@ export function AddSkillFlow({
   // only `pending` changes the label, so without this a keyboard user lands on
   // "Add skill, unavailable" with no way to know which one applies.
   const submitReason =
-    !submitBlocked || pending
+    pending || !(submitBlocked || authLoading)
       ? null
-      : !input.trim()
-        ? "Paste a skill link or source first."
-        : "Review the file found below, then confirm it.";
+      : authLoading && !submitBlocked
+        ? // Transient, and only reachable with a prefilled `initialInput` while
+          // Clerk resolves — but the button is `aria-disabled` for that window
+          // and would otherwise be a tab stop with no stated reason.
+          "Checking your sign-in…"
+        : !input.trim()
+          ? "Paste a skill link or source first."
+          : "Review the file found below, then confirm it.";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

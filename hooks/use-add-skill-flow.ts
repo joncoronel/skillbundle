@@ -158,9 +158,23 @@ export type ReportHelpers<TOk extends PreviewOkBase> = {
 export type AddSkillOutcome<TOk extends PreviewOkBase> =
   /** A submit passed its guards and is starting — clear any previous display. */
   | { kind: "submitting" }
-  /** A skill was added, relisted, or adopted. `viaAlias` is set when step 3
-   *  fired, i.e. the slug that landed is NOT the one in the pasted link. */
-  | { kind: "added"; result: SettledAddResult; viaAlias?: AliasRef }
+  /**
+   * A skill was added, relisted, or adopted. `viaAlias` is set when step 3
+   * fired, i.e. the slug that landed is NOT the one in the pasted link.
+   *
+   * `candidateDismissed` means the same thing it does on `already_exists`: a
+   * confirm card was on screen and has just been dropped, so the surface should
+   * put focus somewhere useful. TRUE only on the step-3 alias re-add reached from
+   * a CONFIRM — the plain-submit alias path drops no card, and the ordinary
+   * step-1 add never had one, so an unconditional focus move here would steal it
+   * off a submit button still sitting under the user's finger.
+   */
+  | {
+      kind: "added";
+      result: SettledAddResult;
+      viaAlias?: AliasRef;
+      candidateDismissed: boolean;
+    }
   /** A GitHub-only confirm succeeded. */
   | { kind: "github_added"; result: GitHubAddSuccess }
   /**
@@ -307,7 +321,16 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
    * it's a union-typed property, not a discriminant.
    */
   const runManualAdd = useCallback(
-    async (candidateInput: string, viaAlias?: AliasRef): Promise<boolean> => {
+    async (
+      candidateInput: string,
+      viaAlias?: AliasRef,
+      /**
+       * Was a confirm card mounted when this ran? Only the step-3 alias re-add
+       * reached from a confirm can say yes; `reset()` below drops that card, and
+       * without this the surface has no way to know it happened.
+       */
+      dismissesCandidate = false,
+    ): Promise<boolean> => {
       const result = await addManually({ input: candidateInput });
       const { status } = result;
       if (status === "not_on_skills_sh") return false;
@@ -317,13 +340,20 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
           source: result.source,
           skillId: result.skillId,
           name: result.name,
-          // This path drops no card, so there is nothing to move focus off.
+          // False even on the confirm path: this arm returns without calling
+          // `reset()`, so the card is still there. Only the `added` arm below
+          // drops one.
           candidateDismissed: false,
         });
         return true;
       }
       reset();
-      emit({ kind: "added", result: { ...result, status }, viaAlias });
+      emit({
+        kind: "added",
+        result: { ...result, status },
+        viaAlias,
+        candidateDismissed: dismissesCandidate,
+      });
       return true;
     },
     [addManually, emit, reset],
@@ -381,7 +411,15 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
         // consumer can say so rather than let the substitution pass unremarked.
         setPhase("retrying");
         const alias = { source: preview.source, skillId: preview.skillId };
-        if (await runManualAdd(`${alias.source}/${alias.skillId}`, alias)) {
+        // `step === "confirm"` is the signal: reached from a confirm, a card is
+        // mounted and `runManualAdd`'s `reset()` is about to unmount it.
+        if (
+          await runManualAdd(
+            `${alias.source}/${alias.skillId}`,
+            alias,
+            step === "confirm",
+          )
+        ) {
           return;
         }
       }
