@@ -282,9 +282,19 @@ export function CatalogControlsBar() {
         >
           More
         </DropdownMenuTrigger>
+        {/* Start-aligned, not end-, because this trigger resizes underneath its
+            own open menu: setting a filter stamps a count badge onto it. The
+            badge grows the trigger rightward — Clear renders after it, so
+            nothing pushes back — which leaves the LEFT edge fixed and the right
+            edge moving. An end-aligned popup follows the edge that moves, and
+            repositions at the one moment the toggle's own work (a cold query,
+            then swapping the result list) owns the main thread, so the
+            positioner's tween on top/left/right/bottom gets starved and the
+            shift stutters. Anchored to the fixed edge there is no reposition to
+            starve. */}
         <DropdownMenuContent
           side="bottom"
-          align="end"
+          align="start"
           level={5}
           className="min-w-56"
         >
