@@ -57,7 +57,7 @@ export function ComparePickerEmptyTrigger({
     <Button
       variant="primary"
       onClick={onClick}
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-4" />
       }
     >

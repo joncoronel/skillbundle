@@ -122,7 +122,7 @@ async function RepoListContent({ source }: { source: string }) {
                 rel="noopener noreferrer"
               />
             }
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={GithubIcon}
                 strokeWidth={2}

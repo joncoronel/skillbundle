@@ -1,10 +1,7 @@
 "use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  FilterHorizontalIcon,
-  Cancel01Icon,
-} from "@hugeicons/core-free-icons";
+import { FilterHorizontalIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import {
   Select,
   SelectContent,
@@ -27,7 +24,10 @@ import { Switch } from "@/components/ui/cubby-ui/switch";
 import { LabeledSection } from "@/components/labeled-section";
 import { ItemCount } from "@/components/item-count";
 import { PublisherSelect } from "@/components/publisher-select";
-import { useCatalogFacets, useExplorerState } from "@/components/explorer-state";
+import {
+  useCatalogFacets,
+  useExplorerState,
+} from "@/components/explorer-state";
 import { formatInstalls, cn } from "@/lib/utils";
 import type { FacetCount } from "@/lib/search/typesense";
 import type { AuditFilterValue, CatalogSortValue } from "@/lib/search-params";
@@ -76,12 +76,13 @@ const surfaceProps = (surface: ControlSurface) =>
     selectAlign: surface !== "sheet",
     selectModal: surface === "sheet" ? false : undefined,
     popupLevel: surface === "sheet" ? 7 : 5,
-    triggerVariant: surface === "sheet" ? ("elevated" as const) : ("ghost" as const),
+    triggerVariant:
+      surface === "sheet" ? ("elevated" as const) : ("ghost" as const),
   }) as const;
 
 /** The small primary count pill shown on a filter trigger (chin "More", the
  *  mobile "Sort & filter" trigger). Renders nothing at zero so call sites can
- *  drop it straight into a `rightSection`. */
+ *  drop it straight into a `trailingIcon`. */
 export function FilterCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
@@ -266,14 +267,16 @@ export function CatalogControlsBar() {
               size="sm"
               className="text-muted-foreground"
               aria-label="More filters"
-              leftSection={
+              leadingIcon={
                 <HugeiconsIcon
                   icon={FilterHorizontalIcon}
                   strokeWidth={2}
                   className="size-3.5"
                 />
               }
-              rightSection={<FilterCountBadge count={moreCount} />}
+              trailingIcon={
+                moreCount > 0 ? <FilterCountBadge count={moreCount} /> : null
+              }
             />
           }
         >
@@ -288,7 +291,9 @@ export function CatalogControlsBar() {
           <DropdownMenuLabel>Minimum installs</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={minInstalls !== null ? String(minInstalls) : ANY}
-            onValueChange={(v) => setParams({ minInstalls: parseMinInstalls(v) })}
+            onValueChange={(v) =>
+              setParams({ minInstalls: parseMinInstalls(v) })
+            }
           >
             <DropdownMenuRadioItem value={ANY} closeOnClick={false}>
               Any
@@ -306,7 +311,14 @@ export function CatalogControlsBar() {
 
           <DropdownMenuSeparator />
 
+          {/* Switch indicators, not checkmarks: these are the same two filters
+              the mobile sheet renders as <SwitchRow>, so the two surfaces read
+              as one control each. Visual only — the row keeps its
+              `menuitemcheckbox` role and the switch is never focusable. */}
           <DropdownMenuCheckboxItem
+            indicator="switch"
+            switchMotion="stretch"
+            switchShape="squircle"
             checked={broken}
             onCheckedChange={(checked) => setParams({ broken: !!checked })}
             closeOnClick={false}
@@ -314,6 +326,9 @@ export function CatalogControlsBar() {
             Hide broken installs
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
+            indicator="switch"
+            switchMotion="stretch"
+            switchShape="squircle"
             checked={hideGitHubOnly}
             onCheckedChange={(checked) =>
               setParams({ hideGitHubOnly: !!checked })
@@ -331,7 +346,7 @@ export function CatalogControlsBar() {
           size="sm"
           className="text-muted-foreground"
           onClick={clearFilters}
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={Cancel01Icon}
               strokeWidth={2}

@@ -39,6 +39,10 @@ type PaginationLinkProps = {
 } & Pick<React.ComponentProps<typeof Button>, "size"> &
   React.ComponentProps<"a">;
 
+// Pagination links are real anchors styled with the flat `buttonVariants`
+// recipe on purpose: rendering them through <Button render={<a/>}> would
+// bolt button semantics (role="button", no Space navigation) onto elements
+// that must stay links for screen readers.
 function PaginationLink({
   className,
   isActive,
@@ -74,10 +78,12 @@ function PaginationPrevious({
     <PaginationLink
       aria-label="Go to previous page"
       size="default"
-      className={cn("gap-1.5 px-3 sm:pe-4", className)}
+      // pl-2.5 mirrors the Button's leading-icon optical padding, which the
+      // flat recipe has no compound variants for.
+      className={cn("gap-1.5 pl-2.5", className)}
       {...props}
     >
-      <HugeiconsIcon icon={ArrowLeft01Icon} size={16}  strokeWidth={2} />
+      <HugeiconsIcon icon={ArrowLeft01Icon} size={16} strokeWidth={2} />
       <span>Previous</span>
     </PaginationLink>
   );
@@ -91,11 +97,11 @@ function PaginationNext({
     <PaginationLink
       aria-label="Go to next page"
       size="default"
-      className={cn("gap-1.5 px-3 sm:ps-4", className)}
+      className={cn("gap-1.5 pr-2.5", className)}
       {...props}
     >
       <span>Next</span>
-      <HugeiconsIcon icon={ArrowRight01Icon} size={16}  strokeWidth={2} />
+      <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={2} />
     </PaginationLink>
   );
 }

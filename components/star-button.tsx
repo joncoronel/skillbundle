@@ -78,7 +78,7 @@ export function StarButton({
       size="sm"
       onClick={handleClick}
       aria-pressed={starred}
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon
           icon={StarIcon}
           strokeWidth={2}

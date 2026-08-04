@@ -229,7 +229,7 @@ function ConnectPrompt({
         size="sm"
         onClick={onClick}
         disabled={connecting}
-        leftSection={
+        leadingIcon={
           <HugeiconsIcon
             icon={GithubIcon}
             strokeWidth={2}

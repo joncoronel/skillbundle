@@ -525,7 +525,7 @@ function CreateBundleView({
           size="xs"
           onClick={onBack}
           disabled={creating}
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={ArrowLeft01Icon}
               strokeWidth={2}

@@ -168,7 +168,7 @@ function DashboardLoaded({
                         className="h-9 sm:h-7"
                         nativeButton={false}
                         render={<Link href={`/bundle/${bundle.urlId}`} />}
-                        leftSection={
+                        leadingIcon={
                           <HugeiconsIcon
                             icon={EyeIcon}
                             strokeWidth={2}
@@ -196,14 +196,14 @@ function DashboardLoaded({
                             isPublic: !bundle.isPublic,
                           });
                         }}
-                        leftSection={
+                        leadingIcon={
                           <HugeiconsIcon
                             icon={LockIcon}
                             strokeWidth={2}
                             className="size-3.5"
                           />
                         }
-                        rightSection={
+                        trailingIcon={
                           bundle.isPublic && !limits?.canMakePrivate ? (
                             <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
                               Pro
@@ -221,7 +221,7 @@ function DashboardLoaded({
                             variant="ghost"
                             size="xs"
                             className="h-9 sm:h-7"
-                            leftSection={
+                            leadingIcon={
                               <HugeiconsIcon
                                 icon={Delete01Icon}
                                 strokeWidth={2}

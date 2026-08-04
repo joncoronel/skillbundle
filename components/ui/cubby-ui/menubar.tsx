@@ -7,11 +7,29 @@ import {
 } from "@/lib/cubby-ui/elevated";
 
 import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import {
-  ArrowRight01Icon,
-  CircleIcon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
+  SwitchVisual,
+  type SwitchVisualProps,
+} from "@/components/ui/cubby-ui/switch/switch";
+
+// Shared shell for checkbox and radio items. Padding matches the plain menu
+// item so labels line up across every item type; the indicator lives in a
+// reserved right-hand column so toggling never shifts the label.
+const toggleItemClasses =
+  "group/switch data-highlighted:bg-surface-hover data-highlighted:text-accent-foreground grid cursor-default items-center rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+
+// The tick draws itself in on check. `pathLength` restates the path as 1 unit
+// long, so the dash values are fractions of the stroke and survive a HugeIcons
+// reshape. Deriving the icon array is the only way to reach the path.
+const tickIcon = Tick02Icon.map(([tag, attrs]) => [
+  tag,
+  { ...attrs, pathLength: 1 },
+]) as typeof Tick02Icon;
+
+const checkmarkClasses =
+  "[&_path]:ease-out-expo [&_path]:transition-[stroke-dashoffset] [&_path]:duration-150 [&_path]:[stroke-dasharray:1] in-data-checked:[&_path]:[stroke-dashoffset:0] in-data-unchecked:[&_path]:[stroke-dashoffset:1] motion-reduce:[&_path]:transition-none";
+
 function Menubar({
   className,
   level = 2,
@@ -71,7 +89,12 @@ function MenubarTrigger({
       delay={delay}
       closeDelay={closeDelay}
       className={cn(
-        "data-popup-open:text-accent-foreground hover:text-accent-foreground hover:bg-surface-hover data-popup-open:bg-surface-hover flex items-center rounded-sm px-2.5 py-1 text-sm font-medium outline-hidden select-none",
+        "data-popup-open:text-accent-foreground hover:text-accent-foreground hover:bg-surface-hover data-popup-open:bg-surface-hover flex items-center rounded-sm px-2.5 py-1 text-sm font-medium select-none",
+        // Menubar triggers are a real tab stop and arrowing between them moves
+        // DOM focus, so they need a visible indicator. `outline-offset-1`
+        // rather than the usual 2 because the triggers sit in a tight row and
+        // a wider ring would collide with its neighbours.
+        "focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent outline-solid focus-visible:outline-2 focus-visible:outline-offset-1",
         className,
       )}
       {...props}
@@ -99,8 +122,11 @@ function MenubarContent({
 }) {
   return (
     <MenubarPortal>
+      {/* No guard here, unlike DropdownMenu: there one positioner is shared by
+          detached triggers and physically travels between them. Each MenubarMenu
+          mounts its own, with no previous position to animate from. */}
       <BaseMenu.Positioner
-        className="z-50 h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none"
+        className="z-50 h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
         align={align}
         alignOffset={alignOffset}
         sideOffset={sideOffset}
@@ -109,48 +135,48 @@ function MenubarContent({
           data-slot="menubar-content"
           data-level={level}
           className={cn(
-            "text-popover-foreground relative min-w-[12rem] overflow-hidden rounded-xl",
+            "text-popover-foreground relative max-h-(--available-height) max-w-(--available-width) min-w-[12rem] overflow-hidden rounded-xl outline-none",
             solidSurface(level, shadowLevel),
             "h-(--popup-height,auto) w-(--popup-width,auto)",
-            "origin-(--transform-origin) transition-[width,height,scale,opacity] duration-[350ms,350ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
+            "origin-(--transform-origin) transition-[width,height,scale,opacity] duration-[150ms,150ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
             "data-ending-style:scale-95 data-ending-style:opacity-0",
-            "motion-reduce:transition-none",
-            "data-instant:transition-none",
+            // Own compositor layer while mounted. width/height in the transition
+            // list stops Chrome compositing the scale, so rows re-raster every
+            // frame and the differential stretch reads as a ripple. ContextMenu
+            // escapes it by transitioning scale and opacity alone.
+            "will-change-transform",
+            "motion-reduce:transition-none motion-reduce:will-change-auto",
+            // No data-instant guard, deliberately. 'group' is the menubar case,
+            // File to Edit, and suppressing it is the conventional choice. Each
+            // MenubarMenu owns its popup, so the swap is a real unmount and
+            // mount: a guard would snap two separate animations where letting
+            // them run reads as a crossfade. 'dismiss' must animate or there is
+            // no exit, and 'trigger-change' cannot fire with one trigger per
+            // root.
             className,
           )}
           {...props}
         >
+          {/*
+            Kept for sizing, not for content transitions. Base UI runs the popup
+            auto-resize from inside the Viewport, and that is what writes
+            --positioner-width / --positioner-height (plus --popup-width /
+            --popup-height, which sit at `auto` between resizes). The positioner
+            above sizes off those, so dropping the Viewport leaves them unset
+            and its explicit box collapses.
+
+            Deliberately carries no morph styling. A menubar can't morph: each
+            MenubarMenu is its own Menu.Root, so moving from File to Edit mounts
+            a new popup rather than swapping content within one, and
+            data-current / data-previous / data-activation-direction never
+            appear. (Verified: two distinct popup elements across a switch.)
+          */}
           <BaseMenu.Viewport
             data-slot="menubar-viewport"
-            className={cn(
-              "relative size-full overflow-clip p-1 [--viewport-padding:0.25rem]",
-              "not-data-transitioning:overflow-y-auto",
-              // Content width
-              "**:data-current:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
-              "**:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
-              // Content base state and transitions
-              "**:data-current:translate-x-0 **:data-current:opacity-100",
-              "**:data-previous:translate-x-0 **:data-previous:opacity-100",
-              "**:data-current:transition-[translate,opacity,filter] **:data-current:duration-[350ms,175ms,350ms] **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "**:data-previous:transition-[translate,opacity,filter] **:data-previous:duration-[350ms,175ms,350ms] **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              // Direction-aware slide animations for incoming content
-              "data-[activation-direction~=left]:**:data-current:data-starting-style:-translate-x-1/2",
-              "data-[activation-direction~=left]:**:data-current:data-starting-style:opacity-0",
-              "data-[activation-direction~=right]:**:data-current:data-starting-style:translate-x-1/2",
-              "data-[activation-direction~=right]:**:data-current:data-starting-style:opacity-0",
-              // Direction-aware slide animations for outgoing content
-              "data-[activation-direction~=left]:**:data-previous:data-ending-style:translate-x-1/2",
-              "data-[activation-direction~=left]:**:data-previous:data-ending-style:opacity-0",
-              "data-[activation-direction~=right]:**:data-previous:data-ending-style:-translate-x-1/2",
-              "data-[activation-direction~=right]:**:data-previous:data-ending-style:opacity-0",
-              // Blur effects during transitions
-              "**:data-current:data-starting-style:blur-[4px]",
-              "**:data-current:data-ending-style:blur-[4px]",
-              "**:data-previous:data-starting-style:blur-[4px]",
-              "**:data-previous:data-ending-style:blur-[4px]",
-              "motion-reduce:**:data-current:transition-none motion-reduce:**:data-previous:transition-none",
-            )}
+            // No `max-w`: `w-full` resolves against the popup's already-capped
+            // content box, so the width bound is inherited for free.
+            className="relative max-h-(--available-height) w-full overflow-clip overflow-y-auto p-1"
           >
             {children}
           </BaseMenu.Viewport>
@@ -172,10 +198,10 @@ function MenubarItem({
   return (
     <BaseMenu.Item
       data-slot="menubar-item"
-      data-inset={inset}
+      data-inset={inset || undefined}
       data-variant={variant}
       className={cn(
-        "focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive-foreground data-[variant=destructive]:*:[svg]:!text-destructive focus:data-[variant=destructive]:*:[svg]:!text-destructive-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus:bg-surface-hover relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-60 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:transition-all [&_svg:not([class*='size-'])]:size-4",
+        "data-highlighted:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:data-highlighted:bg-destructive/20 data-[variant=destructive]:data-highlighted:text-destructive-foreground data-[variant=destructive]:*:[svg]:text-destructive! data-highlighted:data-[variant=destructive]:*:[svg]:text-destructive-foreground! [&_svg:not([class*='text-'])]:text-muted-foreground data-highlighted:bg-surface-hover relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -193,9 +219,9 @@ function MenubarLinkItem({
   return (
     <BaseMenu.LinkItem
       data-slot="menubar-link-item"
-      data-inset={inset}
+      data-inset={inset || undefined}
       className={cn(
-        "focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus:bg-surface-hover relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm no-underline outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:transition-all [&_svg:not([class*='size-'])]:size-4",
+        "data-highlighted:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground data-highlighted:bg-surface-hover relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm no-underline outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -207,24 +233,68 @@ function MenubarCheckboxItem({
   className,
   children,
   checked,
+  inset,
+  indicator = "check",
+  switchColor = "primary",
+  switchShape = "circle",
+  switchSize = "xs",
+  switchMotion = "default",
   ...props
-}: React.ComponentProps<typeof BaseMenu.CheckboxItem>) {
+}: React.ComponentProps<typeof BaseMenu.CheckboxItem> & {
+  inset?: boolean;
+  /** Which indicator sits in the right-hand column. `"switch"` is visual only — the item keeps the `menuitemcheckbox` role. */
+  indicator?: "check" | "switch";
+  /** Checked track colour, when `indicator="switch"`. */
+  switchColor?: SwitchVisualProps["color"];
+  /** Thumb silhouette, when `indicator="switch"`. */
+  switchShape?: SwitchVisualProps["shape"];
+  /** Thumb size, when `indicator="switch"`. Defaults to `xs`, which matches the row's text. */
+  switchSize?: SwitchVisualProps["size"];
+  /** How the thumb travels, when `indicator="switch"`. */
+  switchMotion?: SwitchVisualProps["motion"];
+}) {
   return (
     <BaseMenu.CheckboxItem
       data-slot="menubar-checkbox-item"
+      data-inset={inset || undefined}
+      data-indicator={indicator}
       className={cn(
-        "focus:text-accent-foreground focus:bg-surface-hover relative flex cursor-default items-center gap-2 rounded-md py-1.5 pr-2.5 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-60 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        toggleItemClasses,
+        indicator === "switch"
+          ? "grid-cols-[1fr_auto] gap-3"
+          : "grid-cols-[1fr_1rem] gap-2",
         className,
       )}
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <BaseMenu.CheckboxItemIndicator>
-          <HugeiconsIcon icon={Tick02Icon} className="size-4" strokeWidth={2} />
-        </BaseMenu.CheckboxItemIndicator>
+      <span className="col-start-1 flex min-w-0 items-center gap-2">
+        {children}
       </span>
-      {children}
+      {indicator === "switch" ? (
+        // Visual only: the row carries the role and the click target, so a real
+        // Switch here would nest a focusable control inside a menuitemcheckbox.
+        // Base UI's indicator supplies the aria-hidden.
+        <SwitchVisual
+          color={switchColor}
+          shape={switchShape}
+          size={switchSize}
+          motion={switchMotion}
+          className="col-start-2"
+          render={<BaseMenu.CheckboxItemIndicator keepMounted />}
+        />
+      ) : (
+        <BaseMenu.CheckboxItemIndicator
+          keepMounted
+          className="col-start-2 flex items-center justify-center"
+        >
+          <HugeiconsIcon
+            icon={tickIcon}
+            strokeWidth={2.5}
+            className={cn("size-4", checkmarkClasses)}
+          />
+        </BaseMenu.CheckboxItemIndicator>
+      )}
     </BaseMenu.CheckboxItem>
   );
 }
@@ -232,27 +302,31 @@ function MenubarCheckboxItem({
 function MenubarRadioItem({
   className,
   children,
+  inset,
   ...props
-}: React.ComponentProps<typeof BaseMenu.RadioItem>) {
+}: React.ComponentProps<typeof BaseMenu.RadioItem> & {
+  inset?: boolean;
+}) {
   return (
     <BaseMenu.RadioItem
       data-slot="menubar-radio-item"
-      className={cn(
-        "focus:text-accent-foreground focus:bg-surface-hover relative flex cursor-default items-center gap-2 rounded-md py-1.5 pr-2.5 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-60 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className,
-      )}
+      data-inset={inset || undefined}
+      className={cn(toggleItemClasses, "grid-cols-[1fr_1rem] gap-2", className)}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <BaseMenu.RadioItemIndicator>
-          <HugeiconsIcon
-            icon={CircleIcon}
-            className="size-2 fill-current"
-            strokeWidth={2}
-          />
-        </BaseMenu.RadioItemIndicator>
+      <span className="col-start-1 flex min-w-0 items-center gap-2">
+        {children}
       </span>
-      {children}
+      <BaseMenu.RadioItemIndicator
+        keepMounted
+        className="col-start-2 flex items-center justify-center"
+      >
+        <HugeiconsIcon
+          icon={tickIcon}
+          strokeWidth={2.5}
+          className={cn("size-4", checkmarkClasses)}
+        />
+      </BaseMenu.RadioItemIndicator>
     </BaseMenu.RadioItem>
   );
 }
@@ -261,15 +335,35 @@ function MenubarLabel({
   className,
   inset,
   ...props
+}: React.ComponentProps<"div"> & {
+  inset?: boolean;
+}) {
+  return (
+    <div
+      data-slot="menubar-label"
+      data-inset={inset || undefined}
+      className={cn(
+        "px-2.5 py-1.5 text-xs font-medium data-inset:pl-8",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function MenubarGroupLabel({
+  className,
+  inset,
+  ...props
 }: React.ComponentProps<typeof BaseMenu.GroupLabel> & {
   inset?: boolean;
 }) {
   return (
     <BaseMenu.GroupLabel
-      data-slot="menubar-label"
-      data-inset={inset}
+      data-slot="menubar-group-label"
+      data-inset={inset || undefined}
       className={cn(
-        "px-2.5 py-1.5 text-xs font-medium data-[inset]:pl-8",
+        "px-2.5 py-1.5 text-xs font-medium data-inset:pl-8",
         className,
       )}
       {...props}
@@ -284,7 +378,10 @@ function MenubarSeparator({
   return (
     <BaseMenu.Separator
       data-slot="menubar-separator"
-      className={cn("bg-border -mx-1 my-1 h-px", className)}
+      // Inset to the item label, not the popup edge: mx-2.5 clears the
+      // viewport's p-1 plus the item's px-2.5, so the rule starts where the
+      // text does instead of running into the popup's rounded corners.
+      className={cn("bg-border mx-2.5 my-1 h-px", className)}
       {...props}
     />
   );
@@ -323,9 +420,9 @@ function MenubarSubTrigger({
   return (
     <BaseMenu.SubmenuTrigger
       data-slot="menubar-sub-trigger"
-      data-inset={inset}
+      data-inset={inset || undefined}
       className={cn(
-        "focus:text-accent-foreground data-popup-open:text-accent-foreground focus:bg-surface-hover data-popup-open:bg-surface-hover flex cursor-default items-center rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-[inset]:pl-8",
+        "data-highlighted:text-accent-foreground data-popup-open:text-accent-foreground data-highlighted:bg-surface-hover data-popup-open:bg-surface-hover flex cursor-default items-center rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-inset:pl-8",
         className,
       )}
       {...props}
@@ -357,14 +454,14 @@ function MenubarSubContent({
   return (
     <MenubarPortal>
       <BaseMenu.Positioner
-        className="z-50 max-h-(--available-height)"
+        className="z-50 max-h-(--available-height) max-w-(--available-width)"
         sideOffset={sideOffset}
       >
         <BaseMenu.Popup
           data-slot="menubar-sub-content"
           data-level={level}
           className={cn(
-            "text-popover-foreground relative min-w-[12rem] overflow-hidden rounded-xl",
+            "text-popover-foreground relative max-h-(--available-height) max-w-(--available-width) min-w-[12rem] overflow-hidden rounded-xl outline-none",
             solidSurface(level, shadowLevel),
             // Submenus open as their own popup (no Viewport content-swap) — scale + fade
             "ease-out-expo origin-(--transform-origin) transition-[transform,scale,opacity] duration-100",
@@ -375,7 +472,13 @@ function MenubarSubContent({
           )}
           {...props}
         >
-          <div className="p-1">{children}</div>
+          {/* The popup above is capped at --available-height and clips, so the
+            scroll container has to live here or a tall submenu silently
+            truncates. The main popups get this from Menu.Viewport; a
+            submenu has none, so it is spelled out. */}
+          <div className="max-h-(--available-height) overflow-x-hidden overflow-y-auto p-1">
+            {children}
+          </div>
         </BaseMenu.Popup>
       </BaseMenu.Positioner>
     </MenubarPortal>
@@ -390,6 +493,7 @@ export {
   MenubarContent,
   MenubarGroup,
   MenubarSeparator,
+  MenubarGroupLabel,
   MenubarLabel,
   MenubarItem,
   MenubarLinkItem,

@@ -75,7 +75,7 @@ export function FeatureToggleButton({
       disabled={disabled}
       loading={pending}
       aria-pressed={featured}
-      leftSection={star}
+      leadingIcon={star}
     >
       {featured ? "Featured" : "Feature"}
     </Button>

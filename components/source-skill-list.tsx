@@ -113,7 +113,7 @@ export function SourceSkillList({ skills }: { skills: SkillData[] }) {
             variant="outline"
             size="sm"
             onClick={handleRemoveAll}
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={Cancel01Icon}
                 strokeWidth={2}
@@ -128,7 +128,7 @@ export function SourceSkillList({ skills }: { skills: SkillData[] }) {
             variant="primary"
             size="sm"
             onClick={handleAddAll}
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={Album02Icon}
                 strokeWidth={2}

@@ -123,7 +123,7 @@ export function CompareContent() {
                 variant="outline"
                 size="xs"
                 onClick={openPicker}
-                leftSection={
+                leadingIcon={
                   <HugeiconsIcon
                     icon={PencilEdit02Icon}
                     strokeWidth={2}
@@ -190,7 +190,7 @@ function CopyComparisonLink({ refs }: { refs: SkillRef[] }) {
       onClick={() =>
         copyToClipboard(window.location.origin + compareHref(refs))
       }
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon
           icon={isCopied ? Tick02Icon : Link04Icon}
           strokeWidth={2}

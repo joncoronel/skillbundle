@@ -233,7 +233,7 @@ export function BundleBar() {
                       ),
                     );
                   }}
-                  leftSection={
+                  leadingIcon={
                     <HugeiconsIcon
                       icon={ArrowUpDownIcon}
                       strokeWidth={2}
@@ -304,7 +304,7 @@ export function BundleBar() {
                 variant="outline"
                 size="sm"
                 onClick={handleCopy}
-                leftSection={
+                leadingIcon={
                   <HugeiconsIcon
                     icon={Copy01Icon}
                     strokeWidth={2}
@@ -319,7 +319,7 @@ export function BundleBar() {
                 variant="primary"
                 size="sm"
                 onClick={handleSave}
-                leftSection={
+                leadingIcon={
                   <HugeiconsIcon
                     icon={Download01Icon}
                     strokeWidth={2}

@@ -284,7 +284,7 @@ function BundleToggleButton({ skill }: { skill: SkillData }) {
     <Button
       variant={isSelected ? "outline" : "primary"}
       size="sm"
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon
           icon={isSelected ? MinusSignIcon : PlusSignIcon}
           strokeWidth={2}
@@ -336,7 +336,7 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
       variant="primary"
       size="sm"
       onClick={handleCopy}
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon
           icon={isCopied ? Tick02Icon : Copy01Icon}
           strokeWidth={2}

@@ -52,7 +52,7 @@ export function BundleEditBar({
       size="sm"
       onClick={onAddSkills}
       disabled={atCap}
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon
           icon={Add01Icon}
           strokeWidth={2}

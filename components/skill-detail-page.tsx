@@ -146,7 +146,7 @@ export function SkillDetailPage({
           size="sm"
           className="shrink-0"
           render={<Link href={compareHref([{ source, skillId }])} />}
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={GitCompareIcon}
               strokeWidth={2}

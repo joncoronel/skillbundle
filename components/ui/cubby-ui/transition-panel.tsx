@@ -154,7 +154,40 @@ function TransitionPanel({
   children,
   ...props
 }: TransitionPanelProps) {
-  const { outerRef, innerRef } = useAnimatedHeight();
+  // Swap height animation state. Declared up here (ahead of the narrative
+  // order) because `handleContentResize` below has to exist before
+  // `useAnimatedHeight` is called, to be passed in as its resize callback.
+  const heightState = React.useRef<HeightAnimationState>({
+    animation: null,
+    target: null,
+  });
+
+  // Retarget a swap animation whose destination moved. The observer fires on
+  // every content resize; while a swap animation is in flight, one means the
+  // height we're heading toward is already stale (an image decoded, async data
+  // landed, a nested collapsible opened). Restart from the mid-flight height
+  // toward the new one — the same retarget a CSS transition on `height` would
+  // have done — instead of finishing at the old target and snapping.
+  //
+  // Outside a swap there's no running animation, so this no-ops and the
+  // observer's instant write stands. That's the whole point of the gate:
+  // content animating its own height still drives a single tween the panel
+  // tracks frame-for-frame, with no competing tween of ours.
+  const handleContentResize = React.useCallback(
+    (height: number, outer: HTMLElement) => {
+      const state = heightState.current;
+      if (state.animation?.playState !== "running") return;
+      // The swap's own settle lands here too (the observer fires right after
+      // the layout effect starts the animation); only a moved target retargets.
+      // Rounded/tolerant because the observer reports a fractional border-box
+      // size while the target came from integer `offsetHeight`.
+      if (state.target !== null && Math.abs(state.target - height) < 1) return;
+      animateHeight(outer, Math.round(height), state);
+    },
+    [],
+  );
+
+  const { outerRef, innerRef } = useAnimatedHeight(handleContentResize);
 
   // Shadow useAnimatedHeight's inner callback ref with a RefObject we can read
   // in `registerView` (for the DOM-order rebuild), still forwarding the node on.
@@ -227,10 +260,10 @@ function TransitionPanel({
   // swap (or reduced motion) simply never starts one — no transition classes,
   // no `transitionend` bookkeeping, no fallback timers. The observer's instant
   // style write lands underneath the running animation (WAAPI overrides it)
-  // and is already correct when the animation finishes. An interrupted swap
-  // cancels the old animation and retargets from the mid-flight height
-  // (offsetHeight reflects the animated value).
-  const heightAnimation = React.useRef<Animation | null>(null);
+  // and is already correct when the animation finishes; if the incoming view
+  // resizes mid-flight, `handleContentResize` retargets so it stays that way.
+  // An interrupted swap cancels the old animation and retargets from the
+  // mid-flight height (offsetHeight reflects the animated value).
   const hasSwappedRef = React.useRef(false);
   React.useLayoutEffect(() => {
     // First run is mount, not a swap — nothing to animate.
@@ -241,20 +274,7 @@ function TransitionPanel({
     const outer = outerRef.current;
     const inner = innerDivRef.current;
     if (!outer || !inner) return;
-    const from = outer.offsetHeight;
-    const to = inner.offsetHeight;
-    if (from === to) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const styles = getComputedStyle(outer);
-    const duration = parseCssTime(styles.getPropertyValue("--tp-duration")) ?? 240;
-    const easing =
-      styles.getPropertyValue("--tp-ease").trim() ||
-      "cubic-bezier(0.32, 0.72, 0, 1)";
-    heightAnimation.current?.cancel();
-    heightAnimation.current = outer.animate(
-      { height: [`${from}px`, `${to}px`] },
-      { duration, easing },
-    );
+    animateHeight(outer, inner.offsetHeight, heightState.current);
     // `outerRef` is a stable RefObject; listed to satisfy exhaustive-deps.
   }, [renderedKey, outerRef]);
 
@@ -392,6 +412,42 @@ function TransitionPanel({
 
 TransitionPanel.displayName = "TransitionPanel";
 
+type HeightAnimationState = {
+  animation: Animation | null;
+  /** Height the running animation is heading toward, for staleness checks. */
+  target: number | null;
+};
+
+/**
+ * Start (or restart) the root's one-shot height animation, reading duration and
+ * easing from `--tp-duration` / `--tp-ease` at call time so overrides apply.
+ * No-ops when the height isn't actually changing or under reduced motion, which
+ * is what keeps a same-height swap from needing any cleanup. `from` is read
+ * before cancelling any in-flight animation, so an interrupted or retargeted
+ * swap continues from the mid-flight height rather than snapping back.
+ */
+function animateHeight(
+  outer: HTMLElement,
+  to: number,
+  state: HeightAnimationState,
+): void {
+  const from = outer.offsetHeight;
+  if (from === to) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const styles = getComputedStyle(outer);
+  const duration =
+    parseCssTime(styles.getPropertyValue("--tp-duration")) ?? 240;
+  const easing =
+    styles.getPropertyValue("--tp-ease").trim() ||
+    "cubic-bezier(0.32, 0.72, 0, 1)";
+  state.animation?.cancel();
+  state.target = to;
+  state.animation = outer.animate(
+    { height: [`${from}px`, `${to}px`] },
+    { duration, easing },
+  );
+}
+
 /**
  * Parse a CSS time ("240ms" / "0.24s") to milliseconds. A unitless value is
  * invalid CSS for a time, but if a consumer writes one anyway, reading it as
@@ -523,7 +579,9 @@ function TransitionPanelView({
       // crossfade survives). Chrome resolves it fine. Setting `translate` directly
       // bypasses the registered var. Fade's `scale-*` is a literal, so it's safe.
       mounted &&
-        (isFade ? "starting:scale-[0.96]" : "starting:[translate:var(--tp-enter)_0]"),
+        (isFade
+          ? "starting:scale-[0.96]"
+          : "starting:[translate:var(--tp-enter)_0]"),
       isActive
         ? isFade
           ? "scale-100 opacity-100"

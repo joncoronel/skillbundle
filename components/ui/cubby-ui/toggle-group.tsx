@@ -108,30 +108,10 @@ function ToggleGroup({
       )}
       {...props}
     >
-      <ToggleGroupProvider size={size} variant={variant} detached={detached}>
+      <ToggleGroupContext.Provider value={{ size, variant, detached }}>
         {children}
-      </ToggleGroupProvider>
+      </ToggleGroupContext.Provider>
     </BaseToggleGroup>
-  );
-}
-
-// Memoized so the context value is stable across the group's re-renders — a
-// consumer (ToggleGroupItem) that memoizes on it isn't invalidated every time
-// the parent renders for an unrelated reason.
-function ToggleGroupProvider({
-  size,
-  variant,
-  detached,
-  children,
-}: ToggleGroupContextValue & { children: React.ReactNode }) {
-  const value = React.useMemo(
-    () => ({ size, variant, detached }),
-    [size, variant, detached],
-  );
-  return (
-    <ToggleGroupContext.Provider value={value}>
-      {children}
-    </ToggleGroupContext.Provider>
   );
 }
 
@@ -144,7 +124,7 @@ export type ToggleGroupItemProps = ToggleProps;
  * and ignore it.
  */
 function ToggleGroupItem({ variant, size, ...props }: ToggleGroupItemProps) {
-  const group = React.use(ToggleGroupContext);
+  const group = React.useContext(ToggleGroupContext);
   const resolvedSize = size ?? group.size ?? "default";
   // Detached cells own their variant (reusing the Toggle cva). Attached `outline`
   // reuses the Toggle `outline` too so its states stay in the card family; solid /

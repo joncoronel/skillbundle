@@ -407,7 +407,7 @@ function FilterChipOperator({
             variant="ghost"
             size={size}
             className={cn(
-              "data-popup-open:bg-surface-hover data-popup-open:text-foreground rounded-none! font-normal focus-visible:-outline-offset-2",
+              "rounded-none! font-normal focus-visible:-outline-offset-2",
               className,
             )}
             {...props}
@@ -534,11 +534,13 @@ function FilterAddButton({
             variant="outline"
             size={size}
             className={cn(
-              "text-muted-foreground gap-1.5 border-dashed",
+              // The border renders on the button's paint pseudo-element, so
+              // border style overrides use before: classes.
+              "text-muted-foreground gap-1.5 before:border-dashed",
               className,
             )}
-            leftSection={<HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />}
-            rightSection={
+            leadingIcon={<HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} />}
+            trailingIcon={
               shortcut ? (
                 <Kbd size="sm" variant="ghost" className="ms-1">
                   {shortcut.toUpperCase()}
@@ -589,7 +591,7 @@ function FilterClearButton({
       size={size}
       className={cn("text-muted-foreground gap-1.5", className)}
       onClick={clearAll}
-      leftSection={<HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />}
+      leadingIcon={<HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />}
       {...props}
     >
       {children ?? labels.clear}

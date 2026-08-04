@@ -19,7 +19,7 @@ export function DashboardMasthead() {
           variant="primary"
           nativeButton={false}
           render={<Link href="/" />}
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2.25} className="size-3.5" />
           }
           className="shrink-0"
