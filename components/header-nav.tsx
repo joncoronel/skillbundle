@@ -114,7 +114,17 @@ function NavLink({
       variant="ghost"
       size="sm"
       render={<Link href={href} aria-current={isActive ? "page" : undefined} />}
-      className={cn("gap-1.5", isActive && "bg-surface-selected text-foreground")}
+      // The active fill goes through Button's own paint token, not a `bg-*`
+      // class. Button paints on a ::before pseudo above the root's background,
+      // so a `bg-*` here sits underneath and ghost's hover composites on top
+      // of it instead of replacing it — two overlays stacking to a darkness
+      // neither one names. On --btn-bg it shares a layer with the hover paint,
+      // so ghost's --btn-bg-hover overwrites it, which is how a plain
+      // `background-color` behaved before the paint moved to the pseudo.
+      className={cn(
+        "gap-1.5",
+        isActive && "text-foreground [--btn-bg:var(--surface-selected)]",
+      )}
       leadingIcon={icon}
     >
       {children}
