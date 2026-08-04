@@ -20,8 +20,9 @@ const switchVariants = cva(
     // engine has to satisfy itself each time that nothing outside the switch
     // moved. The promise is already true — the root's width and height are
     // explicit and the thumb is absolutely positioned — so this only tells it
-    // what it would otherwise re-derive. `default` never reflows, so it neither
-    // needs nor loses anything here.
+    // what it would otherwise re-derive. `default` reflows too, just not during
+    // the toggle: its reach is a width and its squash is a height, both on a
+    // fine pointer only. So it takes the same bound on the same terms.
     //
     // Layout only, deliberately. `paint` (and therefore `strict`) clips
     // descendants to the box, which would cut the coarse-pointer tap target
@@ -66,16 +67,21 @@ const switchVariants = cva(
     // indicators are inert, so data-highlighted stands in for hover.
     // motion-safe rather than a motion-reduce reset: a reset carries fewer
     // selectors than the rule it undoes and loses on specificity.
-    // Fine pointers only. Every one of these ends up in the thumb's WIDTH, via
-    // the negative margins, so each is a reflow per frame. A mouse can afford
-    // that; a phone cannot, and on touch the press fires at the same instant as
-    // the toggle, so the reach would relayout straight through the slide and
-    // undo the compositor path `default` sets up. Nothing is lost: coarse
-    // pointers have no real hover, and a finger covers the thumb it would be
-    // reaching with. Held to geometry — the colour rules below are paint-only
-    // and gate on a different rule, see there.
-    "motion-safe:pointer-fine:not-data-disabled:hover:[--switch-hover-part:var(--switch-hover-ext)]",
-    "motion-safe:pointer-fine:not-data-disabled:group-hover/switch:[--switch-hover-part:var(--switch-hover-ext)]",
+    //
+    // Every one of these ends up in the thumb's WIDTH, via the negative
+    // margins, so each is a reflow per frame. A mouse can afford that; a phone
+    // cannot, and on touch a press lands at the same instant as the toggle, so
+    // the reach would relayout straight through the slide and undo the
+    // compositor path `default` sets up. Only the rules a finger can actually
+    // reach say so, though: Tailwind compiles `hover` and `group-hover` inside
+    // `@media (hover: hover)` already, so those two never match on a phone and
+    // a pointer-fine gate on them would be a second lock on the same door.
+    // `:active` has no such wrapper, and data-highlighted is set by Base UI
+    // rather than inferred by the browser, so nothing stands between it and a
+    // finger dragging down a menu. Those three carry the gate. Geometry only —
+    // the colour rules below are paint-only and need no gate at all, see there.
+    "motion-safe:not-data-disabled:hover:[--switch-hover-part:var(--switch-hover-ext)]",
+    "motion-safe:not-data-disabled:group-hover/switch:[--switch-hover-part:var(--switch-hover-ext)]",
     "motion-safe:pointer-fine:not-data-disabled:data-highlighted:[--switch-hover-part:var(--switch-hover-ext)]",
     "motion-safe:pointer-fine:not-data-disabled:active:[--switch-press-part:var(--switch-press-ext)]",
     "motion-safe:pointer-fine:not-data-disabled:group-active/switch:[--switch-press-part:var(--switch-press-ext)]",
@@ -106,25 +112,21 @@ const switchVariants = cva(
     // theme or the other.
     "[--switch-fill-hover:oklch(from_var(--switch-fill-bg)_calc(l-0.05)_c_h)]",
     "data-unchecked:bg-(--switch-track-bg) data-checked:bg-(--switch-fill-bg)",
-    // The `:hover` pair is fine-pointer gated for a different reason than the
-    // geometry above — these are paint-only and cost nothing. It is that mobile
-    // browsers latch `:hover` on the last tapped element, so without the gate a
-    // switch stays visibly hovered after you toggle it, until you tap something
-    // else. `data-highlighted` is NOT gated: Base UI sets it explicitly rather
-    // than the browser inferring it, so it never latches, and it is the only
-    // hover-ish feedback a menu row gets from a keyboard.
-    "pointer-fine:not-data-disabled:hover:data-unchecked:bg-(--switch-track-bg-hover)",
-    "pointer-fine:not-data-disabled:group-hover/switch:data-unchecked:bg-(--switch-track-bg-hover)",
+    // Ungated, unlike the geometry above, including the data-highlighted pair
+    // that is gated up there. These are paint-only: there is no reflow to keep
+    // off a phone, and a highlight that survives a frame longer than it should
+    // costs a repaint of one small box. The `:hover` half also never fires on a
+    // touch-only device to begin with, on Tailwind's `@media (hover: hover)`.
+    "not-data-disabled:hover:data-unchecked:bg-(--switch-track-bg-hover)",
+    "not-data-disabled:group-hover/switch:data-unchecked:bg-(--switch-track-bg-hover)",
     "not-data-disabled:data-highlighted:data-unchecked:bg-(--switch-track-bg-hover)",
-    "pointer-fine:not-data-disabled:hover:data-checked:bg-(--switch-fill-hover)",
-    "pointer-fine:not-data-disabled:group-hover/switch:data-checked:bg-(--switch-fill-hover)",
+    "not-data-disabled:hover:data-checked:bg-(--switch-fill-hover)",
+    "not-data-disabled:group-hover/switch:data-checked:bg-(--switch-fill-hover)",
     "not-data-disabled:data-highlighted:data-checked:bg-(--switch-fill-hover)",
-    // Colour runs at half the speed of anything that moves, so the track reads
-    // as filling ahead of the thumb. One gentle curve for all of it: the two
-    // edges split a single timeline, so a front-loaded curve would spend the
-    // trailing edge's budget on the leading one.
-    "transition-[background-color,--switch-p,--switch-ext,--switch-press]",
-    "duration-[80ms,var(--switch-duration),160ms,160ms]",
+    // One gentle curve for everything: the two edges split a single timeline,
+    // so a front-loaded curve would spend the trailing edge's budget on the
+    // leading one. Which properties ride that curve is a question of how the
+    // switch moves, so the lists themselves live on `motion` below.
     "ease-out-cubic",
     "motion-reduce:transition-none",
     "focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent outline-solid focus-visible:outline-2 focus-visible:outline-offset-2",
@@ -184,6 +186,21 @@ const switchVariants = cva(
       motion: {
         default: [
           "[--switch-split:1] [--switch-duration:160ms]",
+          // A coarse pointer transitions colour and nothing else, because on a
+          // coarse pointer nothing else moves here: the toggle is a translate
+          // the thumb owns and times itself, and the reach and the squash are
+          // both fine-pointer only, so --switch-ext and --switch-press never
+          // leave 0. That leaves --switch-p, which this motion reads only
+          // through a pair of margins that multiply it by that zero. Listing
+          // the three anyway would interpolate three registered custom
+          // properties on the main thread, and recompute the thumb's style
+          // against them, every frame of a toggle the compositor is otherwise
+          // running by itself.
+          "transition-[background-color] duration-80",
+          // Given a pointer that can, colour runs at half the speed of anything
+          // that moves, so the track reads as filling ahead of the thumb.
+          "motion-safe:pointer-fine:transition-[background-color,--switch-p,--switch-ext,--switch-press]",
+          "motion-safe:pointer-fine:duration-[80ms,var(--switch-duration),160ms,160ms]",
           // Fine pointers only, for the same reason as the reach above: this
           // drives the thumb's HEIGHT, and on touch it would be animating
           // through the slide rather than before it.
@@ -192,8 +209,15 @@ const switchVariants = cva(
         ].join(" "),
         // No press squash: the stretch derives its own from how far it has
         // spread. Longer than the slide because this timeline has to show the
-        // thumb both spread and gather inside it.
-        stretch: "[--switch-split:0.5] [--switch-duration:200ms]",
+        // thumb both spread and gather inside it. --switch-press is absent from
+        // the list below for the same reason — nothing in this motion sets it.
+        // --switch-p is not gated the way `default` gates it: interpolating it
+        // IS the stretch, on every pointer there is.
+        stretch: [
+          "[--switch-split:0.5] [--switch-duration:200ms]",
+          "transition-[background-color,--switch-p,--switch-ext]",
+          "duration-[80ms,var(--switch-duration),160ms]",
+        ].join(" "),
       },
     },
     defaultVariants: {
@@ -220,6 +244,12 @@ const switchVariants = cva(
  * cost: interpolating a custom property on the main thread, then relayouting
  * and repainting the thumb every frame. Cheap on a desktop, visibly janky on a
  * phone, especially inside a Drawer that is already compositing hard.
+ *
+ * The compositor path is only clean where nothing else is moving, which means a
+ * coarse pointer — the case that needed it. A desktop toggle almost always
+ * fires mid-hover, so --switch-ext is retracting from the press across the same
+ * frames and the width is not constant after all. Desktops could always afford
+ * that; the point was never to spare them.
  */
 const switchThumbVariants = cva(
   [
@@ -236,7 +266,7 @@ const switchThumbVariants = cva(
     // factor, so the reach retracts exactly as that edge lands on its inset,
     // which is what stops the thumb overhanging the track. Both resolve to 0
     // on coarse pointers, where the gestures that set --switch-ext never fire,
-    // so the used value never changes and no layout is invalidated.
+    // so the used value never changes and the pair costs a phone nothing.
     "ml-[calc(-1*var(--switch-ext)*var(--trail))]",
     "mr-[calc(-1*var(--switch-ext)*(1-var(--lead)))]",
     // Only the horizontal axis needs two edges. Vertically, an explicit height
