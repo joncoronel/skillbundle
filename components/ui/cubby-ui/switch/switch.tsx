@@ -186,19 +186,22 @@ const switchVariants = cva(
       motion: {
         default: [
           "[--switch-split:1] [--switch-duration:160ms]",
-          // A coarse pointer transitions colour and nothing else, because on a
-          // coarse pointer nothing else moves here: the toggle is a translate
-          // the thumb owns and times itself, and the reach and the squash are
-          // both fine-pointer only, so --switch-ext and --switch-press never
-          // leave 0. That leaves --switch-p, which this motion reads only
-          // through a pair of margins that multiply it by that zero. Listing
-          // the three anyway would interpolate three registered custom
-          // properties on the main thread, and recompute the thumb's style
-          // against them, every frame of a toggle the compositor is otherwise
-          // running by itself.
-          "transition-[background-color] duration-80",
-          // Given a pointer that can, colour runs at half the speed of anything
-          // that moves, so the track reads as filling ahead of the thumb.
+          // --switch-p is the only entry a coarse pointer would ever move, and
+          // the only one this motion can do without: the toggle is a translate
+          // the thumb owns and times itself, and the sole thing left reading
+          // --switch-p here is a pair of margins that multiply it by a
+          // --switch-ext no finger sets. Listed for the pointers with a use for
+          // it, left out for the ones without, where it would interpolate a
+          // registered custom property, and recompute the thumb's style against
+          // it, every frame of a toggle the compositor is otherwise running by
+          // itself. --switch-ext and --switch-press stay in both lists because
+          // a property that does not change starts no transition and so costs
+          // nothing to name, and a coarse pointer that can still hover — a TV
+          // remote — does move --switch-ext. Colour runs at half the speed of
+          // anything else either way, so the track reads as filling ahead of
+          // the thumb.
+          "transition-[background-color,--switch-ext,--switch-press]",
+          "duration-[80ms,160ms,160ms]",
           "motion-safe:pointer-fine:transition-[background-color,--switch-p,--switch-ext,--switch-press]",
           "motion-safe:pointer-fine:duration-[80ms,var(--switch-duration),160ms,160ms]",
           // Fine pointers only, for the same reason as the reach above: this
