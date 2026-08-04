@@ -15,6 +15,18 @@ const switchVariants = cva(
     // Containing block for the thumb, which is pinned by left and right so its
     // two edges can move on separate schedules. That is the stretch motion.
     "peer relative inline-block shrink-0 cursor-pointer",
+    // Layout containment bounds the reflow that `stretch` causes. That motion
+    // animates the thumb's `left`/`right` every frame, and without this the
+    // engine has to satisfy itself each time that nothing outside the switch
+    // moved. The promise is already true — the root's width and height are
+    // explicit and the thumb is absolutely positioned — so this only tells it
+    // what it would otherwise re-derive. `default` never reflows, so it neither
+    // needs nor loses anything here.
+    //
+    // Layout only, deliberately. `paint` (and therefore `strict`) clips
+    // descendants to the box, which would cut the coarse-pointer tap target
+    // below back to the visual size and take the 24px WCAG target with it.
+    "[contain:layout]",
     "touch-manipulation [-webkit-tap-highlight-color:transparent]",
     // Track and thumb need separate radii: the track is 4px larger in both
     // axes, so one shared value leaves its corners proportionally tighter.
@@ -54,11 +66,19 @@ const switchVariants = cva(
     // indicators are inert, so data-highlighted stands in for hover.
     // motion-safe rather than a motion-reduce reset: a reset carries fewer
     // selectors than the rule it undoes and loses on specificity.
-    "motion-safe:not-data-disabled:hover:[--switch-hover-part:var(--switch-hover-ext)]",
-    "motion-safe:not-data-disabled:group-hover/switch:[--switch-hover-part:var(--switch-hover-ext)]",
-    "motion-safe:not-data-disabled:data-highlighted:[--switch-hover-part:var(--switch-hover-ext)]",
-    "motion-safe:not-data-disabled:active:[--switch-press-part:var(--switch-press-ext)]",
-    "motion-safe:not-data-disabled:group-active/switch:[--switch-press-part:var(--switch-press-ext)]",
+    // Fine pointers only. Every one of these ends up in the thumb's WIDTH, via
+    // the negative margins, so each is a reflow per frame. A mouse can afford
+    // that; a phone cannot, and on touch the press fires at the same instant as
+    // the toggle, so the reach would relayout straight through the slide and
+    // undo the compositor path `default` sets up. Nothing is lost: coarse
+    // pointers have no real hover, and a finger covers the thumb it would be
+    // reaching with. Held to geometry — the colour rules below are paint-only
+    // and gate on a different rule, see there.
+    "motion-safe:pointer-fine:not-data-disabled:hover:[--switch-hover-part:var(--switch-hover-ext)]",
+    "motion-safe:pointer-fine:not-data-disabled:group-hover/switch:[--switch-hover-part:var(--switch-hover-ext)]",
+    "motion-safe:pointer-fine:not-data-disabled:data-highlighted:[--switch-hover-part:var(--switch-hover-ext)]",
+    "motion-safe:pointer-fine:not-data-disabled:active:[--switch-press-part:var(--switch-press-ext)]",
+    "motion-safe:pointer-fine:not-data-disabled:group-active/switch:[--switch-press-part:var(--switch-press-ext)]",
     // Unchecked track. Values live here rather than in the theme so the
     // component works the moment it is installed; set --switch-track /
     // --switch-track-hover on any ancestor to retune. Translucent, so one
@@ -86,11 +106,18 @@ const switchVariants = cva(
     // theme or the other.
     "[--switch-fill-hover:oklch(from_var(--switch-fill-bg)_calc(l-0.05)_c_h)]",
     "data-unchecked:bg-(--switch-track-bg) data-checked:bg-(--switch-fill-bg)",
-    "not-data-disabled:hover:data-unchecked:bg-(--switch-track-bg-hover)",
-    "not-data-disabled:group-hover/switch:data-unchecked:bg-(--switch-track-bg-hover)",
+    // The `:hover` pair is fine-pointer gated for a different reason than the
+    // geometry above — these are paint-only and cost nothing. It is that mobile
+    // browsers latch `:hover` on the last tapped element, so without the gate a
+    // switch stays visibly hovered after you toggle it, until you tap something
+    // else. `data-highlighted` is NOT gated: Base UI sets it explicitly rather
+    // than the browser inferring it, so it never latches, and it is the only
+    // hover-ish feedback a menu row gets from a keyboard.
+    "pointer-fine:not-data-disabled:hover:data-unchecked:bg-(--switch-track-bg-hover)",
+    "pointer-fine:not-data-disabled:group-hover/switch:data-unchecked:bg-(--switch-track-bg-hover)",
     "not-data-disabled:data-highlighted:data-unchecked:bg-(--switch-track-bg-hover)",
-    "not-data-disabled:hover:data-checked:bg-(--switch-fill-hover)",
-    "not-data-disabled:group-hover/switch:data-checked:bg-(--switch-fill-hover)",
+    "pointer-fine:not-data-disabled:hover:data-checked:bg-(--switch-fill-hover)",
+    "pointer-fine:not-data-disabled:group-hover/switch:data-checked:bg-(--switch-fill-hover)",
     "not-data-disabled:data-highlighted:data-checked:bg-(--switch-fill-hover)",
     // Colour runs at half the speed of anything that moves, so the track reads
     // as filling ahead of the thumb. One gentle curve for all of it: the two
@@ -157,8 +184,11 @@ const switchVariants = cva(
       motion: {
         default: [
           "[--switch-split:1] [--switch-duration:160ms]",
-          "motion-safe:not-data-disabled:active:[--switch-press:var(--switch-press-squash)]",
-          "motion-safe:not-data-disabled:group-active/switch:[--switch-press:var(--switch-press-squash)]",
+          // Fine pointers only, for the same reason as the reach above: this
+          // drives the thumb's HEIGHT, and on touch it would be animating
+          // through the slide rather than before it.
+          "motion-safe:pointer-fine:not-data-disabled:active:[--switch-press:var(--switch-press-squash)]",
+          "motion-safe:pointer-fine:not-data-disabled:group-active/switch:[--switch-press:var(--switch-press-squash)]",
         ].join(" "),
         // No press squash: the stretch derives its own from how far it has
         // spread. Longer than the slide because this timeline has to show the
@@ -180,44 +210,82 @@ const switchVariants = cva(
  * so this is only correct as a direct child of an element carrying
  * `switchVariants`. Unexported for that reason.
  *
- * Animates layout properties rather than transform alone, deliberately: nothing
- * else moves the thumb's two edges independently, and the cost stays on one
- * absolutely positioned element with no layout dependents.
+ * The two motions travel by different means, which is the whole reason this is
+ * a variant rather than one class list. `stretch` moves the thumb's two edges
+ * on separate schedules — no single transform expresses that, so it animates
+ * `left`/`right` and pays for a layout pass per frame. `default` moves both
+ * edges in lockstep at a constant width, which IS a translate, so it uses one
+ * and the compositor runs it off the main thread. Routing `default` through the
+ * layout path too (as this once did) meant the common case paid the rare case's
+ * cost: interpolating a custom property on the main thread, then relayouting
+ * and repainting the thumb every frame. Cheap on a desktop, visibly janky on a
+ * phone, especially inside a Drawer that is already compositing hard.
  */
-const switchThumbClasses = cn([
-  // White unchecked in both themes: the thumb is the lit element against a
-  // recessed track, the way physical switches read.
-  "pointer-events-none absolute top-0 block bg-(--switch-thumb-bg)",
-  "rounded-(--switch-radius) [corner-shape:var(--switch-corner-shape,round)]",
-  // Progress of each edge along its own half of the timeline. Reversing
-  // --switch-p swaps which edge leads for free, so there is no per-direction
-  // code.
-  "[--lead:min(1,var(--switch-p)/var(--switch-split))]",
-  "[--trail:max(0,(var(--switch-p)-(1-var(--switch-split)))/var(--switch-split))]",
-  "left-[calc(2px+var(--travel)*var(--trail))]",
-  "right-[calc(2px+var(--travel)*(1-var(--lead)))]",
-  // Negative margins push one edge outward. Each carries its own edge's factor,
-  // so the reach retracts exactly as that edge lands on its inset, which is
-  // what stops the thumb overhanging the track.
-  "ml-[calc(-1*var(--switch-ext)*var(--trail))]",
-  "mr-[calc(-1*var(--switch-ext)*(1-var(--lead)))]",
-  // Only the horizontal axis needs two edges. Vertically, an explicit height
-  // plus one offset keeps the inset a single number instead of two independent
-  // roundings at fractional DPRs. The offset must be a transform: as a margin
-  // it snaps separately from the height and the thumb reads as shaking.
-  "w-auto h-[calc(var(--thumb-h)-var(--switch-press-total))]",
-  // Whichever is larger; only one is ever non-zero, since --switch-split
-  // decides which motion is in play.
-  "[--switch-press-total:max(var(--switch-press),calc(var(--switch-press-squash)*(var(--lead)-var(--trail))))]",
-  "[transform:translateY(calc(2px+var(--switch-press-total)/2))]",
-  // The thumb's colour is state-dependent and transition-* does not inherit,
-  // so it needs its own. Matched to the track's 80ms step so the two cross
-  // together rather than the thumb snapping.
-  "transition-[background-color] duration-80 ease-out-cubic motion-reduce:transition-none",
-  // Only 2px of track shows around the thumb, so anything heavier darkens the
-  // inset below it and the thumb reads as sitting low.
-  "shadow-[0_1px_1px_0_oklch(0.18_0_0/0.1)]",
-]);
+const switchThumbVariants = cva(
+  [
+    // White unchecked in both themes: the thumb is the lit element against a
+    // recessed track, the way physical switches read.
+    "pointer-events-none absolute top-0 block bg-(--switch-thumb-bg)",
+    "rounded-(--switch-radius) [corner-shape:var(--switch-corner-shape,round)]",
+    // Progress of each edge along its own half of the timeline. Reversing
+    // --switch-p swaps which edge leads for free, so there is no per-direction
+    // code.
+    "[--lead:min(1,var(--switch-p)/var(--switch-split))]",
+    "[--trail:max(0,(var(--switch-p)-(1-var(--switch-split)))/var(--switch-split))]",
+    // Negative margins push one edge outward. Each carries its own edge's
+    // factor, so the reach retracts exactly as that edge lands on its inset,
+    // which is what stops the thumb overhanging the track. Both resolve to 0
+    // on coarse pointers, where the gestures that set --switch-ext never fire,
+    // so the used value never changes and no layout is invalidated.
+    "ml-[calc(-1*var(--switch-ext)*var(--trail))]",
+    "mr-[calc(-1*var(--switch-ext)*(1-var(--lead)))]",
+    // Only the horizontal axis needs two edges. Vertically, an explicit height
+    // plus one offset keeps the inset a single number instead of two independent
+    // roundings at fractional DPRs. The offset must be a transform: as a margin
+    // it snaps separately from the height and the thumb reads as shaking.
+    "w-auto h-[calc(var(--thumb-h)-var(--switch-press-total))]",
+    // Whichever is larger; only one is ever non-zero, since --switch-split
+    // decides which motion is in play.
+    "[--switch-press-total:max(var(--switch-press),calc(var(--switch-press-squash)*(var(--lead)-var(--trail))))]",
+    "[transform:translateY(calc(2px+var(--switch-press-total)/2))]",
+    // Only 2px of track shows around the thumb, so anything heavier darkens the
+    // inset below it and the thumb reads as sitting low.
+    "shadow-[0_1px_1px_0_oklch(0.18_0_0/0.1)]",
+    "motion-reduce:transition-none",
+  ],
+  {
+    variants: {
+      motion: {
+        // Box pinned at the unchecked position; the toggle is a translate.
+        // Same start, end, duration and curve as the layout path it replaces —
+        // at --switch-split:1 the edges were already moving together, so the
+        // interpolated positions are identical.
+        //
+        // Keyed off the PARENT's state, not the thumb's: SwitchVisual renders a
+        // plain span with no state of its own, and the root carries it in both
+        // cases. Direct-child, not `in-data-checked`, which matches any
+        // ancestor — a Switch inside a checked menu row would inherit that
+        // row's state and sit at the wrong end.
+        default: [
+          "left-[2px] right-[calc(2px+var(--travel))]",
+          "[translate:0_0] [[data-checked]>&]:[translate:var(--travel)_0]",
+          // The thumb's colour is state-dependent and transition-* does not
+          // inherit, so it needs its own. Matched to the track's 80ms step so
+          // the two cross together rather than the thumb snapping.
+          "transition-[background-color,translate] duration-[80ms,var(--switch-duration)] ease-out-cubic",
+        ].join(" "),
+        stretch: [
+          "left-[calc(2px+var(--travel)*var(--trail))]",
+          "right-[calc(2px+var(--travel)*(1-var(--lead)))]",
+          "transition-[background-color] duration-80 ease-out-cubic",
+        ].join(" "),
+      },
+    },
+    defaultVariants: {
+      motion: "default",
+    },
+  },
+);
 
 /**
  * cva types an explicit `null` as valid and drops its defaultVariants when it
@@ -254,7 +322,7 @@ function Switch({
     >
       <BaseSwitch.Thumb
         data-slot="switch-thumb"
-        className={switchThumbClasses}
+        className={switchThumbVariants({ motion })}
       />
     </BaseSwitch.Root>
   );
@@ -298,7 +366,7 @@ function SwitchVisual({
       "data-disabled:opacity-100",
       className,
     ),
-    children: <span className={switchThumbClasses} />,
+    children: <span className={switchThumbVariants({ motion })} />,
   };
 
   return useRender({

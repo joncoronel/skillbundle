@@ -6,10 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 
 import { cn } from "@/lib/utils";
-import {
-  solidSurface,
-  type SurfaceLevel,
-} from "@/lib/cubby-ui/elevated";
+import { solidSurface, type SurfaceLevel } from "@/lib/cubby-ui/elevated";
 import {
   SwitchVisual,
   type SwitchVisualProps,
@@ -310,7 +307,7 @@ function DropdownMenuCheckboxItem({
           shape={switchShape}
           size={switchSize}
           motion={switchMotion}
-          className="col-start-2"
+          className="col-start-2 [--switch-press-squash:0px]"
           render={<BaseMenu.CheckboxItemIndicator keepMounted />}
         />
       ) : (

@@ -20,7 +20,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/cubby-ui/dropdown-menu";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Switch } from "@/components/ui/cubby-ui/switch";
+import { Switch } from "@/components/ui/cubby-ui/switch/switch";
 import { LabeledSection } from "@/components/labeled-section";
 import { ItemCount } from "@/components/item-count";
 import { PublisherSelect } from "@/components/publisher-select";
@@ -470,7 +470,11 @@ function SwitchRow({
         <span className="text-sm">{label}</span>
         <span className="text-xs text-muted-foreground">{hint}</span>
       </span>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Switch
+        shape="squircle"
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
     </label>
   );
 }

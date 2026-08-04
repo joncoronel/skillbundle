@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Switch } from "@/components/ui/cubby-ui/switch";
+import { Switch } from "@/components/ui/cubby-ui/switch/switch";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import {
   Tooltip,
@@ -108,7 +108,9 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
     <Dialog handle={handle}>
       <DialogContent variant="inset">
         <DialogHeader>
-          <DialogTitle className="font-display font-medium">Save bundle</DialogTitle>
+          <DialogTitle className="font-display font-medium">
+            Save bundle
+          </DialogTitle>
         </DialogHeader>
         <DialogBody>
           {atLimit ? (
@@ -162,7 +164,8 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                         : undefined
                     }
                   >
-                    {trimmedDescription.length} / {MAX_BUNDLE_DESCRIPTION_LENGTH}
+                    {trimmedDescription.length} /{" "}
+                    {MAX_BUNDLE_DESCRIPTION_LENGTH}
                   </span>
                 </div>
               </div>
@@ -178,7 +181,12 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                 {limits && !limits.canMakePrivate ? (
                   <Tooltip>
                     <TooltipTrigger render={<div />}>
-                      <Switch id="bundle-public" checked={true} disabled />
+                      <Switch
+                        shape="squircle"
+                        id="bundle-public"
+                        checked={true}
+                        disabled
+                      />
                     </TooltipTrigger>
                     <TooltipContent sideOffset={8}>
                       Upgrade to Pro to make bundles private
@@ -186,6 +194,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                   </Tooltip>
                 ) : (
                   <Switch
+                    shape="squircle"
                     id="bundle-public"
                     checked={isPublic}
                     onCheckedChange={setIsPublic}
@@ -212,9 +221,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={
-              atLimit || !name.trim() || saving || descriptionOverLimit
-            }
+            disabled={atLimit || !name.trim() || saving || descriptionOverLimit}
             loading={saving}
           >
             {saving ? "Saving…" : "Save bundle"}
