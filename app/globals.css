@@ -483,7 +483,16 @@ html {
   --compare-line-3: oklch(0.68 0.19 305);
   --primary-active: color-mix(in oklch, var(--primary), white 14%);
   --neutral-active: color-mix(in oklch, var(--neutral), black 14%);
-  --destructive-active: color-mix(in oklch, var(--destructive), black 8%);
+  /* The one -active token that does not step further along its hover's
+     direction, because it cannot. Dark --destructive-hover lightens (white
+     15%, L 0.50 -> 0.575), and --destructive-foreground here is pure white, so
+     continuing to lighten walks the label off AA: white 18% is 4.49:1 and
+     white 22% is 4.12:1, against a 4.5:1 floor. The step that would be visible
+     is the step that fails. So press drops the hover lift instead of adding to
+     it — a 0.075 lightness move back toward rest, which reads as settling, at
+     6.38:1. Do not "make this consistent" with the four tokens above without
+     re-running the contrast numbers. */
+  --destructive-active: var(--destructive);
   --secondary-active: color-mix(in oklch, var(--secondary), white 8%);
   --outline-active: color-mix(in oklch, var(--card), white 8%);
   --surface-active: oklch(1 0 0 / 0.08);

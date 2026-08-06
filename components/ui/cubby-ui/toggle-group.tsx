@@ -54,6 +54,11 @@ function ToggleGroup({
   children,
   ...props
 }: ToggleGroupProps) {
+  const contextValue = React.useMemo(
+    () => ({ size, variant, detached }),
+    [size, variant, detached],
+  );
+
   // Cell styling lives here on the parent, via **:data-[slot=toggle]: descendant
   // selectors, rather than on ToggleGroupItem — on purpose. The item owns cell
   // *identity* (variant/size, fed through context); the group owns *adjacency*:
@@ -108,7 +113,13 @@ function ToggleGroup({
       )}
       {...props}
     >
-      <ToggleGroupContext.Provider value={{ size, variant, detached }}>
+      {/* Memoized so the context value is stable across the group's re-renders
+          — a consumer (ToggleGroupItem) that memoizes on it isn't invalidated
+          every time the parent renders for an unrelated reason. Restored after
+          a registry refresh dropped it; nothing auto-memoizes this, the React
+          Compiler is not enabled here (only its lint rules, via
+          eslint-plugin-react-hooks). */}
+      <ToggleGroupContext.Provider value={contextValue}>
         {children}
       </ToggleGroupContext.Provider>
     </BaseToggleGroup>
@@ -124,7 +135,7 @@ export type ToggleGroupItemProps = ToggleProps;
  * and ignore it.
  */
 function ToggleGroupItem({ variant, size, ...props }: ToggleGroupItemProps) {
-  const group = React.useContext(ToggleGroupContext);
+  const group = React.use(ToggleGroupContext);
   const resolvedSize = size ?? group.size ?? "default";
   // Detached cells own their variant (reusing the Toggle cva). Attached `outline`
   // reuses the Toggle `outline` too so its states stay in the card family; solid /

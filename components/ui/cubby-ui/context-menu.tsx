@@ -225,7 +225,11 @@ function ContextMenuCheckboxItem({
           shape={switchShape}
           size={switchSize}
           motion={switchMotion}
-          className="col-start-2"
+          // Matches DropdownMenu. The squash only bites under
+          // `switchMotion="stretch"` (it is gated on --switch-split), where the
+          // thumb would flatten mid-travel on a row that never receives a
+          // press of its own — the row does.
+          className="col-start-2 [--switch-press-squash:0px]"
           render={<BaseContextMenu.CheckboxItemIndicator keepMounted />}
         />
       ) : (

@@ -143,6 +143,9 @@ importers:
       rehype-harden:
         specifier: ^1.1.8
         version: 1.1.8
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
       shiki:
         specifier: ^3.22.0
         version: 3.22.0

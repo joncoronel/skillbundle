@@ -642,7 +642,11 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
                     className="size-3.5"
                   />
                 }
-                trailingIcon={<FilterCountBadge count={filterCount.sheet} />}
+                trailingIcon={
+                  filterCount.sheet > 0 ? (
+                    <FilterCountBadge count={filterCount.sheet} />
+                  ) : null
+                }
               />
             }
           >

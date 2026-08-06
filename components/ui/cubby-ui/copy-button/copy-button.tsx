@@ -124,7 +124,7 @@ function CopyButton({
     [ref],
   );
 
-  return (
+  const button = (
     <Button
       ref={mergedRef}
       data-slot="copy-button"
@@ -206,23 +206,36 @@ function CopyButton({
         </span>
       </span>
 
-      {/* The icons are aria-hidden and the label is fixed, so this is the only
-          thing that reports the outcome. Mounted for the whole life of the
-          button, never conditionally rendered around the result: a region that
-          arrives already holding its text is not a change, and screen readers
-          announce the change. Suppressed entirely when a toast is attached,
-          which says the same words out loud on its own. `role="status"` over a
-          bare aria-live to match Button's own loading announcement. */}
+    </Button>
+  );
+
+  // The icons are aria-hidden and the label is fixed, so this is the only
+  // thing that reports the outcome. Two rules govern where it can live.
+  //
+  // Mounted for the whole life of the button, never conditionally rendered
+  // around the result: a region that arrives already holding its text is not a
+  // change, and screen readers announce the change.
+  //
+  // And a SIBLING of the button, not a child. `role="button"` is Children
+  // Presentational, so a conforming reader prunes the semantics of everything
+  // inside it — a live region in there is not a live region. This is why the
+  // fixed `aria-label` above is safe: the region genuinely does the reporting.
+  //
+  // Suppressed entirely when a toast is attached, which says the same words out
+  // loud on its own.
+  return (
+    <>
+      {button}
       {!toastEnabled && (
         <span role="status" className="sr-only">
           {isCopied
             ? "Copied to clipboard"
             : isError
-              ? "Failed to copy to clipboard"
+              ? "Failed to copy to clipboard. Copy it manually."
               : ""}
         </span>
       )}
-    </Button>
+    </>
   );
 }
 

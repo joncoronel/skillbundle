@@ -3,8 +3,13 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Button as BaseButton } from "@base-ui/react/button";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Loading03Icon } from "@hugeicons/core-free-icons";
+// The app's one busy visual, shared with the search inputs and the compare
+// chart. A LOCAL divergence: upstream ships a spinning HugeIcon here, because a
+// registry component cannot depend on something outside the registry. Restoring
+// it also keeps @hugeicons/core-free-icons — a 6.3 MB non-barrel module — out of
+// the graph of every route, which importing it here would put it in.
+// Re-apply after any `shadcn add`; see TODO.md "Local cubby-ui divergences".
+import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 import { cn } from "@/lib/utils";
 
 // The button's fill and border render on a ::before pseudo-element that
@@ -145,15 +150,34 @@ function Button({
 }: ButtonProps) {
   const isIconOnly = size != null && iconOnlySizes.has(size);
 
+  // `loading` takes an icon slot and leaves the LABEL VISIBLE: it replaces the
+  // leading icon, or sits on the right when there is a trailing icon (or no
+  // leading one). Restored after a registry refresh replaced it with a centred
+  // spinner over `opacity-0` content — which silently blanked the five call
+  // sites that swap in a pending label ("Saving…", "Creating…", "Opening…").
+  // Wrapped in aria-hidden because DotMatrixRipple renders its own
+  // role="status" aria-live, and a live region inside a <button> is pruned as
+  // presentational; `aria-busy` below is the signal.
+  const loader = loading ? (
+    <span aria-hidden className="inline-flex shrink-0">
+      <DotMatrixRipple size="xs" />
+    </span>
+  ) : null;
+  const loaderOnRight = !!loader && (trailingIcon != null || leadingIcon == null);
+  const resolvedLeading = loader && !loaderOnRight ? loader : leadingIcon;
+  const resolvedTrailing = loaderOnRight ? loader : trailingIcon;
+
+  // A fixed square has no room for a label beside the loader, so there the
+  // loader stands in for the children rather than joining them.
   const content = isIconOnly ? (
-    children
+    (loader ?? children)
   ) : (
     <>
-      {leadingIcon}
+      {resolvedLeading}
       {/* text-box trims ascent/descent whitespace for optical centering;
           unsupported browsers fall back to metrics centering. */}
       <span className="[text-box:trim-both_cap_alphabetic]">{children}</span>
-      {trailingIcon}
+      {resolvedTrailing}
     </>
   );
 
@@ -166,8 +190,10 @@ function Button({
         buttonVariants({
           variant,
           size,
-          iconLeft: !!leadingIcon,
-          iconRight: !!trailingIcon,
+          // Resolved, not raw: while loading the loader occupies a slot, and
+          // the optical padding has to follow it.
+          iconLeft: !!resolvedLeading,
+          iconRight: !!resolvedTrailing,
         }),
         className,
       )}
@@ -180,29 +206,15 @@ function Button({
         data-slot="button-content"
         className={cn("relative", buttonContentLayout)}
       >
-        {loading ? (
-          <>
-            {/* Real content stays laid out (invisible) so the size holds. */}
-            <span className={cn(buttonContentLayout, "opacity-0")}>
-              {content}
-            </span>
-            <span
-              aria-hidden
-              className="absolute inset-0 flex items-center justify-center"
-            >
-              <HugeiconsIcon
-                icon={Loading03Icon}
-                className="animate-spin motion-reduce:animate-pulse"
-                strokeWidth={2}
-              />
-            </span>
-            <span role="status" className="sr-only">
-              Loading
-            </span>
-          </>
-        ) : (
-          content
-        )}
+        {/* No sr-only live region anywhere in here, deliberately. `sr-only`
+            clips rather than hides, so its text would join name-from-content
+            and the button would rename itself mid-request ("Save bundle" ->
+            "Saving… Loading"). It would not announce anyway: role button makes
+            its descendants presentational, and a region that mounts already
+            holding its text has not changed. `aria-busy` above is the signal
+            that works, and callers that want words swap their own label (see
+            components/auth/shared.tsx). */}
+        {content}
       </span>
     </BaseButton>
   );

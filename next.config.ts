@@ -6,6 +6,15 @@ const nextConfig: NextConfig = {
   experimental: {
     // Tree-shake icon barrels. lucide-react is on Next's default-optimized list
     // already; HugeIcons isn't, and it's imported broadly across the app.
+    //
+    // Only `@hugeicons/react` is actually reachable by this. The icon package's
+    // ESM index is one 6.3 MB file of inline declarations, not a re-export
+    // barrel, and Next's barrel loader no-ops on those — the entry below is
+    // kept so nobody re-adds it after re-discovering the same thing. Tree
+    // shaking still drops the unused icons, so this costs build time, not
+    // bytes. Anything landing in the graph of EVERY route should import the
+    // per-icon subpath (`@hugeicons/core-free-icons/Foo`, a default export)
+    // rather than the root.
     optimizePackageImports: ["@hugeicons/react", "@hugeicons/core-free-icons"],
   },
   // The OG image routes read brand .ttf fonts from assets/og via fs.readFile.

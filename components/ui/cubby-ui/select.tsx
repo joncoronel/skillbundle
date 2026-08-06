@@ -205,7 +205,11 @@ function SelectContent({
             // List the scroller via an inline `max-height: 100%`, which only
             // resolves against a definite parent height — pin the content
             // wrapper to the viewport so the List clips and scrolls itself.
-            contentClassName="in-data-[side=none]:h-full"
+            // Withheld under nativeScroll, which has no content wrapper to pin
+            // and warns about the prop it cannot honour.
+            contentClassName={
+              nativeScroll ? undefined : "in-data-[side=none]:h-full"
+            }
           >
             <BaseSelect.List
               data-slot="select-list"

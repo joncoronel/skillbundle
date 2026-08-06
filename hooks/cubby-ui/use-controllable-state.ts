@@ -18,6 +18,14 @@ interface UseControllableStateParams<T> {
  * safe in both modes: they resolve against an eagerly-advanced ref, so
  * multiple `setValue` calls in one event tick compose. `setValue` is
  * referentially stable across renders.
+ *
+ * The ref re-syncs from the prop at the next commit — but only if one happens.
+ * Known constraint: a controlled parent that ignores `onValueChange` AND never
+ * re-renders leaves the ref advanced past the real value, and a repeat
+ * `setValue` to that same value early-returns at the `Object.is` check without
+ * re-notifying. Acceptable — a controlled parent that never commits is already
+ * outside the controlled contract — but it is the first thing to check when a
+ * controlled value appears stuck.
  */
 export function useControllableState<T>({
   value,

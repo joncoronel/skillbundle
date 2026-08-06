@@ -33,6 +33,17 @@ Note the disabled+focused case is already handled — `components/ui/cubby-ui/bu
 uses full ring alpha under `data-disabled` to compensate for `opacity-60`, since CSS
 opacity dims the outline too.
 
+The measurements behind that, recorded here because the comment carrying them lived
+above a cva that a registry refresh replaced, and `button.tsx` is vendored so the next
+one would take it again: CSS `opacity` dims the outline too, so a disabled+focused
+button rendered its `/50` ring at 0.5 × 0.6 ≈ 0.3 alpha — 1.53:1 on light, 1.35:1 on
+dark. Full alpha under the same dimming gives 2.44:1 and 2.16:1, i.e. slightly *more*
+visible than an ordinary focus ring, which is the right way round for the one state
+where you most need to find focus. `data-disabled:focus-visible:outline-ring` (no
+`/50`) is therefore deliberate, not a typo — do not "normalise" it. Residual and not
+from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1, under the 3:1 non-text
+threshold, app-wide. That is the part this entry is about.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
@@ -269,6 +280,48 @@ matched your repo" properly.
   - The **"N copies"** chip (`CopiesBadge` in `components/skill-card.tsx`) is informational
     and the easiest to cut from dense rows. Lean: remove from rows, keep only on the detail
     page.
+
+## Local cubby-ui divergences (re-apply after `shadcn add @cubby-ui/all`)
+
+`components/ui/cubby-ui/**` is vendored. Re-running the registry add overwrites
+these silently — the whole reason this list exists is that it already happened
+once, to the loading indicator. After any update, diff these files and re-apply.
+Anything here that is genuinely general belongs upstream in cubby-ui; the note
+says which.
+
+- **`button.tsx` — `DotMatrixRipple` as the loading visual.** Upstream ships a
+  spinning HugeIcon, because a registry component cannot import an app
+  component. The app has one busy idiom (search inputs, compare chart) and the
+  button should share it. Side benefit: keeps the 6.3 MB
+  `@hugeicons/core-free-icons` module out of the every-route graph. *Upstream
+  fix: let the consumer supply the indicator (a `loadingIndicator` prop, or a
+  provider default) instead of hardcoding one.*
+- **`button.tsx` — no `sr-only` "Loading" region.** `sr-only` clips rather than
+  hides, so it joined name-from-content and renamed the button mid-request;
+  `role="button"` also makes descendants presentational, so it never announced.
+  `aria-busy` is the signal. *Upstream fix: same change, it is a plain bug.*
+- **`switch/switch.tsx` — `motion="default"` slides with `translate`.** Upstream
+  drives both motions off `--switch-p` into `left`/`right`, which reflows the
+  thumb every frame; the default motion is a constant-width slide and does not
+  need that. Plus `contain: layout`, a `pointer-fine` gate on the press
+  geometry, and a restored thumb shadow. *Upstream fix: all of it — see the
+  file's own comments, which carry the reasoning.*
+- **`copy-button/copy-button.tsx` — own grid wrapper, status region outside the
+  button.** Upstream styles Button's internal content span through `[&>span]`
+  (private DOM that has already changed shape once) and puts the live region
+  inside the button. *Upstream fix: both.*
+- **`toggle-group.tsx` — memoized context value, `React.use`.** A registry
+  refresh dropped both. *Upstream fix: yes.*
+- **`context-menu.tsx` / `menubar.tsx` — `[--switch-press-squash:0px]` on the
+  switch indicator**, matching `dropdown-menu.tsx`, which had it and they did
+  not. *Upstream fix: yes, and better as one shared indicator component — the
+  block is copy-pasted across four files.*
+- **`pagination.tsx` — uses the `iconLeft`/`iconRight` compound variants**
+  rather than hand-written `pl-2.5`/`pr-2.5`. *Upstream fix: yes.*
+- **`select.tsx` — `contentClassName` withheld under `nativeScroll`**, which
+  otherwise trips ScrollArea's own dev guard. *Upstream fix: yes.*
+- **`fancy-button.tsx` — slots renamed to `leadingIcon`/`trailingIcon`** to
+  match Button after its rename. *Upstream fix: yes (or delete the component).*
 
 ## Parked decisions (context lives elsewhere)
 

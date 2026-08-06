@@ -283,7 +283,12 @@ const switchThumbVariants = cva(
     "[transform:translateY(calc(2px+var(--switch-press-total)/2))]",
     // Only 2px of track shows around the thumb, so anything heavier darkens the
     // inset below it and the thumb reads as sitting low.
-    "shadow-[0_1px_1px_0_oklch(0.18_0_0/0.1)]",
+    // In light mode the unchecked track is an 8% black overlay, so on a white
+    // dialog the thumb is white-on-near-white and this shadow is the only edge
+    // between them. It was thinned to 1px/0.10 in a registry refresh; restored,
+    // because the "only 2px of track shows" reasoning that motivated thinning it
+    // assumes a track you can actually see.
+    "shadow-[0_1px_2px_0_oklch(0.18_0_0/0.15)]",
     "motion-reduce:transition-none",
   ],
   {

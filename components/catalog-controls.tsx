@@ -43,6 +43,23 @@ const ANY = "any";
 
 const MIN_INSTALL_PRESETS = [100, 1_000, 10_000] as const;
 
+// The boolean filters render as a switch on BOTH surfaces — a menu indicator
+// in the chin's "More", a real control in the mobile sheet. Shape is shared so
+// they are recognisably the same control.
+//
+// Motion is NOT, deliberately. `stretch` moves the thumb's two edges on
+// separate schedules, which no transform expresses, so it animates
+// `left`/`right` and reflows the thumb every frame; `default` slides on the
+// compositor. The chin is desktop-only and can afford the nicer timeline. The
+// sheet is the touch surface, and paying a per-frame reflow there is what made
+// these switches stutter in the drawer. Nobody sees both at once — the two
+// surfaces are mutually exclusive by viewport — so the split costs nothing.
+const FILTER_SWITCH = {
+  shape: "squircle",
+  menuMotion: "stretch",
+  sheetMotion: "default",
+} as const;
+
 // Single source for a preset's label and for parsing the select value back to
 // the param, so the standalone select and the "More" radio group can't drift.
 const minInstallLabel = (n: number) => `${formatInstalls(n)}+ installs`;
@@ -81,8 +98,13 @@ const surfaceProps = (surface: ControlSurface) =>
   }) as const;
 
 /** The small primary count pill shown on a filter trigger (chin "More", the
- *  mobile "Sort & filter" trigger). Renders nothing at zero so call sites can
- *  drop it straight into a `trailingIcon`. */
+ *  mobile "Sort & filter" trigger).
+ *
+ *  Gate the CALL SITE on the count, not just this component. Returning `null`
+ *  is invisible but the element is still truthy, and Button derives its
+ *  leading/trailing padding from `!!leadingIcon` / `!!trailingIcon` — so an
+ *  ungated badge reserves optical padding for a pill that never paints, and
+ *  the trigger sits a few px tighter on that side than its own twin. */
 export function FilterCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
@@ -327,8 +349,8 @@ export function CatalogControlsBar() {
               `menuitemcheckbox` role and the switch is never focusable. */}
           <DropdownMenuCheckboxItem
             indicator="switch"
-            switchMotion="stretch"
-            switchShape="squircle"
+            switchShape={FILTER_SWITCH.shape}
+            switchMotion={FILTER_SWITCH.menuMotion}
             checked={broken}
             onCheckedChange={(checked) => setParams({ broken: !!checked })}
             closeOnClick={false}
@@ -337,8 +359,8 @@ export function CatalogControlsBar() {
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
             indicator="switch"
-            switchMotion="stretch"
-            switchShape="squircle"
+            switchShape={FILTER_SWITCH.shape}
+            switchMotion={FILTER_SWITCH.menuMotion}
             checked={hideGitHubOnly}
             onCheckedChange={(checked) =>
               setParams({ hideGitHubOnly: !!checked })
@@ -481,7 +503,8 @@ function SwitchRow({
         <span className="text-xs text-muted-foreground">{hint}</span>
       </span>
       <Switch
-        shape="squircle"
+        shape={FILTER_SWITCH.shape}
+        motion={FILTER_SWITCH.sheetMotion}
         checked={checked}
         onCheckedChange={onCheckedChange}
       />

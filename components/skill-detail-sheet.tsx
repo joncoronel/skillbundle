@@ -171,7 +171,11 @@ function SkillDetailSheetContent({
       <SheetFooter>
         <Link
           href={skillHref(skill.source, skill.skillId)}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
+          className={buttonVariants({
+            variant: "outline",
+            size: "sm",
+            iconRight: true,
+          })}
           onNavigate={() => handle.close()}
         >
           View full page
@@ -183,7 +187,11 @@ function SkillDetailSheetContent({
         </Link>
         <Link
           href={compareHref([{ source: skill.source, skillId: skill.skillId }])}
-          className={buttonVariants({ variant: "outline", size: "sm" })}
+          className={buttonVariants({
+            variant: "outline",
+            size: "sm",
+            iconLeft: true,
+          })}
           onNavigate={() => handle.close()}
         >
           <HugeiconsIcon

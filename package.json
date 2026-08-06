@@ -59,6 +59,7 @@
     "react-dom": "19.2.7",
     "react-resizable-panels": "^4.6.0",
     "rehype-harden": "^1.1.8",
+    "server-only": "0.0.1",
     "shiki": "^3.22.0",
     "streamdown": "^2.5.0",
     "svix": "^1.84.1",
