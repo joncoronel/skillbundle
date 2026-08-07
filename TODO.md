@@ -44,6 +44,32 @@ where you most need to find focus. `data-disabled:focus-visible:outline-ring` (n
 from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1, under the 3:1 non-text
 threshold, app-wide. That is the part this entry is about.
 
+### Switch: unchecked track is ~1.2:1 in light mode (design decision)
+
+Sibling of the focus-ring entry above, same shape: a measured, accepted 1.4.11
+shortfall parked for a design pass rather than fixed in a component branch.
+
+`components/ui/cubby-ui/switch/switch.tsx` sets the light unchecked track to
+`--switch-track: oklch(0 0 0 / 8%)`. Over a white surface (light `--surface-3`
+through `--surface-8` are all `oklch(1 0 0)`) that composites to roughly
+`rgb(235,235,235)` — about **1.2:1** against the surface, and the white thumb
+sits at about **1.2:1** against the track. WCAG 2.2 SC 1.4.11 asks 3:1 for the
+parts of a control needed to identify its state; both the boundary and the state
+indicator are under it. Dark mode is fine (20% white overlay, thumb/track ≈ 8:1),
+so this is light-only. Reachable at `save-bundle-dialog.tsx` (Public toggle, on a
+Dialog) and `catalog-controls.tsx`'s mobile filter sheet.
+
+**Not a regression** — the predecessor component used `bg-input-elevated`, and
+light `--input-elevated` is the identical `oklch(0 0 0 / 8%)`. Inherited, not
+introduced. The thumb's drop shadow, which is the only remaining separation cue,
+was thinned in a registry refresh and has been restored to
+`0 1px 2px 0 oklch(0.18 0 0 / 0.15)`.
+
+The fix is raising light `--switch-track` toward `oklch(0 0 0 / 22%)` (≈3:1
+against white), or giving the track a 1px border to carry the boundary. Deferred
+because it repaints every switch in the app in light mode — a visual-identity
+call, like the focus rings, not a side effect of a component update.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
@@ -343,6 +369,39 @@ indicator — this app has about ten. A `ButtonDefaults` provider, or an exporte
 defaults object the vendored file reads, would let an app set it once and retire
 the patch entirely. Less conventional for a copy-in registry, so it may be worth
 shipping the props first and seeing whether the repetition actually bites.
+
+### Proposal for cubby-ui: one `MenuSwitchIndicator` instead of four copies
+
+`dropdown-menu.tsx`, `context-menu.tsx`, `menubar.tsx` and `base-drawer.tsx` each
+render a `SwitchVisual` inside their checkbox item when `indicator="switch"`. The
+three menu implementations are identical except for the Base UI namespace they
+pull the indicator from (`BaseMenu` vs `BaseContextMenu`) — same grid column,
+same `keepMounted`, same four props, same comment.
+
+They had already drifted once: `dropdown-menu.tsx` carried
+`[--switch-press-squash:0px]` and the other two did not. That is now fixed
+upstream and fixed *well* — `squash` is a real variant on `switchVariants`, and
+`SwitchVisual` defaults it to `false`, which is correct for every host where the
+row owns the press. So the specific bug is gone; the duplication that produced it
+is not.
+
+The remaining cost is the prop surface. Each of the four flattens
+`SwitchVisualProps` into `switchColor` / `switchShape` / `switchSize` /
+`switchMotion`, so every future Switch variant is four edits in four files, and
+`base-drawer.tsx` has already picked a different default (`switchSize = "sm"` vs
+`"xs"`).
+
+Proposed: one `MenuSwitchIndicator` exported from `switch/switch.tsx` or a
+sibling, taking the switch options plus a `render` prop for the host's
+`CheckboxItemIndicator`. Each menu file renders it and passes its own indicator
+through `render`. Collapse the four flattened props into one
+`switchProps?: Pick<SwitchVisualProps, "color" | "shape" | "size" | "motion">`.
+
+Deferred locally rather than patched: these are vendored files, so the refactor
+would be reverted by the next `shadcn add` while also making that update
+conflict. This round proved the point — the local `[--switch-press-squash:0px]`
+patches were wiped by the re-install, while the upstreamed `squash` variant came
+back.
 
 ## Parked decisions (context lives elsewhere)
 

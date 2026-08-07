@@ -343,9 +343,10 @@ export function CatalogControlsBar() {
 
           <DropdownMenuSeparator />
 
-          {/* Switch indicators, not checkmarks: these are the same two filters
-              the mobile sheet renders as <SwitchRow>, so the two surfaces read
-              as one control each. Visual only — the row keeps its
+          {/* Switch indicators, not checkmarks: the mobile sheet renders these
+              same two filters as <SwitchRow>, and both surfaces take their
+              appearance from FILTER_SWITCH — shape shared, motion deliberately
+              split, see the reason there. Visual only: the row keeps its
               `menuitemcheckbox` role and the switch is never focusable. */}
           <DropdownMenuCheckboxItem
             indicator="switch"
