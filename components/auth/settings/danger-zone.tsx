@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser, useClerk, useReverification } from "@clerk/nextjs";
+import { isReverificationCancelledError } from "@clerk/nextjs/errors";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { DangerIcon } from "@hugeicons/core-free-icons";
@@ -17,6 +18,9 @@ import {
   AlertDialogClose,
 } from "@/components/ui/cubby-ui/alert-dialog";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { useReverificationFlow } from "@/components/auth/reverification-provider";
+import { getClerkErrorMessage } from "@/lib/utils";
 
 function DangerZoneSkeleton() {
   return <Skeleton className="h-9 w-32" />;
@@ -26,26 +30,51 @@ export function DangerZone() {
   const { isLoaded, user } = useUser();
   const { signOut } = useClerk();
   const router = useRouter();
+  const [open, setOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+
+  const onNeedsReverification = useReverificationFlow();
+
+  // Deleting an account is a protected action: Clerk rejects it with
+  // `session_reverification_required` unless the session was verified recently.
+  // `onNeedsReverification` routes that into our own OTP dialog, then retries.
+  const deleteAccount = useReverification(() => user?.delete(), {
+    onNeedsReverification,
+  });
 
   if (!isLoaded || !user) return <DangerZoneSkeleton />;
 
   const handleDelete = async () => {
+    // Close this dialog before the reverification dialog opens, otherwise the
+    // alert dialog's focus trap swallows input meant for the code field.
+    setOpen(false);
     setDeleting(true);
     try {
-      await user.delete();
-      await signOut();
-      router.push("/");
+      await deleteAccount();
     } catch (err) {
-      console.error("Failed to delete account:", err);
+      if (!isReverificationCancelledError(err)) {
+        toast.error({
+          title: "Could not delete account",
+          description: getClerkErrorMessage(err, "Please try again."),
+        });
+      }
       setDeleting(false);
+      return;
     }
+    // `user.delete()` already ended the session, so `signOut` has nothing left
+    // to do and its redirect never fires, stranding us on a settings page with
+    // no user. Clear any leftover client state, then navigate ourselves. The
+    // `redirectUrl` only matters if Clerk does redirect: it keeps us off the
+    // provider's `afterSignOutUrl` (/sign-in), which is wrong for a deleted
+    // account. Either way we land on "/".
+    await signOut({ redirectUrl: "/" }).catch(() => {});
+    router.push("/");
   };
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="destructive-soft" leadingIcon={<HugeiconsIcon icon={DangerIcon} strokeWidth={2} className="size-4" />} />}>
-        Delete account
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger render={<Button variant="destructive-soft" disabled={deleting} leadingIcon={<HugeiconsIcon icon={DangerIcon} strokeWidth={2} className="size-4" />} />}>
+        {deleting ? "Deleting..." : "Delete account"}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
