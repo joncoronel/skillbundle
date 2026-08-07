@@ -3,10 +3,14 @@
 import * as React from "react";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 
 import { cn } from "@/lib/utils";
-import { solidSurface, type SurfaceLevel } from "@/lib/cubby-ui/elevated";
+import {
+  solidSurface,
+  type SurfaceLevel,
+} from "@/lib/cubby-ui/elevated";
 import {
   SwitchVisual,
   type SwitchVisualProps,
@@ -307,7 +311,7 @@ function DropdownMenuCheckboxItem({
           shape={switchShape}
           size={switchSize}
           motion={switchMotion}
-          className="col-start-2 [--switch-press-squash:0px]"
+          className="col-start-2"
           render={<BaseMenu.CheckboxItemIndicator keepMounted />}
         />
       ) : (

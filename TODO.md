@@ -283,45 +283,66 @@ matched your repo" properly.
 
 ## Local cubby-ui divergences (re-apply after `shadcn add @cubby-ui/all`)
 
-`components/ui/cubby-ui/**` is vendored. Re-running the registry add overwrites
-these silently — the whole reason this list exists is that it already happened
-once, to the loading indicator. After any update, diff these files and re-apply.
-Anything here that is genuinely general belongs upstream in cubby-ui; the note
-says which.
+`components/ui/cubby-ui/**` is vendored, so a registry add overwrites local
+edits silently. Keep this list to exactly what is still local — everything that
+gets upstreamed should be deleted from it, or the list becomes a to-do nobody
+trusts.
 
-- **`button.tsx` — `DotMatrixRipple` as the loading visual.** Upstream ships a
-  spinning HugeIcon, because a registry component cannot import an app
-  component. The app has one busy idiom (search inputs, compare chart) and the
-  button should share it. Side benefit: keeps the 6.3 MB
-  `@hugeicons/core-free-icons` module out of the every-route graph. *Upstream
-  fix: let the consumer supply the indicator (a `loadingIndicator` prop, or a
-  provider default) instead of hardcoding one.*
-- **`button.tsx` — no `sr-only` "Loading" region.** `sr-only` clips rather than
-  hides, so it joined name-from-content and renamed the button mid-request;
-  `role="button"` also makes descendants presentational, so it never announced.
-  `aria-busy` is the signal. *Upstream fix: same change, it is a plain bug.*
-- **`switch/switch.tsx` — `motion="default"` slides with `translate`.** Upstream
-  drives both motions off `--switch-p` into `left`/`right`, which reflows the
-  thumb every frame; the default motion is a constant-width slide and does not
-  need that. Plus `contain: layout`, a `pointer-fine` gate on the press
-  geometry, and a restored thumb shadow. *Upstream fix: all of it — see the
-  file's own comments, which carry the reasoning.*
-- **`copy-button/copy-button.tsx` — own grid wrapper, status region outside the
-  button.** Upstream styles Button's internal content span through `[&>span]`
-  (private DOM that has already changed shape once) and puts the live region
-  inside the button. *Upstream fix: both.*
-- **`toggle-group.tsx` — memoized context value, `React.use`.** A registry
-  refresh dropped both. *Upstream fix: yes.*
-- **`context-menu.tsx` / `menubar.tsx` — `[--switch-press-squash:0px]` on the
-  switch indicator**, matching `dropdown-menu.tsx`, which had it and they did
-  not. *Upstream fix: yes, and better as one shared indicator component — the
-  block is copy-pasted across four files.*
-- **`pagination.tsx` — uses the `iconLeft`/`iconRight` compound variants**
-  rather than hand-written `pl-2.5`/`pr-2.5`. *Upstream fix: yes.*
-- **`select.tsx` — `contentClassName` withheld under `nativeScroll`**, which
-  otherwise trips ScrollArea's own dev guard. *Upstream fix: yes.*
-- **`fancy-button.tsx` — slots renamed to `leadingIcon`/`trailingIcon`** to
-  match Button after its rename. *Upstream fix: yes (or delete the component).*
+**Currently one entry.** An earlier round of this list had nine; the other eight
+were fixed upstream in cubby-ui and came back in the next `shadcn add`, which is
+the outcome to aim for. That round is worth copying: the Switch's `squash`
+variant, CopyButton's `display: contents` wrapper and the `sr-only` removal from
+Button all landed upstream in better shape than the local patch had them.
+
+- **`button.tsx` — two default values.** `DEFAULT_LOADING_INDICATOR` and
+  `DEFAULT_LOADING_LAYOUT`, both at the top of the file, both one line. The
+  props they feed (`loadingIndicator`, `loadingLayout`) are implemented here and
+  are meant to go upstream verbatim — see the proposal below. Once they land,
+  re-applying this after a `shadcn add` is changing two literals rather than
+  restructuring the component, and if cubby-ui ever grows a defaults provider it
+  stops being a patch at all.
+
+### Proposal for cubby-ui: consumer-owned loading visual and layout
+
+Implemented locally in `components/ui/cubby-ui/button.tsx`; copy it up. Two
+hardcoded decisions currently force a consumer to patch the vendored file, which
+the next `shadcn add` reverts.
+
+**1. `loadingIndicator?: React.ReactNode`.** Upstream hardcodes a spinning
+HugeIcon. That is the correct default — a registry component cannot import a
+consumer's component — but an app with its own loading idiom then shows two
+different busy visuals depending on whether the busy thing is a button or a
+field, and the only fix is editing the file.
+
+Render it in the existing slot, inside the existing `aria-hidden` wrapper. **That
+wrapper becomes part of the contract once this is a prop and should be
+documented on it.** Loading indicators commonly ship their own `role="status"
+aria-live`; inside a `<button>` such a region is pruned as presentational
+anyway, so hiding it costs nothing and stops a consumer from unknowingly
+creating a live region that never fires. `aria-busy` stays the announcement.
+
+**2. `loadingLayout?: "overlay" | "inline"`, defaulting to `overlay`.** Today's
+behaviour is `overlay`: content at `opacity-0`, indicator centred over it. Its
+comment names the real benefit — the button never changes width. The cost is
+that a consumer swapping in a pending label is writing text nobody can see; that
+regressed five call sites in this app silently. The labels still reach screen
+readers, since `opacity: 0` stays in the accessibility tree, which is exactly
+why it is easy to ship without noticing.
+
+`inline` gives the indicator an icon slot and leaves the label visible. It
+replaces `leadingIcon` when there is one (no width change), otherwise sits after
+the label and the button grows by the indicator's width — the honest trade for
+keeping the label. Two details the implementation here already handles:
+`iconLeft`/`iconRight` must be computed from the *resolved* slots so the optical
+padding follows the indicator, and icon-only sizes have no label to keep, so
+there `inline` lets the indicator stand in for the children.
+
+**Open question worth deciding alongside it.** A per-call-site prop still means
+repeating `loadingIndicator={…}` at every button in an app with one house
+indicator — this app has about ten. A `ButtonDefaults` provider, or an exported
+defaults object the vendored file reads, would let an app set it once and retire
+the patch entirely. Less conventional for a copy-in registry, so it may be worth
+shipping the props first and seeing whether the repetition actually bites.
 
 ## Parked decisions (context lives elsewhere)
 

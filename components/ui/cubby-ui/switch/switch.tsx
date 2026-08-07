@@ -46,12 +46,12 @@ const switchVariants = cva(
     "supports-[width:round(1px,1px)]:[--travel:round(calc(var(--thumb-w)*var(--travel-ratio)),1px)]",
     "h-[calc(var(--thumb-h)+4px)]",
     "w-[calc(var(--thumb-w)+var(--travel)+4px)]",
-    // How far the thumb reaches into the empty half of the track, and how far
-    // it flattens under a press. Whole pixels because a pointer can rest in
-    // either state.
+    // How far the thumb reaches into the empty half of the track. Whole pixels
+    // because a pointer can rest in either state. The matching flatten depth
+    // lives in the `squash` variant below, which is the one of the three a host
+    // turns off.
     "[--switch-hover-ext:round(calc(var(--thumb-h)*0.125),1px)]",
     "[--switch-press-ext:round(calc(var(--thumb-h)*0.25),1px)]",
-    "[--switch-press-squash:round(calc(var(--thumb-h)*0.25),1px)]",
     // --switch-p is the whole toggle: every thumb declaration is a calc() of
     // it, which is how one mechanism serves both motions.
     "[--switch-p:0] data-checked:[--switch-p:1]",
@@ -222,12 +222,28 @@ const switchVariants = cva(
           "duration-[80ms,var(--switch-duration),160ms]",
         ].join(" "),
       },
+      // How far the thumb flattens, and the one knob that reaches both motions
+      // through different triggers: `default` applies it on :active (see the
+      // rules in that variant), `stretch` derives it from how far the thumb has
+      // spread, so there it flattens mid-travel with no press involved. Off
+      // means neither happens and the thumb holds a constant height.
+      //
+      // For hosts that own the press themselves — a menu row, where the
+      // indicator is inert and only squashes if the pointer happens to land on
+      // the graphic — and for anywhere the constant-height spread simply reads
+      // cleaner. Declared here rather than in the base list so `false` is not
+      // relying on twMerge to drop a competing base declaration.
+      squash: {
+        true: "[--switch-press-squash:round(calc(var(--thumb-h)*0.25),1px)]",
+        false: "[--switch-press-squash:0px]",
+      },
     },
     defaultVariants: {
       color: "primary",
       shape: "circle",
       size: "default",
       motion: "default",
+      squash: true,
     },
   },
 );
@@ -346,6 +362,7 @@ function Switch({
   shape = "circle",
   size = "default",
   motion = "default",
+  squash = true,
   ...props
 }: SwitchProps) {
   return (
@@ -355,7 +372,10 @@ function Switch({
       data-shape={shape}
       data-size={size}
       data-motion={motion}
-      className={cn(switchVariants({ color, shape, size, motion }), className)}
+      className={cn(
+        switchVariants({ color, shape, size, motion, squash }),
+        className,
+      )}
       {...props}
     >
       <BaseSwitch.Thumb
@@ -378,6 +398,14 @@ function Switch({
  *
  * Pass that element childless: track and thumb only work as a pair, and
  * children on it would replace the thumb and leave a dead track.
+ *
+ * `squash` defaults to `false` here, inverting the control's default. The
+ * condition that makes this component the right choice — the row owns the press
+ * — is the same condition that makes the flatten wrong: the indicator is inert,
+ * so under `motion="default"` it would squash only when the pointer happened to
+ * land on the graphic rather than anywhere else in the row, and under
+ * `motion="stretch"` it would flatten mid-travel on a row nobody is pressing.
+ * Pass `squash` to opt back in.
  */
 // mergeProps lets the rightmost object win, so a child reaches the thumb's slot
 // from either direction. Omitting `children` closes the direct-prop route; the
@@ -391,13 +419,14 @@ function SwitchVisual({
   shape = "circle",
   size = "xs",
   motion = "default",
+  squash = false,
   render,
   ...props
 }: SwitchVisualProps) {
   const defaultProps = {
     "data-slot": "switch-visual",
     className: cn(
-      switchVariants({ color, shape, size, motion }),
+      switchVariants({ color, shape, size, motion, squash }),
       // The row carries the state and the hit area; this is decoration.
       "pointer-events-none cursor-default",
       // The row already dims when disabled; don't compound the fade.

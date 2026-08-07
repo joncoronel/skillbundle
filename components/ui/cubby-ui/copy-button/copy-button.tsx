@@ -9,11 +9,9 @@ import {
   type AnchoredToastOptions,
 } from "@/components/ui/cubby-ui/toast/toast";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Cancel01Icon,
-  Copy01Icon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Copy01Icon from "@hugeicons/core-free-icons/Copy01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 
 type CopyButtonToastConfig = Omit<AnchoredToastOptions, "anchor">;
 
@@ -205,7 +203,6 @@ function CopyButton({
           {errorIcon ?? DEFAULT_ERROR_ICON}
         </span>
       </span>
-
     </Button>
   );
 
@@ -223,8 +220,14 @@ function CopyButton({
   //
   // Suppressed entirely when a toast is attached, which says the same words out
   // loud on its own.
+  //
+  // `display: contents` rather than a bare fragment, so the component still
+  // resolves to one element for anything that counts them — `Children.only`,
+  // a `render` prop, `:only-child`, `> * + *`. It adds no box, so it creates no
+  // containing block and the absolutely-positioned floating variant in
+  // CodeBlock still resolves against the same ancestor it did before.
   return (
-    <>
+    <span className="contents">
       {button}
       {!toastEnabled && (
         <span role="status" className="sr-only">
@@ -235,7 +238,7 @@ function CopyButton({
               : ""}
         </span>
       )}
-    </>
+    </span>
   );
 }
 

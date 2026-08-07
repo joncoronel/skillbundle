@@ -9,7 +9,8 @@ import {
 } from "@/lib/cubby-ui/elevated";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import {
   SwitchVisual,
   type SwitchVisualProps,
@@ -225,11 +226,7 @@ function ContextMenuCheckboxItem({
           shape={switchShape}
           size={switchSize}
           motion={switchMotion}
-          // Matches DropdownMenu. The squash only bites under
-          // `switchMotion="stretch"` (it is gated on --switch-split), where the
-          // thumb would flatten mid-travel on a row that never receives a
-          // press of its own — the row does.
-          className="col-start-2 [--switch-press-squash:0px]"
+          className="col-start-2"
           render={<BaseContextMenu.CheckboxItemIndicator keepMounted />}
         />
       ) : (
