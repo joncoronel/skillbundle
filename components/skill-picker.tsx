@@ -295,8 +295,13 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
           size="xs"
           onClick={() => onRemove(skill.source, skill.skillId)}
           aria-label={copy.remove(skill.name, skill.source)}
-          className="shrink-0 text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-          leftSection={
+          // Fill AND border go through the --btn-* tokens: the recipe paints
+          // both on a ::before pseudo, so `hover:bg-*` would be hidden beneath
+          // outline's opaque hover fill and `hover:border-*` would colour a
+          // root that carries no border width. --btn-bg-active is set too,
+          // else pressing snaps back to outline's card darken mid-gesture.
+          className="shrink-0 text-destructive transition-colors [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_10%,transparent)] [--btn-bg-active:color-mix(in_oklab,var(--destructive)_15%,transparent)] hover:[--btn-border:color-mix(in_oklab,var(--destructive)_30%,transparent)] hover:text-destructive"
+          leadingIcon={
             <HugeiconsIcon
               icon={Cancel01Icon}
               strokeWidth={2}
@@ -323,7 +328,7 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
               : copy.add(skill.name, skill.source)
           }
           className="shrink-0"
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={Add01Icon}
               strokeWidth={2}

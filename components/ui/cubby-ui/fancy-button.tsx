@@ -39,16 +39,16 @@ const fancyButtonVariants = cva(
 type FancyButtonProps = BaseButton.Props &
   VariantProps<typeof fancyButtonVariants> & {
     color?: string;
-    leftSection?: React.ReactNode;
-    rightSection?: React.ReactNode;
+    leadingIcon?: React.ReactNode;
+    trailingIcon?: React.ReactNode;
   };
 
 export const FancyButton = ({
   children,
   size,
   color,
-  leftSection,
-  rightSection,
+  leadingIcon,
+  trailingIcon,
   className,
   style,
   ...props
@@ -72,9 +72,9 @@ export const FancyButton = ({
 
   const buttonContent = (
     <>
-      {leftSection}
+      {leadingIcon}
       <span className="px-1">{children}</span>
-      {rightSection}
+      {trailingIcon}
     </>
   );
 

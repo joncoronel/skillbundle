@@ -8,9 +8,21 @@ import {
 } from "@/lib/cubby-ui/elevated";
 
 function TooltipProvider({
+  // Base UI's own default is 600ms, which reads as sluggish for a label that
+  // mostly confirms what an icon already implies. Set here rather than on
+  // TooltipTrigger because the trigger's `delay` *wins* over the provider's
+  // (`delay ?? providerDelay ?? 600`), so a default there would make
+  // `<TooltipProvider delay>` impossible to honour.
+  delay = 200,
   ...props
 }: React.ComponentProps<typeof BaseTooltip.Provider>) {
-  return <BaseTooltip.Provider data-slot="tooltip-provider" {...props} />;
+  return (
+    <BaseTooltip.Provider
+      data-slot="tooltip-provider"
+      delay={delay}
+      {...props}
+    />
+  );
 }
 
 function Tooltip<Payload = unknown>({
@@ -90,20 +102,38 @@ function TooltipContent({
         sticky={sticky}
         positionMethod={positionMethod}
         arrowPadding={arrowPadding}
-        className="z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none"
+        className="z-50 h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none motion-reduce:transition-none"
       >
         <BaseTooltip.Popup
           data-slot="tooltip-content"
           data-level={level}
           className={cn(
-            "text-popover-foreground h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-sm text-xs",
+            // `relative` matches Popover and pins the arrow's containing block.
+            // Without it the popup is a containing block only while `scale` is
+            // mid-animation (a non-none scale creates one) and not at rest, so
+            // an absolutely positioned arrow would change reference frame
+            // partway through the open.
+            "text-popover-foreground relative h-(--popup-height,auto) max-h-(--available-height) w-(--popup-width,auto) max-w-(--available-width) origin-(--transform-origin) rounded-sm text-xs outline-none",
             solidSurface(level, shadowLevel),
-            "transition-[width,height,scale,translate,opacity] duration-[350ms,350ms,100ms,175ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo),var(--ease-out-expo)]",
+            // No directional translate: the popup scales from
+            // --transform-origin, which Base UI aims back at the trigger, so
+            // the growth already reads as coming from the anchor. A per-side
+            // nudge on top of that is a second cue for the same thing.
+            "transition-[width,height,scale,opacity] duration-[150ms,150ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
+            // Own compositor layer while mounted. Without it the 0.95 -> 1
+            // scale re-lays-out and re-rasterises the label every frame, and at
+            // 12px the hinting snaps stems between pixels, which reads as the
+            // text crawling. Promoted, the glyphs raster once and the layer is
+            // scaled instead. Scoped to the popup, which only exists while the
+            // tooltip is shown, so nothing carries the hint at rest.
+            "will-change-transform",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
-            "data-starting-style:data-[side=bottom]:-translate-y-1 data-starting-style:data-[side=left]:translate-x-1 data-starting-style:data-[side=right]:-translate-x-1 data-starting-style:data-[side=top]:translate-y-1",
             "data-ending-style:scale-95 data-ending-style:opacity-0",
-            "data-ending-style:data-[side=bottom]:-translate-y-1 data-ending-style:data-[side=left]:translate-x-1 data-ending-style:data-[side=right]:-translate-x-1 data-ending-style:data-[side=top]:translate-y-1",
-            "motion-reduce:transition-none",
+            // Only 'delay', the swap inside a Provider group. 'dismiss' and 'focus'
+            // are closes: Base UI waits on this transition before unmounting, so
+            // suppressing them means no exit at all.
+            "data-[instant=delay]:transition-none",
+            "motion-reduce:transition-none motion-reduce:will-change-auto",
             className,
           )}
           {...props}
@@ -112,29 +142,44 @@ function TooltipContent({
             data-slot="tooltip-viewport"
             className={cn(
               // Base viewport styles
-              "relative size-full overflow-clip px-2 py-1.5 [--viewport-padding:0.5rem]",
+              // `h-full` and the cap do different jobs; both are load-bearing. At
+              // rest --popup-height is `auto`, so the percentage is indefinite and
+              // only the cap bounds the viewport, which is what engages the
+              // overflow-y below. Mid-swap it is a definite px that transitions,
+              // and the percentage tracks it. Without that the viewport snaps to
+              // the incoming content's height on frame one, because Base UI takes
+              // the outgoing content out of flow with position:absolute, and
+              // overflow-clip cuts its extra rows instead of letting them fade.
+              // No `max-w`: `w-full` resolves against the popup's already-capped
+              // content box, so the width bound is inherited for free.
+              "relative h-full max-h-(--available-height) w-full overflow-clip px-2 py-1.5 [--viewport-padding:0.5rem]",
               "not-data-transitioning:overflow-y-auto",
               // Content width and transitions
               "**:data-current:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
               "**:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
+              // Straight crossfade, no scale: tooltip content is a line of
+              // text, and scaling it fights the popup's own scale rather than
+              // reading as a separate layer. The width/height morph carries
+              // the swap.
               "**:data-current:opacity-100 **:data-previous:opacity-100",
-              "**:data-current:transition-opacity **:data-current:duration-175 **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "**:data-previous:transition-opacity **:data-previous:duration-175 **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              // Fade in/out
+              "**:data-current:transition-opacity **:data-current:duration-150 **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "**:data-previous:transition-opacity **:data-previous:duration-150 **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
               "**:data-current:data-starting-style:opacity-0",
-              "**:data-current:data-ending-style:opacity-0",
               "**:data-previous:data-ending-style:opacity-0",
               // Truncate outgoing content as popup shrinks.
               "**:data-previous:truncate",
               // Disable transitions when instant or motion-reduce
-              "[[data-instant]_&_[data-current]]:transition-none [[data-instant]_&_[data-previous]]:transition-none",
+              // Value-matched to the popup's guard above so one policy governs the
+              // subtree. Targets the content: the viewport has no transitions of
+              // its own and transition-property does not inherit.
+              "[[data-instant=delay]_&_[data-current]]:transition-none [[data-instant=delay]_&_[data-previous]]:transition-none",
               "motion-reduce:**:data-current:transition-none motion-reduce:**:data-previous:transition-none",
             )}
           >
             {children}
           </BaseTooltip.Viewport>
           {arrow && (
-            <TooltipArrow className="outline-0 transition-[left,right,top,bottom] duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none data-[side=bottom]:top-[-9px] data-[side=left]:right-[-13.5px] data-[side=left]:rotate-90 data-[side=right]:left-[-13.5px] data-[side=right]:-rotate-90 data-[side=top]:bottom-[-9px] data-[side=top]:rotate-180">
+            <TooltipArrow className="outline-0 transition-[left,right,top,bottom] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none data-[side=bottom]:top-[-9px] data-[side=left]:right-[-13.5px] data-[side=left]:rotate-90 data-[side=right]:left-[-13.5px] data-[side=right]:-rotate-90 data-[side=top]:bottom-[-9px] data-[side=top]:rotate-180 motion-reduce:transition-none">
               <svg width="20" height="10" viewBox="0 0 20 10" fill="none">
                 <path
                   d="M9.66437 2.60207L4.80758 6.97318C4.07308 7.63423 3.11989 8 2.13172 8H0V9H20V8H18.5349C17.5468 8 16.5936 7.63423 15.8591 6.97318L11.0023 2.60207C10.622 2.2598 10.0447 2.25979 9.66437 2.60207Z"

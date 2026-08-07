@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ComputerTerminal01Icon } from "@hugeicons/core-free-icons";
+import ComputerTerminal01Icon from "@hugeicons/core-free-icons/ComputerTerminal01Icon";
 
 interface CodeBlockContextValue {
   code: string;

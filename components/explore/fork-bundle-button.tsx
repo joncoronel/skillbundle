@@ -76,7 +76,7 @@ export function ForkBundleButton({
       onClick={handleFork}
       loading={forking}
       className={className}
-      leftSection={<HugeiconsIcon icon={GitForkIcon} strokeWidth={2} className="size-3.5" />}
+      leadingIcon={<HugeiconsIcon icon={GitForkIcon} strokeWidth={2} className="size-3.5" />}
     >
       {forking ? "Forking…" : "Fork"}
     </Button>

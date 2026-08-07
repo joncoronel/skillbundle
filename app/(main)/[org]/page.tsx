@@ -135,7 +135,7 @@ async function OrgListContent({ org }: { org: string }) {
                 rel="noopener noreferrer"
               />
             }
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={GithubIcon}
                 strokeWidth={2}

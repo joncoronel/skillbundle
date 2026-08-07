@@ -167,7 +167,7 @@ export function AuthSubmitButton({
       type="submit"
       size="lg"
       loading={pending}
-      rightSection={<AuthArrowRight />}
+      trailingIcon={<AuthArrowRight />}
       className={cn("w-full", className)}
     >
       {pending ? pendingLabel : idleLabel}

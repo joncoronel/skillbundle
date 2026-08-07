@@ -4,15 +4,16 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  UnfoldMoreIcon,
-  Tick02Icon,
-  ArrowDown01Icon,
-  ArrowUp01Icon,
-} from "@hugeicons/core-free-icons";
+import UnfoldMoreIcon from "@hugeicons/core-free-icons/UnfoldMoreIcon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import ArrowUp01Icon from "@hugeicons/core-free-icons/ArrowUp01Icon";
 
 import { cn } from "@/lib/utils";
-import { elevatedSurface, type SurfaceLevel } from "@/lib/cubby-ui/elevated";
+import {
+  elevatedSurface,
+  type SurfaceLevel,
+} from "@/lib/cubby-ui/elevated";
 import {
   ScrollArea,
   type ScrollAreaProps,
@@ -66,20 +67,23 @@ const selectTriggerVariants = cva(
       variant: {
         // Opaque bg for page-level or non-elevated substrates. --outline-hover
         // is a deliberate -5% darken of --card/--input for a sharp hover delta.
-        default: "bg-input hover:bg-(--outline-hover)",
+        default:
+          "bg-input hover:bg-(--outline-hover) data-popup-open:bg-(--outline-hover)",
         // Translucent overlay for Cards, Dialogs, etc. --surface-hover (alpha
         // overlay) preserves translucency on any substrate depth.
-        elevated: "bg-input-elevated hover:bg-surface-hover",
+        elevated:
+          "bg-input-elevated hover:bg-surface-hover data-popup-open:bg-surface-hover",
         // Chromeless — mirrors the button's ghost variant for use in toolbars
         // and inline next to ghost buttons. Chevron follows the text on hover.
         ghost:
-          "border-transparent bg-transparent text-muted-foreground hover:bg-surface-hover hover:text-foreground group-hover/select-trigger:[&_svg:not([class*='text-'])]:text-foreground",
+          "border-transparent bg-transparent text-muted-foreground hover:bg-surface-hover hover:text-foreground data-popup-open:bg-surface-hover data-popup-open:text-foreground group-hover/select-trigger:[&_svg:not([class*='text-'])]:text-foreground",
       },
       size: {
-        default: "h-10 px-3 py-2 sm:h-9",
-        // px-2 matches the button's sm size so ghost triggers align optically
-        // with adjacent ghost buttons.
-        sm: "h-9 px-2 py-1.5 sm:h-8",
+        default: "h-10 px-3.5 pr-2.5 py-2 sm:h-9",
+        // Compact trigger. Note: tighter than the Button sm size (px-3), so
+        // ghost triggers in toolbars pair best with icon-size ghost buttons,
+        // which carry no horizontal padding.
+        sm: "h-9 px-3 pr-2 py-1.5 sm:h-8",
       },
     },
     defaultVariants: {
@@ -198,6 +202,15 @@ function SelectContent({
             hideScrollbar={hideScrollbar}
             nativeScroll={nativeScroll}
             className={cn("max-h-80 in-data-[side=none]:max-h-full", className)}
+            // With alignItemWithTrigger (data-side="none") Base UI makes the
+            // List the scroller via an inline `max-height: 100%`, which only
+            // resolves against a definite parent height — pin the content
+            // wrapper to the viewport so the List clips and scrolls itself.
+            // Withheld under nativeScroll, which has no content wrapper to pin
+            // and warns about the prop it cannot honour.
+            contentClassName={
+              nativeScroll ? undefined : "in-data-[side=none]:h-full"
+            }
           >
             <BaseSelect.List
               data-slot="select-list"

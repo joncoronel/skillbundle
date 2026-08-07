@@ -14,11 +14,9 @@ import {
 import { Combobox as BaseCombobox } from "@base-ui/react/combobox";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowDown01Icon,
-  Cancel01Icon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 const useComboboxFilter = BaseCombobox.useFilter;
 const useComboboxFilteredItems = BaseCombobox.useFilteredItems;
 
@@ -43,8 +41,9 @@ function Combobox<Value, Multiple extends boolean | undefined = false>(
   props: BaseCombobox.Root.Props<Value, Multiple>,
 ): React.JSX.Element {
   const id = React.useId();
-  const [chipsElement, setChipsElement] =
-    React.useState<HTMLDivElement | null>(null);
+  const [chipsElement, setChipsElement] = React.useState<HTMLDivElement | null>(
+    null,
+  );
 
   const contextValue = React.useMemo(
     () => ({ id, chipsElement, setChipsElement }),
@@ -94,12 +93,15 @@ function ComboboxInput({
         // Focus ring follows the input via focus-within (same pattern as ComboboxChips).
         "focus-within:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color] duration-100 ease-out outline-solid focus-within:outline-2 focus-within:outline-offset-2",
         // Disabled state (input or field-level) dims and locks the whole field.
-        "has-[input:disabled]:cursor-not-allowed has-[input:disabled]:pointer-events-none has-[input:disabled]:opacity-60",
+        "has-[input:disabled]:pointer-events-none has-[input:disabled]:cursor-not-allowed has-[input:disabled]:opacity-60",
         className,
       )}
     >
       {start != null && (
-        <div data-slot="combobox-input-start" className={comboboxAddonClassName}>
+        <div
+          data-slot="combobox-input-start"
+          className={comboboxAddonClassName}
+        >
           {start}
         </div>
       )}
@@ -564,20 +566,29 @@ function ComboboxChipRemove({
 function ComboboxPopup({
   className,
   children,
-  sideOffset = 6,
-  align,
-  alignOffset,
   side,
+  align,
+  sideOffset = 6,
+  alignOffset,
+  collisionBoundary,
+  collisionPadding,
+  sticky,
+  positionMethod,
   backdrop = false,
   level,
   shadowLevel,
   ...props
 }: BaseCombobox.Popup.Props & {
-  sideOffset?: number;
+  /** Which side of the anchor to align against. Defaults to Base UI's "bottom". */
+  side?: BaseCombobox.Positioner.Props["side"];
   /** Alignment of the popup relative to its anchor. Defaults to Base UI's "center". */
   align?: BaseCombobox.Positioner.Props["align"];
+  sideOffset?: BaseCombobox.Positioner.Props["sideOffset"];
   alignOffset?: BaseCombobox.Positioner.Props["alignOffset"];
-  side?: BaseCombobox.Positioner.Props["side"];
+  collisionBoundary?: BaseCombobox.Positioner.Props["collisionBoundary"];
+  collisionPadding?: BaseCombobox.Positioner.Props["collisionPadding"];
+  sticky?: BaseCombobox.Positioner.Props["sticky"];
+  positionMethod?: BaseCombobox.Positioner.Props["positionMethod"];
   backdrop?: boolean;
   /** Surface elevation level for the popup bg (1-8). Defaults to 3. */
   level?: SurfaceLevel;
@@ -598,10 +609,14 @@ function ComboboxPopup({
        */}
       <ComboboxPositioner
         anchor={context?.chipsElement ?? undefined}
-        sideOffset={sideOffset}
-        align={align}
-        alignOffset={alignOffset}
         side={side}
+        align={align}
+        sideOffset={sideOffset}
+        alignOffset={alignOffset}
+        collisionBoundary={collisionBoundary}
+        collisionPadding={collisionPadding}
+        sticky={sticky}
+        positionMethod={positionMethod}
       >
         <ComboboxPopupPrimitive
           className={className}

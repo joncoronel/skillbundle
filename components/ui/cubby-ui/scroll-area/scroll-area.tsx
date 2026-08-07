@@ -41,6 +41,10 @@ function parseFadeEdges(fadeEdges: FadeEdges): {
 
 type OverscrollBehavior = "auto" | "contain" | "none";
 
+type ContentMinWidth = "viewport" | "fit-content";
+
+type ContentHeight = "auto" | "fill";
+
 type ScrollAreaProps = BaseScrollArea.Root.Props & {
   fadeEdges?: FadeEdges;
   scrollbarGutter?: boolean;
@@ -48,10 +52,32 @@ type ScrollAreaProps = BaseScrollArea.Root.Props & {
   hideScrollbar?: boolean;
   nativeScroll?: boolean;
   overscrollBehavior?: OverscrollBehavior;
+  /**
+   * How wide the content wrapper is allowed to get. `"viewport"` keeps it at
+   * the visible width; `"fit-content"` restores Base UI's default of growing
+   * to the widest child. See the note on the `Content` element below.
+   */
+  contentMinWidth?: ContentMinWidth;
+  /**
+   * How tall the content wrapper is allowed to get. `"auto"` tracks the
+   * children; `"fill"` stretches it to at least the viewport height so a flex
+   * child can push a footer down with `mt-auto`. Children of a `"fill"` wrapper
+   * size themselves with `flex-1`, not `h-full` — see the note on the `Content`
+   * element below.
+   */
+  contentHeight?: ContentHeight;
   /** Ref callback for the scrollable viewport element. Useful for virtualization. */
   viewportRef?: (element: HTMLDivElement | null) => void;
   /** Additional className for the viewport element */
   viewportClassName?: string;
+  /**
+   * Additional className for the content wrapper element. Needed when a child
+   * relies on a percentage height against its parent (e.g. Base UI's Select
+   * list gets `max-height: 100%` with `alignItemWithTrigger`), which only
+   * resolves if the wrapper has a definite height like `h-full`. Ignored with
+   * `nativeScroll` (no content wrapper exists there).
+   */
+  contentClassName?: string;
 };
 
 function ScrollArea({
@@ -63,8 +89,11 @@ function ScrollArea({
   hideScrollbar = false,
   nativeScroll = false,
   overscrollBehavior = "contain",
+  contentMinWidth = "viewport",
+  contentHeight = "auto",
   viewportRef,
   viewportClassName,
+  contentClassName,
   ...props
 }: ScrollAreaProps) {
   if (process.env.NODE_ENV !== "production") {
@@ -76,6 +105,11 @@ function ScrollArea({
     if (nativeScroll && persistScrollbar) {
       console.error(
         "ScrollArea: `persistScrollbar` is not supported with `nativeScroll`.",
+      );
+    }
+    if (nativeScroll && contentClassName) {
+      console.error(
+        "ScrollArea: `contentClassName` is ignored with `nativeScroll` (no content wrapper exists there).",
       );
     }
   }
@@ -130,7 +164,44 @@ function ScrollArea({
           viewportClassName,
         )}
       >
-        <BaseScrollArea.Content data-slot="scroll-area-content">
+        <BaseScrollArea.Content
+          data-slot="scroll-area-content"
+          // `"fill"` stretches the wrapper to the viewport so a short flex
+          // child still has slack for `mt-auto` to push a footer against the
+          // bottom. It uses `min-h-full` rather than `h-full` deliberately:
+          // `h-full` pins the wrapper to exactly the viewport height, which
+          // turns a flex-column child into a fixed-height one, and its items
+          // shrink to fit instead of overflowing — tall content silently
+          // compresses and the scrollbar never appears. `min-h-full` keeps the
+          // wrapper growable, so it fills when content is short and grows when
+          // content is long. The flex column here is what lets children claim
+          // that height with `flex-1` (`h-full` resolves against an auto height
+          // and does nothing).
+          className={cn(
+            contentHeight === "fill" && "flex min-h-full flex-col",
+            contentClassName,
+          )}
+          // Base UI ships `min-width: fit-content` here. That turns on an
+          // intrinsic sizing pass, and anything un-shrinkable in the subtree
+          // (a `whitespace-pre` code block, a fixed-width table) reports its
+          // full width upward — even from inside a nested scroll container,
+          // which does not insulate its parent. The wrapper then outgrows the
+          // viewport, so a vertical panel sprouts a horizontal scrollbar and
+          // the nested scroller, stretched to that width, never reaches its
+          // own overflow and never scrolls itself.
+          //
+          // `"viewport"` skips that pass entirely: width stays `auto`, which
+          // is how this component behaved before the Content wrapper existed.
+          // Overflowing children still extend the scroll range, so sideways
+          // scrolling is intact wherever the child sizes itself. What it gives
+          // up is the wrapper spanning the scroll range, so trailing padding
+          // on a child lands at the fold rather than the far end. Opt back in
+          // with `"fit-content"` if you need that.
+          //
+          // Written through `style` because Base UI's own value is inline; a
+          // class would have to fight it with `!important`.
+          style={contentMinWidth === "viewport" ? { minWidth: 0 } : undefined}
+        >
           {children}
         </BaseScrollArea.Content>
       </BaseScrollArea.Viewport>
@@ -272,4 +343,11 @@ function NativeScrollArea({
 }
 
 export { ScrollArea };
-export type { ScrollAreaProps, FadeEdges, FadeEdge, OverscrollBehavior };
+export type {
+  ScrollAreaProps,
+  FadeEdges,
+  FadeEdge,
+  OverscrollBehavior,
+  ContentMinWidth,
+  ContentHeight,
+};

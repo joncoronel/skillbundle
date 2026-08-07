@@ -37,7 +37,14 @@ function PopoverViewport({ className, ...props }: BasePopover.Viewport.Props) {
   return (
     <BasePopover.Viewport
       data-slot="popover-viewport"
-      className={cn("relative h-full w-full overflow-clip", className)}
+      // Same height and overflow policy as the viewport inside PopoverContent,
+      // which see for why both the percentage and the cap are needed. Padding
+      // is left to the caller; hand-composed popups own their own spacing.
+      className={cn(
+        "relative h-full max-h-(--available-height) w-full overflow-clip",
+        "not-data-transitioning:overflow-y-auto",
+        className,
+      )}
       {...props}
     />
   );
@@ -57,7 +64,7 @@ function PopoverPopup({
       data-slot="popover-popup"
       data-level={level}
       className={cn(
-        "text-popover-foreground relative max-h-(--available-height) max-w-(--available-width) origin-(--transform-origin) rounded-xl",
+        "text-popover-foreground relative max-h-(--available-height) max-w-(--available-width) origin-(--transform-origin) rounded-xl outline-none",
         solidSurface(level, shadowLevel),
         className,
       )}
@@ -150,30 +157,35 @@ function PopoverContent({
         sticky={sticky}
         positionMethod={positionMethod}
         arrowPadding={arrowPadding}
-        className="z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none"
+        className="z-50 h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none motion-reduce:transition-none"
       >
         <BasePopover.Popup
           data-slot="popover-content"
           data-level={level}
           className={cn(
             // Base styles
-            "text-popover-foreground relative",
+            "text-popover-foreground relative outline-none",
             "h-(--popup-height,auto) w-(--popup-width,auto)",
             "max-h-(--available-height) max-w-(--available-width)",
             "origin-(--transform-origin) overflow-hidden rounded-xl",
             // Surface elevation — bg tracks `level`, shadow weight tracks `shadowLevel`
             solidSurface(level, shadowLevel),
             // Size/opacity transitions
-            "transition-[width,height,scale,opacity] duration-[350ms,350ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
+            "transition-[width,height,scale,opacity] duration-[150ms,150ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
             "data-ending-style:scale-95 data-ending-style:opacity-0",
+            // Only the "already open, something changed" instant. Base UI waits on
+            // this transition before unmounting, so suppressing a close means no
+            // exit at all, and 'click' is inferred from `event.detail === 0`,
+            // which every right-click matches.
+            "data-[instant=trigger-change]:transition-none",
             "motion-reduce:transition-none",
             className,
           )}
           {...props}
         >
           {arrow && (
-            <PopoverArrow className="transition-[left,right,top,bottom] duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none data-[side=bottom]:top-[-8px] data-[side=left]:right-[-13px] data-[side=left]:rotate-90 data-[side=right]:left-[-13px] data-[side=right]:-rotate-90 data-[side=top]:bottom-[-8px] data-[side=top]:rotate-180">
+            <PopoverArrow className="transition-[left,right,top,bottom] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none data-[side=bottom]:top-[-8px] data-[side=left]:right-[-13px] data-[side=left]:rotate-90 data-[side=right]:left-[-13px] data-[side=right]:-rotate-90 data-[side=top]:bottom-[-8px] data-[side=top]:rotate-180 motion-reduce:transition-none">
               <svg width="20" height="10" viewBox="0 0 20 10" fill="none">
                 <path
                   d="M9.66437 2.60207L4.80758 6.97318C4.07308 7.63423 3.11989 8 2.13172 8H0V9H20V8H18.5349C17.5468 8 16.5936 7.63423 15.8591 6.97318L11.0023 2.60207C10.622 2.2598 10.0447 2.25979 9.66437 2.60207Z"
@@ -189,32 +201,37 @@ function PopoverContent({
           <BasePopover.Viewport
             data-slot="popover-viewport"
             className={cn(
-              // Base viewport styles
-              "relative size-full overflow-clip px-3 py-3 [--viewport-padding:0.75rem]",
+              // `h-full` and the cap do different jobs; both are load-bearing. At
+              // rest --popup-height is `auto`, so the percentage is indefinite and
+              // only the cap bounds the viewport, which is what engages the
+              // overflow-y below. Mid-swap it is a definite px that transitions,
+              // and the percentage tracks it. Without that the viewport snaps to
+              // the incoming content's height on frame one, because Base UI takes
+              // the outgoing content out of flow with position:absolute, and
+              // overflow-clip cuts its extra rows instead of letting them fade.
+              // No `max-w`: `w-full` resolves against the popup's already-capped
+              // content box, so the width bound is inherited for free.
+              "relative h-full max-h-(--available-height) w-full overflow-clip px-3 py-3 [--viewport-padding:0.75rem]",
               "not-data-transitioning:overflow-y-auto",
               // Content width calculation (edge-to-edge minus padding)
               "**:data-current:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
               "**:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
-              // Content base state and transitions
-              "**:data-current:translate-x-0 **:data-current:opacity-100",
-              "**:data-previous:translate-x-0 **:data-previous:opacity-100",
-              "**:data-current:transition-[translate,opacity,filter] **:data-current:duration-[350ms,175ms,350ms] **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "**:data-previous:transition-[translate,opacity,filter] **:data-previous:duration-[350ms,175ms,350ms] **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              // Direction-aware slide animations for incoming content
-              "data-[activation-direction~=left]:**:data-current:data-starting-style:-translate-x-1/2",
-              "data-[activation-direction~=left]:**:data-current:data-starting-style:opacity-0",
-              "data-[activation-direction~=right]:**:data-current:data-starting-style:translate-x-1/2",
-              "data-[activation-direction~=right]:**:data-current:data-starting-style:opacity-0",
-              // Direction-aware slide animations for outgoing content
-              "data-[activation-direction~=left]:**:data-previous:data-ending-style:translate-x-1/2",
-              "data-[activation-direction~=left]:**:data-previous:data-ending-style:opacity-0",
-              "data-[activation-direction~=right]:**:data-previous:data-ending-style:-translate-x-1/2",
-              "data-[activation-direction~=right]:**:data-previous:data-ending-style:opacity-0",
-              "**:data-current:data-starting-style:blur-[4px]",
-              "**:data-current:data-ending-style:blur-[4px]",
-              "**:data-previous:data-starting-style:blur-[4px]",
-              "**:data-previous:data-ending-style:blur-[4px]",
-              "data-instant:transition-none",
+              // Non-directional crossfade, mirroring TransitionPanel's `fade`
+              // mode: the two halves dissolve in place rather than sliding past
+              // each other, so nothing implies travel and the popup's own
+              // width/height morph carries the movement on its own.
+              "**:data-current:scale-100 **:data-current:opacity-100",
+              "**:data-previous:scale-100 **:data-previous:opacity-100",
+              "**:data-current:transition-[scale,opacity] **:data-current:duration-150 **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "**:data-previous:transition-[scale,opacity] **:data-previous:duration-150 **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
+              // Both directions recede to 0.96, so the swap reads the same
+              // whichever trigger you came from.
+              "**:data-current:data-starting-style:scale-[0.96] **:data-current:data-starting-style:opacity-0",
+              "**:data-previous:data-ending-style:scale-[0.96] **:data-previous:data-ending-style:opacity-0",
+              // Value-matched to the popup's guard above so one policy governs the
+              // subtree. Targets the content: the viewport has no transitions of
+              // its own and transition-property does not inherit.
+              "[[data-instant=trigger-change]_&_[data-current]]:transition-none [[data-instant=trigger-change]_&_[data-previous]]:transition-none",
               "motion-reduce:**:data-current:transition-none motion-reduce:**:data-previous:transition-none",
             )}
           >

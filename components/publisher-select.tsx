@@ -148,18 +148,26 @@ export function PublisherSelect({
             className={cn(
               // No active-state border — the label ("2 publishers") is the
               // indicator, matching the other filter pills (which don't tint).
-              "justify-between gap-2 px-2.5",
+              "justify-between gap-2 ",
               // Match the Select triggers' surface: ghost in the composer chin,
               // translucent-elevated in the mobile sheet.
+              //
+              // Recolour through the --btn-* tokens, never `bg-*`. The Button
+              // recipe paints its fill on a ::before pseudo, so a `bg-*` here
+              // lands on the root instead and the two layers composite — a
+              // second `hover:bg-surface-hover` read as double-strength hover.
+              // tailwind-merge can't catch it either: it has no way to know
+              // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
               inSheet
-                ? "bg-input-elevated hover:bg-surface-hover hover:text-foreground"
+                ? "[--btn-bg:var(--input-elevated)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg-active:var(--surface-active)] hover:text-foreground"
                 : // -ms pulls the ghost trigger's TEXT onto the chin's 12px
                   // optical line (its invisible box overhangs the gutter).
-                  "-ms-2.5 text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                  // Ghost already supplies the hover fill and text colour.
+                  "-ms-2 text-muted-foreground",
               value.length > 0 && "text-foreground",
               className,
             )}
-            rightSection={
+            trailingIcon={
               <HugeiconsIcon
                 icon={UnfoldMoreIcon}
                 strokeWidth={2}
@@ -228,7 +236,7 @@ export function PublisherSelect({
               size="sm"
               className="w-full justify-start text-muted-foreground"
               onClick={() => onChange([])}
-              leftSection={
+              leadingIcon={
                 <HugeiconsIcon
                   icon={Cancel01Icon}
                   strokeWidth={2}

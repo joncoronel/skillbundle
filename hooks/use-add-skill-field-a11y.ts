@@ -122,10 +122,17 @@ export function useAddSkillFieldA11y({
      * write one — a second attribute would be the fork this module exists to
      * close.
      *
-     * ORDERING: this must be spread where it can win over `Button`'s internal
-     * `focusableWhenDisabled={loading}`, which works because `button.tsx` puts
-     * `{...props}` last. If that ever changes, this silently reverts to a
-     * natively disabled button and the focus drop comes back.
+     * ORDERING: `Button` still defaults `focusableWhenDisabled` to its own
+     * `loading` prop, but it no longer relies on spread order to let a caller
+     * win — it destructures the prop and writes
+     * `focusableWhenDisabled={focusableWhenDisabled ?? loading}` after
+     * `{...props}`, so the `true` below holds wherever this is spread. If that
+     * `??` is ever dropped and `loading` wins outright, this silently reverts
+     * to a natively disabled button and the focus drop comes back.
+     *
+     * `aria-busy` IS still order-dependent: `button.tsx` writes its own
+     * (`loading || undefined`) before `{...props}`, so a caller value beats it.
+     * That's what lets `busyButtonProps` drive it from `pending` here.
      *
      * `focusableWhenDisabled` is unconditional on purpose. The tempting
      * `focusableWhenDisabled={pending}` is worse: `useAddSkillFlow`'s `reset()`

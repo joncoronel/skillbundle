@@ -50,7 +50,12 @@ export function BundleToggleButton({
         size="icon_sm"
         aria-label={`Remove ${name} from bundle`}
         onClick={toggle}
-        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        // Destructive tint via the --btn-* tokens, not `bg-*`: the recipe
+        // paints on a ::before pseudo that sits above the root's background,
+        // so `hover:bg-destructive/10` here would be hidden under outline's
+        // opaque hover fill. --btn-bg-active is set too, else pressing snaps
+        // back to outline's card darken mid-gesture.
+        className="text-muted-foreground [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_10%,transparent)] [--btn-bg-active:color-mix(in_oklab,var(--destructive)_15%,transparent)] hover:text-destructive"
       >
         <HugeiconsIcon
           icon={Cancel01Icon}

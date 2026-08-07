@@ -33,6 +33,43 @@ Note the disabled+focused case is already handled — `components/ui/cubby-ui/bu
 uses full ring alpha under `data-disabled` to compensate for `opacity-60`, since CSS
 opacity dims the outline too.
 
+The measurements behind that, recorded here because the comment carrying them lived
+above a cva that a registry refresh replaced, and `button.tsx` is vendored so the next
+one would take it again: CSS `opacity` dims the outline too, so a disabled+focused
+button rendered its `/50` ring at 0.5 × 0.6 ≈ 0.3 alpha — 1.53:1 on light, 1.35:1 on
+dark. Full alpha under the same dimming gives 2.44:1 and 2.16:1, i.e. slightly *more*
+visible than an ordinary focus ring, which is the right way round for the one state
+where you most need to find focus. `data-disabled:focus-visible:outline-ring` (no
+`/50`) is therefore deliberate, not a typo — do not "normalise" it. Residual and not
+from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1, under the 3:1 non-text
+threshold, app-wide. That is the part this entry is about.
+
+### Switch: unchecked track is ~1.2:1 in light mode (design decision)
+
+Sibling of the focus-ring entry above, same shape: a measured, accepted 1.4.11
+shortfall parked for a design pass rather than fixed in a component branch.
+
+`components/ui/cubby-ui/switch/switch.tsx` sets the light unchecked track to
+`--switch-track: oklch(0 0 0 / 8%)`. Over a white surface (light `--surface-3`
+through `--surface-8` are all `oklch(1 0 0)`) that composites to roughly
+`rgb(235,235,235)` — about **1.2:1** against the surface, and the white thumb
+sits at about **1.2:1** against the track. WCAG 2.2 SC 1.4.11 asks 3:1 for the
+parts of a control needed to identify its state; both the boundary and the state
+indicator are under it. Dark mode is fine (20% white overlay, thumb/track ≈ 8:1),
+so this is light-only. Reachable at `save-bundle-dialog.tsx` (Public toggle, on a
+Dialog) and `catalog-controls.tsx`'s mobile filter sheet.
+
+**Not a regression** — the predecessor component used `bg-input-elevated`, and
+light `--input-elevated` is the identical `oklch(0 0 0 / 8%)`. Inherited, not
+introduced. The thumb's drop shadow, which is the only remaining separation cue,
+was thinned in a registry refresh and has been restored to
+`0 1px 2px 0 oklch(0.18 0 0 / 0.15)`.
+
+The fix is raising light `--switch-track` toward `oklch(0 0 0 / 22%)` (≈3:1
+against white), or giving the track a 1px border to carry the boundary. Deferred
+because it repaints every switch in the app in light mode — a visual-identity
+call, like the focus rings, not a side effect of a component update.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
@@ -269,6 +306,102 @@ matched your repo" properly.
   - The **"N copies"** chip (`CopiesBadge` in `components/skill-card.tsx`) is informational
     and the easiest to cut from dense rows. Lean: remove from rows, keep only on the detail
     page.
+
+## Local cubby-ui divergences (re-apply after `shadcn add @cubby-ui/all`)
+
+`components/ui/cubby-ui/**` is vendored, so a registry add overwrites local
+edits silently. Keep this list to exactly what is still local — everything that
+gets upstreamed should be deleted from it, or the list becomes a to-do nobody
+trusts.
+
+**Currently one entry.** An earlier round of this list had nine; the other eight
+were fixed upstream in cubby-ui and came back in the next `shadcn add`, which is
+the outcome to aim for. That round is worth copying: the Switch's `squash`
+variant, CopyButton's `display: contents` wrapper and the `sr-only` removal from
+Button all landed upstream in better shape than the local patch had them.
+
+- **`button.tsx` — two default values.** `DEFAULT_LOADING_INDICATOR` and
+  `DEFAULT_LOADING_LAYOUT`, both at the top of the file, both one line. The
+  props they feed (`loadingIndicator`, `loadingLayout`) are implemented here and
+  are meant to go upstream verbatim — see the proposal below. Once they land,
+  re-applying this after a `shadcn add` is changing two literals rather than
+  restructuring the component, and if cubby-ui ever grows a defaults provider it
+  stops being a patch at all.
+
+### Proposal for cubby-ui: consumer-owned loading visual and layout
+
+Implemented locally in `components/ui/cubby-ui/button.tsx`; copy it up. Two
+hardcoded decisions currently force a consumer to patch the vendored file, which
+the next `shadcn add` reverts.
+
+**1. `loadingIndicator?: React.ReactNode`.** Upstream hardcodes a spinning
+HugeIcon. That is the correct default — a registry component cannot import a
+consumer's component — but an app with its own loading idiom then shows two
+different busy visuals depending on whether the busy thing is a button or a
+field, and the only fix is editing the file.
+
+Render it in the existing slot, inside the existing `aria-hidden` wrapper. **That
+wrapper becomes part of the contract once this is a prop and should be
+documented on it.** Loading indicators commonly ship their own `role="status"
+aria-live`; inside a `<button>` such a region is pruned as presentational
+anyway, so hiding it costs nothing and stops a consumer from unknowingly
+creating a live region that never fires. `aria-busy` stays the announcement.
+
+**2. `loadingLayout?: "overlay" | "inline"`, defaulting to `overlay`.** Today's
+behaviour is `overlay`: content at `opacity-0`, indicator centred over it. Its
+comment names the real benefit — the button never changes width. The cost is
+that a consumer swapping in a pending label is writing text nobody can see; that
+regressed five call sites in this app silently. The labels still reach screen
+readers, since `opacity: 0` stays in the accessibility tree, which is exactly
+why it is easy to ship without noticing.
+
+`inline` gives the indicator an icon slot and leaves the label visible. It
+replaces `leadingIcon` when there is one (no width change), otherwise sits after
+the label and the button grows by the indicator's width — the honest trade for
+keeping the label. Two details the implementation here already handles:
+`iconLeft`/`iconRight` must be computed from the *resolved* slots so the optical
+padding follows the indicator, and icon-only sizes have no label to keep, so
+there `inline` lets the indicator stand in for the children.
+
+**Open question worth deciding alongside it.** A per-call-site prop still means
+repeating `loadingIndicator={…}` at every button in an app with one house
+indicator — this app has about ten. A `ButtonDefaults` provider, or an exported
+defaults object the vendored file reads, would let an app set it once and retire
+the patch entirely. Less conventional for a copy-in registry, so it may be worth
+shipping the props first and seeing whether the repetition actually bites.
+
+### Proposal for cubby-ui: one `MenuSwitchIndicator` instead of four copies
+
+`dropdown-menu.tsx`, `context-menu.tsx`, `menubar.tsx` and `base-drawer.tsx` each
+render a `SwitchVisual` inside their checkbox item when `indicator="switch"`. The
+three menu implementations are identical except for the Base UI namespace they
+pull the indicator from (`BaseMenu` vs `BaseContextMenu`) — same grid column,
+same `keepMounted`, same four props, same comment.
+
+They had already drifted once: `dropdown-menu.tsx` carried
+`[--switch-press-squash:0px]` and the other two did not. That is now fixed
+upstream and fixed *well* — `squash` is a real variant on `switchVariants`, and
+`SwitchVisual` defaults it to `false`, which is correct for every host where the
+row owns the press. So the specific bug is gone; the duplication that produced it
+is not.
+
+The remaining cost is the prop surface. Each of the four flattens
+`SwitchVisualProps` into `switchColor` / `switchShape` / `switchSize` /
+`switchMotion`, so every future Switch variant is four edits in four files, and
+`base-drawer.tsx` has already picked a different default (`switchSize = "sm"` vs
+`"xs"`).
+
+Proposed: one `MenuSwitchIndicator` exported from `switch/switch.tsx` or a
+sibling, taking the switch options plus a `render` prop for the host's
+`CheckboxItemIndicator`. Each menu file renders it and passes its own indicator
+through `render`. Collapse the four flattened props into one
+`switchProps?: Pick<SwitchVisualProps, "color" | "shape" | "size" | "motion">`.
+
+Deferred locally rather than patched: these are vendored files, so the refactor
+would be reverted by the next `shadcn add` while also making that update
+conflict. This round proved the point — the local `[--switch-press-squash:0px]`
+patches were wiped by the re-install, while the upstreamed `squash` variant came
+back.
 
 ## Parked decisions (context lives elsewhere)
 

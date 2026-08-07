@@ -192,6 +192,7 @@ html {
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-surface-active: var(--surface-active);
 }
 
 :root {
@@ -228,7 +229,7 @@ html {
   --destructive-hover: color-mix(in oklch, var(--destructive), black 5%);
   --secondary-hover: color-mix(in oklch, var(--secondary), black 5%);
   --outline-hover: color-mix(in oklch, var(--card), black 5%);
-  --border: oklch(0 0 0 / 10%);
+  --border: color-mix(in oklab, var(--foreground) 10%, transparent);
   --input: var(--surface-3);
   --input-elevated: oklch(0 0 0 / 8%);
   --ring: oklch(0.55 0.2 250);
@@ -352,6 +353,12 @@ html {
   --compare-line-1: var(--primary);
   --compare-line-2: oklch(0.62 0.12 195);
   --compare-line-3: oklch(0.56 0.2 305);
+  --primary-active: color-mix(in oklch, var(--primary), black 8%);
+  --neutral-active: color-mix(in oklch, var(--neutral), white 14%);
+  --destructive-active: color-mix(in oklch, var(--destructive), black 8%);
+  --secondary-active: color-mix(in oklch, var(--secondary), black 8%);
+  --outline-active: color-mix(in oklch, var(--card), black 8%);
+  --surface-active: oklch(0 0 0 / 0.08);
 }
 
 .dark {
@@ -377,7 +384,7 @@ html {
   --destructive-hover: color-mix(in oklch, var(--destructive), white 15%);
   --secondary-hover: color-mix(in oklch, var(--secondary), white 5%);
   --outline-hover: color-mix(in oklch, var(--card), white 5%);
-  --border: oklch(1 0 0 / 10%);
+  --border: color-mix(in oklab, var(--foreground) 10%, transparent);
   --input-elevated: oklch(1 0 0 / 9%);
   --scrollbar: oklch(0.7 var(--neutral-chroma) var(--neutral-hue));
   --sidebar-border: oklch(0.28 var(--neutral-chroma) var(--neutral-hue));
@@ -494,6 +501,30 @@ html {
   --compare-line-1: var(--primary);
   --compare-line-2: oklch(0.74 0.13 195);
   --compare-line-3: oklch(0.68 0.19 305);
+  --primary-active: color-mix(in oklch, var(--primary), white 14%);
+  --neutral-active: color-mix(in oklch, var(--neutral), black 14%);
+  /* Darkens on press, unlike the four tokens above, which each step further
+     along their hover's direction. Deliberate, and the only rule that survives
+     the contrast math: --destructive-foreground here is pure white, and
+     --destructive-hover lightens (white 15%, L 0.50 -> 0.575, 4.80:1), so
+     continuing to lighten walks the label off AA — white 18% is 4.49:1, white
+     22% is 4.12:1, against a 4.5:1 floor. Any lightening step big enough to
+     read is a step that fails. Darkening is free in the other direction: this
+     lands at 7.54:1, better than rest's 6.38:1.
+
+     Accepted cost: from hover this is a 0.115 lightness move that crosses back
+     past rest, several times the press delta of any sibling. Pressing "delete"
+     reads as the button changing colour more than depressing. Judged the lesser
+     problem against an unreadable label, since press is transient and the
+     ::before scale carries the depress on its own.
+
+     So: do NOT "make this consistent" with the tokens above. Reviewed twice and
+     kept both times. Light mode needs no such note — hover already darkens
+     there, so destructive agrees with its siblings and with itself. */
+  --destructive-active: color-mix(in oklch, var(--destructive), black 8%);
+  --secondary-active: color-mix(in oklch, var(--secondary), white 8%);
+  --outline-active: color-mix(in oklch, var(--card), white 8%);
+  --surface-active: oklch(1 0 0 / 0.08);
 }
 
 @layer base {
@@ -511,4 +542,3 @@ html {
     isolation: isolate;
   }
 }
-

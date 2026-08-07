@@ -54,6 +54,11 @@ function ToggleGroup({
   children,
   ...props
 }: ToggleGroupProps) {
+  const contextValue = React.useMemo(
+    () => ({ size, variant, detached }),
+    [size, variant, detached],
+  );
+
   // Cell styling lives here on the parent, via **:data-[slot=toggle]: descendant
   // selectors, rather than on ToggleGroupItem — on purpose. The item owns cell
   // *identity* (variant/size, fed through context); the group owns *adjacency*:
@@ -82,8 +87,8 @@ function ToggleGroup({
                 // rules merge into one that frames the control and divides the cells.
                 ATTACHED_CELL,
                 CELL_RADIUS[size],
-                "data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:border-s-0 data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:rounded-s-none data-[orientation=horizontal]:**:data-[slot=toggle]:not-last:rounded-e-none",
-                "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:border-t-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:rounded-t-none data-[orientation=vertical]:**:data-[slot=toggle]:not-last:rounded-b-none",
+                "data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:rounded-s-none data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:border-s-0 data-[orientation=horizontal]:**:data-[slot=toggle]:not-last:rounded-e-none",
+                "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:rounded-t-none data-[orientation=vertical]:**:data-[slot=toggle]:not-first:border-t-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-last:rounded-b-none",
               ]
             : [
                 // Solid / ghost: one connected track; cells flatten and inherit the track's
@@ -96,42 +101,28 @@ function ToggleGroup({
                 // ghost: no container chrome.
                 ATTACHED_CELL,
                 "**:data-[slot=toggle]:rounded-none **:data-[slot=toggle]:border-0",
-                "**:data-[slot=toggle]:first:rounded-s-[inherit] **:data-[slot=toggle]:last:rounded-e-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-s-none data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-e-none data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-t-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-b-[inherit]",
+                "**:data-[slot=toggle]:first:rounded-s-[inherit] **:data-[slot=toggle]:last:rounded-e-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-s-none data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-t-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-e-none data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-b-[inherit]",
                 separators && [
                   // Floating inset rule at 50% that tracks its cell's ink.
-                  "**:data-[slot=toggle]:not-first:before:pointer-events-none **:data-[slot=toggle]:not-first:before:absolute **:data-[slot=toggle]:not-first:before:z-0 **:data-[slot=toggle]:not-first:before:content-[''] **:data-[slot=toggle]:not-first:before:rounded-full **:data-[slot=toggle]:not-first:before:bg-current **:data-[slot=toggle]:not-first:before:opacity-15",
-                  "**:data-[slot=toggle]:not-first:before:top-1/4 **:data-[slot=toggle]:not-first:before:start-0 **:data-[slot=toggle]:not-first:before:h-1/2 **:data-[slot=toggle]:not-first:before:w-px",
-                  "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:top-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:inset-s-1/4 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:h-px data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:w-1/2",
+                  "**:data-[slot=toggle]:not-first:before:pointer-events-none **:data-[slot=toggle]:not-first:before:absolute **:data-[slot=toggle]:not-first:before:z-0 **:data-[slot=toggle]:not-first:before:rounded-full **:data-[slot=toggle]:not-first:before:bg-current **:data-[slot=toggle]:not-first:before:opacity-15 **:data-[slot=toggle]:not-first:before:content-['']",
+                  "**:data-[slot=toggle]:not-first:before:start-0 **:data-[slot=toggle]:not-first:before:top-1/4 **:data-[slot=toggle]:not-first:before:h-1/2 **:data-[slot=toggle]:not-first:before:w-px",
+                  "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:inset-s-1/4 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:top-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:h-px data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:w-1/2",
                 ],
               ],
         className,
       )}
       {...props}
     >
-      <ToggleGroupProvider size={size} variant={variant} detached={detached}>
+      {/* Memoized so the context value is stable across the group's re-renders
+          — a consumer (ToggleGroupItem) that memoizes on it isn't invalidated
+          every time the parent renders for an unrelated reason. Restored after
+          a registry refresh dropped it; nothing auto-memoizes this, the React
+          Compiler is not enabled here (only its lint rules, via
+          eslint-plugin-react-hooks). */}
+      <ToggleGroupContext.Provider value={contextValue}>
         {children}
-      </ToggleGroupProvider>
+      </ToggleGroupContext.Provider>
     </BaseToggleGroup>
-  );
-}
-
-// Memoized so the context value is stable across the group's re-renders — a
-// consumer (ToggleGroupItem) that memoizes on it isn't invalidated every time
-// the parent renders for an unrelated reason.
-function ToggleGroupProvider({
-  size,
-  variant,
-  detached,
-  children,
-}: ToggleGroupContextValue & { children: React.ReactNode }) {
-  const value = React.useMemo(
-    () => ({ size, variant, detached }),
-    [size, variant, detached],
-  );
-  return (
-    <ToggleGroupContext.Provider value={value}>
-      {children}
-    </ToggleGroupContext.Provider>
   );
 }
 

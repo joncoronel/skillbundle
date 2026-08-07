@@ -7,16 +7,14 @@ import { Toast } from "@base-ui/react/toast";
 import { AnimatePresence } from "motion/react";
 import { motion } from "motion/react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  AlertCircleIcon,
-  Alert02Icon,
-  CheckmarkCircle02Icon,
-  InformationCircleIcon,
-  Loading03Icon,
-  Cancel01Icon,
-} from "@hugeicons/core-free-icons";
+import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
+import Alert02Icon from "@hugeicons/core-free-icons/Alert02Icon";
+import CheckmarkCircle02Icon from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
+import InformationCircleIcon from "@hugeicons/core-free-icons/InformationCircleIcon";
+import Loading03Icon from "@hugeicons/core-free-icons/Loading03Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/cubby-ui/button";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
 import "./toast.css";
 
@@ -1024,17 +1022,15 @@ function StackedToastItem({
               {showCloseButton && (
                 <Toast.Action
                   data-slot="toast-action"
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "xs" }),
-                    "mt-1.5 w-fit",
-                  )}
+                  render={<Button variant="outline" size="xs" />}
+                  className="mt-1.5 w-fit"
                 />
               )}
             </div>
             {!showCloseButton && (
               <Toast.Action
                 data-slot="toast-action"
-                className={buttonVariants({ variant: "outline", size: "xs" })}
+                render={<Button variant="outline" size="xs" />}
               />
             )}
             {showCloseButton && (
@@ -1403,22 +1399,16 @@ function GroupedSingleItemContent({
         )}
         {showCloseButton && item.action && (
           <div className="mt-1.5">
-            <button
-              onClick={item.action.onClick}
-              className={buttonVariants({ variant: "outline", size: "xs" })}
-            >
+            <Button variant="outline" size="xs" onClick={item.action.onClick}>
               {item.action.label}
-            </button>
+            </Button>
           </div>
         )}
       </div>
       {!showCloseButton && item.action && (
-        <button
-          onClick={item.action.onClick}
-          className={buttonVariants({ variant: "outline", size: "xs" })}
-        >
+        <Button variant="outline" size="xs" onClick={item.action.onClick}>
           {item.action.label}
-        </button>
+        </Button>
       )}
       {showCloseButton && (
         <Toast.Close
@@ -1502,13 +1492,14 @@ function GroupedToastSummaryContent({
       {(data.hasShownAllComplete ||
         data.items.length > 1 ||
         (data.completedItems ?? []).length > 0) && (
-        <button
+        <Button
+          variant="outline"
+          size="xs"
           onClick={onToggle}
           aria-expanded={data.isExpanded}
-          className={buttonVariants({ variant: "outline", size: "xs" })}
         >
           {buttonLabel}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -1698,12 +1689,9 @@ function GroupedToastCardItem({
           )}
         </div>
         {item.action && (
-          <button
-            onClick={item.action.onClick}
-            className={buttonVariants({ variant: "outline", size: "xs" })}
-          >
+          <Button variant="outline" size="xs" onClick={item.action.onClick}>
             {item.action.label}
-          </button>
+          </Button>
         )}
       </div>
     </>
@@ -1781,12 +1769,9 @@ function CompletedItemRow({ item, showSeparator }: CompletedItemRowProps) {
           </div>
 
           {item.action && (
-            <button
-              onClick={item.action.onClick}
-              className={buttonVariants({ variant: "outline", size: "xs" })}
-            >
+            <Button variant="outline" size="xs" onClick={item.action.onClick}>
               {item.action.label}
-            </button>
+            </Button>
           )}
         </div>
       </div>

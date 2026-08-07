@@ -3,64 +3,166 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Button as BaseButton } from "@base-ui/react/button";
-import { cn } from "@/lib/utils";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { cn } from "@/lib/utils";
 
-// `data-disabled:focus-visible:outline-ring` (full alpha, not the `/50` default)
-// is deliberate and only reachable via `focusableWhenDisabled`. CSS `opacity`
-// dims the outline too, so a disabled+focused button rendered its ring at
-// 0.5 × 0.6 ≈ 0.3 alpha — measured at 1.53:1 against the light background and
-// 1.35:1 against the dark one. Full alpha under the same dimming gives 2.44:1
-// and 2.16:1, i.e. slightly MORE visible than an ordinary focus ring, which is
-// the right way round for the one state where you most need to find focus.
-// Residual, and NOT from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1,
-// under the 3:1 non-text threshold, app-wide.
-const buttonVariants = cva(
-  "relative inline-flex items-center cursor-pointer justify-center whitespace-nowrap rounded-lg text-sm font-medium data-disabled:pointer-events-none data-disabled:opacity-60 data-disabled:focus-visible:outline-ring [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color,scale,opacity,shadow,background-color,color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid active:shadow-none active:not-aria-[haspopup]:scale-[0.98]",
-  {
-    variants: {
-      variant: {
-        primary:
-          "bg-primary text-primary-foreground hover:bg-(--primary-hover)",
-        "primary-soft":
-          "bg-secondary text-(--primary-soft-foreground) hover:bg-(--secondary-hover)",
-        neutral:
-          "bg-neutral text-neutral-foreground hover:bg-(--neutral-hover)",
-        destructive:
-          "bg-destructive text-destructive-foreground hover:bg-(--destructive-hover) border border-black/5 dark:border-white/5",
-        "destructive-soft":
-          "bg-destructive/12 text-(--destructive-soft-foreground) hover:bg-destructive/20",
-        outline:
-          "border bg-clip-padding bg-card hover:bg-(--outline-hover) hover:text-accent-foreground",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-(--secondary-hover) border border-transparent",
-        ghost:
-          "text-muted-foreground hover:bg-surface-hover hover:text-foreground shadow-none border border-transparent",
-        link: "text-primary underline-offset-4 hover:underline shadow-none",
-      },
-      size: {
-        default: "h-10 sm:h-9 px-3 py-2 gap-1",
-        xs: "h-8 sm:h-7 px-2 py-1.5 gap-0.5 text-xs rounded-md",
-        sm: "h-9 sm:h-8  px-2 py-1.5 gap-0.5",
-        lg: "h-11 sm:h-10  px-3.5 py-2.5 gap-1",
-        icon: "size-10 sm:size-9",
-        icon_xs: "size-8 sm:size-7 rounded-md",
-        icon_sm: "size-9 sm:size-8",
-        icon_lg: "size-11 sm:size-10",
-      },
-    },
-    defaultVariants: {
-      variant: "primary",
-      size: "default",
-    },
-  },
+// The button's fill and border render on a ::before pseudo-element that
+// scales down on press (the pill shrinks, the label stays put). Because the
+// pseudo travels with the classes, every consumer of the recipe — <Button>
+// and flat elements styled via `buttonVariants` (pagination links, calendar
+// nav, toolbar buttons) — gets identical paint and press behavior with no
+// extra DOM. ButtonGroup collapses borders between segments with `before:`
+// rules, inert on children that don't carry the recipe.
+//
+// Paint: variants set per-state tokens (--btn-bg, --btn-bg-hover,
+// --btn-bg-active, --btn-border), the state machine below resolves them into
+// --btn-paint, and buttonPaint renders it on the pseudo (custom properties
+// inherit into pseudo-elements). Consumers recolor by overriding the tokens
+// (className="[--btn-bg:...]") and restyle the border via `before:` classes
+// (className="before:border-dashed").
+const buttonBase = cn(
+  "relative isolate inline-flex items-center cursor-pointer justify-center whitespace-nowrap rounded-lg font-medium data-disabled:pointer-events-none data-disabled:opacity-60 data-disabled:focus-visible:outline-ring [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 focus-visible:outline-ring/50 outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color,scale,opacity,background-color,color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:outline-destructive/50 aria-invalid:outline-2 aria-invalid:outline-offset-2 aria-invalid:outline-solid",
+  // State machine: unset tokens fall through to transparent. Pressing shows
+  // the active paint — except on popup triggers (aria-haspopup), which skip
+  // pressed feedback entirely (mirroring the press-scale guard) and simply
+  // hold their hover paint while open (data-popup-open, stamped by Base UI).
+  "[--btn-paint:var(--btn-bg,transparent)] hover:[--btn-paint:var(--btn-bg-hover,var(--btn-bg,transparent))] active:not-aria-[haspopup]:[--btn-paint:var(--btn-bg-active,var(--btn-bg-hover,var(--btn-bg,transparent)))] data-popup-open:[--btn-paint:var(--btn-bg-hover,var(--btn-bg,transparent))]",
 );
 
+// The paint pseudo-element: 1px border + fill from the resolved vars,
+// transparent when unset. -z-10 keeps it under the content (the root's
+// `isolate` contains it), and pressing scales only the pseudo — except on
+// popup triggers (aria-haspopup), which skip press feedback and hold their
+// hover paint while open instead.
+const buttonPaint =
+  "before:content-[''] before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:border before:border-[color:var(--btn-border,transparent)] before:bg-[var(--btn-paint,transparent)] before:transition-[background-color,border-color,scale] before:duration-100 before:ease-out active:not-aria-[haspopup]:before:scale-[0.98]";
+
+// Text classes plus the paint tokens the state machine reads.
+const buttonVariantClasses = {
+  primary:
+    "text-primary-foreground [--btn-bg:var(--primary)] [--btn-bg-hover:var(--primary-hover)] [--btn-bg-active:var(--primary-active)]",
+  "primary-soft":
+    "text-(--primary-soft-foreground) [--btn-bg:var(--secondary)] [--btn-bg-hover:var(--secondary-hover)] [--btn-bg-active:var(--secondary-active)]",
+  neutral:
+    "text-neutral-foreground [--btn-bg:var(--neutral)] [--btn-bg-hover:var(--neutral-hover)] [--btn-bg-active:var(--neutral-active)]",
+  destructive:
+    "text-destructive-foreground [--btn-border:rgb(0_0_0/0.05)] dark:[--btn-border:rgb(255_255_255/0.05)] [--btn-bg:var(--destructive)] [--btn-bg-hover:var(--destructive-hover)] [--btn-bg-active:var(--destructive-active)]",
+  "destructive-soft":
+    "text-(--destructive-soft-foreground) [--btn-bg:color-mix(in_oklab,var(--destructive)_12%,transparent)] [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_20%,transparent)] [--btn-bg-active:color-mix(in_oklab,var(--destructive)_25%,transparent)]",
+  // bg-clip-padding keeps the card fill out from under the translucent
+  // border. Deliberately NOT in the shared paint: with the default
+  // transparent border it would inset every solid fill by 1px.
+  outline:
+    "[--btn-border:var(--border)] [--btn-bg:var(--card)] [--btn-bg-hover:var(--outline-hover)] [--btn-bg-active:var(--outline-active)] before:bg-clip-padding",
+  // Outline's border with ghost's transparent fill, for elevated substrates
+  // (Cards, Dialogs) where outline's solid card fill would look mismatched.
+  "outline-ghost":
+    "[--btn-border:var(--border)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg-active:var(--surface-active)]",
+  secondary:
+    "text-secondary-foreground [--btn-bg:var(--secondary)] [--btn-bg-hover:var(--secondary-hover)] [--btn-bg-active:var(--secondary-active)]",
+  ghost:
+    "text-muted-foreground hover:text-foreground data-popup-open:text-foreground [--btn-bg-hover:var(--surface-hover)] [--btn-bg-active:var(--surface-active)]",
+  link: "text-primary underline-offset-4 hover:underline",
+};
+
+// Heights match the Input/Select ramp (36px desktop default) so buttons pair
+// with form fields. Below the sm breakpoint each size is one step taller for
+// touch targets.
+const buttonSizeVariantClasses = {
+  default: "h-10 sm:h-9 px-3.5 gap-1.5 text-sm",
+  xs: "h-8 sm:h-7 px-2.5 gap-1 text-xs rounded-md [&_svg:not([class*='size-'])]:size-3.5",
+  sm: "h-9 sm:h-8 px-3 gap-1.5 text-sm",
+  lg: "h-11 sm:h-10 px-3.5 gap-1.5 text-base [&_svg:not([class*='size-'])]:size-5",
+  icon: "size-10 sm:size-9 text-sm",
+  icon_xs:
+    "size-8 sm:size-7 rounded-md text-xs [&_svg:not([class*='size-'])]:size-3.5",
+  icon_sm: "size-9 sm:size-8 text-sm",
+  icon_lg: "size-11 sm:size-10 text-base [&_svg:not([class*='size-'])]:size-5",
+};
+
+// Sizes with no text slot. For these, children render bare (no text-box
+// wrapper) and leadingIcon/trailingIcon are ignored — a fixed square has no
+// room for an icon beside a label.
+const iconOnlySizes = new Set<keyof typeof buttonSizeVariantClasses>([
+  "icon",
+  "icon_xs",
+  "icon_sm",
+  "icon_lg",
+]);
+
+// Fills the root and mirrors its justification so root-level overrides like
+// justify-between keep working.
+const buttonContentLayout =
+  "inline-flex w-full items-center [justify-content:inherit] gap-[inherit]";
+
+// The one button recipe, used by <Button> and by flat elements (links,
+// calendar nav, toolbar buttons) alike — paint, states, and press behavior
+// are identical in both. iconLeft/iconRight tighten padding on the icon side
+// (an icon is visually lighter than a text edge); <Button> sets them from
+// its icon props, flat consumers can pass them explicitly.
+const buttonVariants = cva(cn(buttonBase, buttonPaint), {
+  variants: {
+    variant: buttonVariantClasses,
+    size: buttonSizeVariantClasses,
+    iconLeft: { true: "" },
+    iconRight: { true: "" },
+  },
+  compoundVariants: [
+    { size: "default", iconLeft: true, className: "pl-2.5" },
+    { size: "default", iconRight: true, className: "pr-2.5" },
+    { size: "sm", iconLeft: true, className: "pl-2" },
+    { size: "sm", iconRight: true, className: "pr-2" },
+    { size: "xs", iconLeft: true, className: "pl-2" },
+    { size: "xs", iconRight: true, className: "pr-2" },
+    { size: "lg", iconLeft: true, className: "pl-2.5" },
+    { size: "lg", iconRight: true, className: "pr-2.5" },
+  ],
+  defaultVariants: {
+    variant: "primary",
+    size: "default",
+  },
+});
+
+// ---------------------------------------------------------------------------
+// LOCAL DIVERGENCE — the two values below, and nothing else in this file.
+// Re-apply after `shadcn add`; see TODO.md "Local cubby-ui divergences", which
+// also carries the upstream proposal these two props come from.
+//
+// Upstream defaults to a spinning HugeIcon and to `overlay`. Both are right for
+// a registry component: it cannot import a consumer's loader, and hiding the
+// label is the only layout that never shifts. This app has one busy visual
+// already (search inputs, publisher picker, compare chart) and five buttons
+// that swap in a pending label while working, so it wants the other end of both
+// choices. Everything else here is stock — the props are the mechanism, these
+// are just the values.
+const DEFAULT_LOADING_INDICATOR = <DotMatrixRipple size="xs" />;
+const DEFAULT_LOADING_LAYOUT: LoadingLayout = "inline";
+// ---------------------------------------------------------------------------
+
+/**
+ * How the busy state is presented.
+ *
+ * `overlay` hides the content at `opacity-0` and centres the indicator over it,
+ * so the button never changes width. `inline` gives the indicator an icon slot
+ * and leaves the label visible — it replaces `leadingIcon` when there is one
+ * (no width change), otherwise it sits after the label and the button grows by
+ * the indicator's width. Icon-only sizes have no label to keep, so there
+ * `inline` lets the indicator stand in for the children.
+ */
+type LoadingLayout = "overlay" | "inline";
+
 export type ButtonProps = BaseButton.Props &
-  VariantProps<typeof buttonVariants> & {
+  Omit<VariantProps<typeof buttonVariants>, "iconLeft" | "iconRight"> & {
     loading?: boolean;
-    leftSection?: React.ReactNode;
-    rightSection?: React.ReactNode;
+    /**
+     * Replaces the busy visual. Rendered `aria-hidden`: an indicator that ships
+     * its own `role="status"` would be pruned inside a `<button>` anyway, and
+     * hiding it keeps `aria-busy` the single announcement.
+     */
+    loadingIndicator?: React.ReactNode;
+    loadingLayout?: LoadingLayout;
+    leadingIcon?: React.ReactNode;
+    trailingIcon?: React.ReactNode;
   };
 
 function Button({
@@ -68,26 +170,42 @@ function Button({
   variant,
   size,
   loading,
+  loadingIndicator = DEFAULT_LOADING_INDICATOR,
+  loadingLayout = DEFAULT_LOADING_LAYOUT,
   children,
   disabled,
-  leftSection,
-  rightSection,
+  focusableWhenDisabled,
+  leadingIcon,
+  trailingIcon,
   ...props
 }: ButtonProps) {
-  // `loading` shows a spinner in place of a section: it replaces the left
-  // section, or sits on the right when there's a right section (or no left).
-  const loader = loading ? (
-    <DotMatrixRipple size="xs" ariaLabel="Loading" />
-  ) : null;
-  const loaderOnRight = loader && (rightSection != null || leftSection == null);
-  const resolvedLeft = loader && !loaderOnRight ? loader : leftSection;
-  const resolvedRight = loaderOnRight ? loader : rightSection;
+  const isIconOnly = size != null && iconOnlySizes.has(size);
+  const isInline = loadingLayout === "inline";
 
-  const buttonContent = (
+  // Occupies an icon slot under `inline`. Null otherwise, which is what makes
+  // every `resolved*` below fall through to the caller's own icons.
+  const inlineLoader =
+    loading && isInline ? (
+      <span aria-hidden className="inline-flex shrink-0 items-center">
+        {loadingIndicator}
+      </span>
+    ) : null;
+  const loaderOnRight =
+    !!inlineLoader && (trailingIcon != null || leadingIcon == null);
+  const resolvedLeading =
+    inlineLoader && !loaderOnRight ? inlineLoader : leadingIcon;
+  const resolvedTrailing = loaderOnRight ? inlineLoader : trailingIcon;
+
+  const content = isIconOnly ? (
+    // No label to keep, so the loader stands in rather than joining.
+    (inlineLoader ?? children)
+  ) : (
     <>
-      {resolvedLeft}
-      <span className="px-1">{children}</span>
-      {resolvedRight}
+      {resolvedLeading}
+      {/* text-box trims ascent/descent whitespace for optical centering;
+          unsupported browsers fall back to metrics centering. */}
+      <span className="[text-box:trim-both_cap_alphabetic]">{children}</span>
+      {resolvedTrailing}
     </>
   );
 
@@ -97,19 +215,51 @@ function Button({
       data-size={size}
       data-variant={variant}
       className={cn(
-        buttonVariants({ variant, size }),
-
+        buttonVariants({
+          variant,
+          size,
+          // Resolved, not raw: under `inline` the loader occupies a slot and
+          // the optical padding has to follow it.
+          iconLeft: !!resolvedLeading,
+          iconRight: !!resolvedTrailing,
+        }),
         className,
       )}
       disabled={disabled || loading}
-      focusableWhenDisabled={loading}
-      // `{...props}` must stay LAST. `hooks/use-add-skill-field-a11y.ts` relies
-      // on a caller-supplied `focusableWhenDisabled` beating the `loading`-only
-      // default above; move this line up and every add-skill control silently
-      // reverts to a natively disabled button, which cannot hold focus.
+      aria-busy={loading || undefined}
       {...props}
+      focusableWhenDisabled={focusableWhenDisabled ?? loading}
     >
-      {buttonContent}
+      <span
+        data-slot="button-content"
+        className={cn("relative", buttonContentLayout)}
+      >
+        {loading && !isInline ? (
+          <>
+            {/* Real content stays laid out (invisible) so the size holds. */}
+            <span className={cn(buttonContentLayout, "opacity-0")}>
+              {content}
+            </span>
+            <span
+              aria-hidden
+              className="absolute inset-0 flex items-center justify-center"
+            >
+              {loadingIndicator}
+            </span>
+            {/* No sr-only live region here, deliberately. `sr-only` clips
+                rather than hides, so its text joins name-from-content and the
+                button would rename itself mid-request ("Save" -> "Save
+                Loading"). And it would not announce anyway: `role="button"` is
+                Children Presentational, and a region that mounts already
+                holding its text has not changed. `aria-busy` and `disabled`
+                above are the signals that work. Callers who want words swap
+                their own label, or render their own live region OUTSIDE the
+                button — see CopyButton, which does exactly that. */}
+          </>
+        ) : (
+          content
+        )}
+      </span>
     </BaseButton>
   );
 }

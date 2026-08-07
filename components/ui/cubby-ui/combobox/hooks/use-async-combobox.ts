@@ -13,8 +13,9 @@ export interface UseAsyncComboboxOptions<T extends { id: string }> {
   debounceMs?: number;
 }
 
-export interface UseAsyncComboboxSingleOptions<T extends { id: string }>
-  extends UseAsyncComboboxOptions<T> {
+export interface UseAsyncComboboxSingleOptions<
+  T extends { id: string },
+> extends UseAsyncComboboxOptions<T> {
   /**
    * Whether multiple selection is enabled
    */
@@ -31,8 +32,9 @@ export interface UseAsyncComboboxSingleOptions<T extends { id: string }>
   onValueChange?: (value: T | null) => void;
 }
 
-export interface UseAsyncComboboxMultipleOptions<T extends { id: string }>
-  extends UseAsyncComboboxOptions<T> {
+export interface UseAsyncComboboxMultipleOptions<
+  T extends { id: string },
+> extends UseAsyncComboboxOptions<T> {
   /**
    * Whether multiple selection is enabled
    */

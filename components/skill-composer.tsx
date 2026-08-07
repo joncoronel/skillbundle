@@ -432,7 +432,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
             className="shrink-0 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
             onClick={handleRepoSubmit}
             disabled={!repoDraft.trim()}
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={FlashIcon}
                 strokeWidth={2}
@@ -598,7 +598,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
         size="sm"
         className="ms-auto -me-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
         onClick={() => setParams({ mode: "text" })}
-        leftSection={
+        leadingIcon={
           <HugeiconsIcon
             icon={ArrowLeft02Icon}
             strokeWidth={2}
@@ -635,14 +635,18 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground -ms-2"
-                leftSection={
+                leadingIcon={
                   <HugeiconsIcon
                     icon={FilterHorizontalIcon}
                     strokeWidth={2}
                     className="size-3.5"
                   />
                 }
-                rightSection={<FilterCountBadge count={filterCount.sheet} />}
+                trailingIcon={
+                  filterCount.sheet > 0 ? (
+                    <FilterCountBadge count={filterCount.sheet} />
+                  ) : null
+                }
               />
             }
           >
@@ -662,7 +666,7 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
                     size="sm"
                     className="-me-2 text-muted-foreground"
                     onClick={clearSheetFilters}
-                    leftSection={
+                    leadingIcon={
                       <HugeiconsIcon
                         icon={Cancel01Icon}
                         strokeWidth={2}
@@ -715,7 +719,7 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
           className="shrink-0 text-muted-foreground max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
           onClick={() => setParams({ view: "hot" })}
           aria-label="Hot/Trending leaderboards"
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={FireIcon}
               strokeWidth={2}
@@ -731,14 +735,14 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
           className="shrink-0 text-muted-foreground -me-2 max-[860px]:-me-2.5 max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
           onClick={onEnterRepoMode}
           aria-label="Match repo"
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={GithubIcon}
               strokeWidth={2}
               className="size-3.5 max-[860px]:size-4"
             />
           }
-          rightSection={
+          trailingIcon={
             <HugeiconsIcon
               icon={ArrowRight02Icon}
               strokeWidth={2}

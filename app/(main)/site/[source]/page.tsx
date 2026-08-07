@@ -117,7 +117,7 @@ async function SourceListContent({ source }: { source: string }) {
                 rel="noopener noreferrer"
               />
             }
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={GlobalSearchIcon}
                 strokeWidth={2}

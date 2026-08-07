@@ -218,7 +218,7 @@ export function BundleView({
                         <Button
                           variant="outline"
                           size="sm"
-                          leftSection={
+                          leadingIcon={
                             <HugeiconsIcon
                               icon={Edit01Icon}
                               strokeWidth={2}
@@ -299,7 +299,7 @@ export function BundleView({
                   size="sm"
                   onClick={() => setEditingSkills(true)}
                   disabled={editingSkills}
-                  leftSection={
+                  leadingIcon={
                     <HugeiconsIcon
                       icon={PencilEdit02Icon}
                       strokeWidth={2}
@@ -512,7 +512,7 @@ function SharePopover({
           <Button
             variant="ghost"
             size="sm"
-            leftSection={
+            leadingIcon={
               <HugeiconsIcon
                 icon={Share01Icon}
                 strokeWidth={2}
@@ -547,7 +547,7 @@ function SharePopover({
                   variant="destructive-soft"
                   size="xs"
                   onClick={() => onRevoke({ bundleId })}
-                  leftSection={
+                  leadingIcon={
                     <HugeiconsIcon
                       icon={Cancel01Icon}
                       strokeWidth={2}
@@ -569,7 +569,7 @@ function SharePopover({
                 size="sm"
                 onClick={handleGenerate}
                 loading={generating}
-                rightSection={
+                trailingIcon={
                   <HugeiconsIcon
                     icon={Share01Icon}
                     className="size-4"
@@ -623,10 +623,10 @@ function VisibilityToggle({
         }
         updateVisibility({ bundleId, isPublic: !isPublic });
       }}
-      leftSection={
+      leadingIcon={
         <HugeiconsIcon icon={LockIcon} strokeWidth={2} className="size-3.5" />
       }
-      rightSection={
+      trailingIcon={
         gated ? (
           <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
             Pro

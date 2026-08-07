@@ -1,10 +1,7 @@
 "use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  FilterHorizontalIcon,
-  Cancel01Icon,
-} from "@hugeicons/core-free-icons";
+import { FilterHorizontalIcon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import {
   Select,
   SelectContent,
@@ -23,11 +20,14 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/cubby-ui/dropdown-menu";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Switch } from "@/components/ui/cubby-ui/switch";
+import { Switch } from "@/components/ui/cubby-ui/switch/switch";
 import { LabeledSection } from "@/components/labeled-section";
 import { ItemCount } from "@/components/item-count";
 import { PublisherSelect } from "@/components/publisher-select";
-import { useCatalogFacets, useExplorerState } from "@/components/explorer-state";
+import {
+  useCatalogFacets,
+  useExplorerState,
+} from "@/components/explorer-state";
 import { formatInstalls, cn } from "@/lib/utils";
 import type { FacetCount } from "@/lib/search/typesense";
 import type { AuditFilterValue, CatalogSortValue } from "@/lib/search-params";
@@ -42,6 +42,23 @@ const SORT_LABELS: Record<CatalogSortValue, string> = {
 const ANY = "any";
 
 const MIN_INSTALL_PRESETS = [100, 1_000, 10_000] as const;
+
+// The boolean filters render as a switch on BOTH surfaces — a menu indicator
+// in the chin's "More", a real control in the mobile sheet. Shape is shared so
+// they are recognisably the same control.
+//
+// Motion is NOT, deliberately. `stretch` moves the thumb's two edges on
+// separate schedules, which no transform expresses, so it animates
+// `left`/`right` and reflows the thumb every frame; `default` slides on the
+// compositor. The chin is desktop-only and can afford the nicer timeline. The
+// sheet is the touch surface, and paying a per-frame reflow there is what made
+// these switches stutter in the drawer. Nobody sees both at once — the two
+// surfaces are mutually exclusive by viewport — so the split costs nothing.
+const FILTER_SWITCH = {
+  shape: "squircle",
+  menuMotion: "stretch",
+  sheetMotion: "default",
+} as const;
 
 // Single source for a preset's label and for parsing the select value back to
 // the param, so the standalone select and the "More" radio group can't drift.
@@ -76,12 +93,18 @@ const surfaceProps = (surface: ControlSurface) =>
     selectAlign: surface !== "sheet",
     selectModal: surface === "sheet" ? false : undefined,
     popupLevel: surface === "sheet" ? 7 : 5,
-    triggerVariant: surface === "sheet" ? ("elevated" as const) : ("ghost" as const),
+    triggerVariant:
+      surface === "sheet" ? ("elevated" as const) : ("ghost" as const),
   }) as const;
 
 /** The small primary count pill shown on a filter trigger (chin "More", the
- *  mobile "Sort & filter" trigger). Renders nothing at zero so call sites can
- *  drop it straight into a `rightSection`. */
+ *  mobile "Sort & filter" trigger).
+ *
+ *  Gate the CALL SITE on the count, not just this component. Returning `null`
+ *  is invisible but the element is still truthy, and Button derives its
+ *  leading/trailing padding from `!!leadingIcon` / `!!trailingIcon` — so an
+ *  ungated badge reserves optical padding for a pill that never paints, and
+ *  the trigger sits a few px tighter on that side than its own twin. */
 export function FilterCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
@@ -266,29 +289,43 @@ export function CatalogControlsBar() {
               size="sm"
               className="text-muted-foreground"
               aria-label="More filters"
-              leftSection={
+              leadingIcon={
                 <HugeiconsIcon
                   icon={FilterHorizontalIcon}
                   strokeWidth={2}
                   className="size-3.5"
                 />
               }
-              rightSection={<FilterCountBadge count={moreCount} />}
+              trailingIcon={
+                moreCount > 0 ? <FilterCountBadge count={moreCount} /> : null
+              }
             />
           }
         >
           More
         </DropdownMenuTrigger>
+        {/* Start-aligned, not end-, because this trigger resizes underneath its
+            own open menu: setting a filter stamps a count badge onto it. The
+            badge grows the trigger rightward — Clear renders after it, so
+            nothing pushes back — which leaves the LEFT edge fixed and the right
+            edge moving. An end-aligned popup follows the edge that moves, and
+            repositions at the one moment the toggle's own work (a cold query,
+            then swapping the result list) owns the main thread, so the
+            positioner's tween on top/left/right/bottom gets starved and the
+            shift stutters. Anchored to the fixed edge there is no reposition to
+            starve. */}
         <DropdownMenuContent
           side="bottom"
-          align="end"
+          align="start"
           level={5}
           className="min-w-56"
         >
           <DropdownMenuLabel>Minimum installs</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={minInstalls !== null ? String(minInstalls) : ANY}
-            onValueChange={(v) => setParams({ minInstalls: parseMinInstalls(v) })}
+            onValueChange={(v) =>
+              setParams({ minInstalls: parseMinInstalls(v) })
+            }
           >
             <DropdownMenuRadioItem value={ANY} closeOnClick={false}>
               Any
@@ -306,7 +343,15 @@ export function CatalogControlsBar() {
 
           <DropdownMenuSeparator />
 
+          {/* Switch indicators, not checkmarks: the mobile sheet renders these
+              same two filters as <SwitchRow>, and both surfaces take their
+              appearance from FILTER_SWITCH — shape shared, motion deliberately
+              split, see the reason there. Visual only: the row keeps its
+              `menuitemcheckbox` role and the switch is never focusable. */}
           <DropdownMenuCheckboxItem
+            indicator="switch"
+            switchShape={FILTER_SWITCH.shape}
+            switchMotion={FILTER_SWITCH.menuMotion}
             checked={broken}
             onCheckedChange={(checked) => setParams({ broken: !!checked })}
             closeOnClick={false}
@@ -314,6 +359,9 @@ export function CatalogControlsBar() {
             Hide broken installs
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
+            indicator="switch"
+            switchShape={FILTER_SWITCH.shape}
+            switchMotion={FILTER_SWITCH.menuMotion}
             checked={hideGitHubOnly}
             onCheckedChange={(checked) =>
               setParams({ hideGitHubOnly: !!checked })
@@ -331,7 +379,7 @@ export function CatalogControlsBar() {
           size="sm"
           className="text-muted-foreground"
           onClick={clearFilters}
-          leftSection={
+          leadingIcon={
             <HugeiconsIcon
               icon={Cancel01Icon}
               strokeWidth={2}
@@ -455,7 +503,12 @@ function SwitchRow({
         <span className="text-sm">{label}</span>
         <span className="text-xs text-muted-foreground">{hint}</span>
       </span>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Switch
+        shape={FILTER_SWITCH.shape}
+        motion={FILTER_SWITCH.sheetMotion}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
     </label>
   );
 }

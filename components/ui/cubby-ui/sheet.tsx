@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 const sheetContentVariants = cva(
   [
     "text-popover-foreground fixed z-50 flex max-h-full min-h-0 w-full max-w-full min-w-0 flex-col outline-hidden",
@@ -204,7 +204,10 @@ function SheetContent({
             // line at the viewport boundary.
             variant === "floating"
               ? elevatedSurface(level, shadowLevel)
-              : flushSurface(level, INNER_EDGE_FROM_ATTACH_SIDE[side ?? "right"]),
+              : flushSurface(
+                  level,
+                  INNER_EDGE_FROM_ATTACH_SIDE[side ?? "right"],
+                ),
             sheetContentVariants({ variant, side }),
             !isModal && "pointer-events-auto",
             className,
@@ -277,14 +280,7 @@ function SheetBody({
       )}
     >
       <ScrollArea
-        // Base UI's ScrollArea.Content forces `min-width: fit-content`, which
-        // inside the scroll viewport resolves to max-content — so non-wrapping
-        // content (code blocks) would stretch the body's track past the
-        // viewport and turn the sheet's vertical scroll into a horizontal one.
-        // Clamp this scroll area's own Content back to the viewport width (the
-        // direct-child chain leaves nested ScrollAreas, e.g. the one inside a
-        // CodeBlock, free to scroll horizontally within their own box).
-        className="flex-1 [&>[data-slot=scroll-area-viewport]>[data-slot=scroll-area-content]]:min-w-0!"
+        className="flex-1"
         fadeEdges={fadeEdges}
         scrollbarGutter={scrollbarGutter}
         persistScrollbar={persistScrollbar}

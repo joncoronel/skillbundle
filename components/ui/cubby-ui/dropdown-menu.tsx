@@ -3,36 +3,35 @@
 import * as React from "react";
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 
 import { cn } from "@/lib/utils";
 import {
   solidSurface,
   type SurfaceLevel,
 } from "@/lib/cubby-ui/elevated";
+import {
+  SwitchVisual,
+  type SwitchVisualProps,
+} from "@/components/ui/cubby-ui/switch/switch";
 
-// Path length ≈ 22 (from the path geometry)
-function CheckmarkIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path
-        d="M5 14L8.5 17.5L19 6.5"
-        style={{
-          strokeDasharray: 22,
-        }}
-        className="ease-out-expo transition-[stroke-dashoffset] duration-150 in-data-checked:[stroke-dashoffset:0] in-data-unchecked:[stroke-dashoffset:22] motion-reduce:transition-none"
-      />
-    </svg>
-  );
-}
+// Shared shell for checkbox and radio items. Padding matches the plain menu
+// item so labels line up across every item type; the indicator lives in a
+// reserved right-hand column so toggling never shifts the label.
+const toggleItemClasses =
+  "group/switch data-highlighted:bg-surface-hover data-highlighted:text-accent-foreground grid cursor-default items-center rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+
+// The tick draws itself in on check. `pathLength` restates the path as 1 unit
+// long, so the dash values are fractions of the stroke and survive a HugeIcons
+// reshape. Deriving the icon array is the only way to reach the path.
+const tickIcon = Tick02Icon.map(([tag, attrs]) => [
+  tag,
+  { ...attrs, pathLength: 1 },
+]) as typeof Tick02Icon;
+
+const checkmarkClasses =
+  "[&_path]:ease-out-expo [&_path]:transition-[stroke-dashoffset] [&_path]:duration-150 [&_path]:[stroke-dasharray:1] in-data-checked:[&_path]:[stroke-dashoffset:0] in-data-unchecked:[&_path]:[stroke-dashoffset:1] motion-reduce:[&_path]:transition-none";
 
 function DropdownMenu<Payload = unknown>({
   ...props
@@ -81,7 +80,7 @@ function DropdownMenuContent({
   return (
     <DropdownMenuPortal>
       <DropdownMenuPositioner
-        className="z-50 h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-350 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none"
+        className="z-50 h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-instant:transition-none motion-reduce:transition-none"
         sideOffset={sideOffset}
         align={align}
         side={side}
@@ -90,14 +89,29 @@ function DropdownMenuContent({
           data-slot="dropdown-menu-content"
           data-level={level}
           className={cn(
-            "text-popover-foreground relative min-w-[12rem] overflow-hidden rounded-xl",
+            // Base UI derives --popup-width by measuring at `width:auto`, so two
+            // menus that both sit on this floor morph position and height but not
+            // width. That is the accepted trade: menus narrower than 12rem read
+            // as cramped, and width is the least visible of the three.
+            "text-popover-foreground relative max-h-(--available-height) max-w-(--available-width) min-w-[12rem] overflow-hidden rounded-xl outline-none",
             solidSurface(level, shadowLevel),
             "h-(--popup-height,auto) w-(--popup-width,auto)",
-            "origin-(--transform-origin) transition-[width,height,scale,opacity] duration-[350ms,350ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
+            "origin-(--transform-origin) transition-[width,height,scale,opacity] duration-[150ms,150ms,100ms,100ms] ease-[cubic-bezier(0.22,1,0.36,1),cubic-bezier(0.22,1,0.36,1),var(--ease-out-expo),var(--ease-out-expo)]",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
             "data-ending-style:scale-95 data-ending-style:opacity-0",
-            "motion-reduce:transition-none",
-            "data-instant:transition-none",
+            // Own compositor layer while mounted. The scale stretches the popup
+            // downward from an origin just above it, so the top edge moves
+            // ~0.2px and the bottom ~7px; every row lands on a different
+            // sub-pixel offset, which on an evenly spaced stack of identical
+            // text reads as a ripple. Promoted, the rows raster once.
+            "will-change-transform",
+            "motion-reduce:transition-none motion-reduce:will-change-auto",
+            // Only 'trigger-change', which fires once a detached-trigger swap has
+            // settled. The others must animate: Base UI waits on this transition
+            // before unmounting, so suppressing 'dismiss' means no exit at all,
+            // and 'click' is inferred from `event.detail === 0`, which every
+            // right-click matches.
+            "data-[instant=trigger-change]:transition-none",
             className,
           )}
           {...props}
@@ -105,32 +119,35 @@ function DropdownMenuContent({
           <BaseMenu.Viewport
             data-slot="dropdown-menu-viewport"
             className={cn(
-              "relative size-full overflow-clip p-1 [--viewport-padding:0.25rem]",
+              // `h-full` and the cap do different jobs; both are load-bearing. At
+              // rest --popup-height is `auto`, so the percentage is indefinite and
+              // only the cap bounds the viewport, which is what engages the
+              // overflow-y below. Mid-swap it is a definite px that transitions,
+              // and the percentage tracks it. Without that the viewport snaps to
+              // the incoming content's height on frame one, because Base UI takes
+              // the outgoing content out of flow with position:absolute, and
+              // overflow-clip cuts its extra rows instead of letting them fade.
+              // No `max-w`: `w-full` resolves against the popup's already-capped
+              // content box, so the width bound is inherited for free.
+              "relative h-full max-h-(--available-height) w-full overflow-clip p-1 [--viewport-padding:0.25rem]",
               "not-data-transitioning:overflow-y-auto",
               // Content width
               "**:data-current:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
               "**:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-padding))]",
-              // Content base state and transitions
-              "**:data-current:translate-x-0 **:data-current:opacity-100",
-              "**:data-previous:translate-x-0 **:data-previous:opacity-100",
-              "**:data-current:transition-[translate,opacity,filter] **:data-current:duration-[350ms,175ms,350ms] **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              "**:data-previous:transition-[translate,opacity,filter] **:data-previous:duration-[350ms,175ms,350ms] **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
-              // Direction-aware slide animations for incoming content
-              "data-[activation-direction~=left]:**:data-current:data-starting-style:-translate-x-1/2",
-              "data-[activation-direction~=left]:**:data-current:data-starting-style:opacity-0",
-              "data-[activation-direction~=right]:**:data-current:data-starting-style:translate-x-1/2",
-              "data-[activation-direction~=right]:**:data-current:data-starting-style:opacity-0",
-              // Direction-aware slide animations for outgoing content
-              "data-[activation-direction~=left]:**:data-previous:data-ending-style:translate-x-1/2",
-              "data-[activation-direction~=left]:**:data-previous:data-ending-style:opacity-0",
-              "data-[activation-direction~=right]:**:data-previous:data-ending-style:-translate-x-1/2",
-              "data-[activation-direction~=right]:**:data-previous:data-ending-style:opacity-0",
-              // Blur effects during transitions
-              "**:data-current:data-starting-style:blur-[4px]",
-              "**:data-current:data-ending-style:blur-[4px]",
-              "**:data-previous:data-starting-style:blur-[4px]",
-              "**:data-previous:data-ending-style:blur-[4px]",
-
+              // Non-directional crossfade, matching Popover: the two halves
+              // dissolve in place and both recede to 0.96, so the swap reads
+              // the same whichever trigger you came from and the popup's own
+              // width/height morph carries the movement.
+              "**:data-current:scale-100 **:data-current:opacity-100",
+              "**:data-previous:scale-100 **:data-previous:opacity-100",
+              "**:data-current:transition-[scale,opacity] **:data-current:duration-150 **:data-current:ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "**:data-previous:transition-[scale,opacity] **:data-previous:duration-150 **:data-previous:ease-[cubic-bezier(0.22,1,0.36,1)]",
+              "**:data-current:data-starting-style:scale-[0.96] **:data-current:data-starting-style:opacity-0",
+              "**:data-previous:data-ending-style:scale-[0.96] **:data-previous:data-ending-style:opacity-0",
+              // Value-matched to the popup's guard above so one policy governs the
+              // subtree. Targets the content: the viewport has no transitions of
+              // its own and transition-property does not inherit.
+              "[[data-instant=trigger-change]_&_[data-current]]:transition-none [[data-instant=trigger-change]_&_[data-previous]]:transition-none",
               "motion-reduce:**:data-current:transition-none motion-reduce:**:data-previous:transition-none",
             )}
           >
@@ -160,7 +177,7 @@ function DropdownMenuItem({
   return (
     <BaseMenu.Item
       data-slot="dropdown-menu-item"
-      data-inset={inset}
+      data-inset={inset || undefined}
       data-variant={variant}
       className={cn(
         "data-highlighted:bg-surface-hover data-highlighted:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:data-highlighted:bg-destructive/20 data-[variant=destructive]:data-highlighted:text-destructive-foreground data-[variant=destructive]:*:[svg]:text-destructive! data-highlighted:data-[variant=destructive]:*:[svg]:text-destructive-foreground! [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -194,7 +211,10 @@ function DropdownMenuSeparator({
   return (
     <BaseMenu.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("bg-border -mx-1 my-1 h-px", className)}
+      // Inset to the item label, not the popup edge: mx-2.5 clears the
+      // viewport's p-1 plus the item's px-2.5, so the rule starts where the
+      // text does instead of running into the popup's rounded corners.
+      className={cn("bg-border mx-2.5 my-1 h-px", className)}
       {...props}
     />
   );
@@ -210,9 +230,9 @@ function DropdownMenuLabel({
   return (
     <div
       data-slot="dropdown-menu-label"
-      data-inset={inset}
+      data-inset={inset || undefined}
       className={cn(
-        "px-2.5 py-1.5 text-xs font-medium data-[inset]:pl-8",
+        "px-2.5 py-1.5 text-xs font-medium data-inset:pl-8",
         className,
       )}
       {...props}
@@ -230,9 +250,9 @@ function DropdownMenuGroupLabel({
   return (
     <BaseMenu.GroupLabel
       data-slot="dropdown-menu-group-label"
-      data-inset={inset}
+      data-inset={inset || undefined}
       className={cn(
-        "px-2.5 py-1.5 text-xs font-medium data-[inset]:pl-8",
+        "px-2.5 py-1.5 text-xs font-medium data-inset:pl-8",
         className,
       )}
       {...props}
@@ -244,24 +264,68 @@ function DropdownMenuCheckboxItem({
   className,
   children,
   checked,
+  inset,
+  indicator = "check",
+  switchColor = "primary",
+  switchShape = "circle",
+  switchSize = "xs",
+  switchMotion = "default",
   ...props
-}: React.ComponentProps<typeof BaseMenu.CheckboxItem>) {
+}: React.ComponentProps<typeof BaseMenu.CheckboxItem> & {
+  inset?: boolean;
+  /** Which indicator sits in the right-hand column. `"switch"` is visual only — the item keeps the `menuitemcheckbox` role. */
+  indicator?: "check" | "switch";
+  /** Checked track colour, when `indicator="switch"`. */
+  switchColor?: SwitchVisualProps["color"];
+  /** Thumb silhouette, when `indicator="switch"`. */
+  switchShape?: SwitchVisualProps["shape"];
+  /** Thumb size, when `indicator="switch"`. Defaults to `xs`, which matches the row's text. */
+  switchSize?: SwitchVisualProps["size"];
+  /** How the thumb travels, when `indicator="switch"`. */
+  switchMotion?: SwitchVisualProps["motion"];
+}) {
   return (
     <BaseMenu.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
+      data-inset={inset || undefined}
+      data-indicator={indicator}
       className={cn(
-        "data-highlighted:bg-surface-hover data-highlighted:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-md py-1.5 pr-2.5 pl-8 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        toggleItemClasses,
+        indicator === "switch"
+          ? "grid-cols-[1fr_auto] gap-3"
+          : "grid-cols-[1fr_1rem] gap-2",
         className,
       )}
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <BaseMenu.CheckboxItemIndicator keepMounted>
-          <CheckmarkIcon className="size-4" />
-        </BaseMenu.CheckboxItemIndicator>
+      <span className="col-start-1 flex min-w-0 items-center gap-2">
+        {children}
       </span>
-      {children}
+      {indicator === "switch" ? (
+        // Visual only: the row carries the role and the click target, so a real
+        // Switch here would nest a focusable control inside a menuitemcheckbox.
+        // Base UI's indicator supplies the aria-hidden.
+        <SwitchVisual
+          color={switchColor}
+          shape={switchShape}
+          size={switchSize}
+          motion={switchMotion}
+          className="col-start-2"
+          render={<BaseMenu.CheckboxItemIndicator keepMounted />}
+        />
+      ) : (
+        <BaseMenu.CheckboxItemIndicator
+          keepMounted
+          className="col-start-2 flex items-center justify-center"
+        >
+          <HugeiconsIcon
+            icon={tickIcon}
+            strokeWidth={2.5}
+            className={cn("size-4", checkmarkClasses)}
+          />
+        </BaseMenu.CheckboxItemIndicator>
+      )}
     </BaseMenu.CheckboxItem>
   );
 }
@@ -277,24 +341,31 @@ function DropdownMenuRadioGroup({
 function DropdownMenuRadioItem({
   className,
   children,
+  inset,
   ...props
-}: React.ComponentProps<typeof BaseMenu.RadioItem>) {
+}: React.ComponentProps<typeof BaseMenu.RadioItem> & {
+  inset?: boolean;
+}) {
   return (
     <BaseMenu.RadioItem
       data-slot="dropdown-menu-radio-item"
-      className={cn(
-        "data-highlighted:bg-surface-hover data-highlighted:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-md py-1.5 pr-2.5 pl-8 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className,
-      )}
+      data-inset={inset || undefined}
+      className={cn(toggleItemClasses, "grid-cols-[1fr_1rem] gap-2", className)}
       {...props}
     >
-      <span className="bg-accent pointer-events-none absolute left-2 flex size-3.5 items-center justify-center overflow-clip rounded-full">
-        <BaseMenu.RadioItemIndicator
-          keepMounted
-          className="bg-primary before:bg-primary size-full rounded-full transition-[opacity,transform] duration-150 before:absolute before:inset-0 before:origin-center before:rounded-full before:bg-white before:transition-[scale] before:duration-250 before:content-[''] data-checked:before:scale-50 data-ending-style:opacity-0 data-starting-style:opacity-0 data-unchecked:opacity-0"
-        ></BaseMenu.RadioItemIndicator>
+      <span className="col-start-1 flex min-w-0 items-center gap-2">
+        {children}
       </span>
-      {children}
+      <BaseMenu.RadioItemIndicator
+        keepMounted
+        className="col-start-2 flex items-center justify-center"
+      >
+        <HugeiconsIcon
+          icon={tickIcon}
+          strokeWidth={2.5}
+          className={cn("size-4", checkmarkClasses)}
+        />
+      </BaseMenu.RadioItemIndicator>
     </BaseMenu.RadioItem>
   );
 }
@@ -309,7 +380,7 @@ function DropdownMenuLinkItem({
   return (
     <BaseMenu.LinkItem
       data-slot="dropdown-menu-link-item"
-      data-inset={inset}
+      data-inset={inset || undefined}
       className={cn(
         "data-highlighted:bg-surface-hover data-highlighted:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm no-underline outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-60 data-inset:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
@@ -321,7 +392,7 @@ function DropdownMenuLinkItem({
 
 function DropdownMenuSub({
   ...props
-}: React.ComponentProps<typeof BaseMenu.Root>) {
+}: React.ComponentProps<typeof BaseMenu.SubmenuRoot>) {
   return <BaseMenu.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />;
 }
 
@@ -338,7 +409,7 @@ function DropdownMenuSubTrigger({
   return (
     <BaseMenu.SubmenuTrigger
       data-slot="dropdown-menu-sub-trigger"
-      data-inset={inset}
+      data-inset={inset || undefined}
       delay={delay}
       closeDelay={closeDelay}
       className={cn(
@@ -360,7 +431,10 @@ function DropdownMenuSubTrigger({
 function DropdownMenuSubContent({
   className,
   children,
-  sideOffset = 0,
+  // 8px, not 0: the positioner anchors to the sub-trigger, which sits 4px
+  // inside the parent popup because of its p-1. A 0 offset therefore overlaps
+  // the parent's edge by 4px; 8 leaves a 4px gap, matching Menubar.
+  sideOffset = 8,
   align = "start",
   alignOffset,
   level = 5,
@@ -381,7 +455,7 @@ function DropdownMenuSubContent({
   return (
     <DropdownMenuPortal>
       <DropdownMenuPositioner
-        className="z-50 max-h-(--available-height)"
+        className="z-50 max-h-(--available-height) max-w-(--available-width)"
         sideOffset={sideOffset}
         align={align}
         alignOffset={alignOffset ?? defaultAlignOffset}
@@ -390,7 +464,7 @@ function DropdownMenuSubContent({
           data-slot="dropdown-menu-content"
           data-level={level}
           className={cn(
-            "text-popover-foreground relative min-w-[12rem] overflow-hidden rounded-xl",
+            "text-popover-foreground relative max-h-(--available-height) max-w-(--available-width) min-w-[12rem] overflow-hidden rounded-xl outline-none",
             solidSurface(level, shadowLevel),
             "ease-out-expo origin-(--transform-origin) transition-[transform,scale,opacity] duration-100",
             "data-starting-style:scale-95 data-starting-style:opacity-0",
@@ -400,7 +474,13 @@ function DropdownMenuSubContent({
           )}
           {...props}
         >
-          <div className="p-1">{children}</div>
+          {/* The popup above is capped at --available-height and clips, so the
+            scroll container has to live here or a tall submenu silently
+            truncates. The main popups get this from Menu.Viewport; a
+            submenu has none, so it is spelled out. */}
+          <div className="max-h-(--available-height) overflow-x-hidden overflow-y-auto p-1">
+            {children}
+          </div>
         </BaseMenu.Popup>
       </DropdownMenuPositioner>
     </DropdownMenuPortal>
