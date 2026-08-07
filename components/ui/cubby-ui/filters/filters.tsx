@@ -25,7 +25,8 @@ import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { useControllableState } from "@/hooks/cubby-ui/use-controllable-state";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
 
 import {
   FilterChipContext,

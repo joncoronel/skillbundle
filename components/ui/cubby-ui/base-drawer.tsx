@@ -22,11 +22,9 @@ import {
 } from "@/components/ui/cubby-ui/switch/switch";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowRight01Icon,
-  Cancel01Icon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 
 // The tick draws itself in on check. `pathLength` restates the path as 1 unit
 // long, so the dash values are fractions of the stroke and survive a HugeIcons

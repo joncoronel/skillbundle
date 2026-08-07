@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Calendar01Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
+import Calendar01Icon from "@hugeicons/core-free-icons/Calendar01Icon";
+import UnfoldMoreIcon from "@hugeicons/core-free-icons/UnfoldMoreIcon";
 export interface DateRangePickerProps {
   value?: DateRange;
   onSelect?: (range: DateRange | undefined) => void;
@@ -148,12 +149,20 @@ export function DateRangePicker({
             disabled={disabled}
           >
             <span className="flex w-full items-center">
-              <HugeiconsIcon icon={Calendar01Icon} className="mr-2 size-4"  strokeWidth={2} />
+              <HugeiconsIcon
+                icon={Calendar01Icon}
+                className="mr-2 size-4"
+                strokeWidth={2}
+              />
               <span className={cn(!value?.from && "text-muted-foreground")}>
                 {formatDateRange()}
               </span>
             </span>
-            <HugeiconsIcon icon={UnfoldMoreIcon} className="ml-2 size-4 shrink-0 opacity-50"  strokeWidth={2} />
+            <HugeiconsIcon
+              icon={UnfoldMoreIcon}
+              className="ml-2 size-4 shrink-0 opacity-50"
+              strokeWidth={2}
+            />
           </Button>
         )}
       />

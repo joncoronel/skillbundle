@@ -7,14 +7,12 @@ import { Toast } from "@base-ui/react/toast";
 import { AnimatePresence } from "motion/react";
 import { motion } from "motion/react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  AlertCircleIcon,
-  Alert02Icon,
-  CheckmarkCircle02Icon,
-  InformationCircleIcon,
-  Loading03Icon,
-  Cancel01Icon,
-} from "@hugeicons/core-free-icons";
+import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
+import Alert02Icon from "@hugeicons/core-free-icons/Alert02Icon";
+import CheckmarkCircle02Icon from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
+import InformationCircleIcon from "@hugeicons/core-free-icons/InformationCircleIcon";
+import Loading03Icon from "@hugeicons/core-free-icons/Loading03Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
@@ -1401,11 +1399,7 @@ function GroupedSingleItemContent({
         )}
         {showCloseButton && item.action && (
           <div className="mt-1.5">
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={item.action.onClick}
-            >
+            <Button variant="outline" size="xs" onClick={item.action.onClick}>
               {item.action.label}
             </Button>
           </div>

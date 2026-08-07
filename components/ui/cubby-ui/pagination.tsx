@@ -4,7 +4,9 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/cubby-ui/button";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import ArrowLeft01Icon from "@hugeicons/core-free-icons/ArrowLeft01Icon";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import MoreHorizontalIcon from "@hugeicons/core-free-icons/MoreHorizontalIcon";
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
@@ -127,7 +129,7 @@ function PaginationEllipsis({
       className={cn("flex size-10 items-center justify-center", className)}
       {...props}
     >
-      <HugeiconsIcon icon={MoreHorizontalIcon} size={16}  strokeWidth={2} />
+      <HugeiconsIcon icon={MoreHorizontalIcon} size={16} strokeWidth={2} />
       <span className="sr-only">More pages</span>
     </span>
   );

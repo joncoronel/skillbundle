@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 interface DialogConfigContextValue {
   modal: boolean | "trap-focus";
 }

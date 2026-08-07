@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/cubby-ui/scroll-area/scroll-area";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 const AutocompleteRoot = BaseAutocomplete.Root;
 
 function AutocompleteInput({

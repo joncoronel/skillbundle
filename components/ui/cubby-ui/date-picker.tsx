@@ -12,7 +12,8 @@ import {
 import { cn } from "@/lib/utils";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Calendar01Icon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
+import Calendar01Icon from "@hugeicons/core-free-icons/Calendar01Icon";
+import UnfoldMoreIcon from "@hugeicons/core-free-icons/UnfoldMoreIcon";
 export interface DatePickerProps {
   value?: Date;
   onSelect?: (date: Date | undefined) => void;
@@ -43,14 +44,22 @@ export function DatePicker({
             disabled={disabled}
           >
             <span className="flex w-full items-center">
-              <HugeiconsIcon icon={Calendar01Icon} className="mr-2 size-4"  strokeWidth={2} />
+              <HugeiconsIcon
+                icon={Calendar01Icon}
+                className="mr-2 size-4"
+                strokeWidth={2}
+              />
               {value ? (
                 <span>{dayjs(value).format(format)}</span>
               ) : (
                 <span className="text-muted-foreground">{placeholder}</span>
               )}
             </span>
-            <HugeiconsIcon icon={UnfoldMoreIcon} className="ml-2 size-4 shrink-0 opacity-50"  strokeWidth={2} />
+            <HugeiconsIcon
+              icon={UnfoldMoreIcon}
+              className="ml-2 size-4 shrink-0 opacity-50"
+              strokeWidth={2}
+            />
           </Button>
         )}
       />

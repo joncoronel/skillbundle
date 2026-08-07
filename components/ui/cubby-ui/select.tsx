@@ -4,15 +4,16 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  UnfoldMoreIcon,
-  Tick02Icon,
-  ArrowDown01Icon,
-  ArrowUp01Icon,
-} from "@hugeicons/core-free-icons";
+import UnfoldMoreIcon from "@hugeicons/core-free-icons/UnfoldMoreIcon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import ArrowUp01Icon from "@hugeicons/core-free-icons/ArrowUp01Icon";
 
 import { cn } from "@/lib/utils";
-import { elevatedSurface, type SurfaceLevel } from "@/lib/cubby-ui/elevated";
+import {
+  elevatedSurface,
+  type SurfaceLevel,
+} from "@/lib/cubby-ui/elevated";
 import {
   ScrollArea,
   type ScrollAreaProps,

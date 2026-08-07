@@ -87,8 +87,8 @@ function ToggleGroup({
                 // rules merge into one that frames the control and divides the cells.
                 ATTACHED_CELL,
                 CELL_RADIUS[size],
-                "data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:border-s-0 data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:rounded-s-none data-[orientation=horizontal]:**:data-[slot=toggle]:not-last:rounded-e-none",
-                "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:border-t-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:rounded-t-none data-[orientation=vertical]:**:data-[slot=toggle]:not-last:rounded-b-none",
+                "data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:rounded-s-none data-[orientation=horizontal]:**:data-[slot=toggle]:not-first:border-s-0 data-[orientation=horizontal]:**:data-[slot=toggle]:not-last:rounded-e-none",
+                "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:rounded-t-none data-[orientation=vertical]:**:data-[slot=toggle]:not-first:border-t-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-last:rounded-b-none",
               ]
             : [
                 // Solid / ghost: one connected track; cells flatten and inherit the track's
@@ -101,12 +101,12 @@ function ToggleGroup({
                 // ghost: no container chrome.
                 ATTACHED_CELL,
                 "**:data-[slot=toggle]:rounded-none **:data-[slot=toggle]:border-0",
-                "**:data-[slot=toggle]:first:rounded-s-[inherit] **:data-[slot=toggle]:last:rounded-e-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-s-none data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-e-none data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-t-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-b-[inherit]",
+                "**:data-[slot=toggle]:first:rounded-s-[inherit] **:data-[slot=toggle]:last:rounded-e-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-s-none data-[orientation=vertical]:**:data-[slot=toggle]:first:rounded-t-[inherit] data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-e-none data-[orientation=vertical]:**:data-[slot=toggle]:last:rounded-b-[inherit]",
                 separators && [
                   // Floating inset rule at 50% that tracks its cell's ink.
-                  "**:data-[slot=toggle]:not-first:before:pointer-events-none **:data-[slot=toggle]:not-first:before:absolute **:data-[slot=toggle]:not-first:before:z-0 **:data-[slot=toggle]:not-first:before:content-[''] **:data-[slot=toggle]:not-first:before:rounded-full **:data-[slot=toggle]:not-first:before:bg-current **:data-[slot=toggle]:not-first:before:opacity-15",
-                  "**:data-[slot=toggle]:not-first:before:top-1/4 **:data-[slot=toggle]:not-first:before:start-0 **:data-[slot=toggle]:not-first:before:h-1/2 **:data-[slot=toggle]:not-first:before:w-px",
-                  "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:top-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:inset-s-1/4 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:h-px data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:w-1/2",
+                  "**:data-[slot=toggle]:not-first:before:pointer-events-none **:data-[slot=toggle]:not-first:before:absolute **:data-[slot=toggle]:not-first:before:z-0 **:data-[slot=toggle]:not-first:before:rounded-full **:data-[slot=toggle]:not-first:before:bg-current **:data-[slot=toggle]:not-first:before:opacity-15 **:data-[slot=toggle]:not-first:before:content-['']",
+                  "**:data-[slot=toggle]:not-first:before:start-0 **:data-[slot=toggle]:not-first:before:top-1/4 **:data-[slot=toggle]:not-first:before:h-1/2 **:data-[slot=toggle]:not-first:before:w-px",
+                  "data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:inset-s-1/4 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:top-0 data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:h-px data-[orientation=vertical]:**:data-[slot=toggle]:not-first:before:w-1/2",
                 ],
               ],
         className,
