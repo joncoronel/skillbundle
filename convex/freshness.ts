@@ -175,16 +175,37 @@ export const applySweepResult = internalMutation({
         githubBlobSha: v.string(),
       }),
     ),
+    /**
+     * Skills whose SHA is being recorded for the FIRST time — store it, but do
+     * not queue a re-fetch. Their content is already current; all that was
+     * missing is the baseline to compare against next time.
+     *
+     * This has to be a separate list rather than a flag on `changed`, because
+     * the first version of this function set `needsContentFetch: true` for
+     * every entry it was handed. The caller's comment claimed baselines were
+     * "recorded without flagging" but no mechanism existed to do that, so the
+     * first production run queued a re-fetch of ~7,000 unchanged skills.
+     */
+    baselined: v.array(
+      v.object({
+        skillDocId: v.id("skills"),
+        githubBlobSha: v.string(),
+      }),
+    ),
   },
   returns: v.number(),
-  handler: async (ctx, { repo, branch, etag, changed }) => {
-    for (const { skillDocId, githubBlobSha } of changed) {
+  handler: async (ctx, { repo, branch, etag, changed, baselined }) => {
+    const write = async (
+      skillDocId: Id<"skills">,
+      githubBlobSha: string,
+      flag: boolean,
+    ) => {
       const skill = await ctx.db.get(skillDocId);
-      if (!skill) continue;
+      if (!skill) return;
 
       await ctx.db.patch(skillDocId, {
-        needsContentFetch: true,
         githubBlobSha,
+        ...(flag && { needsContentFetch: true }),
       });
 
       const summary = await ctx.db
@@ -193,11 +214,14 @@ export const applySweepResult = internalMutation({
         .unique();
       if (summary) {
         await ctx.db.patch(summary._id, {
-          needsContentFetch: true,
           githubBlobSha,
+          ...(flag && { needsContentFetch: true }),
         });
       }
-    }
+    };
+
+    for (const b of baselined) await write(b.skillDocId, b.githubBlobSha, false);
+    for (const c of changed) await write(c.skillDocId, c.githubBlobSha, true);
 
     const existing = await ctx.db
       .query("repoSweepState")
@@ -224,11 +248,25 @@ export const applySweepResult = internalMutation({
 export const sweepRepoFreshness = internalAction({
   args: {
     cursor: v.optional(v.string()),
+    /**
+     * How far into the CURRENT page's repo list this invocation should start.
+     *
+     * A page of summaries usually yields more repos than one batch can process,
+     * and the leftovers have to be resumed without advancing the cursor. An
+     * earlier version re-chained on the same cursor with no offset, so every
+     * invocation re-sliced the same first 40 repos and the walk never moved past
+     * page one — an infinite loop that kept re-requesting the same trees from
+     * GitHub. Caught in production on the first real run.
+     */
+    repoOffset: v.optional(v.number()),
     reposSwept: v.optional(v.number()),
     skillsFlagged: v.optional(v.number()),
   },
   returns: v.null(),
-  handler: async (ctx, { cursor, reposSwept = 0, skillsFlagged = 0 }) => {
+  handler: async (
+    ctx,
+    { cursor, repoOffset = 0, reposSwept = 0, skillsFlagged = 0 },
+  ) => {
     const page: {
       repos: Array<{ source: string; skills: SweepSkill[] }>;
       nextCursor: string;
@@ -237,7 +275,7 @@ export const sweepRepoFreshness = internalAction({
       cursor: cursor ?? undefined,
     });
 
-    const batch = page.repos.slice(0, REPOS_PER_BATCH);
+    const batch = page.repos.slice(repoOffset, repoOffset + REPOS_PER_BATCH);
     let swept = reposSwept;
     let flagged = skillsFlagged;
 
@@ -273,20 +311,30 @@ export const sweepRepoFreshness = internalAction({
 
       const { shaByPath } = indexSkillMds(tree.entries);
 
-      const changed = repo.skills.flatMap((s) => {
+      const changed: Array<{ skillDocId: Id<"skills">; githubBlobSha: string }> =
+        [];
+      const baselined: Array<{
+        skillDocId: Id<"skills">;
+        githubBlobSha: string;
+      }> = [];
+
+      for (const s of repo.skills) {
         const current = shaByPath.get(s.path);
         // Not in the tree: the file moved or was deleted. Discovery owns
         // re-resolving that, so don't guess at it here.
-        if (!current) return [];
-        // No stored SHA yet (discovery hasn't run since the field was added).
-        // Record it without flagging — flagging every such row on the first
-        // sweep would queue a full-catalog re-fetch for no reason.
+        if (!current) continue;
+        // No stored SHA yet. Record the baseline WITHOUT queueing a re-fetch —
+        // the content is already current, only the comparison point was
+        // missing. These go in their own list precisely because putting them
+        // in `changed` is what caused the first production run to queue ~7,000
+        // pointless downloads.
         if (!s.githubBlobSha) {
-          return [{ skillDocId: s.skillDocId, githubBlobSha: current }];
+          baselined.push({ skillDocId: s.skillDocId, githubBlobSha: current });
+          continue;
         }
-        if (s.githubBlobSha === current) return [];
-        return [{ skillDocId: s.skillDocId, githubBlobSha: current }];
-      });
+        if (s.githubBlobSha === current) continue;
+        changed.push({ skillDocId: s.skillDocId, githubBlobSha: current });
+      }
 
       const wrote: number = await ctx.runMutation(
         internal.freshness.applySweepResult,
@@ -295,19 +343,30 @@ export const sweepRepoFreshness = internalAction({
           branch: tree.branch,
           etag: tree.etag,
           changed,
+          baselined,
         },
       );
       flagged += wrote;
     }
 
-    const remaining = page.repos.length - batch.length;
-    if (remaining > 0 || !page.isDone) {
-      await ctx.scheduler.runAfter(1_000, internal.freshness.sweepRepoFreshness, {
-        // Only advance the cursor once this page's repos are all consumed.
-        cursor: remaining > 0 ? (cursor ?? undefined) : page.nextCursor,
-        reposSwept: swept,
-        skillsFlagged: flagged,
-      });
+    // Where the NEXT invocation resumes. Advancing the offset is what makes a
+    // same-cursor re-chain make progress instead of re-slicing the same repos.
+    const nextOffset = repoOffset + batch.length;
+    const pageHasMore = nextOffset < page.repos.length;
+
+    if (pageHasMore || !page.isDone) {
+      await ctx.scheduler.runAfter(
+        1_000,
+        internal.freshness.sweepRepoFreshness,
+        {
+          // Hold the cursor while finishing this page; advance it only once the
+          // page's repos are exhausted, resetting the offset with it.
+          cursor: pageHasMore ? (cursor ?? undefined) : page.nextCursor,
+          repoOffset: pageHasMore ? nextOffset : 0,
+          reposSwept: swept,
+          skillsFlagged: flagged,
+        },
+      );
       return null;
     }
 

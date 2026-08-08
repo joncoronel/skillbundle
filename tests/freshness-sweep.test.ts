@@ -177,12 +177,112 @@ describe("listSummariesForSweep", () => {
       skillMdUrl: raw("SKILL.md"),
     });
 
-    // Eligible, so the sweep can RECORD its SHA — but the sweep must not flag
-    // it for re-fetch on that basis. That distinction is the difference between
-    // a quiet first run and a full-catalog re-download.
+    // Eligible, so the sweep can RECORD its SHA. Whether recording also FLAGS
+    // it is a separate question this query cannot answer — see the baselined
+    // tests below, which is where the real guarantee lives.
     const { repos } = await sweepRows(t);
     expect(repos).toHaveLength(1);
     expect(repos[0].skills[0].githubBlobSha).toBeUndefined();
+  });
+});
+
+describe("baselining a first-seen SHA", () => {
+  /**
+   * The bug this exists for, caught in production on the first real run.
+   *
+   * The caller classified a skill with no stored SHA as "record it without
+   * flagging", but handed it to `applySweepResult` in the same `changed` list
+   * as genuine movers — and that function flagged everything it was given.
+   * Result: ~7,000 unchanged skills queued for re-download on the first sweep,
+   * the exact over-flagging failure the sweep exists to avoid.
+   *
+   * The test that was supposed to cover this only asserted that the query
+   * RETURNED such a skill. It never followed through to the write, so the two
+   * halves could disagree and both look tested.
+   */
+  test("records the SHA without queueing a re-fetch", async () => {
+    const t = makeTest();
+    const skillDocId = await seedSkill(t, {
+      source: "owner/repo",
+      skillId: "first-seen",
+      skillMdUrl: raw("SKILL.md"),
+    });
+
+    await t.mutation(internal.freshness.applySweepResult, {
+      repo: "owner/repo",
+      branch: "main",
+      etag: 'W/"abc"',
+      changed: [],
+      baselined: [{ skillDocId, githubBlobSha: "sha-1" }],
+    });
+
+    const { skill, summary } = await t.run(async (ctx) => ({
+      skill: await ctx.db.get(skillDocId),
+      summary: await ctx.db
+        .query("skillSummaries")
+        .withIndex("by_skillDocId", (q) => q.eq("skillDocId", skillDocId))
+        .unique(),
+    }));
+
+    // The SHA lands, on both rows...
+    expect(skill!.githubBlobSha).toBe("sha-1");
+    expect(summary!.githubBlobSha).toBe("sha-1");
+    // ...and nothing is queued. This assertion is the whole point.
+    expect(skill!.needsContentFetch).toBeUndefined();
+    expect(summary!.needsContentFetch).toBeUndefined();
+  });
+
+  test("is not counted as a flagged skill", async () => {
+    const t = makeTest();
+    const skillDocId = await seedSkill(t, {
+      source: "owner/repo",
+      skillId: "first-seen",
+      skillMdUrl: raw("SKILL.md"),
+    });
+
+    // The return value drives the "N skills flagged" log line and whether the
+    // sweep bothers chaining into the content pipeline at all. Counting
+    // baselines here would kick off a full re-fetch chain for no reason.
+    const wrote = await t.mutation(internal.freshness.applySweepResult, {
+      repo: "owner/repo",
+      branch: "main",
+      etag: undefined,
+      changed: [],
+      baselined: [{ skillDocId, githubBlobSha: "sha-1" }],
+    });
+    expect(wrote).toBe(0);
+  });
+
+  test("baselines and real changes can be applied in the same call", async () => {
+    const t = makeTest();
+    const mover = await seedSkill(t, {
+      source: "owner/repo",
+      skillId: "mover",
+      skillMdUrl: raw("a/SKILL.md"),
+      githubBlobSha: "old",
+    });
+    const fresh = await seedSkill(t, {
+      source: "owner/repo",
+      skillId: "fresh",
+      skillMdUrl: raw("b/SKILL.md"),
+    });
+
+    // One repo routinely contains both, so the split has to survive being
+    // mixed rather than only working when a batch is homogeneous.
+    await t.mutation(internal.freshness.applySweepResult, {
+      repo: "owner/repo",
+      branch: "main",
+      etag: undefined,
+      changed: [{ skillDocId: mover, githubBlobSha: "new" }],
+      baselined: [{ skillDocId: fresh, githubBlobSha: "sha-1" }],
+    });
+
+    const rows = await t.run(async (ctx) => ({
+      mover: await ctx.db.get(mover),
+      fresh: await ctx.db.get(fresh),
+    }));
+    expect(rows.mover!.needsContentFetch).toBe(true);
+    expect(rows.fresh!.needsContentFetch).toBeUndefined();
   });
 });
 
@@ -201,6 +301,7 @@ describe("applySweepResult", () => {
       branch: "main",
       etag: 'W/"abc"',
       changed: [{ skillDocId, githubBlobSha: "new" }],
+        baselined: [],
     });
 
     const { skill, summary } = await t.run(async (ctx) => ({
@@ -226,6 +327,7 @@ describe("applySweepResult", () => {
       branch: "main",
       etag: 'W/"abc"',
       changed: [],
+        baselined: [],
     });
 
     const state = await t.run(async (ctx) =>
@@ -244,6 +346,7 @@ describe("applySweepResult", () => {
         branch: "main",
         etag,
         changed: [],
+        baselined: [],
       });
     }
 
@@ -268,6 +371,7 @@ describe("applySweepResult", () => {
       branch: "main",
       etag: 'W/"abc"',
       changed: [],
+        baselined: [],
     });
 
     // The common case by a wide margin. Touching rows here would make the sweep
@@ -292,6 +396,7 @@ describe("applySweepResult", () => {
         branch: "main",
         etag: undefined,
         changed: [{ skillDocId, githubBlobSha: "new" }],
+        baselined: [],
       }),
     ).resolves.toBe(1);
   });
