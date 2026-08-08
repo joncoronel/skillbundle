@@ -40,7 +40,6 @@ import {
   TextAlignLeftIcon,
   Alert02Icon,
   ViewOffSlashIcon,
-  CheckmarkBadge02Icon,
   Cancel01Icon,
   ArrowTurnBackwardIcon,
 } from "@hugeicons/core-free-icons";
@@ -55,6 +54,7 @@ import {
 } from "@/components/ui/cubby-ui/table";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border/marching-border";
+import { OfficialBadge } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -118,7 +118,7 @@ const IS_FAULT: Record<Condition, boolean> = {
 
 const CONDITION_META: Record<
   Condition,
-  { icon: IconSvgElement; label: string; tone: string }
+  { icon: IconSvgElement | null; label: string; tone: string }
 > = {
   audit: {
     icon: SecurityWarningIcon,
@@ -145,8 +145,14 @@ const CONDITION_META: Record<
     label: "Content edited",
     tone: "text-muted-foreground",
   },
+  // No glyph. `CheckmarkBadge02Icon` was here and it is the Official mark's
+  // icon (skill-badges.tsx) — the same shape meaning "verified first-party" in
+  // the catalog and "nothing wrong" here. Beyond the collision, a marker on
+  // every healthy row is not a marker: the column exists so the eye lands on
+  // the few rows that need something, and forty checkmarks defeat that. Steady
+  // reads as an empty cell, and says "Steady" to a screen reader.
   steady: {
-    icon: CheckmarkBadge02Icon,
+    icon: null,
     label: "Steady",
     tone: "text-muted-foreground",
   },
@@ -392,7 +398,7 @@ function RegisterRowView<S extends RegisterSkill>({
             )}
           />
         ) : null}
-        {markerHidden ? null : (
+        {markerHidden || !meta.icon ? null : (
           <HugeiconsIcon
             icon={meta.icon}
             strokeWidth={2}
@@ -411,6 +417,16 @@ function RegisterRowView<S extends RegisterSkill>({
           )}
         >
           {skill.name}
+          {/* Before the chevron, not after. The chevron is the "open this"
+              affordance and has to be the last thing in the row's reading
+              order — with the badge behind it, it read as an arrow pointing at
+              the badge rather than out of the row. */}
+          {skill.curatedOwner ? (
+            <OfficialBadge
+              owner={skill.curatedOwner}
+              className="[&_svg]:size-3.5"
+            />
+          ) : null}
           <HugeiconsIcon
             icon={ArrowRight01Icon}
             strokeWidth={2}
