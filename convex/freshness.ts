@@ -381,3 +381,74 @@ export const sweepRepoFreshness = internalAction({
     return null;
   },
 });
+
+/**
+ * One-command health check for the sweep. Read-only.
+ *
+ *   npx convex run freshness:sweepHealth --prod
+ *
+ * Exists because "the repo counter stopped going up" is NOT evidence the sweep
+ * finished — on the first production run it meant the chain was stuck in a
+ * loop, and a counter cannot tell those apart. These are the numbers that can.
+ *
+ * What a healthy run looks like the morning after:
+ *
+ *   reposSweptInLast25h  ≈ reposTracked          (the whole catalog was walked)
+ *   skillsFlagged        low hundreds            (only genuine changes)
+ *   skillsMissingSha     ≈ 0                     (baselines are recorded)
+ *   versionsLast24h      roughly matches flagged
+ *   versionsBaseline     ≈ 0 after the first day (bootstrapping is done)
+ *
+ * The one to watch is `skillsFlagged`. Thousands means over-flagging is back —
+ * either baselining regressed or SHAs are not persisting — and that turns a
+ * cost saving into a daily full-catalog re-download.
+ */
+export const sweepHealth = internalQuery({
+  args: {},
+  returns: v.object({
+    reposTracked: v.number(),
+    reposSweptInLast25h: v.number(),
+    oldestSweepHoursAgo: v.union(v.number(), v.null()),
+    skillsFlagged: v.number(),
+    skillsFlaggedCapped: v.boolean(),
+    versionsLast24h: v.number(),
+    versionsBaseline: v.number(),
+    versionsRealChange: v.number(),
+  }),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    // Bounded so this stays a cheap query no matter how badly the sweep
+    // misbehaves — hitting the cap is itself the signal.
+    const CAP = 3000;
+
+    const repos = await ctx.db.query("repoSweepState").collect();
+    const recentCutoff = now - 25 * 60 * 60 * 1000;
+    const oldest = repos.reduce<number | null>(
+      (min, r) => (min === null || r.sweptAt < min ? r.sweptAt : min),
+      null,
+    );
+
+    const flagged = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_needsContentFetch", (q) => q.eq("needsContentFetch", true))
+      .take(CAP);
+
+    const versions = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_changedAt", (q) => q.gt("changedAt", now - DAY))
+      .take(CAP);
+
+    return {
+      reposTracked: repos.length,
+      reposSweptInLast25h: repos.filter((r) => r.sweptAt >= recentCutoff).length,
+      oldestSweepHoursAgo:
+        oldest === null ? null : Math.round((now - oldest) / 3_600_000),
+      skillsFlagged: flagged.length,
+      skillsFlaggedCapped: flagged.length === CAP,
+      versionsLast24h: versions.length,
+      versionsBaseline: versions.filter((r) => r.isBaseline).length,
+      versionsRealChange: versions.filter((r) => !r.isBaseline).length,
+    };
+  },
+});
