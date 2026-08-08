@@ -10,33 +10,35 @@ web
 
 **Primary audience:** Developers, indie hackers, and vibe coders who use AI coding assistants (Cursor, Claude Code, etc.) and want to customize their skill setup.
 
-**Situation on arrival:** A mix of discovery-driven exploration ("what skills exist for my stack?") and task-driven efficiency ("I know what I want, let me bundle it and get the install command"). The experience should reward both modes — browsing should feel interesting, and the action path should feel fast.
+**Situation on arrival:** Two modes. Discovery-driven ("what skills exist for my stack?") and maintenance-driven ("has anything changed in the skills I already rely on?"). The first brings people in; the second brings them back. Browsing should feel interesting, and the maintenance answer should be immediate and calm.
 
-**Job to be done:** Find the right AI coding skills for their tech stack, save them into reusable bundles, and share or install them with minimal friction.
+**Job to be done:** Find the right AI coding skills for their tech stack, keep track of the ones they depend on, and find out when those skills change underneath them.
 
-**Access model:** A mostly-signed-out public directory. Browsing, searching, viewing catalog pages, and opening shared bundles need no account. Auth is only required to save and manage your own bundles.
+**Access model:** A mostly-signed-out public directory. Browsing, searching, viewing catalog pages, and opening shared watchlists need no account. Auth is required to watch skills and receive alerts.
 
 ## Product Purpose
 
-SkillBundle is the one-stop shop for the AI coding-skill lifecycle: discovery, comparison, curation, and distribution in one place. It syncs the public skills.sh ecosystem into its own catalog, then lets developers browse (leaderboards, per-owner/per-repo pages, a curated "official" directory), discover (full-text search, or paste a GitHub repo to get skills matched to that codebase), compare similar skills side by side, and bundle the ones they want into a shareable set with a single install command.
+SkillBundle is a catalog of AI coding-assistant skills and a monitor for the ones you depend on. It syncs the public skills.sh ecosystem into its own catalog, then lets developers browse (leaderboards, per-owner/per-repo pages, a curated "official" directory), discover (full-text search, or paste a GitHub repo to get skills matched to that codebase), compare skills side by side, and watch the ones they install so they find out when those skills change, break, or become unsafe.
 
-Success looks like a developer going from "what should I install?" to a copyable install command — for a curated, shareable bundle — with minimal friction, whether they arrived to browse or to act.
+Success looks like a developer knowing the state of every skill they rely on without ever having to check manually.
 
 ## Positioning
 
-The differentiator is the pairing of two things a neighboring product could not truthfully copy at once:
+The differentiator rests on one fact about the ecosystem and one fact about who can act on it:
 
-1. **The full lifecycle in one place.** Discovery → comparison → curation → distribution, ending in a single install command. Individual features (search, leaderboards, repo matching) exist elsewhere in pieces; SkillBundle owns the whole arc.
-2. **The bundle as the primitive.** A named, shareable, forkable, starrable set of skills is the unit of value. It is what gets curated, passed around, installed, and ranked — the thing the whole lifecycle produces and the reason to return.
+1. **Skills are dependencies that nobody versions.** Once installed, a skill's file is decoupled from its source: it carries no repo, no install command, and often no version. It changes upstream silently. Worst of all, its *description* can change, and the description is what decides when an agent invokes the skill, so an edit by a stranger changes your agent's behavior without touching your code. Nothing in the ecosystem tracks this. SkillBundle does.
 
-Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to that actual codebase) is a strong supporting mechanism, but it serves the lifecycle rather than defining it.
+2. **The registry cannot credibly do it.** A registry's metric is installs going up. It has no incentive to tell you a skill got worse, went stale, overlaps something you already have, or should be removed. Independent monitoring is trustworthy precisely because it is not the vendor, the same way dependency auditing has never lived inside the package registry.
+
+Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to that actual codebase) is the strongest discovery mechanism and feeds the watchlist, but monitoring is what earns the return visit.
 
 ## Operating Context
 
-- **Upstream dependency:** the public skills.sh ecosystem and its v1 API, plus GitHub (Tree walks for SKILL.md discovery, repo-identity resolution). skills.sh only exposes a point-in-time install count, so history and momentum are reconstructed from daily snapshots.
-- **Distribution target:** the `npx skills add owner/repo --skill …` CLI. Bundle install commands are generated by grouping skills per source repo to minimize commands (joined with `&&` across repos).
+- **Upstream dependency:** the public skills.sh ecosystem and its v1 API, plus GitHub (Tree walks for SKILL.md discovery, repo-identity resolution). skills.sh only exposes a point-in-time install count, so history and momentum are reconstructed from daily snapshots. Note that skills.sh is operated by Vercel and its API is moving toward Vercel OIDC authentication; see TODO.md for the token-relay fallback.
+- **Distribution target:** the `npx skills add owner/repo --skill …` CLI. Watchlist install commands are still generated by grouping skills per source repo (joined with `&&` across repos), but reproducing a setup is now a secondary action rather than the payoff.
 - **Data pipeline:** skills enter via all-time leaderboard sync, the curated/official set, or admin manual add, then are enriched (content, install history, leaderboard ranks, security audits, embeddings, duplicate detection) on a daily Convex cron chain. Skills unseen for 30 days are soft-delisted.
-- **Sharing surface:** bundles unfurl in chat apps via OG tags; public bundles are ranked by stars/copies and surfaced on `/explore`.
+- **Change capture:** every detected change to a skill writes a version record holding a unified patch plus the raw SKILL.md, so any two versions can be compared and any single version read in full. Measured change rate is roughly 27% of the catalog per month.
+- **Sharing surface:** watchlists are unlisted by default with an optional share link, and unfurl in chat apps via OG tags. There is no public directory of user watchlists and no social ranking.
 
 ## Capabilities and Constraints
 
@@ -44,37 +46,41 @@ Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to
 
 - Browse leaderboards (Popular / Trending / Hot), owner and repo catalog pages, and a curated `/official` directory.
 - Full-text search over skill names, with an "Official only" filter.
-- GitHub repo analysis — paste a repo, get matched skills (Pro-gated; free demo allowlist so anyone can try it on `shadcn-ui/ui`).
+- GitHub repo analysis: paste a repo, get matched skills (Pro-gated; free demo allowlist so anyone can try it on `shadcn-ui/ui`).
 - Side-by-side skill comparison (`/compare`).
 - Skill detail: rendered SKILL.md, install count + rank, installs-over-time chart with momentum, security audit panel, copyable install command, variants across forks/aliases.
-- Bundles: create/manage (auth), public or private (link-only via share token), stars/forks/copy counts, featured placement.
+- Version history per skill: a timeline of changes, adjacent diffs, arbitrary version comparison, and full historical content.
+- Watchlists (auth): watch a skill in one click, group watched skills into named lists, unlisted by default with a toggleable share link, copyable install command retained.
+- Change monitoring and alerts across every watched skill, with a cross-watchlist feed as the signed-in home.
 
 **Constraints / undecided:**
 
-- Search is currently single-field Convex full-text (prefix, no typo tolerance). A move to a faceted engine (filters + sorting + typo tolerance) is under consideration, weighed against sync-pipeline and hosting cost — not decided.
-- Billing is Polar (Merchant of Record) via `@convex-dev/polar`, gated behind a master `FEATURE_GATING_ENABLED` switch. Everything is free at launch until there is traction. Pro is $8/mo / $72/yr covering repo auto-detection, unlimited + private bundles, and bundle analytics.
-- Explicitly out of scope: skill generation/editing, automatic compatibility detection between skills, team workspaces / shared team bundles, and a native mobile app.
+- Search is currently single-field Convex full-text (prefix, no typo tolerance). A move to a faceted engine is under consideration, weighed against sync-pipeline and hosting cost. Not decided.
+- Billing is Polar (Merchant of Record) via `@convex-dev/polar`, gated behind a master `FEATURE_GATING_ENABLED` switch. Everything is free at launch until there is traction. The intended shape is free = a capped number of watched skills on a weekly digest; Pro = unlimited watching, immediate alerts on security regressions, full version history, and repo auto-detection.
+- Removed deliberately: the public `/explore` directory of community bundles, and with it stars, forks, copy counts, and featured placement. Half-dead social signal reads as abandonment, so it is gone rather than dormant.
+- Explicitly out of scope: skill generation/editing, automatic compatibility detection between skills, team workspaces / shared team lists, reading a user's locally installed skills, and a native mobile app.
 
 ## Brand Commitments
 
-- **Name:** SkillBundle.
-- **Voice — three words:** Sharp, fast, inviting. It feels like a well-made developer tool that respects your time: confident and opinionated, never tentative or generic, with a cleverness to the interactions and copy that reads as built by someone who actually uses these tools. It moves quickly, communicates clearly, and does not waste space on ceremony.
-- **Emotional goals:** confidence (I'm picking the right skills), efficiency (this is fast), and a quiet sense of delight (this feels good to use).
-- **Identity constraint:** the Geist Pixel display face is a deliberate, binding identity choice — keep it. (Full visual world — palette, typography, references — lives in DESIGN.md, which is the authority for it.)
+- **Name:** SkillBundle. The name predates the shift toward monitoring; the install command still exists, so it is not inaccurate, but it describes the second-most-important thing the product does.
+- **Voice, three words:** Sharp, fast, inviting. It feels like a well-made developer tool that respects your time: confident and opinionated, never tentative or generic, with a cleverness to the interactions and copy that reads as built by someone who actually uses these tools. It moves quickly, communicates clearly, and does not waste space on ceremony.
+- **Emotional goals:** confidence (I know the state of my setup), efficiency (this is fast), and a quiet sense of delight (this feels good to use). Alerts must add vigilance without adding anxiety.
+- **Identity constraint:** the Geist Pixel display face is a deliberate, binding identity choice. Keep it. (Full visual world, palette, typography, references live in DESIGN.md, which is the authority for it.)
 
 ## Evidence on Hand
 
-- **Real catalog data:** live skills synced daily from skills.sh (content, install counts, ranks), real security audit verdicts per provider, and real repo fingerprints — not mock data.
-- **Real social data:** actual bundles with stars, forks, and copy counts; featured bundles for editorial placement.
-- **No fabricated proof:** there are no invented testimonials, customer logos, benchmarks, or press. Future work must not fabricate them; use the real catalog and bundle activity as the proof.
+- **Real catalog data:** live skills synced daily from skills.sh (content, install counts, ranks), real security audit verdicts from named providers, and real repo fingerprints. Not mock data.
+- **Real change history:** actual upstream edits to real skills, with real diffs and real dates. This is the proof that the problem exists, and it accumulates on its own.
+- **No fabricated proof:** there are no invented testimonials, customer logos, benchmarks, or press, and no social counts to lean on now that they are removed. Use the catalog and the change record as the proof.
 
 ## Product Principles
 
-1. **Serve both the browser and the doer.** Reward exploration and make the action path short; match density to the user's intent at each moment (dense grids and comparisons where developers expect them, room to breathe in hero, onboarding, and empty states).
-2. **Speed is a feature.** Fast in fact and in feel — immediate interactions, no layout shift, a short path from discovery to install command.
-3. **The bundle is the payoff.** Every surface should make it easy to move skills toward a bundle and out as a shareable install command.
-4. **Show real signal, honestly.** Lean on real install counts, ranks, audits, and bundle activity as proof; never invent it, and flag when a skill's install may fail.
-5. **Confidence without arrogance.** A clear point of view that still welcomes people in — invite them, then get out of their way.
+1. **Serve both the browser and the maintainer.** Reward exploration, and make the maintenance answer immediate. Match density to intent: dense grids and comparisons where developers expect them, room to breathe in hero, onboarding, and empty states.
+2. **Speed is a feature.** Fast in fact and in feel. Immediate interactions, no layout shift, a short path from discovery to watching.
+3. **Answer "is anything wrong?" before "what do I have?"** Every watchlist surface leads with state, not inventory. When nothing is wrong it should say so plainly and get out of the way, because healthy is the common case and it should feel calm rather than empty.
+4. **Earn every alert.** A monitoring product dies from noise, not from missing an event. Rank by consequence: a security regression outranks a description change, which outranks a body edit. Suppress mass events rather than firing thousands of notifications when the pipeline hiccups.
+5. **Show real signal, honestly.** Lean on real install counts, ranks, audits, and change history as proof. Never invent it, and flag when a skill's install may fail.
+6. **Confidence without arrogance.** A clear point of view that still welcomes people in. Invite them, then get out of their way.
 
 ## Accessibility & Inclusion
 
@@ -82,4 +88,5 @@ Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to
 - Sufficient contrast (4.5:1 normal text, 3:1 large text and UI components).
 - Support reduced-motion preferences with `prefers-reduced-motion` alternatives for all animations.
 - Fully keyboard navigable; screen-reader friendly (semantic HTML, proper ARIA, meaningful alt text).
-- Color is never the sole indicator of state — pair with icons, text, or patterns.
+- Color is never the sole indicator of state; pair with icons, text, or patterns.
+- Diffs must not use color alone to distinguish additions from removals.

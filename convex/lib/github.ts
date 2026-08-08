@@ -130,6 +130,24 @@ export async function resolveRepoIdentity(
 export interface TreeEntry {
   path: string;
   type: string; // "blob" | "tree"
+  /**
+   * Git's object id for this blob: SHA-1 over `"blob " + size + "\0" + contents`.
+   *
+   * GitHub returns this for every entry in the recursive tree response, so it
+   * costs nothing extra — we were already receiving it and discarding it by
+   * declaring a narrower type than the payload. It is the cheap way to learn
+   * that a SKILL.md moved: one conditional tree call per REPO answers for every
+   * skill in it, instead of downloading each file to hash it.
+   *
+   * NOT comparable to `skills.syncHash`, which is our SHA-256 over the raw text.
+   * Different algorithm, different preimage. Store and compare it only against
+   * itself.
+   *
+   * Optional because `indexSkillMds` and the placement planners accept
+   * hand-built entry lists in tests, and because a `tree`-type entry's sha
+   * identifies a subtree rather than a file.
+   */
+  sha?: string;
 }
 
 export interface TreeResult {
@@ -280,12 +298,23 @@ export function parseSkillMdName(body: string): string | null {
  * name — both callers depend on the identical keying, which is why this is one
  * function and not two.
  */
-export function indexSkillMds(entries: { type: string; path: string }[]): {
+export function indexSkillMds(
+  entries: { type: string; path: string; sha?: string }[],
+): {
   candidates: string[];
   byDir: Map<string, string>;
+  /**
+   * path → git blob sha, for the SKILL.md candidates only.
+   *
+   * Kept as a third return rather than folded into `byDir` so the existing two
+   * keep their exact shapes — both callers depend on that identical keying, and
+   * this function is one function specifically to stop them drifting.
+   */
+  shaByPath: Map<string, string>;
 } {
   const candidates: string[] = [];
   const byDir = new Map<string, string>();
+  const shaByPath = new Map<string, string>();
   for (const entry of entries) {
     if (entry.type !== "blob") continue;
     const lower = entry.path.toLowerCase();
@@ -293,7 +322,8 @@ export function indexSkillMds(entries: { type: string; path: string }[]): {
     candidates.push(entry.path);
     const parts = entry.path.split("/");
     if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
+    if (entry.sha) shaByPath.set(entry.path, entry.sha);
   }
-  return { candidates, byDir };
+  return { candidates, byDir, shaByPath };
 }
 

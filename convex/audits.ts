@@ -168,6 +168,17 @@ export const writeAuditResult = internalMutation({
           worstStatus: args.worstStatus,
           worstRiskLevel: args.worstRiskLevel,
           fetchedAt: now,
+          // Preserve the verdict we are about to overwrite, but only when the
+          // verdict itself moved. `skillAuditsRowChanged` is also true for a
+          // provider re-stamping `auditedAt` with an identical verdict, and
+          // capturing on that would leave previousWorstStatus === worstStatus,
+          // which reads as a change to anything downstream and would fire an
+          // alert for nothing happening.
+          ...(worstStatusChanged && {
+            previousWorstStatus: existing.worstStatus,
+            previousWorstRiskLevel: existing.worstRiskLevel,
+            worstStatusChangedAt: now,
+          }),
         });
       } else {
         // Nothing moved — just stamp the poll time so we know we checked.

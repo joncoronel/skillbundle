@@ -49,6 +49,7 @@ import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
 import type * as recommendations from "../recommendations.js";
 import type * as reconcile from "../reconcile.js";
+import type * as skillVersions from "../skillVersions.js";
 import type * as skills from "../skills.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as throttle from "../throttle.js";
@@ -103,6 +104,7 @@ declare const fullApi: ApiFromModules<{
   polar: typeof polar;
   recommendations: typeof recommendations;
   reconcile: typeof reconcile;
+  skillVersions: typeof skillVersions;
   skills: typeof skills;
   subscriptions: typeof subscriptions;
   throttle: typeof throttle;

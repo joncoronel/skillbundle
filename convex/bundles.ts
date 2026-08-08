@@ -369,6 +369,99 @@ export const revokeShareToken = mutation({
   },
 });
 
+/**
+ * Stamp "the owner has now seen this bundle", clearing its unread state.
+ *
+ * Fires on page view, which is why every rejection path is a SILENT no-op rather
+ * than a throw. The bundle page is reachable signed-out and via share link, so
+ * throwing would spray console errors across entirely legitimate visits — and
+ * there is nothing to protect here anyway: the worst a bad call can do is fail
+ * to record a timestamp.
+ *
+ * Owner-only by design. A share-link visitor marking someone else's bundle read
+ * would silently destroy that person's unread state from across the internet.
+ */
+export const markBundleViewed = mutation({
+  args: { bundleId: v.id("bundles") },
+  returns: v.null(),
+  handler: async (ctx, { bundleId }) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+
+    const bundle = await ctx.db.get(bundleId);
+    if (!bundle || bundle.userId !== user._id) return null;
+
+    await ctx.db.patch(bundleId, { lastViewedAt: Date.now() });
+    return null;
+  },
+});
+
+/**
+ * Per-bundle "how much changed since you last looked", for the dashboard.
+ *
+ * Reads `skillSummaries` (~200 B) rather than `skills` (~13 KB) purely for this:
+ * a user with ten bundles of twenty skills would otherwise pull ~2.6 MB to
+ * render a set of small badges. `contentUpdatedAt` is mirrored onto the summary
+ * to make that possible.
+ *
+ * Counts SKILLS, not changes. "3 skills changed" is the number a person can act
+ * on; "7 changes across 3 skills" is trivia that makes the badge worse.
+ */
+export const listUnreadCounts = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      bundleId: v.id("bundles"),
+      urlId: v.string(),
+      name: v.string(),
+      unreadCount: v.number(),
+      skillCount: v.number(),
+    }),
+  ),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return [];
+
+    const bundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+
+    return await Promise.all(
+      bundles.map(async (bundle) => {
+        const summaries = await Promise.all(
+          bundle.skills.map((s) =>
+            ctx.db
+              .query("skillSummaries")
+              .withIndex("by_source_skillId", (q) =>
+                q.eq("source", s.source).eq("skillId", s.skillId),
+              )
+              .unique(),
+          ),
+        );
+
+        let unreadCount = 0;
+        bundle.skills.forEach((s, i) => {
+          const updated = summaries[i]?.contentUpdatedAt;
+          // Same baseline rule as the bundle page: later of the last visit and
+          // the moment this skill joined, so a freshly added skill does not
+          // arrive pre-marked unread by its own back catalogue.
+          const baseline = Math.max(bundle.lastViewedAt ?? 0, s.addedAt ?? 0);
+          if (updated !== undefined && updated > baseline) unreadCount++;
+        });
+
+        return {
+          bundleId: bundle._id,
+          urlId: bundle.urlId,
+          name: bundle.name,
+          unreadCount,
+          skillCount: bundle.skills.length,
+        };
+      }),
+    );
+  },
+});
+
 export const deleteBundle = mutation({
   args: { bundleId: v.id("bundles") },
   handler: async (ctx, { bundleId }) => {
@@ -466,6 +559,22 @@ export const getByUrlId = query({
               contentUpdatedAt !== undefined &&
               contentUpdatedAt > addedAt;
 
+            // "New since you last opened this bundle", the read-state half of
+            // the same signal. Distinct from `updatedSinceAdded` above, which is
+            // permanent ("this moved at some point after you added it") — this
+            // one clears when the owner actually looks.
+            //
+            // The baseline takes whichever is LATER of the last visit and the
+            // moment the skill joined the bundle. Using lastViewedAt alone would
+            // present a skill added five minutes ago as carrying months of
+            // unread history; using addedAt alone would never clear.
+            const unreadSince = Math.max(
+              bundle.lastViewedAt ?? 0,
+              addedAt ?? 0,
+            );
+            const changedSinceViewed =
+              contentUpdatedAt !== undefined && contentUpdatedAt > unreadSince;
+
             return {
               source: s.source,
               skillId: s.skillId,
@@ -473,6 +582,7 @@ export const getByUrlId = query({
               description: skill?.description,
               installs: skill?.installs ?? 0,
               updatedSinceAdded,
+              changedSinceViewed,
               contentUpdatedAt: skill?.contentUpdatedAt,
               createdAt: skill?._creationTime,
               isDelisted: skill?.isDelisted ?? false,
@@ -537,6 +647,9 @@ export const getByUrlId = query({
       skills: skillsWithData,
       creatorName: creator?.name ?? "Anonymous",
       isOwner,
+      // Owner-only: a share-link visitor has no read state of their own here,
+      // and exposing the owner's would leak when they last looked at it.
+      lastViewedAt: isOwner ? bundle.lastViewedAt : undefined,
       shareToken: isOwner ? bundle.shareToken : undefined,
       forkedFrom: forkedFromInfo,
       copyCount: stats?.copyCount ?? 0,
