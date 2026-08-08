@@ -21,7 +21,7 @@
  * server-side, which is why none is stored — see the schema comment on
  * `skillVersions`.
  */
-import { query } from "./_generated/server";
+import { internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -68,13 +68,23 @@ type FeedKind = "audit" | "description" | "content";
  * exists — roughly 60% of production shares a single `contentUpdatedAt` from
  * the launch backfill.
  *
- * Measured baseline: ~27% of the catalog changes per month, so a normal day is
- * on the order of 25–30 real changes across all 3,000 skills. `MASS_CHANGE_
- * THRESHOLD` sits an order of magnitude above that.
+ * THE THRESHOLD BELOW IS KNOWN WRONG AND AWAITING A MEASUREMENT. It was set at
+ * "10x a normal day" against a catalog assumed to be ~3,000 skills. Prod is
+ * ~15k (Aug 2026), and at the measured ~27.5%/month change rate that puts a
+ * normal day near 140 real changes — so 250 is under 2x, which is a tripwire,
+ * not a breaker. `MASS_CHANGE_SCAN_LIMIT` has the same problem from the other
+ * side: the index walks oldest-first, so once a day exceeds 1,000 rows the
+ * count never reaches the end of it and silently undercounts.
+ *
+ * Run `changeRateHealth` (bottom of this file) against prod and set both from
+ * what it reports. Do not re-derive either from catalog size.
  *
  * The check is deliberately not free, so it is gated behind `SUPPRESSION_MIN_
  * ROWS`: a user with three changed skills needs no circuit breaker regardless
  * of what the catalog did, so the common load never pays for the scan.
+ * SUPPRESSION_MIN_ROWS is a cost gate, not a considered number — and 8 rows can
+ * be one event (an author pushing one repo), which a per-event count would see
+ * and a per-row count cannot.
  */
 const SUPPRESSION_MIN_ROWS = 8;
 const MASS_CHANGE_THRESHOLD = 250;
@@ -580,5 +590,77 @@ export const listChangesForBundle = query({
     );
 
     return rows.filter((r): r is NonNullable<typeof r> => r !== null);
+  },
+});
+
+/**
+ * Diagnostic: what does a normal day of change actually look like?
+ *
+ * `MASS_CHANGE_THRESHOLD` is only meaningful as a multiple of the ordinary
+ * daily rate, and the ordinary daily rate had been INFERRED from catalog size
+ * rather than measured. That inference was wrong twice (this file said 3,000
+ * skills; `schema.ts` said 9.5k; prod is ~15k), which is reason enough to stop
+ * inferring it. Read-only, no auth, safe to run against prod:
+ *
+ *   npx convex run skillVersions:changeRateHealth --prod
+ *
+ * `realChanges` is the number the breaker actually counts. Compare it to
+ * MASS_CHANGE_THRESHOLD: anything under ~5x is not a circuit breaker, it is a
+ * tripwire that fires on busy Tuesdays.
+ *
+ * `capped` matters independently. The breaker reads at most
+ * MASS_CHANGE_SCAN_LIMIT rows and, because the index walks oldest-first, a
+ * capped window means it never sees the end of the day at all — it undercounts
+ * exactly when the count matters most.
+ */
+export const changeRateHealth = internalQuery({
+  args: { days: v.optional(v.number()) },
+  returns: v.object({
+    windows: v.array(
+      v.object({
+        endingDaysAgo: v.number(),
+        rows: v.number(),
+        realChanges: v.number(),
+        baselines: v.number(),
+        capped: v.boolean(),
+      }),
+    ),
+    threshold: v.number(),
+    scanLimit: v.number(),
+  }),
+  handler: async (ctx, { days }) => {
+    // Deliberately bounded per window. Rows carry descriptions inline, so an
+    // unbounded scan across a week would hit Convex's per-query byte ceiling
+    // and fail rather than report.
+    const PER_WINDOW_CAP = 4000;
+    const windowCount = Math.min(Math.max(days ?? 7, 1), 14);
+    const now = Date.now();
+    const windows = [];
+
+    for (let i = 0; i < windowCount; i++) {
+      const end = now - i * MASS_CHANGE_WINDOW_MS;
+      const start = end - MASS_CHANGE_WINDOW_MS;
+      const rows = await ctx.db
+        .query("skillVersions")
+        .withIndex("by_changedAt", (q) =>
+          q.gte("changedAt", start).lt("changedAt", end),
+        )
+        .take(PER_WINDOW_CAP);
+
+      const baselines = rows.filter((r) => r.isBaseline).length;
+      windows.push({
+        endingDaysAgo: i,
+        rows: rows.length,
+        realChanges: rows.length - baselines,
+        baselines,
+        capped: rows.length === PER_WINDOW_CAP,
+      });
+    }
+
+    return {
+      windows,
+      threshold: MASS_CHANGE_THRESHOLD,
+      scanLimit: MASS_CHANGE_SCAN_LIMIT,
+    };
   },
 });
