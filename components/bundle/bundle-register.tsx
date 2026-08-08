@@ -377,6 +377,16 @@ function RegisterRowView<S extends RegisterSkill>({
         // simply invisible. The file's own comment flags the same trap for its
         // selected-row style.
         status && "relative",
+        // Opaque hover, overriding the Table component's `bg-surface-hover`.
+        // That token is a ~6% translucent tint meant to LAYER on a surface, but
+        // the component sets it as the cell's `background-color`, which
+        // REPLACES the opaque cell fill — so the 6% composites over the
+        // container's `bg-muted` instead of over the cell. The row then went
+        // darker than the header strip in light mode and lighter than it in
+        // dark, which is backwards in both. (bundle-card.tsx documents the same
+        // trap for cards.) `surface-2` sits between the cell and the header
+        // strip in both themes by construction.
+        !status && "hover:[&>td]:bg-surface-2!",
         isRemoved &&
           "[&>td]:bg-danger/[0.10]! hover:[&>td]:bg-danger/[0.15]!",
         isAdded &&
