@@ -54,6 +54,7 @@ import {
   TableRow,
 } from "@/components/ui/cubby-ui/table";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border/marching-border";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -369,13 +370,28 @@ function RegisterRowView<S extends RegisterSkill>({
         // outranks anything set on the `<tr>`, so a row-level background is
         // simply invisible. The file's own comment flags the same trap for its
         // selected-row style.
+        status && "relative",
         isRemoved &&
-          "[&>td]:bg-danger/[0.13]! hover:[&>td]:bg-danger/[0.18]!",
+          "[&>td]:bg-danger/[0.10]! hover:[&>td]:bg-danger/[0.15]!",
         isAdded &&
-          "[&>td]:bg-success/[0.13]! hover:[&>td]:bg-success/[0.18]!",
+          "[&>td]:bg-success/[0.10]! hover:[&>td]:bg-success/[0.15]!",
       )}
     >
       <TableCell className="align-top">
+        {status ? (
+          <MarchingBorder
+            // `dash`/`gap` are percentages of the PERIMETER, so the card-sized
+            // defaults stretch into long strokes around a wide, short table
+            // row. Scaled down to keep the ant size roughly constant.
+            dash={0.35}
+            gap={0.3}
+            strokeWidth={1.5}
+            className={cn(
+              "rounded-none",
+              isRemoved ? "text-destructive/55" : "text-success-foreground/55",
+            )}
+          />
+        ) : null}
         {markerHidden ? null : (
           <HugeiconsIcon
             icon={meta.icon}
@@ -402,7 +418,11 @@ function RegisterRowView<S extends RegisterSkill>({
             className="size-3.5 text-muted-foreground/50 transition-transform duration-100 group-hover:translate-x-0.5 motion-reduce:transition-none"
           />
         </Link>
-        {status ? <StagedChip status={status} /> : null}
+        {status ? (
+          <span className="sr-only">
+            {status === "removed" ? "Removing" : "Adding"}
+          </span>
+        ) : null}
         <p className="truncate font-mono text-xs text-muted-foreground">
           {skill.source}
         </p>
@@ -531,31 +551,6 @@ function ConditionDetail({
         </p>
       ) : null}
     </div>
-  );
-}
-
-/**
- * "Removing" / "Adding", stated in a word.
- *
- * The row tint and the strikethrough both say this too, but neither says it in
- * language: a tint is colour alone, and a strikethrough is easy to miss at a
- * glance down a long list. This is the accessible carrier, and the reason the
- * tint can stay quiet enough not to shout at a reader mid-edit.
- */
-function StagedChip({ status }: { status: "added" | "removed" }) {
-  return (
-    <span
-      className={cn(
-        // No pill. The tinted row already frames this; a filled chip on top of
-        // it was two backgrounds saying one thing, and it out-weighted the
-        // skill name it was annotating. Same bare mono-label treatment the
-        // audit column uses.
-        "ml-2 align-middle font-mono text-eyebrow font-medium uppercase tracking-eyebrow",
-        status === "removed" ? "text-danger-foreground" : "text-success-foreground",
-      )}
-    >
-      {status === "removed" ? "Removing" : "Adding"}
-    </span>
   );
 }
 
