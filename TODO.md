@@ -33,7 +33,7 @@ PRODUCT.md, which was rewritten for this.
   track "skills you care about", not "skills you have".
 - **Set-aware search and semantic dedup: dropped.** Both depended on the above.
 - **One-link model.** `isPublic` collapses into a single toggleable share link.
-  Agreed, NOT yet built (see below).
+  Built.
 
 **Shipped and committed** (`66fd930`, `4c08500`, `c7a2a00`):
 
@@ -49,6 +49,16 @@ PRODUCT.md, which was rewritten for this.
 - Skill-page History UI (`components/skill-history.tsx`) on `@pierre/diffs`.
 - Daily per-repo freshness sweep (`convex/freshness.ts`) plus tiered content
   cadences: GitHub 30-day backstop behind the sweep, well-known daily.
+- Social teardown: `/explore`, stars, forks, copy counts, featured placement,
+  public-bundle search, and the `bundleStats` / `bundleStars` tables are gone.
+- Bundle page rebuilt as a register (`components/bundle/bundle-register.tsx`):
+  one row per skill, ordered by consequence, with a tally above it and install
+  demoted to a disclosure. `markBundleViewed` is wired back on, which the
+  register earns by showing each change inline.
+- One-link model: `isPublic` plus a separate `shareToken` URL collapsed to one
+  link and one switch. Bundles are created closed and the Pro gate on privacy is
+  gone. `listChangesForBundle` and the dashboard feed share one
+  `resolveSkillChange` so their ranking cannot drift.
 - Dashboard change panel (`app/(main)/dashboard/change-feed.tsx`). The feed
   query now carries audit regressions as first-class rows, ranks by consequence
   ahead of recency, drops baselines (no previous content = no diff to show), and
@@ -78,22 +88,7 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Remaining work, in order:**
 
-1. **Bundle page redesign, one-link migration, and social teardown as ONE
-   piece** — they are tangled. The page moves from a static manifest to an
-   Operate-mode status surface: lead with aggregate health, then what needs
-   attention, then skills with their state, with the install command demoted to
-   a secondary action (it stays — reproducing a setup is still a real job).
-   **Re-wire `markBundleViewed` on this page as part of it.** It is written and
-   currently uncalled: firing it on the manifest cleared the dashboard panel for
-   skills the page never actually showed you. Once the page surfaces the changes,
-   opening it is a genuine acknowledgement and the call becomes correct. Consider
-   per-skill read state at the same time, since a page that shows each change
-   individually invites dismissing them individually.
-   The teardown removes `/explore`, stars, forks, copy counts, `featuredAt`,
-   `listExplore`, `toggleStar`, `forkBundle`, `setBundleFeatured`,
-   `listFeatured`, and the `bundleStats` / `bundleStars` tables. Half-dead
-   social reads as abandonment, which is why it goes rather than lingering.
-2. **Pricing rewrite.** Two of the four Pro bullets (private bundles, unlimited
+1. **Pricing rewrite.** Two of the four Pro bullets (private bundles, unlimited
    bundles) are now free on skills.sh. Intended shape is in PRODUCT.md: free =
    capped watched skills on a weekly digest, Pro = unlimited + immediate
    security-regression surfacing + full version history.
@@ -113,6 +108,24 @@ That ambiguity is exactly how the loop bug survived being watched.
   silently under-reports while the archive backfills. It self-corrects as
   skills accumulate a second version, so it needs no work — just do not read
   an empty feed as proof that nothing changed until roughly Sep 2026.
+- **Two-step field removal, half done.** `bundles.shareToken` and
+  `bundles.featuredAt` are dead but still declared in `schema.ts` as
+  deprecated-optional, because Convex refuses a schema that drops a field while
+  any row still carries it. `migrateOneLinkModel` strips them and has run on
+  dev. After it runs on prod, delete both fields from `schema.ts` and deploy
+  again. Until then the schema carries two fields nothing reads.
+- **Edit mode is still the old card grid.** Entering it swaps the register for
+  the same-size `SkillCardView` grid the redesign exists to refuse, carrying no
+  condition state — so the tally and register now step aside while editing
+  rather than posing a question the staging grid cannot answer. Rebuilding
+  `EditableSkillSection` around register rows was deliberately out of scope.
+- **The register does not scale past ~30 rows yet.** No virtualisation, no way
+  to collapse the steady tail, and the sticky column strip scrolls away because
+  the table's scroll area has no height cap. A healthy 40-skill bundle is 40
+  rows of em-dashes. Fine at current bundle sizes; revisit if that changes.
+- A fault row offers no remedy — it links to the skill's detail page but has no
+  "remove from bundle" action, which is the thing you actually want when a
+  skill is delisted or its audit failed.
 - `next.config.ts` carries a Turbopack alias for `@shikijs/themes/horizon-bright`,
   which `@pierre/theming@1.0.1` imports and which exists in no published release
   of that package. Both packages are already at their latest version, so there
