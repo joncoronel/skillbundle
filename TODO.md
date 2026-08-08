@@ -6,6 +6,129 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### skills.sh API auth is moving to Vercel OIDC (build the token relay before the key dies)
+
+Measured Aug 2026. The skills.sh v1 API now rejects unauthenticated requests
+and the docs no longer mention API keys at all:
+
+    GET /api/v1/skills            401 authentication_required
+    GET /api/v1/skills/search     401
+    GET /api/v1/skills/audit/...  200   (enforcement inconsistent, for now)
+
+The 401 body points at a Vercel OIDC token. Our `SKILLS_SH_API_KEY` (`sk_live_`)
+still works as of Aug 2026, so nothing is broken yet, but it is now an
+undocumented mechanism on a first-party API. Treat its removal as a matter of
+when. Emailed skills.sh asking whether keys are being retired; no reply.
+
+**Why this is awkward for us:** the token is minted per-request inside a Vercel
+runtime, and our whole sync runs on Convex crons. Convex cannot get one.
+
+**The migration, when needed (token relay):**
+
+1. A secret-gated route handler on our Vercel app returns
+   `await getVercelOidcToken()` from `@vercel/oidc`.
+2. Convex caches that token and refreshes every ~10h (lifetime is ~12h), or
+   lazily on a 401 from skills.sh.
+3. `authHeaders()` in `convex/lib/skillsApi.ts` sends the cached token.
+
+This works because skills.sh verifies the token the standard way: JWT signature
+against `oidc.vercel.com/[TEAM_SLUG]`'s JWKS, checking issuer / audience /
+`owner:...:project:...:environment:...` subject. There is no check that the
+request originated from Vercel infrastructure, so a relayed token validates.
+
+Rejected alternative: proxying every skills.sh call through a Vercel route. Our
+sync is thousands of staggered per-skill scheduled actions carrying multi-MB
+`files[]` payloads, so that converts one cron chain into thousands of Hobby
+function invocations. The relay costs 2-3 invocations a day and keeps all sync
+bandwidth on Convex.
+
+**Two things to check before building it:**
+
+- Whether OIDC Federation (Settings → OIDC Federation) is available on our
+  Vercel plan at all. This decides whether the plan works; unverified.
+- It moves a bearer credential carrying our team/project identity off Vercel.
+  Scoped to us and attributed to us either way, so not misrepresentation, but
+  keep it in Convex env/table, never log it, keep the relay secret-gated.
+
+**Cheapest insurance, do this before migrating:** make `authHeaders()` prefer
+the key and fall back to a relayed OIDC token on a 401, so the day the key dies
+it is a config flip rather than an outage. Also fix the stale comment at the top
+of `convex/lib/skillsApi.ts`, which still documents a 60 req/min unauthenticated
+tier that no longer exists; a future reader would plan around it.
+
+Strategic note, not just an ops note: skills.sh is Vercel, and OIDC-only auth
+scopes every consumer to a Vercel team and project with `owner_id` /
+`project_id` / `environment` logged per request. Our entire catalog is
+downstream of an API that a competitor controls, meters, and can identify us on.
+That is the backdrop for any decision about what this app should be.
+
+### Embedding-powered catalog features (parked while monitoring is the focus)
+
+Context (Aug 2026): skills.sh launched Packs and their v1 search API now does
+semantic search on multi-word queries, so "we have embeddings and they don't" is
+false. What is still true is that **their embeddings only answer query → skill.
+Nobody uses embeddings for structure**: skill ↔ skill relationships, clustering,
+overlap, mapping. Every idea below lives in that gap, and all of them run over
+the 512-dim `voyage-code-3` vectors already sitting in `skillEmbeddings`.
+
+The pairwise math is already written and calibrated: `cosineSimilarity`
+(`convex/skills.ts:3283`) and the `cosineSimilarityBetween` internalQuery
+(`:3301`), with an empirical threshold table at `:3276-3281` — 0.97+ near-verbatim
+duplicate, 0.90 same topic, 0.70 same category, <0.5 unrelated. Those thresholds
+are the tuning input for everything here.
+
+Deliberately **not** in this list: semantic dedup at catalog scale, and set-aware
+search ("find me an X that doesn't overlap what I have"). Both were considered and
+cut — dedup wasn't wanted, and set-aware search depends on knowing a user's
+installed set, which the dropped lockfile-checkup idea was going to supply.
+
+**1. Similar skills / alternatives on catalog pages.** Every skill detail page
+gets a "related" block of its nearest neighbors. Do NOT run an O(N²) sweep over
+~9.5k skills; instead query each skill's own vector against the existing
+`by_embedding` vector index with a small limit — one cheap call per skill, reusing
+machinery that's already tuned. Store the neighbor list on `skillSummaries` so it
+renders from the slim row. Smallest item here, and it doubles as the SEO play:
+real internal linking across catalog pages, which is the only search angle we have
+against skills.sh (they own the canonical page for every skill and will always win
+the head terms). Also makes `/compare` self-suggesting instead of requiring the
+user to already know what to compare.
+
+**2. Auto-derived topics.** Cluster the catalog's embeddings (k-means or HDBSCAN),
+label each cluster from its centroid-nearest member or a cheap LLM pass over the
+top ~10 descriptions. Batch job, not per request. Worked example from a real
+machine's installed set: `next-cache-components-adoption` +
+`next-cache-components-optimizer` + `next-best-practices` cluster into "Next.js
+caching"; `impeccable` + `baseline-ui` + `building-components` +
+`web-design-guidelines` + `html` + `css-motion-systems` cluster into "frontend
+design". Nobody wrote those categories — they fall out of the vectors.
+
+Why it beats skills.sh: their `/topics` is hand-curated (7 buckets: React,
+Next.js, Design & UI, Mobile, Databases, Testing, Marketing) and covers what
+someone thought to create. Derived topics cover what exists, including emerging
+clusters the week they form. This is also the honest way to close the technology-
+tagging gap described in AGENTS.md, and it would finally populate the
+`technologies` prop on `components/skill-card.tsx` that nothing feeds today.
+
+**3. Ecosystem map.** UMAP/t-SNE the whole catalog from 512 dims to 2, precompute
+offline, render as a static explorable scatter where position means similarity.
+Dense blobs are saturated categories, empty space is unbuilt territory, and
+colouring dots by install count shows where lots of people are building the same
+unwanted thing. Nobody has made a picture of this ecosystem. Honest framing: this
+is marketing and portfolio value, not product value — nobody pays for a map — but
+it is one offline batch job over vectors we already have, and it is the most
+shareable artifact on this list.
+
+**4. Author tools.** Different audience: people writing skills, not installing
+them. Point it at a SKILL.md and get "this overlaps 0.91 with these six existing
+skills," plus whether the description is distinctive enough to trigger reliably
+instead of colliding with something already popular. Vercel serves consumers;
+nobody serves authors, and authors are small, motivated and vocal. Treat as a
+distribution/credibility wedge, not a revenue line.
+
+Sequencing note: #1 is a weekend and improves the catalog whether or not anything
+else lands. #2 is the next-cheapest. #3 any time. #4 is independent of all of them.
+None of these block or are blocked by the monitoring work.
+
 ### Focus rings fail the 3:1 contrast threshold app-wide (design decision)
 
 Measured Jul 2026 while fixing a disabled-button focus ring, then re-measured
