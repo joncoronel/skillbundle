@@ -66,6 +66,12 @@ PRODUCT.md, which was rewritten for this.
   link and one switch. Bundles are created closed and the Pro gate on privacy is
   gone. `listChangesForBundle` and the dashboard feed share one
   `resolveSkillChange` so their ranking cannot drift.
+- Pricing rebuilt as a comparison plate (`app/(main)/pricing/pricing-plate.tsx`)
+  with the tiers re-cut: free covers 25 watched skills, Pro is $5/mo for
+  unlimited watching + repo matching + unlimited GitHub-only adds. The 3-bundle
+  cap is gone (it metered organisation, not dependence) and `maxBundles` is
+  replaced by `maxWatchedSkills`, counted distinct across bundles. Security
+  regressions are free on every plan, permanently.
 - Dashboard change panel (`app/(main)/dashboard/change-feed.tsx`). The feed
   query now carries audit regressions as first-class rows, ranks by consequence
   ahead of recency, drops baselines (no previous content = no diff to show), and
@@ -93,12 +99,9 @@ Why a dedicated check rather than reading a row count: "the counter stopped
 going up" is what a stalled chain looks like AND what a finished one looks like.
 That ambiguity is exactly how the loop bug survived being watched.
 
-**Remaining work, in order:**
+**Remaining work:**
 
-1. **Pricing rewrite.** Two of the four Pro bullets (private bundles, unlimited
-   bundles) are now free on skills.sh. Intended shape is in PRODUCT.md: free =
-   capped watched skills on a weekly digest, Pro = unlimited + immediate
-   security-regression surfacing + full version history.
+*(Nothing outstanding — the pricing rewrite was the last item.)*
 
 **Loose ends worth knowing about:**
 

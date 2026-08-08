@@ -78,6 +78,10 @@ const renameBundleDialogHandle = createDialogHandle();
 export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   const bundle = usePreloadedQuery(preloadedBundle);
   const [editingSkills, setEditingSkills] = useState(false);
+  // Above the `bundle === null` early return below — hooks cannot sit after it
+  // without changing call order between the found and not-found renders.
+  const [installOpen, setInstallOpen] = useState(false);
+  const installPanelId = useId();
   const queryArgs = { urlId };
 
   // Opening the bundle now marks it read, and the register is what earns that:
@@ -148,8 +152,6 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   const skillCount = bundle.skills.length;
   const commandCount = generateInstallCommands(bundle.skills).length;
   const editing = bundle.isOwner && editingSkills;
-  const [installOpen, setInstallOpen] = useState(false);
-  const installPanelId = useId();
   // `changes` streams in after the preloaded bundle — the register renders
   // immediately with every row Steady and settles as the archive answers,
   // rather than holding the whole page behind a second round trip.

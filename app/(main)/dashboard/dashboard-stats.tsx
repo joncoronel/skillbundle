@@ -6,18 +6,24 @@ import { cn } from "@/lib/utils";
 type PlanData = FunctionReturnType<typeof api.plans.currentPlan>;
 
 interface DashboardStatsProps {
-  bundles: unknown[];
+  /** Every bundle's skills, so the distinct count can be derived here. */
+  bundles: Array<{ skills: Array<{ source: string; skillId: string }> }>;
   plan: PlanData["plan"];
   limits: PlanData["limits"];
 }
 
 export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
-  const maxBundles = limits.maxBundles;
-  const hasCap = Number.isFinite(maxBundles);
-  const atCap = hasCap && bundles.length >= maxBundles;
-  const bundlesValue = hasCap
-    ? `${bundles.length}/${maxBundles}`
-    : `${bundles.length}`;
+  // Distinct across bundles, matching what the server meters. Filing one skill
+  // in two lists is organisation, and organising is not what is being counted.
+  const watched = new Set<string>();
+  for (const b of bundles) {
+    for (const s of b.skills) watched.add(`${s.source}::${s.skillId}`);
+  }
+
+  const max = limits.maxWatchedSkills;
+  const hasCap = Number.isFinite(max);
+  const atCap = hasCap && watched.size >= max;
+  const bundlesValue = hasCap ? `${watched.size}/${max}` : `${watched.size}`;
   const planLabel = hasCap
     ? plan === "free"
       ? "Free plan"
@@ -26,7 +32,7 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-      <Metric value={bundlesValue} label="bundles" />
+      <Metric value={bundlesValue} label="skills watched" />
       {planLabel ? (
         <>
           <Separator />

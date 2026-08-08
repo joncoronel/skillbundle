@@ -462,16 +462,15 @@ function CreateBundleView({
   const [creating, setCreating] = useState(false);
   const createBundle = useMutation(api.bundles.createBundle);
 
-  // Preempt the bundle-limit failure: if the user is already at their
-  // plan's max, swap the form for an UpgradeBanner instead of letting
-  // them type a name and only fail at submit time. Mirrors the pattern
-  // in save-bundle-dialog.tsx.
+  // Preempt the watch-limit failure: if the user is already at their plan's
+  // max, swap the form for an UpgradeBanner instead of letting them type a
+  // name and only fail at submit time. Mirrors save-bundle-dialog.tsx.
   const { limits } = useUserPlan();
-  const bundles = useQuery(api.bundles.listByUser);
+  const watched = useQuery(api.bundles.countWatchedSkills);
   const atLimit =
     limits !== null &&
-    bundles !== undefined &&
-    bundles.length >= limits.maxBundles;
+    watched !== undefined &&
+    watched >= limits.maxWatchedSkills;
 
   // Reset the input whenever this view transitions out. The TransitionPanel
   // keeps inactive views mounted (display: none) so their useState values
@@ -542,7 +541,7 @@ function CreateBundleView({
       {atLimit && limits ? (
         <div className="p-3">
           <UpgradeBanner
-            message={`You've reached your limit of ${limits.maxBundles} bundles. Upgrade to Pro for unlimited bundles.`}
+            message={`You're watching ${limits.maxWatchedSkills} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
           />
         </div>
       ) : (

@@ -1,4 +1,17 @@
+/**
+ * Display copy for the pricing surfaces. The enforceable truth lives in
+ * `convex/lib/plans.ts`; nothing may be claimed here that is not gated there.
+ *
+ * Two bullets on the previous version had stopped being true — "private
+ * bundles" (now free for everyone) and "bundle analytics" (the tables were
+ * deleted with the social layer). A pricing page is the one surface where a
+ * stale feature list is a lie rather than an oversight, so when the gates
+ * change, this file changes in the same commit.
+ */
 export type Plan = "free" | "pro";
+
+/** Mirrors `FREE_WATCHED_SKILLS` in convex/lib/plans.ts. */
+export const FREE_WATCHED_SKILLS = 25;
 
 export interface PlanDisplayInfo {
   name: string;
@@ -18,39 +31,38 @@ export interface PlanDisplayInfo {
 export const PLANS: Record<Plan, PlanDisplayInfo> = {
   free: {
     name: "Free",
-    tagline: "For curious builders",
-    description: "Everything you need to start stacking skills.",
+    tagline: "Watch your setup",
+    description: "The whole product, at personal scale.",
     priceMonthly: 0,
     priceYearly: 0,
     features: [
-      "Browse, search & compare skills",
-      "3 saved bundles",
-      "Public bundles only",
-      "Add 3 GitHub-only skills",
-      "Basic install commands",
+      `Watch up to ${FREE_WATCHED_SKILLS} skills`,
+      "Every change, the day it happens",
+      "Security regressions included",
+      "Full version history and diffs",
+      "Browse, search and compare the catalog",
     ],
     cta: {
-      free: "Start free",
-      upgrade: "Start free",
+      free: "Start watching",
+      upgrade: "Start watching",
       manage: "Current plan",
     },
   },
   pro: {
     name: "Pro",
-    tagline: "For power users",
-    description: "Auto-detect, unlimited bundles, private sharing.",
-    priceMonthly: 8,
-    priceYearly: 72,
+    tagline: "For a setup you depend on",
+    description: "Unlimited watching, plus the expensive lookups.",
+    priceMonthly: 5,
+    priceYearly: 48,
     highlighted: true,
     features: [
-      "GitHub repo auto-detection",
-      "Unlimited saved bundles",
-      "Private bundles",
+      "Watch unlimited skills",
+      "Point it at a repo, get matched skills",
       "Unlimited GitHub-only skill adds",
-      "Bundle analytics",
+      "Everything in Free",
     ],
     cta: {
-      free: "Get started",
+      free: "Go Pro",
       upgrade: "Upgrade to Pro",
       manage: "Manage subscription",
     },
@@ -63,6 +75,8 @@ export interface ComparisonRow {
   label: string;
   free: ComparisonValue;
   pro: ComparisonValue;
+  /** Shown under the label. For rows where the honest answer needs a caveat. */
+  note?: string;
 }
 
 export interface ComparisonGroup {
@@ -72,27 +86,42 @@ export interface ComparisonGroup {
 
 export const COMPARISON: ComparisonGroup[] = [
   {
-    title: "Discovery",
+    title: "Monitoring",
     rows: [
-      { label: "Browse all skills", free: true, pro: true },
-      { label: "Search & compare skills", free: true, pro: true },
-      { label: "GitHub repo auto-detection", free: false, pro: true },
+      {
+        label: "Skills watched",
+        free: `Up to ${FREE_WATCHED_SKILLS}`,
+        pro: "Unlimited",
+        note: "Counted once per skill, however many lists it sits in.",
+      },
+      { label: "Content and description changes", free: true, pro: true },
+      {
+        label: "Security verdict regressions",
+        free: true,
+        pro: true,
+        note: "Never held back by plan. Nobody should pay to hear this.",
+      },
+      { label: "Full version history and diffs", free: true, pro: true },
+      { label: "Lists to organise them into", free: "Unlimited", pro: "Unlimited" },
     ],
   },
   {
-    title: "Bundles",
+    title: "Discovery",
     rows: [
-      { label: "Saved bundles", free: "Up to 3", pro: "Unlimited" },
-      { label: "Public bundles", free: true, pro: true },
-      { label: "Private bundles", free: false, pro: true },
-      { label: "Bundle analytics (views, copies)", free: false, pro: true },
+      { label: "Browse, search and compare", free: true, pro: true },
+      {
+        label: "Match skills to a GitHub repo",
+        free: "Demo repo only",
+        pro: true,
+        note: "Reads the repo's dependencies and matches against the catalog.",
+      },
     ],
   },
   {
     title: "Contributing",
     rows: [
       { label: "Add skills that are on skills.sh", free: true, pro: true },
-      { label: "Add GitHub-only skills", free: "Up to 3", pro: "Unlimited" },
+      { label: "Add skills that only exist on GitHub", free: "Up to 3", pro: "Unlimited" },
     ],
   },
 ];

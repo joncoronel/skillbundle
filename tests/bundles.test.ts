@@ -16,6 +16,7 @@ import { ConvexError } from "convex/values";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
+import { FREE_WATCHED_SKILLS } from "../convex/lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_SKILLS,
@@ -210,23 +211,25 @@ describe("createBundle", () => {
     ).rejects.toThrow(/\+3 more/);
   });
 
-  test("rejects when the free user is at the bundle limit", async () => {
-    // Free plan = 3 bundles. Insert 3 directly to hit the cap without
-    // exercising the createBundle path 3 times.
+  test("rejects when the free user is at the watched-skill limit", async () => {
+    // The meter is distinct skills watched, not bundles — so this seeds one
+    // bundle already holding the whole free allowance rather than N bundles.
     const { t, asUser, userId } = await setup();
     await t.run(async (ctx) => {
       const now = Date.now();
-      for (let i = 0; i < 3; i++) {
-        await ctx.db.insert("bundles", {
-          userId,
-          isPublic: false,
-          name: `Existing ${i}`,
-          urlId: `existing-${i}`,
-          skills: [],
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+      await ctx.db.insert("bundles", {
+        userId,
+        isPublic: false,
+        name: "Already watching",
+        urlId: "already-watching",
+        skills: Array.from({ length: FREE_WATCHED_SKILLS }, (_, i) => ({
+          source: "owner/repo",
+          skillId: `filler-${i}`,
+          addedAt: now,
+        })),
+        createdAt: now,
+        updatedAt: now,
+      });
     });
 
     await expect(
@@ -234,8 +237,41 @@ describe("createBundle", () => {
         name: "One too many",
         skills: [{ source: "owner/repo", skillId: "skill-a" }],
       }),
-    ).rejects.toThrow(/Bundle limit reached/i);
+    ).rejects.toThrow(/free plan covers 25/i);
   });
+
+  test("a skill already watched elsewhere does not count twice", async () => {
+    // Filing the same dependency in a second list is organisation, and
+    // organising is not what is being metered.
+    const { t, asUser, userId } = await setup();
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("bundles", {
+        userId,
+        isPublic: false,
+        name: "Full",
+        urlId: "full-list",
+        skills: Array.from({ length: FREE_WATCHED_SKILLS }, (_, i) => ({
+          source: "owner/repo",
+          skillId: `filler-${i}`,
+          addedAt: now,
+        })),
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    // `assertSkillsExist` still applies — the skill has to be in the catalog.
+    await seedSkill(t, "owner/repo", "filler-0");
+
+    // At the cap, but re-filing an existing skill keeps the union the same.
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: "Same skill, second list",
+      skills: [{ source: "owner/repo", skillId: "filler-0" }],
+    });
+    expect(bundleId).toBeTruthy();
+  });
+
 
   test("rejects when unauthenticated", async () => {
     const t = makeTest();

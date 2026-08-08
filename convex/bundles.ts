@@ -41,12 +41,57 @@ async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
   return ensureUniqueUrlId(ctx);
 }
 
-async function countUserBundles(ctx: MutationCtx, userId: Id<"users">) {
+/**
+ * How many distinct skills this user watches, across every bundle.
+ *
+ * Distinct on `source::skillId`, and optionally ignoring one bundle — the
+ * caller is usually about to replace that bundle's contents, so counting its
+ * current skills would charge the user twice for the ones they are keeping.
+ *
+ * This replaced a bundle counter. Capping bundles capped ORGANISATION: two tidy
+ * lists cost more than one messy one, which is a rule about filing rather than
+ * about how much someone depends on the product.
+ */
+async function watchedSkillKeys(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  ignoreBundleId?: Id<"bundles">,
+): Promise<Set<string>> {
   const bundles = await ctx.db
     .query("bundles")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
-  return bundles.length;
+
+  const keys = new Set<string>();
+  for (const b of bundles) {
+    if (ignoreBundleId && b._id === ignoreBundleId) continue;
+    for (const sk of b.skills) keys.add(`${sk.source}::${sk.skillId}`);
+  }
+  return keys;
+}
+
+/**
+ * Throw if adding `incoming` would push the user past their watch limit.
+ *
+ * Counts the UNION, so re-adding a skill already watched in another bundle is
+ * free — the limit is on distinct skills watched, and someone filing the same
+ * dependency in two lists has not started depending on more things.
+ */
+function assertWatchLimit(
+  existing: Set<string>,
+  incoming: Array<{ source: string; skillId: string }>,
+  maxWatchedSkills: number,
+) {
+  if (!Number.isFinite(maxWatchedSkills)) return;
+
+  const union = new Set(existing);
+  for (const sk of incoming) union.add(`${sk.source}::${sk.skillId}`);
+  if (union.size <= maxWatchedSkills) return;
+
+  throw new ConvexError(
+    `That would put you at ${union.size} watched skills; the free plan covers ${maxWatchedSkills}. ` +
+      `Upgrade to Pro to watch as many as you like.`,
+  );
 }
 
 /**
@@ -119,12 +164,6 @@ export const createBundle = mutation({
   // page. Creation is not the moment to ask.
   handler: async (ctx, { name, description, skills }) => {
     const user = await getCurrentUserOrThrow(ctx);
-    const { limits } = await getUserPlanWithLimits(ctx);
-
-    const bundleCount = await countUserBundles(ctx, user._id);
-    if (bundleCount >= limits.maxBundles) {
-      throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
-    }
 
     // Defense-in-depth: the client form gates on `name.trim()` before
     // submitting, but the server has to defend too — a direct call via
@@ -150,6 +189,18 @@ export const createBundle = mutation({
         `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
       );
     }
+
+    // Plan limits last, after the request has been shown to be well-formed. A
+    // malformed request should be told it is malformed rather than sold an
+    // upgrade — and this ordering keeps the cheap local checks ahead of a read
+    // over every bundle the user owns.
+    const { limits } = await getUserPlanWithLimits(ctx);
+    assertWatchLimit(
+      await watchedSkillKeys(ctx, user._id),
+      skills,
+      limits.maxWatchedSkills,
+    );
+
     await assertSkillsExist(ctx, skills);
 
     const urlId = await ensureUniqueUrlId(ctx);
@@ -273,6 +324,17 @@ export const updateBundleSkills = mutation({
         `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
       );
     }
+
+    // This bundle's own skills are excluded from the baseline, because `skills`
+    // REPLACES them — counting both would bill the user twice for every skill
+    // they are keeping, and make a pure removal fail the check.
+    const { limits } = await getUserPlanWithLimits(ctx);
+    assertWatchLimit(
+      await watchedSkillKeys(ctx, user._id, bundleId),
+      skills,
+      limits.maxWatchedSkills,
+    );
+
     await assertSkillsExist(ctx, skills);
 
     const existingByKey = new Map(
@@ -468,6 +530,30 @@ export const deleteBundle = mutation({
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
+
+/**
+ * Distinct skills this user watches, for the client-side "you're at your limit"
+ * preempt. The server still enforces on write — this only exists so the UI can
+ * swap a form for an upgrade prompt instead of letting someone fill it in and
+ * fail at submit.
+ */
+export const countWatchedSkills = query({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return 0;
+    const bundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+    const keys = new Set<string>();
+    for (const b of bundles) {
+      for (const sk of b.skills) keys.add(`${sk.source}::${sk.skillId}`);
+    }
+    return keys.size;
+  },
+});
 
 export const countByUser = query({
   args: {},

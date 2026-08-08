@@ -48,14 +48,14 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   // also drops the redundant unauthenticated re-run during the Clerk → Convex
   // token handoff. Mirrors useUserPlan and fork-bundle-button.
   const { isAuthenticated } = useConvexAuth();
-  const bundleCount = useQuery(
-    api.bundles.countByUser,
+  const watched = useQuery(
+    api.bundles.countWatchedSkills,
     isAuthenticated ? {} : "skip",
   );
   const atLimit =
     limits !== null &&
-    bundleCount !== undefined &&
-    bundleCount >= limits.maxBundles;
+    watched !== undefined &&
+    watched >= limits.maxWatchedSkills;
   const count = selectedSkills.length;
 
   const trimmedDescription = description.trim();
@@ -106,7 +106,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
         <DialogBody>
           {atLimit ? (
             <UpgradeBanner
-              message={`You've reached your limit of ${limits.maxBundles} bundles. Upgrade to Pro for unlimited bundles.`}
+              message={`You're watching ${limits.maxWatchedSkills} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
             />
           ) : (
             <div className="space-y-4">

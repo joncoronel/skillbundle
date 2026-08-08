@@ -98,7 +98,6 @@ function DashboardLoaded({
       );
     }
   });
-  const limits = planData.limits;
   const [sortBy, setSortBy] = useState<SortBy>("newest");
 
   const sortedBundles = useMemo(() => {
@@ -193,14 +192,6 @@ function DashboardLoaded({
                         size="xs"
                         className="h-9 sm:h-7"
                         onClick={() => {
-                          if (bundle.isPublic && !limits?.canMakePrivate) {
-                            toast.info({
-                              title: "Pro feature",
-                              description:
-                                "Upgrade to Pro to make bundles private.",
-                            });
-                            return;
-                          }
                           updateVisibility({
                             bundleId: bundle._id,
                             isPublic: !bundle.isPublic,
@@ -212,13 +203,6 @@ function DashboardLoaded({
                             strokeWidth={2}
                             className="size-3.5"
                           />
-                        }
-                        trailingIcon={
-                          bundle.isPublic && !limits?.canMakePrivate ? (
-                            <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
-                              Pro
-                            </span>
-                          ) : undefined
                         }
                       >
                         {bundle.isPublic ? "Make private" : "Make public"}
