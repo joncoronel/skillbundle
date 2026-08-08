@@ -543,6 +543,10 @@ export const getByUrlId = query({
             return {
               source: s.source,
               skillId: s.skillId,
+              // Returned, not just used locally above: the register shows when
+              // each skill joined, and omitting it left that column reading
+              // "—" for every row of every bundle, forever.
+              addedAt,
               name: skill?.name ?? s.skillId,
               description: skill?.description,
               installs: skill?.installs ?? 0,

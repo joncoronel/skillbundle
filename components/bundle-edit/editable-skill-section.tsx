@@ -32,11 +32,11 @@ interface EditableSkillSectionProps {
    *  getting yanked out of the DOM. */
   editing: boolean;
   bundleId: Id<"bundles">;
-  /** Full query args (`urlId` + optional `shareToken`) for `getByUrlId`,
+  /** Query args (`urlId`) for `getByUrlId`,
    *  matching the cache key the bundle page is reading. Passing only
    *  `urlId` would miss the cache entry on share-token-accessed bundles
    *  and the optimistic patch would silently no-op. */
-  queryArgs: { urlId: string; shareToken?: string };
+  queryArgs: { urlId: string };
   /** The bundle's current skills, used to seed the staging area. */
   initialSkills: SkillData[];
   onExit: () => void;
@@ -64,7 +64,7 @@ export function EditableSkillSection({
   ).withOptimisticUpdate((localStore, { bundleId: id }) => {
     // getByUrlId is the query the bundle detail page is reading — patch
     // it directly using the prop-supplied queryArgs (urlId + optional
-    // shareToken). We don't try to fish urlId out of listByUser because
+    // We don't try to fish urlId out of listByUser because
     // that query may not be subscribed (the QuickAddPopover only
     // subscribes from view-only SkillCardViews, and those unmount when
     // edit mode is active). For skills already in the bundle, merge the

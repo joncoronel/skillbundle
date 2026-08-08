@@ -105,7 +105,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   // version archive and the audit table, which the roster itself does not need.
   const changes = useQuery(api.skillVersions.listChangesForBundle, { urlId });
 
-  const updateVisibility = useMutation(
+  const updateVisibilityMutation = useMutation(
     api.bundles.updateBundleVisibility,
   ).withOptimisticUpdate((localStore, { isPublic }) => {
     const current = localStore.getQuery(api.bundles.getByUrlId, queryArgs);
@@ -117,12 +117,37 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
     }
   });
 
+  // Surfaced, not swallowed. On rejection Convex reverts the optimistic update
+  // and the switch silently flips back — on the one control that decides
+  // whether strangers can read this bundle. An owner would read that as a
+  // glitch and assume the link is live. Matches the rename/description dialogs.
+  function updateVisibility(args: {
+    bundleId: Id<"bundles">;
+    isPublic: boolean;
+  }) {
+    updateVisibilityMutation(args).catch((error: unknown) => {
+      let message = "Couldn't reach the server. Try again.";
+      if (error instanceof ConvexError && typeof error.data === "string") {
+        message = error.data;
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
+      toast.error({
+        title: args.isPublic
+          ? "Couldn't share the bundle"
+          : "Couldn't make the bundle private",
+        description: message,
+      });
+    });
+  }
+
   if (bundle === null) {
     return <BundleNotFound />;
   }
 
   const skillCount = bundle.skills.length;
   const commandCount = generateInstallCommands(bundle.skills).length;
+  const editing = bundle.isOwner && editingSkills;
   // `changes` streams in after the preloaded bundle — the register renders
   // immediately with every row Steady and settles as the archive answers,
   // rather than holding the whole page behind a second round trip.
@@ -149,10 +174,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
               />
 
               <p className="mt-4 text-sm text-muted-foreground tabular-nums">
-                <MetadataItems
-                  skillCount={skillCount}
-                  createdAt={bundle.createdAt}
-                />
+                <MetadataItems createdAt={bundle.createdAt} />
               </p>
 
               {bundle.forkedFrom && (
@@ -206,46 +228,61 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
             ordered so the worst one is already first. Install is a disclosure
             in the tally line — still reachable, no longer leading. */}
         <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <SectionHeader title="Register" count={skillCount} />
-            {bundle.isOwner ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditingSkills(true)}
-                disabled={editingSkills}
-                leadingIcon={
-                  <HugeiconsIcon
-                    icon={PencilEdit02Icon}
-                    strokeWidth={2}
-                    className="size-3.5"
-                  />
-                }
-              >
-                Edit skills
-              </Button>
-            ) : null}
-          </div>
-
-          <InstallDisclosure
-            skills={bundle.skills}
-            enabled={commandCount > 0}
-            tally={(trigger) => (
-              <RegisterTally
-                total={skillCount}
-                faults={register.faults}
-                changed={register.changed}
-                steady={register.steady}
-                action={trigger}
-              />
-            )}
+          <SectionHeader
+            title="Skills"
+            count={skillCount}
+            action={
+              bundle.isOwner ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingSkills(true)}
+                  disabled={editingSkills}
+                  leadingIcon={
+                    <HugeiconsIcon
+                      icon={PencilEdit02Icon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  Edit skills
+                </Button>
+              ) : null
+            }
           />
 
-          {/* Read-only register: visible whenever we're not in edit mode (or
-              for non-owners who can never enter edit mode). */}
-          {!(bundle.isOwner && editingSkills) && skillCount > 0 ? (
-            <BundleRegister rows={register.rows} />
-          ) : null}
+          {/* Both the tally and the register step aside in edit mode. The edit
+              surface is a staging grid that carries no condition state, so a
+              tally still reading "1 needs attention" above it would be an
+              unanswerable prompt — you could not tell which row it meant. */}
+          {editing ? null : (
+            <>
+              <InstallDisclosure
+                skills={bundle.skills}
+                enabled={commandCount > 0}
+                tally={(trigger) => (
+                  <RegisterTally
+                    total={skillCount}
+                    faults={register.faults}
+                    changed={register.changed}
+                    steady={register.steady}
+                    pending={changes === undefined}
+                    action={trigger}
+                  />
+                )}
+              />
+
+              {skillCount > 0 ? (
+                <BundleRegister
+                  rows={register.rows}
+                  pending={changes === undefined}
+                />
+              ) : (
+                <BundleEmpty isOwner={bundle.isOwner} />
+              )}
+            </>
+          )}
           {/* Edit infrastructure: mounts unconditionally for owners so the
               BundleEditBar can animate in/out via its `open` prop instead
               of being yanked out of the tree when edit mode exits. The
@@ -291,17 +328,10 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
 // Metadata row + section header + toolbar slot
 // ---------------------------------------------------------------------------
 
-function MetadataItems({
-  skillCount,
-  createdAt,
-}: {
-  skillCount: number;
-  createdAt: number;
-}) {
-  const items: string[] = [
-    `${skillCount} skill${skillCount !== 1 ? "s" : ""}`,
-    `Created ${timeAgo(createdAt)}`,
-  ];
+function MetadataItems({ createdAt }: { createdAt: number }) {
+  // Skill count deliberately absent: the section heading and the tally both
+  // state it, and three copies in one viewport is two too many.
+  const items: string[] = [`Created ${timeAgo(createdAt)}`];
 
   return (
     <>
@@ -329,7 +359,7 @@ function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3">
       <h2 className="text-xl font-semibold tracking-tight">
         {title}
         {count !== undefined ? (
@@ -763,6 +793,7 @@ function InstallDisclosure({
   tally: (trigger: ReactNode) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const installPanelId = useId();
   if (!enabled) return <>{tally(null)}</>;
 
   return (
@@ -779,6 +810,7 @@ function InstallDisclosure({
           variant="outline"
           size="xs"
           aria-expanded={open}
+          aria-controls={installPanelId}
           onClick={() => setOpen((o) => !o)}
           trailingIcon={
             <HugeiconsIcon
@@ -794,7 +826,7 @@ function InstallDisclosure({
           Install
         </Button>,
       )}
-      <CollapsibleContent>
+      <CollapsibleContent id={installPanelId}>
         <div className="space-y-3 pt-4">
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
@@ -806,5 +838,41 @@ function InstallDisclosure({
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Empty bundle
+// ---------------------------------------------------------------------------
+
+/**
+ * A bundle with no skills.
+ *
+ * Gets a real state rather than an absent register. The previous build left
+ * roughly 800px of nothing under a success-green status light, which told the
+ * owner their empty bundle was healthy — an answer to a question they had not
+ * asked, in the colour reserved for the one they had.
+ */
+function BundleEmpty({ isOwner }: { isOwner: boolean }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center">
+      <p className="text-sm font-medium">Nothing to watch yet.</p>
+      <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">
+        {isOwner
+          ? "Add the skills you depend on and this page will tell you when any of them change."
+          : "The owner hasn't added any skills to this bundle."}
+      </p>
+      {isOwner ? (
+        <Button
+          variant="primary"
+          size="sm"
+          className="mt-5"
+          nativeButton={false}
+          render={<Link href="/" />}
+        >
+          Browse skills
+        </Button>
+      ) : null}
+    </div>
   );
 }

@@ -17,7 +17,9 @@
  *
  * FIRST VIEWPORT: Bundle identity, then a one-line tally with the status light,
  * then the register's mono column strip and its first rows. Install is a
- * disclosure in the tally line — it stays reachable, it stops leading.
+ * disclosure in the tally line — it stays reachable, it stops leading. The
+ * section is labelled "Skills", not "Register": the register is the form, and
+ * naming the metaphor at the reader is not the product's own language.
  *
  * FORM: Audit register. #2 on the ordered list; the roll assigned index 1 of 7
  * (seed key skillbundle-bundle-page-2026-08-08, dealt via the impeccable roll
@@ -141,7 +143,7 @@ const CONDITION_META: Record<
   steady: {
     icon: CheckmarkBadge02Icon,
     label: "Steady",
-    tone: "text-muted-foreground/60",
+    tone: "text-muted-foreground",
   },
 };
 
@@ -205,7 +207,13 @@ export function buildRegister(
  * column the reader came for. What has to survive on a phone is the row order
  * and the leading marker, not the column count.
  */
-export function BundleRegister({ rows }: { rows: RegisterRow[] }) {
+export function BundleRegister({
+  rows,
+  pending,
+}: {
+  rows: RegisterRow[];
+  pending: boolean;
+}) {
   return (
     // `md:max-w-none` overrides the Table component's own 672px cap, which is
     // tuned for a table sitting beside other content. This one IS the content.
@@ -216,11 +224,19 @@ export function BundleRegister({ rows }: { rows: RegisterRow[] }) {
     // description delta mid-word here.
     <Table className="table-fixed md:max-w-none">
       <TableHeader>
-        <TableRow className="hover:bg-transparent">
+        {/* Mono, uppercase, eyebrow tracking — DESIGN.md assigns exactly that
+            to table headers, and the audit cells below already use it. The
+            TableHead default is body-size sans, which made the strip the one
+            place the register stepped outside its own world. */}
+        <TableRow className="hover:bg-transparent [&>th]:font-mono [&>th]:text-eyebrow [&>th]:uppercase [&>th]:tracking-eyebrow">
           <TableHead className="w-8">
             <span className="sr-only">Condition marker</span>
           </TableHead>
-          <TableHead className="w-[38%] sm:w-[26%]">Skill</TableHead>
+          {/* `w-auto` below sm, not a percentage: under table-fixed the browser
+              splits leftover width between the declared columns, which inflated
+              the 32px marker column to ~124px on a phone and squeezed the
+              deltas into truncation. */}
+          <TableHead className="w-auto sm:w-[26%]">Skill</TableHead>
           <TableHead className="hidden sm:table-cell">Condition</TableHead>
           <TableHead className="hidden md:table-cell w-28">Audit</TableHead>
           <TableHead className="hidden sm:table-cell w-24 text-right">
@@ -233,6 +249,7 @@ export function BundleRegister({ rows }: { rows: RegisterRow[] }) {
           <RegisterRowView
             key={`${row.skill.source}::${row.skill.skillId}`}
             row={row}
+            pending={pending}
           />
         ))}
       </TableBody>
@@ -240,9 +257,17 @@ export function BundleRegister({ rows }: { rows: RegisterRow[] }) {
   );
 }
 
-function RegisterRowView({ row }: { row: RegisterRow }) {
+function RegisterRowView({
+  row,
+  pending,
+}: {
+  row: RegisterRow;
+  pending: boolean;
+}) {
   const { skill, change, condition } = row;
   const meta = CONDITION_META[condition];
+  // A steady marker is a claim. Do not make it before the data lands.
+  const markerHidden = pending && condition === "steady";
   const delta =
     condition === "description"
       ? {
@@ -255,18 +280,20 @@ function RegisterRowView({ row }: { row: RegisterRow }) {
   return (
     <TableRow className={cn(condition === "steady" && "text-muted-foreground")}>
       <TableCell className="align-top">
-        <HugeiconsIcon
-          icon={meta.icon}
-          strokeWidth={2}
-          aria-hidden
-          className={cn("mt-0.5 size-4", meta.tone)}
-        />
+        {markerHidden ? null : (
+          <HugeiconsIcon
+            icon={meta.icon}
+            strokeWidth={2}
+            aria-hidden
+            className={cn("mt-0.5 size-4", meta.tone)}
+          />
+        )}
       </TableCell>
 
       <TableCell className="align-top whitespace-normal">
         <Link
           href={skillHref(skill.source, skill.skillId)}
-          className="group inline-flex items-center gap-1 font-medium text-foreground outline-none hover:underline focus-visible:underline"
+          className="group inline-flex items-center gap-1 rounded-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
         >
           {skill.name}
           <HugeiconsIcon
@@ -286,6 +313,7 @@ function RegisterRowView({ row }: { row: RegisterRow }) {
             label={meta.label}
             change={change}
             delta={hasDelta ? delta : null}
+            pending={pending}
           />
         </div>
       </TableCell>
@@ -296,6 +324,7 @@ function RegisterRowView({ row }: { row: RegisterRow }) {
           label={meta.label}
           change={change}
           delta={hasDelta ? delta : null}
+          pending={pending}
         />
       </TableCell>
 
@@ -323,12 +352,18 @@ function ConditionDetail({
   label,
   change,
   delta,
+  pending,
 }: {
   condition: Condition;
   label: string;
   change?: RegisterChange;
   delta: { before?: string; after?: string } | null;
+  pending: boolean;
 }) {
+  // Say nothing rather than "Steady" while the answer is still in flight.
+  if (pending && condition === "steady") {
+    return <span className="sr-only">Checking</span>;
+  }
   return (
     <div className="mt-1 sm:mt-0">
       {condition === "steady" ? (
@@ -336,7 +371,7 @@ function ConditionDetail({
           {/* Steady still announces itself to a screen reader; it just does not
               spend a line of the reader's attention on every quiet row. */}
           <span className="sr-only">{label}</span>
-          <span aria-hidden className="text-sm text-muted-foreground/50">
+          <span aria-hidden className="text-sm text-muted-foreground">
             &mdash;
           </span>
         </>
@@ -353,14 +388,25 @@ function ConditionDetail({
 
       {delta ? <DescriptionDelta {...delta} /> : null}
 
+      {/* Named, not bare. `delisted` and `fetch-error` outrank the change
+          record, so a bare date under "No longer listed" would be read as the
+          date it was delisted when it is actually the date of some unrelated
+          content edit. */}
       {change ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          {timeAgo(change.changedAt)}
+          {CHANGE_NOUN[change.kind]} {timeAgo(change.changedAt)}
         </p>
       ) : null}
     </div>
   );
 }
+
+/** What the change record's timestamp actually refers to. */
+const CHANGE_NOUN: Record<RegisterChange["kind"], string> = {
+  audit: "verdict changed",
+  description: "description changed",
+  content: "content edited",
+};
 
 const AUDIT_TONE: Record<string, string> = {
   pass: "text-success-foreground",
@@ -377,8 +423,9 @@ function AuditCell({
 }) {
   if (!status || status === "unknown") {
     return (
-      <span className="font-mono text-xs uppercase tracking-eyebrow text-muted-foreground/50">
-        &mdash;
+      <span className="font-mono text-xs uppercase tracking-eyebrow text-muted-foreground">
+        <span className="sr-only">Not audited</span>
+        <span aria-hidden>&mdash;</span>
       </span>
     );
   }
@@ -451,23 +498,44 @@ export function RegisterTally({
   faults,
   changed,
   steady,
+  pending,
   action,
 }: {
   total: number;
   faults: number;
   changed: number;
   steady: number;
+  /** The change data has not arrived yet. See the `pending` tone below. */
+  pending: boolean;
   action?: React.ReactNode;
 }) {
-  const tone: "clear" | "changed" | "fault" =
-    faults > 0 ? "fault" : changed > 0 ? "changed" : "clear";
+  // `pending` and `empty` are their own tones, and both used to resolve to
+  // green. That was the worst defect in this component: with the change query
+  // still in flight every row looks steady, so a bundle carrying a CRITICAL
+  // regression painted a success light and the words "nothing changed" before
+  // flipping to red. Volunteering an all-clear you have not verified is the one
+  // failure mode a monitoring product cannot afford. An empty bundle was the
+  // same mistake in a quieter key: nothing to report is not the same as fine.
+  const tone: "pending" | "empty" | "clear" | "changed" | "fault" = pending
+    ? "pending"
+    : total === 0
+      ? "empty"
+      : faults > 0
+        ? "fault"
+        : changed > 0
+          ? "changed"
+          : "clear";
 
   const dot = {
+    pending: "bg-muted-foreground animate-pulse motion-reduce:animate-none",
+    empty: "bg-muted-foreground",
     clear: "bg-success-foreground",
     changed: "bg-warning-foreground",
     fault: "bg-danger-foreground",
   }[tone];
   const halo = {
+    pending: "bg-muted-foreground/15",
+    empty: "bg-muted-foreground/15",
     clear: "bg-success/20",
     changed: "bg-warning/20",
     fault: "bg-danger/20",
@@ -485,9 +553,15 @@ export function RegisterTally({
         <span className={cn("size-1.5 rounded-full", dot)} />
       </span>
 
-      <p className="flex-1 text-sm">
-        {total === 0 ? (
-          <span className="text-muted-foreground">No skills yet.</span>
+      <p aria-live="polite" className="flex-1 text-sm">
+        {tone === "pending" ? (
+          <span className="text-muted-foreground tabular-nums">
+            Checking {total} skill{total === 1 ? "" : "s"}&hellip;
+          </span>
+        ) : tone === "empty" ? (
+          <span className="text-muted-foreground">
+            No skills in this bundle yet.
+          </span>
         ) : tone === "clear" ? (
           <>
             <span className="font-medium">All steady.</span>{" "}
@@ -503,9 +577,11 @@ export function RegisterTally({
                 ? `${faults} need${faults === 1 ? "s" : ""} attention`
                 : `${changed} changed`}
             </span>{" "}
-            <span className="text-muted-foreground tabular-nums">
-              {faults > 0 && changed > 0 ? `· ${changed} changed ` : ""}·{" "}
-              {steady} steady
+            <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+              {faults > 0 && changed > 0 ? `· ${changed} changed ` : ""}
+              {/* A steady count only informs when there is a steady
+                  population; "0 steady" is noise. */}
+              {steady > 0 ? `· ${steady} steady` : ""}
             </span>
           </>
         )}
