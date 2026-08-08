@@ -495,8 +495,15 @@ export default defineSchema({
     // threshold and the precedent that makes the breaker necessary.
   })
     .index("by_skill_changedAt", ["skillDocId", "changedAt"])
-    // Powers the cross-skill feed and the notifier's mass-change window count.
-    .index("by_changedAt", ["changedAt"]),
+    // Chronological feed across all skills.
+    .index("by_changedAt", ["changedAt"])
+    // Mass-change breaker only. It must count REAL changes in a window, and
+    // baselines outnumber them enormously while the archive backfills (459 to 0
+    // on the day this index was added). Filtering after a capped read spends the
+    // whole budget on baselines and reports zero, which fails silent — the one
+    // failure mode a circuit breaker may not have. Indexing the flag moves the
+    // filter into the seek, so the read is bounded by real changes alone.
+    .index("by_isBaseline_changedAt", ["isBaseline", "changedAt"]),
 
   // Per-repo ETag for the daily freshness sweep (convex/freshness.ts).
   //

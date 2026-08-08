@@ -68,16 +68,17 @@ type FeedKind = "audit" | "description" | "content";
  * exists — roughly 60% of production shares a single `contentUpdatedAt` from
  * the launch backfill.
  *
- * THE THRESHOLD BELOW IS KNOWN WRONG AND AWAITING A MEASUREMENT. It was set at
- * "10x a normal day" against a catalog assumed to be ~3,000 skills. Prod is
- * ~15k (Aug 2026), and at the measured ~27.5%/month change rate that puts a
- * normal day near 140 real changes — so 250 is under 2x, which is a tripwire,
- * not a breaker. `MASS_CHANGE_SCAN_LIMIT` has the same problem from the other
- * side: the index walks oldest-first, so once a day exceeds 1,000 rows the
- * count never reaches the end of it and silently undercounts.
+ * THE THRESHOLD IS INTERIM. It cannot be measured yet: `changeRateHealth`
+ * against prod (Aug 2026) reports 459 baselines and ZERO real changes, because
+ * the archive is a day old and nothing has been seen twice. 750 is ~5x an
+ * ESTIMATE — 15k skills at the measured 27.5%/month is ~140 real changes a day.
+ * The previous 250 was ~10x an estimate built on a catalog of 3,000, a number
+ * that was never true. Re-run the diagnostic once the backfill finishes (~33
+ * days at the current rate) and set this from what it actually reports.
  *
- * Run `changeRateHealth` (bottom of this file) against prod and set both from
- * what it reports. Do not re-derive either from catalog size.
+ * Counting is exact rather than sampled: the seek takes at most THRESHOLD rows
+ * and trips iff it fills them, so there is no scan limit to undercount against
+ * and the read is bounded by the threshold itself.
  *
  * The check is deliberately not free, so it is gated behind `SUPPRESSION_MIN_
  * ROWS`: a user with three changed skills needs no circuit breaker regardless
@@ -87,8 +88,8 @@ type FeedKind = "audit" | "description" | "content";
  * and a per-row count cannot.
  */
 const SUPPRESSION_MIN_ROWS = 8;
-const MASS_CHANGE_THRESHOLD = 250;
-const MASS_CHANGE_SCAN_LIMIT = 1000;
+/** Exported so the tests seed against the live value rather than a literal. */
+export const MASS_CHANGE_THRESHOLD = 750;
 const MASS_CHANGE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Metadata shape shared by the timeline and the dashboard feed. */
@@ -413,23 +414,26 @@ export const listRecentChangesForUser = query({
 /**
  * Did the whole catalog move at once? See `MASS_CHANGE_THRESHOLD`.
  *
- * Counts only non-baseline rows. Baselines arrive in bursts by nature — the
- * archive backfills a few hundred a day — so including them would trip the
- * breaker during normal operation, which is the one failure mode a circuit
- * breaker must not have.
+ * Baselines are excluded IN THE INDEX, not after the read. They outnumber real
+ * changes by orders of magnitude during backfill (459 to 0 on the day this was
+ * written), so a capped read that filters afterwards spends its whole budget on
+ * baselines and reports zero — a breaker that fails silent. Seeking on the flag
+ * makes the read bounded by real changes alone.
+ *
+ * `take(THRESHOLD)` rather than a larger scan: the only question is whether the
+ * count reaches the threshold, so filling the take IS the answer. Exact, and it
+ * reads no more rows than the number it is looking for.
  */
 async function isCatalogWideChangeEvent(ctx: QueryCtx): Promise<boolean> {
   const since = Date.now() - MASS_CHANGE_WINDOW_MS;
-  const recent = await ctx.db
+  const realChanges = await ctx.db
     .query("skillVersions")
-    .withIndex("by_changedAt", (q) => q.gte("changedAt", since))
-    .take(MASS_CHANGE_SCAN_LIMIT);
+    .withIndex("by_isBaseline_changedAt", (q) =>
+      q.eq("isBaseline", false).gte("changedAt", since),
+    )
+    .take(MASS_CHANGE_THRESHOLD);
 
-  let realChanges = 0;
-  for (const row of recent) {
-    if (!row.isBaseline && ++realChanges >= MASS_CHANGE_THRESHOLD) return true;
-  }
-  return false;
+  return realChanges.length >= MASS_CHANGE_THRESHOLD;
 }
 
 /**
@@ -604,14 +608,13 @@ export const listChangesForBundle = query({
  *
  *   npx convex run skillVersions:changeRateHealth --prod
  *
- * `realChanges` is the number the breaker actually counts. Compare it to
- * MASS_CHANGE_THRESHOLD: anything under ~5x is not a circuit breaker, it is a
- * tripwire that fires on busy Tuesdays.
+ * `realChanges` is the number the breaker actually counts. Set the threshold to
+ * roughly 5x a busy day: under that it is a tripwire that fires on ordinary
+ * Tuesdays, far over it and it never fires at all.
  *
- * `capped` matters independently. The breaker reads at most
- * MASS_CHANGE_SCAN_LIMIT rows and, because the index walks oldest-first, a
- * capped window means it never sees the end of the day at all — it undercounts
- * exactly when the count matters most.
+ * `baselines` reads the backfill's progress, not the change rate. All-baselines
+ * with zero real changes means the archive has not seen anything twice yet and
+ * this diagnostic cannot answer the question — wait, do not tune on it.
  */
 export const changeRateHealth = internalQuery({
   args: { days: v.optional(v.number()) },
@@ -626,7 +629,6 @@ export const changeRateHealth = internalQuery({
       }),
     ),
     threshold: v.number(),
-    scanLimit: v.number(),
   }),
   handler: async (ctx, { days }) => {
     // Deliberately bounded per window. Rows carry descriptions inline, so an
@@ -657,10 +659,6 @@ export const changeRateHealth = internalQuery({
       });
     }
 
-    return {
-      windows,
-      threshold: MASS_CHANGE_THRESHOLD,
-      scanLimit: MASS_CHANGE_SCAN_LIMIT,
-    };
+    return { windows, threshold: MASS_CHANGE_THRESHOLD };
   },
 });

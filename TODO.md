@@ -101,7 +101,14 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Remaining work:**
 
-*(Nothing outstanding — the pricing rewrite was the last item.)*
+- **Re-measure the mass-change threshold once the archive has history.**
+  `MASS_CHANGE_THRESHOLD` is 750, which is ~5x an ESTIMATE (15k skills at the
+  measured 27.5%/month). It cannot be measured yet: on 2026-08-08 prod held 459
+  baselines and zero real changes, because the archive was one day old and
+  nothing had been seen twice. Backfill runs ~459/day against ~15k skills, so
+  from roughly 2026-09-10 run `npx convex run skillVersions:changeRateHealth
+  --prod` and set the constant to ~5x a busy day's `realChanges`. Under ~3x it
+  fires on ordinary Tuesdays; far over it never fires.
 
 **Loose ends worth knowing about:**
 

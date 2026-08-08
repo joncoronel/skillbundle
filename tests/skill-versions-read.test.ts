@@ -18,6 +18,7 @@
 import { test, expect, describe } from "vitest";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { MASS_CHANGE_THRESHOLD } from "../convex/skillVersions";
 import { makeTest } from "./_setup";
 
 type TestHandle = ReturnType<typeof makeTest>;
@@ -677,7 +678,10 @@ describe("listRecentChangesForUser — mass-change suppression", () => {
 
   test("trips when the whole catalog moves at once", async () => {
     const t = makeTest();
-    const asUser = await setupMass(t, 300);
+    // Seeded off the live threshold, not a literal. The constant is expected to
+    // move again once the archive has enough history to measure a real daily
+    // rate, and a hardcoded count would fail as a false alarm when it does.
+    const asUser = await setupMass(t, MASS_CHANGE_THRESHOLD + 20);
 
     const feed = await asUser.query(
       api.skillVersions.listRecentChangesForUser,
@@ -722,5 +726,34 @@ describe("listRecentChangesForUser — mass-change suppression", () => {
       {},
     );
     expect(feed.suppressed).toBe(false);
+  });
+
+  test("a baseline burst cannot blind the count", async () => {
+    const t = makeTest();
+    const now = Date.now();
+    const asUser = await setupMass(t, MASS_CHANGE_THRESHOLD + 20);
+
+    // Baselines dated EARLIER than the real changes, which is the ordering that
+    // used to break this: the old implementation read a capped page of the
+    // window oldest-first and only then discarded baselines, so a backfill at
+    // the head of the day ate the budget and the real changes behind it were
+    // never counted. A breaker that fails silent is worse than none, so this
+    // pins the fix — baselines are now excluded by the index, not after the read.
+    await Promise.all(
+      Array.from({ length: 400 }, async (_, i) => {
+        const id = `earlier-baseline-${i}`;
+        const docId = await seedSkill(t, id);
+        await addVersion(t, docId, id, {
+          changedAt: now - 20 * HOUR,
+          isBaseline: true,
+        });
+      }),
+    );
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.suppressed).toBe(true);
   });
 });
