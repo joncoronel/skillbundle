@@ -628,57 +628,9 @@ export const listByUser = query({
 // discovery surface, and discovery here is the skill catalog, not a leaderboard
 // of strangers' folders. Bundles are private working sets now.
 
-/**
- * One-time migration to the one-link model. Idempotent.
- *
- * Does two things:
- *
- * 1. **Closes every bundle.** They used to be created public by default,
- *    because "public" meant "listed in the community directory" and being
- *    listed was the point. It now means only "anyone with this link can open
- *    it". Rows created under the old default would otherwise stay open forever
- *    under a rule their owners never agreed to. Closes ALL of them rather than
- *    guessing which were meaningfully shared: any link already handed out stops
- *    working, which is the cost, and the owner re-opens with one switch.
- *    Erring toward closed is the only direction that cannot leak a setup.
- *
- * 2. **Strips the dead `shareToken` and `featuredAt` fields.** Both are
- *    unreferenced, but a Convex schema cannot drop a field while rows still
- *    carry it — pushing a schema without them fails validation against the old
- *    documents. So they stay declared as deprecated-optional until this has run
- *    everywhere, and only then come out of schema.ts.
- *
- * ORDER MATTERS, and it is two deploys:
- *
- *   1. deploy (fields still declared)  →  npx convex run bundles:migrateOneLinkModel --prod
- *   2. delete the fields from schema.ts  →  deploy again
- */
-export const migrateOneLinkModel = internalMutation({
-  args: {},
-  returns: v.object({
-    scanned: v.number(),
-    closed: v.number(),
-    fieldsStripped: v.number(),
-  }),
-  handler: async (ctx) => {
-    const bundles = await ctx.db.query("bundles").collect();
-    let closed = 0;
-    let fieldsStripped = 0;
-
-    for (const b of bundles) {
-      const patch: Record<string, unknown> = {};
-      if (b.isPublic) {
-        patch.isPublic = false;
-        closed++;
-      }
-      if (b.shareToken !== undefined || b.featuredAt !== undefined) {
-        patch.shareToken = undefined;
-        patch.featuredAt = undefined;
-        fieldsStripped++;
-      }
-      if (Object.keys(patch).length > 0) await ctx.db.patch(b._id, patch);
-    }
-
-    return { scanned: bundles.length, closed, fieldsStripped };
-  },
-});
+// The one-link migration (`migrateOneLinkModel`) lived here and is gone: it ran
+// on dev and prod in Aug 2026, closing every bundle created under the old
+// public-by-default rule and stripping `shareToken` / `featuredAt`. It could not
+// outlive the fields it removed — a mutation cannot reference a field the schema
+// no longer declares — which is the natural end of a migration's life once it
+// has run everywhere. `git log` has it if a new deployment ever needs it.

@@ -624,14 +624,6 @@ export default defineSchema({
     // Off by default, and `migrateOneLinkModel` closed the rows created under
     // the old public-by-default rule.
     isPublic: v.boolean(),
-    // DEPRECATED, awaiting removal. Both are dead — nothing reads or writes
-    // them — but a Convex schema cannot drop a field while any row still
-    // carries it, so they stay declared until `migrateOneLinkModel` has run on
-    // every deployment. Delete them (and this comment) in the deploy after
-    // that. `shareToken` was the second URL; `featuredAt` was editorial
-    // placement on the removed /explore directory.
-    shareToken: v.optional(v.string()),
-    featuredAt: v.optional(v.number()),
     forkedFrom: v.optional(v.id("bundles")),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),

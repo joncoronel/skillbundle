@@ -108,12 +108,12 @@ That ambiguity is exactly how the loop bug survived being watched.
   silently under-reports while the archive backfills. It self-corrects as
   skills accumulate a second version, so it needs no work — just do not read
   an empty feed as proof that nothing changed until roughly Sep 2026.
-- **Two-step field removal, half done.** `bundles.shareToken` and
-  `bundles.featuredAt` are dead but still declared in `schema.ts` as
-  deprecated-optional, because Convex refuses a schema that drops a field while
-  any row still carries it. `migrateOneLinkModel` strips them and has run on
-  dev. After it runs on prod, delete both fields from `schema.ts` and deploy
-  again. Until then the schema carries two fields nothing reads.
+- **Dropping a Convex field takes two deploys.** Worth remembering next time:
+  the schema is validated against existing documents, so a field cannot leave
+  `schema.ts` while any row still carries it. Declare it deprecated-optional,
+  ship a migration that strips it, run that everywhere, THEN remove it and
+  deploy again. Done for `shareToken` / `featuredAt` in Aug 2026; the migration
+  was deleted afterwards because it could not outlive the fields it referenced.
 - **Edit mode is still the old card grid.** Entering it swaps the register for
   the same-size `SkillCardView` grid the redesign exists to refuse, carrying no
   condition state — so the tally and register now step aside while editing

@@ -13,7 +13,7 @@
  */
 import { test, expect, describe } from "vitest";
 import { ConvexError } from "convex/values";
-import { api, internal } from "../convex/_generated/api";
+import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
 import {
@@ -596,47 +596,6 @@ describe("createBundle visibility", () => {
   });
 });
 
-describe("migrateOneLinkModel", () => {
-  test("closes old public bundles and strips the dead fields, idempotently", async () => {
-    const { t, userId } = await setup();
-    await t.run(async (ctx) => {
-      const now = Date.now();
-      const rows: Array<[boolean, string | undefined]> = [
-        [true, "old-share-token"],
-        [true, undefined],
-        [false, undefined],
-      ];
-      for (const [isPublic, shareToken] of rows) {
-        await ctx.db.insert("bundles", {
-          userId,
-          isPublic,
-          shareToken,
-          featuredAt: shareToken ? now : undefined,
-          name: "Legacy",
-          urlId: `legacy-${Math.random().toString(36).slice(2, 8)}`,
-          skills: [],
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    });
-
-    const first = await t.mutation(internal.bundles.migrateOneLinkModel, {});
-    expect(first).toEqual({ scanned: 3, closed: 2, fieldsStripped: 1 });
-
-    // Idempotent: the second run must find nothing left to do, because the
-    // schema field removal that follows it is a one-way door.
-    const second = await t.mutation(internal.bundles.migrateOneLinkModel, {});
-    expect(second).toEqual({ scanned: 3, closed: 0, fieldsStripped: 0 });
-
-    const remaining = await t.run(async (ctx) =>
-      ctx.db.query("bundles").collect(),
-    );
-    expect(remaining.every((b) => !b.isPublic)).toBe(true);
-    expect(remaining.every((b) => b.shareToken === undefined)).toBe(true);
-    expect(remaining.every((b) => b.featuredAt === undefined)).toBe(true);
-  });
-});
 
 describe("createBundle urlId", () => {
   test("produces a 10-char base62 urlId", async () => {
