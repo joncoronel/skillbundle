@@ -1333,7 +1333,43 @@ export const backfillDiscoverUrls = internalAction({
 // Phase 2a — Content fetch via raw.githubusercontent.com (GitHub sources)
 // ---------------------------------------------------------------------------
 
-const CONTENT_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/**
+ * How stale a GitHub skill's content may get before the TIMER re-flags it.
+ *
+ * Long, because for GitHub sources the timer is no longer the primary
+ * mechanism: `freshness.sweepRepoFreshness` runs daily and asks GitHub's Tree
+ * API which blob SHAs actually moved, flagging only those. Leaving this at 7
+ * days would keep re-downloading the whole catalog weekly regardless, so the
+ * sweep would be pure added cost instead of a replacement.
+ *
+ * It stays as a backstop rather than being deleted because the sweep has gaps
+ * it cannot close: a repo whose tree fetch fails (404, 409 too-large, rate
+ * limit) is skipped rather than guessed at. The one real regression from
+ * lengthening this is that case — a still-fetchable file in a repo whose TREE
+ * is unfetchable now waits up to 30 days instead of 7. Narrow and bounded.
+ *
+ * The other apparent gaps recover faster than this anyway: a moved file and a
+ * repeatedly-failing fetch both route through discovery, which stays on
+ * REDISCOVERY_INTERVAL_MS below.
+ */
+const GITHUB_CONTENT_BACKSTOP_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * How stale a WELL-KNOWN skill's content may get.
+ *
+ * Daily, and here the timer IS the whole mechanism — these sources have no tree
+ * to walk, so the sweep skips them entirely. Leaving them on a weekly cadence
+ * while GitHub moved to daily would have made them the least fresh rows in the
+ * catalog, which is backwards.
+ *
+ * Affordable because there are only ~170 of them. Measured Aug 2026 against the
+ * real v1 detail endpoint: ~15.7 KB per response (max 26 KB across a six-skill
+ * sample), so a full daily pass is ~2.7 MB and ~170 calls against a 600/minute
+ * rate limit. Note the endpoint returns the whole `files[]` array and skills
+ * with large bundled examples can be far heavier than that sample — if this
+ * ever needs to scale, that tail is where to look first.
+ */
+const WELL_KNOWN_CONTENT_REFRESH_MS = 24 * 60 * 60 * 1000; // 1 day
 const REDISCOVERY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const AUDIT_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -1963,10 +1999,12 @@ export const markStaleContentBatch = internalMutation({
       let contentMarked = false;
       if (isGitHub) {
         const hasUrl = s.skillMdUrl && s.skillMdUrl !== "";
+        // Backstop only — the daily sweep is what normally catches GitHub
+        // changes. See GITHUB_CONTENT_BACKSTOP_MS.
         const contentStale =
           hasUrl &&
           !s.needsContentFetch &&
-          now - (s.contentFetchedAt ?? 0) > CONTENT_REFRESH_INTERVAL_MS;
+          now - (s.contentFetchedAt ?? 0) > GITHUB_CONTENT_BACKSTOP_MS;
         // GitHub-only rows are exempt from the MAX_DISCOVERY_FAILURES cap:
         // ordinary skills un-stick from exhausted discovery when new installs
         // arrive (installsChanged resets the counter), but no feed ever
@@ -1996,9 +2034,11 @@ export const markStaleContentBatch = internalMutation({
           contentMarked = true;
         }
       } else {
+        // Well-known sources have no tree, so the sweep never sees them and
+        // this timer is their only freshness mechanism. Daily, not weekly.
         const stale =
           !s.needsContentFetch &&
-          now - (s.contentFetchedAt ?? 0) > CONTENT_REFRESH_INTERVAL_MS;
+          now - (s.contentFetchedAt ?? 0) > WELL_KNOWN_CONTENT_REFRESH_MS;
         if (stale) {
           await ctx.db.patch(s.skillDocId, { needsContentFetch: true });
           await ctx.db.patch(s._id, { needsContentFetch: true });

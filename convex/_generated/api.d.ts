@@ -19,6 +19,7 @@ import type * as curatedRefresh from "../curatedRefresh.js";
 import type * as devSeed from "../devSeed.js";
 import type * as devStats from "../devStats.js";
 import type * as duplicates from "../duplicates.js";
+import type * as freshness from "../freshness.js";
 import type * as github from "../github.js";
 import type * as githubAccount from "../githubAccount.js";
 import type * as githubCache from "../githubCache.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   devSeed: typeof devSeed;
   devStats: typeof devStats;
   duplicates: typeof duplicates;
+  freshness: typeof freshness;
   github: typeof github;
   githubAccount: typeof githubAccount;
   githubCache: typeof githubCache;

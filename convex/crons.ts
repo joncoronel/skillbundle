@@ -12,6 +12,27 @@ const crons = cronJobs();
 // crons at all. When you need fresh data locally, run a sync on demand, e.g.
 // `npx convex run skills:syncSkills`.
 if (process.env.CRONS_ENABLED === "true") {
+  // Daily at 04:00 UTC: per-repo freshness sweep (convex/freshness.ts).
+  //
+  // Asks GitHub's Tree API, once per repo and conditionally, which SKILL.md
+  // blob SHAs moved, and flags only those for re-fetch. Because ~98% of the
+  // catalog is GitHub at ~6.8 skills per repo, that costs ~1,400 mostly-304
+  // tree calls plus ~265 downloads — fewer file downloads than the 7-day timer
+  // does, at daily resolution instead of weekly.
+  //
+  // Runs two hours ahead of syncSkills so a full walk (self-chaining across
+  // ~1,400 repos) and the content fetch it queues both settle before the 06:00
+  // chain starts competing for the same work set.
+  //
+  // It ACCELERATES `markStaleContent`, it does not replace it — see the header
+  // in freshness.ts for the gaps the 7-day timer still has to cover.
+  crons.daily(
+    "sweep repo freshness",
+    { hourUTC: 4, minuteUTC: 0 },
+    internal.freshness.sweepRepoFreshness,
+    {},
+  );
+
   // Daily at 06:00 UTC: full sync. syncSkills walks the v1 listing endpoint,
   // upserts presence + installs, schedules markDelistedSkills, then chains
   // markStaleContent which re-flags rows older than 7 days for re-fetch and

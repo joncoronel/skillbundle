@@ -504,6 +504,27 @@ export default defineSchema({
     // Powers the cross-skill feed and the notifier's mass-change window count.
     .index("by_changedAt", ["changedAt"]),
 
+  // Per-repo ETag for the daily freshness sweep (convex/freshness.ts).
+  //
+  // Deliberately NOT reusing `githubTreeCache` below. That row is keyed by the
+  // same `owner/repo` string, but its `dependencyFilePaths` field carries a
+  // prefix-encoded scan owned by `recommendations.ts`, and its ETag belongs to
+  // whichever branch that scan was taken from. Two writers with different
+  // payloads on one row is how a cache starts returning one consumer's data to
+  // another; a second small table is cheaper than that class of bug.
+  //
+  // One row per GitHub repo (~1,400 at current catalog size), so this stays
+  // small no matter how many skills each repo holds.
+  repoSweepState: defineTable({
+    repo: v.string(),
+    branch: v.string(),
+    // Absent until the first successful tree fetch. Its whole purpose is the
+    // conditional request: an unchanged repo answers 304, which costs no
+    // response body and does not count against GitHub's rate limit.
+    etag: v.optional(v.string()),
+    sweptAt: v.number(),
+  }).index("by_repo", ["repo"]),
+
   // Denormalized owner-level rollup powering the /official directory page.
   // Computed by syncCurated from the same curated set that drives the
   // per-skill `curatedOwner` stamp. Reading this table is O(N owners),
