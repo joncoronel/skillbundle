@@ -6,6 +6,93 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Monitoring pivot: state, decisions, and what is left (Aug 2026)
+
+Why any of this exists: skills.sh (which is Vercel) launched Packs, which does
+bundle-and-install better than we can, and their v1 API already serves
+leaderboards, trending/hot, curated, audits, duplicate flags and semantic search
+— all of which the catalog was re-rendering. The defensible position left is the
+one thing a registry has no incentive to build: telling you when a skill you
+depend on **changed, broke, or became unsafe**. Full positioning lives in
+PRODUCT.md, which was rewritten for this.
+
+**Decisions already made. Do not relitigate without new information.**
+
+- **No email/push.** The product is pull: you open the app and see what changed.
+  This killed the notifier, the alert-severity ladder, and the `skillWatchers`
+  inverted index (built, then deleted — it existed only to answer "who do I
+  email about this skill", and nothing else needs that direction).
+- **"Since you last looked" instead of alerts.** One `bundles.lastViewedAt`
+  timestamp. Baseline is `max(lastViewedAt, addedAt)` per skill so a newly added
+  skill does not arrive carrying months of unread history.
+- **A bundle IS a watchlist.** No separate bookmark primitive. Watching a skill
+  means it sits in a bundle; a default bundle covers the one-click case.
+- **Skill checkup via lockfile: dropped.** `~/.agents/.skill-lock.json` does
+  track source, but it lives on the user's machine and most installs are global
+  rather than committed, so a web app cannot read it. Accepted consequence: we
+  track "skills you care about", not "skills you have".
+- **Set-aware search and semantic dedup: dropped.** Both depended on the above.
+- **One-link model.** `isPublic` collapses into a single toggleable share link.
+  Agreed, NOT yet built (see below).
+
+**Shipped and committed** (`66fd930`, `4c08500`, `c7a2a00`):
+
+- `skillVersions` archive: raw SKILL.md per change in file storage, metadata
+  inline, captured at BOTH content-write paths. Descriptions stored inline in
+  full because a description change is the high-severity event (it decides when
+  an agent invokes a skill).
+- `skillAudits` keeps its previous verdict instead of overwriting it.
+- Unread state: `lastViewedAt`, `markBundleViewed`, `listUnreadCounts`,
+  `changedSinceViewed` on the bundle read.
+- Read API in `convex/skillVersions.ts`: `listForSkill`, `getVersions`,
+  `getAuditChange`, `listRecentChangesForUser`.
+- Skill-page History UI (`components/skill-history.tsx`) on `@pierre/diffs`.
+- Daily per-repo freshness sweep (`convex/freshness.ts`) plus tiered content
+  cadences: GitHub 30-day backstop behind the sweep, well-known daily.
+
+**NOT DEPLOYED. This is the most time-sensitive item.** Crons are gated behind
+`CRONS_ENABLED`, so neither the archive nor the sweep runs in production yet.
+Version history is the one thing that cannot be backfilled — measured change
+rate is ~27.5%/month, so roughly 2,600 changes a month are going unrecorded
+every month this waits. Run `npx convex deploy` before building anything else.
+
+**Remaining work, in order:**
+
+1. **Dashboard feed.** `listRecentChangesForUser` already returns the right
+   shape, so this is mostly rendering. Shortest path to demonstrating the whole
+   thesis, and it is the surface that earns the return visit.
+2. **Bundle page redesign, one-link migration, and social teardown as ONE
+   piece** — they are tangled. The page moves from a static manifest to an
+   Operate-mode status surface: lead with aggregate health, then what needs
+   attention, then skills with their state, with the install command demoted to
+   a secondary action (it stays — reproducing a setup is still a real job).
+   The teardown removes `/explore`, stars, forks, copy counts, `featuredAt`,
+   `listExplore`, `toggleStar`, `forkBundle`, `setBundleFeatured`,
+   `listFeatured`, and the `bundleStats` / `bundleStars` tables. Half-dead
+   social reads as abandonment, which is why it goes rather than lingering.
+3. **Pricing rewrite.** Two of the four Pro bullets (private bundles, unlimited
+   bundles) are now free on skills.sh. Intended shape is in PRODUCT.md: free =
+   capped watched skills on a weekly digest, Pro = unlimited + immediate
+   security-regression surfacing + full version history.
+
+**Loose ends worth knowing about:**
+
+- `skillVersions.suppressed` is declared and nothing sets it. It was the
+  notifier's mass-change circuit breaker. Still needed, but now as a DISPLAY
+  concern: if a pipeline change reprocesses the catalog, the dashboard feed must
+  not render thousands of events. Build it with the feed. Precedent that this
+  happens: ~60% of prod shares one `contentUpdatedAt` from the launch backfill.
+- `next.config.ts` carries a Turbopack alias for `@shikijs/themes/horizon-bright`,
+  which `@pierre/theming@1.0.1` imports and which exists in no published release
+  of that package. Both packages are already at their latest version, so there
+  is no upgrade to take. Delete the alias if upstream ever fixes it.
+- The diff renderer wraps long lines rather than scrolling them. That is forced,
+  not preferred — CodeView's horizontal scroller lives in its shadow root while
+  the vertical one has to live outside, and no placement of the height cap
+  merges them (measured, including `max-h-96 overflow-auto` directly on
+  CodeView). If this ever hosts code-dominant files, add a wrap toggle rather
+  than flipping the default.
+
 ### skills.sh API auth is moving to Vercel OIDC (build the token relay before the key dies)
 
 Measured Aug 2026. The skills.sh v1 API now rejects unauthenticated requests
