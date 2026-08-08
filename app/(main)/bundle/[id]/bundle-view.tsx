@@ -293,7 +293,11 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
               editing={editingSkills}
               bundleId={bundle._id}
               queryArgs={queryArgs}
-              initialSkills={bundle.skills}
+              // Consequence order, not roster order: you enter edit mode
+              // because something in the register was wrong, so the staging
+              // grid should open on that skill rather than make you find it
+              // again from memory.
+              initialSkills={register.rows.map((r) => r.skill)}
               onExit={() => setEditingSkills(false)}
             />
           ) : null}
@@ -330,24 +334,11 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
 
 function MetadataItems({ createdAt }: { createdAt: number }) {
   // Skill count deliberately absent: the section heading and the tally both
-  // state it, and three copies in one viewport is two too many.
-  const items: string[] = [`Created ${timeAgo(createdAt)}`];
-
-  return (
-    <>
-      {items.map((item, i) => (
-        <span key={i}>
-          {i > 0 && (
-            <span aria-hidden className="px-1.5">
-              &middot;
-            </span>
-          )}
-          {item}
-        </span>
-      ))}
-    </>
-  );
+  // state it, and three copies in one viewport is two too many. That leaves one
+  // item, so this is a string and not a list with an unreachable separator.
+  return <>Created {timeAgo(createdAt)}</>;
 }
+
 
 function SectionHeader({
   count,

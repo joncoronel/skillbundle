@@ -159,16 +159,22 @@ function conditionOf(
   return "steady";
 }
 
-export type RegisterRow = {
-  skill: RegisterSkill;
+export type RegisterRow<S extends RegisterSkill = RegisterSkill> = {
+  skill: S;
   change?: RegisterChange;
   condition: Condition;
 };
 
-export function buildRegister(
-  skills: RegisterSkill[],
+/**
+ * Generic over the caller's skill type rather than narrowing to
+ * `RegisterSkill`: the bundle page feeds the consequence-ordered rows straight
+ * back into its edit mode, which needs the full skill object, and a widened
+ * return type would have forced a cast there.
+ */
+export function buildRegister<S extends RegisterSkill>(
+  skills: S[],
   changes: RegisterChange[] | undefined,
-): { rows: RegisterRow[]; faults: number; changed: number; steady: number } {
+): { rows: RegisterRow<S>[]; faults: number; changed: number; steady: number } {
   const byKey = new Map((changes ?? []).map((c) => [c.key, c]));
 
   const rows = skills.map((skill) => {
@@ -360,17 +366,18 @@ function ConditionDetail({
   delta: { before?: string; after?: string } | null;
   pending: boolean;
 }) {
-  // Say nothing rather than "Steady" while the answer is still in flight.
-  if (pending && condition === "steady") {
-    return <span className="sr-only">Checking</span>;
-  }
+  // While pending, drop the CLAIM but keep the row's height. Returning nothing
+  // here made every steady row grow when the query landed — on mobile the
+  // condition lives inside the skill cell, so a 20-skill all-steady bundle (the
+  // common case) jumped ~480px on resolve.
+  const unresolvedSteady = pending && condition === "steady";
   return (
     <div className="mt-1 sm:mt-0">
       {condition === "steady" ? (
         <>
           {/* Steady still announces itself to a screen reader; it just does not
               spend a line of the reader's attention on every quiet row. */}
-          <span className="sr-only">{label}</span>
+          <span className="sr-only">{unresolvedSteady ? "Checking" : label}</span>
           <span aria-hidden className="text-sm text-muted-foreground">
             &mdash;
           </span>
@@ -388,13 +395,16 @@ function ConditionDetail({
 
       {delta ? <DescriptionDelta {...delta} /> : null}
 
-      {/* Named, not bare. `delisted` and `fetch-error` outrank the change
-          record, so a bare date under "No longer listed" would be read as the
-          date it was delisted when it is actually the date of some unrelated
-          content edit. */}
+      {/* Named only when it disagrees with the condition above it. `delisted`
+          and `fetch-error` outrank the change record, so a bare date under "No
+          longer listed" reads as the date it was delisted when it is really the
+          date of some unrelated content edit. When the two agree, the noun is
+          just the label again and the date stands alone. */}
       {change ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          {CHANGE_NOUN[change.kind]} {timeAgo(change.changedAt)}
+          {change.kind === condition
+            ? timeAgo(change.changedAt)
+            : `${CHANGE_NOUN[change.kind]} ${timeAgo(change.changedAt)}`}
         </p>
       ) : null}
     </div>
@@ -541,6 +551,10 @@ export function RegisterTally({
     fault: "bg-danger/20",
   }[tone];
 
+  // The empty panel below states this in full; a tally echoing it directly
+  // above is the same sentence twice.
+  if (tone === "empty") return null;
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <span
@@ -557,10 +571,6 @@ export function RegisterTally({
         {tone === "pending" ? (
           <span className="text-muted-foreground tabular-nums">
             Checking {total} skill{total === 1 ? "" : "s"}&hellip;
-          </span>
-        ) : tone === "empty" ? (
-          <span className="text-muted-foreground">
-            No skills in this bundle yet.
           </span>
         ) : tone === "clear" ? (
           <>
