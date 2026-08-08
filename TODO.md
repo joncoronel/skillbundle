@@ -74,7 +74,15 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 1. **Dashboard feed.** `listRecentChangesForUser` already returns the right
    shape, so this is mostly rendering. Shortest path to demonstrating the whole
-   thesis, and it is the surface that earns the return visit.
+   thesis, and it is the surface that earns the return visit. Two things to
+   design deliberately rather than default:
+   - **The empty state is the COMMON state.** Most visits will have nothing
+     changed, and that is the healthy outcome, not a failure to load. It has to
+     read as calm and settled ("nothing has changed since your last visit"),
+     never as a broken or unpopulated page. PRODUCT.md principle 3 says the
+     same thing: answer "is anything wrong?" before "what do I have?".
+   - **Mass-change suppression**, using the `suppressed` field below. Build it
+     here, not later.
 2. **Bundle page redesign, one-link migration, and social teardown as ONE
    piece** — they are tangled. The page moves from a static manifest to an
    Operate-mode status surface: lead with aggregate health, then what needs
