@@ -196,6 +196,53 @@ Built on the cubby-ui library (Base UI primitives + CVA variants). Components ar
 ### Navigation
 - Neutral by default, Signal Blue marks the active item. Mono labels for section headers; sidebar uses `surface-1` with a hairline border. Collapse the sidebar at small breakpoints rather than reflowing type.
 
+### Status light and condition vocabulary
+
+The monitoring surfaces (the dashboard change panel, the bundle register) share
+one state readout, and it is system rather than local — a third surface must
+reuse it, not reinvent it.
+
+- **The light.** A `size-1.5` dot centred in a `size-5` ring of its own hue at
+  20% (15% for the neutral tones). Small on purpose: the healthy state is the
+  common one, so a large green mark would be seen every visit and learned as
+  noise. Five tones, in this order of precedence:
+  `pending` (`muted-foreground`, pulsing, `motion-reduce:animate-none`) →
+  `empty` (`muted-foreground`) → `fault` (`danger-foreground`) →
+  `changed` (`warning-foreground`) → `clear` (`success-foreground`).
+- **Pending and empty are never green.** They resolve ahead of `clear` in the
+  precedence chain because both used to fall through to it, which made a surface
+  claim "nothing has changed" before it had checked. In a monitoring product an
+  unverified all-clear is the one state that costs trust.
+- **Condition ranking.** One ordering carries triage everywhere:
+  security regression → delisted → install-may-fail → description changed →
+  content edited → steady. Sort by it and the worst item is the first row; no
+  surface needs a separate "needs attention" section.
+- **Consequence outranks recency.** A verdict that went `pass → fail` three
+  weeks ago sits above a typo fix from an hour ago.
+- **The state is never colour alone.** Every condition pairs its tone with a
+  distinct HugeIcons glyph and a text label, `sr-only` where the visible row
+  stays quiet. Diffs use `−`/`+` notation in mono so additions and removals
+  survive without hue.
+
+### Register table
+
+A dense `<table>` is the right form for an inventory whose rows carry state —
+the reader scans a column, which is a relationship a screen reader should get
+for free. Notes that are easy to lose:
+
+- `Table` ships `md:max-w-2xl` and `TableCell` ships `whitespace-nowrap`, both
+  correct for a table beside other content and both wrong for a table that IS
+  the content. Override with `md:max-w-none` and `whitespace-normal` on the
+  prose cells.
+- `table-fixed` with explicit column widths, and `w-auto` rather than a
+  percentage on the primary column at the narrowest breakpoint — under fixed
+  layout the browser distributes leftover width across declared columns, which
+  inflates a narrow marker column and squeezes the content beside it.
+- Header cells take the mono label treatment (§3), not the component default.
+- At narrow widths drop trailing columns and fold their content into the primary
+  cell. Never leave a column parked off-screen behind a horizontal scroll: the
+  column the reader came for is the first one to disappear that way.
+
 ### Signature: Dot-Matrix Ripple
 The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in sequence, echoing the Nothing OS dot-matrix motif. It is the project's loading vocabulary everywhere a spinner would otherwise go.
 
@@ -208,6 +255,10 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Do** keep Ink Muted (`oklch(0.5 ...)`) for secondary text; verify ≥4.5:1 before lightening anything.
 - **Do** reserve the Geist Pixel display face for ≥60px hero moments.
 - **Do** use the `DotMatrixRipple` for loading states, not a generic spinner.
+- **Do** give an unresolved state its own tone. Never let "not checked yet" or
+  "nothing here" fall through to the success colour.
+- **Do** hold layout height across a loading→resolved transition; a placeholder
+  that occupies no space makes every row jump when data lands.
 - **Do** keep transitions fast (100ms `ease-out`) and let the 0.98 active scale carry the press.
 
 ### Don't:
@@ -218,3 +269,11 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Don't** hand-roll `box-shadow`; use the `surface-N` elevation system.
 - **Don't** introduce a second accent hue or let two blue elements compete on one screen.
 - **Don't** make it look template-generated, cartoonish, or like a generic SaaS landing page.
+- **Don't** use a grid of same-size cards as the structure for a set whose items
+  differ in state. Equal cards assert equal standing and bury the one that needs
+  attention; that is what the register replaced on the bundle page.
+- **Don't** fade `muted-foreground` below its own value (`/50`, `/60`) for
+  elegance — it is tuned to land at 4.5:1 and anything under it fails the
+  contrast floor.
+- **Don't** strip `outline-none` from an interactive element without replacing
+  the focus ring. A hover-identical underline is not a focus indicator.
