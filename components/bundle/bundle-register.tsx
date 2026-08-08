@@ -352,7 +352,27 @@ function RegisterRowView<S extends RegisterSkill>({
         condition === "steady" && "text-muted-foreground",
         // Staged rows stay in place and in order rather than jumping to a
         // pending group — you are meant to see the row you just acted on.
-        isRemoved && "opacity-55",
+        //
+        // The tint is what carries the state. The card grid this replaced used
+        // an animated dashed border (`MarchingBorder`), which cannot sit on a
+        // `<tr>` without an absolutely-positioned overlay; a tinted row is the
+        // table's own way of saying the same thing and is legible at a glance
+        // down a long list, which the border never was.
+        //
+        // Deliberately NOT faded: an earlier pass dimmed the whole row, which
+        // dimmed the restore button with it (opacity cascades and a child
+        // cannot opt out) and made the thing you were about to delete the
+        // hardest thing to read. You need to read what you are removing.
+        //
+        // Applied to the CELLS with `!`, not to the row: TableBody paints body
+        // cells via `[&_tr_td]:bg-surface-3`, a descendant selector that
+        // outranks anything set on the `<tr>`, so a row-level background is
+        // simply invisible. The file's own comment flags the same trap for its
+        // selected-row style.
+        isRemoved &&
+          "[&>td]:bg-danger/[0.13]! hover:[&>td]:bg-danger/[0.18]!",
+        isAdded &&
+          "[&>td]:bg-success/[0.13]! hover:[&>td]:bg-success/[0.18]!",
       )}
     >
       <TableCell className="align-top">
@@ -374,11 +394,6 @@ function RegisterRowView<S extends RegisterSkill>({
             isRemoved && "line-through",
           )}
         >
-          {isAdded ? (
-            <span aria-hidden className="text-success-foreground">
-              +
-            </span>
-          ) : null}
           {skill.name}
           <HugeiconsIcon
             icon={ArrowRight01Icon}
@@ -387,6 +402,7 @@ function RegisterRowView<S extends RegisterSkill>({
             className="size-3.5 text-muted-foreground/50 transition-transform duration-100 group-hover:translate-x-0.5 motion-reduce:transition-none"
           />
         </Link>
+        {status ? <StagedChip status={status} /> : null}
         <p className="truncate font-mono text-xs text-muted-foreground">
           {skill.source}
         </p>
@@ -432,7 +448,7 @@ function RegisterRowView<S extends RegisterSkill>({
       {actions ? (
         <TableCell className="align-top">
           <Button
-            variant="ghost"
+            variant={isRemoved ? "primary-soft" : "ghost"}
             size="xs"
             className="-mr-1 size-7 p-0"
             aria-label={
@@ -515,6 +531,29 @@ function ConditionDetail({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * "Removing" / "Adding", stated in a word.
+ *
+ * The row tint and the strikethrough both say this too, but neither says it in
+ * language: a tint is colour alone, and a strikethrough is easy to miss at a
+ * glance down a long list. This is the accessible carrier, and the reason the
+ * tint can stay quiet enough not to shout at a reader mid-edit.
+ */
+function StagedChip({ status }: { status: "added" | "removed" }) {
+  return (
+    <span
+      className={cn(
+        "ml-2 rounded-md px-1.5 py-0.5 align-middle font-mono text-eyebrow font-medium uppercase tracking-eyebrow",
+        status === "removed"
+          ? "bg-danger/15 text-danger-foreground"
+          : "bg-success/15 text-success-foreground",
+      )}
+    >
+      {status === "removed" ? "Removing" : "Adding"}
+    </span>
   );
 }
 
