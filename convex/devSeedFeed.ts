@@ -91,7 +91,10 @@ export const seedFeedBundle = internalMutation({
       userId: user._id,
       name: FEED_BUNDLE_NAME,
       urlId: `dev-feed-${now.toString(36)}`,
-      isPublic: false,
+      // Open, unlike a real bundle: local inspection of the bundle page has to
+      // work without a signed-in session (Clerk's dev sign-up sits behind a
+      // Cloudflare challenge), and a closed bundle answers only to its owner.
+      isPublic: true,
       createdAt: now,
       updatedAt: now,
       // Old enough that every seeded change lands after it.
@@ -114,6 +117,13 @@ export const seedFeedBundle = internalMutation({
         worstRiskLevel: "CRITICAL",
         previousWorstStatus: "pass",
         worstStatusChangedAt: now - 3 * DAY,
+      });
+      // The register's Audit column reads the verdict denormalized onto the
+      // `skills` row, not the audit row, so a seed that patched only the latter
+      // left that column empty and untested.
+      await ctx.db.patch(audit.skillDocId, {
+        worstAuditStatus: "fail",
+        worstAuditRiskLevel: "CRITICAL",
       });
     }
 

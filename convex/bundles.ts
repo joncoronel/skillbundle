@@ -1,4 +1,5 @@
 import {
+  internalMutation,
   mutation,
   query,
   type MutationCtx,
@@ -30,15 +31,6 @@ function generateUrlId(length = 10): string {
   return randomId(length);
 }
 
-function timingSafeEqualStr(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
-  return diff === 0;
-}
 
 async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
   const id = generateUrlId();
@@ -122,18 +114,17 @@ export const createBundle = mutation({
         skillId: v.string(),
       }),
     ),
-    isPublic: v.boolean(),
   },
-  handler: async (ctx, { name, description, skills, isPublic }) => {
+  // No visibility argument. A bundle is the set of skills you depend on, so it
+  // starts closed and opening it is a deliberate, reversible act on the bundle
+  // page. Creation is not the moment to ask.
+  handler: async (ctx, { name, description, skills }) => {
     const user = await getCurrentUserOrThrow(ctx);
     const { limits } = await getUserPlanWithLimits(ctx);
 
     const bundleCount = await countUserBundles(ctx, user._id);
     if (bundleCount >= limits.maxBundles) {
       throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
-    }
-    if (!isPublic && !limits.canMakePrivate) {
-      throw new ConvexError("Private bundles require a Pro plan.");
     }
 
     // Defense-in-depth: the client form gates on `name.trim()` before
@@ -174,7 +165,7 @@ export const createBundle = mutation({
           : undefined,
       urlId,
       skills: skills.map((s) => ({ ...s, addedAt: now })),
-      isPublic,
+      isPublic: false,
       createdAt: now,
       // Stamp updatedAt on insert so every row has it from day one. Without
       // this, new bundles have `updatedAt: undefined` until their first
@@ -200,13 +191,9 @@ export const updateBundleVisibility = mutation({
       throw new ConvexError("Bundle not found or unauthorized");
     }
 
-    if (!isPublic) {
-      const { limits } = await getUserPlanWithLimits(ctx);
-      if (!limits.canMakePrivate) {
-        throw new ConvexError("Private bundles require a Pro plan.");
-      }
-    }
-
+    // No plan gate. Closed is the default now, so charging for it would be
+    // charging for the default; `canMakePrivate` is dead here and the pricing
+    // rewrite (TODO.md) removes it.
     await ctx.db.patch(bundleId, { isPublic });
   },
 });
@@ -319,36 +306,14 @@ export const updateBundleSkills = mutation({
   },
 });
 
-export const generateShareToken = mutation({
-  args: { bundleId: v.id("bundles") },
-  handler: async (ctx, { bundleId }) => {
-    const user = await getCurrentUserOrThrow(ctx);
-    const bundle = await ctx.db.get(bundleId);
-
-    if (!bundle || bundle.userId !== user._id) {
-      throw new ConvexError("Bundle not found or unauthorized");
-    }
-
-    const token = randomId(32);
-
-    await ctx.db.patch(bundleId, { shareToken: token });
-    return token;
-  },
-});
-
-export const revokeShareToken = mutation({
-  args: { bundleId: v.id("bundles") },
-  handler: async (ctx, { bundleId }) => {
-    const user = await getCurrentUserOrThrow(ctx);
-    const bundle = await ctx.db.get(bundleId);
-
-    if (!bundle || bundle.userId !== user._id) {
-      throw new ConvexError("Bundle not found or unauthorized");
-    }
-
-    await ctx.db.patch(bundleId, { shareToken: undefined });
-  },
-});
+// REMOVED: `generateShareToken` / `revokeShareToken`.
+//
+// A share token was a SECOND URL for a bundle whose first URL was closed —
+// two links to one thing, with different rules, and the owner had to know
+// which one they had copied. Sharing is now one link (the bundle's own) and
+// one switch (`updateBundleVisibility`). Existing tokens are dead: the access
+// check no longer reads them, and `migrateCloseAllBundles` closed every
+// bundle so nothing is unintentionally reachable by an old URL.
 
 /**
  * Stamp "the owner has now seen this bundle", clearing its unread state.
@@ -519,8 +484,8 @@ export const countByUser = query({
 });
 
 export const getByUrlId = query({
-  args: { urlId: v.string(), shareToken: v.optional(v.string()) },
-  handler: async (ctx, { urlId, shareToken }) => {
+  args: { urlId: v.string() },
+  handler: async (ctx, { urlId }) => {
     // Layer 1: bundle lookup and current user are independent — parallelize.
     const [bundle, currentUser] = await Promise.all([
       ctx.db
@@ -534,14 +499,10 @@ export const getByUrlId = query({
 
     const isOwner = currentUser !== null && currentUser._id === bundle.userId;
 
-    if (!bundle.isPublic) {
-      const hasValidToken =
-        shareToken !== undefined &&
-        bundle.shareToken !== undefined &&
-        timingSafeEqualStr(shareToken, bundle.shareToken);
-
-      if (!isOwner && !hasValidToken) return null;
-    }
+    // One link, one rule: the bundle's own URL works for everyone or for
+    // nobody but the owner. There is no second token-bearing URL to reason
+    // about, which is the whole point of the one-link model.
+    if (!bundle.isPublic && !isOwner) return null;
 
     // Layer 2: every remaining read is independent given (bundle, currentUser).
     // Parallelize: skills, creator, forked-from chain.
@@ -634,7 +595,6 @@ export const getByUrlId = query({
       // Owner-only: a share-link visitor has no read state of their own here,
       // and exposing the owner's would leak when they last looked at it.
       lastViewedAt: isOwner ? bundle.lastViewedAt : undefined,
-      shareToken: isOwner ? bundle.shareToken : undefined,
       forkedFrom: forkedFromInfo,
     };
   },
@@ -663,3 +623,58 @@ export const listByUser = query({
 // the /explore page. That page is gone: a directory of community bundles is a
 // discovery surface, and discovery here is the skill catalog, not a leaderboard
 // of strangers' folders. Bundles are private working sets now.
+
+/**
+ * One-time migration to the one-link model. Idempotent.
+ *
+ * Does two things:
+ *
+ * 1. **Closes every bundle.** They used to be created public by default,
+ *    because "public" meant "listed in the community directory" and being
+ *    listed was the point. It now means only "anyone with this link can open
+ *    it". Rows created under the old default would otherwise stay open forever
+ *    under a rule their owners never agreed to. Closes ALL of them rather than
+ *    guessing which were meaningfully shared: any link already handed out stops
+ *    working, which is the cost, and the owner re-opens with one switch.
+ *    Erring toward closed is the only direction that cannot leak a setup.
+ *
+ * 2. **Strips the dead `shareToken` and `featuredAt` fields.** Both are
+ *    unreferenced, but a Convex schema cannot drop a field while rows still
+ *    carry it — pushing a schema without them fails validation against the old
+ *    documents. So they stay declared as deprecated-optional until this has run
+ *    everywhere, and only then come out of schema.ts.
+ *
+ * ORDER MATTERS, and it is two deploys:
+ *
+ *   1. deploy (fields still declared)  →  npx convex run bundles:migrateOneLinkModel --prod
+ *   2. delete the fields from schema.ts  →  deploy again
+ */
+export const migrateOneLinkModel = internalMutation({
+  args: {},
+  returns: v.object({
+    scanned: v.number(),
+    closed: v.number(),
+    fieldsStripped: v.number(),
+  }),
+  handler: async (ctx) => {
+    const bundles = await ctx.db.query("bundles").collect();
+    let closed = 0;
+    let fieldsStripped = 0;
+
+    for (const b of bundles) {
+      const patch: Record<string, unknown> = {};
+      if (b.isPublic) {
+        patch.isPublic = false;
+        closed++;
+      }
+      if (b.shareToken !== undefined || b.featuredAt !== undefined) {
+        patch.shareToken = undefined;
+        patch.featuredAt = undefined;
+        fieldsStripped++;
+      }
+      if (Object.keys(patch).length > 0) await ctx.db.patch(b._id, patch);
+    }
+
+    return { scanned: bundles.length, closed, fieldsStripped };
+  },
+});

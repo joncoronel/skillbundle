@@ -99,7 +99,6 @@ async function setup() {
       { source: "owner/repo", skillId: "skill-a" },
       { source: "owner/repo", skillId: "skill-b" },
     ],
-    isPublic: true,
   });
 
   // createBundle stamps addedAt = now, and the baseline is the LATER of

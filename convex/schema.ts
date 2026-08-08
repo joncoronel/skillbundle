@@ -613,15 +613,25 @@ export default defineSchema({
         addedAt: v.optional(v.number()),
       }),
     ),
-    // Can anyone but the owner open this bundle?
+    // Can anyone but the owner open this bundle's one link?
     //
-    // This used to mean "listed in the public directory" as well. The directory
-    // is gone, so it now means only what the name says. Note that `isPublic` and
-    // `shareToken` are two different links to the same thing with different
-    // rules — that collapses to one link in the bundle-page redesign (TODO.md),
-    // which is where the sharing UI gets rebuilt anyway.
+    // It used to mean "listed in the public directory", and a separate
+    // `shareToken` gave closed bundles a second, unguessable URL. Two links to
+    // one thing with different rules is a model the owner has to hold in their
+    // head, and with the directory gone the two states had collapsed into the
+    // same thing anyway. Now: one link (`urlId`), one switch (this).
+    //
+    // Off by default, and `migrateCloseAllBundles` closed the rows created
+    // under the old public-by-default rule.
     isPublic: v.boolean(),
+    // DEPRECATED, awaiting removal. Both are dead — nothing reads or writes
+    // them — but a Convex schema cannot drop a field while any row still
+    // carries it, so they stay declared until `migrateOneLinkModel` has run on
+    // every deployment. Delete them (and this comment) in the deploy after
+    // that. `shareToken` was the second URL; `featuredAt` was editorial
+    // placement on the removed /explore directory.
     shareToken: v.optional(v.string()),
+    featuredAt: v.optional(v.number()),
     forkedFrom: v.optional(v.id("bundles")),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),

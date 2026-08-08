@@ -493,7 +493,6 @@ function CreateBundleView({
       await createBundle({
         name: trimmed,
         skills: [{ source: skill.source, skillId: skill.skillId }],
-        isPublic: true,
       });
       // Swap back to the list so the user sees the new bundle (with this
       // skill checked) without losing context. Popover stays open.

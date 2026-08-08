@@ -340,7 +340,6 @@ describe("listRecentChangesForUser", () => {
     const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
       name,
       skills: skillIds.map((skillId) => ({ source: SOURCE, skillId })),
-      isPublic: true,
     });
     await t.run(async (ctx) => {
       const bundle = await ctx.db.get(bundleId);
@@ -662,7 +661,6 @@ describe("listRecentChangesForUser — mass-change suppression", () => {
     const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
       name: "One",
       skills: watched.map((skillId) => ({ source: SOURCE, skillId })),
-      isPublic: true,
     });
     await t.run(async (ctx) => {
       const bundle = await ctx.db.get(bundleId);

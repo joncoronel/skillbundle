@@ -18,13 +18,6 @@ import {
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Switch } from "@/components/ui/cubby-ui/switch/switch";
-import { Badge } from "@/components/ui/cubby-ui/badge";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/cubby-ui/tooltip";
 import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
@@ -48,7 +41,6 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [isPublic, setIsPublic] = useState(true);
   const [saving, setSaving] = useState(false);
   const { limits } = useUserPlan();
   // Skip the query until authenticated. countByUser returns 0 for anonymous
@@ -83,7 +75,6 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
           source,
           skillId,
         })),
-        isPublic,
       });
 
       clearAll();
@@ -169,43 +160,13 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="bundle-public" className="text-sm font-medium">
-                  Public bundle
-                  {limits && !limits.canMakePrivate && (
-                    <Badge variant="outline" className="ml-2 text-[10px]">
-                      Pro
-                    </Badge>
-                  )}
-                </label>
-                {limits && !limits.canMakePrivate ? (
-                  <Tooltip>
-                    <TooltipTrigger render={<div />}>
-                      <Switch
-                        shape="squircle"
-                        id="bundle-public"
-                        checked={true}
-                        disabled
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={8}>
-                      Upgrade to Pro to make bundles private
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Switch
-                    shape="squircle"
-                    id="bundle-public"
-                    checked={isPublic}
-                    onCheckedChange={setIsPublic}
-                  />
-                )}
-              </div>
+              {/* No visibility control here. A bundle is created closed and
+                  sharing is a switch on the bundle page — asking at creation
+                  time made people decide before they had anything to decide
+                  about. */}
               <p className="text-sm text-muted-foreground">
-                {count} skill{count !== 1 ? "s" : ""} will be saved.{" "}
-                {isPublic
-                  ? "Anyone with the link can view your bundle."
-                  : "Only you can see this bundle."}
+                {count} skill{count !== 1 ? "s" : ""} will be saved. Only you
+                can see this bundle until you share it.
               </p>
             </div>
           )}

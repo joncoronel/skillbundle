@@ -362,68 +362,9 @@ export const listRecentChangesForUser = query({
 
     const results = await Promise.all(
       Array.from(candidates.values()).map(async (c) => {
-        const summary = await ctx.db
-          .query("skillSummaries")
-          .withIndex("by_source_skillId", (q) =>
-            q.eq("source", c.source).eq("skillId", c.skillId),
-          )
-          .unique();
-        if (!summary) return null;
-
-        // The mirrored timestamp answers "did the content move?" from a ~200 B
-        // row, so only genuinely-unread skills go on to touch the archive. The
-        // audit lookup is not gated on it: a verdict can regress on a re-audit
-        // of byte-identical content, and that is the highest-severity event
-        // there is.
-        const contentMoved =
-          summary.contentUpdatedAt !== undefined &&
-          summary.contentUpdatedAt > c.baseline;
-
-        const [latest, auditRow] = await Promise.all([
-          contentMoved
-            ? ctx.db
-                .query("skillVersions")
-                .withIndex("by_skill_changedAt", (q) =>
-                  q.eq("skillDocId", summary.skillDocId),
-                )
-                .order("desc")
-                .first()
-            : Promise.resolve(null),
-          ctx.db
-            .query("skillAudits")
-            .withIndex("by_source_skillId", (q) =>
-              q.eq("source", c.source).eq("skillId", c.skillId),
-            )
-            .unique(),
-        ]);
-
-        // See the header: a baseline has no previous content to diff against.
-        const version = latest && !latest.isBaseline ? latest : null;
-
-        const previousStatus = auditRow?.previousWorstStatus;
-        const auditChangedAt = auditRow?.worstStatusChangedAt;
-        const audit =
-          auditRow &&
-          previousStatus !== undefined &&
-          auditChangedAt !== undefined &&
-          auditChangedAt > c.baseline &&
-          (AUDIT_RANK[auditRow.worstStatus] ?? 0) >
-            (AUDIT_RANK[previousStatus] ?? 0)
-            ? {
-                from: previousStatus,
-                to: auditRow.worstStatus,
-                riskLevel: auditRow.worstRiskLevel,
-                changedAt: auditChangedAt,
-              }
-            : undefined;
-
-        if (!version && !audit) return null;
-
-        const kind: FeedKind = audit
-          ? "audit"
-          : version?.descriptionChanged
-            ? "description"
-            : "content";
+        const change = await resolveSkillChange(ctx, c);
+        if (!change) return null;
+        const { summary, kind, changedAt, audit, version } = change;
 
         return {
           source: c.source,
@@ -433,7 +374,7 @@ export const listRecentChangesForUser = query({
           bundleName: c.bundle.name,
           bundleUrlId: c.bundle.urlId,
           kind,
-          changedAt: Math.max(audit?.changedAt ?? 0, version?.changedAt ?? 0),
+          changedAt,
           audit,
           version: version ? await toEntry(ctx, version) : null,
         };
@@ -480,3 +421,164 @@ async function isCatalogWideChangeEvent(ctx: QueryCtx): Promise<boolean> {
   }
   return false;
 }
+
+/**
+ * "What happened to this skill since `baseline`?" — the one place that answers
+ * it, shared by the dashboard panel and the bundle register.
+ *
+ * Both surfaces ask the same question of different sets, and an earlier draft
+ * had the logic twice. The parts that are easy to get subtly wrong — audits not
+ * being gated on the content timestamp, baselines being excluded, the
+ * consequence ranking — are exactly the parts that must not drift between two
+ * views the user reads minutes apart.
+ */
+async function resolveSkillChange(
+  ctx: QueryCtx,
+  target: { source: string; skillId: string; baseline: number },
+) {
+  const summary = await ctx.db
+    .query("skillSummaries")
+    .withIndex("by_source_skillId", (q) =>
+      q.eq("source", target.source).eq("skillId", target.skillId),
+    )
+    .unique();
+  if (!summary) return null;
+
+  // The mirrored timestamp answers "did the content move?" from a ~200 B row,
+  // so only genuinely-unread skills go on to touch the archive. The audit
+  // lookup is NOT gated on it: a verdict can regress on a re-audit of
+  // byte-identical content, and that is the highest-severity event there is.
+  const contentMoved =
+    summary.contentUpdatedAt !== undefined &&
+    summary.contentUpdatedAt > target.baseline;
+
+  const [latest, auditRow] = await Promise.all([
+    contentMoved
+      ? ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_changedAt", (q) =>
+            q.eq("skillDocId", summary.skillDocId),
+          )
+          .order("desc")
+          .first()
+      : Promise.resolve(null),
+    ctx.db
+      .query("skillAudits")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", target.source).eq("skillId", target.skillId),
+      )
+      .unique(),
+  ]);
+
+  // See the module header: a baseline has no previous content to diff against.
+  const version = latest && !latest.isBaseline ? latest : null;
+
+  const previousStatus = auditRow?.previousWorstStatus;
+  const auditChangedAt = auditRow?.worstStatusChangedAt;
+  const audit =
+    auditRow &&
+    previousStatus !== undefined &&
+    auditChangedAt !== undefined &&
+    auditChangedAt > target.baseline &&
+    (AUDIT_RANK[auditRow.worstStatus] ?? 0) > (AUDIT_RANK[previousStatus] ?? 0)
+      ? {
+          from: previousStatus,
+          to: auditRow.worstStatus,
+          riskLevel: auditRow.worstRiskLevel,
+          changedAt: auditChangedAt,
+        }
+      : undefined;
+
+  if (!version && !audit) return null;
+
+  const kind: FeedKind = audit
+    ? "audit"
+    : version?.descriptionChanged
+      ? "description"
+      : "content";
+
+  return {
+    summary,
+    kind,
+    changedAt: Math.max(audit?.changedAt ?? 0, version?.changedAt ?? 0),
+    audit,
+    version,
+  };
+}
+
+/**
+ * Changes to the skills in ONE bundle, keyed by `source::skillId`.
+ *
+ * A map rather than a list because the caller already has the bundle's skills
+ * and needs to decorate them in place — the register renders every skill, in
+ * consequence order, with the changed ones carrying their payload. A separate
+ * list would have to be re-joined against the roster on the client.
+ *
+ * Access mirrors `bundles.getByUrlId` exactly: a closed bundle answers only to
+ * its owner. Divergence here would be a leak, so the check is deliberately the
+ * same two lines rather than anything cleverer.
+ *
+ * The baseline is `addedAt` alone, NOT `max(lastViewedAt, addedAt)`. This page
+ * answers "what has changed since I added this", which does not clear when you
+ * look — the dashboard panel owns the read-state question, and giving the two
+ * surfaces the same baseline would make opening the bundle erase its own
+ * contents.
+ */
+export const listChangesForBundle = query({
+  args: { urlId: v.string() },
+  returns: v.array(
+    v.object({
+      key: v.string(),
+      kind: v.union(
+        v.literal("audit"),
+        v.literal("description"),
+        v.literal("content"),
+      ),
+      changedAt: v.number(),
+      audit: v.optional(
+        v.object({
+          from: v.string(),
+          to: v.string(),
+          riskLevel: v.optional(v.string()),
+          changedAt: v.number(),
+        }),
+      ),
+      version: v.union(v.null(), versionEntry),
+    }),
+  ),
+  handler: async (ctx, { urlId }) => {
+    const [bundle, currentUser] = await Promise.all([
+      ctx.db
+        .query("bundles")
+        .withIndex("by_urlId", (q) => q.eq("urlId", urlId))
+        .unique(),
+      getCurrentUser(ctx),
+    ]);
+    if (!bundle) return [];
+
+    const isOwner = currentUser !== null && currentUser._id === bundle.userId;
+    if (!bundle.isPublic && !isOwner) return [];
+
+    const rows = await Promise.all(
+      bundle.skills.map(async (s) => {
+        const change = await resolveSkillChange(ctx, {
+          source: s.source,
+          skillId: s.skillId,
+          baseline: s.addedAt ?? 0,
+        });
+        if (!change) return null;
+        return {
+          key: `${s.source}::${s.skillId}`,
+          kind: change.kind,
+          changedAt: change.changedAt,
+          audit: change.audit,
+          version: change.version
+            ? await toEntry(ctx, change.version)
+            : null,
+        };
+      }),
+    );
+
+    return rows.filter((r): r is NonNullable<typeof r> => r !== null);
+  },
+});

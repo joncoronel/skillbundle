@@ -1,12 +1,21 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
+import {
+  usePreloadedQuery,
+  useMutation,
+  useQuery,
+  type Preloaded,
+} from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { SkillCardView } from "@/components/skill-card";
+import {
+  BundleRegister,
+  RegisterTally,
+  buildRegister,
+} from "@/components/bundle/bundle-register";
 import {
   SkillDetailSheet,
   SkillDetailHandleProvider,
@@ -38,57 +47,64 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/cubby-ui/popover";
+import { Switch } from "@/components/ui/cubby-ui/switch/switch";
+import {
+  Collapsible,
+  CollapsibleContent,
+} from "@/components/ui/cubby-ui/collapsible";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  ArrowDown01Icon,
   Share01Icon,
   Edit01Icon,
   Edit02Icon,
-  Cancel01Icon,
   PencilEdit02Icon,
   LockIcon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
-import { timeAgo } from "@/lib/utils";
+import { cn, timeAgo } from "@/lib/utils";
 import { EditableSkillSection } from "@/components/bundle-edit/editable-skill-section";
 import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
-  preloadedPlan: Preloaded<typeof api.plans.currentPlan>;
   urlId: string;
-  shareToken?: string;
-  isAuthenticated: boolean;
 }
 
 const skillDetailHandle = createSkillDetailHandle();
 const descriptionDialogHandle = createDialogHandle();
 const renameBundleDialogHandle = createDialogHandle();
 
-export function BundleView({
-  preloadedBundle,
-  preloadedPlan,
-  urlId,
-  shareToken,
-  isAuthenticated,
-}: BundleViewProps) {
+export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   const bundle = usePreloadedQuery(preloadedBundle);
-  const planData = usePreloadedQuery(preloadedPlan);
   const [editingSkills, setEditingSkills] = useState(false);
-  const queryArgs = { urlId, shareToken };
+  const queryArgs = { urlId };
 
-  // NOTE: this page deliberately does NOT call `markBundleViewed`.
+  // Opening the bundle now marks it read, and the register is what earns that:
+  // every changed skill is on this page, in consequence order, with its
+  // description delta shown inline. This was pulled once before, when the page
+  // was still a card grid that named no changes — marking something read that
+  // was never shown is the one thing a monitoring product cannot do.
   //
-  // It was wired here briefly and had to come out. Opening a bundle stamps the
-  // whole bundle read, which silently cleared every changed skill in it from
-  // the dashboard panel — including the ones you never looked at — because this
-  // page is still a manifest that lists skills rather than a surface that shows
-  // what changed about them. Marking something read that was never shown is the
-  // one thing a monitoring product cannot do.
+  // Owner-only (the mutation re-checks and no-ops otherwise), fired once per
+  // mount, and not awaited: the page renders identically either way, and a
+  // failed timestamp is not worth an error surface.
   //
-  // Re-wire it as part of the bundle-page redesign (TODO.md), once the page
-  // actually surfaces the changes it would be acknowledging. Until then the
-  // panel's own "Mark all read" is the only thing that clears it, which is the
-  // honest arrangement: you acknowledge, you are not acknowledged for.
+  // The register itself is unaffected by the stamp — `listChangesForBundle`
+  // baselines on `addedAt`, not on the last visit, so the page does not erase
+  // its own contents on load. Only the dashboard panel clears.
+  const ownedBundleId = bundle?.isOwner ? bundle._id : undefined;
+  const markViewed = useMutation(api.bundles.markBundleViewed);
+  useEffect(() => {
+    if (!ownedBundleId) return;
+    void markViewed({ bundleId: ownedBundleId });
+  }, [ownedBundleId, markViewed]);
+
+  // Per-skill change payloads for the register, baselined on when each skill
+  // joined the bundle. Separate from the bundle read because it touches the
+  // version archive and the audit table, which the roster itself does not need.
+  const changes = useQuery(api.skillVersions.listChangesForBundle, { urlId });
+
   const updateVisibility = useMutation(
     api.bundles.updateBundleVisibility,
   ).withOptimisticUpdate((localStore, { isPublic }) => {
@@ -100,26 +116,17 @@ export function BundleView({
       });
     }
   });
-  const generateShare = useMutation(api.bundles.generateShareToken);
-  const revokeShare = useMutation(
-    api.bundles.revokeShareToken,
-  ).withOptimisticUpdate((localStore) => {
-    const current = localStore.getQuery(api.bundles.getByUrlId, queryArgs);
-    if (current !== undefined && current !== null) {
-      localStore.setQuery(api.bundles.getByUrlId, queryArgs, {
-        ...current,
-        shareToken: undefined,
-      });
-    }
-  });
 
   if (bundle === null) {
     return <BundleNotFound />;
   }
 
-  const updatedCount = bundle.skills.filter((s) => s.updatedSinceAdded).length;
   const skillCount = bundle.skills.length;
   const commandCount = generateInstallCommands(bundle.skills).length;
+  // `changes` streams in after the preloaded bundle — the register renders
+  // immediately with every row Steady and settles as the archive answers,
+  // rather than holding the whole page behind a second round trip.
+  const register = buildRegister(bundle.skills, changes);
 
   return (
     // Rows anywhere in this page (read-only grid, edit-mode diff grid) open
@@ -182,91 +189,62 @@ export function BundleView({
                         </Button>
                       }
                     />
-                    <VisibilityToggle
+                    <ShareControl
                       bundleId={bundle._id}
+                      urlId={bundle.urlId}
                       isPublic={bundle.isPublic}
-                      canMakePrivate={planData.limits?.canMakePrivate ?? false}
                       updateVisibility={updateVisibility}
                     />
-                    {!bundle.isPublic ? (
-                      <SharePopover
-                        bundleId={bundle._id}
-                        urlId={bundle.urlId}
-                        shareToken={bundle.shareToken}
-                        onGenerate={generateShare}
-                        onRevoke={revokeShare}
-                      />
-                    ) : null}
                   </>
                 ) : null}
               </div>
           </div>
         </header>
 
-        {updatedCount > 0 && (
-          <div className="rounded-lg bg-primary/10 px-4 py-3">
-            <p className="text-sm font-medium">Updates available</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {updatedCount} skill{updatedCount !== 1 ? "s" : ""} updated since
-              this bundle was saved. Re-run the install commands to get the
-              latest versions.
-            </p>
+        {/* The register, and its caption. Consequence before inventory: the
+            tally answers "is anything wrong?" and the rows underneath are
+            ordered so the worst one is already first. Install is a disclosure
+            in the tally line — still reachable, no longer leading. */}
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <SectionHeader title="Register" count={skillCount} />
+            {bundle.isOwner ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditingSkills(true)}
+                disabled={editingSkills}
+                leadingIcon={
+                  <HugeiconsIcon
+                    icon={PencilEdit02Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                }
+              >
+                Edit skills
+              </Button>
+            ) : null}
           </div>
-        )}
 
-        {commandCount > 0 && (
-          <section>
-            <SectionHeader
-              title="Install"
-              action={
-                <CopyAllCommandsButton skills={bundle.skills} />
-              }
-            />
-            <InstallCommands skills={bundle.skills} />
-          </section>
-        )}
-
-        <section>
-          {/* Co-locate the Edit-skills affordance with the section it
-              modifies: the bundle-identity actions (Rename, Visibility,
-              Share) stay in the header, while "Edit skills" sits with the
-              skills it acts on. */}
-          <SectionHeader
-            title="Skills"
-            count={skillCount}
-            action={
-              bundle.isOwner ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingSkills(true)}
-                  disabled={editingSkills}
-                  leadingIcon={
-                    <HugeiconsIcon
-                      icon={PencilEdit02Icon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  Edit skills
-                </Button>
-              ) : null
-            }
+          <InstallDisclosure
+            skills={bundle.skills}
+            enabled={commandCount > 0}
+            tally={(trigger) => (
+              <RegisterTally
+                total={skillCount}
+                faults={register.faults}
+                changed={register.changed}
+                steady={register.steady}
+                action={trigger}
+              />
+            )}
           />
-          {/* Read-only grid: visible whenever we're not in edit mode (or
+
+          {/* Read-only register: visible whenever we're not in edit mode (or
               for non-owners who can never enter edit mode). */}
-          {!(bundle.isOwner && editingSkills) ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {bundle.skills.map((skill) => (
-                <SkillCardView
-                  key={`${skill.source}/${skill.skillId}`}
-                  skill={skill}
-                  enableQuickAdd={isAuthenticated}
-                  currentBundleId={bundle._id}
-                />
-              ))}
-            </div>
+          {!(bundle.isOwner && editingSkills) && skillCount > 0 ? (
+            <BundleRegister rows={register.rows} />
           ) : null}
           {/* Edit infrastructure: mounts unconditionally for owners so the
               BundleEditBar can animate in/out via its `open` prop instead
@@ -394,47 +372,53 @@ function BundleNotFound() {
 }
 
 // ---------------------------------------------------------------------------
-// Share popover
+// Share control — one link, one switch
 // ---------------------------------------------------------------------------
 
-function SharePopover({
+/**
+ * The whole sharing model, in one popover.
+ *
+ * There used to be two controls and two links: a public/private toggle, and a
+ * separate "create share link" that minted a second, token-bearing URL for
+ * closed bundles. The owner then had to remember which URL they had copied and
+ * which rule it followed. Now the bundle has one address, and this switch says
+ * whether anyone but the owner can open it.
+ *
+ * The URL is shown whatever the state, greyed while closed, so the thing you
+ * are turning on is visible before you turn it on.
+ */
+function ShareControl({
   bundleId,
   urlId,
-  shareToken,
-  onGenerate,
-  onRevoke,
+  isPublic,
+  updateVisibility,
 }: {
   bundleId: Id<"bundles">;
   urlId: string;
-  shareToken?: string;
-  onGenerate: (args: { bundleId: Id<"bundles"> }) => Promise<string>;
-  onRevoke: (args: { bundleId: Id<"bundles"> }) => Promise<null>;
+  isPublic: boolean;
+  updateVisibility: (args: {
+    bundleId: Id<"bundles">;
+    isPublic: boolean;
+  }) => void;
 }) {
-  const [generating, setGenerating] = useState(false);
+  // Read at render, not through state: this only ever renders inside an opened
+  // popover, which is a client-side interaction, so there is no server pass to
+  // mismatch against. The relative path is a correct fallback either way.
   const shareUrl =
     typeof window !== "undefined"
-      ? `${window.location.origin}/bundle/${urlId}?share=${shareToken}`
-      : `/bundle/${urlId}?share=${shareToken}`;
-
-  async function handleGenerate() {
-    setGenerating(true);
-    try {
-      await onGenerate({ bundleId });
-    } finally {
-      setGenerating(false);
-    }
-  }
+      ? `${window.location.origin}/bundle/${urlId}`
+      : `/bundle/${urlId}`;
 
   return (
     <Popover>
       <PopoverTrigger
         render={
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             leadingIcon={
               <HugeiconsIcon
-                icon={Share01Icon}
+                icon={isPublic ? Share01Icon : LockIcon}
                 strokeWidth={2}
                 className="size-3.5"
               />
@@ -442,120 +426,47 @@ function SharePopover({
           />
         }
       >
-        Share
+        {isPublic ? "Shared" : "Private"}
       </PopoverTrigger>
       <PopoverContent
         side="bottom"
         align="start"
         sideOffset={8}
-        className="w-72"
+        className="w-80"
       >
-        <div className="flex flex-col gap-2">
-          {shareToken ? (
-            <>
-              <div className="flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-1.5">
-                <span className="min-w-0 flex-1 overflow-x-auto text-nowrap text-xs text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {shareUrl}
-                </span>
-                <CopyButton content={shareUrl} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  Anyone with this link can view
-                </span>
-                <Button
-                  variant="destructive-soft"
-                  size="xs"
-                  onClick={() => onRevoke({ bundleId })}
-                  leadingIcon={
-                    <HugeiconsIcon
-                      icon={Cancel01Icon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  Revoke
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground">
-                Create a link to share this private bundle.
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Share this bundle</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {isPublic
+                  ? "Anyone with the link can open it."
+                  : "Only you can open it."}
               </p>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleGenerate}
-                loading={generating}
-                trailingIcon={
-                  <HugeiconsIcon
-                    icon={Share01Icon}
-                    className="size-4"
-                    strokeWidth={2}
-                  />
-                }
-              >
-                {generating ? "Creating link…" : "Create share link"}
-              </Button>
-            </>
-          )}
+            </div>
+            <Switch
+              checked={isPublic}
+              onCheckedChange={(checked: boolean) =>
+                updateVisibility({ bundleId, isPublic: checked })
+              }
+              aria-label="Anyone with the link can open this bundle"
+            />
+          </div>
+
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-1.5 transition-opacity duration-100",
+              !isPublic && "opacity-50",
+            )}
+          >
+            <span className="min-w-0 flex-1 overflow-x-auto text-nowrap text-xs text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {shareUrl}
+            </span>
+            <CopyButton content={shareUrl} disabled={!isPublic} />
+          </div>
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Visibility toggle (plan-gated)
-// ---------------------------------------------------------------------------
-
-function VisibilityToggle({
-  bundleId,
-  isPublic,
-  canMakePrivate,
-  updateVisibility,
-}: {
-  bundleId: Id<"bundles">;
-  isPublic: boolean;
-  canMakePrivate: boolean;
-  updateVisibility: (args: {
-    bundleId: Id<"bundles">;
-    isPublic: boolean;
-  }) => void;
-}) {
-  // Gate is surfaced inline (the "Pro" tag) rather than in a hover tooltip,
-  // so touch users see it too. Matches the dashboard's Make-private button.
-  const gated = isPublic && !canMakePrivate;
-
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => {
-        if (gated) {
-          toast.info({
-            title: "Pro feature",
-            description: "Upgrade to Pro to make bundles private.",
-          });
-          return;
-        }
-        updateVisibility({ bundleId, isPublic: !isPublic });
-      }}
-      leadingIcon={
-        <HugeiconsIcon icon={LockIcon} strokeWidth={2} className="size-3.5" />
-      }
-      trailingIcon={
-        gated ? (
-          <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
-            Pro
-          </span>
-        ) : undefined
-      }
-    >
-      {isPublic ? "Make private" : "Make public"}
-    </Button>
   );
 }
 
@@ -566,7 +477,7 @@ function VisibilityToggle({
 interface RenameBundleDialogProps {
   bundleId: Id<"bundles">;
   currentName: string;
-  queryArgs: { urlId: string; shareToken?: string };
+  queryArgs: { urlId: string };
 }
 
 function RenameBundleDialog({
@@ -718,7 +629,7 @@ function BundleDescription({
 interface DescriptionDialogProps {
   bundleId: Id<"bundles">;
   currentDescription?: string;
-  queryArgs: { urlId: string; shareToken?: string };
+  queryArgs: { urlId: string };
 }
 
 function DescriptionDialog({
@@ -822,5 +733,78 @@ function DescriptionDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Install disclosure
+// ---------------------------------------------------------------------------
+
+/**
+ * The install commands, folded away.
+ *
+ * They used to open the page as a full section, which said that reproducing the
+ * setup is what a bundle is for. It is a real job, but a secondary one — the
+ * page's subject is the state of what you already have. Demoted to a control on
+ * the tally line: one click away, zero vertical space when unused.
+ *
+ * Takes the tally as a render prop rather than sitting next to it, because the
+ * trigger has to be INSIDE the Collapsible while the panel it opens has to be
+ * full-width BELOW the tally. Rendering the disclosure as its own sibling made
+ * the trigger a full-width bar that read as an empty input field.
+ */
+function InstallDisclosure({
+  skills,
+  enabled,
+  tally,
+}: {
+  skills: React.ComponentProps<typeof InstallCommands>["skills"];
+  enabled: boolean;
+  tally: (trigger: ReactNode) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!enabled) return <>{tally(null)}</>;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      {/* A plain Button rather than CollapsibleTrigger: that component ships
+          `w-full` plus its own border and card background because it is built
+          for accordion headers, and `render` merges those onto whatever you
+          pass — which turned this control into a full-width bar that read as an
+          empty input. The Collapsible is controlled, so a button toggling the
+          same state is equivalent, with aria-expanded restoring what the
+          trigger would have announced. */}
+      {tally(
+        <Button
+          variant="outline"
+          size="xs"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          trailingIcon={
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              strokeWidth={2}
+              className={cn(
+                "size-3.5 transition-transform duration-100 motion-reduce:transition-none",
+                open && "rotate-180",
+              )}
+            />
+          }
+        >
+          Install
+        </Button>,
+      )}
+      <CollapsibleContent>
+        <div className="space-y-3 pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+              Install commands
+            </p>
+            <CopyAllCommandsButton skills={skills} />
+          </div>
+          <InstallCommands skills={skills} />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
