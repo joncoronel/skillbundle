@@ -621,8 +621,8 @@ export default defineSchema({
     // head, and with the directory gone the two states had collapsed into the
     // same thing anyway. Now: one link (`urlId`), one switch (this).
     //
-    // Off by default, and `migrateCloseAllBundles` closed the rows created
-    // under the old public-by-default rule.
+    // Off by default, and `migrateOneLinkModel` closed the rows created under
+    // the old public-by-default rule.
     isPublic: v.boolean(),
     // DEPRECATED, awaiting removal. Both are dead — nothing reads or writes
     // them — but a Convex schema cannot drop a field while any row still
