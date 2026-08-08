@@ -50,11 +50,25 @@ PRODUCT.md, which was rewritten for this.
 - Daily per-repo freshness sweep (`convex/freshness.ts`) plus tiered content
   cadences: GitHub 30-day backstop behind the sweep, well-known daily.
 
-**NOT DEPLOYED. This is the most time-sensitive item.** Crons are gated behind
-`CRONS_ENABLED`, so neither the archive nor the sweep runs in production yet.
-Version history is the one thing that cannot be backfilled — measured change
-rate is ~27.5%/month, so roughly 2,600 changes a month are going unrecorded
-every month this waits. Run `npx convex deploy` before building anything else.
+**Deployed Aug 8 2026.** The archive and the sweep are both live in production.
+
+**Open item: verify the first clean sweep.** The initial production run hit two
+bugs (an infinite chain loop, and over-flagging every first-seen skill), both
+fixed in `6b1aea3`. The run that followed was still draining ~7,000 spurious
+re-fetches, so the first genuinely clean reading is the 04:00 UTC cron on
+Aug 9 or later. Check it with:
+
+    npx convex run freshness:sweepHealth --prod
+
+Healthy: `reposSweptInLast25h` ≈ `reposTracked` (~1,600), `skillsFlagged` in the
+low hundreds with `skillsFlaggedCapped: false`, `versionsBaseline` ≈ 0 now that
+bootstrapping is done. `skillsFlagged` in the thousands means over-flagging has
+returned and the sweep has become a daily full-catalog re-download — that is the
+number to look at first.
+
+Why a dedicated check rather than reading a row count: "the counter stopped
+going up" is what a stalled chain looks like AND what a finished one looks like.
+That ambiguity is exactly how the loop bug survived being watched.
 
 **Remaining work, in order:**
 
