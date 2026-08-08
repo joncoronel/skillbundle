@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
@@ -91,22 +91,19 @@ export function BundleView({
   const [editingSkills, setEditingSkills] = useState(false);
   const queryArgs = { urlId, shareToken };
 
-  // Opening a bundle is what "reading" it means, so this is the path that
-  // normally clears its rows from the dashboard feed — "Mark all read" is the
-  // bulk escape hatch, not the only way out.
+  // NOTE: this page deliberately does NOT call `markBundleViewed`.
   //
-  // Owner-only and silent: the mutation itself re-checks ownership and no-ops
-  // otherwise (a share-link visitor must never stamp someone else's read
-  // state), and this guard just avoids the pointless call. Fired once per
-  // mount rather than on every re-render, and deliberately NOT awaited — the
-  // page renders the pre-view state either way, and a failed timestamp is not
-  // worth an error surface.
-  const bundleId = bundle?.isOwner ? bundle._id : undefined;
-  const markViewed = useMutation(api.bundles.markBundleViewed);
-  useEffect(() => {
-    if (!bundleId) return;
-    void markViewed({ bundleId });
-  }, [bundleId, markViewed]);
+  // It was wired here briefly and had to come out. Opening a bundle stamps the
+  // whole bundle read, which silently cleared every changed skill in it from
+  // the dashboard panel — including the ones you never looked at — because this
+  // page is still a manifest that lists skills rather than a surface that shows
+  // what changed about them. Marking something read that was never shown is the
+  // one thing a monitoring product cannot do.
+  //
+  // Re-wire it as part of the bundle-page redesign (TODO.md), once the page
+  // actually surfaces the changes it would be acknowledging. Until then the
+  // panel's own "Mark all read" is the only thing that clears it, which is the
+  // honest arrangement: you acknowledge, you are not acknowledged for.
   const updateVisibility = useMutation(
     api.bundles.updateBundleVisibility,
   ).withOptimisticUpdate((localStore, { isPublic }) => {

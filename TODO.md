@@ -52,9 +52,9 @@ PRODUCT.md, which was rewritten for this.
 - Dashboard change panel (`app/(main)/dashboard/change-feed.tsx`). The feed
   query now carries audit regressions as first-class rows, ranks by consequence
   ahead of recency, drops baselines (no previous content = no diff to show), and
-  trips a mass-change breaker. `markAllBundlesViewed` clears it in bulk;
-  `markBundleViewed` is finally wired to the bundle page, which is the ordinary
-  way a row clears. `devSeedFeed.ts` populates it locally.
+  trips a mass-change breaker. `markAllBundlesViewed` clears it in bulk and is
+  currently the ONLY thing that clears it. `devSeedFeed.ts` populates it
+  locally.
 
 **Deployed Aug 8 2026.** The archive and the sweep are both live in production.
 
@@ -83,6 +83,12 @@ That ambiguity is exactly how the loop bug survived being watched.
    Operate-mode status surface: lead with aggregate health, then what needs
    attention, then skills with their state, with the install command demoted to
    a secondary action (it stays — reproducing a setup is still a real job).
+   **Re-wire `markBundleViewed` on this page as part of it.** It is written and
+   currently uncalled: firing it on the manifest cleared the dashboard panel for
+   skills the page never actually showed you. Once the page surfaces the changes,
+   opening it is a genuine acknowledgement and the call becomes correct. Consider
+   per-skill read state at the same time, since a page that shows each change
+   individually invites dismissing them individually.
    The teardown removes `/explore`, stars, forks, copy counts, `featuredAt`,
    `listExplore`, `toggleStar`, `forkBundle`, `setBundleFeatured`,
    `listFeatured`, and the `bundleStats` / `bundleStars` tables. Half-dead

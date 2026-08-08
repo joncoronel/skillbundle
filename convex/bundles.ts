@@ -372,10 +372,18 @@ export const revokeShareToken = mutation({
 /**
  * Stamp "the owner has now seen this bundle", clearing its unread state.
  *
- * Fires on page view, which is why every rejection path is a SILENT no-op rather
- * than a throw. The bundle page is reachable signed-out and via share link, so
- * throwing would spray console errors across entirely legitimate visits — and
- * there is nothing to protect here anyway: the worst a bad call can do is fail
+ * CURRENTLY UNCALLED. It was built to fire on bundle page view, and briefly did,
+ * but that stamps the whole bundle read the moment you open it — clearing every
+ * changed skill from the dashboard panel including the ones you never looked at,
+ * because the bundle page still lists skills rather than showing what changed
+ * about them. Marking something read that was never shown is the one thing a
+ * monitoring product cannot do, so the call came back out. Restore it as part of
+ * the bundle-page redesign, once the page surfaces what it would acknowledge.
+ *
+ * Every rejection path is a SILENT no-op rather than a throw, because the
+ * intended caller is a page view: the bundle page is reachable signed-out and by
+ * share link, so throwing would spray console errors across entirely legitimate
+ * visits, and there is nothing to protect — the worst a bad call can do is fail
  * to record a timestamp.
  *
  * Owner-only by design. A share-link visitor marking someone else's bundle read
