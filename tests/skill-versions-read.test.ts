@@ -111,6 +111,33 @@ async function setContentUpdatedAt(t: TestHandle, skillId: string, at: number) {
   });
 }
 
+/** An audit row whose verdict moved at `changedAt`. */
+async function addAudit(
+  t: TestHandle,
+  skillDocId: Id<"skills">,
+  skillId: string,
+  opts: {
+    worstStatus: string;
+    previousWorstStatus?: string;
+    changedAt: number;
+    riskLevel?: string;
+  },
+) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("skillAudits", {
+      skillDocId,
+      source: SOURCE,
+      skillId,
+      audits: [],
+      worstStatus: opts.worstStatus,
+      worstRiskLevel: opts.riskLevel,
+      previousWorstStatus: opts.previousWorstStatus,
+      worstStatusChangedAt: opts.changedAt,
+      fetchedAt: opts.changedAt,
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 
 describe("listForSkill", () => {
@@ -337,13 +364,35 @@ describe("listRecentChangesForUser", () => {
     await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
     await addVersion(t, a, "skill-a", { changedAt: now - 1 * HOUR });
 
-    const rows = await asUser.query(
+    const feed = await asUser.query(
       api.skillVersions.listRecentChangesForUser,
       {},
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].skillId).toBe("skill-a");
-    expect(rows[0].bundleName).toBe("One");
+    expect(feed.items).toHaveLength(1);
+    expect(feed.items[0].skillId).toBe("skill-a");
+    expect(feed.items[0].bundleName).toBe("One");
+    expect(feed.items[0].kind).toBe("content");
+    expect(feed.items[0].version).not.toBeNull();
+    expect(feed.suppressed).toBe(false);
+  });
+
+  test("counts every watched skill, not just the changed ones", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a", "skill-b"], {
+      lastViewedAt: now - 5 * HOUR,
+    });
+    await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
+    await addVersion(t, a, "skill-a", { changedAt: now - 1 * HOUR });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toHaveLength(1);
+    // The all-clear readout leans on this to say "watching N skills"; it must
+    // be the denominator, not the numerator.
+    expect(feed.watchedSkillCount).toBe(2);
   });
 
   test("omits a skill whose change predates the last visit", async () => {
@@ -355,9 +404,11 @@ describe("listRecentChangesForUser", () => {
     await setContentUpdatedAt(t, "skill-a", now - 5 * HOUR);
     await addVersion(t, a, "skill-a", { changedAt: now - 5 * HOUR });
 
-    expect(
-      await asUser.query(api.skillVersions.listRecentChangesForUser, {}),
-    ).toEqual([]);
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toEqual([]);
   });
 
   test("reports a skill in two bundles once, against the longest-unread one", async () => {
@@ -372,12 +423,12 @@ describe("listRecentChangesForUser", () => {
     await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
     await addVersion(t, a, "skill-a", { changedAt: now - 1 * HOUR });
 
-    const rows = await asUser.query(
+    const feed = await asUser.query(
       api.skillVersions.listRecentChangesForUser,
       {},
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].bundleName).toBe("Neglected");
+    expect(feed.items).toHaveLength(1);
+    expect(feed.items[0].bundleName).toBe("Neglected");
   });
 
   test("omits an unread skill that has no archived version to show", async () => {
@@ -391,12 +442,172 @@ describe("listRecentChangesForUser", () => {
     // promise a diff it cannot produce.
     await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
 
-    expect(
-      await asUser.query(api.skillVersions.listRecentChangesForUser, {}),
-    ).toEqual([]);
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toEqual([]);
   });
 
-  test("orders newest first across bundles", async () => {
+  test("omits a skill whose only archived version is its baseline", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 5 * HOUR,
+    });
+    await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
+    // A baseline means "we started archiving this file", not "it changed". It
+    // holds no previous content, so there is no diff to link to. The archive is
+    // still backfilling, so this is the common case, not an edge one.
+    await addVersion(t, a, "skill-a", {
+      changedAt: now - 1 * HOUR,
+      isBaseline: true,
+    });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toEqual([]);
+  });
+
+  test("includes a skill once a real change lands on top of its baseline", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 10 * HOUR,
+    });
+    await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
+    await addVersion(t, a, "skill-a", {
+      changedAt: now - 8 * HOUR,
+      isBaseline: true,
+    });
+    await addVersion(t, a, "skill-a", { changedAt: now - 1 * HOUR });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toHaveLength(1);
+    expect(feed.items[0].version?.isBaseline).toBe(false);
+  });
+
+  test("labels a description change so it can outrank a body edit", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 5 * HOUR,
+    });
+    await setContentUpdatedAt(t, "skill-a", now - 1 * HOUR);
+    await addVersion(t, a, "skill-a", {
+      changedAt: now - 1 * HOUR,
+      descriptionChanged: true,
+    });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items[0].kind).toBe("description");
+  });
+
+  test("surfaces a security regression even with no content change", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 5 * HOUR,
+    });
+    // No contentUpdatedAt bump at all: a re-audit of byte-identical content can
+    // still flip the verdict, and that is the highest-severity event there is.
+    await addAudit(t, a, "skill-a", {
+      worstStatus: "fail",
+      previousWorstStatus: "pass",
+      changedAt: now - 1 * HOUR,
+      riskLevel: "CRITICAL",
+    });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toHaveLength(1);
+    expect(feed.items[0].kind).toBe("audit");
+    expect(feed.items[0].audit).toMatchObject({ from: "pass", to: "fail" });
+    expect(feed.items[0].version).toBeNull();
+  });
+
+  test("ignores a verdict that improved", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 5 * HOUR,
+    });
+    await addAudit(t, a, "skill-a", {
+      worstStatus: "pass",
+      previousWorstStatus: "fail",
+      changedAt: now - 1 * HOUR,
+    });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toEqual([]);
+  });
+
+  test("ranks by consequence before recency", async () => {
+    const { t, asUser, a, b } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 40 * HOUR,
+    });
+    await makeBundle(t, asUser, "Two", ["skill-b"], {
+      lastViewedAt: now - 40 * HOUR,
+    });
+    // skill-b changed an hour ago; skill-a's verdict regressed nearly a day
+    // ago. The older, worse event still leads. (Both sit inside the baseline,
+    // which `makeBundle` puts at addedAt = now − 24h.)
+    await setContentUpdatedAt(t, "skill-b", now - 1 * HOUR);
+    await addVersion(t, b, "skill-b", { changedAt: now - 1 * HOUR });
+    await addAudit(t, a, "skill-a", {
+      worstStatus: "warn",
+      previousWorstStatus: "pass",
+      changedAt: now - 20 * HOUR,
+    });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items.map((r) => r.skillId)).toEqual(["skill-a", "skill-b"]);
+  });
+
+  test("merges a regression and a content change into one row", async () => {
+    const { t, asUser, a } = await setupFeed();
+    const now = Date.now();
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 5 * HOUR,
+    });
+    await setContentUpdatedAt(t, "skill-a", now - 2 * HOUR);
+    await addVersion(t, a, "skill-a", { changedAt: now - 2 * HOUR });
+    await addAudit(t, a, "skill-a", {
+      worstStatus: "fail",
+      previousWorstStatus: "warn",
+      changedAt: now - 1 * HOUR,
+    });
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.items).toHaveLength(1);
+    // Headlined by the worse event, but the version rides along so the row can
+    // still link to a diff.
+    expect(feed.items[0].kind).toBe("audit");
+    expect(feed.items[0].version).not.toBeNull();
+  });
+
+  test("orders newest first among events of equal consequence", async () => {
     const { t, asUser, a, b } = await setupFeed();
     const now = Date.now();
     await makeBundle(t, asUser, "One", ["skill-a"], { lastViewedAt: now - 20 * HOUR });
@@ -406,17 +617,112 @@ describe("listRecentChangesForUser", () => {
     await addVersion(t, a, "skill-a", { changedAt: now - 6 * HOUR });
     await addVersion(t, b, "skill-b", { changedAt: now - 2 * HOUR });
 
-    const rows = await asUser.query(
+    const feed = await asUser.query(
       api.skillVersions.listRecentChangesForUser,
       {},
     );
-    expect(rows.map((r) => r.skillId)).toEqual(["skill-b", "skill-a"]);
+    expect(feed.items.map((r) => r.skillId)).toEqual(["skill-b", "skill-a"]);
   });
 
   test("returns nothing when signed out", async () => {
     const { t } = await setupFeed();
-    expect(
-      await t.query(api.skillVersions.listRecentChangesForUser, {}),
-    ).toEqual([]);
+    const feed = await t.query(api.skillVersions.listRecentChangesForUser, {});
+    expect(feed.items).toEqual([]);
+    expect(feed.watchedSkillCount).toBe(0);
+  });
+});
+
+describe("listRecentChangesForUser — mass-change suppression", () => {
+  /**
+   * The breaker guards against OUR pipeline rewriting hashes catalog-wide, so
+   * the fixture is a catalog-wide event: many skills, all moving at once. The
+   * user only watches a handful of them.
+   */
+  async function setupMass(t: TestHandle, catalogChanges: number) {
+    const now = Date.now();
+    await seedUser(t, "user-1");
+    const asUser = t.withIdentity({ subject: "user-1" });
+    const watched: string[] = [];
+
+    for (let i = 0; i < 10; i++) {
+      const id = `watched-${i}`;
+      const docId = await seedSkill(t, id);
+      await setContentUpdatedAt(t, id, now - 1 * HOUR);
+      await addVersion(t, docId, id, { changedAt: now - 1 * HOUR });
+      watched.push(id);
+    }
+
+    // The rest of the catalog moving in the same window is what trips it.
+    for (let i = 0; i < catalogChanges; i++) {
+      const id = `other-${i}`;
+      const docId = await seedSkill(t, id);
+      await addVersion(t, docId, id, { changedAt: now - 1 * HOUR });
+    }
+
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: "One",
+      skills: watched.map((skillId) => ({ source: SOURCE, skillId })),
+      isPublic: true,
+    });
+    await t.run(async (ctx) => {
+      const bundle = await ctx.db.get(bundleId);
+      await ctx.db.patch(bundleId, {
+        lastViewedAt: now - 5 * HOUR,
+        skills: bundle!.skills.map((s) => ({
+          ...s,
+          addedAt: now - 24 * HOUR,
+        })),
+      });
+    });
+    return asUser;
+  }
+
+  test("trips when the whole catalog moves at once", async () => {
+    const t = makeTest();
+    const asUser = await setupMass(t, 300);
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.suppressed).toBe(true);
+    // Items still come back — the reads are already paid for, and the UI puts
+    // them behind a disclosure rather than a second round trip.
+    expect(feed.items).toHaveLength(10);
+  });
+
+  test("stays clear on an ordinary day", async () => {
+    const t = makeTest();
+    const asUser = await setupMass(t, 20);
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.suppressed).toBe(false);
+  });
+
+  test("ignores a burst of baselines", async () => {
+    const t = makeTest();
+    const now = Date.now();
+    const asUser = await setupMass(t, 0);
+    // The archive backfills hundreds of baselines a day by design. A breaker
+    // that fires on those would be permanently tripped during normal operation.
+    await Promise.all(
+      Array.from({ length: 400 }, async (_, i) => {
+        const id = `baseline-${i}`;
+        const docId = await seedSkill(t, id);
+        await addVersion(t, docId, id, {
+          changedAt: now - 1 * HOUR,
+          isBaseline: true,
+        });
+      }),
+    );
+
+    const feed = await asUser.query(
+      api.skillVersions.listRecentChangesForUser,
+      {},
+    );
+    expect(feed.suppressed).toBe(false);
   });
 });

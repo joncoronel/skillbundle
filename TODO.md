@@ -49,6 +49,12 @@ PRODUCT.md, which was rewritten for this.
 - Skill-page History UI (`components/skill-history.tsx`) on `@pierre/diffs`.
 - Daily per-repo freshness sweep (`convex/freshness.ts`) plus tiered content
   cadences: GitHub 30-day backstop behind the sweep, well-known daily.
+- Dashboard change panel (`app/(main)/dashboard/change-feed.tsx`). The feed
+  query now carries audit regressions as first-class rows, ranks by consequence
+  ahead of recency, drops baselines (no previous content = no diff to show), and
+  trips a mass-change breaker. `markAllBundlesViewed` clears it in bulk;
+  `markBundleViewed` is finally wired to the bundle page, which is the ordinary
+  way a row clears. `devSeedFeed.ts` populates it locally.
 
 **Deployed Aug 8 2026.** The archive and the sweep are both live in production.
 
@@ -72,18 +78,7 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Remaining work, in order:**
 
-1. **Dashboard feed.** `listRecentChangesForUser` already returns the right
-   shape, so this is mostly rendering. Shortest path to demonstrating the whole
-   thesis, and it is the surface that earns the return visit. Two things to
-   design deliberately rather than default:
-   - **The empty state is the COMMON state.** Most visits will have nothing
-     changed, and that is the healthy outcome, not a failure to load. It has to
-     read as calm and settled ("nothing has changed since your last visit"),
-     never as a broken or unpopulated page. PRODUCT.md principle 3 says the
-     same thing: answer "is anything wrong?" before "what do I have?".
-   - **Mass-change suppression**, using the `suppressed` field below. Build it
-     here, not later.
-2. **Bundle page redesign, one-link migration, and social teardown as ONE
+1. **Bundle page redesign, one-link migration, and social teardown as ONE
    piece** — they are tangled. The page moves from a static manifest to an
    Operate-mode status surface: lead with aggregate health, then what needs
    attention, then skills with their state, with the install command demoted to
@@ -92,18 +87,26 @@ That ambiguity is exactly how the loop bug survived being watched.
    `listExplore`, `toggleStar`, `forkBundle`, `setBundleFeatured`,
    `listFeatured`, and the `bundleStats` / `bundleStars` tables. Half-dead
    social reads as abandonment, which is why it goes rather than lingering.
-3. **Pricing rewrite.** Two of the four Pro bullets (private bundles, unlimited
+2. **Pricing rewrite.** Two of the four Pro bullets (private bundles, unlimited
    bundles) are now free on skills.sh. Intended shape is in PRODUCT.md: free =
    capped watched skills on a weekly digest, Pro = unlimited + immediate
    security-regression surfacing + full version history.
 
 **Loose ends worth knowing about:**
 
-- `skillVersions.suppressed` is declared and nothing sets it. It was the
-  notifier's mass-change circuit breaker. Still needed, but now as a DISPLAY
-  concern: if a pipeline change reprocesses the catalog, the dashboard feed must
-  not render thousands of events. Build it with the feed. Precedent that this
-  happens: ~60% of prod shares one `contentUpdatedAt` from the launch backfill.
+- `skillVersions.suppressed` is declared and still nothing sets it — the
+  mass-change breaker got built at READ time instead (`isCatalogWideChangeEvent`
+  in `skillVersions.ts`), because at write time you cannot know you are the 3rd
+  of 3,000. A per-row flag would need a second pass over the archive to set, and
+  the read-time count is one bounded index scan that only runs when a user
+  already has 8+ changed skills. Drop the field on the next schema change unless
+  a use appears. (Precedent that mass events happen: ~60% of prod shares one
+  `contentUpdatedAt` from the launch backfill.)
+- The dashboard feed hides a change whose only archived version is a baseline,
+  because a baseline has no previous content and so no diff to link to. That
+  silently under-reports while the archive backfills. It self-corrects as
+  skills accumulate a second version, so it needs no work — just do not read
+  an empty feed as proof that nothing changed until roughly Sep 2026.
 - `next.config.ts` carries a Turbopack alias for `@shikijs/themes/horizon-bright`,
   which `@pierre/theming@1.0.1` imports and which exists in no published release
   of that package. Both packages are already at their latest version, so there

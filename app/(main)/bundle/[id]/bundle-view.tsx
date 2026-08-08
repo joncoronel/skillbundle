@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
@@ -90,6 +90,23 @@ export function BundleView({
   const planData = usePreloadedQuery(preloadedPlan);
   const [editingSkills, setEditingSkills] = useState(false);
   const queryArgs = { urlId, shareToken };
+
+  // Opening a bundle is what "reading" it means, so this is the path that
+  // normally clears its rows from the dashboard feed — "Mark all read" is the
+  // bulk escape hatch, not the only way out.
+  //
+  // Owner-only and silent: the mutation itself re-checks ownership and no-ops
+  // otherwise (a share-link visitor must never stamp someone else's read
+  // state), and this guard just avoids the pointless call. Fired once per
+  // mount rather than on every re-render, and deliberately NOT awaited — the
+  // page renders the pre-view state either way, and a failed timestamp is not
+  // worth an error surface.
+  const bundleId = bundle?.isOwner ? bundle._id : undefined;
+  const markViewed = useMutation(api.bundles.markBundleViewed);
+  useEffect(() => {
+    if (!bundleId) return;
+    void markViewed({ bundleId });
+  }, [bundleId, markViewed]);
   const updateVisibility = useMutation(
     api.bundles.updateBundleVisibility,
   ).withOptimisticUpdate((localStore, { isPublic }) => {

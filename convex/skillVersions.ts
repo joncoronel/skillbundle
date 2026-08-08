@@ -36,6 +36,51 @@ import { getCurrentUser } from "./users";
 const DEFAULT_VERSION_LIMIT = 50;
 const MAX_VERSION_LIMIT = 200;
 
+/** Severity ordering for audit verdicts. Higher is worse. */
+const AUDIT_RANK: Record<string, number> = {
+  unknown: 0,
+  pass: 1,
+  warn: 2,
+  fail: 3,
+};
+
+/**
+ * Consequence ordering for the dashboard feed, per PRODUCT.md principle 4: a
+ * security regression outranks a description change, which outranks a body
+ * edit. Not chronological — a verdict that went `pass → fail` three weeks ago
+ * still matters more than a typo fix an hour ago, and a monitoring panel that
+ * buries it under fresher noise has failed at its one job.
+ */
+const FEED_RANK: Record<FeedKind, number> = {
+  audit: 3,
+  description: 2,
+  content: 1,
+};
+type FeedKind = "audit" | "description" | "content";
+
+/**
+ * Mass-change circuit breaker.
+ *
+ * The failure this guards against is ours, not the ecosystem's: a pipeline
+ * change that rewrites content hashes catalog-wide would otherwise present as
+ * "43 of your skills changed today", which is both false and exactly the kind
+ * of noise that kills a monitoring product (PRODUCT.md principle 4). Precedent
+ * exists — roughly 60% of production shares a single `contentUpdatedAt` from
+ * the launch backfill.
+ *
+ * Measured baseline: ~27% of the catalog changes per month, so a normal day is
+ * on the order of 25–30 real changes across all 3,000 skills. `MASS_CHANGE_
+ * THRESHOLD` sits an order of magnitude above that.
+ *
+ * The check is deliberately not free, so it is gated behind `SUPPRESSION_MIN_
+ * ROWS`: a user with three changed skills needs no circuit breaker regardless
+ * of what the catalog did, so the common load never pays for the scan.
+ */
+const SUPPRESSION_MIN_ROWS = 8;
+const MASS_CHANGE_THRESHOLD = 250;
+const MASS_CHANGE_SCAN_LIMIT = 1000;
+const MASS_CHANGE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /** Metadata shape shared by the timeline and the dashboard feed. */
 const versionEntry = v.object({
   versionId: v.id("skillVersions"),
@@ -183,16 +228,10 @@ export const getAuditChange = query({
       .unique();
     if (!row) return null;
 
-    const rank: Record<string, number> = {
-      unknown: 0,
-      pass: 1,
-      warn: 2,
-      fail: 3,
-    };
     const previous = row.previousWorstStatus;
     const regressed =
       previous !== undefined &&
-      (rank[row.worstStatus] ?? 0) > (rank[previous] ?? 0);
+      (AUDIT_RANK[row.worstStatus] ?? 0) > (AUDIT_RANK[previous] ?? 0);
 
     return {
       worstStatus: row.worstStatus,
@@ -207,34 +246,89 @@ export const getAuditChange = query({
 });
 
 /**
- * The dashboard feed: skills across the signed-in user's bundles that changed
- * since they last opened the bundle holding them, newest first.
+ * The dashboard feed: everything that happened to the skills in the signed-in
+ * user's bundles since they last opened the bundle holding them.
  *
- * Runs the cheap direction — user → their bundles → those skills → latest
- * version — which is why no inverted skill-to-watcher index exists. An earlier
- * design built one; it turned out to be needed only for pushing email, and there
- * is no email.
+ * Runs the cheap direction — user → their bundles → those skills → what changed
+ * — which is why no inverted skill-to-watcher index exists. An earlier design
+ * built one; it turned out to be needed only for pushing email, and there is no
+ * email.
  *
  * A skill filed in two bundles appears once, attributed to whichever bundle
  * makes it unread by the wider margin (the earliest baseline), so the feed
  * reflects the longest you have gone without seeing it.
+ *
+ * ## Two event sources, one row
+ *
+ * A skill can change in two independent ways, and the feed has to carry both or
+ * it cannot honour PRODUCT.md's ranking. Content edits come from the version
+ * archive; security regressions come from `skillAudits`, which records only
+ * current-and-previous rather than a timeline. A skill that did both gets ONE
+ * row headlined by the worse event, with the version attached so the diff link
+ * still works.
+ *
+ * ## Why baselines never appear
+ *
+ * `isBaseline` means "this is the first time we archived this file", not "this
+ * file changed". It carries no previous content, so there is nothing to diff
+ * and nothing a reader could act on. Filtering it here matters more than it
+ * sounds: the archive began in Aug 2026 and is still backfilling, so most
+ * skills' first row is a baseline. Because a baseline is always the OLDEST row
+ * for a skill, checking the newest row is enough — if that one is a baseline,
+ * it is the only one.
+ *
+ * The trade-off is honest and temporary: a genuine change that happens to be a
+ * skill's first archived row is hidden. Showing "something changed, but we
+ * cannot tell you what" is worse than staying quiet, and the case disappears as
+ * the archive fills.
  */
-export const listRecentChangesForUser = query({
-  args: { limit: v.optional(v.number()) },
-  returns: v.array(
+const feedItem = v.object({
+  source: v.string(),
+  skillId: v.string(),
+  name: v.string(),
+  bundleId: v.id("bundles"),
+  bundleName: v.string(),
+  bundleUrlId: v.string(),
+  /** The headline event, already ranked by consequence. */
+  kind: v.union(
+    v.literal("audit"),
+    v.literal("description"),
+    v.literal("content"),
+  ),
+  /** Most recent of the events present on this row. */
+  changedAt: v.number(),
+  /** Present only when the verdict got worse since the baseline. */
+  audit: v.optional(
     v.object({
-      source: v.string(),
-      skillId: v.string(),
-      name: v.string(),
-      bundleId: v.id("bundles"),
-      bundleName: v.string(),
-      bundleUrlId: v.string(),
-      latest: versionEntry,
+      from: v.string(),
+      to: v.string(),
+      riskLevel: v.optional(v.string()),
+      changedAt: v.number(),
     }),
   ),
+  /** Present unless this is an audit-only row. */
+  version: v.union(v.null(), versionEntry),
+});
+
+export const listRecentChangesForUser = query({
+  args: { limit: v.optional(v.number()) },
+  returns: v.object({
+    items: v.array(feedItem),
+    /**
+     * The circuit breaker tripped: an implausible number of skills changed
+     * catalog-wide in the last day, which in practice means our pipeline
+     * reprocessed content rather than the ecosystem moving. `items` is still
+     * populated — the reads are already paid for, and the caller should offer
+     * them behind a disclosure rather than a second round trip — but the UI
+     * must not present them as ordinary news.
+     */
+    suppressed: v.boolean(),
+    /** Skills the user watches, for the all-clear readout's denominator. */
+    watchedSkillCount: v.number(),
+  }),
   handler: async (ctx, { limit }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) return [];
+    if (!user) return { items: [], suppressed: false, watchedSkillCount: 0 };
 
     const bundles = await ctx.db
       .query("bundles")
@@ -264,6 +358,8 @@ export const listRecentChangesForUser = query({
       }
     }
 
+    const watchedSkillCount = candidates.size;
+
     const results = await Promise.all(
       Array.from(candidates.values()).map(async (c) => {
         const summary = await ctx.db
@@ -274,23 +370,60 @@ export const listRecentChangesForUser = query({
           .unique();
         if (!summary) return null;
 
-        // Cheap rejection first: the mirrored timestamp answers "did anything
-        // change?" from a ~200 B row, so only genuinely-unread skills go on to
-        // touch the archive.
-        const updated = summary.contentUpdatedAt;
-        if (updated === undefined || updated <= c.baseline) return null;
+        // The mirrored timestamp answers "did the content move?" from a ~200 B
+        // row, so only genuinely-unread skills go on to touch the archive. The
+        // audit lookup is not gated on it: a verdict can regress on a re-audit
+        // of byte-identical content, and that is the highest-severity event
+        // there is.
+        const contentMoved =
+          summary.contentUpdatedAt !== undefined &&
+          summary.contentUpdatedAt > c.baseline;
 
-        const latest = await ctx.db
-          .query("skillVersions")
-          .withIndex("by_skill_changedAt", (q) =>
-            q.eq("skillDocId", summary.skillDocId),
-          )
-          .order("desc")
-          .first();
-        // Changed before the archive existed, or archiving failed for it. The
-        // count and the feed can legitimately disagree here; the feed only shows
-        // what it can actually render a diff for.
-        if (!latest) return null;
+        const [latest, auditRow] = await Promise.all([
+          contentMoved
+            ? ctx.db
+                .query("skillVersions")
+                .withIndex("by_skill_changedAt", (q) =>
+                  q.eq("skillDocId", summary.skillDocId),
+                )
+                .order("desc")
+                .first()
+            : Promise.resolve(null),
+          ctx.db
+            .query("skillAudits")
+            .withIndex("by_source_skillId", (q) =>
+              q.eq("source", c.source).eq("skillId", c.skillId),
+            )
+            .unique(),
+        ]);
+
+        // See the header: a baseline has no previous content to diff against.
+        const version = latest && !latest.isBaseline ? latest : null;
+
+        const previousStatus = auditRow?.previousWorstStatus;
+        const auditChangedAt = auditRow?.worstStatusChangedAt;
+        const audit =
+          auditRow &&
+          previousStatus !== undefined &&
+          auditChangedAt !== undefined &&
+          auditChangedAt > c.baseline &&
+          (AUDIT_RANK[auditRow.worstStatus] ?? 0) >
+            (AUDIT_RANK[previousStatus] ?? 0)
+            ? {
+                from: previousStatus,
+                to: auditRow.worstStatus,
+                riskLevel: auditRow.worstRiskLevel,
+                changedAt: auditChangedAt,
+              }
+            : undefined;
+
+        if (!version && !audit) return null;
+
+        const kind: FeedKind = audit
+          ? "audit"
+          : version?.descriptionChanged
+            ? "description"
+            : "content";
 
         return {
           source: c.source,
@@ -299,14 +432,51 @@ export const listRecentChangesForUser = query({
           bundleId: c.bundle._id,
           bundleName: c.bundle.name,
           bundleUrlId: c.bundle.urlId,
-          latest: await toEntry(ctx, latest),
+          kind,
+          changedAt: Math.max(audit?.changedAt ?? 0, version?.changedAt ?? 0),
+          audit,
+          version: version ? await toEntry(ctx, version) : null,
         };
       }),
     );
 
-    return results
+    const items = results
       .filter((r): r is NonNullable<typeof r> => r !== null)
-      .sort((a, b) => b.latest.changedAt - a.latest.changedAt)
+      .sort(
+        (a, b) =>
+          FEED_RANK[b.kind] - FEED_RANK[a.kind] || b.changedAt - a.changedAt,
+      )
       .slice(0, Math.min(limit ?? DEFAULT_VERSION_LIMIT, MAX_VERSION_LIMIT));
+
+    return {
+      items,
+      suppressed:
+        items.length >= SUPPRESSION_MIN_ROWS
+          ? await isCatalogWideChangeEvent(ctx)
+          : false,
+      watchedSkillCount,
+    };
   },
 });
+
+/**
+ * Did the whole catalog move at once? See `MASS_CHANGE_THRESHOLD`.
+ *
+ * Counts only non-baseline rows. Baselines arrive in bursts by nature — the
+ * archive backfills a few hundred a day — so including them would trip the
+ * breaker during normal operation, which is the one failure mode a circuit
+ * breaker must not have.
+ */
+async function isCatalogWideChangeEvent(ctx: QueryCtx): Promise<boolean> {
+  const since = Date.now() - MASS_CHANGE_WINDOW_MS;
+  const recent = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_changedAt", (q) => q.gte("changedAt", since))
+    .take(MASS_CHANGE_SCAN_LIMIT);
+
+  let realChanges = 0;
+  for (const row of recent) {
+    if (!row.isBaseline && ++realChanges >= MASS_CHANGE_THRESHOLD) return true;
+  }
+  return false;
+}

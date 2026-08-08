@@ -23,6 +23,7 @@ import {
   AlertDialogTrigger,
   createAlertDialogHandle,
 } from "@/components/ui/cubby-ui/alert-dialog";
+import { ChangeFeed } from "./change-feed";
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
@@ -53,19 +54,25 @@ export function DashboardContent() {
     api.plans.currentPlan,
     isAuthenticated ? {} : "skip",
   );
+  const feed = useQuery(
+    api.skillVersions.listRecentChangesForUser,
+    isAuthenticated ? {} : "skip",
+  );
 
-  if (bundles === undefined || planData === undefined) {
+  if (bundles === undefined || planData === undefined || feed === undefined) {
     return <DashboardSkeleton />;
   }
-  return <DashboardLoaded bundles={bundles} planData={planData} />;
+  return <DashboardLoaded bundles={bundles} planData={planData} feed={feed} />;
 }
 
 function DashboardLoaded({
   bundles,
   planData,
+  feed,
 }: {
   bundles: FunctionReturnType<typeof api.bundles.listByUser>;
   planData: FunctionReturnType<typeof api.plans.currentPlan>;
+  feed: FunctionReturnType<typeof api.skillVersions.listRecentChangesForUser>;
 }) {
   const deleteBundle = useMutation(
     api.bundles.deleteBundle,
@@ -130,6 +137,11 @@ function DashboardLoaded({
   return (
     <>
       <div className="space-y-10">
+        {/* State before inventory (PRODUCT.md principle 3): the panel answers
+            "is anything wrong?" above the fold, and the bundle grid answers
+            "what do I have?" underneath it. */}
+        <ChangeFeed feed={feed} />
+
         <DashboardStats
           bundles={bundles}
           plan={planData.plan}

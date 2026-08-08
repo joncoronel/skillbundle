@@ -17,6 +17,7 @@ import type * as crons from "../crons.js";
 import type * as curated from "../curated.js";
 import type * as curatedRefresh from "../curatedRefresh.js";
 import type * as devSeed from "../devSeed.js";
+import type * as devSeedFeed from "../devSeedFeed.js";
 import type * as devStats from "../devStats.js";
 import type * as duplicates from "../duplicates.js";
 import type * as freshness from "../freshness.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   curated: typeof curated;
   curatedRefresh: typeof curatedRefresh;
   devSeed: typeof devSeed;
+  devSeedFeed: typeof devSeedFeed;
   devStats: typeof devStats;
   duplicates: typeof duplicates;
   freshness: typeof freshness;

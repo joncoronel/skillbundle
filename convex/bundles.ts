@@ -397,6 +397,39 @@ export const markBundleViewed = mutation({
 });
 
 /**
+ * Clear the whole dashboard feed in one action.
+ *
+ * The feed spans bundles, so it needs a clearing action that does too —
+ * otherwise the only way to dismiss a change is to open the bundle that
+ * contains it, and a feed you cannot acknowledge is a feed that is always full.
+ *
+ * Stamps one timestamp across every bundle rather than per-row read state,
+ * which keeps this a patch of N small rows and matches how the baseline is
+ * already computed everywhere else (`max(lastViewedAt, addedAt)`). The cost is
+ * that it is all-or-nothing; a per-skill dismissal would need its own table and
+ * is not worth one yet.
+ */
+export const markAllBundlesViewed = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+
+    const bundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+
+    const now = Date.now();
+    await Promise.all(
+      bundles.map((b) => ctx.db.patch(b._id, { lastViewedAt: now })),
+    );
+    return null;
+  },
+});
+
+/**
  * Per-bundle "how much changed since you last looked", for the dashboard.
  *
  * Reads `skillSummaries` (~200 B) rather than `skills` (~13 KB) purely for this:

@@ -261,6 +261,11 @@ export const seedVersions = internalAction({
     skillId: v.string(),
     clear: v.optional(v.boolean()),
   },
+  returns: v.object({
+    source: v.string(),
+    skillId: v.string(),
+    seeded: v.number(),
+  }),
   handler: async (ctx, { source, skillId, clear }) => {
     const skillDocId: Id<"skills"> = await ctx.runMutation(
       internal.devSeed.clearSeededVersions,
