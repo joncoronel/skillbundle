@@ -20,6 +20,7 @@ import { type SkillData } from "@/components/skill-card";
 import {
   BundleRegister,
   buildRegister,
+  groupRows,
   type RegisterChange,
 } from "@/components/bundle/bundle-register";
 import { useBundleEdit } from "@/hooks/use-bundle-edit";
@@ -74,7 +75,7 @@ export function EditableSkillSection({
       edit.displayItems.map((d) => d.skill),
       changes,
     );
-    return built.rows.map((r) => {
+    const withStatus = built.rows.map((r) => {
       // `displayItems` reports three states; only two are staging. "kept" must
       // become undefined, not be cast away — an earlier version asserted the
       // narrower type and left the string in place, so every unchanged row hit
@@ -85,6 +86,7 @@ export function EditableSkillSection({
         status: status === "added" || status === "removed" ? status : undefined,
       };
     });
+    return { rows: withStatus, groups: groupRows(withStatus) };
   }, [edit.displayItems, changes]);
 
   // `.withOptimisticUpdate` is recreated every render, so the callback
@@ -216,7 +218,7 @@ export function EditableSkillSection({
       */}
       {editing ? (
         <BundleRegister
-          rows={editRows}
+          groups={editRows.groups}
           pending={changes === undefined}
           actions={{
             onRemove: (skill) => edit.removeSkill(skill.source, skill.skillId),

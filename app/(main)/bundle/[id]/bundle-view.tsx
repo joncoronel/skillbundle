@@ -148,6 +148,8 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   const skillCount = bundle.skills.length;
   const commandCount = generateInstallCommands(bundle.skills).length;
   const editing = bundle.isOwner && editingSkills;
+  const [installOpen, setInstallOpen] = useState(false);
+  const installPanelId = useId();
   // `changes` streams in after the preloaded bundle — the register renders
   // immediately with every row Steady and settles as the archive answers,
   // rather than holding the whole page behind a second round trip.
@@ -228,29 +230,70 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
             ordered so the worst one is already first. Install is a disclosure
             in the tally line — still reachable, no longer leading. */}
         <section className="space-y-4">
+          {/* Install sits with Edit skills, not on its own line. It used to
+              ride the tally row, and once the sections took over the tally's
+              job that row went empty except for this button — an orphan
+              control above the table. */}
           <SectionHeader
             title="Skills"
             count={skillCount}
             action={
-              bundle.isOwner ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingSkills(true)}
-                  disabled={editingSkills}
-                  leadingIcon={
-                    <HugeiconsIcon
-                      icon={PencilEdit02Icon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  Edit skills
-                </Button>
-              ) : null
+              <div className="flex items-center gap-2">
+                {commandCount > 0 && !editing ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-expanded={installOpen}
+                    aria-controls={installPanelId}
+                    onClick={() => setInstallOpen((o) => !o)}
+                    trailingIcon={
+                      <HugeiconsIcon
+                        icon={ArrowDown01Icon}
+                        strokeWidth={2}
+                        className={cn(
+                          "size-3.5 transition-transform duration-100 motion-reduce:transition-none",
+                          installOpen && "rotate-180",
+                        )}
+                      />
+                    }
+                  >
+                    Install
+                  </Button>
+                ) : null}
+                {bundle.isOwner ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingSkills(true)}
+                    disabled={editingSkills}
+                    leadingIcon={
+                      <HugeiconsIcon
+                        icon={PencilEdit02Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
+                      />
+                    }
+                  >
+                    Edit skills
+                  </Button>
+                ) : null}
+              </div>
             }
           />
+
+          <Collapsible open={installOpen} onOpenChange={setInstallOpen}>
+            <CollapsibleContent id={installPanelId}>
+              <div className="space-y-3 pb-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+                    Install commands
+                  </p>
+                  <CopyAllCommandsButton skills={bundle.skills} />
+                </div>
+                <InstallCommands skills={bundle.skills} />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* The tally steps aside in edit mode: it reports saved state, and
               while you have unsaved adds and removes staged it would be
@@ -258,24 +301,16 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
               itself stays — edit mode is now a mode OF it. */}
           {editing ? null : (
             <>
-              <InstallDisclosure
-                skills={bundle.skills}
-                enabled={commandCount > 0}
-                tally={(trigger) => (
-                  <RegisterTally
-                    total={skillCount}
-                    faults={register.faults}
-                    changed={register.changed}
-                    steady={register.steady}
-                    pending={changes === undefined}
-                    action={trigger}
-                  />
-                )}
+              <RegisterTally
+                total={skillCount}
+                faults={register.faults}
+                changed={register.changed}
+                pending={changes === undefined}
               />
 
               {skillCount > 0 ? (
                 <BundleRegister
-                  rows={register.rows}
+                  groups={register.groups}
                   pending={changes === undefined}
                 />
               ) : (
@@ -761,77 +796,6 @@ function DescriptionDialog({
 // ---------------------------------------------------------------------------
 // Install disclosure
 // ---------------------------------------------------------------------------
-
-/**
- * The install commands, folded away.
- *
- * They used to open the page as a full section, which said that reproducing the
- * setup is what a bundle is for. It is a real job, but a secondary one — the
- * page's subject is the state of what you already have. Demoted to a control on
- * the tally line: one click away, zero vertical space when unused.
- *
- * Takes the tally as a render prop rather than sitting next to it, because the
- * trigger has to be INSIDE the Collapsible while the panel it opens has to be
- * full-width BELOW the tally. Rendering the disclosure as its own sibling made
- * the trigger a full-width bar that read as an empty input field.
- */
-function InstallDisclosure({
-  skills,
-  enabled,
-  tally,
-}: {
-  skills: React.ComponentProps<typeof InstallCommands>["skills"];
-  enabled: boolean;
-  tally: (trigger: ReactNode) => ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const installPanelId = useId();
-  if (!enabled) return <>{tally(null)}</>;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      {/* A plain Button rather than CollapsibleTrigger: that component ships
-          `w-full` plus its own border and card background because it is built
-          for accordion headers, and `render` merges those onto whatever you
-          pass — which turned this control into a full-width bar that read as an
-          empty input. The Collapsible is controlled, so a button toggling the
-          same state is equivalent, with aria-expanded restoring what the
-          trigger would have announced. */}
-      {tally(
-        <Button
-          variant="outline"
-          size="xs"
-          aria-expanded={open}
-          aria-controls={installPanelId}
-          onClick={() => setOpen((o) => !o)}
-          trailingIcon={
-            <HugeiconsIcon
-              icon={ArrowDown01Icon}
-              strokeWidth={2}
-              className={cn(
-                "size-3.5 transition-transform duration-100 motion-reduce:transition-none",
-                open && "rotate-180",
-              )}
-            />
-          }
-        >
-          Install
-        </Button>,
-      )}
-      <CollapsibleContent id={installPanelId}>
-        <div className="space-y-3 pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-              Install commands
-            </p>
-            <CopyAllCommandsButton skills={skills} />
-          </div>
-          <InstallCommands skills={skills} />
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Empty bundle

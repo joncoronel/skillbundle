@@ -11,15 +11,17 @@
  * OWN-WORLD: The committed Control Panel system — violet-tinted neutrals, one
  * blue signal, surface-3 panels, mono for labels and data. No new tokens.
  *
- * STORY: The reader arrives asking "is my setup still OK?", reads the tally,
- * and finds the worst thing already at the top because the register is ordered
- * by consequence rather than by name or date.
+ * STORY: The reader arrives asking "is my setup still OK?" and finds the answer
+ * as structure — the register is sectioned by consequence (Needs attention,
+ * Changed, Steady), each with a count, so the worst thing is the first row of
+ * the first section rather than something to infer from an ordering.
  *
- * FIRST VIEWPORT: Bundle identity, then a one-line tally with the status light,
- * then the register's mono column strip and its first rows. Install is a
- * disclosure in the tally line — it stays reachable, it stops leading. The
- * section is labelled "Skills", not "Register": the register is the form, and
- * naming the metaphor at the reader is not the product's own language.
+ * FIRST VIEWPORT: Bundle identity, then the section head carrying Install and
+ * Edit skills, then the register's mono column strip and its first section.
+ * Steady starts folded. The summary line above speaks only when the sections
+ * cannot — while checking, and when everything is fine. The section is labelled
+ * "Skills", not "Register": the register is the form, and naming the metaphor
+ * at the reader is not the product's own language.
  *
  * FORM: Audit register. #2 on the ordered list; the roll assigned index 1 of 7
  * (seed key skillbundle-bundle-page-2026-08-08, dealt via the impeccable roll
@@ -29,7 +31,7 @@
  * finish review, the verdict, and DESIGN.md.
  */
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
@@ -106,15 +108,48 @@ const RANK: Record<Condition, number> = {
   steady: 0,
 };
 
-/** Conditions that mean something is wrong, as opposed to merely new. */
-const IS_FAULT: Record<Condition, boolean> = {
-  audit: true,
-  delisted: true,
-  "fetch-error": true,
-  description: false,
-  content: false,
-  steady: false,
+/**
+ * The three sections the register groups into, and which condition belongs to
+ * each. These are the same three the tally names, on purpose: the summary line
+ * and the structure underneath it should not be two different taxonomies.
+ *
+ * One section per CONDITION was the obvious alternative and it is worse — six
+ * headers for a set that rarely fills three of them, so most of the table
+ * becomes labels for nothing.
+ */
+export type GroupKey = "attention" | "changed" | "steady";
+
+const GROUP_OF: Record<Condition, GroupKey> = {
+  audit: "attention",
+  delisted: "attention",
+  "fetch-error": "attention",
+  description: "changed",
+  content: "changed",
+  steady: "steady",
 };
+
+const GROUP_META: Record<
+  GroupKey,
+  { label: string; dot: string; halo: string }
+> = {
+  attention: {
+    label: "Needs attention",
+    dot: "bg-danger-foreground",
+    halo: "bg-danger/20",
+  },
+  changed: {
+    label: "Changed",
+    dot: "bg-warning-foreground",
+    halo: "bg-warning/20",
+  },
+  steady: {
+    label: "Steady",
+    dot: "bg-success-foreground",
+    halo: "bg-success/20",
+  },
+};
+
+const GROUP_ORDER: GroupKey[] = ["attention", "changed", "steady"];
 
 const CONDITION_META: Record<
   Condition,
@@ -190,10 +225,33 @@ export type RegisterActions<S extends RegisterSkill = RegisterSkill> = {
  * back into its edit mode, which needs the full skill object, and a widened
  * return type would have forced a cast there.
  */
+/**
+ * Section the rows, preserving consequence order inside each — so the worst
+ * item is still the first row of the first section.
+ *
+ * Exported because edit mode re-derives its rows against the staged list and
+ * has to regroup them; two copies of this would be two chances for the read and
+ * edit views to disagree about where a row belongs.
+ */
+export function groupRows<S extends RegisterSkill>(
+  rows: RegisterRow<S>[],
+): Array<{ key: GroupKey; rows: RegisterRow<S>[] }> {
+  return GROUP_ORDER.map((key) => ({
+    key,
+    rows: rows.filter((r) => GROUP_OF[r.condition] === key),
+  })).filter((g) => g.rows.length > 0);
+}
+
 export function buildRegister<S extends RegisterSkill>(
   skills: S[],
   changes: RegisterChange[] | undefined,
-): { rows: RegisterRow<S>[]; faults: number; changed: number; steady: number } {
+): {
+  rows: RegisterRow<S>[];
+  groups: Array<{ key: GroupKey; rows: RegisterRow<S>[] }>;
+  faults: number;
+  changed: number;
+  steady: number;
+} {
   const byKey = new Map((changes ?? []).map((c) => [c.key, c]));
 
   const rows = skills.map((skill) => {
@@ -210,13 +268,18 @@ export function buildRegister<S extends RegisterSkill>(
       a.skill.name.localeCompare(b.skill.name),
   );
 
-  let faults = 0;
-  let changed = 0;
-  for (const r of rows) {
-    if (IS_FAULT[r.condition]) faults++;
-    else if (r.condition !== "steady") changed++;
-  }
-  return { rows, faults, changed, steady: rows.length - faults - changed };
+  const groups = groupRows(rows);
+
+  const counts = { attention: 0, changed: 0, steady: 0 };
+  for (const r of rows) counts[GROUP_OF[r.condition]]++;
+
+  return {
+    rows,
+    groups,
+    faults: counts.attention,
+    changed: counts.changed,
+    steady: counts.steady,
+  };
 }
 
 /**
@@ -233,28 +296,28 @@ export function buildRegister<S extends RegisterSkill>(
  * and the leading marker, not the column count.
  */
 export function BundleRegister<S extends RegisterSkill>({
-  rows,
+  groups,
   pending,
   actions,
 }: {
-  rows: RegisterRow<S>[];
+  groups: Array<{ key: GroupKey; rows: RegisterRow<S>[] }>;
   pending: boolean;
   actions?: RegisterActions<S>;
 }) {
   const editing = actions !== undefined;
-  const [showSteady, setShowSteady] = useState(false);
 
-  // Split, not filter. On a healthy bundle every row is steady, and forty rows
-  // of em-dash is the version of "calm" that reads as "empty" — but hiding the
-  // inventory outright would cost the reader their sense of what they have. So
-  // the quiet rows collapse behind their own count, always on screen, one click
-  // from the full list.
+  // Steady starts folded. On a healthy bundle it holds every row, and forty
+  // rows of em-dash is the version of "calm" that reads as "empty" — but
+  // hiding the inventory outright would cost the reader their sense of what
+  // they have, so it folds behind its own labelled count rather than
+  // disappearing. The other two sections start open: they exist only when
+  // there is something in them.
   //
-  // Never collapsed in edit mode: there you are managing the inventory, not
+  // Nothing is folded in edit mode. There you are managing the inventory, not
   // triaging it, and a hidden row cannot be removed.
-  const notable = editing ? rows : rows.filter((r) => r.condition !== "steady");
-  const steady = editing ? [] : rows.filter((r) => r.condition === "steady");
-  const visible = showSteady ? [...notable, ...steady] : notable;
+  const [collapsed, setCollapsed] = useState<Set<GroupKey>>(
+    () => new Set<GroupKey>(["steady"]),
+  );
   const columnCount = editing ? 6 : 5;
 
   return (
@@ -298,31 +361,118 @@ export function BundleRegister<S extends RegisterSkill>({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {visible.map((row) => (
-          <RegisterRowView
-            key={`${row.skill.source}::${row.skill.skillId}`}
-            row={row}
-            pending={pending}
-            actions={actions}
-            columnCount={columnCount}
-          />
-        ))}
-        {steady.length > 0 && !showSteady ? (
-          <TableRow>
-            <TableCell colSpan={columnCount} className="p-0">
-              <button
-                type="button"
-                onClick={() => setShowSteady(true)}
-                className="w-full cursor-pointer px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors duration-100 hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
-              >
-                <span className="tabular-nums">{steady.length}</span> steady
-                <span className="ml-2 text-muted-foreground/70">Show all</span>
-              </button>
-            </TableCell>
-          </TableRow>
-        ) : null}
+        {groups.map((group) => {
+          const open = editing || !collapsed.has(group.key);
+          return (
+            <Fragment key={group.key}>
+              <GroupHeaderRow
+                group={group.key}
+                count={group.rows.length}
+                open={open}
+                columnCount={columnCount}
+                // Sections are fixed open while editing; a fold that cannot be
+                // unfolded is a control that lies.
+                onToggle={
+                  editing
+                    ? undefined
+                    : () =>
+                        setCollapsed((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(group.key)) next.delete(group.key);
+                          else next.add(group.key);
+                          return next;
+                        })
+                }
+              />
+              {open
+                ? group.rows.map((row) => (
+                    <RegisterRowView
+                      key={`${row.skill.source}::${row.skill.skillId}`}
+                      row={row}
+                      pending={pending}
+                      actions={actions}
+                      columnCount={columnCount}
+                    />
+                  ))
+                : null}
+            </Fragment>
+          );
+        })}
       </TableBody>
     </Table>
+  );
+}
+
+/**
+ * A section header inside the table body.
+ *
+ * A `<tr>` spanning every column rather than a separate table per group, so one
+ * set of columns stays aligned down the whole register — the reader is
+ * comparing conditions across sections, and three tables would each size their
+ * columns independently.
+ */
+function GroupHeaderRow({
+  group,
+  count,
+  open,
+  columnCount,
+  onToggle,
+}: {
+  group: GroupKey;
+  count: number;
+  open: boolean;
+  columnCount: number;
+  onToggle?: () => void;
+}) {
+  const meta = GROUP_META[group];
+  const content = (
+    <span className="flex items-center gap-2">
+      {onToggle ? (
+        <HugeiconsIcon
+          icon={ArrowRight01Icon}
+          strokeWidth={2}
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-100 motion-reduce:transition-none",
+            open && "rotate-90",
+          )}
+        />
+      ) : (
+        <span aria-hidden className="size-3.5 shrink-0" />
+      )}
+      <span
+        aria-hidden
+        className={cn(
+          "grid size-4 shrink-0 place-items-center rounded-full",
+          meta.halo,
+        )}
+      >
+        <span className={cn("size-1.5 rounded-full", meta.dot)} />
+      </span>
+      <span className="text-sm font-medium text-foreground">{meta.label}</span>
+      <span className="text-sm tabular-nums text-muted-foreground">
+        {count}
+      </span>
+    </span>
+  );
+
+  return (
+    <TableRow className="[&>td]:bg-muted/60!">
+      <TableCell colSpan={columnCount} className="p-0">
+        {onToggle ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            className="w-full cursor-pointer px-3 py-2 text-left transition-colors duration-100 hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
+          >
+            {content}
+          </button>
+        ) : (
+          <div className="px-3 py-2">{content}</div>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -676,17 +826,13 @@ export function RegisterTally({
   total,
   faults,
   changed,
-  steady,
   pending,
-  action,
 }: {
   total: number;
   faults: number;
   changed: number;
-  steady: number;
   /** The change data has not arrived yet. See the `pending` tone below. */
   pending: boolean;
-  action?: React.ReactNode;
 }) {
   // `pending` and `empty` are their own tones, and both used to resolve to
   // green. That was the worst defect in this component: with the change query
@@ -724,6 +870,12 @@ export function RegisterTally({
   // above is the same sentence twice.
   if (tone === "empty") return null;
 
+  // Silent unless it has something the sections cannot say. With a fault or a
+  // change present, each section header already carries this dot beside the
+  // rows it describes — a summary line repeating them would be a second voice
+  // saying the same thing, and an empty one is just a gap above the table.
+  if (tone !== "pending" && tone !== "clear") return null;
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <span
@@ -736,6 +888,17 @@ export function RegisterTally({
         <span className={cn("size-1.5 rounded-full", dot)} />
       </span>
 
+      {/*
+        No breakdown here any more. The register groups into the same three
+        sections this used to count, each with its own dot and number, so a
+        tally reading "1 needs attention · 2 changed · 10 steady" directly above
+        headers saying exactly that was the same sentence twice.
+
+        What the sections cannot say is the healthy verdict: a lone collapsed
+        "Steady 13" is an inventory label, not the reassurance PRODUCT.md
+        principle 3 asks for. So this line speaks only when the structure
+        underneath cannot — while checking, and when everything is fine.
+      */}
       <p aria-live="polite" className="flex-1 text-sm">
         {tone === "pending" ? (
           <span className="text-muted-foreground tabular-nums">
@@ -749,24 +912,8 @@ export function RegisterTally({
               added them.
             </span>
           </>
-        ) : (
-          <>
-            <span className="font-medium tabular-nums">
-              {faults > 0
-                ? `${faults} need${faults === 1 ? "s" : ""} attention`
-                : `${changed} changed`}
-            </span>{" "}
-            <span className="whitespace-nowrap text-muted-foreground tabular-nums">
-              {faults > 0 && changed > 0 ? `· ${changed} changed ` : ""}
-              {/* A steady count only informs when there is a steady
-                  population; "0 steady" is noise. */}
-              {steady > 0 ? `· ${steady} steady` : ""}
-            </span>
-          </>
-        )}
+        ) : null}
       </p>
-
-      {action}
     </div>
   );
 }

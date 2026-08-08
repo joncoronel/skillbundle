@@ -242,6 +242,22 @@ for free. Notes that are easy to lose:
 - At narrow widths drop trailing columns and fold their content into the primary
   cell. Never leave a column parked off-screen behind a horizontal scroll: the
   column the reader came for is the first one to disappear that way.
+- **Section, do not just sort.** When rows carry a ranked condition, group them
+  into labelled sections (a full-width `<tr>` header inside one table, so the
+  columns stay aligned across sections) rather than relying on sort order alone.
+  The ranking becomes structure the reader can see instead of a pattern they
+  have to infer, each section carries its own count, and the quiet section can
+  fold. Reuse the status-light dot on the section header — same vocabulary as
+  the readout above it.
+- **A summary above a sectioned table earns its place only by saying something
+  the sections cannot.** Counts belong to the section headers; the summary keeps
+  the verdict (checking, all clear) and goes silent otherwise rather than
+  restating them.
+- Hover state must be OPAQUE. `bg-surface-hover` is a translucent tint for
+  layering, and Table applies it as the cell's `background-color`, which
+  replaces the opaque fill so the tint composites over the container instead —
+  darker than the header strip in light, lighter in dark. Use `surface-2`, which
+  sits between cell and header strip in both themes.
 
 ### Signature: Dot-Matrix Ripple
 The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in sequence, echoing the Nothing OS dot-matrix motif. It is the project's loading vocabulary everywhere a spinner would otherwise go.
