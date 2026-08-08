@@ -17,6 +17,25 @@ const nextConfig: NextConfig = {
     // rather than the root.
     optimizePackageImports: ["@hugeicons/react", "@hugeicons/core-free-icons"],
   },
+  turbopack: {
+    resolveAlias: {
+      // Upstream bug workaround, not a preference.
+      //
+      // `@pierre/theming` (pulled in by @pierre/diffs, which renders the skill
+      // version diffs) statically maps 65 Shiki themes to dynamic imports. 64
+      // resolve. `horizon-bright` does not exist in ANY published release of
+      // `@shikijs/themes` — checked 3.22, 3.23, 4.0 and 4.4 — so the module
+      // graph fails to build even though nothing in this app ever selects that
+      // theme. Because the map is a static import, no runtime option (including
+      // `disableWorkerPool`) can avoid it.
+      //
+      // Aliased to `horizon`, its actual sibling, so the graph resolves. The
+      // theme is unreachable in practice: the diff renderer is pinned to
+      // github-light / github-dark in components/skill-history.tsx to match the
+      // app's own code blocks. Delete this once @pierre/theming fixes the entry.
+      "@shikijs/themes/horizon-bright": "@shikijs/themes/horizon",
+    },
+  },
   // The OG image routes read brand .ttf fonts from assets/og via fs.readFile.
   // Next's static analysis can't always trace a runtime-built path, so list the
   // files explicitly to guarantee they ship with the serverless functions.

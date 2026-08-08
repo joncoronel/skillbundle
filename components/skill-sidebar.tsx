@@ -195,7 +195,16 @@ export function SkillSidebar({
       )}
 
       <SideSection label={updatedKind}>
-        <span className="text-sm text-foreground">{updatedDate}</span>
+        {/* The sidebar is the page's index of facts, so it is the right place to
+            point at the record behind this one. Kept as a plain anchor rather
+            than a button: it is navigation within the page, and the History
+            section stays reachable by scrolling regardless. */}
+        <a
+          href="#history"
+          className="text-sm text-foreground underline decoration-border underline-offset-4 transition-colors duration-100 ease-out hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+        >
+          {updatedDate}
+        </a>
       </SideSection>
 
       {audits && audits.length > 0 && (
