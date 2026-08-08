@@ -546,10 +546,12 @@ function StagedChip({ status }: { status: "added" | "removed" }) {
   return (
     <span
       className={cn(
-        "ml-2 rounded-md px-1.5 py-0.5 align-middle font-mono text-eyebrow font-medium uppercase tracking-eyebrow",
-        status === "removed"
-          ? "bg-danger/15 text-danger-foreground"
-          : "bg-success/15 text-success-foreground",
+        // No pill. The tinted row already frames this; a filled chip on top of
+        // it was two backgrounds saying one thing, and it out-weighted the
+        // skill name it was annotating. Same bare mono-label treatment the
+        // audit column uses.
+        "ml-2 align-middle font-mono text-eyebrow font-medium uppercase tracking-eyebrow",
+        status === "removed" ? "text-danger-foreground" : "text-success-foreground",
       )}
     >
       {status === "removed" ? "Removing" : "Adding"}

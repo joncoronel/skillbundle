@@ -74,13 +74,17 @@ export function EditableSkillSection({
       edit.displayItems.map((d) => d.skill),
       changes,
     );
-    return built.rows.map((r) => ({
-      ...r,
-      status: statusByKey.get(`${r.skill.source}::${r.skill.skillId}`) as
-        | "added"
-        | "removed"
-        | undefined,
-    }));
+    return built.rows.map((r) => {
+      // `displayItems` reports three states; only two are staging. "kept" must
+      // become undefined, not be cast away — an earlier version asserted the
+      // narrower type and left the string in place, so every unchanged row hit
+      // the chip's truthiness check and rendered as "Adding".
+      const status = statusByKey.get(`${r.skill.source}::${r.skill.skillId}`);
+      return {
+        ...r,
+        status: status === "added" || status === "removed" ? status : undefined,
+      };
+    });
   }, [edit.displayItems, changes]);
 
   // `.withOptimisticUpdate` is recreated every render, so the callback
