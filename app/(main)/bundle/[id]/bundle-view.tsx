@@ -252,10 +252,10 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
             }
           />
 
-          {/* Both the tally and the register step aside in edit mode. The edit
-              surface is a staging grid that carries no condition state, so a
-              tally still reading "1 needs attention" above it would be an
-              unanswerable prompt — you could not tell which row it meant. */}
+          {/* The tally steps aside in edit mode: it reports saved state, and
+              while you have unsaved adds and removes staged it would be
+              counting something that is no longer on screen. The register
+              itself stays — edit mode is now a mode OF it. */}
           {editing ? null : (
             <>
               <InstallDisclosure
@@ -298,6 +298,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
               // grid should open on that skill rather than make you find it
               // again from memory.
               initialSkills={register.rows.map((r) => r.skill)}
+              changes={changes}
               onExit={() => setEditingSkills(false)}
             />
           ) : null}

@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
-import { ArrowTurnBackwardIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -17,10 +16,13 @@ import {
   AlertDialogTitle,
   AlertDialogDescription,
 } from "@/components/ui/cubby-ui/alert-dialog";
-import { SkillCardView, type SkillData } from "@/components/skill-card";
-import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border/marching-border";
+import { type SkillData } from "@/components/skill-card";
+import {
+  BundleRegister,
+  buildRegister,
+  type RegisterChange,
+} from "@/components/bundle/bundle-register";
 import { useBundleEdit } from "@/hooks/use-bundle-edit";
-import { cn } from "@/lib/utils";
 import { BundleEditSkillPicker } from "./skill-picker-sheet";
 import { BundleEditBar } from "./bundle-edit-bar";
 
@@ -39,6 +41,9 @@ interface EditableSkillSectionProps {
   queryArgs: { urlId: string };
   /** The bundle's current skills, used to seed the staging area. */
   initialSkills: SkillData[];
+  /** Per-skill change payloads, so edit mode keeps the read view's condition
+   *  column instead of going blind to it. */
+  changes: RegisterChange[] | undefined;
   onExit: () => void;
 }
 
@@ -47,11 +52,36 @@ export function EditableSkillSection({
   bundleId,
   queryArgs,
   initialSkills,
+  changes,
   onExit,
 }: EditableSkillSectionProps) {
   const edit = useBundleEdit<SkillData>(initialSkills);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+
+  // Re-derived rather than passed in: the staged list changes as you edit, so
+  // the ordering has to be recomputed against it. `buildRegister` is the same
+  // function the read view uses, so a skill cannot sort differently in the two
+  // modes. Staged status is re-attached afterwards by key.
+  const editRows = useMemo(() => {
+    const statusByKey = new Map(
+      edit.displayItems.map((d) => [
+        `${d.skill.source}::${d.skill.skillId}`,
+        d.status,
+      ]),
+    );
+    const built = buildRegister(
+      edit.displayItems.map((d) => d.skill),
+      changes,
+    );
+    return built.rows.map((r) => ({
+      ...r,
+      status: statusByKey.get(`${r.skill.source}::${r.skill.skillId}`) as
+        | "added"
+        | "removed"
+        | undefined,
+    }));
+  }, [edit.displayItems, changes]);
 
   // `.withOptimisticUpdate` is recreated every render, so the callback
   // closes over the current render's `edit.skills` — no ref or effect
@@ -171,69 +201,24 @@ export function EditableSkillSection({
 
   return (
     <>
+      {/*
+        The same register the read view renders, not a separate grid of cards.
+        Editing used to swap in `SkillCardView` tiles that carried no condition
+        state, so the moment you went to decide what to remove, the page stopped
+        telling you which skill was broken — you had to remember. Now the rows,
+        their consequence ordering and their condition text all survive into
+        edit mode, and the remove control sits on the row that raised the
+        problem.
+      */}
       {editing ? (
-        <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {edit.displayItems.map(({ skill, status }) => {
-          const isAdded = status === "added";
-          const isRemoved = status === "removed";
-          const isStaged = isAdded || isRemoved;
-          return (
-            <div
-              key={`${skill.source}/${skill.skillId}`}
-              className="relative h-full rounded-2xl"
-            >
-              <SkillCardView
-                skill={skill}
-                className={cn(
-                  "h-full",
-                  // Hide the card's solid 1px border on staged cards so
-                  // it doesn't peek through the gaps in the marching
-                  // dashed overlay.
-                  isStaged && "border-transparent dark:border-transparent",
-                  // Pending-add: "+" prefix on the title as a typographic
-                  // cue; the marching dashed overlay carries the color.
-                  isAdded && [
-                    "**:data-[slot=card-title]:before:content-['+']",
-                    "**:data-[slot=card-title]:before:mr-1.5",
-                  ],
-                  // Pending-remove: faded card content + title strikethrough.
-                  // Overlay supplies the red dashed border. Opacity is
-                  // scoped to slotted children (header, footer) so the
-                  // absolute restore-button overlay stays at full opacity
-                  // — CSS opacity cascades multiplicatively and can't be
-                  // overridden from a child, so the fade has to skip the
-                  // overlay's ancestor chain entirely.
-                  isRemoved && [
-                    "*:data-slot:opacity-60",
-                    "**:data-[slot=card-title]:line-through",
-                  ],
-                )}
-                editControls={
-                  isRemoved
-                    ? {
-                        onRemove: () => edit.addSkill(skill),
-                        removeIcon: ArrowTurnBackwardIcon,
-                        removeLabel: "Restore skill",
-                      }
-                    : {
-                        onRemove: () =>
-                          edit.removeSkill(skill.source, skill.skillId),
-                      }
-                }
-              />
-              {isStaged && (
-                <MarchingBorder
-                  className={
-                    isAdded
-                      ? "text-success-foreground/55"
-                      : "text-destructive/55"
-                  }
-                />
-              )}
-            </div>
-          );
-        })}
-        </div>
+        <BundleRegister
+          rows={editRows}
+          pending={changes === undefined}
+          actions={{
+            onRemove: (skill) => edit.removeSkill(skill.source, skill.skillId),
+            onRestore: (skill) => edit.addSkill(skill),
+          }}
+        />
       ) : null}
 
       <BundleEditSkillPicker

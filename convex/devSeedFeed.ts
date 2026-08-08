@@ -54,10 +54,19 @@ export const seedFeedBundle = internalMutation({
         skillId: row.skillId,
       });
     }
-    const skills = Array.from(bySkill.values()).slice(0, 4);
-    if (skills.length === 0) {
+    const changed = Array.from(bySkill.values()).slice(0, 4);
+    if (changed.length === 0) {
       throw new Error("Run devSeed:seedVersions on a few skills first");
     }
+
+    // Pad with skills that have no history, so the register has a steady tail
+    // to collapse. Without these every seeded row is a fault or a change, and
+    // the all-steady case — the common one in production — never gets looked at.
+    const filler = (await ctx.db.query("skillSummaries").take(40))
+      .filter((f) => !bySkill.has(`${f.source}::${f.skillId}`))
+      .slice(0, 9)
+      .map((f) => ({ source: f.source, skillId: f.skillId }));
+    const skills = [...changed, ...filler];
 
     const existing = await ctx.db
       .query("bundles")
@@ -104,7 +113,7 @@ export const seedFeedBundle = internalMutation({
 
     // The highest-consequence row: a verdict that was passing when the skill was
     // added and is failing now.
-    const target = skills[0];
+    const target = changed[0];
     const audit = await ctx.db
       .query("skillAudits")
       .withIndex("by_source_skillId", (q) =>
@@ -131,8 +140,8 @@ export const seedFeedBundle = internalMutation({
     // seeded row would render as the same kind. Demote the last skill's newest
     // version to a body-only edit so the panel shows all three weights and the
     // ranking is actually visible.
-    const quiet = skills.at(-1);
-    if (quiet && skills.length > 1) {
+    const quiet = changed.at(-1);
+    if (quiet && changed.length > 1) {
       const summary = await ctx.db
         .query("skillSummaries")
         .withIndex("by_source_skillId", (q) =>

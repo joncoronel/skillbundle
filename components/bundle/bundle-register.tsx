@@ -29,6 +29,7 @@
  * finish review, the verdict, and DESIGN.md.
  */
 
+import { useState } from "react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
@@ -40,6 +41,8 @@ import {
   Alert02Icon,
   ViewOffSlashIcon,
   CheckmarkBadge02Icon,
+  Cancel01Icon,
+  ArrowTurnBackwardIcon,
 } from "@hugeicons/core-free-icons";
 
 import {
@@ -50,6 +53,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/cubby-ui/table";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -58,8 +62,8 @@ export type RegisterSkill = {
   source: string;
   skillId: string;
   name: string;
-  isDelisted: boolean;
-  hasContentFetchError: boolean;
+  isDelisted?: boolean;
+  hasContentFetchError?: boolean;
   curatedOwner?: string;
   worstAuditStatus?: string;
   worstAuditRiskLevel?: string;
@@ -163,6 +167,14 @@ export type RegisterRow<S extends RegisterSkill = RegisterSkill> = {
   skill: S;
   change?: RegisterChange;
   condition: Condition;
+  /** Set only in edit mode, for skills staged but not yet saved. */
+  status?: "added" | "removed";
+};
+
+/** Edit-mode handlers. Their presence is what puts the register in edit mode. */
+export type RegisterActions<S extends RegisterSkill = RegisterSkill> = {
+  onRemove: (skill: S) => void;
+  onRestore: (skill: S) => void;
 };
 
 /**
@@ -213,13 +225,31 @@ export function buildRegister<S extends RegisterSkill>(
  * column the reader came for. What has to survive on a phone is the row order
  * and the leading marker, not the column count.
  */
-export function BundleRegister({
+export function BundleRegister<S extends RegisterSkill>({
   rows,
   pending,
+  actions,
 }: {
-  rows: RegisterRow[];
+  rows: RegisterRow<S>[];
   pending: boolean;
+  actions?: RegisterActions<S>;
 }) {
+  const editing = actions !== undefined;
+  const [showSteady, setShowSteady] = useState(false);
+
+  // Split, not filter. On a healthy bundle every row is steady, and forty rows
+  // of em-dash is the version of "calm" that reads as "empty" — but hiding the
+  // inventory outright would cost the reader their sense of what they have. So
+  // the quiet rows collapse behind their own count, always on screen, one click
+  // from the full list.
+  //
+  // Never collapsed in edit mode: there you are managing the inventory, not
+  // triaging it, and a hidden row cannot be removed.
+  const notable = editing ? rows : rows.filter((r) => r.condition !== "steady");
+  const steady = editing ? [] : rows.filter((r) => r.condition === "steady");
+  const visible = showSteady ? [...notable, ...steady] : notable;
+  const columnCount = editing ? 6 : 5;
+
   return (
     // `md:max-w-none` overrides the Table component's own 672px cap, which is
     // tuned for a table sitting beside other content. This one IS the content.
@@ -228,7 +258,12 @@ export function BundleRegister({
     // below: TableCell ships `whitespace-nowrap`, which is right for the data
     // tables this component was built for and silently truncated every
     // description delta mid-word here.
-    <Table className="table-fixed md:max-w-none">
+    // `max-h` is what makes the sticky header actually stick: Table pins it
+    // inside its own scroll area, and an area with no height cap never scrolls,
+    // so the page scrolls instead and the labels leave with it. Viewport-
+    // relative rather than a fixed pixel height so a short bundle gets no inner
+    // scrollbar at all.
+    <Table className="table-fixed max-h-[70vh] md:max-w-none">
       <TableHeader>
         {/* Mono, uppercase, eyebrow tracking — DESIGN.md assigns exactly that
             to table headers, and the audit cells below already use it. The
@@ -248,29 +283,57 @@ export function BundleRegister({
           <TableHead className="hidden sm:table-cell w-24 text-right">
             Added
           </TableHead>
+          {editing ? (
+            <TableHead className="w-10">
+              <span className="sr-only">Remove</span>
+            </TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
+        {visible.map((row) => (
           <RegisterRowView
             key={`${row.skill.source}::${row.skill.skillId}`}
             row={row}
             pending={pending}
+            actions={actions}
+            columnCount={columnCount}
           />
         ))}
+        {steady.length > 0 && !showSteady ? (
+          <TableRow>
+            <TableCell colSpan={columnCount} className="p-0">
+              <button
+                type="button"
+                onClick={() => setShowSteady(true)}
+                className="w-full cursor-pointer px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors duration-100 hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
+              >
+                <span className="tabular-nums">{steady.length}</span> steady
+                <span className="ml-2 text-muted-foreground/70">Show all</span>
+              </button>
+            </TableCell>
+          </TableRow>
+        ) : null}
       </TableBody>
     </Table>
   );
 }
 
-function RegisterRowView({
+function RegisterRowView<S extends RegisterSkill>({
   row,
   pending,
+  actions,
+  columnCount,
 }: {
-  row: RegisterRow;
+  row: RegisterRow<S>;
   pending: boolean;
+  actions?: RegisterActions<S>;
+  columnCount: number;
 }) {
-  const { skill, change, condition } = row;
+  void columnCount;
+  const { skill, change, condition, status } = row;
+  const isRemoved = status === "removed";
+  const isAdded = status === "added";
   const meta = CONDITION_META[condition];
   // A steady marker is a claim. Do not make it before the data lands.
   const markerHidden = pending && condition === "steady";
@@ -284,7 +347,14 @@ function RegisterRowView({
   const hasDelta = Boolean(delta?.before || delta?.after);
 
   return (
-    <TableRow className={cn(condition === "steady" && "text-muted-foreground")}>
+    <TableRow
+      className={cn(
+        condition === "steady" && "text-muted-foreground",
+        // Staged rows stay in place and in order rather than jumping to a
+        // pending group — you are meant to see the row you just acted on.
+        isRemoved && "opacity-55",
+      )}
+    >
       <TableCell className="align-top">
         {markerHidden ? null : (
           <HugeiconsIcon
@@ -299,8 +369,16 @@ function RegisterRowView({
       <TableCell className="align-top whitespace-normal">
         <Link
           href={skillHref(skill.source, skill.skillId)}
-          className="group inline-flex items-center gap-1 rounded-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+          className={cn(
+            "group inline-flex items-center gap-1 rounded-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50",
+            isRemoved && "line-through",
+          )}
         >
+          {isAdded ? (
+            <span aria-hidden className="text-success-foreground">
+              +
+            </span>
+          ) : null}
           {skill.name}
           <HugeiconsIcon
             icon={ArrowRight01Icon}
@@ -342,8 +420,37 @@ function RegisterRowView({
       </TableCell>
 
       <TableCell className="hidden sm:table-cell align-top text-right text-xs tabular-nums text-muted-foreground">
-        {skill.addedAt ? timeAgo(skill.addedAt) : "—"}
+        {isAdded ? (
+          <span className="text-success-foreground">New</span>
+        ) : skill.addedAt ? (
+          timeAgo(skill.addedAt)
+        ) : (
+          "—"
+        )}
       </TableCell>
+
+      {actions ? (
+        <TableCell className="align-top">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="-mr-1 size-7 p-0"
+            aria-label={
+              isRemoved ? `Restore ${skill.name}` : `Remove ${skill.name}`
+            }
+            onClick={() =>
+              isRemoved ? actions.onRestore(skill) : actions.onRemove(skill)
+            }
+          >
+            <HugeiconsIcon
+              icon={isRemoved ? ArrowTurnBackwardIcon : Cancel01Icon}
+              strokeWidth={2}
+              aria-hidden
+              className="size-3.5"
+            />
+          </Button>
+        </TableCell>
+      ) : null}
     </TableRow>
   );
 }

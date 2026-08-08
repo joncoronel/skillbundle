@@ -1,5 +1,4 @@
 import {
-  internalMutation,
   mutation,
   query,
   type MutationCtx,

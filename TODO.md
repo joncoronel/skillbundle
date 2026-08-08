@@ -54,7 +54,14 @@ PRODUCT.md, which was rewritten for this.
 - Bundle page rebuilt as a register (`components/bundle/bundle-register.tsx`):
   one row per skill, ordered by consequence, with a tally above it and install
   demoted to a disclosure. `markBundleViewed` is wired back on, which the
-  register earns by showing each change inline.
+  register earns by showing each change inline. Steady rows collapse behind
+  their own count, so a healthy 40-skill bundle is a short page rather than 40
+  em-dashes, and the table carries a `max-h` so its sticky column strip has
+  something to stick inside.
+- Edit mode is the same register, not a separate card grid. Rows keep their
+  consequence ordering and condition text while you stage adds and removes, so
+  the skill you came to remove is the first row and still says why. Removing is
+  a control on the row; staging, the save bar and the picker are unchanged.
 - One-link model: `isPublic` plus a separate `shareToken` URL collapsed to one
   link and one switch. Bundles are created closed and the Pro gate on privacy is
   gone. `listChangesForBundle` and the dashboard feed share one
@@ -114,18 +121,9 @@ That ambiguity is exactly how the loop bug survived being watched.
   ship a migration that strips it, run that everywhere, THEN remove it and
   deploy again. Done for `shareToken` / `featuredAt` in Aug 2026; the migration
   was deleted afterwards because it could not outlive the fields it referenced.
-- **Edit mode is still the old card grid.** Entering it swaps the register for
-  the same-size `SkillCardView` grid the redesign exists to refuse, carrying no
-  condition state — so the tally and register now step aside while editing
-  rather than posing a question the staging grid cannot answer. Rebuilding
-  `EditableSkillSection` around register rows was deliberately out of scope.
-- **The register does not scale past ~30 rows yet.** No virtualisation, no way
-  to collapse the steady tail, and the sticky column strip scrolls away because
-  the table's scroll area has no height cap. A healthy 40-skill bundle is 40
-  rows of em-dashes. Fine at current bundle sizes; revisit if that changes.
-- A fault row offers no remedy — it links to the skill's detail page but has no
-  "remove from bundle" action, which is the thing you actually want when a
-  skill is delisted or its audit failed.
+- Virtualising the register was listed here and was never a real problem:
+  bundles cap at 100 skills (`MAX_BUNDLE_SKILLS`) and 100 table rows render
+  instantly. Removed rather than carried.
 - `next.config.ts` carries a Turbopack alias for `@shikijs/themes/horizon-bright`,
   which `@pierre/theming@1.0.1` imports and which exists in no published release
   of that package. Both packages are already at their latest version, so there
