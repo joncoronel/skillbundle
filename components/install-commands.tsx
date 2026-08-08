@@ -1,9 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import {
@@ -14,21 +11,18 @@ import {
 
 interface InstallCommandsProps {
   skills: BundleSkill[];
-  bundleId?: Id<"bundles">;
 }
 
 // Copy-all control, extracted so it can sit in the section header beside the
 // "Install" title (the page owns that row) while the copy state stays here.
-export function CopyAllCommandsButton({ skills, bundleId }: InstallCommandsProps) {
+export function CopyAllCommandsButton({ skills }: InstallCommandsProps) {
   const [copiedAll, setCopiedAll] = useState(false);
-  const recordCopy = useMutation(api.bundleEvents.recordCopy);
 
   async function handleCopyAll() {
     const text = generateAllCommandsText(skills);
     await navigator.clipboard.writeText(text);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
-    if (bundleId) recordCopy({ bundleId }).catch(() => {});
   }
 
   return (
@@ -38,15 +32,8 @@ export function CopyAllCommandsButton({ skills, bundleId }: InstallCommandsProps
   );
 }
 
-export function InstallCommands({ skills, bundleId }: InstallCommandsProps) {
+export function InstallCommands({ skills }: InstallCommandsProps) {
   const commands = generateInstallCommands(skills);
-  const recordCopy = useMutation(api.bundleEvents.recordCopy);
-
-  function trackCopy() {
-    if (bundleId) {
-      recordCopy({ bundleId }).catch(() => {});
-    }
-  }
 
   if (commands.length === 0) return null;
 
@@ -68,7 +55,6 @@ export function InstallCommands({ skills, bundleId }: InstallCommandsProps) {
               <CopyButton
                 content={cmd.command}
                 className="backdrop-blur-sm"
-                onCopied={trackCopy}
               />
             </div>
           </div>

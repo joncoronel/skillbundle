@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/cubby-ui/drawer/drawer";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CompassIcon,
   DashboardSquare01Icon,
   GitCompareIcon,
   Menu01Icon,
@@ -80,13 +79,6 @@ function DrawerNavLinks({ activeHref }: { activeHref: string | null }) {
   return (
     <>
       <DrawerNavLink
-        href="/explore"
-        icon={CompassIcon}
-        isActive={activeHref === "/explore"}
-      >
-        Explore
-      </DrawerNavLink>
-      <DrawerNavLink
         href="/official"
         icon={CheckmarkCircle02Icon}
         isActive={activeHref === "/official"}
@@ -133,7 +125,7 @@ function DrawerNavLink({
 }: {
   href: string;
   children: React.ReactNode;
-  icon: typeof CompassIcon;
+  icon: typeof CheckmarkCircle02Icon;
   isActive: boolean;
 }) {
   return (

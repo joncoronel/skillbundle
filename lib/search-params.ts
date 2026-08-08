@@ -15,7 +15,7 @@ import {
   type SkillRef,
 } from "@/lib/compare";
 
-// Shared debounce duration for all search inputs (home, /explore). Picked
+// Shared debounce duration for all search inputs. Picked
 // short enough to feel responsive on a typing pause, long enough that mid-
 // word keystrokes don't fire a fetch.
 export const SEARCH_DEBOUNCE_MS = 200;
@@ -127,15 +127,6 @@ export const HOME_PARAM_DEFAULTS: HomeParams = Object.fromEntries(
     "defaultValue" in parser ? parser.defaultValue : null,
   ]),
 ) as HomeParams;
-
-// -- Explore page (/explore) parsers --
-
-export const exploreQueryParser = parseAsString.withDefault("");
-
-const exploreSortValues = ["newest", "starred"] as const;
-export type ExploreSortValue = (typeof exploreSortValues)[number];
-export const exploreSortParser =
-  parseAsStringLiteral(exploreSortValues).withDefault("newest");
 
 // -- Compare page (/compare) parsers --
 

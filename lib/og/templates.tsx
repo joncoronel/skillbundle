@@ -115,7 +115,7 @@ export async function renderOg(
   // Components forbids the route-level `revalidate` they used to carry, so we
   // cache the rendered PNG at the CDN instead (render once, serve for a day,
   // revalidate in the background; the data loaders are daily too). The static
-  // section cards (`/explore`, `/compare`, etc.) omit it and keep Next's
+  // section cards (`/compare`, etc.) omit it and keep Next's
   // build-time static optimization.
   opts?: { cache?: boolean },
 ): Promise<ImageResponse> {

@@ -4,7 +4,7 @@ import { useEffect, useRef, type RefObject } from "react";
 
 /**
  * Infinite-scroll sentinel, shared by every paginated list (home catalog,
- * search results, /explore bundles). Attach the returned ref to an invisible
+ * search results). Attach the returned ref to an invisible
  * marker element after the rows; when it comes within `rootMargin` of the
  * viewport and more pages exist, the next page is fetched.
  *

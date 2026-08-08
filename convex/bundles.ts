@@ -4,13 +4,10 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
-import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserOrThrow } from "./users";
 import { getUserPlanWithLimits } from "./lib/plans";
-import { assertAdmin, checkIsAdminByEmail } from "./devStats";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_SKILLS,
@@ -66,12 +63,6 @@ async function countUserBundles(ctx: MutationCtx, userId: Id<"users">) {
  * `skills` table. Used by the surfaces that accept user-supplied skill
  * arrays (`createBundle`, `updateBundleSkills`) to keep ghost references
  * out of the bundles table.
- *
- * Why not `forkBundle`: that mutation copies skills from an existing
- * server-side bundle, which was already validated when its own skills
- * were added. Re-validating on fork would also block forking legacy
- * bundles that predate this check — a separate cleanup migration is
- * the right shape for that, not a runtime gate on fork.
  *
  * Lookups run in parallel via the `by_source_skillId` index. The
  * caller can pass duplicates safely; we dedupe by `${source}::${skillId}`
@@ -217,16 +208,6 @@ export const updateBundleVisibility = mutation({
     }
 
     await ctx.db.patch(bundleId, { isPublic });
-
-    // Mirror onto bundleStats so the compound public-aware index for
-    // most-starred stays accurate. No-op when the stats row doesn't exist.
-    const stats = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_bundleId", (q) => q.eq("bundleId", bundleId))
-      .unique();
-    if (stats) {
-      await ctx.db.patch(stats._id, { isPublic });
-    }
   },
 });
 
@@ -513,28 +494,10 @@ export const deleteBundle = mutation({
       throw new ConvexError("Bundle not found or unauthorized");
     }
 
-    // Sync delete of bounded child rows: bundleStats has at most one row per
-    // bundle, so .collect() is safe.
-    const stats = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_bundleId", (q) => q.eq("bundleId", bundleId))
-      .collect();
-    await Promise.all(stats.map((row) => ctx.db.delete(row._id)));
-
-    // Delete the bundle row itself so the user sees it gone immediately.
+    // A bundle owns no child rows any more — the stats row and the scheduled
+    // paginated star cleanup both went with the social teardown — so this is a
+    // single delete rather than a fan-out.
     await ctx.db.delete(bundleId);
-
-    // bundleStars is unbounded per bundle (one row per starring user). Doing
-    // .collect() inline could blow Convex's 16MB / 8K-row caps for a popular
-    // bundle. Schedule a paginated internal-action cleanup instead — the
-    // mutation returns fast and the action loops in 500-row batches until
-    // empty. Brief eventual-consistency window where stars linger is invisible
-    // to UI (no surface queries bundleStars by a deleted bundleId).
-    await ctx.scheduler.runAfter(
-      0,
-      internal.bundleStars.cleanupStarsForBundle,
-      { bundleId },
-    );
   },
 });
 
@@ -581,8 +544,8 @@ export const getByUrlId = query({
     }
 
     // Layer 2: every remaining read is independent given (bundle, currentUser).
-    // Parallelize: skills, creator, stats, forked-from chain, viewerHasStarred.
-    const [skillsWithData, creator, stats, forkedFromInfo, viewerHasStarred] =
+    // Parallelize: skills, creator, forked-from chain.
+    const [skillsWithData, creator, forkedFromInfo] =
       await Promise.all([
         Promise.all(
           bundle.skills.map(async (s) => {
@@ -639,12 +602,10 @@ export const getByUrlId = query({
           }),
         ),
         ctx.db.get(bundle.userId),
-        ctx.db
-          .query("bundleStats")
-          .withIndex("by_bundleId", (q) => q.eq("bundleId", bundle._id))
-          .unique(),
         // Fork lineage chain stays internally serial (parent → parent's
-        // creator) but runs in parallel with everything else.
+        // creator) but runs in parallel with everything else. Forking itself is
+        // gone, but rows created before the teardown still carry `forkedFrom`,
+        // and dropping the attribution would misrepresent whose work it was.
         bundle.forkedFrom
           ? (async () => {
               const parent = await ctx.db.get(bundle.forkedFrom!);
@@ -657,25 +618,7 @@ export const getByUrlId = query({
               };
             })()
           : Promise.resolve(undefined),
-        currentUser !== null
-          ? ctx.db
-              .query("bundleStars")
-              .withIndex("by_user_bundle", (q) =>
-                q
-                  .eq("userId", currentUser._id)
-                  .eq("bundleId", bundle._id),
-              )
-              .unique()
-              .then((star) => star !== null)
-          : Promise.resolve(false),
       ]);
-
-    // Viewer admin status — folded into the bundle query so the detail page
-    // doesn't need a separate api.devStats.isAdmin round-trip just to gate
-    // the FeatureToggleButton. Reuses currentUser.email to avoid a second
-    // ctx.auth.getUserIdentity() call (already happened in getCurrentUser).
-    // Sync — no DB read, runs after the parallel layer.
-    const viewerIsAdmin = checkIsAdminByEmail(currentUser?.email);
 
     return {
       _id: bundle._id,
@@ -693,12 +636,6 @@ export const getByUrlId = query({
       lastViewedAt: isOwner ? bundle.lastViewedAt : undefined,
       shareToken: isOwner ? bundle.shareToken : undefined,
       forkedFrom: forkedFromInfo,
-      copyCount: stats?.copyCount ?? 0,
-      forkCount: stats?.forkCount ?? 0,
-      starCount: stats?.starCount ?? 0,
-      featuredAt: bundle.featuredAt,
-      viewerIsAdmin,
-      viewerHasStarred,
     };
   },
 });
@@ -715,281 +652,14 @@ export const listByUser = query({
       .order("desc")
       .collect();
 
-    return Promise.all(
-      bundles.map(async (bundle) => {
-        const stats = await ctx.db
-          .query("bundleStats")
-          .withIndex("by_bundleId", (q) => q.eq("bundleId", bundle._id))
-          .unique();
-
-        return {
-          ...bundle,
-          copyCount: stats?.copyCount ?? 0,
-          forkCount: stats?.forkCount ?? 0,
-        };
-      }),
-    );
+    return bundles;
   },
 });
 
-export async function enrichBundle(
-  ctx: QueryCtx,
-  bundle: {
-    _id: ReturnType<typeof v.id<"bundles">>["type"];
-    name: string;
-    description?: string;
-    urlId: string;
-    skills: Array<{ source: string; skillId: string; addedAt?: number }>;
-    createdAt: number;
-    userId: ReturnType<typeof v.id<"users">>["type"];
-    forkedFrom?: ReturnType<typeof v.id<"bundles">>["type"];
-    featuredAt?: number;
-    isPublic: boolean;
-  },
-  // Pass when the caller already has the stats row in scope (e.g. listExplore's
-  // starred branch paginates stats directly). Saves the extra by_bundleId
-  // lookup per bundle. Typed as the full Doc so it stays in sync with schema
-  // changes — partial structural shapes drift silently.
-  preloadedStats?: Doc<"bundleStats"> | null,
-) {
-  const [creator, stats] = await Promise.all([
-    ctx.db.get(bundle.userId),
-    preloadedStats !== undefined
-      ? Promise.resolve(preloadedStats)
-      : ctx.db
-          .query("bundleStats")
-          .withIndex("by_bundleId", (q) => q.eq("bundleId", bundle._id))
-          .unique(),
-  ]);
-
-  return {
-    _id: bundle._id,
-    name: bundle.name,
-    description: bundle.description,
-    urlId: bundle.urlId,
-    isPublic: bundle.isPublic,
-    skillCount: bundle.skills.length,
-    createdAt: bundle.createdAt,
-    creatorName: creator?.name ?? "Anonymous",
-    creatorImage: creator?.image,
-    forkedFrom: bundle.forkedFrom,
-    copyCount: stats?.copyCount ?? 0,
-    forkCount: stats?.forkCount ?? 0,
-    starCount: stats?.starCount ?? 0,
-    featuredAt: bundle.featuredAt,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Unified paginated explore query
+// REMOVED: `enrichBundle`, `listExplore`, `searchPublic`, `forkBundle`,
+// `setBundleFeatured`, `listFeatured`.
 //
-// One entry point for the /explore page's filter row. The grid re-sorts
-// by `sort`, the underlying index changes, but the response shape stays
-// identical so the React component code path is the same per filter.
-// ---------------------------------------------------------------------------
-
-export const listExplore = query({
-  args: {
-    sort: v.union(v.literal("newest"), v.literal("starred")),
-    paginationOpts: paginationOptsValidator,
-  },
-  handler: async (ctx, { sort, paginationOpts }) => {
-    if (sort === "newest") {
-      const result = await ctx.db
-        .query("bundles")
-        .withIndex("by_public_createdAt", (q) => q.eq("isPublic", true))
-        .order("desc")
-        .paginate(paginationOpts);
-
-      const enriched = await Promise.all(
-        result.page.map((bundle) => enrichBundle(ctx, bundle)),
-      );
-      return { ...result, page: enriched };
-    }
-
-    // Most-starred ranks by `bundleStats.starCount`. `isPublic` is denormalized
-    // onto stats so the compound index applies the public filter at the index
-    // level — no post-pagination trimming on visibility. `.gt("starCount", 0)`
-    // skips bundles with no stars at all.
-    const statsPage = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_public_starCount", (q) =>
-        q.eq("isPublic", true).gt("starCount", 0),
-      )
-      .order("desc")
-      .paginate(paginationOpts);
-
-    // Pair each stat with its bundle. Defensive null filter below: stats can't
-    // legitimately outlive their bundle (deleteBundle removes the stats row
-    // before the bundle row, and Convex OCC prevents inserts racing past a
-    // deletion), so this filter is effectively dead code — kept as belt-and-
-    // suspenders against any future invariant drift.
-    const pairs = await Promise.all(
-      statsPage.page.map(async (stat) => ({
-        stat,
-        bundle: await ctx.db.get(stat.bundleId),
-      })),
-    );
-
-    const enriched = await Promise.all(
-      pairs
-        .filter(
-          (p): p is { stat: (typeof statsPage.page)[number]; bundle: NonNullable<typeof p.bundle> } =>
-            p.bundle !== null,
-        )
-        .map(({ stat, bundle }) => enrichBundle(ctx, bundle, stat)),
-    );
-
-    return {
-      ...statsPage,
-      page: enriched,
-    };
-  },
-});
-
-export const searchPublic = query({
-  args: {
-    query: v.string(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, { query, limit = 20 }) => {
-    const results = await ctx.db
-      .query("bundles")
-      .withSearchIndex("search_name", (q) =>
-        q.search("name", query).eq("isPublic", true),
-      )
-      .take(limit);
-
-    return Promise.all(results.map((bundle) => enrichBundle(ctx, bundle)));
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Fork a bundle
-// ---------------------------------------------------------------------------
-
-export const forkBundle = mutation({
-  args: {
-    bundleId: v.id("bundles"),
-    name: v.optional(v.string()),
-  },
-  handler: async (ctx, { bundleId, name }) => {
-    const user = await getCurrentUserOrThrow(ctx);
-    const { limits } = await getUserPlanWithLimits(ctx);
-
-    const bundleCount = await countUserBundles(ctx, user._id);
-    if (bundleCount >= limits.maxBundles) {
-      throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
-    }
-
-    const source = await ctx.db.get(bundleId);
-    if (!source) throw new ConvexError("Bundle not found");
-
-    // Must be public or owned by user
-    if (!source.isPublic && source.userId !== user._id) {
-      throw new ConvexError("Cannot fork a private bundle");
-    }
-
-    const urlId = await ensureUniqueUrlId(ctx);
-    const now = Date.now();
-
-    const newBundleId = await ctx.db.insert("bundles", {
-      userId: user._id,
-      name: name ?? `${source.name} (fork)`,
-      urlId,
-      skills: source.skills.map((s) => ({
-        source: s.source,
-        skillId: s.skillId,
-        addedAt: now,
-      })),
-      isPublic: true,
-      forkedFrom: bundleId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Update source bundle stats — increment fork counter only.
-    const stats = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_bundleId", (q) => q.eq("bundleId", bundleId))
-      .unique();
-
-    if (stats) {
-      await ctx.db.patch(stats._id, {
-        forkCount: stats.forkCount + 1,
-        lastEventAt: now,
-      });
-    } else {
-      await ctx.db.insert("bundleStats", {
-        bundleId,
-        isPublic: source.isPublic,
-        copyCount: 0,
-        forkCount: 1,
-        starCount: 0,
-        lastEventAt: now,
-      });
-    }
-
-    return { bundleId: newBundleId, urlId };
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Admin: feature / unfeature bundles for the Explore fallback
-// ---------------------------------------------------------------------------
-
-export const setBundleFeatured = mutation({
-  args: { bundleId: v.id("bundles"), featured: v.boolean() },
-  handler: async (ctx, { bundleId, featured }) => {
-    // Auth-gated mutation: cheap admin check first, then the DB read. Going
-    // parallel would shave ~ms on the success path but waste a db.get on
-    // every unauthorized call (and slightly widen attack surface). Serial is
-    // the canonical shape for auth-then-act paths.
-    await assertAdmin(ctx);
-    const bundle = await ctx.db.get(bundleId);
-    if (!bundle) throw new ConvexError("Bundle not found");
-    if (featured && !bundle.isPublic) {
-      throw new ConvexError("Cannot feature a private bundle");
-    }
-    await ctx.db.patch(bundleId, {
-      featuredAt: featured ? Date.now() : undefined,
-    });
-  },
-});
-
-// The editorial Featured section on /explore reads this with the default
-// `includePrivate: false`. The /dev management section passes `true` so admin
-// can see and unfeature bundles whose owner has since flipped private.
-const FEATURED_FETCH_CAP = 50;
-export const listFeatured = query({
-  args: {
-    limit: v.optional(v.number()),
-    includePrivate: v.optional(v.boolean()),
-  },
-  handler: async (ctx, { limit, includePrivate = false }) => {
-    if (includePrivate) await assertAdmin(ctx);
-
-    // Cap the requested limit so an arbitrary caller can't force a huge
-    // take() + N enrichments. The cap applies on both paths — it's well
-    // above any realistic UI need (the public Featured section asks for 3,
-    // the /dev management section asks for the default).
-    const fetchSize = Math.min(limit ?? FEATURED_FETCH_CAP, FEATURED_FETCH_CAP);
-
-    const bundles = includePrivate
-      ? await ctx.db
-          .query("bundles")
-          .withIndex("by_featured", (q) => q.gt("featuredAt", 0))
-          .order("desc")
-          .take(fetchSize)
-      : await ctx.db
-          .query("bundles")
-          .withIndex("by_public_featured", (q) =>
-            q.eq("isPublic", true).gt("featuredAt", 0),
-          )
-          .order("desc")
-          .take(fetchSize);
-
-    return Promise.all(bundles.map((b) => enrichBundle(ctx, b)));
-  },
-});
-
+// Every one of them existed to browse, rank, or copy OTHER people's bundles on
+// the /explore page. That page is gone: a directory of community bundles is a
+// discovery surface, and discovery here is the skill catalog, not a leaderboard
+// of strangers' folders. Bundles are private working sets now.

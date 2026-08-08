@@ -9,7 +9,7 @@ import { BundleBar } from "@/components/bundle-bar";
 // enumerate. So the rule is inverted: show everywhere EXCEPT a small set of
 // reserved non-browse first segments. Only (main)-group routes ever reach this
 // component (it's mounted from that layout), so the reserved set just needs the
-// non-browse routes inside (main); `/compare`, `/explore`, `/official`, and all
+// non-browse routes inside (main); `/compare`, `/official`, and all
 // org/repo/skill/site paths fall through to "browse". The bar self-hides when
 // the selection is empty, so an over-broad match is cosmetic only.
 const RESERVED_FIRST_SEGMENTS = new Set([

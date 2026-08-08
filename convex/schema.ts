@@ -613,19 +613,18 @@ export default defineSchema({
         addedAt: v.optional(v.number()),
       }),
     ),
-    // IMPORTANT: this field is denormalized onto bundleStats.isPublic so the
-    // by_public_starCount index can filter at the index level. Any code path
-    // that mutates isPublic here MUST mirror the change to the corresponding
-    // bundleStats row IF one exists (see updateBundleVisibility for the
-    // pattern). When no stats row exists yet, downstream creation paths
-    // (recordCopy, forkBundle, toggleStar) read the bundle's current isPublic
-    // at insert time, so the invariant holds eventually.
+    // Can anyone but the owner open this bundle?
+    //
+    // This used to mean "listed in the public directory" as well. The directory
+    // is gone, so it now means only what the name says. Note that `isPublic` and
+    // `shareToken` are two different links to the same thing with different
+    // rules — that collapses to one link in the bundle-page redesign (TODO.md),
+    // which is where the sharing UI gets rebuilt anyway.
     isPublic: v.boolean(),
     shareToken: v.optional(v.string()),
     forkedFrom: v.optional(v.id("bundles")),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
-    featuredAt: v.optional(v.number()),
     // When the OWNER last opened this bundle. Stamped by `markBundleViewed`,
     // which refuses non-owners — a share-link visitor reading someone else's
     // bundle must not mark it read for them.
@@ -647,40 +646,21 @@ export default defineSchema({
     // new to this reader.
     lastViewedAt: v.optional(v.number()),
   })
+    // Only the two access paths remain: a user's own bundles, and one bundle by
+    // its link. `by_public_createdAt`, `by_featured`, `by_public_featured` and
+    // the `search_name` search index all existed to browse and rank OTHER
+    // people's bundles, which is no longer a thing you can do here.
     .index("by_userId", ["userId"])
-    .index("by_urlId", ["urlId"])
-    .index("by_public_createdAt", ["isPublic", "createdAt"])
-    .index("by_featured", ["featuredAt"])
-    .index("by_public_featured", ["isPublic", "featuredAt"])
-    .searchIndex("search_name", {
-      searchField: "name",
-      filterFields: ["isPublic"],
-    }),
+    .index("by_urlId", ["urlId"]),
 
-  bundleStats: defineTable({
-    bundleId: v.id("bundles"),
-    // Denormalized from bundles.isPublic so the by_public_starCount index can
-    // rank-and-filter at the index level. Required (not optional) so the
-    // invariant is enforced by the schema — every row is guaranteed to have
-    // isPublic set, and rows can never silently drop out of "Most starred".
-    // All insert paths (recordCopy, forkBundle, toggleStar) read it from the
-    // bundle; updateBundleVisibility mirrors flips onto any existing stats row.
-    isPublic: v.boolean(),
-    copyCount: v.number(),
-    forkCount: v.number(),
-    starCount: v.optional(v.number()),
-    lastEventAt: v.number(),
-  })
-    .index("by_bundleId", ["bundleId"])
-    .index("by_public_starCount", ["isPublic", "starCount"]),
-
-  bundleStars: defineTable({
-    bundleId: v.id("bundles"),
-    userId: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_user_bundle", ["userId", "bundleId"])
-    .index("by_bundle", ["bundleId"]),
+  // REMOVED: `bundleStats` (copy/fork/star counters) and `bundleStars`.
+  //
+  // They existed to rank a public directory of community bundles, and that
+  // directory is gone. A social signal nobody is generating reads as an
+  // abandoned product, not a quiet one, so the counters went with it rather
+  // than sitting at zero. Bundles are private working sets now; what matters
+  // about one is the state of the skills in it, not how many strangers copied
+  // it.
 
   // Single-row run lock for the Typesense catalog sync (typesense.syncCatalog).
   // Two overlapping mark-and-sweep walks can cross-stamp documents and sweep

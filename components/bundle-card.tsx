@@ -1,14 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { StarIcon } from "@hugeicons/core-free-icons";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
-  CardContent,
   CardFooter,
   CardAction,
 } from "@/components/ui/cubby-ui/card";
@@ -31,9 +28,6 @@ interface BundleCardProps {
   creatorImage?: string;
   isPublic?: boolean;
   actions?: React.ReactNode;
-  copyCount?: number;
-  forkCount?: number;
-  starCount?: number;
 }
 
 export function BundleCard({
@@ -46,15 +40,7 @@ export function BundleCard({
   creatorImage,
   isPublic = true,
   actions,
-  copyCount,
-  forkCount,
-  starCount,
 }: BundleCardProps) {
-  const hasStats =
-    copyCount !== undefined ||
-    forkCount !== undefined ||
-    starCount !== undefined;
-
   const content = (
     <Card
       className={cn(
@@ -105,39 +91,6 @@ export function BundleCard({
           {description}
         </p>
       </CardHeader>
-      {hasStats ? (
-        <CardContent className="mt-auto pt-0">
-          <div className="flex items-center gap-2 text-xs font-mono tabular-nums text-muted-foreground">
-            {copyCount !== undefined ? (
-              <span>
-                {copyCount} {copyCount === 1 ? "copy" : "copies"}
-              </span>
-            ) : null}
-            {forkCount !== undefined && copyCount !== undefined ? (
-              <span aria-hidden>&middot;</span>
-            ) : null}
-            {forkCount !== undefined ? (
-              <span>
-                {forkCount} {forkCount === 1 ? "fork" : "forks"}
-              </span>
-            ) : null}
-            {starCount !== undefined &&
-            (copyCount !== undefined || forkCount !== undefined) ? (
-              <span aria-hidden>&middot;</span>
-            ) : null}
-            {starCount !== undefined ? (
-              <span className="inline-flex items-center gap-1">
-                <HugeiconsIcon
-                  icon={StarIcon}
-                  aria-hidden
-                  className="size-3 fill-current"
-                />
-                {starCount}
-              </span>
-            ) : null}
-          </div>
-        </CardContent>
-      ) : null}
       {actions ? <CardFooter className="mt-auto">{actions}</CardFooter> : null}
     </Card>
   );
@@ -154,10 +107,8 @@ export function BundleCard({
 }
 
 export function BundleCardSkeleton({
-  hasStats = false,
   hasActions = false,
 }: {
-  hasStats?: boolean;
   hasActions?: boolean;
 }) {
   return (
@@ -182,11 +133,6 @@ export function BundleCardSkeleton({
           <Skeleton className="h-3 w-1/2 rounded" />
         </div>
       </CardHeader>
-      {hasStats ? (
-        <CardContent className="mt-auto pt-0">
-          <Skeleton className="h-lh w-36 rounded text-xs" />
-        </CardContent>
-      ) : null}
       {hasActions ? (
         <CardFooter className="mt-auto">
           <div className="flex gap-2">

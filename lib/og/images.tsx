@@ -233,13 +233,6 @@ export async function bundleOgImage(urlId: string, version: string) {
     { value: String(count), label: count === 1 ? "Skill" : "Skills" },
     { value: formatInstalls(totalInstalls), label: "Total installs" },
   ];
-  if (bundle.starCount > 0) {
-    stats.push({
-      value: formatInstalls(bundle.starCount),
-      label: bundle.starCount === 1 ? "Star" : "Stars",
-    });
-  }
-
   return renderOg(
     <Frame category="Bundle">
       <Title text={bundle.name} size={nameSize(bundle.name)} />

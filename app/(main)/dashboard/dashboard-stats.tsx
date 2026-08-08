@@ -5,26 +5,13 @@ import { cn } from "@/lib/utils";
 
 type PlanData = FunctionReturnType<typeof api.plans.currentPlan>;
 
-interface BundleLike {
-  copyCount?: number;
-  forkCount?: number;
-}
-
 interface DashboardStatsProps {
-  bundles: BundleLike[];
+  bundles: unknown[];
   plan: PlanData["plan"];
   limits: PlanData["limits"];
 }
 
 export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
-  const totals = bundles.reduce(
-    (acc, b) => ({
-      copies: acc.copies + (b.copyCount ?? 0),
-      forks: acc.forks + (b.forkCount ?? 0),
-    }),
-    { copies: 0, forks: 0 },
-  );
-
   const maxBundles = limits.maxBundles;
   const hasCap = Number.isFinite(maxBundles);
   const atCap = hasCap && bundles.length >= maxBundles;
@@ -40,10 +27,6 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
       <Metric value={bundlesValue} label="bundles" />
-      <Separator />
-      <Metric value={formatNumber(totals.copies)} label="copies" />
-      <Separator />
-      <Metric value={formatNumber(totals.forks)} label="forks" />
       {planLabel ? (
         <>
           <Separator />
@@ -93,11 +76,4 @@ function Separator() {
       ·
     </span>
   );
-}
-
-function formatNumber(n: number): string {
-  if (n < 1000) return n.toString();
-  if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
 }

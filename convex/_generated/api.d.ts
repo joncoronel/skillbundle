@@ -10,8 +10,6 @@
 
 import type * as audits from "../audits.js";
 import type * as bindAudit from "../bindAudit.js";
-import type * as bundleEvents from "../bundleEvents.js";
-import type * as bundleStars from "../bundleStars.js";
 import type * as bundles from "../bundles.js";
 import type * as crons from "../crons.js";
 import type * as curated from "../curated.js";
@@ -67,8 +65,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   audits: typeof audits;
   bindAudit: typeof bindAudit;
-  bundleEvents: typeof bundleEvents;
-  bundleStars: typeof bundleStars;
   bundles: typeof bundles;
   crons: typeof crons;
   curated: typeof curated;

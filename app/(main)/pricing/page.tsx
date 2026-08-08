@@ -85,14 +85,6 @@ function ClosingCta() {
           >
             Start free
           </Button>
-          <Button
-            nativeButton={false}
-            variant="ghost"
-            size="lg"
-            render={<Link href="/explore" />}
-          >
-            Browse community bundles
-          </Button>
         </div>
       </div>
     </section>

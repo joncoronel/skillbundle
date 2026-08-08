@@ -2,7 +2,6 @@
 
 import { useId, useState, type ReactNode } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
@@ -39,15 +38,12 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/cubby-ui/popover";
-import { ForkBundleButton } from "@/components/explore/fork-bundle-button";
-import { StarButton } from "@/components/star-button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Share01Icon,
   Edit01Icon,
   Edit02Icon,
   Cancel01Icon,
-  StarIcon,
   PencilEdit02Icon,
   LockIcon,
 } from "@hugeicons/core-free-icons";
@@ -55,17 +51,6 @@ import { generateInstallCommands } from "@/lib/install-commands";
 import { timeAgo } from "@/lib/utils";
 import { EditableSkillSection } from "@/components/bundle-edit/editable-skill-section";
 import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
-
-// Admin-only — lazy-loaded so non-admins don't pay the bundle cost. The JSX
-// site is also gated on `viewerIsAdmin`, so the chunk is only fetched when
-// it'll actually render.
-const FeatureToggleButton = dynamic(
-  () =>
-    import("@/components/admin/feature-toggle-button").then(
-      (m) => m.FeatureToggleButton,
-    ),
-  { ssr: false },
-);
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
@@ -145,28 +130,6 @@ export function BundleView({
         <header>
           <div>
               <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                {/*
-                 * Show the badge only when the bundle is *actually* surfaced
-                 * as featured — i.e. both editorial-marked AND public.
-                 * `featuredAt` deliberately persists across visibility flips so
-                 * re-publishing auto-restores featured status, but during the
-                 * private window the badge would be misleading (the bundle
-                 * isn't on /explore Featured, and listFeatured filters by
-                 * isPublic at the query level).
-                 */}
-                {bundle.featuredAt !== undefined && bundle.isPublic ? (
-                  <>
-                    <span className="inline-flex items-center gap-1 font-medium text-primary">
-                      <HugeiconsIcon
-                        icon={StarIcon}
-                        aria-hidden
-                        className="size-3.5 fill-primary"
-                      />
-                      Featured
-                    </span>
-                    <span aria-hidden>·</span>
-                  </>
-                ) : null}
                 <span>by {bundle.creatorName}</span>
               </div>
               <h1 className="mt-2 font-display text-4xl font-medium tracking-tight leading-hero text-balance wrap-break-word md:text-5xl">
@@ -182,9 +145,6 @@ export function BundleView({
                 <MetadataItems
                   skillCount={skillCount}
                   createdAt={bundle.createdAt}
-                  copyCount={bundle.copyCount}
-                  forkCount={bundle.forkCount}
-                  starCount={bundle.starCount}
                 />
               </p>
 
@@ -202,28 +162,6 @@ export function BundleView({
               )}
 
               <div className="mt-6 flex flex-wrap items-center gap-2 empty:hidden">
-                {/* Viewer actions grouped together, Fork leading. */}
-                {!bundle.isOwner ? (
-                  <ForkBundleButton
-                    bundleId={bundle._id}
-                    isAuthenticated={isAuthenticated}
-                  />
-                ) : null}
-                {/*
-                 * Show on public bundles (anyone can star), AND on private
-                 * bundles where the viewer has an existing star — so a user
-                 * who starred while public can still unstar after the owner
-                 * flips private. Matches `toggleStar`'s deliberate allowance
-                 * to delete existing stars regardless of visibility.
-                 */}
-                {bundle.isPublic || bundle.viewerHasStarred ? (
-                  <StarButton
-                    bundleId={bundle._id}
-                    starred={bundle.viewerHasStarred}
-                    count={bundle.starCount}
-                    isAuthenticated={isAuthenticated}
-                  />
-                ) : null}
                 {bundle.isOwner ? (
                   <>
                     <DialogTrigger
@@ -261,13 +199,6 @@ export function BundleView({
                     ) : null}
                   </>
                 ) : null}
-                {bundle.viewerIsAdmin ? (
-                  <FeatureToggleButton
-                    bundleId={bundle._id}
-                    isPublic={bundle.isPublic}
-                    featuredAt={bundle.featuredAt}
-                  />
-                ) : null}
               </div>
           </div>
         </header>
@@ -288,13 +219,10 @@ export function BundleView({
             <SectionHeader
               title="Install"
               action={
-                <CopyAllCommandsButton
-                  skills={bundle.skills}
-                  bundleId={bundle._id}
-                />
+                <CopyAllCommandsButton skills={bundle.skills} />
               }
             />
-            <InstallCommands skills={bundle.skills} bundleId={bundle._id} />
+            <InstallCommands skills={bundle.skills} />
           </section>
         )}
 
@@ -388,29 +316,14 @@ export function BundleView({
 function MetadataItems({
   skillCount,
   createdAt,
-  copyCount,
-  forkCount,
-  starCount,
 }: {
   skillCount: number;
   createdAt: number;
-  copyCount: number;
-  forkCount: number;
-  starCount: number;
 }) {
   const items: string[] = [
     `${skillCount} skill${skillCount !== 1 ? "s" : ""}`,
     `Created ${timeAgo(createdAt)}`,
   ];
-  if (copyCount > 0) {
-    items.push(`${copyCount} ${copyCount !== 1 ? "copies" : "copy"}`);
-  }
-  if (forkCount > 0) {
-    items.push(`${forkCount} fork${forkCount !== 1 ? "s" : ""}`);
-  }
-  if (starCount > 0) {
-    items.push(`${starCount} star${starCount !== 1 ? "s" : ""}`);
-  }
 
   return (
     <>
@@ -469,13 +382,6 @@ function BundleNotFound() {
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Button
             variant="primary"
-            nativeButton={false}
-            render={<Link href="/explore" />}
-          >
-            Explore bundles
-          </Button>
-          <Button
-            variant="ghost"
             nativeButton={false}
             render={<Link href="/" />}
           >

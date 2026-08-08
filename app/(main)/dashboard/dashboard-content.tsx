@@ -104,8 +104,6 @@ function DashboardLoaded({
   const sortedBundles = useMemo(() => {
     const list = [...bundles];
     switch (sortBy) {
-      case "most-copied":
-        return list.sort((a, b) => (b.copyCount ?? 0) - (a.copyCount ?? 0));
       case "alphabetical":
         return list.sort((a, b) => a.name.localeCompare(b.name));
       case "newest":

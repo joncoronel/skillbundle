@@ -22,13 +22,6 @@ export function DashboardEmpty() {
           >
             Build your first bundle
           </Button>
-          <Button
-            variant="ghost"
-            nativeButton={false}
-            render={<Link href="/explore" />}
-          >
-            Explore public bundles
-          </Button>
         </div>
       </div>
     </div>
