@@ -489,16 +489,10 @@ export default defineSchema({
     // live skills row rather than the blob, so a description change is fully
     // reportable on a baseline row. Only the body diff is unavailable.
     isBaseline: v.boolean(),
-    // Stamped by the notifier, never by the writer, when this row landed inside
-    // a window that tripped the mass-change circuit breaker. The archive still
-    // records the change; notification must not fire on it.
-    //
-    // Why this matters concretely: prod's own history shows ~60% of the catalog
-    // sharing one `contentUpdatedAt` because every skill got its first content
-    // fetch at launch. Any future extraction change, bulk backfill, or new
-    // source added at scale reproduces that shape, and without suppression it
-    // would fire thousands of "this skill changed!" alerts in one sync.
-    suppressed: v.optional(v.boolean()),
+    // No `suppressed` flag here on purpose. Mass-change suppression is computed
+    // at READ time (`isCatalogWideChangeEvent` in skillVersions.ts), because a
+    // writer cannot know it is the 3rd of 3,000. See that file for the
+    // threshold and the precedent that makes the breaker necessary.
   })
     .index("by_skill_changedAt", ["skillDocId", "changedAt"])
     // Powers the cross-skill feed and the notifier's mass-change window count.

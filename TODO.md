@@ -105,14 +105,13 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Loose ends worth knowing about:**
 
-- `skillVersions.suppressed` is declared and still nothing sets it — the
-  mass-change breaker got built at READ time instead (`isCatalogWideChangeEvent`
-  in `skillVersions.ts`), because at write time you cannot know you are the 3rd
-  of 3,000. A per-row flag would need a second pass over the archive to set, and
-  the read-time count is one bounded index scan that only runs when a user
-  already has 8+ changed skills. Drop the field on the next schema change unless
-  a use appears. (Precedent that mass events happen: ~60% of prod shares one
-  `contentUpdatedAt` from the launch backfill.)
+- ~~`skillVersions.suppressed` is declared and nothing sets it.~~ Dropped
+  Aug 2026. The mass-change breaker got built at READ time instead
+  (`isCatalogWideChangeEvent` in `skillVersions.ts`), because at write time you
+  cannot know you are the 3rd of 3,000, so the per-row flag never had a writer.
+  Worth noting for the two-deploy rule below: this one came out in a *single*
+  deploy, because no row ever carried it. The dance is only needed when the
+  field has been written.
 - The dashboard feed hides a change whose only archived version is a baseline,
   because a baseline has no previous content and so no diff to link to. That
   silently under-reports while the archive backfills. It self-corrects as
