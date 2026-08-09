@@ -141,14 +141,24 @@ That ambiguity is exactly how the loop bug survived being watched.
   needs a heavy Pro account to matter at all, which is why it is parked rather
   than scheduled. Revisit if anyone gets near it.
 
-- **Re-measure the mass-change threshold once the archive has history.**
-  `MASS_CHANGE_THRESHOLD` is 750, which is ~5x an ESTIMATE (15k skills at the
-  measured 27.5%/month). It cannot be measured yet: on 2026-08-08 prod held 459
-  baselines and zero real changes, because the archive was one day old and
-  nothing had been seen twice. Backfill runs ~459/day against ~15k skills, so
-  from roughly 2026-09-10 run `npx convex run skillVersions:changeRateHealth
-  --prod` and set the constant to ~5x a busy day's `realChanges`. Under ~3x it
-  fires on ordinary Tuesdays; far over it never fires.
+- **Re-measure the mass-change threshold.** `MASS_CHANGE_THRESHOLD` in
+  `skillVersions.ts` is 750, which is ~5x an ESTIMATE (15k skills at the
+  measured 27.5%/month), not a measurement. Under ~3x a busy day it fires on
+  ordinary Tuesdays; far over it never fires at all.
+
+      npx convex run skillVersions:changeRateHealth --prod
+
+  Read `realChanges` per day — IGNORE `baselines`, which is the one-time
+  backfill and says nothing about the change rate. Take several days: the rate
+  is lumpy, and one reading times thirty is how the previous estimate went
+  wrong. Then set the constant to ~5x a busy day.
+
+  **From roughly 2026-08-16, not September.** An earlier version of this entry
+  said mid-September, reasoning that the archive was slowly backfilling itself
+  at ~459/day. That model was wrong — the archive only ever wrote on a CHANGE,
+  so it was never going to fill on its own. The one-time backfill (2026-08-09)
+  gave every skill a baseline, so real change data has been accruing since
+  then, and a week of it is enough.
 
 **Loose ends worth knowing about:**
 
