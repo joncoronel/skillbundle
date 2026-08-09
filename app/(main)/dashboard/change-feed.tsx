@@ -151,6 +151,19 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
             ) : null}
           </header>
 
+          {/* Same coverage caveat as the all-clear. Without it this reading
+              shows a bare "N skills changed", which reads as the whole answer
+              — and this is the likelier branch for an account large enough to
+              hit the cap in the first place. */}
+          {feed.checkedSkillCount < feed.watchedSkillCount ? (
+            <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground tabular-nums sm:px-6">
+              <CoverageNote
+                checked={feed.checkedSkillCount}
+                total={feed.watchedSkillCount}
+              />
+            </p>
+          ) : null}
+
           {feed.suppressed ? (
             <div className="border-t border-border px-5 py-4 sm:px-6">
               <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
@@ -253,7 +266,11 @@ function AllClear({
   const partial = checkedCount < watchedSkillCount;
   return (
     <div className="flex items-center gap-3 px-5 py-4 sm:px-6">
-      <StatusLight tone="clear" />
+      {/* Not green on a partial check. A clear light IS the all-clear, so
+          pairing it with "we did not look at all of them" says two different
+          things at once — and DESIGN.md reserves the neutral tone for exactly
+          this: the product declining to assert. */}
+      <StatusLight tone={partial ? "hold" : "clear"} />
       <div className="min-w-0">
         {/* tabIndex -1 so "Mark all read" can hand focus here rather than
             dropping it when its own subtree is hidden. */}
@@ -262,19 +279,46 @@ function AllClear({
           tabIndex={-1}
           className="text-sm font-semibold tracking-tight outline-none"
         >
-          {partial ? "Nothing has changed so far." : "Nothing has changed."}
+          {partial
+            ? "Nothing changed in the skills we checked."
+            : "Nothing has changed."}
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
           {watchedSkillCount === 0
             ? "You aren't watching any skills yet."
             : partial
-              ? `Checked ${checkedCount} of ${watchedSkillCount} watched skills, oldest first. The rest are checked on later loads.`
+              ? null
               : `Watching ${watchedSkillCount} skill${
                   watchedSkillCount === 1 ? "" : "s"
                 }, all as you last left them.`}
+          {partial ? <CoverageNote checked={checkedCount} total={watchedSkillCount} /> : null}
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * What the load did NOT look at.
+ *
+ * Rendered on both readings, not just the all-clear. A reader with 700 watched
+ * skills and three changes gets "3 skills changed" — a count that reads as
+ * complete and is not, which is the more likely branch for the only accounts
+ * big enough to hit the cap.
+ *
+ * Deliberately does not promise the remainder gets picked up later. An earlier
+ * version said "the rest are checked on later loads", which is false: the scan
+ * takes the oldest baselines first, and viewing a bundle moves its skills to
+ * the NEWEST baseline — so the unchecked tail is the recently-seen tail and it
+ * stays there. Nothing rotates. Saying otherwise turned one false reassurance
+ * into a smaller one.
+ */
+function CoverageNote({ checked, total }: { checked: number; total: number }) {
+  return (
+    <span className="block">
+      Checked {checked} of {total} watched skills, least recently seen first.
+      The other {total - checked} were not checked on this load.
+    </span>
   );
 }
 
