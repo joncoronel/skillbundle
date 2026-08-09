@@ -217,6 +217,51 @@ export const touchSweepState = internalMutation({
   },
 });
 
+/**
+ * Open a run record. Called once per WALK, by the first invocation only.
+ *
+ * See the `sweepRuns` table comment: the chain can end without an error, so
+ * "did the last walk finish" has to be a stored fact rather than something
+ * inferred from how many repos happen to carry a recent timestamp.
+ */
+export const startSweepRun = internalMutation({
+  args: {},
+  returns: v.id("sweepRuns"),
+  handler: async (ctx) => {
+    return await ctx.db.insert("sweepRuns", {
+      startedAt: Date.now(),
+      reposSwept: 0,
+      reposSkipped: 0,
+      skillsFlagged: 0,
+    });
+  },
+});
+
+/**
+ * Record progress, and close the run when it reaches an ending.
+ *
+ * Progress is written on EVERY chain link, not just at the end. A run that dies
+ * halfway then leaves behind its last known counts, which is the difference
+ * between "it stopped somewhere" and "it stopped after 146 repos".
+ */
+export const updateSweepRun = internalMutation({
+  args: {
+    runId: v.id("sweepRuns"),
+    reposSwept: v.number(),
+    reposSkipped: v.number(),
+    skillsFlagged: v.number(),
+    outcome: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { runId, outcome, ...counts }) => {
+    await ctx.db.patch(runId, {
+      ...counts,
+      ...(outcome ? { outcome, finishedAt: Date.now() } : {}),
+    });
+    return null;
+  },
+});
+
 export const getSweepState = internalQuery({
   args: { repo: v.string() },
   returns: v.union(
@@ -356,6 +401,8 @@ export const sweepRepoFreshness = internalAction({
      * See the conditional-request rule below.
      */
     runStartedAt: v.optional(v.number()),
+    /** The `sweepRuns` row for this walk. Created by the first invocation. */
+    runId: v.optional(v.id("sweepRuns")),
   },
   returns: v.null(),
   handler: async (
@@ -367,9 +414,13 @@ export const sweepRepoFreshness = internalAction({
       skillsFlagged = 0,
       reposSkipped = 0,
       runStartedAt,
+      runId,
     },
   ) => {
     const runStart = runStartedAt ?? Date.now();
+    // First link of the walk opens the record; later links carry the id.
+    const run: Id<"sweepRuns"> =
+      runId ?? (await ctx.runMutation(internal.freshness.startSweepRun, {}));
     const page: {
       repos: Array<{ source: string; branch?: string; skills: SweepSkill[] }>;
       nextCursor: string;
@@ -429,6 +480,15 @@ export const sweepRepoFreshness = internalAction({
           `Freshness sweep ABORTED on rate limit after ${swept} repos ` +
             `(${flagged} skills flagged). Remaining repos were not inspected.`,
         );
+        // Closed with an outcome, so this reads as a deliberate stop rather
+        // than a chain that vanished. Logs get evicted; this row does not.
+        await ctx.runMutation(internal.freshness.updateSweepRun, {
+          runId: run,
+          reposSwept: swept,
+          reposSkipped: skipped,
+          skillsFlagged: flagged,
+          outcome: "rate-limited",
+        });
         if (flagged > 0) {
           await ctx.scheduler.runAfter(
             5_000,
@@ -512,6 +572,15 @@ export const sweepRepoFreshness = internalAction({
     const nextOffset = repoOffset + batch.length;
     const pageHasMore = nextOffset < page.repos.length;
 
+    // Progress before chaining, so a link that never fires still leaves its
+    // predecessor's counts behind to be read.
+    await ctx.runMutation(internal.freshness.updateSweepRun, {
+      runId: run,
+      reposSwept: swept,
+      reposSkipped: skipped,
+      skillsFlagged: flagged,
+    });
+
     if (pageHasMore || !page.isDone) {
       await ctx.scheduler.runAfter(
         1_000,
@@ -527,6 +596,7 @@ export const sweepRepoFreshness = internalAction({
           // Carried, not re-stamped: it marks the start of the WALK, and the
           // straddle check compares each repo's sweep time against it.
           runStartedAt: runStart,
+          runId: run,
         },
       );
       return null;
@@ -539,6 +609,15 @@ export const sweepRepoFreshness = internalAction({
       `Freshness sweep complete: ${swept} repos inspected, ${skipped} skipped, ` +
         `${flagged} skills flagged for re-fetch`,
     );
+    // The only place `finishedAt` gets set on a completed walk. Everything else
+    // leaves it unset, which is exactly what makes an abandoned chain visible.
+    await ctx.runMutation(internal.freshness.updateSweepRun, {
+      runId: run,
+      reposSwept: swept,
+      reposSkipped: skipped,
+      skillsFlagged: flagged,
+      outcome: "complete",
+    });
     // Drain whatever the sweep queued. Safe when nothing was flagged —
     // backfillFetchContent no-ops on an empty work set.
     if (flagged > 0) {
@@ -615,6 +694,18 @@ export const sweepHealth = internalQuery({
      */
     skillsWithNoVersions: v.number(),
     sampleSize: v.number(),
+    /**
+     * The most recent walk: did it finish, and how far did it get.
+     *
+     * `lastRunFinished: false` on a run that is not currently in progress means
+     * the chain died — no error, no log, it just stopped. That happened on
+     * 2026-08-09 (146 of 1,624 repos) and was invisible until someone read the
+     * repo counts and thought to question them. This states it outright.
+     */
+    lastRunStartedHoursAgo: v.union(v.number(), v.null()),
+    lastRunFinished: v.boolean(),
+    lastRunOutcome: v.union(v.string(), v.null()),
+    lastRunReposSwept: v.union(v.number(), v.null()),
   }),
   handler: async (ctx) => {
     const now = Date.now();
@@ -679,7 +770,20 @@ export const sweepHealth = internalQuery({
       }),
     );
 
+    const lastRun = await ctx.db
+      .query("sweepRuns")
+      .withIndex("by_startedAt")
+      .order("desc")
+      .first();
+
     return {
+      lastRunStartedHoursAgo:
+        lastRun === null
+          ? null
+          : Math.round((now - lastRun.startedAt) / 3_600_000),
+      lastRunFinished: lastRun?.finishedAt !== undefined,
+      lastRunOutcome: lastRun?.outcome ?? null,
+      lastRunReposSwept: lastRun?.reposSwept ?? null,
       reposTracked: repos.length,
       reposSweptInLast25h: repos.filter((r) => r.sweptAt >= recentCutoff).length,
       oldestSweepHoursAgo:

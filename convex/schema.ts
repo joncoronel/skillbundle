@@ -526,6 +526,32 @@ export default defineSchema({
     sweptAt: v.number(),
   }).index("by_repo", ["repo"]),
 
+  /**
+   * One row per freshness-sweep WALK, so a run that stops halfway is evident.
+   *
+   * The sweep self-chains across ~40 invocations. An action that throws is not
+   * retried and an action interrupted mid-flight simply stops, so a chain can
+   * end early with no error, no log line, and no retry. On 2026-08-09 one did:
+   * 146 of 1,624 repos, discovered only because someone happened to read
+   * `sweepHealth`, and by then the logs had been evicted and the per-repo
+   * timestamps had been overwritten by the manual re-run. The cause is still
+   * unknown, which is the actual problem this table solves.
+   *
+   * `finishedAt` unset on the newest row means the last walk never completed.
+   * That is the signal — `sweepHealth` reports it, so the next reading says so
+   * outright instead of leaving it to be inferred from a repo count.
+   */
+  sweepRuns: defineTable({
+    startedAt: v.number(),
+    /** Unset while running, and permanently unset if the chain died. */
+    finishedAt: v.optional(v.number()),
+    reposSwept: v.number(),
+    reposSkipped: v.number(),
+    skillsFlagged: v.number(),
+    /** "complete" | "rate-limited". Absent means it never reached an ending. */
+    outcome: v.optional(v.string()),
+  }).index("by_startedAt", ["startedAt"]),
+
   // Denormalized owner-level rollup powering the /official directory page.
   // Computed by syncCurated from the same curated set that drives the
   // per-skill `curatedOwner` stamp. Reading this table is O(N owners),

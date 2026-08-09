@@ -152,19 +152,35 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Loose ends worth knowing about:**
 
-- **A self-chaining job can die silently, and nothing reports it.** On
-  2026-08-09 the daily sweep stopped after 146 of 1,624 repos — almost certainly
-  a Convex deploy landing mid-chain, since an interrupted action just stops: no
-  error, no abort log, no retry. It was found only because someone happened to
-  read `sweepHealth`. Re-running it manually completed the full walk, so the
-  code is fine; the gap is that a partial run and a healthy one look identical
-  unless you go looking.
-  `sweepHealth` can SHOW it (`reposSweptInLast25h` far below `reposTracked`) but
-  nothing SURFACES it. Options if this recurs: have the sweep record a
-  run-completed marker and have the next run warn when the previous one never
-  finished, or avoid deploying between 04:00 and 04:15 UTC. Low priority while
-  the catalog is small and the backstop still covers each skill monthly.
+- **The daily sweep stopped after 146 of 1,624 repos on 2026-08-09, and we do
+  not know why.** Re-running it by hand completed the full walk (1,623/1,624),
+  so the code is not simply broken. Two candidates, neither confirmed:
 
+  1. A Convex deploy landed mid-chain. An interrupted action just stops — no
+     error, no log, no retry — which matches a partial run with no abort line.
+  2. It was the first production run after the sweep changes in this branch,
+     notably `touchSweepState`, which fires a mutation on every 304 where the
+     old code wrote nothing. That turns a near-write-free walk into ~1,600
+     round-trips, and one throw anywhere kills the chain. Weakened by the
+     manual re-run succeeding, but "intermittent under load at 04:00 UTC" and
+     "fine by hand at midday" are compatible.
+
+  The evidence is gone: Convex evicted the logs (the baseline backfill flooded
+  them), and the manual re-run overwrote the per-repo `sweptAt` timestamps that
+  would have shown which 146. Suggesting that re-run before dumping the table
+  was a mistake.
+
+  **Instrumented rather than guessed at.** The `sweepRuns` table now records one
+  row per walk, with progress written on every chain link and `finishedAt` set
+  only on a real ending. `sweepHealth` surfaces `lastRunFinished`,
+  `lastRunOutcome` and `lastRunReposSwept`, so a chain that dies is stated
+  outright instead of inferred from a low repo count. Verified on dev: a run
+  reads `finished: false` with a climbing count while in flight, then closes
+  `complete`.
+
+  **The open question resolves itself on the next few 04:00 UTC runs** (9pm
+  Pacific). Completing means 2026-08-09 was a one-off. Dying again means
+  candidate 2, and the row will say where it stopped.
 - ~~`skillVersions.suppressed` is declared and nothing sets it.~~ Dropped
   Aug 2026. The mass-change breaker got built at READ time instead
   (`isCatalogWideChangeEvent` in `skillVersions.ts`), because at write time you
