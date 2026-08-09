@@ -580,6 +580,24 @@ export const sweepHealth = internalQuery({
     versionsLast24h: v.number(),
     versionsBaseline: v.number(),
     versionsRealChange: v.number(),
+    /**
+     * Of a bounded sample of live skills, how many have NO archive row at all.
+     *
+     * Every other number here answers "did the content move?". None of them can
+     * see a row that should exist and does not, because a missing row is not a
+     * change — so nothing in the pipeline notices it. That was harmless while
+     * rows were only ever added; `devSeed:clearSeededVersions` made deletion
+     * possible, and on 2026-08-09 it was run against production by mistake and
+     * removed a skill's history with nothing reporting it.
+     *
+     * READ THIS AS A RATE, NOT AN ALARM, UNTIL THE BACKFILL FINISHES. The
+     * archive began Aug 2026 and baselines a few hundred skills a day, so most
+     * of the catalog legitimately has no row yet and this starts near
+     * `sampleSize`. It should fall steadily. Once it is near zero, a jump means
+     * rows are being deleted or the writer is failing silently.
+     */
+    skillsWithNoVersions: v.number(),
+    sampleSize: v.number(),
   }),
   handler: async (ctx) => {
     const now = Date.now();
@@ -605,6 +623,29 @@ export const sweepHealth = internalQuery({
       .withIndex("by_changedAt", (q) => q.gt("changedAt", now - DAY))
       .take(CAP);
 
+    // Sampled, not counted. A true count is one indexed read per live skill
+    // (~15k), which is both over the per-query budget and far more than a
+    // health check needs — the question is "is the rate where it should be",
+    // and 300 answers that to within a few percent.
+    const SAMPLE = 300;
+    const sample = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false),
+      )
+      .take(SAMPLE);
+    const missing = await Promise.all(
+      sample.map(async (s) => {
+        const row = await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_changedAt", (q) =>
+            q.eq("skillDocId", s.skillDocId),
+          )
+          .first();
+        return row === null;
+      }),
+    );
+
     return {
       reposTracked: repos.length,
       reposSweptInLast25h: repos.filter((r) => r.sweptAt >= recentCutoff).length,
@@ -615,6 +656,8 @@ export const sweepHealth = internalQuery({
       versionsLast24h: versions.length,
       versionsBaseline: versions.filter((r) => r.isBaseline).length,
       versionsRealChange: versions.filter((r) => !r.isBaseline).length,
+      skillsWithNoVersions: missing.filter(Boolean).length,
+      sampleSize: sample.length,
     };
   },
 });
