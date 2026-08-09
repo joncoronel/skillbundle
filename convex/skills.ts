@@ -4128,3 +4128,221 @@ export const myGitHubAddQuota = query({
     return await computeGitHubAddQuota(ctx, user._id);
   },
 });
+
+// ---------------------------------------------------------------------------
+// One-time archive baseline backfill
+//
+// WHY THIS EXISTS, and why it is not just "run the content fetcher".
+//
+// The archive only records a version when content CHANGED — `fetchSkillContent`
+// gates `archiveSkillVersion` on `outcome.changed`, and that is false whenever
+// the hash matches. That gate is right for the daily pipeline: without it every
+// content refresh would store ~15k identical blobs.
+//
+// But it means a skill with no archive row only gets one when it next changes,
+// and that first row is a BASELINE — no predecessor, so no diff, so the change
+// is not reportable. The user hears nothing. Only the SECOND change produces a
+// comparison. At the measured ~27.5%/month change rate, most of the catalog is
+// therefore two changes and several months away from being covered, silently.
+//
+// Nothing fixes that on its own. There is no rotation quietly filling in
+// baselines; a skill that never changes never gets one, ever.
+//
+// This closes the gap in one pass: fetch every live GitHub skill that has no
+// archive row and write its baseline unconditionally. Afterwards, the NEXT
+// change to any skill is reportable, and `sweepHealth.skillsWithNoVersions`
+// becomes a real alarm because zero is finally the correct answer.
+//
+// Safe to re-run. It only touches skills with no row, and `recordSkillVersion`
+// is itself idempotent on the hash, so a resumed or repeated pass is a no-op
+// over everything already done.
+// ---------------------------------------------------------------------------
+
+/** Skills per page. Each carries one extra indexed read for the row check. */
+const BASELINE_PAGE = 100;
+
+export const listSkillsNeedingBaseline = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  returns: v.object({
+    skills: v.array(
+      v.object({
+        skillDocId: v.id("skills"),
+        skillMdUrl: v.string(),
+        label: v.string(),
+      }),
+    ),
+    scanned: v.number(),
+    nextCursor: v.string(),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false),
+      )
+      .paginate({ numItems: BASELINE_PAGE, cursor: cursor ?? null });
+
+    const candidates = result.page.filter(
+      (s) => isGitHubSource(s.source) && s.skillMdUrl,
+    );
+
+    const needing = await Promise.all(
+      candidates.map(async (s) => {
+        const existing = await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_changedAt", (q) =>
+            q.eq("skillDocId", s.skillDocId),
+          )
+          .first();
+        return existing === null
+          ? {
+              skillDocId: s.skillDocId,
+              skillMdUrl: s.skillMdUrl as string,
+              label: `${s.source}/${s.skillId}`,
+            }
+          : null;
+      }),
+    );
+
+    return {
+      skills: needing.filter((s): s is NonNullable<typeof s> => s !== null),
+      scanned: result.page.length,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const backfillArchiveBaselines = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    scanned: v.optional(v.number()),
+    written: v.optional(v.number()),
+    failed: v.optional(v.number()),
+    /** Fetches refused for quota, as opposed to missing files. See the log. */
+    rateLimited: v.optional(v.number()),
+    /** Stop after this many pages. Omit to run to completion. */
+    maxPages: v.optional(v.number()),
+    page: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (
+    ctx,
+    {
+      cursor,
+      scanned = 0,
+      written = 0,
+      failed = 0,
+      rateLimited = 0,
+      maxPages,
+      page = 0,
+    },
+  ) => {
+    const result: {
+      skills: Array<{
+        skillDocId: Id<"skills">;
+        skillMdUrl: string;
+        label: string;
+      }>;
+      scanned: number;
+      nextCursor: string;
+      isDone: boolean;
+    } = await ctx.runQuery(internal.skills.listSkillsNeedingBaseline, {
+      cursor: cursor ?? undefined,
+    });
+
+    let wrote = written;
+    let failures = failed;
+    let throttled = rateLimited;
+    // Statuses are counted, not swallowed. A 404 means the file moved and the
+    // skill needs rediscovery; a 429 means we are being throttled and should
+    // stop rather than burn the rest of the catalog. Collapsing both into
+    // "failed" would make a rate-limited run look like a catalog full of dead
+    // links — the same class of ambiguity the sweep's RATE_LIMITED sentinel
+    // exists to remove.
+    const statuses = new Map<number, number>();
+
+    for (const s of result.skills) {
+      try {
+        const res = await fetch(s.skillMdUrl);
+        if (!res.ok) {
+          statuses.set(res.status, (statuses.get(res.status) ?? 0) + 1);
+          if (res.status === 429 || res.status === 403) throttled++;
+          failures++;
+          continue;
+        }
+        const raw = await res.text();
+        // No `updateDescription` call. The skills row is already correct — this
+        // is a pure archive write, and routing through the content path would
+        // hit the very changed-gate this exists to bypass.
+        await archiveSkillVersion(ctx, {
+          skillDocId: s.skillDocId,
+          raw,
+          syncHash: await sha256Hex(raw),
+          frontmatterVersion: extractFrontmatterVersion(raw) ?? undefined,
+          // No `descriptionBefore`: there is no previous version by definition.
+          // `descriptionChanged: false` because nothing changed — this row is a
+          // starting point, not an event, and marking it changed would make the
+          // feed announce a change that never happened.
+          descriptionAfter: extractFrontmatterDescription(raw) ?? undefined,
+          descriptionChanged: false,
+          contentChanged: false,
+        });
+        wrote++;
+      } catch {
+        failures++;
+      }
+    }
+
+    const totalScanned = scanned + result.scanned;
+    const nextPage = page + 1;
+    const hitPageLimit = maxPages !== undefined && nextPage >= maxPages;
+
+    const breakdown = [...statuses.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([code, n]) => `${code}x${n}`)
+      .join(" ");
+    if (breakdown) {
+      console.log(`  page ${page} fetch failures: ${breakdown}`);
+    }
+
+    // Being throttled means every remaining request fails the same way. Stop
+    // and report the cursor rather than converting a quota problem into
+    // thousands of phantom dead links.
+    if (throttled > 0) {
+      console.error(
+        `Archive baseline backfill ABORTED on rate limit after ${totalScanned} scanned, ` +
+          `${wrote} written. Resume later with cursor ${result.nextCursor}`,
+      );
+      return null;
+    }
+
+    if (!result.isDone && !hitPageLimit) {
+      // Paced, not hammered: ~100 raw.githubusercontent requests per page and a
+      // short gap between pages. The ceiling on raw file serving is not
+      // documented the way the API's is, so this errs slow.
+      await ctx.scheduler.runAfter(
+        5_000,
+        internal.skills.backfillArchiveBaselines,
+        {
+          cursor: result.nextCursor,
+          scanned: totalScanned,
+          written: wrote,
+          failed: failures,
+          rateLimited: throttled,
+          maxPages,
+          page: nextPage,
+        },
+      );
+      return null;
+    }
+
+    console.log(
+      `Archive baseline backfill ${result.isDone ? "COMPLETE" : "paused at page limit"}: ` +
+        `${totalScanned} summaries scanned, ${wrote} baselines written, ${failures} fetch failures. ` +
+        `${result.isDone ? "" : `Resume with cursor ${result.nextCursor}`}`,
+    );
+    return null;
+  },
+});
