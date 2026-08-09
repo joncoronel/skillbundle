@@ -160,6 +160,34 @@ That ambiguity is exactly how the loop bug survived being watched.
   gave every skill a baseline, so real change data has been accruing since
   then, and a week of it is enough.
 
+- **Nothing prunes the version archive.** `skillSnapshots` has a retention
+  cron (06:45 UTC, 180 days, `pruneSnapshots`). `skillVersions` has no
+  equivalent — the only code that deletes a version row is `devSeed`'s
+  teardown, which is gated against production. The two `ctx.storage.delete`
+  calls in `recordSkillVersion` release the INCOMING blob on a no-op write
+  (dead skill row, or a duplicate hash from a retry); they never touch stored
+  rows. `MAX_VERSION_LIMIT = 200` is a read cap, not retention.
+
+  Rows are cheap; the blobs are not. Every version stores the full raw
+  SKILL.md in file storage, and the 2026-08-09 backfill wrote ~12,600 of them
+  in one pass — already the bulk of what is there. Growth from here is one
+  blob per real change, which is the same number
+  `skillVersions:changeRateHealth` reports, so the threshold re-measurement
+  above sizes this too. Do that first; there is no point designing retention
+  against a guess.
+
+  One asymmetry worth knowing when you do: `markDelistedSkills` explicitly
+  deletes a delisted skill's `skillEmbeddings` row to save storage, but leaves
+  its version rows and blobs. A skill can leave the catalog for good and keep
+  its full archive.
+
+  NOT scheduled, because the shape is a product decision and not a cleanup. A
+  monitoring product deleting its own history is a feature change. The
+  plausible options — cap versions per skill, drop the blob but keep the row
+  and its description diff, or age out on a window — differ in what a user
+  loses, so pick deliberately rather than reaching for the snapshot cron's
+  pattern because it exists.
+
 **Loose ends worth knowing about:**
 
 - **The daily sweep stopped after 146 of 1,624 repos on 2026-08-09, and we do
