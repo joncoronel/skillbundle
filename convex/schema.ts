@@ -482,12 +482,20 @@ export default defineSchema({
     descriptionAfter: v.optional(v.string()),
     descriptionChanged: v.boolean(),
     contentChanged: v.boolean(),
-    // True for the first row ever written for a skill. There is no stored
-    // predecessor blob, so no content DIFF is possible against it.
+    // True when this row is a STARTING POINT rather than an event: the first
+    // copy taken of a file we had no prior record of. Written by the one-time
+    // backfill, and by a skill's genuine first content fetch.
     //
-    // This does NOT mean "do not notify". `descriptionBefore` is read off the
-    // live skills row rather than the blob, so a description change is fully
-    // reportable on a baseline row. Only the body diff is unavailable.
+    // NOT simply "the first row for this skill". A well-known skill missed by
+    // the GitHub-only backfill has an empty archive but a long-standing
+    // `syncHash`, so its first row is a real change and must report as one. See
+    // `recordSkillVersion` for how the two are told apart.
+    //
+    // A baseline has no stored predecessor blob, so no body DIFF is possible
+    // against it — but that is not the same as "do not notify", and it is no
+    // longer coextensive with this flag. `descriptionBefore` is read off the
+    // live skills row rather than the blob, so description-level reporting
+    // works on any first row, baseline or not.
     isBaseline: v.boolean(),
     // No `suppressed` flag here on purpose. Mass-change suppression is computed
     // at READ time (`isCatalogWideChangeEvent` in skillVersions.ts), because a

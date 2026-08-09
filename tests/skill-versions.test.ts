@@ -203,6 +203,44 @@ test("first content write is recorded as a baseline", async () => {
   expect(versions[0].previousFrontmatterVersion).toBeUndefined();
 });
 
+test("a first row is a real change when the skill already had content", async () => {
+  // The well-known-source case, and the reason `isBaseline` is not simply
+  // "no predecessor row". `backfillArchiveBaselines` only walks GitHub sources
+  // (`listSkillsNeedingBaseline` filters on `isGitHubSource && skillMdUrl`), so
+  // a well-known skill reaches its first real change with an EMPTY archive but
+  // a `syncHash` that has been on its skills row since long before the archive
+  // existed. Flagging that row a baseline hid it from the feed, which drops
+  // baselines — one silently swallowed change per well-known skill.
+  const t = makeTest();
+  const skillDocId = await seedSkill(t);
+
+  // Content that predates the archive: the skills row carries a hash and a
+  // description, but nothing was ever recorded.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(skillDocId, {
+      description: "Old description",
+      content: "Old body",
+      syncHash: "hash-from-before-the-archive-existed",
+    });
+  });
+  expect(await versionsFor(t, skillDocId)).toHaveLength(0);
+
+  await writeContent(
+    t,
+    skillDocId,
+    skillMd({ description: "New description", body: "New body" }),
+  );
+
+  const versions = await versionsFor(t, skillDocId);
+  expect(versions).toHaveLength(1);
+  expect(versions[0].isBaseline).toBe(false);
+  // No predecessor blob, so no body diff — but the high-severity half survives,
+  // because `descriptionBefore` is read off the live skills row.
+  expect(versions[0].descriptionBefore).toBe("Old description");
+  expect(versions[0].descriptionAfter).toBe("New description");
+  expect(versions[0].descriptionChanged).toBe(true);
+});
+
 test("an unchanged hash writes no version row", async () => {
   const t = makeTest();
   const skillDocId = await seedSkill(t);

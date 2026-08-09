@@ -309,18 +309,20 @@ export const getAuditChange = query({
  *
  * ## Why baselines never appear
  *
- * `isBaseline` means "this is the first time we archived this file", not "this
- * file changed". It carries no previous content, so there is nothing to diff
- * and nothing a reader could act on. Filtering it here matters more than it
- * sounds: the archive began in Aug 2026 and is still backfilling, so most
- * skills' first row is a baseline. Because a baseline is always the OLDEST row
- * for a skill, checking the newest row is enough — if that one is a baseline,
- * it is the only one.
+ * `isBaseline` means "this row is a starting point", not "this file changed" —
+ * a copy taken so later rows have something to compare against. Nothing about
+ * it is actionable, so it never reaches the feed. Because a baseline is always
+ * the OLDEST row for a skill, checking the newest row is enough: if that one is
+ * a baseline, it is the only one.
  *
- * The trade-off is honest and temporary: a genuine change that happens to be a
- * skill's first archived row is hidden. Showing "something changed, but we
- * cannot tell you what" is worse than staying quiet, and the case disappears as
- * the archive fills.
+ * What is deliberately NOT filtered here is a real change that happens to be a
+ * skill's first archived row. That case is why `recordSkillVersion` sets the
+ * flag from `previousSyncHash` rather than from "no predecessor row" — every
+ * well-known source is in exactly that position, having been skipped by the
+ * GitHub-only backfill. Such a row has no predecessor blob and so no body diff,
+ * but it does carry `descriptionBefore` off the live skills row, which is the
+ * high-severity half. Reporting "the description moved, here it is, no body
+ * diff available" beats silence.
  */
 const feedItem = v.object({
   source: v.string(),
@@ -894,10 +896,30 @@ export const recordSkillVersion = internalMutation({
       descriptionAfter: args.descriptionAfter,
       descriptionChanged: args.descriptionChanged,
       contentChanged: args.contentChanged,
-      // No predecessor blob means no body diff is possible against this row.
-      // Description-level reporting still works, because `descriptionBefore`
-      // comes off the live skills row rather than the archive.
-      isBaseline: latest === null,
+      // A baseline is a STARTING POINT, not an event: the first copy we ever
+      // took of a file we had no prior record of. Both halves of that matter.
+      //
+      // `latest === null` alone was wrong, and it cost every well-known source
+      // one change. The one-time backfill covered GitHub skills only
+      // (`listSkillsNeedingBaseline` filters on `isGitHubSource && skillMdUrl`),
+      // so a well-known skill still has an empty archive while its skills row
+      // has carried a `syncHash` since long before the archive existed. Its
+      // first archived row is therefore a genuine detected change — and calling
+      // that a baseline hid it, because the feed drops baselines.
+      //
+      // `previousSyncHash` is the discriminator, and the callers already supply
+      // it: both content writers pass the hash the skills row held before this
+      // write, so it is set exactly when a previous copy existed. The backfill
+      // passes none, and neither does a skill's genuine first content fetch.
+      // Those two are the real baselines.
+      //
+      // This deliberately decouples the flag from "has a predecessor blob": a
+      // first-row real change now reports as a change while still having no
+      // blob to diff against. Both readers already cope. `descriptionBefore`
+      // comes off the live skills row rather than the archive, and the timeline
+      // anchors on `isBaseline || !previous` (skill-history.tsx) rather than on
+      // the flag alone.
+      isBaseline: latest === null && args.previousSyncHash === undefined,
     });
 
     return null;
