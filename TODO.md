@@ -89,19 +89,25 @@ PRODUCT.md, which was rewritten for this.
 
 **Deployed Aug 8 2026.** The archive and the sweep are both live in production.
 
-**Open item: verify the first clean sweep.** The initial production run hit two
-bugs (an infinite chain loop, and over-flagging every first-seen skill), both
-fixed in `6b1aea3`. The run that followed was still draining ~7,000 spurious
-re-fetches, so the first genuinely clean reading is the 04:00 UTC cron on
-Aug 9 or later. Check it with:
+**Closed Aug 9 2026: the sweep verified clean.** The initial production run hit
+two bugs (an infinite chain loop, and over-flagging every first-seen skill),
+both fixed in `6b1aea3`. A clean reading was taken on Aug 9:
 
-    npx convex run freshness:sweepHealth --prod
+    reposSweptInLast25h  1623 / 1624 tracked
+    skillsFlagged        0        (skillsFlaggedCapped false)
+    skillsWithNoVersions 0        (of a 300-row tail sample)
+    versionsBaseline     12,625   (versionsCapped false)
 
-Healthy: `reposSweptInLast25h` ≈ `reposTracked` (~1,600), `skillsFlagged` in the
-low hundreds with `skillsFlaggedCapped: false`, `versionsBaseline` ≈ 0 now that
-bootstrapping is done. `skillsFlagged` in the thousands means over-flagging has
-returned and the sweep has become a daily full-catalog re-download — that is the
-number to look at first.
+Re-check with `npx convex run freshness:sweepHealth --prod`. `skillsFlagged` in
+the thousands means over-flagging has returned and the sweep has become a daily
+full-catalog re-download — that is the number to look at first. A
+`reposSweptInLast25h` far below `reposTracked` means the chain did not finish;
+see the silent-chain note below before assuming a code fault.
+
+Note `versionsBaseline` is 12,625 rather than ≈ 0. An earlier draft of this
+section expected ≈ 0 "now that bootstrapping is done"; that was written before
+the one-time baseline backfill, which deliberately wrote a row for every skill.
+It falls back toward 0 once those age past the 24h window.
 
 Why a dedicated check rather than reading a row count: "the counter stopped
 going up" is what a stalled chain looks like AND what a finished one looks like.
@@ -146,6 +152,19 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Loose ends worth knowing about:**
 
+- **A self-chaining job can die silently, and nothing reports it.** On
+  2026-08-09 the daily sweep stopped after 146 of 1,624 repos — almost certainly
+  a Convex deploy landing mid-chain, since an interrupted action just stops: no
+  error, no abort log, no retry. It was found only because someone happened to
+  read `sweepHealth`. Re-running it manually completed the full walk, so the
+  code is fine; the gap is that a partial run and a healthy one look identical
+  unless you go looking.
+  `sweepHealth` can SHOW it (`reposSweptInLast25h` far below `reposTracked`) but
+  nothing SURFACES it. Options if this recurs: have the sweep record a
+  run-completed marker and have the next run warn when the previous one never
+  finished, or avoid deploying between 04:00 and 04:15 UTC. Low priority while
+  the catalog is small and the backstop still covers each skill monthly.
+
 - ~~`skillVersions.suppressed` is declared and nothing sets it.~~ Dropped
   Aug 2026. The mass-change breaker got built at READ time instead
   (`isCatalogWideChangeEvent` in `skillVersions.ts`), because at write time you
@@ -153,11 +172,22 @@ That ambiguity is exactly how the loop bug survived being watched.
   Worth noting for the two-deploy rule below: this one came out in a *single*
   deploy, because no row ever carried it. The dance is only needed when the
   field has been written.
-- The dashboard feed hides a change whose only archived version is a baseline,
-  because a baseline has no previous content and so no diff to link to. That
-  silently under-reports while the archive backfills. It self-corrects as
-  skills accumulate a second version, so it needs no work — just do not read
-  an empty feed as proof that nothing changed until roughly Sep 2026.
+- ~~The dashboard feed hides a change whose only archived version is a
+  baseline... do not read an empty feed as proof that nothing changed until
+  roughly Sep 2026.~~ **Closed 2026-08-09 by backfilling every baseline.**
+
+  The reasoning behind that caveat was wrong, not just its date. It assumed the
+  archive was slowly filling itself in. It was not: the archive only writes on a
+  CHANGE (`archiveSkillVersion` is gated on `outcome.changed`), so a skill that
+  never changed would never get a first row — not in a month, not ever. Coverage
+  would have crept up only as skills happened to change, and each skill's FIRST
+  change would still be swallowed as its baseline, leaving the user told nothing
+  until the second.
+
+  `skills:backfillArchiveBaselines` closed it in one pass: 12,625 baselines, all
+  300 of the tail sample covered, verified with `sweepHealth`. Every skill now
+  has a comparison point, so the NEXT change to any skill is reportable. An
+  empty feed can be read as an empty feed.
 - **Dropping a Convex field takes two deploys.** Worth remembering next time:
   the schema is validated against existing documents, so a field cannot leave
   `schema.ts` while any row still carries it. Declare it deprecated-optional,
