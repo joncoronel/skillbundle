@@ -559,15 +559,25 @@ export const sweepRepoFreshness = internalAction({
  *
  * What a healthy run looks like the morning after:
  *
- *   reposSweptInLast25h  ≈ reposTracked          (the whole catalog was walked)
- *   skillsFlagged        low hundreds            (only genuine changes)
- *   skillsMissingSha     ≈ 0                     (baselines are recorded)
- *   versionsLast24h      roughly matches flagged
- *   versionsBaseline     ≈ 0 after the first day (bootstrapping is done)
+ *   reposSweptInLast25h   ≈ reposTracked         (the whole catalog was walked)
+ *   skillsFlagged         low hundreds            (only genuine changes)
+ *   skillsFlaggedCapped   false                   (that count is real)
+ *   versionsLast24h       roughly matches flagged
+ *   versionsCapped        false                   (that count is real too)
+ *   versionsBaseline      ≈ 0                     (except during a backfill)
+ *   skillsWithNoVersions  ≈ 0 once backfilled     (see the field's own note)
  *
  * The one to watch is `skillsFlagged`. Thousands means over-flagging is back —
  * either baselining regressed or SHAs are not persisting — and that turns a
  * cost saving into a daily full-catalog re-download.
+ *
+ * CHECK THE TWO `*Capped` FLAGS BEFORE BELIEVING ANY COUNT. A capped read
+ * reports a floor, and a floor that stops moving looks exactly like a job that
+ * has finished — which is how a running backfill was read as complete.
+ *
+ * `versionsBaseline` is only ≈ 0 in steady state. While
+ * `skills:backfillArchiveBaselines` runs it is the bulk of the day's rows, and
+ * that is the job working rather than a fault.
  */
 export const sweepHealth = internalQuery({
   args: {},
@@ -578,6 +588,13 @@ export const sweepHealth = internalQuery({
     skillsFlagged: v.number(),
     skillsFlaggedCapped: v.boolean(),
     versionsLast24h: v.number(),
+    /**
+     * The version read hit `CAP`, so the three `versions*` numbers below are
+     * floors rather than counts. Without this you cannot tell a saturated
+     * counter from a settled one — read one as the other and a backfill still
+     * in flight looks complete.
+     */
+    versionsCapped: v.boolean(),
     versionsBaseline: v.number(),
     versionsRealChange: v.number(),
     /**
@@ -603,8 +620,16 @@ export const sweepHealth = internalQuery({
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;
     // Bounded so this stays a cheap query no matter how badly the sweep
-    // misbehaves — hitting the cap is itself the signal.
-    const CAP = 3000;
+    // misbehaves — hitting the cap is itself the signal, PROVIDED the caller
+    // can tell. Both capped reads below report whether they saturated.
+    //
+    // 3,000 was sized for a day that produced a few hundred rows. The archive
+    // baseline backfill produces thousands, and during one this read silently
+    // froze at exactly 3,000 — which is indistinguishable from a job that has
+    // finished. That misread happened, and it is the same defect the sweep's
+    // rate-limit sentinel exists to prevent: a bounded operation that cannot
+    // say it was bounded.
+    const CAP = 20_000;
 
     const repos = await ctx.db.query("repoSweepState").collect();
     const recentCutoff = now - 25 * 60 * 60 * 1000;
@@ -662,6 +687,7 @@ export const sweepHealth = internalQuery({
       skillsFlagged: flagged.length,
       skillsFlaggedCapped: flagged.length === CAP,
       versionsLast24h: versions.length,
+      versionsCapped: versions.length === CAP,
       versionsBaseline: versions.filter((r) => r.isBaseline).length,
       versionsRealChange: versions.filter((r) => !r.isBaseline).length,
       skillsWithNoVersions: missing.filter(Boolean).length,
