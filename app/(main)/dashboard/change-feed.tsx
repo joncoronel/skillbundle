@@ -264,13 +264,19 @@ function AllClear({
   // over the full count asserts something the query never checked — the same
   // false-reassurance defect as the delisted-skill blocker, one layer along.
   const partial = checkedCount < watchedSkillCount;
+  // Watching nothing is not the same as everything being fine. DESIGN.md names
+  // `empty` alongside `pending` as never-green, and the sibling `RegisterTally`
+  // already implements it — this component had only the partial half of the
+  // same rule, so an account with no watched skills got a green all-clear over
+  // an empty list.
+  const empty = watchedSkillCount === 0;
   return (
     <div className="flex items-center gap-3 px-5 py-4 sm:px-6">
-      {/* Not green on a partial check. A clear light IS the all-clear, so
-          pairing it with "we did not look at all of them" says two different
-          things at once — and DESIGN.md reserves the neutral tone for exactly
-          this: the product declining to assert. */}
-      <StatusLight tone={partial ? "hold" : "clear"} />
+      {/* Green is a CLAIM, and only two states earn it. A partial check has not
+          looked at everything; an empty list has nothing to look at. Both go
+          neutral — the tone DESIGN.md reserves for the product declining to
+          assert. */}
+      <StatusLight tone={partial || empty ? "hold" : "clear"} />
       <div className="min-w-0">
         {/* tabIndex -1 so "Mark all read" can hand focus here rather than
             dropping it when its own subtree is hidden. */}
@@ -279,13 +285,15 @@ function AllClear({
           tabIndex={-1}
           className="text-sm font-semibold tracking-tight outline-none"
         >
-          {partial
-            ? "Nothing changed in the skills we checked."
-            : "Nothing has changed."}
+          {empty
+            ? "Nothing to watch yet."
+            : partial
+              ? "Nothing changed in the skills we checked."
+              : "Nothing has changed."}
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-          {watchedSkillCount === 0
-            ? "You aren't watching any skills yet."
+          {empty
+            ? "Add a skill to a bundle and it will be watched from then on."
             : partial
               ? null
               : `Watching ${watchedSkillCount} skill${
@@ -316,7 +324,7 @@ function AllClear({
 function CoverageNote({ checked, total }: { checked: number; total: number }) {
   return (
     <span className="block">
-      Checked {checked} of {total} watched skills, least recently seen first.
+      Checked {checked} of {total} watched skills, least recently checked first.
       The other {total - checked} were not checked on this load.
     </span>
   );

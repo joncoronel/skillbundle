@@ -8,16 +8,20 @@
 //   npx convex run devSeed:seedInsights '{"source":"google-deepmind/science-skills","skillId":"protein-sequence-msa"}'
 //   npx convex run devSeed:seedInsights '{"source":"...","skillId":"...","days":0}'   # clear
 //
-// These are `internalMutation`s: the CLI (admin key) can run them, but they are
-// never exposed to clients, so this file is safe to leave in the repo.
+// These are `internalMutation`s, so no client can reach them. That is NOT what
+// makes them safe — `--prod` is one flag away from every command shown above,
+// and one of these deletes archive blobs irreversibly. EVERY export in this
+// file calls `assertNotProduction` first; see convex/lib/devOnly.ts.
 import { internalAction, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { assertNotProduction } from "./lib/devOnly";
 
 export const seedInsights = internalMutation({
   args: { source: v.string(), skillId: v.string(), days: v.optional(v.number()) },
   handler: async (ctx, { source, skillId, days = 45 }) => {
+    assertNotProduction("devSeed:seedInsights");
     const summary = await ctx.db
       .query("skillSummaries")
       .withIndex("by_source_skillId", (q) =>
@@ -70,6 +74,7 @@ export const seedExact = internalMutation({
     snapshots: v.array(v.object({ day: v.string(), installs: v.number() })),
   },
   handler: async (ctx, { source, skillId, snapshots }) => {
+    assertNotProduction("devSeed:seedExact");
     const summary = await ctx.db
       .query("skillSummaries")
       .withIndex("by_source_skillId", (q) =>
@@ -177,6 +182,10 @@ export const clearSeededVersions = internalMutation({
   args: { source: v.string(), skillId: v.string() },
   returns: v.id("skills"),
   handler: async (ctx, { source, skillId }) => {
+    // The most dangerous function in this file: it deletes every skillVersions
+    // row for a skill AND its storage blob, with no "seeded" predicate despite
+    // the name. On production that is the real archive, irreversibly.
+    assertNotProduction("devSeed:clearSeededVersions");
     const summary = await ctx.db
       .query("skillSummaries")
       .withIndex("by_source_skillId", (q) =>
@@ -221,6 +230,7 @@ export const insertSeededVersion = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    assertNotProduction("devSeed:insertSeededVersion");
     await ctx.db.insert("skillVersions", {
       skillDocId: args.skillDocId,
       source: args.source,
@@ -267,6 +277,7 @@ export const seedVersions = internalAction({
     seeded: v.number(),
   }),
   handler: async (ctx, { source, skillId, clear }) => {
+    assertNotProduction("devSeed:seedVersions");
     const skillDocId: Id<"skills"> = await ctx.runMutation(
       internal.devSeed.clearSeededVersions,
       { source, skillId },
@@ -348,12 +359,7 @@ export const seedFault = internalMutation({
   },
   returns: v.object({ source: v.string(), skillId: v.string(), kind: v.string() }),
   handler: async (ctx, { source, skillId, kind }) => {
-    // Same guard as devSeedFeed: `--prod` is one flag away, and forging a
-    // delisting on a real catalog row would show every watcher a skill that has
-    // not actually gone anywhere.
-    if (process.env.CRONS_ENABLED === "true") {
-      throw new Error("devSeed:seedFault is dev-only and refuses to run on production.");
-    }
+    assertNotProduction("devSeed:seedFault");
 
     const summary = await ctx.db
       .query("skillSummaries")

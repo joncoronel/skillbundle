@@ -21,6 +21,7 @@
 // files losing their types. Two CLI commands is a cheaper price than that.
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { assertNotProduction } from "./lib/devOnly";
 
 const FEED_BUNDLE_NAME = "Dev feed";
 const DAY = 24 * 60 * 60 * 1000;
@@ -33,19 +34,10 @@ export const seedFeedBundle = internalMutation({
     cleared: v.boolean(),
   }),
   handler: async (ctx, { email, clear }) => {
-    // Never on production. `internalMutation` already means no client can reach
-    // this, but the doc comment above shows the bare CLI command and `--prod`
-    // is one flag away — and what this writes is not innocuous: it forges a
-    // `pass → fail / CRITICAL` verdict on a REAL skill, which every watcher
-    // then sees in their feed, and attaches a publicly-readable bundle to an
-    // arbitrary real user. In a product whose promise is that every alert is
-    // earned, the function that can fabricate the highest-severity alert is the
-    // one that most deserves a guard. Same idiom as crons.ts / reconcile.ts.
-    if (process.env.CRONS_ENABLED === "true") {
-      throw new Error(
-        "devSeedFeed:seedFeedBundle is dev-only and refuses to run on production.",
-      );
-    }
+    // Forges a `pass → fail / CRITICAL` verdict on a REAL skill, which every
+    // watcher would then see in their feed, and attaches a publicly-readable
+    // bundle to an arbitrary real user. See convex/lib/devOnly.ts.
+    assertNotProduction("devSeedFeed:seedFeedBundle");
 
     // Full scan, deliberately: `users` is indexed by Clerk id, not email, and a
     // dev deployment holds a handful of rows. Not worth an index only a seed
