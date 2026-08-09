@@ -314,3 +314,63 @@ export const seedVersions = internalAction({
     return { source, skillId, seeded: SEED_STEPS.length };
   },
 });
+
+/**
+ * Dev-only: put a watched skill into a FAULT state, or take it out of one.
+ *
+ *   npx convex run devSeed:seedFault '{"source":"owner/repo","skillId":"x","kind":"delisted"}'
+ *   npx convex run devSeed:seedFault '{"source":"owner/repo","skillId":"x","kind":"fetch-error"}'
+ *   npx convex run devSeed:seedFault '{"source":"owner/repo","skillId":"x","kind":"clear"}'
+ *
+ * Why this exists. `delisted` and `hasContentFetchError` drive a whole branch of
+ * the monitoring UI — the "Needs attention" section, the alert-tone status
+ * light, and the focus target "Mark all read" picks (a fault survives the
+ * clear, so the panel does NOT crossfade and focus has to go somewhere else).
+ * None of that is reachable on a dev deployment: faults only arise from a real
+ * upstream delisting or a real fetch failure, and the crons that would produce
+ * either are off. So the one branch of the panel most likely to regress was
+ * also the only one that could not be exercised, which is exactly how it
+ * regressed once already.
+ *
+ * Writes both the summary and the skills row, because the register reads the
+ * bundle projection (skills) and the feed reads the summary mirror; setting one
+ * would produce a state the two surfaces disagree about.
+ */
+export const seedFault = internalMutation({
+  args: {
+    source: v.string(),
+    skillId: v.string(),
+    kind: v.union(
+      v.literal("delisted"),
+      v.literal("fetch-error"),
+      v.literal("clear"),
+    ),
+  },
+  returns: v.object({ source: v.string(), skillId: v.string(), kind: v.string() }),
+  handler: async (ctx, { source, skillId, kind }) => {
+    // Same guard as devSeedFeed: `--prod` is one flag away, and forging a
+    // delisting on a real catalog row would show every watcher a skill that has
+    // not actually gone anywhere.
+    if (process.env.CRONS_ENABLED === "true") {
+      throw new Error("devSeed:seedFault is dev-only and refuses to run on production.");
+    }
+
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", source).eq("skillId", skillId),
+      )
+      .unique();
+    if (!summary) throw new Error(`No skill found for ${source}/${skillId}`);
+
+    const patch = {
+      isDelisted: kind === "delisted",
+      hasContentFetchError: kind === "fetch-error",
+    };
+    await ctx.db.patch(summary._id, patch);
+    const skill = await ctx.db.get(summary.skillDocId);
+    if (skill) await ctx.db.patch(summary.skillDocId, patch);
+
+    return { source, skillId, kind };
+  },
+});

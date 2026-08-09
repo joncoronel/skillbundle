@@ -109,6 +109,32 @@ That ambiguity is exactly how the loop bug survived being watched.
 
 **Remaining work:**
 
+- **The dashboard feed checks at most 500 watched skills per load, and the
+  unchecked tail never rotates.** `MAX_FEED_CANDIDATES` in `skillVersions.ts`
+  bounds the fan-out — `resolveSkillChange` costs 2-3 indexed reads per skill,
+  and unbounded it eventually exceeds Convex's per-query read ceiling, which
+  fails the dashboard outright rather than degrading. So the cap has to exist.
+
+  What is wrong is that it is not eventual. Candidates sort by baseline
+  ascending (least recently seen first) and `markBundleViewed` sets a bundle's
+  `lastViewedAt` to now — which gives its skills the NEWEST baseline and sorts
+  them to the BACK. So the tail is the recently-seen tail, and it stays there:
+  the same 500 are re-scanned on every load, forever.
+
+  The UI is honest about it (`CoverageNote` in change-feed.tsx states how many
+  of how many were checked, and the light goes neutral rather than green), but
+  honest is not the same as covered. A skill in the tail could be delisted for
+  months and never reported.
+
+  The fix is a persisted per-user scan position — store where the last load
+  stopped, resume from there, wrap around — so coverage is eventual rather than
+  never. That is real per-user state and did not belong in the review pass that
+  found it.
+
+  UNREACHABLE below 501 distinct watched skills, and free caps at 25. This
+  needs a heavy Pro account to matter at all, which is why it is parked rather
+  than scheduled. Revisit if anyone gets near it.
+
 - **Re-measure the mass-change threshold once the archive has history.**
   `MASS_CHANGE_THRESHOLD` is 750, which is ~5x an ESTIMATE (15k skills at the
   measured 27.5%/month). It cannot be measured yet: on 2026-08-08 prod held 459
