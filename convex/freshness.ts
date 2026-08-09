@@ -625,14 +625,22 @@ export const sweepHealth = internalQuery({
 
     // Sampled, not counted. A true count is one indexed read per live skill
     // (~15k), which is both over the per-query budget and far more than a
-    // health check needs — the question is "is the rate where it should be",
-    // and 300 answers that to within a few percent.
+    // health check needs.
+    //
+    // `.order("desc")` is load-bearing. `backfillArchiveBaselines` paginates
+    // this SAME index from the ascending end, so an ascending sample here reads
+    // precisely the rows the backfill just finished — it showed 299 -> 70 after
+    // 500 of ~15k skills, which looks like 77% done and is actually 3%. Taking
+    // from the far end makes this a conservative reading: it only approaches
+    // zero once the backfill has genuinely reached the end of the catalog, and
+    // that is the right bias for an alarm too.
     const SAMPLE = 300;
     const sample = await ctx.db
       .query("skillSummaries")
       .withIndex("by_isDelisted_lastSeenInApi", (q) =>
         q.eq("isDelisted", false),
       )
+      .order("desc")
       .take(SAMPLE);
     const missing = await Promise.all(
       sample.map(async (s) => {
