@@ -82,6 +82,7 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
 
   const [revealSuppressed, setRevealSuppressed] = useState(false);
   const allClearRef = useRef<HTMLHeadingElement>(null);
+  const panelHeadingRef = useRef<HTMLHeadingElement>(null);
 
   if (feed === undefined) return <ChangeFeedPending />;
 
@@ -93,13 +94,19 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
     !feed.suppressed || revealSuppressed ? feed.items : faults;
 
   function handleMarkAllRead() {
+    // Which heading survives depends on whether anything is left. Faults do not
+    // clear, so a reader with one delisted skill stays on THIS panel — the
+    // crossfade never flips, `AllClear` stays `display: none`, and focusing it
+    // is a silent no-op. That is how the original focus collapse came back:
+    // the fault-survival rule made the all-clear branch unreachable in exactly
+    // the case the button still renders.
+    const target = faults.length > 0 ? panelHeadingRef : allClearRef;
     void markAllViewed({});
-    // The crossfade applies `display: none` to the subtree this button lives
-    // in, so without this the focused element vanishes and focus collapses to
-    // <body> — dumping a keyboard user at the top of the document. Move it to
-    // the readout that replaces it, which is also what a screen reader should
-    // land on. rAF so the swap has happened before we reach for the target.
-    requestAnimationFrame(() => allClearRef.current?.focus());
+    // The button's own subtree gets `display: none` (or the button unmounts
+    // outright, since it is hidden when no changes remain), so without this the
+    // focused element vanishes and focus falls to <body> — dumping a keyboard
+    // user at the top of the document. rAF so the swap has happened first.
+    requestAnimationFrame(() => target.current?.focus());
   }
 
   return (
@@ -115,12 +122,19 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
       <Crossfade active={hasItems}>
         <AllClear
           watchedSkillCount={feed.watchedSkillCount}
+          checkedCount={feed.checkedSkillCount}
           headingRef={allClearRef}
         />
         <div>
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4 sm:px-6">
             <StatusLight tone={worstTone(feed)} />
-            <h2 className="flex-1 text-sm font-semibold tracking-tight">
+            {/* tabIndex -1 so "Mark all read" can hand focus here when faults
+                keep the panel on this reading. */}
+            <h2
+              ref={panelHeadingRef}
+              tabIndex={-1}
+              className="flex-1 text-sm font-semibold tracking-tight outline-none"
+            >
               {feed.suppressed
                 ? "Catalog-wide update"
                 : headline(faults.length, changes.length)}
@@ -221,11 +235,22 @@ function headline(faults: number, changes: number): string {
  */
 function AllClear({
   watchedSkillCount,
+  checkedCount,
   headingRef,
 }: {
   watchedSkillCount: number;
+  /**
+   * How many of those were actually resolved this load. Below the total when
+   * the feed truncated — see MAX_FEED_CANDIDATES.
+   */
+  checkedCount: number;
   headingRef?: React.Ref<HTMLHeadingElement>;
 }) {
+  // An all-clear is a CLAIM, and it is only true about what we looked at. With
+  // more watched skills than one load resolves, "all as you last left them"
+  // over the full count asserts something the query never checked — the same
+  // false-reassurance defect as the delisted-skill blocker, one layer along.
+  const partial = checkedCount < watchedSkillCount;
   return (
     <div className="flex items-center gap-3 px-5 py-4 sm:px-6">
       <StatusLight tone="clear" />
@@ -237,14 +262,16 @@ function AllClear({
           tabIndex={-1}
           className="text-sm font-semibold tracking-tight outline-none"
         >
-          Nothing has changed.
+          {partial ? "Nothing has changed so far." : "Nothing has changed."}
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
           {watchedSkillCount === 0
             ? "You aren't watching any skills yet."
-            : `Watching ${watchedSkillCount} skill${
-                watchedSkillCount === 1 ? "" : "s"
-              }, all as you last left them.`}
+            : partial
+              ? `Checked ${checkedCount} of ${watchedSkillCount} watched skills, oldest first. The rest are checked on later loads.`
+              : `Watching ${watchedSkillCount} skill${
+                  watchedSkillCount === 1 ? "" : "s"
+                }, all as you last left them.`}
         </p>
       </div>
     </div>

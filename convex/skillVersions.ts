@@ -372,11 +372,16 @@ export const listRecentChangesForUser = query({
     /** Skills the user watches, for the all-clear readout's denominator. */
     watchedSkillCount: v.number(),
     /**
-     * More watched skills than one load can resolve; some were not checked.
-     * See `MAX_FEED_CANDIDATES`. The panel must say so rather than imply the
-     * list it shows is the whole answer.
+     * How many of `watchedSkillCount` this load actually resolved. Lower than
+     * the total when the fan-out truncated — see `MAX_FEED_CANDIDATES`.
+     *
+     * A COUNT rather than a `truncated` boolean, because the flag version was
+     * returned, validated, documented and then read by nothing: the all-clear
+     * went on saying "watching N skills, all as you last left them" over the
+     * full N while having checked only the first 500. That is the same
+     * false-reassurance defect as the delisted-skill blocker, one layer along.
      */
-    truncated: v.boolean(),
+    checkedSkillCount: v.number(),
   }),
   handler: async (ctx, { limit }) => {
     const user = await getCurrentUser(ctx);
@@ -385,7 +390,7 @@ export const listRecentChangesForUser = query({
         items: [],
         suppressed: false,
         watchedSkillCount: 0,
-        truncated: false,
+        checkedSkillCount: 0,
       };
 
     const bundles = await ctx.db
@@ -425,10 +430,11 @@ export const listRecentChangesForUser = query({
     // enough account hits Convex's per-query read ceiling and the dashboard
     // fails outright rather than degrading.
     //
-    // Oldest baseline first, so the truncated tail is the part the reader has
-    // seen most recently. `truncated` is returned rather than swallowed: a
-    // monitoring product silently checking only part of your list is the same
-    // class of lie as a false all-clear.
+    // Oldest baseline first, so the unchecked tail is the part the reader has
+    // seen most recently. The count of what was actually scanned is returned
+    // rather than swallowed, and the all-clear reads it: a monitoring product
+    // silently checking only part of your list is the same class of lie as a
+    // false all-clear.
     const ordered = Array.from(candidates.values()).sort(
       (a, b) => a.baseline - b.baseline,
     );
@@ -479,7 +485,7 @@ export const listRecentChangesForUser = query({
         items.filter((i) => !isFault(i.condition)).length,
       ),
       watchedSkillCount,
-      truncated: ordered.length > scanned.length,
+      checkedSkillCount: scanned.length,
     };
   },
 });

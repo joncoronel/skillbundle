@@ -746,18 +746,21 @@ export function RegisterTally({
   // flipping to red. Volunteering an all-clear you have not verified is the one
   // failure mode a monitoring product cannot afford. An empty bundle was the
   // same mistake in a quieter key: nothing to report is not the same as fine.
-  const tone: "pending" | "empty" | "hold" | "clear" | "changed" | "fault" =
-    pending
-      ? "pending"
-      : total === 0
-        ? "empty"
-        : faults > 0
-          ? "fault"
-          : suppressed
-            ? "hold"
-            : changed > 0
-              ? "changed"
-              : "clear";
+  // Suppression is NOT a tone. It used to be one, ranked below `fault`, so a
+  // single delisted skill swallowed the caveat entirely: one fault plus forty
+  // suppressed changes rendered no hold notice at all, while the dashboard one
+  // click away said "holding these back". The two are orthogonal — a fault is
+  // something that IS wrong, suppression is doubt about the change list — so
+  // the caveat renders alongside whatever tone the light is showing.
+  const tone: "pending" | "empty" | "clear" | "changed" | "fault" = pending
+    ? "pending"
+    : total === 0
+      ? "empty"
+      : faults > 0
+        ? "fault"
+        : changed > 0
+          ? "changed"
+          : "clear";
 
   // The empty panel below states this in full; a tally echoing it directly
   // above is the same sentence twice. Nothing to announce either — there is no
@@ -775,18 +778,14 @@ export function RegisterTally({
   // removed live region never announces. So a screen-reader user was told
   // "Checking 14 skills…" and then told the result only when the result was
   // good. The announcement worked precisely when the news did not matter.
-  const visible = tone === "pending" || tone === "clear" || tone === "hold";
+  const visible = tone === "pending" || tone === "clear" || suppressed;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {visible ? (
         <StatusLight
           tone={
-            tone === "pending"
-              ? "hold"
-              : tone === "hold"
-                ? "hold"
-                : TONE_OF_GROUP.steady
+            tone === "pending" || suppressed ? "hold" : TONE_OF_GROUP.steady
           }
           className={cn(
             tone === "pending" &&
@@ -810,32 +809,42 @@ export function RegisterTally({
           <span className="text-muted-foreground tabular-nums">
             Checking {total} skill{total === 1 ? "" : "s"}&hellip;
           </span>
-        ) : tone === "clear" ? (
-          <>
-            <span className="font-medium">All steady.</span>{" "}
-            <span className="text-muted-foreground tabular-nums">
-              {total} skill{total === 1 ? "" : "s"}, nothing changed since you
-              added them.
-            </span>
-          </>
-        ) : tone === "hold" ? (
-          <span className="text-muted-foreground">
-            A large share of the catalog changed at once, which usually means we
-            reprocessed content rather than authors editing it. Read these rows
-            with that in mind.
-          </span>
         ) : (
-          // Sectioned visually, announced in words. `sr-only` rather than
-          // absent so the region stays mounted and actually fires.
-          <span className="sr-only">
-            {[
-              faults > 0 ? `${faults} need attention` : null,
-              changed > 0 ? `${changed} changed` : null,
-            ]
-              .filter(Boolean)
-              .join(", ")}
-            .
-          </span>
+          <>
+            {/* The verdict. Visible only when it says something the sections
+                cannot; otherwise `sr-only`, so the live region stays mounted
+                and actually fires. */}
+            {tone === "clear" && !suppressed ? (
+              <>
+                <span className="font-medium">All steady.</span>{" "}
+                <span className="text-muted-foreground tabular-nums">
+                  {total} skill{total === 1 ? "" : "s"}, nothing changed since
+                  you added them.
+                </span>
+              </>
+            ) : (
+              <span className="sr-only">
+                {[
+                  faults > 0 ? `${faults} need attention` : null,
+                  changed > 0 ? `${changed} changed` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "All steady"}
+                .
+              </span>
+            )}
+
+            {/* Additive, not an alternative. Renders whatever else is true —
+                including alongside a fault, which is the case that used to
+                lose it entirely. */}
+            {suppressed ? (
+              <span className="text-muted-foreground">
+                A large share of the catalog changed at once, which usually
+                means we reprocessed content rather than authors editing it.
+                Read these rows with that in mind.
+              </span>
+            ) : null}
+          </>
         )}
       </p>
     </div>

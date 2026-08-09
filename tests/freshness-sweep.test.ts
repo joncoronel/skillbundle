@@ -20,7 +20,7 @@ import { test, expect, describe } from "vitest";
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
-import { pathFromRawUrl } from "../convex/freshness";
+import { pathFromRawUrl, shouldSendConditional } from "../convex/freshness";
 
 type TestHandle = ReturnType<typeof makeTest>;
 
@@ -350,7 +350,10 @@ describe("applySweepResult", () => {
     );
     // Without this the sweep re-downloads every tree in full every day, which
     // is most of its cost saving.
-    expect(state).toEqual({ branch: "main", etag: 'W/"abc"' });
+    expect(state).toMatchObject({ branch: "main", etag: 'W/"abc"' });
+    // Also returned, so the caller can tell it has already seen this repo in
+    // the current walk — the page-boundary straddle.
+    expect(state?.sweptAt).toEqual(expect.any(Number));
   });
 
   test("updates rather than duplicates the state row on a second sweep", async () => {
@@ -414,5 +417,74 @@ describe("applySweepResult", () => {
         baselined: [],
       }),
     ).resolves.toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("shouldSendConditional", () => {
+  const RUN_START = 1_000_000;
+
+  test("sends the ETag in the ordinary steady-state case", () => {
+    // Fully baselined, last swept on a previous run. This is the common path
+    // and the sweep's entire cost saving depends on it staying conditional.
+    expect(
+      shouldSendConditional({
+        allBaselined: true,
+        sweptAt: RUN_START - 86_400_000,
+        runStart: RUN_START,
+      }),
+    ).toBe(true);
+  });
+
+  test("withholds it when any skill has no baseline SHA", () => {
+    // A 304 cannot tell us the SHA of a skill we have never recorded one for,
+    // and the fast path returns before any comparison happens.
+    expect(
+      shouldSendConditional({
+        allBaselined: false,
+        sweptAt: RUN_START - 86_400_000,
+        runStart: RUN_START,
+      }),
+    ).toBe(false);
+  });
+
+  test("withholds it when the repo was already swept in THIS run", () => {
+    // The page-boundary straddle. Pass A stored a fresh ETag after comparing
+    // only its half of the repo; if pass B sends that ETag it 304s and the
+    // other half is never compared — every run, forever.
+    //
+    // This is the case the first fix missed: it keyed only on baselining, so
+    // the hole closed during backfill and reopened once every skill had a SHA.
+    expect(
+      shouldSendConditional({
+        allBaselined: true,
+        sweptAt: RUN_START + 5_000,
+        runStart: RUN_START,
+      }),
+    ).toBe(false);
+  });
+
+  test("treats a sweep at exactly the run start as this run", () => {
+    // Boundary: the first repo of a walk can be stamped on the same
+    // millisecond the walk began.
+    expect(
+      shouldSendConditional({
+        allBaselined: true,
+        sweptAt: RUN_START,
+        runStart: RUN_START,
+      }),
+    ).toBe(false);
+  });
+
+  test("sends it for a repo with no state row at all", () => {
+    // No stored ETag to send either, but the rule must not throw on undefined.
+    expect(
+      shouldSendConditional({
+        allBaselined: true,
+        sweptAt: undefined,
+        runStart: RUN_START,
+      }),
+    ).toBe(true);
   });
 });

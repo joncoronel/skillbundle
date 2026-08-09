@@ -54,7 +54,6 @@ import {
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 

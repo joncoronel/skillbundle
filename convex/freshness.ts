@@ -86,6 +86,41 @@ type SweepSkill = {
 };
 
 /**
+ * Whether it is safe to send `If-None-Match` for this repo on this pass.
+ *
+ * A 304 says "the tree has not changed since that ETag". The sweep's fast path
+ * returns before any per-skill comparison, so a 304 is only safe if the pass
+ * that WROTE that ETag compared every skill in the repo. Two cases where it did
+ * not:
+ *
+ *   1. **Unbaselined skills.** A 304 cannot tell us the blob SHA of a skill we
+ *      have never recorded one for.
+ *
+ *   2. **The page-boundary straddle.** Summaries paginate, so a repo whose
+ *      skills span a boundary is visited twice in one walk. Pass A gets a 200,
+ *      compares only ITS half, stores a fresh ETag. Pass B reads that ETag,
+ *      sends it, 304s, and never compares the other half — permanently, because
+ *      pass A always consumes the tree change first.
+ *
+ * `sweptAt >= runStart` IS the straddle: the only way a repo carries a sweep
+ * timestamp from the current walk is that we already processed it this walk.
+ *
+ * Extracted and exported so the rule can be tested directly. An earlier fix
+ * handled only case 1, which closes the hole while the archive backfills and
+ * silently reopens it once every skill has a SHA — i.e. in exactly the steady
+ * state this is meant to protect.
+ */
+export function shouldSendConditional(args: {
+  allBaselined: boolean;
+  sweptAt: number | undefined;
+  runStart: number;
+}): boolean {
+  if (!args.allBaselined) return false;
+  if (args.sweptAt !== undefined && args.sweptAt >= args.runStart) return false;
+  return true;
+}
+
+/**
  * One page of live GitHub-source skills, grouped by repo.
  *
  * Paginates the `by_source_skillId` index specifically because it orders rows by
@@ -186,14 +221,21 @@ export const getSweepState = internalQuery({
   args: { repo: v.string() },
   returns: v.union(
     v.null(),
-    v.object({ branch: v.string(), etag: v.optional(v.string()) }),
+    v.object({
+      branch: v.string(),
+      etag: v.optional(v.string()),
+      /** Needed by the caller to detect a repo it has already seen THIS run. */
+      sweptAt: v.optional(v.number()),
+    }),
   ),
   handler: async (ctx, { repo }) => {
     const row = await ctx.db
       .query("repoSweepState")
       .withIndex("by_repo", (q) => q.eq("repo", repo))
       .unique();
-    return row ? { branch: row.branch, etag: row.etag } : null;
+    return row
+      ? { branch: row.branch, etag: row.etag, sweptAt: row.sweptAt }
+      : null;
   },
 });
 
@@ -304,12 +346,30 @@ export const sweepRepoFreshness = internalAction({
     repoOffset: v.optional(v.number()),
     reposSwept: v.optional(v.number()),
     skillsFlagged: v.optional(v.number()),
+    reposSkipped: v.optional(v.number()),
+    /**
+     * When this WALK began, carried across every chained invocation.
+     *
+     * Its only job is to recognise a repo we have already swept during this
+     * same run, which is exactly what a page-boundary straddle looks like: the
+     * repo's skills are split across two pages, so it comes round twice.
+     * See the conditional-request rule below.
+     */
+    runStartedAt: v.optional(v.number()),
   },
   returns: v.null(),
   handler: async (
     ctx,
-    { cursor, repoOffset = 0, reposSwept = 0, skillsFlagged = 0 },
+    {
+      cursor,
+      repoOffset = 0,
+      reposSwept = 0,
+      skillsFlagged = 0,
+      reposSkipped = 0,
+      runStartedAt,
+    },
   ) => {
+    const runStart = runStartedAt ?? Date.now();
     const page: {
       repos: Array<{ source: string; branch?: string; skills: SweepSkill[] }>;
       nextCursor: string;
@@ -321,7 +381,10 @@ export const sweepRepoFreshness = internalAction({
     const batch = page.repos.slice(repoOffset, repoOffset + REPOS_PER_BATCH);
     let swept = reposSwept;
     let flagged = skillsFlagged;
-    let skipped = 0;
+    // Cumulative like the other two. Reset per invocation, it was counted
+    // against totals that span the whole chain, so the completion log mixed
+    // scopes and under-reported skips by however many invocations it took.
+    let skipped = reposSkipped;
 
     for (const repo of batch) {
       const [owner, name] = repo.source.split("/");
@@ -346,19 +409,15 @@ export const sweepRepoFreshness = internalAction({
         ),
       ];
 
-      // Conditional ONLY when every skill in this group already has a baseline
-      // SHA. A 304 tells us the tree is unchanged; it does not tell us the SHA
-      // of a skill we have never recorded one for, and the fast path returns
-      // before any comparison happens. So when a repo straddles a page
-      // boundary — page 1 gets a 200 and stores the ETag, page 2 then 304s —
-      // page 2's half would never be baselined, permanently, because page 1
-      // always consumes the tree change first. Withholding the ETag costs one
-      // full tree fetch on the pass that has unbaselined skills and nothing
-      // afterwards, since they all have SHAs by then.
-      const allBaselined = repo.skills.every((s) => Boolean(s.githubBlobSha));
+      // See `shouldSendConditional` for why a 304 is not always safe.
+      const conditional = shouldSendConditional({
+        allBaselined: repo.skills.every((s) => Boolean(s.githubBlobSha)),
+        sweptAt: state?.sweptAt,
+        runStart,
+      });
 
       const tree = await fetchRepoTree(owner, name, branches, {
-        etag: allBaselined ? state?.etag : undefined,
+        etag: conditional ? state?.etag : undefined,
       });
 
       // GitHub cut us off. Every remaining request this run will fail the same
@@ -464,6 +523,10 @@ export const sweepRepoFreshness = internalAction({
           repoOffset: pageHasMore ? nextOffset : 0,
           reposSwept: swept,
           skillsFlagged: flagged,
+          reposSkipped: skipped,
+          // Carried, not re-stamped: it marks the start of the WALK, and the
+          // straddle check compares each repo's sweep time against it.
+          runStartedAt: runStart,
         },
       );
       return null;
