@@ -196,6 +196,86 @@ Built on the cubby-ui library (Base UI primitives + CVA variants). Components ar
 ### Navigation
 - Neutral by default, Signal Blue marks the active item. Mono labels for section headers; sidebar uses `surface-1` with a hairline border. Collapse the sidebar at small breakpoints rather than reflowing type.
 
+### Status light and condition vocabulary
+
+The monitoring surfaces (the dashboard change panel, the bundle register) share
+one state readout, and it is system rather than local — a third surface must
+reuse it, not reinvent it.
+
+**This now has one implementation, and it is not optional.** `Condition`,
+`CONDITION_RANK`, `GROUP_OF` and `resolveCondition` live in
+`lib/monitoring/conditions.ts`, which is dependency-free so `convex/` imports it
+too; `StatusLight`, `DescriptionDelta` and `CONDITION_META` live in
+`components/monitoring/`. Stating the vocabulary here and letting each surface
+build its own was not enough: a panel review found three status lights across
+five tone vocabularies for three colours, two `DescriptionDelta` copies that had
+already drifted on measure and on their empty-input guard, and — because the
+server owned a SHORTER ranking than the client — a dashboard that rendered a
+green all-clear over a delisted dependency the bundle page was calling "Needs
+attention". Add a condition in the shared module or not at all.
+
+**Faults are states, not events.** `delisted` and `fetch-error` have no
+timestamp and no read-state: nothing records when a skill was delisted, so
+render no relative time for one, and never let "mark all read" clear it —
+reading that a dependency is gone does not bring it back.
+
+- **The light.** A `size-1.5` dot centred in a `size-5` ring of its own hue at
+  20% (15% for the neutral tones). Small on purpose: the healthy state is the
+  common one, so a large green mark would be seen every visit and learned as
+  noise. Five tones, in this order of precedence:
+  `pending` (`muted-foreground`, pulsing, `motion-reduce:animate-none`) →
+  `empty` (`muted-foreground`) → `fault` (`danger-foreground`) →
+  `changed` (`warning-foreground`) → `clear` (`success-foreground`).
+- **Pending and empty are never green.** They resolve ahead of `clear` in the
+  precedence chain because both used to fall through to it, which made a surface
+  claim "nothing has changed" before it had checked. In a monitoring product an
+  unverified all-clear is the one state that costs trust.
+- **Condition ranking.** One ordering carries triage everywhere:
+  security regression → delisted → install-may-fail → description changed →
+  content edited → steady. Sort by it and the worst item is the first row; no
+  surface needs a separate "needs attention" section.
+- **Consequence outranks recency.** A verdict that went `pass → fail` three
+  weeks ago sits above a typo fix from an hour ago.
+- **The state is never colour alone.** Every condition pairs its tone with a
+  distinct HugeIcons glyph and a text label, `sr-only` where the visible row
+  stays quiet. Diffs use `−`/`+` notation in mono so additions and removals
+  survive without hue.
+
+### Register table
+
+A dense `<table>` is the right form for an inventory whose rows carry state —
+the reader scans a column, which is a relationship a screen reader should get
+for free. Notes that are easy to lose:
+
+- `Table` ships `md:max-w-2xl` and `TableCell` ships `whitespace-nowrap`, both
+  correct for a table beside other content and both wrong for a table that IS
+  the content. Override with `md:max-w-none` and `whitespace-normal` on the
+  prose cells.
+- `table-fixed` with explicit column widths, and `w-auto` rather than a
+  percentage on the primary column at the narrowest breakpoint — under fixed
+  layout the browser distributes leftover width across declared columns, which
+  inflates a narrow marker column and squeezes the content beside it.
+- Header cells take the mono label treatment (§3), not the component default.
+- At narrow widths drop trailing columns and fold their content into the primary
+  cell. Never leave a column parked off-screen behind a horizontal scroll: the
+  column the reader came for is the first one to disappear that way.
+- **Section, do not just sort.** When rows carry a ranked condition, group them
+  into labelled sections (a full-width `<tr>` header inside one table, so the
+  columns stay aligned across sections) rather than relying on sort order alone.
+  The ranking becomes structure the reader can see instead of a pattern they
+  have to infer, each section carries its own count, and the quiet section can
+  fold. Reuse the status-light dot on the section header — same vocabulary as
+  the readout above it.
+- **A summary above a sectioned table earns its place only by saying something
+  the sections cannot.** Counts belong to the section headers; the summary keeps
+  the verdict (checking, all clear) and goes silent otherwise rather than
+  restating them.
+- Hover state must be OPAQUE. `bg-surface-hover` is a translucent tint for
+  layering, and Table applies it as the cell's `background-color`, which
+  replaces the opaque fill so the tint composites over the container instead —
+  darker than the header strip in light, lighter in dark. Use `surface-2`, which
+  sits between cell and header strip in both themes.
+
 ### Signature: Dot-Matrix Ripple
 The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in sequence, echoing the Nothing OS dot-matrix motif. It is the project's loading vocabulary everywhere a spinner would otherwise go.
 
@@ -208,6 +288,10 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Do** keep Ink Muted (`oklch(0.5 ...)`) for secondary text; verify ≥4.5:1 before lightening anything.
 - **Do** reserve the Geist Pixel display face for ≥60px hero moments.
 - **Do** use the `DotMatrixRipple` for loading states, not a generic spinner.
+- **Do** give an unresolved state its own tone. Never let "not checked yet" or
+  "nothing here" fall through to the success colour.
+- **Do** hold layout height across a loading→resolved transition; a placeholder
+  that occupies no space makes every row jump when data lands.
 - **Do** keep transitions fast (100ms `ease-out`) and let the 0.98 active scale carry the press.
 
 ### Don't:
@@ -218,3 +302,28 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Don't** hand-roll `box-shadow`; use the `surface-N` elevation system.
 - **Don't** introduce a second accent hue or let two blue elements compete on one screen.
 - **Don't** make it look template-generated, cartoonish, or like a generic SaaS landing page.
+- **Don't** use a grid of same-size cards as the structure for a set whose items
+  differ in state. Equal cards assert equal standing and bury the one that needs
+  attention; that is what the register replaced on the bundle page.
+- **Don't** fade `muted-foreground` below its own value (`/50`, `/60`) for
+  elegance — it is tuned to land at 4.5:1 and anything under it fails the
+  contrast floor.
+- **Don't** strip `outline-none` from an interactive element without replacing
+  the focus ring. A hover-identical underline is not a focus indicator.
+- **Don't** unmount an `aria-live` region to hide it. A removed live region
+  never announces, so a status readout that returns `null` on its interesting
+  outcomes speaks only when the news is good. Keep the region mounted and vary
+  its contents, `sr-only` if it should be visually silent.
+- **Don't** apply an alpha step to `--danger` / `--success` / `--warning` and
+  expect a visible tint. Those tokens are ALREADY the tinted background pair
+  (near-white in light, near-black in dark); at 10% they composite to under
+  1.01:1 against the cell. Use them at full strength and reserve the alpha for
+  hover.
+- **Don't** hide a label with `sm:hidden` when it is the only thing naming a
+  column, a plan, or an owner. `display: none` removes it from the
+  accessibility tree, so the layout gets wider and the reading gets worse; use
+  `sm:sr-only`.
+- **Don't** express a table's grouping with a `<td colSpan>` header row. A data
+  cell has no relationship to the rows under it, so the grouping exists only
+  visually. One `<tbody>` per group with `aria-labelledby` is the version a
+  screen reader can navigate.

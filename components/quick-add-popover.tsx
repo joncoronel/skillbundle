@@ -30,6 +30,7 @@ import { UpgradeBanner } from "@/components/upgrade-banner";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
 import { cn } from "@/lib/utils";
+import { watchKey } from "@/lib/bundle-limits";
 
 export interface QuickAddPopoverSkill {
   source: string;
@@ -462,16 +463,28 @@ function CreateBundleView({
   const [creating, setCreating] = useState(false);
   const createBundle = useMutation(api.bundles.createBundle);
 
-  // Preempt the bundle-limit failure: if the user is already at their
-  // plan's max, swap the form for an UpgradeBanner instead of letting
-  // them type a name and only fail at submit time. Mirrors the pattern
-  // in save-bundle-dialog.tsx.
+  // Preempt the watch-limit failure: if the user is already at their plan's
+  // max, swap the form for an UpgradeBanner instead of letting them type a
+  // name and only fail at submit time. Mirrors save-bundle-dialog.tsx.
+  //
+  // Gated on auth, which it claimed to mirror but did not: the query returns 0
+  // for an anonymous caller, so during the Clerk → Convex handshake `atLimit`
+  // evaluated false and the create form painted, then swapped to the upgrade
+  // banner when the authenticated result landed.
   const { limits } = useUserPlan();
-  const bundles = useQuery(api.bundles.listByUser);
+  const { isAuthenticated } = useConvexAuth();
+  const watchedKeys = useQuery(
+    api.bundles.listWatchedSkillKeys,
+    isAuthenticated ? {} : "skip",
+  );
+  // Union with the one skill being filed — see save-bundle-dialog.tsx. Adding a
+  // skill you already watch costs nothing on the server.
   const atLimit =
     limits !== null &&
-    bundles !== undefined &&
-    bundles.length >= limits.maxBundles;
+    watchedKeys !== undefined &&
+    Number.isFinite(limits.maxWatchedSkills) &&
+    new Set([...watchedKeys, watchKey(skill)]).size >
+      limits.maxWatchedSkills;
 
   // Reset the input whenever this view transitions out. The TransitionPanel
   // keeps inactive views mounted (display: none) so their useState values
@@ -493,7 +506,6 @@ function CreateBundleView({
       await createBundle({
         name: trimmed,
         skills: [{ source: skill.source, skillId: skill.skillId }],
-        isPublic: true,
       });
       // Swap back to the list so the user sees the new bundle (with this
       // skill checked) without losing context. Popover stays open.
@@ -543,7 +555,7 @@ function CreateBundleView({
       {atLimit && limits ? (
         <div className="p-3">
           <UpgradeBanner
-            message={`You've reached your limit of ${limits.maxBundles} bundles. Upgrade to Pro for unlimited bundles.`}
+            message={`You're watching ${limits.maxWatchedSkills} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
           />
         </div>
       ) : (

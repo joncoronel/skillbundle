@@ -31,9 +31,9 @@ export default function NotFound() {
         <Button
           variant="outline"
           nativeButton={false}
-          render={<Link href="/explore" />}
+          render={<Link href="/official" />}
         >
-          Browse bundles
+          Browse official skills
         </Button>
       </div>
     </div>

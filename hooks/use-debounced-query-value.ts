@@ -10,7 +10,7 @@ import { SEARCH_DEBOUNCE_MS } from "@/lib/search-params";
 
 /**
  * Shared React Query cache policy for search RESULT SETS — the catalog
- * (useInfiniteQuery), the skill pickers, and /explore bundle search. One place
+ * (useInfiniteQuery) and the skill pickers. One place
  * so the three don't drift: keepPreviousData holds the prior rows while a
  * refinement fetches (no empty flash), 60s stale keeps a session snappy without
  * refetch churn, 5min gc survives a cleared-then-retyped search. (The publisher
@@ -25,7 +25,7 @@ export const SEARCH_RESULT_CACHE = {
 
 /**
  * The one debounce + cache-bypass state machine behind every search input
- * (home catalog, /explore, the compare/bundle pickers). Returns the
+ * (home catalog, the compare/bundle pickers). Returns the
  * "effective" query the caller should actually fetch with:
  *
  * - **Debounce:** the returned value trails the raw input by

@@ -10,15 +10,15 @@
 
 import type * as audits from "../audits.js";
 import type * as bindAudit from "../bindAudit.js";
-import type * as bundleEvents from "../bundleEvents.js";
-import type * as bundleStars from "../bundleStars.js";
 import type * as bundles from "../bundles.js";
 import type * as crons from "../crons.js";
 import type * as curated from "../curated.js";
 import type * as curatedRefresh from "../curatedRefresh.js";
 import type * as devSeed from "../devSeed.js";
+import type * as devSeedFeed from "../devSeedFeed.js";
 import type * as devStats from "../devStats.js";
 import type * as duplicates from "../duplicates.js";
+import type * as freshness from "../freshness.js";
 import type * as github from "../github.js";
 import type * as githubAccount from "../githubAccount.js";
 import type * as githubCache from "../githubCache.js";
@@ -29,6 +29,7 @@ import type * as leaderboards from "../leaderboards.js";
 import type * as lib_appDay from "../lib/appDay.js";
 import type * as lib_clerkGithub from "../lib/clerkGithub.js";
 import type * as lib_detailRefresh from "../lib/detailRefresh.js";
+import type * as lib_devOnly from "../lib/devOnly.js";
 import type * as lib_discoveryPlacement from "../lib/discoveryPlacement.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
 import type * as lib_github from "../lib/github.js";
@@ -49,6 +50,7 @@ import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
 import type * as recommendations from "../recommendations.js";
 import type * as reconcile from "../reconcile.js";
+import type * as skillVersions from "../skillVersions.js";
 import type * as skills from "../skills.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as throttle from "../throttle.js";
@@ -64,15 +66,15 @@ import type {
 declare const fullApi: ApiFromModules<{
   audits: typeof audits;
   bindAudit: typeof bindAudit;
-  bundleEvents: typeof bundleEvents;
-  bundleStars: typeof bundleStars;
   bundles: typeof bundles;
   crons: typeof crons;
   curated: typeof curated;
   curatedRefresh: typeof curatedRefresh;
   devSeed: typeof devSeed;
+  devSeedFeed: typeof devSeedFeed;
   devStats: typeof devStats;
   duplicates: typeof duplicates;
+  freshness: typeof freshness;
   github: typeof github;
   githubAccount: typeof githubAccount;
   githubCache: typeof githubCache;
@@ -83,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   "lib/appDay": typeof lib_appDay;
   "lib/clerkGithub": typeof lib_clerkGithub;
   "lib/detailRefresh": typeof lib_detailRefresh;
+  "lib/devOnly": typeof lib_devOnly;
   "lib/discoveryPlacement": typeof lib_discoveryPlacement;
   "lib/embeddings": typeof lib_embeddings;
   "lib/github": typeof lib_github;
@@ -103,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   polar: typeof polar;
   recommendations: typeof recommendations;
   reconcile: typeof reconcile;
+  skillVersions: typeof skillVersions;
   skills: typeof skills;
   subscriptions: typeof subscriptions;
   throttle: typeof throttle;

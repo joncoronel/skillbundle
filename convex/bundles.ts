@@ -4,16 +4,15 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
-import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserOrThrow } from "./users";
 import { getUserPlanWithLimits } from "./lib/plans";
-import { assertAdmin, checkIsAdminByEmail } from "./devStats";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_SKILLS,
+  MAX_BUNDLES_PER_USER,
+  watchKey,
 } from "../lib/bundle-limits";
 
 // ---------------------------------------------------------------------------
@@ -33,15 +32,6 @@ function generateUrlId(length = 10): string {
   return randomId(length);
 }
 
-function timingSafeEqualStr(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
-  return diff === 0;
-}
 
 async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
   const id = generateUrlId();
@@ -53,12 +43,62 @@ async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
   return ensureUniqueUrlId(ctx);
 }
 
-async function countUserBundles(ctx: MutationCtx, userId: Id<"users">) {
+/**
+ * How many distinct skills this user watches, across every bundle.
+ *
+ * Distinct on `source::skillId`, and optionally ignoring one bundle — the
+ * caller is usually about to replace that bundle's contents, so counting its
+ * current skills would charge the user twice for the ones they are keeping.
+ *
+ * This replaced a bundle counter. Capping bundles capped ORGANISATION: two tidy
+ * lists cost more than one messy one, which is a rule about filing rather than
+ * about how much someone depends on the product.
+ */
+async function watchedSkillKeys(
+  // QueryCtx, not MutationCtx, so the read-side query below shares this exact
+  // loop. It was retyped verbatim 480 lines away, and the dashboard had a third
+  // copy client-side — three implementations of the number the whole plan
+  // re-cut meters on, and three chances for the enforced count, the preempt and
+  // the displayed count to disagree.
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  ignoreBundleId?: Id<"bundles">,
+): Promise<Set<string>> {
   const bundles = await ctx.db
     .query("bundles")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
-  return bundles.length;
+
+  const keys = new Set<string>();
+  for (const b of bundles) {
+    if (ignoreBundleId && b._id === ignoreBundleId) continue;
+    for (const sk of b.skills) keys.add(watchKey(sk));
+  }
+  return keys;
+}
+
+/**
+ * Throw if adding `incoming` would push the user past their watch limit.
+ *
+ * Counts the UNION, so re-adding a skill already watched in another bundle is
+ * free — the limit is on distinct skills watched, and someone filing the same
+ * dependency in two lists has not started depending on more things.
+ */
+function assertWatchLimit(
+  existing: Set<string>,
+  incoming: Array<{ source: string; skillId: string }>,
+  maxWatchedSkills: number,
+) {
+  if (!Number.isFinite(maxWatchedSkills)) return;
+
+  const union = new Set(existing);
+  for (const sk of incoming) union.add(watchKey(sk));
+  if (union.size <= maxWatchedSkills) return;
+
+  throw new ConvexError(
+    `That would put you at ${union.size} watched skills; the free plan covers ${maxWatchedSkills}. ` +
+      `Upgrade to Pro to watch as many as you like.`,
+  );
 }
 
 /**
@@ -66,12 +106,6 @@ async function countUserBundles(ctx: MutationCtx, userId: Id<"users">) {
  * `skills` table. Used by the surfaces that accept user-supplied skill
  * arrays (`createBundle`, `updateBundleSkills`) to keep ghost references
  * out of the bundles table.
- *
- * Why not `forkBundle`: that mutation copies skills from an existing
- * server-side bundle, which was already validated when its own skills
- * were added. Re-validating on fork would also block forking legacy
- * bundles that predate this check — a separate cleanup migration is
- * the right shape for that, not a runtime gate on fork.
  *
  * Lookups run in parallel via the `by_source_skillId` index. The
  * caller can pass duplicates safely; we dedupe by `${source}::${skillId}`
@@ -131,19 +165,12 @@ export const createBundle = mutation({
         skillId: v.string(),
       }),
     ),
-    isPublic: v.boolean(),
   },
-  handler: async (ctx, { name, description, skills, isPublic }) => {
+  // No visibility argument. A bundle is the set of skills you depend on, so it
+  // starts closed and opening it is a deliberate, reversible act on the bundle
+  // page. Creation is not the moment to ask.
+  handler: async (ctx, { name, description, skills }) => {
     const user = await getCurrentUserOrThrow(ctx);
-    const { limits } = await getUserPlanWithLimits(ctx);
-
-    const bundleCount = await countUserBundles(ctx, user._id);
-    if (bundleCount >= limits.maxBundles) {
-      throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
-    }
-    if (!isPublic && !limits.canMakePrivate) {
-      throw new ConvexError("Private bundles require a Pro plan.");
-    }
 
     // Defense-in-depth: the client form gates on `name.trim()` before
     // submitting, but the server has to defend too — a direct call via
@@ -169,6 +196,32 @@ export const createBundle = mutation({
         `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
       );
     }
+
+    // Plan limits last, after the request has been shown to be well-formed. A
+    // malformed request should be told it is malformed rather than sold an
+    // upgrade — and this ordering keeps the cheap local checks ahead of a read
+    // over every bundle the user owns.
+    const { limits } = await getUserPlanWithLimits(ctx);
+
+    // Not a plan gate — see `MAX_BUNDLES_PER_USER`. An empty bundle passes
+    // every other check for free, so without this nothing bounded row creation
+    // at all, and each row multiplies the dashboard feed's fan-out.
+    const existingBundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+    if (existingBundles.length >= MAX_BUNDLES_PER_USER) {
+      throw new ConvexError(
+        `You already have ${existingBundles.length} bundles, which is the maximum. Delete one to make room.`,
+      );
+    }
+
+    const existingKeys = new Set<string>();
+    for (const b of existingBundles) {
+      for (const sk of b.skills) existingKeys.add(watchKey(sk));
+    }
+    assertWatchLimit(existingKeys, skills, limits.maxWatchedSkills);
+
     await assertSkillsExist(ctx, skills);
 
     const urlId = await ensureUniqueUrlId(ctx);
@@ -183,7 +236,7 @@ export const createBundle = mutation({
           : undefined,
       urlId,
       skills: skills.map((s) => ({ ...s, addedAt: now })),
-      isPublic,
+      isPublic: false,
       createdAt: now,
       // Stamp updatedAt on insert so every row has it from day one. Without
       // this, new bundles have `updatedAt: undefined` until their first
@@ -209,24 +262,25 @@ export const updateBundleVisibility = mutation({
       throw new ConvexError("Bundle not found or unauthorized");
     }
 
-    if (!isPublic) {
-      const { limits } = await getUserPlanWithLimits(ctx);
-      if (!limits.canMakePrivate) {
-        throw new ConvexError("Private bundles require a Pro plan.");
-      }
-    }
-
-    await ctx.db.patch(bundleId, { isPublic });
-
-    // Mirror onto bundleStats so the compound public-aware index for
-    // most-starred stays accurate. No-op when the stats row doesn't exist.
-    const stats = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_bundleId", (q) => q.eq("bundleId", bundleId))
-      .unique();
-    if (stats) {
-      await ctx.db.patch(stats._id, { isPublic });
-    }
+    // No plan gate. Closed is the default now, so charging for it would be
+    // charging for the default; `canMakePrivate` is dead here and the pricing
+    // rewrite (TODO.md) removes it.
+    //
+    // `updatedAt` is NOT optional here, though it looks like a no-op field on a
+    // boolean flip. The bundle page builds its OG image URL as
+    // `/bundle/:id/og/:updatedAt` (page.tsx), so this timestamp IS the social
+    // card's cache key, and the card is cached for a day fresh plus a day
+    // stale-while-revalidate on top of a `cacheLife("days")` data-cache entry.
+    // Without the stamp:
+    //   - closing a bundle does not revoke its card, so everyone holding the
+    //     link — precisely the people just cut off — keeps seeing its name,
+    //     description and skill count for ~48h; and
+    //   - opening one does not publish its card either, because the generic
+    //     brand fallback cached at `createdAt` stays on the same URL.
+    // The one-link model made this load-bearing: this switch is now the only
+    // privacy control AND the only share control. Every sibling mutation
+    // already stamps the clock; this one was the anomaly.
+    await ctx.db.patch(bundleId, { isPublic, updatedAt: Date.now() });
   },
 });
 
@@ -306,6 +360,17 @@ export const updateBundleSkills = mutation({
         `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
       );
     }
+
+    // This bundle's own skills are excluded from the baseline, because `skills`
+    // REPLACES them — counting both would bill the user twice for every skill
+    // they are keeping, and make a pure removal fail the check.
+    const { limits } = await getUserPlanWithLimits(ctx);
+    assertWatchLimit(
+      await watchedSkillKeys(ctx, user._id, bundleId),
+      skills,
+      limits.maxWatchedSkills,
+    );
+
     await assertSkillsExist(ctx, skills);
 
     const existingByKey = new Map(
@@ -338,36 +403,103 @@ export const updateBundleSkills = mutation({
   },
 });
 
-export const generateShareToken = mutation({
+// REMOVED: `generateShareToken` / `revokeShareToken`.
+//
+// A share token was a SECOND URL for a bundle whose first URL was closed —
+// two links to one thing, with different rules, and the owner had to know
+// which one they had copied. Sharing is now one link (the bundle's own) and
+// one switch (`updateBundleVisibility`). Existing tokens are dead: the access
+// check no longer reads them, and `migrateOneLinkModel` closed every
+// bundle so nothing is unintentionally reachable by an old URL.
+
+/**
+ * Stamp "the owner has now seen this bundle", clearing its unread state.
+ *
+ * Called from the bundle page, but only once its change query has RESOLVED.
+ *
+ * This was withdrawn once and the reason still governs the wiring. It fired on
+ * page view while the page was a card grid that named no changes, so opening a
+ * bundle cleared every changed skill from the dashboard panel including ones
+ * the reader never saw. Marking something read that was never shown is the one
+ * thing a monitoring product cannot do.
+ *
+ * The register earns the stamp by displaying each change inline — but only
+ * after `listChangesForBundle` answers, which is why the caller's effect is
+ * gated on that query rather than on mount (bundle-view.tsx). The register
+ * itself is unaffected by the stamp: it baselines on `addedAt`, not on the last
+ * visit, so the page cannot erase its own contents.
+ *
+ * Every rejection path is a SILENT no-op rather than a throw, because the
+ * intended caller is a page view: the bundle page is reachable signed-out and by
+ * share link, so throwing would spray console errors across entirely legitimate
+ * visits, and there is nothing to protect — the worst a bad call can do is fail
+ * to record a timestamp.
+ *
+ * Owner-only by design. A share-link visitor marking someone else's bundle read
+ * would silently destroy that person's unread state from across the internet.
+ */
+export const markBundleViewed = mutation({
   args: { bundleId: v.id("bundles") },
+  returns: v.null(),
   handler: async (ctx, { bundleId }) => {
-    const user = await getCurrentUserOrThrow(ctx);
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+
     const bundle = await ctx.db.get(bundleId);
+    if (!bundle || bundle.userId !== user._id) return null;
 
-    if (!bundle || bundle.userId !== user._id) {
-      throw new ConvexError("Bundle not found or unauthorized");
-    }
-
-    const token = randomId(32);
-
-    await ctx.db.patch(bundleId, { shareToken: token });
-    return token;
+    await ctx.db.patch(bundleId, { lastViewedAt: Date.now() });
+    return null;
   },
 });
 
-export const revokeShareToken = mutation({
-  args: { bundleId: v.id("bundles") },
-  handler: async (ctx, { bundleId }) => {
-    const user = await getCurrentUserOrThrow(ctx);
-    const bundle = await ctx.db.get(bundleId);
+/**
+ * Clear the whole dashboard feed in one action.
+ *
+ * The feed spans bundles, so it needs a clearing action that does too —
+ * otherwise the only way to dismiss a change is to open the bundle that
+ * contains it, and a feed you cannot acknowledge is a feed that is always full.
+ *
+ * Stamps one timestamp across every bundle rather than per-row read state,
+ * which keeps this a patch of N small rows and matches how the baseline is
+ * already computed everywhere else (`max(lastViewedAt, addedAt)`). The cost is
+ * that it is all-or-nothing; a per-skill dismissal would need its own table and
+ * is not worth one yet.
+ */
+export const markAllBundlesViewed = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
 
-    if (!bundle || bundle.userId !== user._id) {
-      throw new ConvexError("Bundle not found or unauthorized");
-    }
+    const bundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
 
-    await ctx.db.patch(bundleId, { shareToken: undefined });
+    const now = Date.now();
+    await Promise.all(
+      bundles.map((b) => ctx.db.patch(b._id, { lastViewedAt: now })),
+    );
+    return null;
   },
 });
+
+/*
+ * `listUnreadCounts` used to live here and has been deleted.
+ *
+ * Nothing outside its own test ever called it, and it implemented "changed
+ * since baseline" as a bare `contentUpdatedAt > baseline` — which counts
+ * baseline archive rows, ignores audit regressions and ignores delisting. That
+ * is a DIFFERENT answer from `resolveSkillChange` in skillVersions.ts, which
+ * drives both surfaces a user actually reads. Shipped, validator-typed and
+ * tested, it read as load-bearing to the next person, who would wire it into a
+ * badge and get numbers contradicting the page beside it.
+ *
+ * If a per-bundle unread badge is wanted, derive it from `resolveSkillChange`
+ * so there is one definition of "changed".
+ */
 
 export const deleteBundle = mutation({
   args: { bundleId: v.id("bundles") },
@@ -379,34 +511,39 @@ export const deleteBundle = mutation({
       throw new ConvexError("Bundle not found or unauthorized");
     }
 
-    // Sync delete of bounded child rows: bundleStats has at most one row per
-    // bundle, so .collect() is safe.
-    const stats = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_bundleId", (q) => q.eq("bundleId", bundleId))
-      .collect();
-    await Promise.all(stats.map((row) => ctx.db.delete(row._id)));
-
-    // Delete the bundle row itself so the user sees it gone immediately.
+    // A bundle owns no child rows any more — the stats row and the scheduled
+    // paginated star cleanup both went with the social teardown — so this is a
+    // single delete rather than a fan-out.
     await ctx.db.delete(bundleId);
-
-    // bundleStars is unbounded per bundle (one row per starring user). Doing
-    // .collect() inline could blow Convex's 16MB / 8K-row caps for a popular
-    // bundle. Schedule a paginated internal-action cleanup instead — the
-    // mutation returns fast and the action loops in 500-row batches until
-    // empty. Brief eventual-consistency window where stars linger is invisible
-    // to UI (no surface queries bundleStars by a deleted bundleId).
-    await ctx.scheduler.runAfter(
-      0,
-      internal.bundleStars.cleanupStarsForBundle,
-      { bundleId },
-    );
   },
 });
 
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
+
+/**
+ * The distinct skills this user watches, as `source::skillId` keys.
+ *
+ * Returns the KEYS, not just a count, because the client-side "you're at your
+ * limit" preempt has to answer the same question the server does — and the
+ * server unions the incoming skills against these (`assertWatchLimit`), so
+ * re-filing skills you already watch is free. A bare count forced both call
+ * sites to hard-block at exactly the limit, which showed an upgrade banner in
+ * place of the form for an operation that would have succeeded.
+ *
+ * The server still enforces on write; this only exists so the UI can swap in an
+ * upgrade prompt instead of letting someone fill a form in and fail at submit.
+ */
+export const listWatchedSkillKeys = query({
+  args: {},
+  returns: v.array(v.string()),
+  handler: async (ctx) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return [];
+    return Array.from(await watchedSkillKeys(ctx, user._id));
+  },
+});
 
 export const countByUser = query({
   args: {},
@@ -422,8 +559,8 @@ export const countByUser = query({
 });
 
 export const getByUrlId = query({
-  args: { urlId: v.string(), shareToken: v.optional(v.string()) },
-  handler: async (ctx, { urlId, shareToken }) => {
+  args: { urlId: v.string() },
+  handler: async (ctx, { urlId }) => {
     // Layer 1: bundle lookup and current user are independent — parallelize.
     const [bundle, currentUser] = await Promise.all([
       ctx.db
@@ -437,18 +574,14 @@ export const getByUrlId = query({
 
     const isOwner = currentUser !== null && currentUser._id === bundle.userId;
 
-    if (!bundle.isPublic) {
-      const hasValidToken =
-        shareToken !== undefined &&
-        bundle.shareToken !== undefined &&
-        timingSafeEqualStr(shareToken, bundle.shareToken);
-
-      if (!isOwner && !hasValidToken) return null;
-    }
+    // One link, one rule: the bundle's own URL works for everyone or for
+    // nobody but the owner. There is no second token-bearing URL to reason
+    // about, which is the whole point of the one-link model.
+    if (!bundle.isPublic && !isOwner) return null;
 
     // Layer 2: every remaining read is independent given (bundle, currentUser).
-    // Parallelize: skills, creator, stats, forked-from chain, viewerHasStarred.
-    const [skillsWithData, creator, stats, forkedFromInfo, viewerHasStarred] =
+    // Parallelize: skills, creator, forked-from chain.
+    const [skillsWithData, creator, forkedFromInfo] =
       await Promise.all([
         Promise.all(
           bundle.skills.map(async (s) => {
@@ -460,19 +593,24 @@ export const getByUrlId = query({
               .unique();
 
             const addedAt = s.addedAt;
-            const contentUpdatedAt = skill?.contentUpdatedAt;
-            const updatedSinceAdded =
-              addedAt !== undefined &&
-              contentUpdatedAt !== undefined &&
-              contentUpdatedAt > addedAt;
 
+            // No `updatedSinceAdded` / `changedSinceViewed` here any more. Both
+            // were computed per skill and read by nothing: the register renders
+            // neither, and their only former consumer (skill-card) no longer
+            // renders on this page. Worse, they derived from the FAT skills row
+            // while `resolveSkillChange` reads the `skillSummaries` mirror, so
+            // the two sources could hold different histories — a third,
+            // divergent definition of "changed" sitting in a shipped validator.
             return {
               source: s.source,
               skillId: s.skillId,
+              // Returned, not just used locally above: the register shows when
+              // each skill joined, and omitting it left that column reading
+              // "—" for every row of every bundle, forever.
+              addedAt,
               name: skill?.name ?? s.skillId,
               description: skill?.description,
               installs: skill?.installs ?? 0,
-              updatedSinceAdded,
               contentUpdatedAt: skill?.contentUpdatedAt,
               createdAt: skill?._creationTime,
               isDelisted: skill?.isDelisted ?? false,
@@ -488,12 +626,10 @@ export const getByUrlId = query({
           }),
         ),
         ctx.db.get(bundle.userId),
-        ctx.db
-          .query("bundleStats")
-          .withIndex("by_bundleId", (q) => q.eq("bundleId", bundle._id))
-          .unique(),
         // Fork lineage chain stays internally serial (parent → parent's
-        // creator) but runs in parallel with everything else.
+        // creator) but runs in parallel with everything else. Forking itself is
+        // gone, but rows created before the teardown still carry `forkedFrom`,
+        // and dropping the attribution would misrepresent whose work it was.
         bundle.forkedFrom
           ? (async () => {
               const parent = await ctx.db.get(bundle.forkedFrom!);
@@ -506,25 +642,7 @@ export const getByUrlId = query({
               };
             })()
           : Promise.resolve(undefined),
-        currentUser !== null
-          ? ctx.db
-              .query("bundleStars")
-              .withIndex("by_user_bundle", (q) =>
-                q
-                  .eq("userId", currentUser._id)
-                  .eq("bundleId", bundle._id),
-              )
-              .unique()
-              .then((star) => star !== null)
-          : Promise.resolve(false),
       ]);
-
-    // Viewer admin status — folded into the bundle query so the detail page
-    // doesn't need a separate api.devStats.isAdmin round-trip just to gate
-    // the FeatureToggleButton. Reuses currentUser.email to avoid a second
-    // ctx.auth.getUserIdentity() call (already happened in getCurrentUser).
-    // Sync — no DB read, runs after the parallel layer.
-    const viewerIsAdmin = checkIsAdminByEmail(currentUser?.email);
 
     return {
       _id: bundle._id,
@@ -537,14 +655,10 @@ export const getByUrlId = query({
       skills: skillsWithData,
       creatorName: creator?.name ?? "Anonymous",
       isOwner,
-      shareToken: isOwner ? bundle.shareToken : undefined,
+      // Owner-only: a share-link visitor has no read state of their own here,
+      // and exposing the owner's would leak when they last looked at it.
+      lastViewedAt: isOwner ? bundle.lastViewedAt : undefined,
       forkedFrom: forkedFromInfo,
-      copyCount: stats?.copyCount ?? 0,
-      forkCount: stats?.forkCount ?? 0,
-      starCount: stats?.starCount ?? 0,
-      featuredAt: bundle.featuredAt,
-      viewerIsAdmin,
-      viewerHasStarred,
     };
   },
 });
@@ -561,281 +675,21 @@ export const listByUser = query({
       .order("desc")
       .collect();
 
-    return Promise.all(
-      bundles.map(async (bundle) => {
-        const stats = await ctx.db
-          .query("bundleStats")
-          .withIndex("by_bundleId", (q) => q.eq("bundleId", bundle._id))
-          .unique();
-
-        return {
-          ...bundle,
-          copyCount: stats?.copyCount ?? 0,
-          forkCount: stats?.forkCount ?? 0,
-        };
-      }),
-    );
+    return bundles;
   },
 });
 
-export async function enrichBundle(
-  ctx: QueryCtx,
-  bundle: {
-    _id: ReturnType<typeof v.id<"bundles">>["type"];
-    name: string;
-    description?: string;
-    urlId: string;
-    skills: Array<{ source: string; skillId: string; addedAt?: number }>;
-    createdAt: number;
-    userId: ReturnType<typeof v.id<"users">>["type"];
-    forkedFrom?: ReturnType<typeof v.id<"bundles">>["type"];
-    featuredAt?: number;
-    isPublic: boolean;
-  },
-  // Pass when the caller already has the stats row in scope (e.g. listExplore's
-  // starred branch paginates stats directly). Saves the extra by_bundleId
-  // lookup per bundle. Typed as the full Doc so it stays in sync with schema
-  // changes — partial structural shapes drift silently.
-  preloadedStats?: Doc<"bundleStats"> | null,
-) {
-  const [creator, stats] = await Promise.all([
-    ctx.db.get(bundle.userId),
-    preloadedStats !== undefined
-      ? Promise.resolve(preloadedStats)
-      : ctx.db
-          .query("bundleStats")
-          .withIndex("by_bundleId", (q) => q.eq("bundleId", bundle._id))
-          .unique(),
-  ]);
-
-  return {
-    _id: bundle._id,
-    name: bundle.name,
-    description: bundle.description,
-    urlId: bundle.urlId,
-    isPublic: bundle.isPublic,
-    skillCount: bundle.skills.length,
-    createdAt: bundle.createdAt,
-    creatorName: creator?.name ?? "Anonymous",
-    creatorImage: creator?.image,
-    forkedFrom: bundle.forkedFrom,
-    copyCount: stats?.copyCount ?? 0,
-    forkCount: stats?.forkCount ?? 0,
-    starCount: stats?.starCount ?? 0,
-    featuredAt: bundle.featuredAt,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Unified paginated explore query
+// REMOVED: `enrichBundle`, `listExplore`, `searchPublic`, `forkBundle`,
+// `setBundleFeatured`, `listFeatured`.
 //
-// One entry point for the /explore page's filter row. The grid re-sorts
-// by `sort`, the underlying index changes, but the response shape stays
-// identical so the React component code path is the same per filter.
-// ---------------------------------------------------------------------------
+// Every one of them existed to browse, rank, or copy OTHER people's bundles on
+// the /explore page. That page is gone: a directory of community bundles is a
+// discovery surface, and discovery here is the skill catalog, not a leaderboard
+// of strangers' folders. Bundles are private working sets now.
 
-export const listExplore = query({
-  args: {
-    sort: v.union(v.literal("newest"), v.literal("starred")),
-    paginationOpts: paginationOptsValidator,
-  },
-  handler: async (ctx, { sort, paginationOpts }) => {
-    if (sort === "newest") {
-      const result = await ctx.db
-        .query("bundles")
-        .withIndex("by_public_createdAt", (q) => q.eq("isPublic", true))
-        .order("desc")
-        .paginate(paginationOpts);
-
-      const enriched = await Promise.all(
-        result.page.map((bundle) => enrichBundle(ctx, bundle)),
-      );
-      return { ...result, page: enriched };
-    }
-
-    // Most-starred ranks by `bundleStats.starCount`. `isPublic` is denormalized
-    // onto stats so the compound index applies the public filter at the index
-    // level — no post-pagination trimming on visibility. `.gt("starCount", 0)`
-    // skips bundles with no stars at all.
-    const statsPage = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_public_starCount", (q) =>
-        q.eq("isPublic", true).gt("starCount", 0),
-      )
-      .order("desc")
-      .paginate(paginationOpts);
-
-    // Pair each stat with its bundle. Defensive null filter below: stats can't
-    // legitimately outlive their bundle (deleteBundle removes the stats row
-    // before the bundle row, and Convex OCC prevents inserts racing past a
-    // deletion), so this filter is effectively dead code — kept as belt-and-
-    // suspenders against any future invariant drift.
-    const pairs = await Promise.all(
-      statsPage.page.map(async (stat) => ({
-        stat,
-        bundle: await ctx.db.get(stat.bundleId),
-      })),
-    );
-
-    const enriched = await Promise.all(
-      pairs
-        .filter(
-          (p): p is { stat: (typeof statsPage.page)[number]; bundle: NonNullable<typeof p.bundle> } =>
-            p.bundle !== null,
-        )
-        .map(({ stat, bundle }) => enrichBundle(ctx, bundle, stat)),
-    );
-
-    return {
-      ...statsPage,
-      page: enriched,
-    };
-  },
-});
-
-export const searchPublic = query({
-  args: {
-    query: v.string(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, { query, limit = 20 }) => {
-    const results = await ctx.db
-      .query("bundles")
-      .withSearchIndex("search_name", (q) =>
-        q.search("name", query).eq("isPublic", true),
-      )
-      .take(limit);
-
-    return Promise.all(results.map((bundle) => enrichBundle(ctx, bundle)));
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Fork a bundle
-// ---------------------------------------------------------------------------
-
-export const forkBundle = mutation({
-  args: {
-    bundleId: v.id("bundles"),
-    name: v.optional(v.string()),
-  },
-  handler: async (ctx, { bundleId, name }) => {
-    const user = await getCurrentUserOrThrow(ctx);
-    const { limits } = await getUserPlanWithLimits(ctx);
-
-    const bundleCount = await countUserBundles(ctx, user._id);
-    if (bundleCount >= limits.maxBundles) {
-      throw new ConvexError("Bundle limit reached. Upgrade to Pro for unlimited bundles.");
-    }
-
-    const source = await ctx.db.get(bundleId);
-    if (!source) throw new ConvexError("Bundle not found");
-
-    // Must be public or owned by user
-    if (!source.isPublic && source.userId !== user._id) {
-      throw new ConvexError("Cannot fork a private bundle");
-    }
-
-    const urlId = await ensureUniqueUrlId(ctx);
-    const now = Date.now();
-
-    const newBundleId = await ctx.db.insert("bundles", {
-      userId: user._id,
-      name: name ?? `${source.name} (fork)`,
-      urlId,
-      skills: source.skills.map((s) => ({
-        source: s.source,
-        skillId: s.skillId,
-        addedAt: now,
-      })),
-      isPublic: true,
-      forkedFrom: bundleId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Update source bundle stats — increment fork counter only.
-    const stats = await ctx.db
-      .query("bundleStats")
-      .withIndex("by_bundleId", (q) => q.eq("bundleId", bundleId))
-      .unique();
-
-    if (stats) {
-      await ctx.db.patch(stats._id, {
-        forkCount: stats.forkCount + 1,
-        lastEventAt: now,
-      });
-    } else {
-      await ctx.db.insert("bundleStats", {
-        bundleId,
-        isPublic: source.isPublic,
-        copyCount: 0,
-        forkCount: 1,
-        starCount: 0,
-        lastEventAt: now,
-      });
-    }
-
-    return { bundleId: newBundleId, urlId };
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Admin: feature / unfeature bundles for the Explore fallback
-// ---------------------------------------------------------------------------
-
-export const setBundleFeatured = mutation({
-  args: { bundleId: v.id("bundles"), featured: v.boolean() },
-  handler: async (ctx, { bundleId, featured }) => {
-    // Auth-gated mutation: cheap admin check first, then the DB read. Going
-    // parallel would shave ~ms on the success path but waste a db.get on
-    // every unauthorized call (and slightly widen attack surface). Serial is
-    // the canonical shape for auth-then-act paths.
-    await assertAdmin(ctx);
-    const bundle = await ctx.db.get(bundleId);
-    if (!bundle) throw new ConvexError("Bundle not found");
-    if (featured && !bundle.isPublic) {
-      throw new ConvexError("Cannot feature a private bundle");
-    }
-    await ctx.db.patch(bundleId, {
-      featuredAt: featured ? Date.now() : undefined,
-    });
-  },
-});
-
-// The editorial Featured section on /explore reads this with the default
-// `includePrivate: false`. The /dev management section passes `true` so admin
-// can see and unfeature bundles whose owner has since flipped private.
-const FEATURED_FETCH_CAP = 50;
-export const listFeatured = query({
-  args: {
-    limit: v.optional(v.number()),
-    includePrivate: v.optional(v.boolean()),
-  },
-  handler: async (ctx, { limit, includePrivate = false }) => {
-    if (includePrivate) await assertAdmin(ctx);
-
-    // Cap the requested limit so an arbitrary caller can't force a huge
-    // take() + N enrichments. The cap applies on both paths — it's well
-    // above any realistic UI need (the public Featured section asks for 3,
-    // the /dev management section asks for the default).
-    const fetchSize = Math.min(limit ?? FEATURED_FETCH_CAP, FEATURED_FETCH_CAP);
-
-    const bundles = includePrivate
-      ? await ctx.db
-          .query("bundles")
-          .withIndex("by_featured", (q) => q.gt("featuredAt", 0))
-          .order("desc")
-          .take(fetchSize)
-      : await ctx.db
-          .query("bundles")
-          .withIndex("by_public_featured", (q) =>
-            q.eq("isPublic", true).gt("featuredAt", 0),
-          )
-          .order("desc")
-          .take(fetchSize);
-
-    return Promise.all(bundles.map((b) => enrichBundle(ctx, b)));
-  },
-});
-
+// The one-link migration (`migrateOneLinkModel`) lived here and is gone: it ran
+// on dev and prod in Aug 2026, closing every bundle created under the old
+// public-by-default rule and stripping `shareToken` / `featuredAt`. It could not
+// outlive the fields it removed — a mutation cannot reference a field the schema
+// no longer declares — which is the natural end of a migration's life once it
+// has run everywhere. `git log` has it if a new deployment ever needs it.

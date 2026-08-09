@@ -6,6 +6,385 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Monitoring pivot: state, decisions, and what is left (Aug 2026)
+
+Why any of this exists: skills.sh (which is Vercel) launched Packs, which does
+bundle-and-install better than we can, and their v1 API already serves
+leaderboards, trending/hot, curated, audits, duplicate flags and semantic search
+— all of which the catalog was re-rendering. The defensible position left is the
+one thing a registry has no incentive to build: telling you when a skill you
+depend on **changed, broke, or became unsafe**. Full positioning lives in
+PRODUCT.md, which was rewritten for this.
+
+**Decisions already made. Do not relitigate without new information.**
+
+- **No email/push.** The product is pull: you open the app and see what changed.
+  This killed the notifier, the alert-severity ladder, and the `skillWatchers`
+  inverted index (built, then deleted — it existed only to answer "who do I
+  email about this skill", and nothing else needs that direction).
+- **"Since you last looked" instead of alerts.** One `bundles.lastViewedAt`
+  timestamp. Baseline is `max(lastViewedAt, addedAt)` per skill so a newly added
+  skill does not arrive carrying months of unread history.
+- **A bundle IS a watchlist.** No separate bookmark primitive. Watching a skill
+  means it sits in a bundle; a default bundle covers the one-click case.
+- **Skill checkup via lockfile: dropped.** `~/.agents/.skill-lock.json` does
+  track source, but it lives on the user's machine and most installs are global
+  rather than committed, so a web app cannot read it. Accepted consequence: we
+  track "skills you care about", not "skills you have".
+- **Set-aware search and semantic dedup: dropped.** Both depended on the above.
+- **One-link model.** `isPublic` collapses into a single toggleable share link.
+  Built.
+
+**Shipped and committed** (`66fd930`, `4c08500`, `c7a2a00`):
+
+- `skillVersions` archive: raw SKILL.md per change in file storage, metadata
+  inline, captured at BOTH content-write paths. Descriptions stored inline in
+  full because a description change is the high-severity event (it decides when
+  an agent invokes a skill).
+- `skillAudits` keeps its previous verdict instead of overwriting it.
+- Unread state: `lastViewedAt` and `markBundleViewed`. (`listUnreadCounts` and
+  `changedSinceViewed` were also built and have since been DELETED — nothing
+  read them, and they defined "changed" as a bare `contentUpdatedAt >
+  baseline`, which ignores audit regressions and delisting. That is a different
+  answer from `resolveSkillChange`, which drives both surfaces users see.)
+- Read API in `convex/skillVersions.ts`: `listForSkill`, `getVersions`,
+  `getAuditChange`, `listRecentChangesForUser`.
+- Skill-page History UI (`components/skill-history.tsx`) on `@pierre/diffs`.
+- Daily per-repo freshness sweep (`convex/freshness.ts`) plus tiered content
+  cadences: GitHub 30-day backstop behind the sweep, well-known daily.
+- Social teardown: `/explore`, stars, forks, copy counts, featured placement,
+  public-bundle search, and the `bundleStats` / `bundleStars` tables are gone.
+- Bundle page rebuilt as a register (`components/bundle/bundle-register.tsx`):
+  one row per skill, ordered by consequence, with a tally above it and install
+  demoted to a disclosure. `markBundleViewed` is wired back on, which the
+  register earns by showing each change inline. Steady rows collapse behind
+  their own count, so a healthy 40-skill bundle is a short page rather than 40
+  em-dashes, and the table carries a `max-h` so its sticky column strip has
+  something to stick inside.
+- Edit mode is the same register, not a separate card grid — and since the panel
+  review, the same register INSTANCE. The page renders one `<BundleRegister>`
+  and hands it the staged groups plus row handlers when editing; staging lives
+  in `hooks/use-bundle-edit-session.ts` so both modes can reach it, and
+  `BundleEditChrome` holds only the picker, the save bar and the discard dialog.
+  Two instances used to mean React unmounted one and mounted the other, so your
+  section folds and your scroll position reset on every save. Rows keep their
+  consequence ordering and condition text while you stage adds and removes, so
+  the skill you came to remove is the first row and still says why.
+- One-link model: `isPublic` plus a separate `shareToken` URL collapsed to one
+  link and one switch. Bundles are created closed and the Pro gate on privacy is
+  gone. `listChangesForBundle` and the dashboard feed share one
+  `resolveSkillChange` so their ranking cannot drift.
+- Pricing rebuilt as a comparison plate (`app/(main)/pricing/pricing-plate.tsx`)
+  with the tiers re-cut: free covers 25 watched skills, Pro is $5/mo for
+  unlimited watching + repo matching + unlimited GitHub-only adds. The 3-bundle
+  cap is gone (it metered organisation, not dependence) and `maxBundles` is
+  replaced by `maxWatchedSkills`, counted distinct across bundles. Security
+  regressions are free on every plan, permanently.
+- Dashboard change panel (`app/(main)/dashboard/change-feed.tsx`). The feed
+  query now carries audit regressions as first-class rows, ranks by consequence
+  ahead of recency, drops baselines (no previous content = no diff to show), and
+  trips a mass-change breaker. `markAllBundlesViewed` clears it in bulk and is
+  currently the ONLY thing that clears it. `devSeedFeed.ts` populates it
+  locally.
+
+**Deployed Aug 8 2026.** The archive and the sweep are both live in production.
+
+**Closed Aug 9 2026: the sweep verified clean.** The initial production run hit
+two bugs (an infinite chain loop, and over-flagging every first-seen skill),
+both fixed in `6b1aea3`. A clean reading was taken on Aug 9:
+
+    reposSweptInLast25h  1623 / 1624 tracked
+    skillsFlagged        0        (skillsFlaggedCapped false)
+    skillsWithNoVersions 0        (of a 300-row tail sample)
+    versionsBaseline     12,625   (versionsCapped false)
+
+Re-check with `npx convex run freshness:sweepHealth --prod`. `skillsFlagged` in
+the thousands means over-flagging has returned and the sweep has become a daily
+full-catalog re-download — that is the number to look at first. A
+`reposSweptInLast25h` far below `reposTracked` means the chain did not finish;
+see the silent-chain note below before assuming a code fault.
+
+Note `versionsBaseline` is 12,625 rather than ≈ 0. An earlier draft of this
+section expected ≈ 0 "now that bootstrapping is done"; that was written before
+the one-time baseline backfill, which deliberately wrote a row for every skill.
+It falls back toward 0 once those age past the 24h window.
+
+Why a dedicated check rather than reading a row count: "the counter stopped
+going up" is what a stalled chain looks like AND what a finished one looks like.
+That ambiguity is exactly how the loop bug survived being watched.
+
+**Remaining work:**
+
+- **The dashboard feed checks at most 500 watched skills per load, and the
+  unchecked tail never rotates.** `MAX_FEED_CANDIDATES` in `skillVersions.ts`
+  bounds the fan-out — `resolveSkillChange` costs 2-3 indexed reads per skill,
+  and unbounded it eventually exceeds Convex's per-query read ceiling, which
+  fails the dashboard outright rather than degrading. So the cap has to exist.
+
+  What is wrong is that it is not eventual. Candidates sort by baseline
+  ascending (least recently seen first) and `markBundleViewed` sets a bundle's
+  `lastViewedAt` to now — which gives its skills the NEWEST baseline and sorts
+  them to the BACK. So the tail is the recently-seen tail, and it stays there:
+  the same 500 are re-scanned on every load, forever.
+
+  The UI is honest about it (`CoverageNote` in change-feed.tsx states how many
+  of how many were checked, and the light goes neutral rather than green), but
+  honest is not the same as covered. A skill in the tail could be delisted for
+  months and never reported.
+
+  The fix is a persisted per-user scan position — store where the last load
+  stopped, resume from there, wrap around — so coverage is eventual rather than
+  never. That is real per-user state and did not belong in the review pass that
+  found it.
+
+  UNREACHABLE below 501 distinct watched skills, and free caps at 25. This
+  needs a heavy Pro account to matter at all, which is why it is parked rather
+  than scheduled. Revisit if anyone gets near it.
+
+- **Re-measure the mass-change threshold.** `MASS_CHANGE_THRESHOLD` in
+  `skillVersions.ts` is 750, which is ~5x an ESTIMATE (15k skills at the
+  measured 27.5%/month), not a measurement. Under ~3x a busy day it fires on
+  ordinary Tuesdays; far over it never fires at all.
+
+      npx convex run skillVersions:changeRateHealth --prod
+
+  Read `realChanges` per day — IGNORE `baselines`, which is the one-time
+  backfill and says nothing about the change rate. Take several days: the rate
+  is lumpy, and one reading times thirty is how the previous estimate went
+  wrong. Then set the constant to ~5x a busy day.
+
+  **From roughly 2026-08-16, not September.** An earlier version of this entry
+  said mid-September, reasoning that the archive was slowly backfilling itself
+  at ~459/day. That model was wrong — the archive only ever wrote on a CHANGE,
+  so it was never going to fill on its own. The one-time backfill (2026-08-09)
+  gave every skill a baseline, so real change data has been accruing since
+  then, and a week of it is enough.
+
+- **Nothing prunes the version archive.** `skillSnapshots` has a retention
+  cron (06:45 UTC, 180 days, `pruneSnapshots`). `skillVersions` has no
+  equivalent — the only code that deletes a version row is `devSeed`'s
+  teardown, which is gated against production. The two `ctx.storage.delete`
+  calls in `recordSkillVersion` release the INCOMING blob on a no-op write
+  (dead skill row, or a duplicate hash from a retry); they never touch stored
+  rows. `MAX_VERSION_LIMIT = 200` is a read cap, not retention.
+
+  Rows are cheap; the blobs are not. Every version stores the full raw
+  SKILL.md in file storage, and the 2026-08-09 backfill wrote ~12,600 of them
+  in one pass — already the bulk of what is there. Growth from here is one
+  blob per real change, which is the same number
+  `skillVersions:changeRateHealth` reports, so the threshold re-measurement
+  above sizes this too. Do that first; there is no point designing retention
+  against a guess.
+
+  One asymmetry worth knowing when you do: `markDelistedSkills` explicitly
+  deletes a delisted skill's `skillEmbeddings` row to save storage, but leaves
+  its version rows and blobs. A skill can leave the catalog for good and keep
+  its full archive.
+
+  NOT scheduled, because the shape is a product decision and not a cleanup. A
+  monitoring product deleting its own history is a feature change. The
+  plausible options — cap versions per skill, drop the blob but keep the row
+  and its description diff, or age out on a window — differ in what a user
+  loses, so pick deliberately rather than reaching for the snapshot cron's
+  pattern because it exists.
+
+**Loose ends worth knowing about:**
+
+- **The daily sweep stopped after 146 of 1,624 repos on 2026-08-09, and we do
+  not know why.** Re-running it by hand completed the full walk (1,623/1,624),
+  so the code is not simply broken. Two candidates, neither confirmed:
+
+  1. A Convex deploy landed mid-chain. An interrupted action just stops — no
+     error, no log, no retry — which matches a partial run with no abort line.
+  2. It was the first production run after the sweep changes in this branch,
+     notably `touchSweepState`, which fires a mutation on every 304 where the
+     old code wrote nothing. That turns a near-write-free walk into ~1,600
+     round-trips, and one throw anywhere kills the chain. Weakened by the
+     manual re-run succeeding, but "intermittent under load at 04:00 UTC" and
+     "fine by hand at midday" are compatible.
+
+  The evidence is gone: Convex evicted the logs (the baseline backfill flooded
+  them), and the manual re-run overwrote the per-repo `sweptAt` timestamps that
+  would have shown which 146. Suggesting that re-run before dumping the table
+  was a mistake.
+
+  **Instrumented rather than guessed at.** The `sweepRuns` table now records one
+  row per walk, with progress written on every chain link and `finishedAt` set
+  only on a real ending. `sweepHealth` surfaces `lastRunFinished`,
+  `lastRunOutcome` and `lastRunReposSwept`, so a chain that dies is stated
+  outright instead of inferred from a low repo count. Verified on dev: a run
+  reads `finished: false` with a climbing count while in flight, then closes
+  `complete`.
+
+  **The open question resolves itself on the next few 04:00 UTC runs** (9pm
+  Pacific). Completing means 2026-08-09 was a one-off. Dying again means
+  candidate 2, and the row will say where it stopped.
+- ~~`skillVersions.suppressed` is declared and nothing sets it.~~ Dropped
+  Aug 2026. The mass-change breaker got built at READ time instead
+  (`isCatalogWideChangeEvent` in `skillVersions.ts`), because at write time you
+  cannot know you are the 3rd of 3,000, so the per-row flag never had a writer.
+  Worth noting for the two-deploy rule below: this one came out in a *single*
+  deploy, because no row ever carried it. The dance is only needed when the
+  field has been written.
+- ~~The dashboard feed hides a change whose only archived version is a
+  baseline... do not read an empty feed as proof that nothing changed until
+  roughly Sep 2026.~~ **Closed 2026-08-09 by backfilling every baseline.**
+
+  The reasoning behind that caveat was wrong, not just its date. It assumed the
+  archive was slowly filling itself in. It was not: the archive only writes on a
+  CHANGE (`archiveSkillVersion` is gated on `outcome.changed`), so a skill that
+  never changed would never get a first row — not in a month, not ever. Coverage
+  would have crept up only as skills happened to change, and each skill's FIRST
+  change would still be swallowed as its baseline, leaving the user told nothing
+  until the second.
+
+  `skills:backfillArchiveBaselines` closed it in one pass: 12,625 baselines, all
+  300 of the tail sample covered, verified with `sweepHealth`. Every skill now
+  has a comparison point, so the NEXT change to any skill is reportable. An
+  empty feed can be read as an empty feed.
+- **Dropping a Convex field takes two deploys.** Worth remembering next time:
+  the schema is validated against existing documents, so a field cannot leave
+  `schema.ts` while any row still carries it. Declare it deprecated-optional,
+  ship a migration that strips it, run that everywhere, THEN remove it and
+  deploy again. Done for `shareToken` / `featuredAt` in Aug 2026; the migration
+  was deleted afterwards because it could not outlive the fields it referenced.
+- Virtualising the register was listed here and was never a real problem:
+  bundles cap at 100 skills (`MAX_BUNDLE_SKILLS`) and 100 table rows render
+  instantly. Removed rather than carried.
+- `next.config.ts` carries a Turbopack alias for `@shikijs/themes/horizon-bright`,
+  which `@pierre/theming@1.0.1` imports and which exists in no published release
+  of that package. Both packages are already at their latest version, so there
+  is no upgrade to take. Delete the alias if upstream ever fixes it.
+- The diff renderer wraps long lines rather than scrolling them. That is forced,
+  not preferred — CodeView's horizontal scroller lives in its shadow root while
+  the vertical one has to live outside, and no placement of the height cap
+  merges them (measured, including `max-h-96 overflow-auto` directly on
+  CodeView). If this ever hosts code-dominant files, add a wrap toggle rather
+  than flipping the default.
+
+### skills.sh API auth is moving to Vercel OIDC (build the token relay before the key dies)
+
+Measured Aug 2026. The skills.sh v1 API now rejects unauthenticated requests
+and the docs no longer mention API keys at all:
+
+    GET /api/v1/skills            401 authentication_required
+    GET /api/v1/skills/search     401
+    GET /api/v1/skills/audit/...  200   (enforcement inconsistent, for now)
+
+The 401 body points at a Vercel OIDC token. Our `SKILLS_SH_API_KEY` (`sk_live_`)
+still works as of Aug 2026, so nothing is broken yet, but it is now an
+undocumented mechanism on a first-party API. Treat its removal as a matter of
+when. Emailed skills.sh asking whether keys are being retired; no reply.
+
+**Why this is awkward for us:** the token is minted per-request inside a Vercel
+runtime, and our whole sync runs on Convex crons. Convex cannot get one.
+
+**The migration, when needed (token relay):**
+
+1. A secret-gated route handler on our Vercel app returns
+   `await getVercelOidcToken()` from `@vercel/oidc`.
+2. Convex caches that token and refreshes every ~10h (lifetime is ~12h), or
+   lazily on a 401 from skills.sh.
+3. `authHeaders()` in `convex/lib/skillsApi.ts` sends the cached token.
+
+This works because skills.sh verifies the token the standard way: JWT signature
+against `oidc.vercel.com/[TEAM_SLUG]`'s JWKS, checking issuer / audience /
+`owner:...:project:...:environment:...` subject. There is no check that the
+request originated from Vercel infrastructure, so a relayed token validates.
+
+Rejected alternative: proxying every skills.sh call through a Vercel route. Our
+sync is thousands of staggered per-skill scheduled actions carrying multi-MB
+`files[]` payloads, so that converts one cron chain into thousands of Hobby
+function invocations. The relay costs 2-3 invocations a day and keeps all sync
+bandwidth on Convex.
+
+**Two things to check before building it:**
+
+- Whether OIDC Federation (Settings → OIDC Federation) is available on our
+  Vercel plan at all. This decides whether the plan works; unverified.
+- It moves a bearer credential carrying our team/project identity off Vercel.
+  Scoped to us and attributed to us either way, so not misrepresentation, but
+  keep it in Convex env/table, never log it, keep the relay secret-gated.
+
+**Cheapest insurance, do this before migrating:** make `authHeaders()` prefer
+the key and fall back to a relayed OIDC token on a 401, so the day the key dies
+it is a config flip rather than an outage. Also fix the stale comment at the top
+of `convex/lib/skillsApi.ts`, which still documents a 60 req/min unauthenticated
+tier that no longer exists; a future reader would plan around it.
+
+Strategic note, not just an ops note: skills.sh is Vercel, and OIDC-only auth
+scopes every consumer to a Vercel team and project with `owner_id` /
+`project_id` / `environment` logged per request. Our entire catalog is
+downstream of an API that a competitor controls, meters, and can identify us on.
+That is the backdrop for any decision about what this app should be.
+
+### Embedding-powered catalog features (parked while monitoring is the focus)
+
+Context (Aug 2026): skills.sh launched Packs and their v1 search API now does
+semantic search on multi-word queries, so "we have embeddings and they don't" is
+false. What is still true is that **their embeddings only answer query → skill.
+Nobody uses embeddings for structure**: skill ↔ skill relationships, clustering,
+overlap, mapping. Every idea below lives in that gap, and all of them run over
+the 512-dim `voyage-code-3` vectors already sitting in `skillEmbeddings`.
+
+The pairwise math is already written and calibrated: `cosineSimilarity`
+(`convex/skills.ts:3283`) and the `cosineSimilarityBetween` internalQuery
+(`:3301`), with an empirical threshold table at `:3276-3281` — 0.97+ near-verbatim
+duplicate, 0.90 same topic, 0.70 same category, <0.5 unrelated. Those thresholds
+are the tuning input for everything here.
+
+Deliberately **not** in this list: semantic dedup at catalog scale, and set-aware
+search ("find me an X that doesn't overlap what I have"). Both were considered and
+cut — dedup wasn't wanted, and set-aware search depends on knowing a user's
+installed set, which the dropped lockfile-checkup idea was going to supply.
+
+**1. Similar skills / alternatives on catalog pages.** Every skill detail page
+gets a "related" block of its nearest neighbors. Do NOT run an O(N²) sweep over
+~9.5k skills; instead query each skill's own vector against the existing
+`by_embedding` vector index with a small limit — one cheap call per skill, reusing
+machinery that's already tuned. Store the neighbor list on `skillSummaries` so it
+renders from the slim row. Smallest item here, and it doubles as the SEO play:
+real internal linking across catalog pages, which is the only search angle we have
+against skills.sh (they own the canonical page for every skill and will always win
+the head terms). Also makes `/compare` self-suggesting instead of requiring the
+user to already know what to compare.
+
+**2. Auto-derived topics.** Cluster the catalog's embeddings (k-means or HDBSCAN),
+label each cluster from its centroid-nearest member or a cheap LLM pass over the
+top ~10 descriptions. Batch job, not per request. Worked example from a real
+machine's installed set: `next-cache-components-adoption` +
+`next-cache-components-optimizer` + `next-best-practices` cluster into "Next.js
+caching"; `impeccable` + `baseline-ui` + `building-components` +
+`web-design-guidelines` + `html` + `css-motion-systems` cluster into "frontend
+design". Nobody wrote those categories — they fall out of the vectors.
+
+Why it beats skills.sh: their `/topics` is hand-curated (7 buckets: React,
+Next.js, Design & UI, Mobile, Databases, Testing, Marketing) and covers what
+someone thought to create. Derived topics cover what exists, including emerging
+clusters the week they form. This is also the honest way to close the technology-
+tagging gap described in AGENTS.md, and it would finally populate the
+`technologies` prop on `components/skill-card.tsx` that nothing feeds today.
+
+**3. Ecosystem map.** UMAP/t-SNE the whole catalog from 512 dims to 2, precompute
+offline, render as a static explorable scatter where position means similarity.
+Dense blobs are saturated categories, empty space is unbuilt territory, and
+colouring dots by install count shows where lots of people are building the same
+unwanted thing. Nobody has made a picture of this ecosystem. Honest framing: this
+is marketing and portfolio value, not product value — nobody pays for a map — but
+it is one offline batch job over vectors we already have, and it is the most
+shareable artifact on this list.
+
+**4. Author tools.** Different audience: people writing skills, not installing
+them. Point it at a SKILL.md and get "this overlaps 0.91 with these six existing
+skills," plus whether the description is distinctive enough to trigger reliably
+instead of colliding with something already popular. Vercel serves consumers;
+nobody serves authors, and authors are small, motivated and vocal. Treat as a
+distribution/credibility wedge, not a revenue line.
+
+Sequencing note: #1 is a weekend and improves the catalog whether or not anything
+else lands. #2 is the next-cheapest. #3 any time. #4 is independent of all of them.
+None of these block or are blocked by the monitoring work.
+
 ### Focus rings fail the 3:1 contrast threshold app-wide (design decision)
 
 Measured Jul 2026 while fixing a disabled-button focus ring, then re-measured

@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  CompassIcon,
   DashboardSquare01Icon,
   Tag01Icon,
   CheckmarkCircle02Icon,
@@ -34,15 +33,6 @@ function ActiveNavLinks() {
 function NavLinks({ activeHref }: { activeHref: string | null }) {
   return (
     <nav className="max-sm:hidden flex items-center gap-1">
-      <NavLink
-        href="/explore"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon icon={CompassIcon} strokeWidth={2} className="size-4" />
-        }
-      >
-        Explore
-      </NavLink>
       <NavLink
         href="/official"
         activeHref={activeHref}

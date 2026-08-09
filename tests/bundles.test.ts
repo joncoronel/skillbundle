@@ -16,6 +16,7 @@ import { ConvexError } from "convex/values";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
+import { FREE_WATCHED_SKILLS } from "../convex/lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_SKILLS,
@@ -88,7 +89,6 @@ describe("createBundle", () => {
         { source: "owner/repo", skillId: "skill-a" },
         { source: "owner/repo", skillId: "skill-b" },
       ],
-      isPublic: true,
     });
     const after = Date.now();
 
@@ -97,7 +97,8 @@ describe("createBundle", () => {
     expect(bundle!.name).toBe("My Bundle");
     expect(bundle!.description).toBe("A short description");
     expect(bundle!.userId).toBe(userId);
-    expect(bundle!.isPublic).toBe(true);
+    // Closed on creation — see the "createBundle visibility" block below.
+    expect(bundle!.isPublic).toBe(false);
     expect(bundle!.createdAt).toBeGreaterThanOrEqual(before);
     expect(bundle!.createdAt).toBeLessThanOrEqual(after);
     expect(bundle!.updatedAt).toBe(bundle!.createdAt);
@@ -114,7 +115,6 @@ describe("createBundle", () => {
       name: "No description",
       description: "   ",
       skills: [{ source: "owner/repo", skillId: "skill-a" }],
-      isPublic: true,
     });
 
     const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
@@ -126,7 +126,6 @@ describe("createBundle", () => {
     const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
       name: "No description",
       skills: [{ source: "owner/repo", skillId: "skill-a" }],
-      isPublic: true,
     });
     const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
     expect(bundle!.description).toBeUndefined();
@@ -138,7 +137,6 @@ describe("createBundle", () => {
       asUser.mutation(api.bundles.createBundle, {
         name: "   ",
         skills: [{ source: "owner/repo", skillId: "skill-a" }],
-        isPublic: true,
       }),
     ).rejects.toThrow(/Name cannot be empty/i);
   });
@@ -150,7 +148,6 @@ describe("createBundle", () => {
         name: "Too long description",
         description: "x".repeat(MAX_BUNDLE_DESCRIPTION_LENGTH + 1),
         skills: [{ source: "owner/repo", skillId: "skill-a" }],
-        isPublic: true,
       }),
     ).rejects.toThrow(
       new RegExp(`Description must be ${MAX_BUNDLE_DESCRIPTION_LENGTH}`, "i"),
@@ -164,7 +161,6 @@ describe("createBundle", () => {
       name: "At cap",
       description: at,
       skills: [{ source: "owner/repo", skillId: "skill-a" }],
-      isPublic: true,
     });
     const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
     expect(bundle!.description).toBe(at);
@@ -184,7 +180,6 @@ describe("createBundle", () => {
       asUser.mutation(api.bundles.createBundle, {
         name: "Too many",
         skills: bogusSkills,
-        isPublic: true,
       }),
     ).rejects.toThrow(/limited to .* skills/i);
   });
@@ -198,7 +193,6 @@ describe("createBundle", () => {
           { source: "owner/repo", skillId: "skill-a" }, // real
           { source: "owner/repo", skillId: "does-not-exist" }, // ghost
         ],
-        isPublic: true,
       }),
     ).rejects.toThrow(/Unknown skill.*owner\/repo\/does-not-exist/i);
   });
@@ -213,38 +207,71 @@ describe("createBundle", () => {
       asUser.mutation(api.bundles.createBundle, {
         name: "Many ghosts",
         skills: ghosts,
-        isPublic: true,
       }),
     ).rejects.toThrow(/\+3 more/);
   });
 
-  test("rejects when the free user is at the bundle limit", async () => {
-    // Free plan = 3 bundles. Insert 3 directly to hit the cap without
-    // exercising the createBundle path 3 times.
+  test("rejects when the free user is at the watched-skill limit", async () => {
+    // The meter is distinct skills watched, not bundles — so this seeds one
+    // bundle already holding the whole free allowance rather than N bundles.
     const { t, asUser, userId } = await setup();
     await t.run(async (ctx) => {
       const now = Date.now();
-      for (let i = 0; i < 3; i++) {
-        await ctx.db.insert("bundles", {
-          userId,
-          name: `Existing ${i}`,
-          urlId: `existing-${i}`,
-          skills: [],
-          isPublic: true,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
+      await ctx.db.insert("bundles", {
+        userId,
+        isPublic: false,
+        name: "Already watching",
+        urlId: "already-watching",
+        skills: Array.from({ length: FREE_WATCHED_SKILLS }, (_, i) => ({
+          source: "owner/repo",
+          skillId: `filler-${i}`,
+          addedAt: now,
+        })),
+        createdAt: now,
+        updatedAt: now,
+      });
     });
 
     await expect(
       asUser.mutation(api.bundles.createBundle, {
         name: "One too many",
         skills: [{ source: "owner/repo", skillId: "skill-a" }],
-        isPublic: true,
       }),
-    ).rejects.toThrow(/Bundle limit reached/i);
+    ).rejects.toThrow(/free plan covers 25/i);
   });
+
+  test("a skill already watched elsewhere does not count twice", async () => {
+    // Filing the same dependency in a second list is organisation, and
+    // organising is not what is being metered.
+    const { t, asUser, userId } = await setup();
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("bundles", {
+        userId,
+        isPublic: false,
+        name: "Full",
+        urlId: "full-list",
+        skills: Array.from({ length: FREE_WATCHED_SKILLS }, (_, i) => ({
+          source: "owner/repo",
+          skillId: `filler-${i}`,
+          addedAt: now,
+        })),
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    // `assertSkillsExist` still applies — the skill has to be in the catalog.
+    await seedSkill(t, "owner/repo", "filler-0");
+
+    // At the cap, but re-filing an existing skill keeps the union the same.
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: "Same skill, second list",
+      skills: [{ source: "owner/repo", skillId: "filler-0" }],
+    });
+    expect(bundleId).toBeTruthy();
+  });
+
 
   test("rejects when unauthenticated", async () => {
     const t = makeTest();
@@ -252,21 +279,12 @@ describe("createBundle", () => {
       t.mutation(api.bundles.createBundle, {
         name: "Anon",
         skills: [],
-        isPublic: true,
       }),
     ).rejects.toThrow(/get current user/i);
   });
 
-  test("rejects private bundle on free plan", async () => {
-    const { asUser } = await setup();
-    await expect(
-      asUser.mutation(api.bundles.createBundle, {
-        name: "Private",
-        skills: [{ source: "owner/repo", skillId: "skill-a" }],
-        isPublic: false,
-      }),
-    ).rejects.toThrow(/Private bundles require a Pro plan/i);
-  });
+  // REMOVED: "rejects private bundle on free plan". Private is the default now,
+  // so there is no gate to test — see "createBundle visibility" below.
 });
 
 // ---------------------------------------------------------------------------
@@ -286,10 +304,10 @@ describe("updateBundleSkills", () => {
       const now = Date.now();
       return await ctx.db.insert("bundles", {
         userId,
+          isPublic: false,
         name: "Existing",
         urlId: `seed-${Math.random().toString(36).slice(2, 8)}`,
         skills,
-        isPublic: true,
         createdAt: now,
         updatedAt: now,
       });
@@ -421,11 +439,11 @@ describe("updateBundleDescription", () => {
       const now = Date.now();
       return await ctx.db.insert("bundles", {
         userId,
+          isPublic: false,
         name: "Existing",
         urlId: `desc-${Math.random().toString(36).slice(2, 8)}`,
         description,
         skills: [],
-        isPublic: true,
         createdAt: now,
         updatedAt: now,
       });
@@ -465,10 +483,10 @@ describe("updateBundleDescription", () => {
       // unambiguous regardless of test scheduler timing.
       return await ctx.db.insert("bundles", {
         userId,
+          isPublic: false,
         name: "Old",
         urlId: "old-stamp",
         skills: [],
-        isPublic: true,
         createdAt: 1_000_000_000_000,
         updatedAt: 1_000_000_000_000,
       });
@@ -511,71 +529,109 @@ describe("updateBundleDescription", () => {
 });
 
 // ---------------------------------------------------------------------------
-// generateShareToken / getByUrlId (share-token access gate)
+// getByUrlId access gate (one-link model)
 // ---------------------------------------------------------------------------
 
-describe("generateShareToken", () => {
-  async function seedPrivateBundle(t: TestHandle, userId: Id<"users">) {
+describe("getByUrlId access", () => {
+  async function seedBundle(
+    t: TestHandle,
+    userId: Id<"users">,
+    isPublic: boolean,
+  ) {
     return await t.run(async (ctx) => {
       const now = Date.now();
-      return await ctx.db.insert("bundles", {
+      const id = await ctx.db.insert("bundles", {
         userId,
-        name: "Private bundle",
-        urlId: `private-${Math.random().toString(36).slice(2, 8)}`,
+        isPublic,
+        name: isPublic ? "Shared bundle" : "Closed bundle",
+        urlId: `gate-${Math.random().toString(36).slice(2, 8)}`,
         skills: [],
-        isPublic: false,
         createdAt: now,
         updatedAt: now,
       });
+      return (await ctx.db.get(id))!.urlId;
     });
   }
 
-  test("returns a 32-char base62 token, and consecutive calls differ", async () => {
+  test("a closed bundle answers only to its owner", async () => {
     const { t, asUser, userId } = await setup();
-    const bundleId = await seedPrivateBundle(t, userId);
+    const urlId = await seedBundle(t, userId, false);
 
-    const token1 = await asUser.mutation(api.bundles.generateShareToken, {
-      bundleId,
-    });
-    const token2 = await asUser.mutation(api.bundles.generateShareToken, {
-      bundleId,
-    });
+    // There is no second token-bearing URL to try any more: the bundle's own
+    // link is the only address, and for a closed bundle it resolves for the
+    // owner and nobody else.
+    expect(await t.query(api.bundles.getByUrlId, { urlId })).toBeNull();
 
-    expect(token1).toMatch(/^[A-Za-z0-9]{32}$/);
-    expect(token2).toMatch(/^[A-Za-z0-9]{32}$/);
-    expect(token1).not.toBe(token2);
+    const asOwner = await asUser.query(api.bundles.getByUrlId, { urlId });
+    expect(asOwner).not.toBeNull();
+    expect(asOwner!.urlId).toBe(urlId);
   });
 
-  test("getByUrlId on a private bundle: null with no/wrong token, returns bundle with the exact token", async () => {
-    const { t, asUser, userId } = await setup();
-    const bundleId = await seedPrivateBundle(t, userId);
-    const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
-    const urlId = bundle!.urlId;
+  test("an open bundle answers to anyone with the link", async () => {
+    const { t, userId } = await setup();
+    const urlId = await seedBundle(t, userId, true);
 
-    const token = await asUser.mutation(api.bundles.generateShareToken, {
-      bundleId,
+    const anonymous = await t.query(api.bundles.getByUrlId, { urlId });
+    expect(anonymous).not.toBeNull();
+    expect(anonymous!.isOwner).toBe(false);
+  });
+
+  test("a stranger cannot see the owner's read state", async () => {
+    const { t, userId } = await setup();
+    const urlId = await seedBundle(t, userId, true);
+    await t.run(async (ctx) => {
+      const b = await ctx.db
+        .query("bundles")
+        .withIndex("by_urlId", (q) => q.eq("urlId", urlId))
+        .unique();
+      await ctx.db.patch(b!._id, { lastViewedAt: Date.now() });
     });
 
-    // No token, no auth: null.
-    const noToken = await t.query(api.bundles.getByUrlId, { urlId });
-    expect(noToken).toBeNull();
-
-    // Wrong token, no auth: null.
-    const wrongToken = await t.query(api.bundles.getByUrlId, {
-      urlId,
-      shareToken: "not-the-right-token-not-the-right-tok",
-    });
-    expect(wrongToken).toBeNull();
-
-    // Exact token, no auth: returns the bundle.
-    const withToken = await t.query(api.bundles.getByUrlId, {
-      urlId,
-      shareToken: token,
-    });
-    expect(withToken).not.toBeNull();
-    expect(withToken!.urlId).toBe(urlId);
+    const anonymous = await t.query(api.bundles.getByUrlId, { urlId });
+    expect(anonymous!.lastViewedAt).toBeUndefined();
   });
 });
+
+describe("createBundle visibility", () => {
+  test("creates closed, regardless of plan", async () => {
+    const { t, asUser } = await setup();
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: "Fresh",
+      skills: [],
+    });
+    const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
+    // The set of skills you depend on is private until you decide otherwise;
+    // creation is not the moment to ask.
+    expect(bundle!.isPublic).toBe(false);
+  });
+
+  test("the owner can open and close it with no plan gate", async () => {
+    const { t, asUser } = await setup();
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: "Toggle",
+      skills: [],
+    });
+
+    await asUser.mutation(api.bundles.updateBundleVisibility, {
+      bundleId,
+      isPublic: true,
+    });
+    expect((await t.run(async (ctx) => ctx.db.get(bundleId)))!.isPublic).toBe(
+      true,
+    );
+
+    // Closing used to be Pro-gated, back when open was the default. Closed is
+    // the default now, so charging for it would be charging for the default.
+    await asUser.mutation(api.bundles.updateBundleVisibility, {
+      bundleId,
+      isPublic: false,
+    });
+    expect((await t.run(async (ctx) => ctx.db.get(bundleId)))!.isPublic).toBe(
+      false,
+    );
+  });
+});
+
 
 describe("createBundle urlId", () => {
   test("produces a 10-char base62 urlId", async () => {
@@ -583,7 +639,6 @@ describe("createBundle urlId", () => {
     const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
       name: "UrlId check",
       skills: [{ source: "owner/repo", skillId: "skill-a" }],
-      isPublic: true,
     });
     const bundle = await t.run(async (ctx) => ctx.db.get(bundleId));
     expect(bundle!.urlId).toMatch(/^[A-Za-z0-9]{10}$/);
@@ -606,7 +661,6 @@ test("validation errors are ConvexError with the message on .data", async () => 
       name: "x",
       description: "x".repeat(MAX_BUNDLE_DESCRIPTION_LENGTH + 1),
       skills: [],
-      isPublic: true,
     })
     .then(
       () => {

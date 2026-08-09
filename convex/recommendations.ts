@@ -16,7 +16,12 @@ import {
   type TreeScanResult,
 } from "./github";
 import { embedText } from "./lib/embeddings";
-import { fetchRepoMetadata, fetchRepoTree, NOT_MODIFIED } from "./lib/github";
+import {
+  fetchRepoMetadata,
+  fetchRepoTree,
+  NOT_MODIFIED,
+  RATE_LIMITED,
+} from "./lib/github";
 import { getGithubOauthToken } from "./lib/clerkGithub";
 import {
   extractRepoSlug,
@@ -442,10 +447,14 @@ async function runAnalysis(
   let branch: string | undefined;
 
   if (treeCache) {
-    const treeResult = await fetchRepoTree(owner, repo, [treeCache.branch], {
+    const treeRaw = await fetchRepoTree(owner, repo, [treeCache.branch], {
       etag: treeCache.etag,
       token,
     });
+    // Rate limit is handled as "could not read the tree" here. This runs per
+    // user request rather than as a catalog walk, so there is no remaining
+    // batch to abandon — the existing null path already degrades correctly.
+    const treeResult = treeRaw === RATE_LIMITED ? null : treeRaw;
     if (treeResult === NOT_MODIFIED) {
       // Repo unchanged — fingerprint cache (if any) is still valid
       debugLog(
@@ -546,9 +555,10 @@ async function runAnalysis(
       if (!branchesToTry.includes("main")) branchesToTry.push("main");
       if (!branchesToTry.includes("master")) branchesToTry.push("master");
 
-      const treeResult = await fetchRepoTree(owner, repo, branchesToTry, {
+      const treeRaw = await fetchRepoTree(owner, repo, branchesToTry, {
         token,
       });
+      const treeResult = treeRaw === RATE_LIMITED ? null : treeRaw;
       if (treeResult && treeResult !== NOT_MODIFIED) {
         branch = treeResult.branch;
         scan = scanTree(treeResult.entries);

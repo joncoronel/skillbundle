@@ -58,6 +58,27 @@ export default defineSchema({
     // well-known sources via v1 detail. Used for the hash-skip path: if the
     // newly-fetched hash matches stored, skip parse/embed/write entirely.
     syncHash: v.optional(v.string()),
+    // GitHub's own blob SHA for this skill's SKILL.md, captured from the Tree
+    // API during discovery. A DIFFERENT hash from `syncHash` above and not
+    // comparable to it: this is git's object id, SHA-1 over
+    // `"blob " + size + "\0" + contents`, whereas syncHash is our SHA-256 over
+    // the raw text. Kept side by side on purpose, doing different jobs.
+    //
+    // Why it earns a field: `syncHash` can only be computed AFTER downloading
+    // the file, so today every freshness check costs a full fetch of every
+    // skill. GitHub hands this one back for free inside the recursive tree
+    // response we already request, so a single conditional tree call per REPO
+    // reveals which SKILL.md files moved without downloading any of them.
+    //
+    // The catalog is ~98% GitHub sources clustering at ~6.8 skills per repo
+    // (sampled Aug 2026), so that turns a per-skill sweep into a per-repo one
+    // and is what makes a daily content cadence cost less than today's weekly
+    // fetch-everything cycle. Undefined for well-known sources, which have no
+    // tree to walk and must keep paying the detail endpoint.
+    //
+    // Strictly a change DETECTOR. `syncHash` remains the content hash of
+    // record; nothing should compare these two to each other.
+    githubBlobSha: v.optional(v.string()),
     // GitHub-source skill needs SKILL.md path discovery via the Tree API.
     // Set true on first sync OR when content fetch fails twice (path likely
     // moved). Cleared by updateSkillMdUrls after discovery runs (success or
@@ -176,6 +197,24 @@ export default defineSchema({
     // syncStats.totalSkills.
     installRank: v.optional(v.number()),
     syncHash: v.optional(v.string()),
+    // Mirrored from the skills row, following the same pattern as `syncHash`
+    // above. See the field's full explanation on `skills`.
+    //
+    // The mirror is what makes the per-repo freshness sweep affordable: it can
+    // compare a repo's tree against ~200 B summary rows instead of paging the
+    // ~13 KB skills documents, and 40 hex characters is a rounding error on a
+    // row that already carries a 64-character syncHash.
+    githubBlobSha: v.optional(v.string()),
+    // Also mirrored from skills, and for the same reason: "did this change since
+    // I last looked at my bundle?" is one timestamp comparison per skill, and
+    // making it read a ~200 B summary instead of a ~13 KB skills document is the
+    // difference between a bundle page costing ~20 KB and ~1.3 MB of reads.
+    //
+    // Note the distinction from `contentFetchedAt` beside it: fetched is the last
+    // time we CHECKED, updated is the last time the file actually MOVED. Unread
+    // state has to key off the latter or every skill turns unread on every
+    // refresh sweep.
+    contentUpdatedAt: v.optional(v.number()),
     // Required: every summary is created from an API feed, so it always has a
     // "last seen" timestamp. Kept non-optional so the by_isDelisted_lastSeenInApi
     // range (staleness scans) has no undefined edge case. Backfilled before the
@@ -350,9 +389,30 @@ export default defineSchema({
     worstStatus: v.string(),
     worstRiskLevel: v.optional(v.string()),
     fetchedAt: v.number(),
+    // The verdict this row held before the most recent change to it, plus when
+    // that change landed. `writeAuditResult` has always computed
+    // `worstStatusChanged` and then patched straight over the old value, so a
+    // regression was detected and immediately forgotten.
+    //
+    // A single previous value rather than a history table, matching the same
+    // call this file's neighbour makes for content: an alert needs "pass → fail",
+    // not the full sequence of verdicts. Kept here rather than in a separate
+    // table because it is one field on a row that is already being written.
+    //
+    // This is the highest-severity monitoring signal there is: a skill that
+    // passed its audits when someone installed it and fails them now. Nothing
+    // re-checks after install, and skills execute inside the user's agent.
+    previousWorstStatus: v.optional(v.string()),
+    previousWorstRiskLevel: v.optional(v.string()),
+    worstStatusChangedAt: v.optional(v.number()),
   })
     .index("by_skillDocId", ["skillDocId"])
-    .index("by_source_skillId", ["source", "skillId"]),
+    .index("by_source_skillId", ["source", "skillId"])
+    // Lets the notifier sweep recent verdict movements without scanning the
+    // whole table. Sparse on purpose: only rows that have ever changed verdict
+    // carry `worstStatusChangedAt`, and a catalog where most skills pass and
+    // keep passing means most rows never enter this index at all.
+    .index("by_worstStatusChangedAt", ["worstStatusChangedAt"]),
 
   // Daily install snapshots — one row per skill per UTC day. skills.sh only
   // exposes a point-in-time install count (no history, no backfill), so this
@@ -370,6 +430,127 @@ export default defineSchema({
   })
     .index("by_skill_day", ["skillDocId", "day"])
     .index("by_day", ["day"]),
+
+  // Version archive for skill content. One row per DETECTED CHANGE to a skill's
+  // raw SKILL.md, written by both content-write paths in skills.ts
+  // (`updateDescription` and `updateSkillFromDetail`) via `recordSkillVersion`.
+  //
+  // The raw file lives in Convex FILE storage rather than inline. Bodies run
+  // ~10-25 KB, and file storage is a separate and much cheaper allowance
+  // (100 GB included, $0.03/GB overage) than document storage ($0.20/GB), which
+  // the ~9.5k-row `skills` table already draws on. Measured against prod
+  // (Aug 2026): ~27.5% of the catalog changes per month, so ~2,600 changes →
+  // ~39 MB/month of blobs. `skillSnapshots` above already writes ~285k rows a
+  // month, so this is a rounding error next to what the pipeline does daily.
+  //
+  // NO PATCH/DIFF IS STORED, deliberately. Because every version's full text is
+  // retained, any two versions can be diffed on demand — the client renderer
+  // does exactly that — and patches can be backfilled from the blobs at any
+  // point if adjacent-diff egress ever justifies the optimization. Storing them
+  // up front would cost a storage read plus a diff on every single write, for a
+  // benefit that is speculative until there is traffic. Deferring is free here
+  // in a way it usually isn't, precisely because the source material is kept.
+  skillVersions: defineTable({
+    skillDocId: v.id("skills"),
+    // Denormalized so a timeline or cross-skill feed reads without joining back
+    // to `skills`, whose rows are ~13 KB.
+    source: v.string(),
+    skillId: v.string(),
+    changedAt: v.number(),
+    // SHA-256 of the raw file — same construction as `skills.syncHash`, so the
+    // two are directly comparable.
+    syncHash: v.string(),
+    previousSyncHash: v.optional(v.string()),
+    // Raw SKILL.md INCLUDING frontmatter. `skills.content` is the body with
+    // frontmatter stripped (see extractBodyContent), so a frontmatter-only edit
+    // — a `version:` bump being the common case — is invisible there and
+    // visible here. Diffing the stripped body would silently drop those.
+    rawStorageId: v.id("_storage"),
+    rawBytes: v.number(),
+    // Parsed from frontmatter where the author declares one. "4.0.3 → 4.0.4" is
+    // a far more legible timeline entry than a hash delta, and a major bump is a
+    // genuine severity signal. Absent for the many skills that declare no
+    // version, so it enhances the timeline rather than carrying it.
+    frontmatterVersion: v.optional(v.string()),
+    previousFrontmatterVersion: v.optional(v.string()),
+    // Descriptions are kept inline, in full, on purpose. A description change is
+    // the high-severity content event: the description is what decides WHEN an
+    // agent invokes a skill, so an upstream edit changes the user's agent
+    // behavior without touching their code. Holding it outside the blob means
+    // alerts and timelines render it without fetching any file.
+    descriptionBefore: v.optional(v.string()),
+    descriptionAfter: v.optional(v.string()),
+    descriptionChanged: v.boolean(),
+    contentChanged: v.boolean(),
+    // True for the first row ever written for a skill. There is no stored
+    // predecessor blob, so no content DIFF is possible against it.
+    //
+    // This does NOT mean "do not notify". `descriptionBefore` is read off the
+    // live skills row rather than the blob, so a description change is fully
+    // reportable on a baseline row. Only the body diff is unavailable.
+    isBaseline: v.boolean(),
+    // No `suppressed` flag here on purpose. Mass-change suppression is computed
+    // at READ time (`isCatalogWideChangeEvent` in skillVersions.ts), because a
+    // writer cannot know it is the 3rd of 3,000. See that file for the
+    // threshold and the precedent that makes the breaker necessary.
+  })
+    .index("by_skill_changedAt", ["skillDocId", "changedAt"])
+    // Chronological feed across all skills.
+    .index("by_changedAt", ["changedAt"])
+    // Mass-change breaker only. It must count REAL changes in a window, and
+    // baselines outnumber them enormously while the archive backfills (459 to 0
+    // on the day this index was added). Filtering after a capped read spends the
+    // whole budget on baselines and reports zero, which fails silent — the one
+    // failure mode a circuit breaker may not have. Indexing the flag moves the
+    // filter into the seek, so the read is bounded by real changes alone.
+    .index("by_isBaseline_changedAt", ["isBaseline", "changedAt"]),
+
+  // Per-repo ETag for the daily freshness sweep (convex/freshness.ts).
+  //
+  // Deliberately NOT reusing `githubTreeCache` below. That row is keyed by the
+  // same `owner/repo` string, but its `dependencyFilePaths` field carries a
+  // prefix-encoded scan owned by `recommendations.ts`, and its ETag belongs to
+  // whichever branch that scan was taken from. Two writers with different
+  // payloads on one row is how a cache starts returning one consumer's data to
+  // another; a second small table is cheaper than that class of bug.
+  //
+  // One row per GitHub repo (~1,400 at current catalog size), so this stays
+  // small no matter how many skills each repo holds.
+  repoSweepState: defineTable({
+    repo: v.string(),
+    branch: v.string(),
+    // Absent until the first successful tree fetch. Its whole purpose is the
+    // conditional request: an unchanged repo answers 304, which costs no
+    // response body and does not count against GitHub's rate limit.
+    etag: v.optional(v.string()),
+    sweptAt: v.number(),
+  }).index("by_repo", ["repo"]),
+
+  /**
+   * One row per freshness-sweep WALK, so a run that stops halfway is evident.
+   *
+   * The sweep self-chains across ~40 invocations. An action that throws is not
+   * retried and an action interrupted mid-flight simply stops, so a chain can
+   * end early with no error, no log line, and no retry. On 2026-08-09 one did:
+   * 146 of 1,624 repos, discovered only because someone happened to read
+   * `sweepHealth`, and by then the logs had been evicted and the per-repo
+   * timestamps had been overwritten by the manual re-run. The cause is still
+   * unknown, which is the actual problem this table solves.
+   *
+   * `finishedAt` unset on the newest row means the last walk never completed.
+   * That is the signal — `sweepHealth` reports it, so the next reading says so
+   * outright instead of leaving it to be inferred from a repo count.
+   */
+  sweepRuns: defineTable({
+    startedAt: v.number(),
+    /** Unset while running, and permanently unset if the chain died. */
+    finishedAt: v.optional(v.number()),
+    reposSwept: v.number(),
+    reposSkipped: v.number(),
+    skillsFlagged: v.number(),
+    /** "complete" | "rate-limited". Absent means it never reached an ending. */
+    outcome: v.optional(v.string()),
+  }).index("by_startedAt", ["startedAt"]),
 
   // Denormalized owner-level rollup powering the /official directory page.
   // Computed by syncCurated from the same curated set that drives the
@@ -459,54 +640,56 @@ export default defineSchema({
         addedAt: v.optional(v.number()),
       }),
     ),
-    // IMPORTANT: this field is denormalized onto bundleStats.isPublic so the
-    // by_public_starCount index can filter at the index level. Any code path
-    // that mutates isPublic here MUST mirror the change to the corresponding
-    // bundleStats row IF one exists (see updateBundleVisibility for the
-    // pattern). When no stats row exists yet, downstream creation paths
-    // (recordCopy, forkBundle, toggleStar) read the bundle's current isPublic
-    // at insert time, so the invariant holds eventually.
+    // Can anyone but the owner open this bundle's one link?
+    //
+    // It used to mean "listed in the public directory", and a separate
+    // `shareToken` gave closed bundles a second, unguessable URL. Two links to
+    // one thing with different rules is a model the owner has to hold in their
+    // head, and with the directory gone the two states had collapsed into the
+    // same thing anyway. Now: one link (`urlId`), one switch (this).
+    //
+    // Off by default, and `migrateOneLinkModel` closed the rows created under
+    // the old public-by-default rule.
     isPublic: v.boolean(),
-    shareToken: v.optional(v.string()),
     forkedFrom: v.optional(v.id("bundles")),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
-    featuredAt: v.optional(v.number()),
+    // When the OWNER last opened this bundle. Stamped by `markBundleViewed`,
+    // which refuses non-owners — a share-link visitor reading someone else's
+    // bundle must not mark it read for them.
+    //
+    // This is the whole "since you last looked" mechanism, chosen over email
+    // notification. It buys most of the felt value of alerts (the bundle can say
+    // "3 skills changed since your last visit" and surface those first) for one
+    // optional number, with no delivery, unsubscribe, digest-tuning, or
+    // alert-fatigue problem to solve.
+    //
+    // Per bundle rather than per user on purpose: opening one watchlist must not
+    // silently mark every other one read. The dashboard's cross-bundle count is
+    // derived by taking the union across bundles, which stays correct without a
+    // second global timestamp to keep in sync.
+    //
+    // Undefined means never opened. Do NOT treat that as "everything is unread":
+    // the per-skill baseline is `max(lastViewedAt ?? 0, entry.addedAt)`, because
+    // a skill added yesterday should not present six months of prior history as
+    // new to this reader.
+    lastViewedAt: v.optional(v.number()),
   })
+    // Only the two access paths remain: a user's own bundles, and one bundle by
+    // its link. `by_public_createdAt`, `by_featured`, `by_public_featured` and
+    // the `search_name` search index all existed to browse and rank OTHER
+    // people's bundles, which is no longer a thing you can do here.
     .index("by_userId", ["userId"])
-    .index("by_urlId", ["urlId"])
-    .index("by_public_createdAt", ["isPublic", "createdAt"])
-    .index("by_featured", ["featuredAt"])
-    .index("by_public_featured", ["isPublic", "featuredAt"])
-    .searchIndex("search_name", {
-      searchField: "name",
-      filterFields: ["isPublic"],
-    }),
+    .index("by_urlId", ["urlId"]),
 
-  bundleStats: defineTable({
-    bundleId: v.id("bundles"),
-    // Denormalized from bundles.isPublic so the by_public_starCount index can
-    // rank-and-filter at the index level. Required (not optional) so the
-    // invariant is enforced by the schema — every row is guaranteed to have
-    // isPublic set, and rows can never silently drop out of "Most starred".
-    // All insert paths (recordCopy, forkBundle, toggleStar) read it from the
-    // bundle; updateBundleVisibility mirrors flips onto any existing stats row.
-    isPublic: v.boolean(),
-    copyCount: v.number(),
-    forkCount: v.number(),
-    starCount: v.optional(v.number()),
-    lastEventAt: v.number(),
-  })
-    .index("by_bundleId", ["bundleId"])
-    .index("by_public_starCount", ["isPublic", "starCount"]),
-
-  bundleStars: defineTable({
-    bundleId: v.id("bundles"),
-    userId: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_user_bundle", ["userId", "bundleId"])
-    .index("by_bundle", ["bundleId"]),
+  // REMOVED: `bundleStats` (copy/fork/star counters) and `bundleStars`.
+  //
+  // They existed to rank a public directory of community bundles, and that
+  // directory is gone. A social signal nobody is generating reads as an
+  // abandoned product, not a quiet one, so the counters went with it rather
+  // than sitting at zero. Bundles are private working sets now; what matters
+  // about one is the state of the skills in it, not how many strangers copied
+  // it.
 
   // Single-row run lock for the Typesense catalog sync (typesense.syncCatalog).
   // Two overlapping mark-and-sweep walks can cross-stamp documents and sweep

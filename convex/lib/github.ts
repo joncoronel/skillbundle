@@ -130,6 +130,24 @@ export async function resolveRepoIdentity(
 export interface TreeEntry {
   path: string;
   type: string; // "blob" | "tree"
+  /**
+   * Git's object id for this blob: SHA-1 over `"blob " + size + "\0" + contents`.
+   *
+   * GitHub returns this for every entry in the recursive tree response, so it
+   * costs nothing extra — we were already receiving it and discarding it by
+   * declaring a narrower type than the payload. It is the cheap way to learn
+   * that a SKILL.md moved: one conditional tree call per REPO answers for every
+   * skill in it, instead of downloading each file to hash it.
+   *
+   * NOT comparable to `skills.syncHash`, which is our SHA-256 over the raw text.
+   * Different algorithm, different preimage. Store and compare it only against
+   * itself.
+   *
+   * Optional because `indexSkillMds` and the placement planners accept
+   * hand-built entry lists in tests, and because a `tree`-type entry's sha
+   * identifies a subtree rather than a file.
+   */
+  sha?: string;
 }
 
 export interface TreeResult {
@@ -144,19 +162,34 @@ export const NOT_MODIFIED = "not_modified" as const;
 export type NotModified = typeof NOT_MODIFIED;
 
 /**
+ * Sentinel for "GitHub cut us off", distinct from "this repo has no tree".
+ *
+ * Both used to return null, which made an exhausted rate-limit budget
+ * indistinguishable from a quiet day: every remaining repo in the walk was
+ * skipped silently and the run still logged success with a low flagged count.
+ * Because the walk order is a stable cursor order, that starved the SAME tail
+ * of the catalog on every recurrence.
+ */
+export const RATE_LIMITED = "rate_limited" as const;
+export type RateLimited = typeof RATE_LIMITED;
+
+/**
  * Fetch the recursive file tree for a repo.
  * Tries branches in priority order (pass the default branch first).
  *
  * When `options.etag` is provided, sends `If-None-Match` for the first branch.
  * Returns `NOT_MODIFIED` on 304 (cache is still valid, no rate limit cost).
- * Returns null if the tree cannot be fetched (404, 409 too large, rate limit).
+ * Returns `RATE_LIMITED` when GitHub refuses on quota — callers should stop,
+ * not continue, because every subsequent request will fail the same way.
+ * Returns null if the tree cannot be fetched for a reason specific to this repo
+ * (404, 409 too large).
  */
 export async function fetchRepoTree(
   owner: string,
   repo: string,
   branches: string[],
   options?: { etag?: string; token?: string },
-): Promise<TreeResult | NotModified | null> {
+): Promise<TreeResult | NotModified | RateLimited | null> {
   if (!isSafeRepoPath(`${owner}/${repo}`)) return null;
   const baseHeaders = githubHeaders(options?.token);
 
@@ -196,7 +229,8 @@ export async function fetchRepoTree(
         );
         return null;
       }
-      // Rate limited — log details and bail
+      // Rate limited — log details and bail. Distinct from null: the caller
+      // must stop the whole walk, not skip this repo and keep burning requests.
       if (res.status === 403 || res.status === 429) {
         const retryAfter = res.headers.get("retry-after");
         const remaining = res.headers.get("x-ratelimit-remaining");
@@ -206,7 +240,7 @@ export async function fetchRepoTree(
             `status=${res.status}, remaining=${remaining}, ` +
             `retry-after=${retryAfter}, reset=${resetEpoch}`,
         );
-        return null;
+        return RATE_LIMITED;
       }
       console.error(
         `Tree API ${res.status} for ${owner}/${repo}/${branch}`,
@@ -280,12 +314,23 @@ export function parseSkillMdName(body: string): string | null {
  * name — both callers depend on the identical keying, which is why this is one
  * function and not two.
  */
-export function indexSkillMds(entries: { type: string; path: string }[]): {
+export function indexSkillMds(
+  entries: { type: string; path: string; sha?: string }[],
+): {
   candidates: string[];
   byDir: Map<string, string>;
+  /**
+   * path → git blob sha, for the SKILL.md candidates only.
+   *
+   * Kept as a third return rather than folded into `byDir` so the existing two
+   * keep their exact shapes — both callers depend on that identical keying, and
+   * this function is one function specifically to stop them drifting.
+   */
+  shaByPath: Map<string, string>;
 } {
   const candidates: string[] = [];
   const byDir = new Map<string, string>();
+  const shaByPath = new Map<string, string>();
   for (const entry of entries) {
     if (entry.type !== "blob") continue;
     const lower = entry.path.toLowerCase();
@@ -293,7 +338,8 @@ export function indexSkillMds(entries: { type: string; path: string }[]): {
     candidates.push(entry.path);
     const parts = entry.path.split("/");
     if (parts.length >= 2) byDir.set(parts[parts.length - 2], entry.path);
+    if (entry.sha) shaByPath.set(entry.path, entry.sha);
   }
-  return { candidates, byDir };
+  return { candidates, byDir, shaByPath };
 }
 

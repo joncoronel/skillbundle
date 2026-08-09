@@ -2,35 +2,29 @@ import Link from "next/link";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
+import { watchKey } from "@/lib/bundle-limits";
 
 type PlanData = FunctionReturnType<typeof api.plans.currentPlan>;
 
-interface BundleLike {
-  copyCount?: number;
-  forkCount?: number;
-}
-
 interface DashboardStatsProps {
-  bundles: BundleLike[];
+  /** Every bundle's skills, so the distinct count can be derived here. */
+  bundles: Array<{ skills: Array<{ source: string; skillId: string }> }>;
   plan: PlanData["plan"];
   limits: PlanData["limits"];
 }
 
 export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
-  const totals = bundles.reduce(
-    (acc, b) => ({
-      copies: acc.copies + (b.copyCount ?? 0),
-      forks: acc.forks + (b.forkCount ?? 0),
-    }),
-    { copies: 0, forks: 0 },
-  );
+  // Distinct across bundles, matching what the server meters. Filing one skill
+  // in two lists is organisation, and organising is not what is being counted.
+  const watched = new Set<string>();
+  for (const b of bundles) {
+    for (const s of b.skills) watched.add(watchKey(s));
+  }
 
-  const maxBundles = limits.maxBundles;
-  const hasCap = Number.isFinite(maxBundles);
-  const atCap = hasCap && bundles.length >= maxBundles;
-  const bundlesValue = hasCap
-    ? `${bundles.length}/${maxBundles}`
-    : `${bundles.length}`;
+  const max = limits.maxWatchedSkills;
+  const hasCap = Number.isFinite(max);
+  const atCap = hasCap && watched.size >= max;
+  const bundlesValue = hasCap ? `${watched.size}/${max}` : `${watched.size}`;
   const planLabel = hasCap
     ? plan === "free"
       ? "Free plan"
@@ -39,11 +33,7 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-      <Metric value={bundlesValue} label="bundles" />
-      <Separator />
-      <Metric value={formatNumber(totals.copies)} label="copies" />
-      <Separator />
-      <Metric value={formatNumber(totals.forks)} label="forks" />
+      <Metric value={bundlesValue} label="skills watched" />
       {planLabel ? (
         <>
           <Separator />
@@ -93,11 +83,4 @@ function Separator() {
       ·
     </span>
   );
-}
-
-function formatNumber(n: number): string {
-  if (n < 1000) return n.toString();
-  if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
 }

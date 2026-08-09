@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useRouter } from "next/navigation";
@@ -18,18 +18,15 @@ import {
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { Switch } from "@/components/ui/cubby-ui/switch/switch";
-import { Badge } from "@/components/ui/cubby-ui/badge";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/cubby-ui/tooltip";
 import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
-import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
+import {
+  FREE_WATCHED_SKILLS,
+  MAX_BUNDLE_DESCRIPTION_LENGTH,
+  watchKey,
+} from "@/lib/bundle-limits";
 
 export type SaveBundleDialogHandle = ReturnType<typeof createDialogHandle>;
 
@@ -48,7 +45,6 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [isPublic, setIsPublic] = useState(true);
   const [saving, setSaving] = useState(false);
   const { limits } = useUserPlan();
   // Skip the query until authenticated. countByUser returns 0 for anonymous
@@ -56,15 +52,23 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   // also drops the redundant unauthenticated re-run during the Clerk → Convex
   // token handoff. Mirrors useUserPlan and fork-bundle-button.
   const { isAuthenticated } = useConvexAuth();
-  const bundleCount = useQuery(
-    api.bundles.countByUser,
+  const watchedKeys = useQuery(
+    api.bundles.listWatchedSkillKeys,
     isAuthenticated ? {} : "skip",
   );
-  const atLimit =
-    limits !== null &&
-    bundleCount !== undefined &&
-    bundleCount >= limits.maxBundles;
   const count = selectedSkills.length;
+  // Union, not `watched >= max`. The server counts distinct skills across all
+  // bundles and unions the incoming set in, so re-filing skills you already
+  // watch is free — a bare count blocked at exactly the limit and showed an
+  // upgrade banner in place of the form for an operation that would have
+  // succeeded. Contradicted the plate's own row saying lists are unlimited.
+  const atLimit = useMemo(() => {
+    if (limits === null || watchedKeys === undefined) return false;
+    if (!Number.isFinite(limits.maxWatchedSkills)) return false;
+    const union = new Set(watchedKeys);
+    for (const s of selectedSkills) union.add(watchKey(s));
+    return union.size > limits.maxWatchedSkills;
+  }, [limits, watchedKeys, selectedSkills]);
 
   const trimmedDescription = description.trim();
   const descriptionOverLimit =
@@ -83,7 +87,6 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
           source,
           skillId,
         })),
-        isPublic,
       });
 
       clearAll();
@@ -115,7 +118,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
         <DialogBody>
           {atLimit ? (
             <UpgradeBanner
-              message={`You've reached your limit of ${limits.maxBundles} bundles. Upgrade to Pro for unlimited bundles.`}
+              message={`You're watching ${limits?.maxWatchedSkills ?? FREE_WATCHED_SKILLS} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
             />
           ) : (
             <div className="space-y-4">
@@ -169,43 +172,13 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="bundle-public" className="text-sm font-medium">
-                  Public bundle
-                  {limits && !limits.canMakePrivate && (
-                    <Badge variant="outline" className="ml-2 text-[10px]">
-                      Pro
-                    </Badge>
-                  )}
-                </label>
-                {limits && !limits.canMakePrivate ? (
-                  <Tooltip>
-                    <TooltipTrigger render={<div />}>
-                      <Switch
-                        shape="squircle"
-                        id="bundle-public"
-                        checked={true}
-                        disabled
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={8}>
-                      Upgrade to Pro to make bundles private
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Switch
-                    shape="squircle"
-                    id="bundle-public"
-                    checked={isPublic}
-                    onCheckedChange={setIsPublic}
-                  />
-                )}
-              </div>
+              {/* No visibility control here. A bundle is created closed and
+                  sharing is a switch on the bundle page — asking at creation
+                  time made people decide before they had anything to decide
+                  about. */}
               <p className="text-sm text-muted-foreground">
-                {count} skill{count !== 1 ? "s" : ""} will be saved.{" "}
-                {isPublic
-                  ? "Anyone with the link can view your bundle."
-                  : "Only you can see this bundle."}
+                {count} skill{count !== 1 ? "s" : ""} will be saved. Only you
+                can see this bundle until you share it.
               </p>
             </div>
           )}

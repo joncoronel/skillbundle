@@ -1,38 +1,32 @@
 import type { Metadata } from "next";
 import { fetchQuery, preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { getAuth, getAuthToken } from "@/lib/auth";
+import { getAuthToken } from "@/lib/auth";
 import { BundleView } from "./bundle-view";
 
 // Bundle name/description in the title and OG tags so shared links unfurl
 // meaningfully in chat apps — sharing is the product's core loop. The route is
-// dynamic anyway (auth cookies + share token), so this runs per request; the
+// dynamic anyway (auth cookies), so this runs per request; the
 // extra getByUrlId call alongside the page's preloadQuery is absorbed by
 // Convex's query cache (identical args, same auth, milliseconds apart).
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ share?: string }>;
 }): Promise<Metadata> {
-  const [{ id }, { share }, token] = await Promise.all([
-    params,
-    searchParams,
-    getAuthToken(),
-  ]);
+  const [{ id }, token] = await Promise.all([params, getAuthToken()]);
   // Deliberate conflation: transient Convex errors fall through to the same
   // generic-title + noindex branch as missing/private bundles. For metadata,
   // failing toward "say nothing" is the safe direction — the page itself
   // still loads (or errors) on its own path below.
   const bundle = await fetchQuery(
     api.bundles.getByUrlId,
-    { urlId: id, shareToken: share },
+    { urlId: id },
     { token },
   ).catch(() => null);
 
-  // Missing or private-without-access: keep the generic title and stay out
-  // of search indexes.
+  // Missing, or closed and this isn't the owner: keep the generic title and
+  // stay out of search indexes.
   if (!bundle) {
     return { title: "Bundle", robots: { index: false } };
   }
@@ -57,7 +51,7 @@ export async function generateMetadata({
       type: "website",
       images: [{ url: ogImage, width: 1200, height: 630, alt: bundle.name }],
     },
-    // Private bundles reached via share token shouldn't be indexed.
+    // A closed bundle only resolves for its owner; never index it.
     ...(bundle.isPublic ? {} : { robots: { index: false } }),
   };
 }
@@ -68,42 +62,20 @@ export async function generateMetadata({
 // redundant with loading.tsx.
 export default async function BundlePage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ share?: string }>;
 }) {
-  // Read the route param, share token, and auth (cookies) in parallel, then
-  // preload the bundle and plan with the user's token.
-  const [{ id }, { share }, auth, token] = await Promise.all([
-    params,
-    searchParams,
-    getAuth(),
-    getAuthToken(),
-  ]);
-  const [preloadedBundle, preloadedPlan] = await Promise.all([
-    preloadQuery(
-      api.bundles.getByUrlId,
-      { urlId: id, shareToken: share },
-      { token },
-    ),
-    preloadQuery(api.plans.currentPlan, {}, { token }),
-  ]);
-
-  // Auth state from the actual session. We deliberately don't derive this
-  // from `token !== undefined` because getAuthToken() returns undefined on
-  // both "not signed in" AND ClerkOfflineError — using the session userId
-  // means a signed-in user during a transient Clerk outage doesn't get
-  // bounced to /sign-in when clicking action buttons.
-  const isAuthenticated = auth.userId !== null;
-
-  return (
-    <BundleView
-      preloadedBundle={preloadedBundle}
-      preloadedPlan={preloadedPlan}
-      urlId={id}
-      shareToken={share}
-      isAuthenticated={isAuthenticated}
-    />
+  // Read the route param and the auth token in parallel, then preload the
+  // bundle with it.
+  // The plan is no longer read here: closing a bundle used to be Pro-gated and
+  // the card grid needed to know whether the viewer could quick-add. Neither is
+  // true now, so the page preloads one query instead of two.
+  const [{ id }, token] = await Promise.all([params, getAuthToken()]);
+  const preloadedBundle = await preloadQuery(
+    api.bundles.getByUrlId,
+    { urlId: id },
+    { token },
   );
+
+  return <BundleView preloadedBundle={preloadedBundle} urlId={id} />;
 }

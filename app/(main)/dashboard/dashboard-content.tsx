@@ -23,6 +23,7 @@ import {
   AlertDialogTrigger,
   createAlertDialogHandle,
 } from "@/components/ui/cubby-ui/alert-dialog";
+import { ChangeFeed } from "./change-feed";
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
@@ -53,19 +54,33 @@ export function DashboardContent() {
     api.plans.currentPlan,
     isAuthenticated ? {} : "skip",
   );
+  const feed = useQuery(
+    api.skillVersions.listRecentChangesForUser,
+    isAuthenticated ? {} : "skip",
+  );
 
+  // `feed` is deliberately NOT in this gate. It is the heaviest of the three
+  // (it fans out over every watched skill), and AND-ing it here made every
+  // dashboard visit pay the slowest query's latency for the whole page —
+  // against docs/architecture.md's Suspense-default-state principle, which says
+  // a surface paints its meaningful default and lets slower islands fill in.
+  // ChangeFeed owns its own pending state.
   if (bundles === undefined || planData === undefined) {
     return <DashboardSkeleton />;
   }
-  return <DashboardLoaded bundles={bundles} planData={planData} />;
+  return <DashboardLoaded bundles={bundles} planData={planData} feed={feed} />;
 }
 
 function DashboardLoaded({
   bundles,
   planData,
+  feed,
 }: {
   bundles: FunctionReturnType<typeof api.bundles.listByUser>;
   planData: FunctionReturnType<typeof api.plans.currentPlan>;
+  feed:
+    | FunctionReturnType<typeof api.skillVersions.listRecentChangesForUser>
+    | undefined;
 }) {
   const deleteBundle = useMutation(
     api.bundles.deleteBundle,
@@ -91,14 +106,11 @@ function DashboardLoaded({
       );
     }
   });
-  const limits = planData.limits;
   const [sortBy, setSortBy] = useState<SortBy>("newest");
 
   const sortedBundles = useMemo(() => {
     const list = [...bundles];
     switch (sortBy) {
-      case "most-copied":
-        return list.sort((a, b) => (b.copyCount ?? 0) - (a.copyCount ?? 0));
       case "alphabetical":
         return list.sort((a, b) => a.name.localeCompare(b.name));
       case "newest":
@@ -130,6 +142,11 @@ function DashboardLoaded({
   return (
     <>
       <div className="space-y-10">
+        {/* State before inventory (PRODUCT.md principle 3): the panel answers
+            "is anything wrong?" above the fold, and the bundle grid answers
+            "what do I have?" underneath it. */}
+        <ChangeFeed feed={feed} />
+
         <DashboardStats
           bundles={bundles}
           plan={planData.plan}
@@ -183,14 +200,6 @@ function DashboardLoaded({
                         size="xs"
                         className="h-9 sm:h-7"
                         onClick={() => {
-                          if (bundle.isPublic && !limits?.canMakePrivate) {
-                            toast.info({
-                              title: "Pro feature",
-                              description:
-                                "Upgrade to Pro to make bundles private.",
-                            });
-                            return;
-                          }
                           updateVisibility({
                             bundleId: bundle._id,
                             isPublic: !bundle.isPublic,
@@ -202,13 +211,6 @@ function DashboardLoaded({
                             strokeWidth={2}
                             className="size-3.5"
                           />
-                        }
-                        trailingIcon={
-                          bundle.isPublic && !limits?.canMakePrivate ? (
-                            <span className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px] font-medium uppercase tracking-eyebrow text-muted-foreground">
-                              Pro
-                            </span>
-                          ) : undefined
                         }
                       >
                         {bundle.isPublic ? "Make private" : "Make public"}

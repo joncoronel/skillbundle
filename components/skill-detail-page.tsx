@@ -18,6 +18,7 @@ import { formatDate } from "@/lib/utils";
 import { SkillSidebar } from "@/components/skill-sidebar";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
+import { SkillHistory } from "@/components/skill-history";
 import { skillHref } from "@/lib/skill-urls";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
@@ -286,6 +287,19 @@ async function SkillDetailBody({
         <SkillCopies
           aliases={copies.aliases}
           forks={copies.forks}
+          className="mt-10 lg:col-start-1"
+        />
+
+        {/* Above Documentation, not below it. A SKILL.md runs to tens of KB, so
+            anything after it is effectively unreachable without deliberate
+            scrolling — and "has this changed recently?" is a question people
+            have BEFORE committing to reading the docs, not after. Collapsed it
+            is only a few rows, so it costs the reader almost nothing on the way
+            past. Sits with the other supplemental sections rather than
+            interrupting the Overview → Documentation run. */}
+        <SkillHistory
+          source={source}
+          skillId={skillId}
           className="mt-10 lg:col-start-1"
         />
 

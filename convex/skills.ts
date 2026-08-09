@@ -28,10 +28,12 @@ import {
   resolveDefaultBranch,
   fetchRepoTree,
   NOT_MODIFIED,
+  RATE_LIMITED,
 } from "./lib/github";
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
+import { extractFrontmatterVersion } from "./skillVersions";
 import {
   fetchRawText,
   indexSkillMds,
@@ -238,6 +240,7 @@ async function upsertSkillSummary(
     auditFetchedAt?: number;
     skillDocId: Id<"skills">;
     contentFetchedAt?: number;
+    contentUpdatedAt?: number;
     skillMdUrl?: string;
     needsContentFetch?: boolean;
     needsDiscovery?: boolean;
@@ -304,6 +307,9 @@ async function upsertSkillSummary(
       ...(fields.contentFetchedAt !== undefined && {
         contentFetchedAt: fields.contentFetchedAt,
       }),
+      ...(fields.contentUpdatedAt !== undefined && {
+        contentUpdatedAt: fields.contentUpdatedAt,
+      }),
       ...(fields.skillMdUrl !== undefined && {
         skillMdUrl: fields.skillMdUrl,
       }),
@@ -364,6 +370,7 @@ async function upsertSkillSummary(
       auditFetchedAt: fields.auditFetchedAt,
       skillDocId: fields.skillDocId,
       contentFetchedAt: fields.contentFetchedAt,
+      contentUpdatedAt: fields.contentUpdatedAt,
       skillMdUrl: fields.skillMdUrl,
       needsContentFetch: fields.needsContentFetch,
       needsDiscovery: fields.needsDiscovery,
@@ -845,6 +852,12 @@ function extractBodyContent(raw: string): string | null {
   return trimmed || null;
 }
 
+// `extractFrontmatterVersion` and `recordSkillVersion` moved to
+// convex/skillVersions.ts — the archive owns both halves now. See the note
+// at the top of that file. `archiveSkillVersion` below stays here: it is the
+// action-side helper the sync pipeline calls, and it needs pipeline context.
+
+
 // ---------------------------------------------------------------------------
 // Phase 1 — URL Discovery (GitHub Tree API)
 // ---------------------------------------------------------------------------
@@ -929,7 +942,13 @@ export const discoverSkillMdUrls = internalAction({
     if (!branches.includes("master")) branches.push("master");
 
     const treeResult = await fetchRepoTree(owner, repo, branches);
-    const tree = treeResult === NOT_MODIFIED ? null : treeResult;
+    // Both sentinels collapse to "no tree" for discovery. A rate limit here
+    // leaves the row's `needsDiscovery` flag set, so the next run retries it —
+    // unlike the freshness sweep, which walks the whole catalog and has to stop.
+    const tree =
+      treeResult === NOT_MODIFIED || treeResult === RATE_LIMITED
+        ? null
+        : treeResult;
     const resolvedBranch = tree?.branch ?? defaultBranch;
 
     const matchedSkillIds = new Set<string>();
@@ -982,11 +1001,18 @@ export const discoverSkillMdUrls = internalAction({
      * row stays in the work set for the next sync rather than being recorded as
      * having no file on the strength of a failed write.
      */
+    // Git blob sha per SKILL.md path, filled in from the tree below. Declared up
+    // here because `applyPlacements` closes over it and is defined first; it
+    // stays empty on the probe path (no tree was fetched), where every skill
+    // simply gets no sha and falls back to the download-and-hash check.
+    const skillMdShaByPath = new Map<string, string>();
+
     const applyPlacements = async (placements: readonly Placement[]) => {
       await writeUpdates(
         placements.map(({ skill, path }) => ({
           docId: skill.docId as Id<"skills">,
           skillMdUrl: rawUrlFor(path),
+          githubBlobSha: skillMdShaByPath.get(path),
         })),
       );
       // After the write, so a throw leaves nothing marked matched.
@@ -1042,9 +1068,14 @@ export const discoverSkillMdUrls = internalAction({
     // Collect every SKILL.md (case-insensitive) in the tree, indexed by the
     // immediate parent directory name. Shared with the GitHub-only resolver
     // (lib/github.ts) so the two cannot key it differently.
-    const { candidates: allSkillMdPaths, byDir: skillMdByDir } = indexSkillMds(
-      tree.entries,
-    );
+    const {
+      candidates: allSkillMdPaths,
+      byDir: skillMdByDir,
+      shaByPath,
+    } = indexSkillMds(tree.entries);
+    // Copy rather than reassign: `applyPlacements` above captured this map by
+    // reference before the tree existed.
+    for (const [path, sha] of shaByPath) skillMdShaByPath.set(path, sha);
 
     // Pass 1: directory name matches the skillId, bound from the tree without
     // opening the file. Do NOT add a name check here — one was tried and reverted
@@ -1164,7 +1195,14 @@ export const clearDiscoveryForWellKnown = internalMutation({
 export const updateSkillMdUrls = internalMutation({
   args: {
     updates: v.array(
-      v.object({ docId: v.id("skills"), skillMdUrl: v.string() }),
+      v.object({
+        docId: v.id("skills"),
+        skillMdUrl: v.string(),
+        // Absent on the probe path (no tree was walked) and on the not-found
+        // path. Only ever written alongside a URL that came from a real tree
+        // entry, so a stored sha always describes the file the URL points at.
+        githubBlobSha: v.optional(v.string()),
+      }),
     ),
   },
   returns: v.null(),
@@ -1184,7 +1222,7 @@ export const updateSkillMdUrls = internalMutation({
     );
 
     await Promise.all(
-      updates.flatMap(({ docId, skillMdUrl }, i) => {
+      updates.flatMap(({ docId, skillMdUrl, githubBlobSha }, i) => {
         const hasUrl = skillMdUrl !== "";
         const summary = summaries[i];
         // Discovery failure surfaces the same "Install may fail" badge as
@@ -1203,6 +1241,11 @@ export const updateSkillMdUrls = internalMutation({
             : (summary?.discoveryFailCount ?? 0) + 1,
           hasContentFetchError: !hasUrl,
           ...(!hasUrl && { contentFetchedAt: now }),
+          // Only written when discovery actually produced one. Patching
+          // `undefined` here would ERASE a previously captured sha every time a
+          // probe-path rediscovery ran, so the field has to stay absent from the
+          // patch rather than be set to undefined.
+          ...(githubBlobSha ? { githubBlobSha } : {}),
         };
         return [
           ctx.db.patch(docId, fields),
@@ -1280,7 +1323,43 @@ export const backfillDiscoverUrls = internalAction({
 // Phase 2a — Content fetch via raw.githubusercontent.com (GitHub sources)
 // ---------------------------------------------------------------------------
 
-const CONTENT_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+/**
+ * How stale a GitHub skill's content may get before the TIMER re-flags it.
+ *
+ * Long, because for GitHub sources the timer is no longer the primary
+ * mechanism: `freshness.sweepRepoFreshness` runs daily and asks GitHub's Tree
+ * API which blob SHAs actually moved, flagging only those. Leaving this at 7
+ * days would keep re-downloading the whole catalog weekly regardless, so the
+ * sweep would be pure added cost instead of a replacement.
+ *
+ * It stays as a backstop rather than being deleted because the sweep has gaps
+ * it cannot close: a repo whose tree fetch fails (404, 409 too-large, rate
+ * limit) is skipped rather than guessed at. The one real regression from
+ * lengthening this is that case — a still-fetchable file in a repo whose TREE
+ * is unfetchable now waits up to 30 days instead of 7. Narrow and bounded.
+ *
+ * The other apparent gaps recover faster than this anyway: a moved file and a
+ * repeatedly-failing fetch both route through discovery, which stays on
+ * REDISCOVERY_INTERVAL_MS below.
+ */
+const GITHUB_CONTENT_BACKSTOP_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * How stale a WELL-KNOWN skill's content may get.
+ *
+ * Daily, and here the timer IS the whole mechanism — these sources have no tree
+ * to walk, so the sweep skips them entirely. Leaving them on a weekly cadence
+ * while GitHub moved to daily would have made them the least fresh rows in the
+ * catalog, which is backwards.
+ *
+ * Affordable because there are only ~170 of them. Measured Aug 2026 against the
+ * real v1 detail endpoint: ~15.7 KB per response (max 26 KB across a six-skill
+ * sample), so a full daily pass is ~2.7 MB and ~170 calls against a 600/minute
+ * rate limit. Note the endpoint returns the whole `files[]` array and skills
+ * with large bundled examples can be far heavier than that sample — if this
+ * ever needs to scale, that tail is where to look first.
+ */
+const WELL_KNOWN_CONTENT_REFRESH_MS = 24 * 60 * 60 * 1000; // 1 day
 const REDISCOVERY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const AUDIT_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -1352,16 +1431,37 @@ export const fetchSkillContent = internalAction({
         const raw = await res.text();
         const description = extractFrontmatterDescription(raw);
         const body = extractBodyContent(raw);
+        const frontmatterVersion = extractFrontmatterVersion(raw);
         const hash = await sha256Hex(raw);
 
         if (description !== null || body) {
-          await ctx.runMutation(internal.skills.updateDescription, {
-            skillId,
-            description: description ?? undefined,
-            content: body ?? undefined,
-            skillMdUrl,
-            syncHash: hash,
-          });
+          const outcome = await ctx.runMutation(
+            internal.skills.updateDescription,
+            {
+              skillId,
+              description: description ?? undefined,
+              content: body ?? undefined,
+              skillMdUrl,
+              syncHash: hash,
+            },
+          );
+
+          // Archive only on a real change. The unchanged-hash fast path inside
+          // the mutation returns changed:false, which is what keeps this from
+          // storing ~9.5k blobs on every 7-day content refresh sweep.
+          if (outcome.changed) {
+            await archiveSkillVersion(ctx, {
+              skillDocId: skillId,
+              raw,
+              syncHash: hash,
+              previousSyncHash: outcome.previousSyncHash,
+              frontmatterVersion: frontmatterVersion ?? undefined,
+              descriptionBefore: outcome.previousDescription,
+              descriptionAfter: description ?? undefined,
+              descriptionChanged: outcome.descriptionChanged,
+              contentChanged: outcome.contentChanged,
+            });
+          }
         } else {
           await ctx.runMutation(internal.skills.markContentFetched, {
             skillId,
@@ -1488,6 +1588,45 @@ export const backfillFetchContent = internalAction({
   },
 });
 
+/**
+ * What a content write reports back to its calling action so the action can
+ * archive the version it just wrote.
+ *
+ * This has to be a return value rather than something the mutation does itself:
+ * `ctx.storage.store` is action-only in Convex, and the previous description is
+ * only readable *before* the patch overwrites it. So the mutation is the one
+ * place that can see the old state, and the action is the only one that can
+ * write the blob. See `archiveSkillVersion`.
+ */
+const contentWriteOutcome = v.object({
+  /**
+   * The RAW FILE changed, i.e. the sync hash differs from the stored one.
+   *
+   * Deliberately NOT `descriptionChanged || contentChanged`. Those two compare
+   * the parsed description and the frontmatter-stripped body, so a
+   * frontmatter-only edit — a `version:` bump being the common case — leaves
+   * both false while the file genuinely changed. Archiving on that narrower
+   * signal silently dropped exactly the edits the timeline most wants to show.
+   *
+   * The pair still drives `contentUpdatedAt` and `needsEmbedding`, which is
+   * correct and unchanged: the embedding is built from name + description +
+   * body, so a version bump has no business forcing a re-embed. The archive and
+   * the embedding queue want different questions answered, so they get
+   * different flags.
+   */
+  changed: v.boolean(),
+  previousSyncHash: v.optional(v.string()),
+  previousDescription: v.optional(v.string()),
+  descriptionChanged: v.boolean(),
+  contentChanged: v.boolean(),
+});
+
+const NO_CONTENT_CHANGE = {
+  changed: false,
+  descriptionChanged: false,
+  contentChanged: false,
+} as const;
+
 export const updateDescription = internalMutation({
   args: {
     skillId: v.id("skills"),
@@ -1496,9 +1635,10 @@ export const updateDescription = internalMutation({
     skillMdUrl: v.string(),
     syncHash: v.string(),
   },
+  returns: contentWriteOutcome,
   handler: async (ctx, { skillId, description, content, skillMdUrl, syncHash }) => {
     const skill = await ctx.db.get(skillId);
-    if (!skill) return;
+    if (!skill) return NO_CONTENT_CHANGE;
 
     const now = Date.now();
     const hashUnchanged = skill.syncHash === syncHash;
@@ -1529,7 +1669,7 @@ export const updateDescription = internalMutation({
           ...gitHubOnlyHeartbeat(skill, now),
         });
       }
-      return;
+      return NO_CONTENT_CHANGE;
     }
 
     // Clear broken legacy descriptions ("|" or ">") when no valid one parsed.
@@ -1553,7 +1693,16 @@ export const updateDescription = internalMutation({
       skillMdUrl,
       syncHash,
       contentFetchedAt: now,
-      ...(hasActualChange && { contentUpdatedAt: now, needsEmbedding: true }),
+      // Unconditional: reaching here means the raw hash moved. Previously this
+      // was gated on `hasActualChange` alongside needsEmbedding, which meant a
+      // frontmatter-only edit (a `version:` bump) left the timestamp stale even
+      // though the file demonstrably changed — the same blind spot that made the
+      // version archive miss those edits. Now it agrees with the archive.
+      contentUpdatedAt: now,
+      // Still gated, and correctly so: the embedding is built from name +
+      // description + body, so a version bump has no business forcing a re-embed
+      // and paying for a Voyage call.
+      ...(hasActualChange && { needsEmbedding: true }),
       needsContentFetch: false,
       contentFetchFailCount: 0,
       hasContentFetchError: false,
@@ -1569,6 +1718,7 @@ export const updateDescription = internalMutation({
       syncHash,
       skillDocId: skillId,
       contentFetchedAt: now,
+      contentUpdatedAt: now,
       needsContentFetch: false,
       hasContentFetchError: false,
       skillMdUrl,
@@ -1581,8 +1731,85 @@ export const updateDescription = internalMutation({
       isGitHubOnly: skill.isGitHubOnly,
       ...gitHubOnlyHeartbeat(skill, now),
     });
+
+    return {
+      // Unconditionally true here: the only way to reach this point is past the
+      // `hashUnchanged` early return above, which means the raw file differs.
+      changed: true,
+      previousSyncHash: skill.syncHash,
+      previousDescription: skill.description,
+      descriptionChanged,
+      contentChanged,
+    };
   },
 });
+
+
+/**
+ * Store a fetched SKILL.md verbatim and record the version row that points at
+ * it. Shared by both content-write paths so the archive can never drift between
+ * them — the GitHub-raw path (`fetchSkillContent`) and the well-known-source
+ * path (`fetchSkillDetailBatch`) both land here.
+ *
+ * Takes the RAW text, frontmatter included, not the stripped body: a
+ * frontmatter-only edit such as a `version:` bump is invisible in
+ * `skills.content` and is exactly the kind of change the timeline should show.
+ */
+async function archiveSkillVersion(
+  ctx: ActionCtx,
+  args: {
+    skillDocId: Id<"skills">;
+    raw: string;
+    syncHash: string;
+    previousSyncHash?: string;
+    frontmatterVersion?: string;
+    descriptionBefore?: string;
+    descriptionAfter?: string;
+    descriptionChanged: boolean;
+    contentChanged: boolean;
+  },
+): Promise<void> {
+  // Declared outside the try so the catch can release it. The blob is stored
+  // BEFORE the row that references it exists, so a mutation failure (OCC
+  // conflict, transaction limit, transient error) leaves a file nothing points
+  // at and no query can find. Convex storage has no reaper, so that is silent
+  // unbounded growth — `recordSkillVersion` already releases the blob on every
+  // one of its own early returns; this path was the one that did not.
+  let rawStorageId: Id<"_storage"> | undefined;
+  try {
+    const blob = new Blob([args.raw], { type: "text/markdown" });
+    rawStorageId = await ctx.storage.store(blob);
+    await ctx.runMutation(internal.skillVersions.recordSkillVersion, {
+      skillDocId: args.skillDocId,
+      rawStorageId,
+      rawBytes: blob.size,
+      syncHash: args.syncHash,
+      previousSyncHash: args.previousSyncHash,
+      frontmatterVersion: args.frontmatterVersion,
+      descriptionBefore: args.descriptionBefore,
+      descriptionAfter: args.descriptionAfter,
+      descriptionChanged: args.descriptionChanged,
+      contentChanged: args.contentChanged,
+    });
+  } catch (e) {
+    // Best-effort by design, and the swallow is the point. Archiving runs
+    // *after* the write that actually matters: the skill row is already correct
+    // by the time we reach here. A failure costs one gap in one skill's
+    // timeline, whereas letting it throw would abort the surrounding content
+    // chain and stall every skill queued behind it. Trade the gap.
+    console.error(`Failed to archive version for skill ${args.skillDocId}:`, e);
+    if (rawStorageId) {
+      // Wrapped: cleanup failing must not replace the original error with a
+      // second one, and there is nothing further to do about it either way.
+      await ctx.storage.delete(rawStorageId).catch((cleanupError: unknown) => {
+        console.error(
+          `Failed to release orphaned blob ${rawStorageId}:`,
+          cleanupError,
+        );
+      });
+    }
+  }
+}
 
 export const markContentFetched = internalMutation({
   args: { skillId: v.id("skills") },
@@ -1701,10 +1928,12 @@ export const markStaleContentBatch = internalMutation({
       let contentMarked = false;
       if (isGitHub) {
         const hasUrl = s.skillMdUrl && s.skillMdUrl !== "";
+        // Backstop only — the daily sweep is what normally catches GitHub
+        // changes. See GITHUB_CONTENT_BACKSTOP_MS.
         const contentStale =
           hasUrl &&
           !s.needsContentFetch &&
-          now - (s.contentFetchedAt ?? 0) > CONTENT_REFRESH_INTERVAL_MS;
+          now - (s.contentFetchedAt ?? 0) > GITHUB_CONTENT_BACKSTOP_MS;
         // GitHub-only rows are exempt from the MAX_DISCOVERY_FAILURES cap:
         // ordinary skills un-stick from exhausted discovery when new installs
         // arrive (installsChanged resets the counter), but no feed ever
@@ -1734,9 +1963,11 @@ export const markStaleContentBatch = internalMutation({
           contentMarked = true;
         }
       } else {
+        // Well-known sources have no tree, so the sweep never sees them and
+        // this timer is their only freshness mechanism. Daily, not weekly.
         const stale =
           !s.needsContentFetch &&
-          now - (s.contentFetchedAt ?? 0) > CONTENT_REFRESH_INTERVAL_MS;
+          now - (s.contentFetchedAt ?? 0) > WELL_KNOWN_CONTENT_REFRESH_MS;
         if (stale) {
           await ctx.db.patch(s.skillDocId, { needsContentFetch: true });
           await ctx.db.patch(s._id, { needsContentFetch: true });
@@ -1850,6 +2081,7 @@ export const updateSkillFromDetail = internalMutation({
     content: v.optional(v.string()),
     syncHash: v.string(),
   },
+  returns: contentWriteOutcome,
   /**
    * Apply a v1 detail fetch to the skill + summary rows. If the API hash
    * matches the stored syncHash we still clear `needsContentFetch` (we did
@@ -1859,7 +2091,7 @@ export const updateSkillFromDetail = internalMutation({
    */
   handler: async (ctx, { skillId, description, content, syncHash }) => {
     const skill = await ctx.db.get(skillId);
-    if (!skill) return;
+    if (!skill) return NO_CONTENT_CHANGE;
 
     const now = Date.now();
     const hashUnchanged = skill.syncHash === syncHash;
@@ -1883,7 +2115,7 @@ export const updateSkillFromDetail = internalMutation({
           hasContentFetchError: false,
         });
       }
-      return;
+      return NO_CONTENT_CHANGE;
     }
 
     const descriptionChanged =
@@ -1896,7 +2128,10 @@ export const updateSkillFromDetail = internalMutation({
       ...(content !== undefined && { content }),
       syncHash,
       contentFetchedAt: now,
-      ...(hasActualChange && { contentUpdatedAt: now, needsEmbedding: true }),
+      // See the matching comment in updateDescription: unconditional because the
+      // hash moved, while needsEmbedding stays gated on the parsed fields.
+      contentUpdatedAt: now,
+      ...(hasActualChange && { needsEmbedding: true }),
       needsContentFetch: false,
       hasContentFetchError: false,
     });
@@ -1910,6 +2145,7 @@ export const updateSkillFromDetail = internalMutation({
       syncHash,
       skillDocId: skillId,
       contentFetchedAt: now,
+      contentUpdatedAt: now,
       needsContentFetch: false,
       hasContentFetchError: false,
       // Belt and braces. This path is well-known-sources only (its work set
@@ -1920,6 +2156,16 @@ export const updateSkillFromDetail = internalMutation({
       // a source filter two functions away.
       isGitHubOnly: skill.isGitHubOnly,
     });
+
+    return {
+      // Unconditionally true here: the only way to reach this point is past the
+      // `hashUnchanged` early return above, which means the raw file differs.
+      changed: true,
+      previousSyncHash: skill.syncHash,
+      previousDescription: skill.description,
+      descriptionChanged,
+      contentChanged,
+    };
   },
 });
 
@@ -1992,12 +2238,36 @@ export const fetchSkillDetailBatch = internalAction({
           }
           const description = extractFrontmatterDescription(skillMdContents);
           const body = extractBodyContent(skillMdContents);
-          await ctx.runMutation(internal.skills.updateSkillFromDetail, {
-            skillId: s.skillDocId,
-            description: description ?? undefined,
-            content: body ?? undefined,
-            syncHash: hash,
-          });
+          const frontmatterVersion =
+            extractFrontmatterVersion(skillMdContents);
+          const outcome = await ctx.runMutation(
+            internal.skills.updateSkillFromDetail,
+            {
+              skillId: s.skillDocId,
+              description: description ?? undefined,
+              content: body ?? undefined,
+              syncHash: hash,
+            },
+          );
+
+          // Same archive call as the GitHub-raw path in `fetchSkillContent`, so
+          // the two content sources can't drift in what history they leave
+          // behind. `skillMdContents` is the lean single-file string, not the
+          // multi-MB files[] the comment above warns about, so holding it across
+          // this await costs nothing.
+          if (outcome.changed) {
+            await archiveSkillVersion(ctx, {
+              skillDocId: s.skillDocId,
+              raw: skillMdContents,
+              syncHash: hash,
+              previousSyncHash: outcome.previousSyncHash,
+              frontmatterVersion: frontmatterVersion ?? undefined,
+              descriptionBefore: outcome.previousDescription,
+              descriptionAfter: description ?? undefined,
+              descriptionChanged: outcome.descriptionChanged,
+              contentChanged: outcome.contentChanged,
+            });
+          }
         } catch (e) {
           if (e instanceof SkillsApiRateLimitError) {
             rateLimited = e;
@@ -3856,5 +4126,223 @@ export const myGitHubAddQuota = query({
     const user = await getCurrentUser(ctx);
     if (!user) return null;
     return await computeGitHubAddQuota(ctx, user._id);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// One-time archive baseline backfill
+//
+// WHY THIS EXISTS, and why it is not just "run the content fetcher".
+//
+// The archive only records a version when content CHANGED — `fetchSkillContent`
+// gates `archiveSkillVersion` on `outcome.changed`, and that is false whenever
+// the hash matches. That gate is right for the daily pipeline: without it every
+// content refresh would store ~15k identical blobs.
+//
+// But it means a skill with no archive row only gets one when it next changes,
+// and that first row is a BASELINE — no predecessor, so no diff, so the change
+// is not reportable. The user hears nothing. Only the SECOND change produces a
+// comparison. At the measured ~27.5%/month change rate, most of the catalog is
+// therefore two changes and several months away from being covered, silently.
+//
+// Nothing fixes that on its own. There is no rotation quietly filling in
+// baselines; a skill that never changes never gets one, ever.
+//
+// This closes the gap in one pass: fetch every live GitHub skill that has no
+// archive row and write its baseline unconditionally. Afterwards, the NEXT
+// change to any skill is reportable, and `sweepHealth.skillsWithNoVersions`
+// becomes a real alarm because zero is finally the correct answer.
+//
+// Safe to re-run. It only touches skills with no row, and `recordSkillVersion`
+// is itself idempotent on the hash, so a resumed or repeated pass is a no-op
+// over everything already done.
+// ---------------------------------------------------------------------------
+
+/** Skills per page. Each carries one extra indexed read for the row check. */
+const BASELINE_PAGE = 100;
+
+export const listSkillsNeedingBaseline = internalQuery({
+  args: { cursor: v.optional(v.string()) },
+  returns: v.object({
+    skills: v.array(
+      v.object({
+        skillDocId: v.id("skills"),
+        skillMdUrl: v.string(),
+        label: v.string(),
+      }),
+    ),
+    scanned: v.number(),
+    nextCursor: v.string(),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { cursor }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_lastSeenInApi", (q) =>
+        q.eq("isDelisted", false),
+      )
+      .paginate({ numItems: BASELINE_PAGE, cursor: cursor ?? null });
+
+    const candidates = result.page.filter(
+      (s) => isGitHubSource(s.source) && s.skillMdUrl,
+    );
+
+    const needing = await Promise.all(
+      candidates.map(async (s) => {
+        const existing = await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_changedAt", (q) =>
+            q.eq("skillDocId", s.skillDocId),
+          )
+          .first();
+        return existing === null
+          ? {
+              skillDocId: s.skillDocId,
+              skillMdUrl: s.skillMdUrl as string,
+              label: `${s.source}/${s.skillId}`,
+            }
+          : null;
+      }),
+    );
+
+    return {
+      skills: needing.filter((s): s is NonNullable<typeof s> => s !== null),
+      scanned: result.page.length,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const backfillArchiveBaselines = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    scanned: v.optional(v.number()),
+    written: v.optional(v.number()),
+    failed: v.optional(v.number()),
+    /** Fetches refused for quota, as opposed to missing files. See the log. */
+    rateLimited: v.optional(v.number()),
+    /** Stop after this many pages. Omit to run to completion. */
+    maxPages: v.optional(v.number()),
+    page: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (
+    ctx,
+    {
+      cursor,
+      scanned = 0,
+      written = 0,
+      failed = 0,
+      rateLimited = 0,
+      maxPages,
+      page = 0,
+    },
+  ) => {
+    const result: {
+      skills: Array<{
+        skillDocId: Id<"skills">;
+        skillMdUrl: string;
+        label: string;
+      }>;
+      scanned: number;
+      nextCursor: string;
+      isDone: boolean;
+    } = await ctx.runQuery(internal.skills.listSkillsNeedingBaseline, {
+      cursor: cursor ?? undefined,
+    });
+
+    let wrote = written;
+    let failures = failed;
+    let throttled = rateLimited;
+    // Statuses are counted, not swallowed. A 404 means the file moved and the
+    // skill needs rediscovery; a 429 means we are being throttled and should
+    // stop rather than burn the rest of the catalog. Collapsing both into
+    // "failed" would make a rate-limited run look like a catalog full of dead
+    // links — the same class of ambiguity the sweep's RATE_LIMITED sentinel
+    // exists to remove.
+    const statuses = new Map<number, number>();
+
+    for (const s of result.skills) {
+      try {
+        const res = await fetch(s.skillMdUrl);
+        if (!res.ok) {
+          statuses.set(res.status, (statuses.get(res.status) ?? 0) + 1);
+          if (res.status === 429 || res.status === 403) throttled++;
+          failures++;
+          continue;
+        }
+        const raw = await res.text();
+        // No `updateDescription` call. The skills row is already correct — this
+        // is a pure archive write, and routing through the content path would
+        // hit the very changed-gate this exists to bypass.
+        await archiveSkillVersion(ctx, {
+          skillDocId: s.skillDocId,
+          raw,
+          syncHash: await sha256Hex(raw),
+          frontmatterVersion: extractFrontmatterVersion(raw) ?? undefined,
+          // No `descriptionBefore`: there is no previous version by definition.
+          // `descriptionChanged: false` because nothing changed — this row is a
+          // starting point, not an event, and marking it changed would make the
+          // feed announce a change that never happened.
+          descriptionAfter: extractFrontmatterDescription(raw) ?? undefined,
+          descriptionChanged: false,
+          contentChanged: false,
+        });
+        wrote++;
+      } catch {
+        failures++;
+      }
+    }
+
+    const totalScanned = scanned + result.scanned;
+    const nextPage = page + 1;
+    const hitPageLimit = maxPages !== undefined && nextPage >= maxPages;
+
+    const breakdown = [...statuses.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([code, n]) => `${code}x${n}`)
+      .join(" ");
+    if (breakdown) {
+      console.log(`  page ${page} fetch failures: ${breakdown}`);
+    }
+
+    // Being throttled means every remaining request fails the same way. Stop
+    // and report the cursor rather than converting a quota problem into
+    // thousands of phantom dead links.
+    if (throttled > 0) {
+      console.error(
+        `Archive baseline backfill ABORTED on rate limit after ${totalScanned} scanned, ` +
+          `${wrote} written. Resume later with cursor ${result.nextCursor}`,
+      );
+      return null;
+    }
+
+    if (!result.isDone && !hitPageLimit) {
+      // Paced, not hammered: ~100 raw.githubusercontent requests per page and a
+      // short gap between pages. The ceiling on raw file serving is not
+      // documented the way the API's is, so this errs slow.
+      await ctx.scheduler.runAfter(
+        5_000,
+        internal.skills.backfillArchiveBaselines,
+        {
+          cursor: result.nextCursor,
+          scanned: totalScanned,
+          written: wrote,
+          failed: failures,
+          rateLimited: throttled,
+          maxPages,
+          page: nextPage,
+        },
+      );
+      return null;
+    }
+
+    console.log(
+      `Archive baseline backfill ${result.isDone ? "COMPLETE" : "paused at page limit"}: ` +
+        `${totalScanned} summaries scanned, ${wrote} baselines written, ${failures} fetch failures. ` +
+        `${result.isDone ? "" : `Resume with cursor ${result.nextCursor}`}`,
+    );
+    return null;
   },
 });
