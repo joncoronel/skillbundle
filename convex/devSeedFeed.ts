@@ -33,6 +33,20 @@ export const seedFeedBundle = internalMutation({
     cleared: v.boolean(),
   }),
   handler: async (ctx, { email, clear }) => {
+    // Never on production. `internalMutation` already means no client can reach
+    // this, but the doc comment above shows the bare CLI command and `--prod`
+    // is one flag away — and what this writes is not innocuous: it forges a
+    // `pass → fail / CRITICAL` verdict on a REAL skill, which every watcher
+    // then sees in their feed, and attaches a publicly-readable bundle to an
+    // arbitrary real user. In a product whose promise is that every alert is
+    // earned, the function that can fabricate the highest-severity alert is the
+    // one that most deserves a guard. Same idiom as crons.ts / reconcile.ts.
+    if (process.env.CRONS_ENABLED === "true") {
+      throw new Error(
+        "devSeedFeed:seedFeedBundle is dev-only and refuses to run on production.",
+      );
+    }
+
     // Full scan, deliberately: `users` is indexed by Clerk id, not email, and a
     // dev deployment holds a handful of rows. Not worth an index only a seed
     // script would ever use.
@@ -99,7 +113,14 @@ export const seedFeedBundle = internalMutation({
     await ctx.db.insert("bundles", {
       userId: user._id,
       name: FEED_BUNDLE_NAME,
-      urlId: `dev-feed-${now.toString(36)}`,
+      // Random, not a base36 timestamp. This row is public, and a
+      // timestamp-derived id is guessable by anyone who knows roughly when it
+      // was made. Dev-only, but the seed should not model a pattern the real
+      // `generateUrlId` deliberately avoids.
+      urlId: `dev-feed-${Array.from(
+        crypto.getRandomValues(new Uint8Array(6)),
+        (b) => b.toString(16).padStart(2, "0"),
+      ).join("")}`,
       // Open, unlike a real bundle: local inspection of the bundle page has to
       // work without a signed-in session (Clerk's dev sign-up sits behind a
       // Cloudflare challenge), and a closed bundle answers only to its owner.

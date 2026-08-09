@@ -33,6 +33,7 @@ import { isGitHubSource } from "./lib/source";
 import {
   fetchRepoMetadata,
   fetchRepoTree,
+  RATE_LIMITED,
   fetchRawText,
   indexSkillMds,
   rawGitHubUrl,
@@ -237,7 +238,12 @@ async function resolveGitHubSkillMd(
     };
   };
 
-  const tree = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
+  // A rate-limit refusal is handled exactly like an unfetchable tree here: this
+  // is a single admin-triggered add, not a walk, so there is no remaining work
+  // to abandon and the caller's existing "could not read the repo" path is the
+  // right outcome.
+  const treeOrLimited = await fetchRepoTree(owner, repo, [meta.defaultBranch]);
+  const tree = treeOrLimited === RATE_LIMITED ? null : treeOrLimited;
   // Tree unavailable (too large / rate limited / transient) or truncated:
   // don't claim absence — fall back to probing the conventional layouts
   // directly, the same escape hatch discoverSkillMdUrls uses. All probes run

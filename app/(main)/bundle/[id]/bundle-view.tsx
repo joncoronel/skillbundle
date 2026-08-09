@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   usePreloadedQuery,
@@ -8,6 +8,7 @@ import {
   useQuery,
   type Preloaded,
 } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -16,12 +17,6 @@ import {
   RegisterTally,
   buildRegister,
 } from "@/components/bundle/bundle-register";
-import {
-  SkillDetailSheet,
-  SkillDetailHandleProvider,
-  createSkillDetailHandle,
-} from "@/components/skill-detail-sheet";
-
 import {
   InstallCommands,
   CopyAllCommandsButton,
@@ -63,7 +58,8 @@ import {
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
 import { cn, timeAgo } from "@/lib/utils";
-import { EditableSkillSection } from "@/components/bundle-edit/editable-skill-section";
+import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
+import { useBundleEditSession } from "@/hooks/use-bundle-edit-session";
 import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
 
 interface BundleViewProps {
@@ -71,7 +67,22 @@ interface BundleViewProps {
   urlId: string;
 }
 
-const skillDetailHandle = createSkillDetailHandle();
+/**
+ * The bundle read's own skill shape, taken from the query rather than restated.
+ * `EditableSkill` is a looser structural type (every register field optional),
+ * so declaring the fallback as that widened `skills` into a union and every
+ * consumer below rejected it.
+ */
+type BundleSkill = NonNullable<
+  FunctionReturnType<typeof api.bundles.getByUrlId>
+>["skills"][number];
+
+/**
+ * Stable empty array. `bundle?.skills ?? []` would be a new reference on every
+ * render, which defeats the memos below and the staging hook's mirror mode.
+ */
+const EMPTY_SKILLS: BundleSkill[] = [];
+
 const descriptionDialogHandle = createDialogHandle();
 const renameBundleDialogHandle = createDialogHandle();
 
@@ -99,15 +110,24 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   // its own contents on load. Only the dashboard panel clears.
   const ownedBundleId = bundle?.isOwner ? bundle._id : undefined;
   const markViewed = useMutation(api.bundles.markBundleViewed);
-  useEffect(() => {
-    if (!ownedBundleId) return;
-    void markViewed({ bundleId: ownedBundleId });
-  }, [ownedBundleId, markViewed]);
 
   // Per-skill change payloads for the register, baselined on when each skill
   // joined the bundle. Separate from the bundle read because it touches the
   // version archive and the audit table, which the roster itself does not need.
   const changes = useQuery(api.skillVersions.listChangesForBundle, { urlId });
+
+  useEffect(() => {
+    // Gated on `changes`, not just on ownership. The stamp is earned by the
+    // page having SHOWN the changes, and until this query resolves every row
+    // still reads Steady — so an unconditional effect marked the bundle read on
+    // first paint, and did it even if the reader bounced immediately or the
+    // query errored. The dashboard then drops those changes forever, including
+    // a security regression nobody saw. That is the exact failure
+    // `markBundleViewed`'s own docstring calls the one thing a monitoring
+    // product cannot do, and it is why the call was pulled once already.
+    if (!ownedBundleId || changes === undefined) return;
+    void markViewed({ bundleId: ownedBundleId });
+  }, [ownedBundleId, changes, markViewed]);
 
   const updateVisibilityMutation = useMutation(
     api.bundles.updateBundleVisibility,
@@ -145,22 +165,46 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
     });
   }
 
+  // Memoised, and above the early return so the hook order does not change
+  // between the found and not-found renders.
+  //
+  // Unmemoised this ran twice per render, because the edit component fed its
+  // own `buildRegister` from a fresh array literal and invalidated every memo
+  // inside `useBundleEdit` — a second 100-element sort plus three filter passes
+  // on every render, for output that was discarded while not editing.
+  const skills = useMemo(() => bundle?.skills ?? EMPTY_SKILLS, [bundle?.skills]);
+  const register = useMemo(
+    // `changes` streams in after the preloaded bundle — the register renders
+    // immediately with every row Steady and settles as the archive answers,
+    // rather than holding the whole page behind a second round trip.
+    () => buildRegister(skills, changes?.items),
+    [skills, changes],
+  );
+  const commandCount = useMemo(
+    () => generateInstallCommands(skills).length,
+    [skills],
+  );
+
+  // The staging state lives HERE, not inside the edit chrome, so one register
+  // can serve both modes. Two instances meant toggling edit mode unmounted one
+  // and mounted the other, resetting the reader's section folds and their
+  // scroll offset inside the register's own scroll container on every save.
+  const editSession = useBundleEditSession({
+    bundleId: bundle?._id,
+    queryArgs,
+    initialSkills: skills,
+    changes: changes?.items,
+    onExit: () => setEditingSkills(false),
+  });
+
   if (bundle === null) {
     return <BundleNotFound />;
   }
 
   const skillCount = bundle.skills.length;
-  const commandCount = generateInstallCommands(bundle.skills).length;
   const editing = bundle.isOwner && editingSkills;
-  // `changes` streams in after the preloaded bundle — the register renders
-  // immediately with every row Steady and settles as the archive answers,
-  // rather than holding the whole page behind a second round trip.
-  const register = buildRegister(bundle.skills, changes);
 
   return (
-    // Rows anywhere in this page (read-only grid, edit-mode diff grid) open
-    // the skill detail sheet through this provider.
-    <SkillDetailHandleProvider handle={skillDetailHandle}>
     <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
@@ -299,54 +343,58 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
 
           {/* The tally steps aside in edit mode: it reports saved state, and
               while you have unsaved adds and removes staged it would be
-              counting something that is no longer on screen. The register
-              itself stays — edit mode is now a mode OF it. */}
+              counting something that is no longer on screen. */}
           {editing ? null : (
-            <>
-              <RegisterTally
-                total={skillCount}
-                faults={register.faults}
-                changed={register.changed}
-                pending={changes === undefined}
-              />
-
-              {skillCount > 0 ? (
-                <BundleRegister
-                  groups={register.groups}
-                  pending={changes === undefined}
-                />
-              ) : (
-                <BundleEmpty isOwner={bundle.isOwner} />
-              )}
-            </>
+            <RegisterTally
+              total={skillCount}
+              faults={register.faults}
+              changed={register.changed}
+              pending={changes === undefined}
+              suppressed={changes?.suppressed ?? false}
+            />
           )}
-          {/* Edit infrastructure: mounts unconditionally for owners so the
-              BundleEditBar can animate in/out via its `open` prop instead
-              of being yanked out of the tree when edit mode exits. The
-              diff grid renders only when `editing` is true. */}
+
+          {/*
+            ONE register, in one position in the tree, for both modes. Edit is
+            genuinely a mode OF it: the same component instance takes the staged
+            groups and the row handlers, so nothing unmounts when you toggle.
+
+            Two instances is what this replaced, and the cost was invisible in
+            the markup but obvious in use — React tore one down and built the
+            other, so the section folds you had opened closed again and the
+            scroll offset inside the register's own container jumped back to the
+            top after every save.
+          */}
+          {skillCount > 0 || editing ? (
+            <BundleRegister
+              groups={editing ? editSession.rows.groups : register.groups}
+              pending={changes === undefined}
+              actions={editing ? editSession.actions : undefined}
+            />
+          ) : (
+            <BundleEmpty isOwner={bundle.isOwner} />
+          )}
+
+          {/* The controls only — picker, bottom bar, discard dialog. Mounts
+              unconditionally for owners so the bar can animate in and out via
+              its `open` prop instead of being yanked out of the tree. */}
           {bundle.isOwner ? (
-            <EditableSkillSection
-              key={bundle._id}
+            <BundleEditChrome
               editing={editingSkills}
-              bundleId={bundle._id}
-              queryArgs={queryArgs}
-              // Consequence order, not roster order: you enter edit mode
-              // because something in the register was wrong, so the staging
-              // grid should open on that skill rather than make you find it
-              // again from memory.
-              initialSkills={register.rows.map((r) => r.skill)}
-              changes={changes}
+              session={editSession}
               onExit={() => setEditingSkills(false)}
             />
           ) : null}
         </section>
       </div>
 
-      <SkillDetailSheet
-        handle={skillDetailHandle}
-        footerAction="copy-install"
-      />
-
+      {/* No SkillDetailSheet / SkillDetailHandleProvider here any more. Its only
+          consumer is `skill-card.tsx`, and no skill card renders on this page
+          since the register replaced the grids — register rows are plain links.
+          The provider wrapped zero consumers and the sheet was mounted with no
+          way to open it, dragging its dependency graph (audit section,
+          bundle-selection, install-commands, compare, badges) into the route's
+          client bundle for nothing. */}
       {bundle.isOwner && (
         <>
           <RenameBundleDialog
@@ -362,7 +410,6 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
         </>
       )}
     </main>
-    </SkillDetailHandleProvider>
   );
 }
 

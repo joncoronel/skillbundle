@@ -38,7 +38,12 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { fetchRepoTree, indexSkillMds, NOT_MODIFIED } from "./lib/github";
+import {
+  fetchRepoTree,
+  indexSkillMds,
+  NOT_MODIFIED,
+  RATE_LIMITED,
+} from "./lib/github";
 import { isGitHubSource } from "./lib/source";
 
 /** Repos inspected per action invocation before chaining. */
@@ -58,11 +63,19 @@ const SUMMARY_PAGE = 400;
  * outcome for a GitHub-only row pointing somewhere unexpected: skip it and let
  * the timer handle that skill.
  */
-export function pathFromRawUrl(url: string): string | null {
+export function pathFromRawUrl(
+  url: string,
+): { branch: string; path: string } | null {
   const match = url.match(
-    /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/[^/]+\/(.+)$/,
+    /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/([^/]+)\/(.+)$/,
   );
-  return match ? match[1] : null;
+  // The branch used to be matched and thrown away, which is why a repo whose
+  // default is neither `main` nor `master` could never be swept: both guesses
+  // 404, no `repoSweepState` row is ever written, so it can never LEARN its
+  // branch and is excluded forever — with its skills falling back to the
+  // 30-day content timer. Discovery already resolved the real branch and baked
+  // it into this very URL.
+  return match ? { branch: match[1], path: match[2] } : null;
 }
 
 type SweepSkill = {
@@ -77,9 +90,9 @@ type SweepSkill = {
  *
  * Paginates the `by_source_skillId` index specifically because it orders rows by
  * source, so a repo's skills arrive contiguously and grouping is free. A repo
- * straddling a page boundary is swept twice; that is harmless (the second tree
- * call 304s and the per-skill comparison is idempotent) and cheaper than
- * carrying partial groups across invocations.
+ * straddling a page boundary is swept twice, which is cheaper than carrying
+ * partial groups across invocations — see the conditional-request rule in
+ * `sweepRepoFreshness` for why the second pass is not skipped by the ETag.
  */
 export const listSummariesForSweep = internalQuery({
   args: { cursor: v.optional(v.string()) },
@@ -87,6 +100,8 @@ export const listSummariesForSweep = internalQuery({
     repos: v.array(
       v.object({
         source: v.string(),
+        /** The branch discovery resolved, recovered from the stored raw URL. */
+        branch: v.optional(v.string()),
         skills: v.array(
           v.object({
             skillDocId: v.id("skills"),
@@ -106,7 +121,10 @@ export const listSummariesForSweep = internalQuery({
       .withIndex("by_source_skillId")
       .paginate({ numItems: SUMMARY_PAGE, cursor: cursor ?? null });
 
-    const bySource = new Map<string, SweepSkill[]>();
+    const bySource = new Map<
+      string,
+      { branch?: string; skills: SweepSkill[] }
+    >();
     for (const s of result.page) {
       // Delisted rows are hidden everywhere and not worth a request; well-known
       // sources have no tree; a row without a resolved URL has no path to
@@ -115,27 +133,52 @@ export const listSummariesForSweep = internalQuery({
       if (!isGitHubSource(s.source)) continue;
       if (!s.skillMdUrl) continue;
 
-      const path = pathFromRawUrl(s.skillMdUrl);
-      if (!path) continue;
+      const parsed = pathFromRawUrl(s.skillMdUrl);
+      if (!parsed) continue;
 
-      const list = bySource.get(s.source) ?? [];
-      list.push({
+      const group = bySource.get(s.source) ?? { branch: parsed.branch, skills: [] };
+      group.skills.push({
         skillDocId: s.skillDocId,
         skillId: s.skillId,
-        path,
+        path: parsed.path,
         githubBlobSha: s.githubBlobSha,
       });
-      bySource.set(s.source, list);
+      bySource.set(s.source, group);
     }
 
     return {
-      repos: Array.from(bySource.entries()).map(([source, skills]) => ({
+      repos: Array.from(bySource.entries()).map(([source, group]) => ({
         source,
-        skills,
+        branch: group.branch,
+        skills: group.skills,
       })),
       nextCursor: result.continueCursor,
       isDone: result.isDone,
     };
+  },
+});
+
+/**
+ * Record that a repo was checked and found unchanged.
+ *
+ * Separate from `applySweepResult` because the 304 path has nothing to write —
+ * no SHAs moved, and the ETag we already hold is still the current one. All
+ * that needs to advance is the clock, so `sweepHealth` can tell a working sweep
+ * from a stalled one.
+ */
+export const touchSweepState = internalMutation({
+  args: { repo: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { repo }) => {
+    const existing = await ctx.db
+      .query("repoSweepState")
+      .withIndex("by_repo", (q) => q.eq("repo", repo))
+      .unique();
+    // No insert on the miss path: a 304 can only happen against an ETag we
+    // stored, which means the row exists. Inserting here would invent a row
+    // with no branch.
+    if (existing) await ctx.db.patch(existing._id, { sweptAt: Date.now() });
+    return null;
   },
 });
 
@@ -268,7 +311,7 @@ export const sweepRepoFreshness = internalAction({
     { cursor, repoOffset = 0, reposSwept = 0, skillsFlagged = 0 },
   ) => {
     const page: {
-      repos: Array<{ source: string; skills: SweepSkill[] }>;
+      repos: Array<{ source: string; branch?: string; skills: SweepSkill[] }>;
       nextCursor: string;
       isDone: boolean;
     } = await ctx.runQuery(internal.freshness.listSummariesForSweep, {
@@ -278,36 +321,92 @@ export const sweepRepoFreshness = internalAction({
     const batch = page.repos.slice(repoOffset, repoOffset + REPOS_PER_BATCH);
     let swept = reposSwept;
     let flagged = skillsFlagged;
+    let skipped = 0;
 
     for (const repo of batch) {
       const [owner, name] = repo.source.split("/");
-      if (!owner || !name) continue;
+      if (!owner || !name) {
+        skipped++;
+        continue;
+      }
 
       const state = await ctx.runQuery(internal.freshness.getSweepState, {
         repo: repo.source,
       });
 
-      // Try the remembered branch first so the stored ETag is actually valid
-      // for the request; `fetchRepoTree` only sends If-None-Match for the first
-      // branch it tries.
-      const branches = state?.branch
-        ? [state.branch, "main", "master"]
-        : ["main", "master"];
+      // Remembered branch first (its ETag is what we hold), then the branch
+      // discovery actually resolved, then the guesses. Deduped: with
+      // `state.branch === "main"` this used to be ["main","main","master"],
+      // a duplicated request on the 404 path.
+      const branches = [
+        ...new Set(
+          [state?.branch, repo.branch, "main", "master"].filter(
+            (b): b is string => Boolean(b),
+          ),
+        ),
+      ];
+
+      // Conditional ONLY when every skill in this group already has a baseline
+      // SHA. A 304 tells us the tree is unchanged; it does not tell us the SHA
+      // of a skill we have never recorded one for, and the fast path returns
+      // before any comparison happens. So when a repo straddles a page
+      // boundary — page 1 gets a 200 and stores the ETag, page 2 then 304s —
+      // page 2's half would never be baselined, permanently, because page 1
+      // always consumes the tree change first. Withholding the ETag costs one
+      // full tree fetch on the pass that has unbaselined skills and nothing
+      // afterwards, since they all have SHAs by then.
+      const allBaselined = repo.skills.every((s) => Boolean(s.githubBlobSha));
 
       const tree = await fetchRepoTree(owner, name, branches, {
-        etag: state?.etag,
+        etag: allBaselined ? state?.etag : undefined,
       });
 
-      swept++;
+      // GitHub cut us off. Every remaining request this run will fail the same
+      // way, so stop rather than burn through the rest of the walk marking it
+      // "inspected" — the walk order is stable, so continuing would starve the
+      // same tail of the catalog on every recurrence.
+      if (tree === RATE_LIMITED) {
+        console.error(
+          `Freshness sweep ABORTED on rate limit after ${swept} repos ` +
+            `(${flagged} skills flagged). Remaining repos were not inspected.`,
+        );
+        if (flagged > 0) {
+          await ctx.scheduler.runAfter(
+            5_000,
+            internal.skills.backfillFetchContent,
+            {},
+          );
+        }
+        return null;
+      }
 
       // Nothing in the entire repo changed. This is the common case and the
       // whole point: no body transferred, no rate-limit cost, and every skill
       // in the repo is settled by one request.
-      if (tree === NOT_MODIFIED) continue;
+      //
+      // Still records the sweep. `sweptAt` was only written by
+      // `applySweepResult`, which this path skips — so in steady state, where
+      // the module budgets "~1,400 mostly-304 tree calls", almost no repo
+      // advanced its timestamp. `reposSweptInLast25h` decayed toward zero and
+      // `oldestSweepHoursAgo` grew without bound on a sweep that was working
+      // perfectly, which is exactly the reading a STALLED chain produces — the
+      // one ambiguity sweepHealth exists to remove.
+      if (tree === NOT_MODIFIED) {
+        swept++;
+        await ctx.runMutation(internal.freshness.touchSweepState, {
+          repo: repo.source,
+        });
+        continue;
+      }
 
-      // 404, rate limit, or a repo too large for the Tree API. Leave the rows
-      // alone; the 7-day timer is the backstop for exactly this.
-      if (!tree) continue;
+      // 404 or a repo too large for the Tree API. Leave the rows alone; the
+      // content timer is the backstop for exactly this.
+      if (!tree) {
+        skipped++;
+        continue;
+      }
+
+      swept++;
 
       const { shaByPath } = indexSkillMds(tree.entries);
 
@@ -370,8 +469,12 @@ export const sweepRepoFreshness = internalAction({
       return null;
     }
 
+    // Three numbers, not one. "N repos inspected" used to include 404s, 409s
+    // and rate-limit bail-outs, so the single figure printed at the end could
+    // not distinguish a full walk from one that failed most of its requests.
     console.log(
-      `Freshness sweep complete: ${swept} repos inspected, ${flagged} skills flagged for re-fetch`,
+      `Freshness sweep complete: ${swept} repos inspected, ${skipped} skipped, ` +
+        `${flagged} skills flagged for re-fetch`,
     );
     // Drain whatever the sweep queued. Safe when nothing was flagged —
     // backfillFetchContent no-ops on an empty work set.

@@ -73,10 +73,25 @@ async function sweepRows(t: TestHandle) {
 
 describe("pathFromRawUrl", () => {
   test("recovers the tree path from a stored raw URL", () => {
-    expect(pathFromRawUrl(raw("skills/alpha/SKILL.md"))).toBe(
-      "skills/alpha/SKILL.md",
-    );
-    expect(pathFromRawUrl(raw("SKILL.md"))).toBe("SKILL.md");
+    expect(pathFromRawUrl(raw("skills/alpha/SKILL.md"))).toEqual({
+      branch: "main",
+      path: "skills/alpha/SKILL.md",
+    });
+    expect(pathFromRawUrl(raw("SKILL.md"))).toEqual({
+      branch: "main",
+      path: "SKILL.md",
+    });
+  });
+
+  test("recovers the BRANCH too, including non-main defaults", () => {
+    // The branch segment used to be matched and discarded, so a repo whose
+    // default is neither main nor master 404'd on both guesses, never got a
+    // sweep-state row, and could therefore never learn its own branch.
+    expect(
+      pathFromRawUrl(
+        "https://raw.githubusercontent.com/o/r/develop/skills/a/SKILL.md",
+      ),
+    ).toEqual({ branch: "develop", path: "skills/a/SKILL.md" });
   });
 
   test("returns null for anything that is not a raw.githubusercontent URL", () => {

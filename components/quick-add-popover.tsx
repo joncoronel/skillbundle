@@ -30,6 +30,7 @@ import { UpgradeBanner } from "@/components/upgrade-banner";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { MAX_BUNDLE_SKILLS } from "@/lib/bundle-limits";
 import { cn } from "@/lib/utils";
+import { watchKey } from "@/lib/bundle-limits";
 
 export interface QuickAddPopoverSkill {
   source: string;
@@ -465,12 +466,25 @@ function CreateBundleView({
   // Preempt the watch-limit failure: if the user is already at their plan's
   // max, swap the form for an UpgradeBanner instead of letting them type a
   // name and only fail at submit time. Mirrors save-bundle-dialog.tsx.
+  //
+  // Gated on auth, which it claimed to mirror but did not: the query returns 0
+  // for an anonymous caller, so during the Clerk → Convex handshake `atLimit`
+  // evaluated false and the create form painted, then swapped to the upgrade
+  // banner when the authenticated result landed.
   const { limits } = useUserPlan();
-  const watched = useQuery(api.bundles.countWatchedSkills);
+  const { isAuthenticated } = useConvexAuth();
+  const watchedKeys = useQuery(
+    api.bundles.listWatchedSkillKeys,
+    isAuthenticated ? {} : "skip",
+  );
+  // Union with the one skill being filed — see save-bundle-dialog.tsx. Adding a
+  // skill you already watch costs nothing on the server.
   const atLimit =
     limits !== null &&
-    watched !== undefined &&
-    watched >= limits.maxWatchedSkills;
+    watchedKeys !== undefined &&
+    Number.isFinite(limits.maxWatchedSkills) &&
+    new Set([...watchedKeys, watchKey(skill)]).size >
+      limits.maxWatchedSkills;
 
   // Reset the input whenever this view transitions out. The TransitionPanel
   // keeps inactive views mounted (display: none) so their useState values

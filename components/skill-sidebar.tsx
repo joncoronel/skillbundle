@@ -199,8 +199,12 @@ export function SkillSidebar({
             point at the record behind this one. Kept as a plain anchor rather
             than a button: it is navigation within the page, and the History
             section stays reachable by scrolling regardless. */}
+        {/* Named for a link list. The visible text is just a date, so out of
+            context — which is how a screen reader's link list presents it —
+            "August 3, 2026" said nothing about where it goes (WCAG 2.4.4). */}
         <a
           href="#history"
+          aria-label={`View change history — last updated ${updatedDate}`}
           className="text-sm text-foreground underline decoration-border underline-offset-4 transition-colors duration-100 ease-out hover:decoration-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
         >
           {updatedDate}

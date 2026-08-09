@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useRouter } from "next/navigation";
@@ -22,7 +22,11 @@ import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
-import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
+import {
+  FREE_WATCHED_SKILLS,
+  MAX_BUNDLE_DESCRIPTION_LENGTH,
+  watchKey,
+} from "@/lib/bundle-limits";
 
 export type SaveBundleDialogHandle = ReturnType<typeof createDialogHandle>;
 
@@ -48,15 +52,23 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   // also drops the redundant unauthenticated re-run during the Clerk → Convex
   // token handoff. Mirrors useUserPlan and fork-bundle-button.
   const { isAuthenticated } = useConvexAuth();
-  const watched = useQuery(
-    api.bundles.countWatchedSkills,
+  const watchedKeys = useQuery(
+    api.bundles.listWatchedSkillKeys,
     isAuthenticated ? {} : "skip",
   );
-  const atLimit =
-    limits !== null &&
-    watched !== undefined &&
-    watched >= limits.maxWatchedSkills;
   const count = selectedSkills.length;
+  // Union, not `watched >= max`. The server counts distinct skills across all
+  // bundles and unions the incoming set in, so re-filing skills you already
+  // watch is free — a bare count blocked at exactly the limit and showed an
+  // upgrade banner in place of the form for an operation that would have
+  // succeeded. Contradicted the plate's own row saying lists are unlimited.
+  const atLimit = useMemo(() => {
+    if (limits === null || watchedKeys === undefined) return false;
+    if (!Number.isFinite(limits.maxWatchedSkills)) return false;
+    const union = new Set(watchedKeys);
+    for (const s of selectedSkills) union.add(watchKey(s));
+    return union.size > limits.maxWatchedSkills;
+  }, [limits, watchedKeys, selectedSkills]);
 
   const trimmedDescription = description.trim();
   const descriptionOverLimit =
@@ -106,7 +118,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
         <DialogBody>
           {atLimit ? (
             <UpgradeBanner
-              message={`You're watching ${limits.maxWatchedSkills} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
+              message={`You're watching ${limits?.maxWatchedSkills ?? FREE_WATCHED_SKILLS} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
             />
           ) : (
             <div className="space-y-4">

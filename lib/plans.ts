@@ -10,8 +10,10 @@
  */
 export type Plan = "free" | "pro";
 
-/** Mirrors `FREE_WATCHED_SKILLS` in convex/lib/plans.ts. */
-export const FREE_WATCHED_SKILLS = 25;
+// One definition, shared with the enforcement side. This used to be a second
+// literal kept in step with the first by a comment.
+export { FREE_WATCHED_SKILLS } from "./bundle-limits";
+import { FREE_WATCHED_SKILLS } from "./bundle-limits";
 
 export interface PlanDisplayInfo {
   name: string;

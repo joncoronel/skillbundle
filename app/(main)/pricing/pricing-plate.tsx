@@ -76,24 +76,57 @@ export function PricingPlate() {
 
   return (
     <div className="space-y-8">
+      {/*
+        A radio group, not Tabs. The tab pattern promises a tabpanel: the
+        triggers rendered role="tab" inside role="tablist" with no panel
+        anywhere in the document, so a screen reader announced "Monthly, tab, 1
+        of 2" and set the reader up to expect associated content that does not
+        exist. What this control actually governs — the prices in the head and
+        which product id checkout uses — sits outside the widget entirely.
+      */}
       <div className="flex justify-center">
-        <Tabs
-          value={cycle}
-          onValueChange={(v) => v && setCycle(v as Cycle)}
+        <fieldset
+          className={cn(
+            "inline-flex gap-1 rounded-lg p-1",
+            solidSurface(2),
+          )}
         >
-          <TabsList>
-            <TabsTrigger value="monthly">Monthly</TabsTrigger>
-            <TabsTrigger value="yearly">
-              Yearly
-              {savings ? (
+          <legend className="sr-only">Billing cycle</legend>
+          {(["monthly", "yearly"] as const).map((value) => (
+            <label
+              key={value}
+              className={cn(
+                "cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-100",
+                "has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring/50",
+                cycle === value
+                  ? "bg-surface-3 text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <input
+                type="radio"
+                name="billing-cycle"
+                value={value}
+                checked={cycle === value}
+                onChange={() => setCycle(value)}
+                className="sr-only"
+              />
+              {value === "monthly" ? "Monthly" : "Yearly"}
+              {value === "yearly" && savings ? (
                 <span className="ml-1.5 text-primary">&minus;{savings}%</span>
               ) : null}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+            </label>
+          ))}
+        </fieldset>
       </div>
 
       <div className={cn("overflow-hidden rounded-2xl", solidSurface(3, 1))}>
+        {/* Document order was h1 → h3 (repeated) → h2 (the FAQ), so heading
+            navigation presented the comparison groups as children of nothing
+            and the FAQ as a peer of the page title. One named h2 for the plate
+            restores the nesting without adding a visible heading the design
+            does not want. */}
+        <h2 className="sr-only">Plan comparison</h2>
         <PlateHead cycle={cycle} />
         {COMPARISON.map((group) => (
           <section key={group.title}>
@@ -333,7 +366,14 @@ function PlateCell({
           className="hidden size-3.5 shrink-0 text-primary sm:block"
         />
       ) : null}
-      <span className="sm:hidden">
+      {/* `sm:sr-only`, NOT `sm:hidden`. This label is the only thing telling a
+          non-visual reader which plan a cell belongs to — a <dl> gives no
+          column-header association — and `display: none` removed it from the
+          accessibility tree at every desktop width. A boolean row then read as
+          "Watched skills. Not included. Included." with nothing saying which is
+          which. Visually hidden keeps it announced while the visible column
+          header does the work sighted readers need. */}
+      <span className="sm:sr-only">
         <span className="font-mono text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
           {isPro ? "Pro " : "Free "}
         </span>
@@ -372,16 +412,32 @@ function PlateCell({
  */
 function WhereYouLand() {
   const { isAuthenticated } = useConvexAuth();
-  const watched = useQuery(
-    api.bundles.countWatchedSkills,
+  const { limits } = useUserPlan();
+  const watchedKeys = useQuery(
+    api.bundles.listWatchedSkillKeys,
     isAuthenticated ? {} : "skip",
   );
 
-  if (!isAuthenticated || watched === undefined) {
+  if (!isAuthenticated || watchedKeys === undefined || limits === null) {
     return (
       <p className="text-center text-sm text-muted-foreground">
         Free covers {FREE_WATCHED_SKILLS} watched skills. Most personal setups
         never reach it.
+      </p>
+    );
+  }
+
+  const watched = watchedKeys.length;
+
+  // Read the VIEWER'S limit, not the free constant. This compared every
+  // signed-in reader against 25, so a Pro subscriber watching 40 skills got a
+  // full red bar and "You're past what Free covers" on a page that elsewhere
+  // marks Pro as their current plan — the one element here that is about them
+  // rather than about the offer, telling paying customers something false.
+  if (!Number.isFinite(limits.maxWatchedSkills)) {
+    return (
+      <p className="text-center text-sm text-muted-foreground tabular-nums">
+        You watch {watched} skill{watched === 1 ? "" : "s"}. Pro has no limit.
       </p>
     );
   }

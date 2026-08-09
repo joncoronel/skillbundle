@@ -1,21 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { IconSvgElement } from "@hugeicons/react";
-import {
-  ArrowRight01Icon,
-  FileEditIcon,
-  SecurityWarningIcon,
-  TextAlignLeftIcon,
-} from "@hugeicons/core-free-icons";
+import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
+import { CONDITION_META } from "@/components/monitoring/condition-meta";
+import { DescriptionDelta } from "@/components/monitoring/description-delta";
+import {
+  StatusLight,
+  TONE_OF_GROUP,
+  type Tone,
+} from "@/components/monitoring/status-light";
+import { GROUP_OF, isFault } from "@/lib/monitoring/conditions";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
@@ -37,19 +39,24 @@ type FeedItem = Feed["items"][number];
  *
  * So the panel keeps its shape and its status light, and only its readout
  * changes. The light is the worst thing currently in it, which is why it is
- * honest rather than decorative: green when there is nothing, amber for content
- * edits, red for a security regression.
+ * honest rather than decorative.
  *
  * ## Consequence, not chronology
  *
- * Rows arrive pre-ranked by the query (security → description → content) and are
- * rendered at three different weights so the ordering is visible and not just
- * true. A description change carries its before/after inline, because the
- * description is what decides when an agent invokes a skill — that payload is
- * the product's entire argument, and it makes its own case better than a
- * sentence explaining it would.
+ * Rows arrive pre-ranked by the query, using the SAME ordering the bundle
+ * register sorts by (lib/monitoring/conditions). A description change carries
+ * its before/after inline, because the description is what decides when an
+ * agent invokes a skill — that payload is the product's entire argument, and it
+ * makes its own case better than a sentence explaining it would.
+ *
+ * ## Faults are not news, and never clear
+ *
+ * A delisted or unfetchable skill is a STATE. It has no timestamp, and reading
+ * about it does not fix it, so it survives "Mark all read" and renders no time.
+ * The panel used to be blind to both, which meant it could show a green
+ * all-clear over a dependency the bundle page was calling Needs attention.
  */
-export function ChangeFeed({ feed }: { feed: Feed }) {
+export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
   const markAllViewed = useMutation(
     api.bundles.markAllBundlesViewed,
   ).withOptimisticUpdate((localStore) => {
@@ -62,50 +69,80 @@ export function ChangeFeed({ feed }: { feed: Feed }) {
       if (q.value === undefined) continue;
       localStore.setQuery(api.skillVersions.listRecentChangesForUser, q.args, {
         ...q.value,
-        items: [],
+        // Faults survive. Marking read acknowledges CHANGES; a skill that is
+        // still delisted is still delisted, and dropping it here would make the
+        // button look like it fixed something. The server agrees — faults do not
+        // consult the baseline — so clearing them optimistically would also
+        // flicker them straight back on the next round trip.
+        items: q.value.items.filter((i) => isFault(i.condition)),
         suppressed: false,
       });
     }
   });
 
   const [revealSuppressed, setRevealSuppressed] = useState(false);
+  const allClearRef = useRef<HTMLHeadingElement>(null);
 
-  const hasChanges = feed.items.length > 0;
-  const showRows = hasChanges && (!feed.suppressed || revealSuppressed);
+  if (feed === undefined) return <ChangeFeedPending />;
+
+  const hasItems = feed.items.length > 0;
+  const changes = feed.items.filter((i) => !isFault(i.condition));
+  const faults = feed.items.filter((i) => isFault(i.condition));
+  // Suppression hides CHANGES behind a disclosure; faults are never held back.
+  const shownItems =
+    !feed.suppressed || revealSuppressed ? feed.items : faults;
+
+  function handleMarkAllRead() {
+    void markAllViewed({});
+    // The crossfade applies `display: none` to the subtree this button lives
+    // in, so without this the focused element vanishes and focus collapses to
+    // <body> — dumping a keyboard user at the top of the document. Move it to
+    // the readout that replaces it, which is also what a screen reader should
+    // land on. rAF so the swap has happened before we reach for the target.
+    requestAnimationFrame(() => allClearRef.current?.focus());
+  }
 
   return (
     <section
       aria-label="Change status"
+      // The live region sits on the SECTION, not inside either reading, because
+      // the crossfade unmounts one of them. A live region that gets removed
+      // never announces — the previous placement announced "all clear" and
+      // stayed silent for every outcome that was actually worth hearing.
+      aria-live="polite"
       className={cn("rounded-2xl", solidSurface(3, 1))}
     >
-      <Crossfade active={hasChanges}>
-        <AllClear watchedSkillCount={feed.watchedSkillCount} />
+      <Crossfade active={hasItems}>
+        <AllClear
+          watchedSkillCount={feed.watchedSkillCount}
+          headingRef={allClearRef}
+        />
         <div>
           <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4 sm:px-6">
             <StatusLight tone={worstTone(feed)} />
             <h2 className="flex-1 text-sm font-semibold tracking-tight">
               {feed.suppressed
                 ? "Catalog-wide update"
-                : `${feed.items.length} ${
-                    feed.items.length === 1 ? "skill" : "skills"
-                  } changed`}
+                : headline(faults.length, changes.length)}
             </h2>
-            <Button
-              variant="outline"
-              size="xs"
-              className="h-8 sm:h-7"
-              onClick={() => void markAllViewed({})}
-            >
-              Mark all read
-            </Button>
+            {changes.length > 0 ? (
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-8 sm:h-7"
+                onClick={handleMarkAllRead}
+              >
+                Mark all read
+              </Button>
+            ) : null}
           </header>
 
           {feed.suppressed ? (
             <div className="border-t border-border px-5 py-4 sm:px-6">
               <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-                {feed.items.length} of the skills you watch changed at once,
-                which almost always means we reprocessed catalog content rather
-                than their authors editing them. Holding them back until that is
+                {changes.length} of the skills you watch changed at once, which
+                almost always means we reprocessed catalog content rather than
+                their authors editing them. Holding them back until that is
                 clear.
               </p>
               {!revealSuppressed ? (
@@ -121,9 +158,9 @@ export function ChangeFeed({ feed }: { feed: Feed }) {
             </div>
           ) : null}
 
-          {showRows ? (
+          {shownItems.length > 0 ? (
             <ul className="divide-y divide-border border-t border-border">
-              {feed.items.map((item) => (
+              {shownItems.map((item) => (
                 <ChangeRow key={`${item.source}::${item.skillId}`} item={item} />
               ))}
             </ul>
@@ -135,6 +172,46 @@ export function ChangeFeed({ feed }: { feed: Feed }) {
 }
 
 /**
+ * Same height and shape as the resolved panel. The dashboard no longer blocks
+ * on this query, so this is what fills the slot for the fraction of a second
+ * the fan-out takes — a collapsed panel would make the page jump.
+ */
+function ChangeFeedPending() {
+  return (
+    <section
+      aria-label="Change status"
+      aria-busy
+      className={cn("rounded-2xl", solidSurface(3, 1))}
+    >
+      <div className="flex items-center gap-3 px-5 py-4 sm:px-6">
+        <span
+          aria-hidden
+          className="grid size-5 shrink-0 place-items-center rounded-full bg-muted-foreground/10"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/40 motion-reduce:animate-none" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-tight text-muted-foreground">
+            Checking what changed&hellip;
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground/70">
+            Reading the archive for the skills you watch.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function headline(faults: number, changes: number): string {
+  const parts: string[] = [];
+  if (faults > 0) parts.push(`${faults} need${faults === 1 ? "s" : ""} attention`);
+  if (changes > 0)
+    parts.push(`${changes} skill${changes === 1 ? "" : "s"} changed`);
+  return parts.join(", ");
+}
+
+/**
  * The resting readout. Deliberately one line of statement plus one line of
  * fact, at the same height as the has-changes header — the panel should not
  * visibly deflate when there is no news.
@@ -142,12 +219,24 @@ export function ChangeFeed({ feed }: { feed: Feed }) {
  * It reports numbers so it is self-evidently working. "Nothing has changed" on
  * its own is indistinguishable from a query that silently returned nothing.
  */
-function AllClear({ watchedSkillCount }: { watchedSkillCount: number }) {
+function AllClear({
+  watchedSkillCount,
+  headingRef,
+}: {
+  watchedSkillCount: number;
+  headingRef?: React.Ref<HTMLHeadingElement>;
+}) {
   return (
     <div className="flex items-center gap-3 px-5 py-4 sm:px-6">
       <StatusLight tone="clear" />
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold tracking-tight">
+        {/* tabIndex -1 so "Mark all read" can hand focus here rather than
+            dropping it when its own subtree is hidden. */}
+        <h2
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-sm font-semibold tracking-tight outline-none"
+        >
           Nothing has changed.
         </h2>
         <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
@@ -162,69 +251,19 @@ function AllClear({ watchedSkillCount }: { watchedSkillCount: number }) {
   );
 }
 
-type Tone = "clear" | "hold" | "content" | "alert";
-
-/**
- * The instrument light. A 6px dot in a soft ring of its own hue — small enough
- * that green on a healthy visit reads as "powered on" rather than as
- * congratulation, which is what would make it noise after the third time.
- *
- * Colour is never the only carrier: the heading beside it always states the
- * condition in words, and each row repeats it in its own label.
- */
-const TONE_LIGHT: Record<Tone, { dot: string; halo: string }> = {
-  clear: { dot: "bg-success-foreground", halo: "bg-success/20" },
-  hold: { dot: "bg-muted-foreground", halo: "bg-muted-foreground/15" },
-  content: { dot: "bg-warning-foreground", halo: "bg-warning/20" },
-  alert: { dot: "bg-danger-foreground", halo: "bg-danger/20" },
-};
-
-function StatusLight({ tone }: { tone: Tone }) {
-  const { dot, halo } = TONE_LIGHT[tone];
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "grid size-5 shrink-0 place-items-center rounded-full",
-        halo,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", dot)} />
-    </span>
-  );
-}
-
 function worstTone(feed: Feed): Tone {
   // Suppressed goes neutral rather than red. The panel is saying "we do not
   // believe these yet" — lighting it with the severity of events it is actively
-  // holding back would assert exactly what it is declining to assert.
+  // holding back would assert exactly what it is declining to assert. Faults
+  // are exempt: those are not in doubt, so they still light it.
+  const faulted = feed.items.some((i) => GROUP_OF[i.condition] === "attention");
+  if (faulted) return "alert";
   if (feed.suppressed) return "hold";
-  return feed.items.some((i) => i.kind === "audit") ? "alert" : "content";
+  return feed.items.length > 0 ? TONE_OF_GROUP.changed : "clear";
 }
 
-const KIND_META: Record<
-  FeedItem["kind"],
-  { icon: IconSvgElement; label: string; iconClass: string }
-> = {
-  audit: {
-    icon: SecurityWarningIcon,
-    label: "Security verdict changed",
-    iconClass: "text-danger-foreground",
-  },
-  description: {
-    icon: TextAlignLeftIcon,
-    label: "Description changed",
-    iconClass: "text-warning-foreground",
-  },
-  content: {
-    icon: FileEditIcon,
-    label: "Content edited",
-    iconClass: "text-muted-foreground",
-  },
-};
-
 function ChangeRow({ item }: { item: FeedItem }) {
-  const meta = KIND_META[item.kind];
+  const meta = CONDITION_META[item.condition];
   const href = item.version
     ? `${skillHref(item.source, item.skillId)}#history`
     : skillHref(item.source, item.skillId);
@@ -239,12 +278,16 @@ function ChangeRow({ item }: { item: FeedItem }) {
           "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:-outline-offset-2",
         )}
       >
-        <HugeiconsIcon
-          icon={meta.icon}
-          strokeWidth={2}
-          aria-hidden
-          className={cn("mt-0.5 size-4 shrink-0", meta.iconClass)}
-        />
+        {meta.icon ? (
+          <HugeiconsIcon
+            icon={meta.icon}
+            strokeWidth={2}
+            aria-hidden
+            className={cn("mt-0.5 size-4 shrink-0", meta.tone)}
+          />
+        ) : (
+          <span aria-hidden className="mt-0.5 size-4 shrink-0" />
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -259,7 +302,7 @@ function ChangeRow({ item }: { item: FeedItem }) {
             </p>
           ) : null}
 
-          {item.kind === "description" ? (
+          {item.condition === "description" ? (
             <DescriptionDelta
               before={item.version?.descriptionBefore}
               after={item.version?.descriptionAfter}
@@ -273,10 +316,12 @@ function ChangeRow({ item }: { item: FeedItem }) {
 
         {/* Anchored to the right edge so the row has two ends instead of a
             long void between the text and the chevron, and so times read down
-            a column. */}
-        <span className="shrink-0 pt-px text-xs tabular-nums text-muted-foreground">
-          {timeAgo(item.changedAt)}
-        </span>
+            a column. Faults carry no time — see the module header. */}
+        {item.changedAt !== null ? (
+          <span className="shrink-0 pt-px text-xs tabular-nums text-muted-foreground">
+            {timeAgo(item.changedAt)}
+          </span>
+        ) : null}
 
         <HugeiconsIcon
           icon={ArrowRight01Icon}
@@ -286,53 +331,5 @@ function ChangeRow({ item }: { item: FeedItem }) {
         />
       </Link>
     </li>
-  );
-}
-
-/**
- * The before/after of a skill's description, inline.
- *
- * No surrounding tray. A box here would be a box inside the panel, and the
- * codebase already made this call for rendered markdown — the diff is a
- * quotation of content, not a second surface.
- *
- * `−` and `+` are diff notation rather than icons standing in for one, set in
- * mono to say so, and they carry the meaning on their own: PRODUCT.md commits
- * to colour never being the sole indicator of state, and a two-line red/green
- * delta is the easiest place in the product to break that.
- */
-function DescriptionDelta({
-  before,
-  after,
-}: {
-  before?: string;
-  after?: string;
-}) {
-  if (!before && !after) return null;
-  return (
-    // Capped measure: descriptions are prose, and on a wide dashboard an
-    // uncapped line runs past 120ch and stops being readable.
-    <div className="mt-1.5 max-w-[68ch] space-y-0.5 text-xs leading-relaxed">
-      {before ? (
-        <p className="flex gap-2">
-          <span aria-hidden className="font-mono text-danger-foreground">
-            &minus;
-          </span>
-          <span className="sr-only">Was: </span>
-          <span className="line-clamp-2 text-muted-foreground line-through decoration-muted-foreground/40">
-            {before}
-          </span>
-        </p>
-      ) : null}
-      {after ? (
-        <p className="flex gap-2">
-          <span aria-hidden className="font-mono text-success-foreground">
-            +
-          </span>
-          <span className="sr-only">Now: </span>
-          <span className="line-clamp-2 text-foreground">{after}</span>
-        </p>
-      ) : null}
-    </div>
   );
 }

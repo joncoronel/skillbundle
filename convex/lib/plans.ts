@@ -2,6 +2,8 @@ import { QueryCtx } from "../_generated/server";
 import { polar } from "../polar";
 import { getCurrentUser } from "../users";
 
+import { FREE_WATCHED_SKILLS } from "../../lib/bundle-limits";
+
 export type Plan = "free" | "pro";
 
 /**
@@ -38,13 +40,10 @@ export interface PlanLimits {
   maxGitHubOnlyAdds: number;
 }
 
-/**
- * 25 is meant to be a real working limit, not a teaser. A personal agent setup
- * lands well inside it, so the free tier delivers the entire product rather
- * than a demo of it; the people past it are running something they would notice
- * breaking, which is the same population that will pay to keep watching it.
- */
-export const FREE_WATCHED_SKILLS = 25;
+// Re-exported, not redeclared. The single definition lives in the
+// dependency-free `lib/bundle-limits.ts` so the enforced value and the value
+// the pricing page advertises cannot drift apart.
+export { FREE_WATCHED_SKILLS };
 
 const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   free: {

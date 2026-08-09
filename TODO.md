@@ -42,8 +42,11 @@ PRODUCT.md, which was rewritten for this.
   full because a description change is the high-severity event (it decides when
   an agent invokes a skill).
 - `skillAudits` keeps its previous verdict instead of overwriting it.
-- Unread state: `lastViewedAt`, `markBundleViewed`, `listUnreadCounts`,
-  `changedSinceViewed` on the bundle read.
+- Unread state: `lastViewedAt` and `markBundleViewed`. (`listUnreadCounts` and
+  `changedSinceViewed` were also built and have since been DELETED — nothing
+  read them, and they defined "changed" as a bare `contentUpdatedAt >
+  baseline`, which ignores audit regressions and delisting. That is a different
+  answer from `resolveSkillChange`, which drives both surfaces users see.)
 - Read API in `convex/skillVersions.ts`: `listForSkill`, `getVersions`,
   `getAuditChange`, `listRecentChangesForUser`.
 - Skill-page History UI (`components/skill-history.tsx`) on `@pierre/diffs`.
@@ -58,10 +61,15 @@ PRODUCT.md, which was rewritten for this.
   their own count, so a healthy 40-skill bundle is a short page rather than 40
   em-dashes, and the table carries a `max-h` so its sticky column strip has
   something to stick inside.
-- Edit mode is the same register, not a separate card grid. Rows keep their
+- Edit mode is the same register, not a separate card grid — and since the panel
+  review, the same register INSTANCE. The page renders one `<BundleRegister>`
+  and hands it the staged groups plus row handlers when editing; staging lives
+  in `hooks/use-bundle-edit-session.ts` so both modes can reach it, and
+  `BundleEditChrome` holds only the picker, the save bar and the discard dialog.
+  Two instances used to mean React unmounted one and mounted the other, so your
+  section folds and your scroll position reset on every save. Rows keep their
   consequence ordering and condition text while you stage adds and removes, so
-  the skill you came to remove is the first row and still says why. Removing is
-  a control on the row; staging, the save bar and the picker are unchanged.
+  the skill you came to remove is the first row and still says why.
 - One-link model: `isPublic` plus a separate `shareToken` URL collapsed to one
   link and one switch. Bundles are created closed and the Pro gate on privacy is
   gone. `listChangesForBundle` and the dashboard feed share one

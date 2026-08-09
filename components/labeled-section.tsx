@@ -14,7 +14,18 @@ export function LabeledSection({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className={cn(className)}>
+    <section
+      id={id}
+      // Only when this section is actually an anchor target.
+      //
+      // `scroll-mt-20` clears the sticky app header (h-14 at top-0), which
+      // otherwise covers the section label the link just jumped to.
+      // `tabIndex={-1}` makes the target focusable so the browser moves focus
+      // with the jump — without it a keyboard user's tab position stays where
+      // it was and a screen reader keeps reading from the link they left.
+      {...(id ? { tabIndex: -1 } : {})}
+      className={cn(id && "scroll-mt-20 outline-none", className)}
+    >
       <div className="mb-4 flex items-center gap-3">
         <span className="shrink-0 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
           {label}

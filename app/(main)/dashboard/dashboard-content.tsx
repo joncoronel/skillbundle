@@ -59,7 +59,13 @@ export function DashboardContent() {
     isAuthenticated ? {} : "skip",
   );
 
-  if (bundles === undefined || planData === undefined || feed === undefined) {
+  // `feed` is deliberately NOT in this gate. It is the heaviest of the three
+  // (it fans out over every watched skill), and AND-ing it here made every
+  // dashboard visit pay the slowest query's latency for the whole page —
+  // against docs/architecture.md's Suspense-default-state principle, which says
+  // a surface paints its meaningful default and lets slower islands fill in.
+  // ChangeFeed owns its own pending state.
+  if (bundles === undefined || planData === undefined) {
     return <DashboardSkeleton />;
   }
   return <DashboardLoaded bundles={bundles} planData={planData} feed={feed} />;
@@ -72,7 +78,9 @@ function DashboardLoaded({
 }: {
   bundles: FunctionReturnType<typeof api.bundles.listByUser>;
   planData: FunctionReturnType<typeof api.plans.currentPlan>;
-  feed: FunctionReturnType<typeof api.skillVersions.listRecentChangesForUser>;
+  feed:
+    | FunctionReturnType<typeof api.skillVersions.listRecentChangesForUser>
+    | undefined;
 }) {
   const deleteBundle = useMutation(
     api.bundles.deleteBundle,

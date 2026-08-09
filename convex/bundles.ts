@@ -11,6 +11,8 @@ import { getUserPlanWithLimits } from "./lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_SKILLS,
+  MAX_BUNDLES_PER_USER,
+  watchKey,
 } from "../lib/bundle-limits";
 
 // ---------------------------------------------------------------------------
@@ -53,7 +55,12 @@ async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
  * about how much someone depends on the product.
  */
 async function watchedSkillKeys(
-  ctx: MutationCtx,
+  // QueryCtx, not MutationCtx, so the read-side query below shares this exact
+  // loop. It was retyped verbatim 480 lines away, and the dashboard had a third
+  // copy client-side — three implementations of the number the whole plan
+  // re-cut meters on, and three chances for the enforced count, the preempt and
+  // the displayed count to disagree.
+  ctx: QueryCtx,
   userId: Id<"users">,
   ignoreBundleId?: Id<"bundles">,
 ): Promise<Set<string>> {
@@ -65,7 +72,7 @@ async function watchedSkillKeys(
   const keys = new Set<string>();
   for (const b of bundles) {
     if (ignoreBundleId && b._id === ignoreBundleId) continue;
-    for (const sk of b.skills) keys.add(`${sk.source}::${sk.skillId}`);
+    for (const sk of b.skills) keys.add(watchKey(sk));
   }
   return keys;
 }
@@ -85,7 +92,7 @@ function assertWatchLimit(
   if (!Number.isFinite(maxWatchedSkills)) return;
 
   const union = new Set(existing);
-  for (const sk of incoming) union.add(`${sk.source}::${sk.skillId}`);
+  for (const sk of incoming) union.add(watchKey(sk));
   if (union.size <= maxWatchedSkills) return;
 
   throw new ConvexError(
@@ -195,11 +202,25 @@ export const createBundle = mutation({
     // upgrade — and this ordering keeps the cheap local checks ahead of a read
     // over every bundle the user owns.
     const { limits } = await getUserPlanWithLimits(ctx);
-    assertWatchLimit(
-      await watchedSkillKeys(ctx, user._id),
-      skills,
-      limits.maxWatchedSkills,
-    );
+
+    // Not a plan gate — see `MAX_BUNDLES_PER_USER`. An empty bundle passes
+    // every other check for free, so without this nothing bounded row creation
+    // at all, and each row multiplies the dashboard feed's fan-out.
+    const existingBundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+    if (existingBundles.length >= MAX_BUNDLES_PER_USER) {
+      throw new ConvexError(
+        `You already have ${existingBundles.length} bundles, which is the maximum. Delete one to make room.`,
+      );
+    }
+
+    const existingKeys = new Set<string>();
+    for (const b of existingBundles) {
+      for (const sk of b.skills) existingKeys.add(watchKey(sk));
+    }
+    assertWatchLimit(existingKeys, skills, limits.maxWatchedSkills);
 
     await assertSkillsExist(ctx, skills);
 
@@ -244,7 +265,22 @@ export const updateBundleVisibility = mutation({
     // No plan gate. Closed is the default now, so charging for it would be
     // charging for the default; `canMakePrivate` is dead here and the pricing
     // rewrite (TODO.md) removes it.
-    await ctx.db.patch(bundleId, { isPublic });
+    //
+    // `updatedAt` is NOT optional here, though it looks like a no-op field on a
+    // boolean flip. The bundle page builds its OG image URL as
+    // `/bundle/:id/og/:updatedAt` (page.tsx), so this timestamp IS the social
+    // card's cache key, and the card is cached for a day fresh plus a day
+    // stale-while-revalidate on top of a `cacheLife("days")` data-cache entry.
+    // Without the stamp:
+    //   - closing a bundle does not revoke its card, so everyone holding the
+    //     link — precisely the people just cut off — keeps seeing its name,
+    //     description and skill count for ~48h; and
+    //   - opening one does not publish its card either, because the generic
+    //     brand fallback cached at `createdAt` stays on the same URL.
+    // The one-link model made this load-bearing: this switch is now the only
+    // privacy control AND the only share control. Every sibling mutation
+    // already stamps the clock; this one was the anomaly.
+    await ctx.db.patch(bundleId, { isPublic, updatedAt: Date.now() });
   },
 });
 
@@ -373,19 +409,25 @@ export const updateBundleSkills = mutation({
 // two links to one thing, with different rules, and the owner had to know
 // which one they had copied. Sharing is now one link (the bundle's own) and
 // one switch (`updateBundleVisibility`). Existing tokens are dead: the access
-// check no longer reads them, and `migrateCloseAllBundles` closed every
+// check no longer reads them, and `migrateOneLinkModel` closed every
 // bundle so nothing is unintentionally reachable by an old URL.
 
 /**
  * Stamp "the owner has now seen this bundle", clearing its unread state.
  *
- * CURRENTLY UNCALLED. It was built to fire on bundle page view, and briefly did,
- * but that stamps the whole bundle read the moment you open it — clearing every
- * changed skill from the dashboard panel including the ones you never looked at,
- * because the bundle page still lists skills rather than showing what changed
- * about them. Marking something read that was never shown is the one thing a
- * monitoring product cannot do, so the call came back out. Restore it as part of
- * the bundle-page redesign, once the page surfaces what it would acknowledge.
+ * Called from the bundle page, but only once its change query has RESOLVED.
+ *
+ * This was withdrawn once and the reason still governs the wiring. It fired on
+ * page view while the page was a card grid that named no changes, so opening a
+ * bundle cleared every changed skill from the dashboard panel including ones
+ * the reader never saw. Marking something read that was never shown is the one
+ * thing a monitoring product cannot do.
+ *
+ * The register earns the stamp by displaying each change inline — but only
+ * after `listChangesForBundle` answers, which is why the caller's effect is
+ * gated on that query rather than on mount (bundle-view.tsx). The register
+ * itself is unaffected by the stamp: it baselines on `addedAt`, not on the last
+ * visit, so the page cannot erase its own contents.
  *
  * Every rejection path is a SILENT no-op rather than a throw, because the
  * intended caller is a page view: the bundle page is reachable signed-out and by
@@ -444,71 +486,20 @@ export const markAllBundlesViewed = mutation({
   },
 });
 
-/**
- * Per-bundle "how much changed since you last looked", for the dashboard.
+/*
+ * `listUnreadCounts` used to live here and has been deleted.
  *
- * Reads `skillSummaries` (~200 B) rather than `skills` (~13 KB) purely for this:
- * a user with ten bundles of twenty skills would otherwise pull ~2.6 MB to
- * render a set of small badges. `contentUpdatedAt` is mirrored onto the summary
- * to make that possible.
+ * Nothing outside its own test ever called it, and it implemented "changed
+ * since baseline" as a bare `contentUpdatedAt > baseline` — which counts
+ * baseline archive rows, ignores audit regressions and ignores delisting. That
+ * is a DIFFERENT answer from `resolveSkillChange` in skillVersions.ts, which
+ * drives both surfaces a user actually reads. Shipped, validator-typed and
+ * tested, it read as load-bearing to the next person, who would wire it into a
+ * badge and get numbers contradicting the page beside it.
  *
- * Counts SKILLS, not changes. "3 skills changed" is the number a person can act
- * on; "7 changes across 3 skills" is trivia that makes the badge worse.
+ * If a per-bundle unread badge is wanted, derive it from `resolveSkillChange`
+ * so there is one definition of "changed".
  */
-export const listUnreadCounts = query({
-  args: {},
-  returns: v.array(
-    v.object({
-      bundleId: v.id("bundles"),
-      urlId: v.string(),
-      name: v.string(),
-      unreadCount: v.number(),
-      skillCount: v.number(),
-    }),
-  ),
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) return [];
-
-    const bundles = await ctx.db
-      .query("bundles")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .collect();
-
-    return await Promise.all(
-      bundles.map(async (bundle) => {
-        const summaries = await Promise.all(
-          bundle.skills.map((s) =>
-            ctx.db
-              .query("skillSummaries")
-              .withIndex("by_source_skillId", (q) =>
-                q.eq("source", s.source).eq("skillId", s.skillId),
-              )
-              .unique(),
-          ),
-        );
-
-        let unreadCount = 0;
-        bundle.skills.forEach((s, i) => {
-          const updated = summaries[i]?.contentUpdatedAt;
-          // Same baseline rule as the bundle page: later of the last visit and
-          // the moment this skill joined, so a freshly added skill does not
-          // arrive pre-marked unread by its own back catalogue.
-          const baseline = Math.max(bundle.lastViewedAt ?? 0, s.addedAt ?? 0);
-          if (updated !== undefined && updated > baseline) unreadCount++;
-        });
-
-        return {
-          bundleId: bundle._id,
-          urlId: bundle.urlId,
-          name: bundle.name,
-          unreadCount,
-          skillCount: bundle.skills.length,
-        };
-      }),
-    );
-  },
-});
 
 export const deleteBundle = mutation({
   args: { bundleId: v.id("bundles") },
@@ -532,26 +523,25 @@ export const deleteBundle = mutation({
 // ---------------------------------------------------------------------------
 
 /**
- * Distinct skills this user watches, for the client-side "you're at your limit"
- * preempt. The server still enforces on write — this only exists so the UI can
- * swap a form for an upgrade prompt instead of letting someone fill it in and
- * fail at submit.
+ * The distinct skills this user watches, as `source::skillId` keys.
+ *
+ * Returns the KEYS, not just a count, because the client-side "you're at your
+ * limit" preempt has to answer the same question the server does — and the
+ * server unions the incoming skills against these (`assertWatchLimit`), so
+ * re-filing skills you already watch is free. A bare count forced both call
+ * sites to hard-block at exactly the limit, which showed an upgrade banner in
+ * place of the form for an operation that would have succeeded.
+ *
+ * The server still enforces on write; this only exists so the UI can swap in an
+ * upgrade prompt instead of letting someone fill a form in and fail at submit.
  */
-export const countWatchedSkills = query({
+export const listWatchedSkillKeys = query({
   args: {},
-  returns: v.number(),
+  returns: v.array(v.string()),
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
-    if (!user) return 0;
-    const bundles = await ctx.db
-      .query("bundles")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .collect();
-    const keys = new Set<string>();
-    for (const b of bundles) {
-      for (const sk of b.skills) keys.add(`${sk.source}::${sk.skillId}`);
-    }
-    return keys.size;
+    if (!user) return [];
+    return Array.from(await watchedSkillKeys(ctx, user._id));
   },
 });
 
@@ -603,28 +593,14 @@ export const getByUrlId = query({
               .unique();
 
             const addedAt = s.addedAt;
-            const contentUpdatedAt = skill?.contentUpdatedAt;
-            const updatedSinceAdded =
-              addedAt !== undefined &&
-              contentUpdatedAt !== undefined &&
-              contentUpdatedAt > addedAt;
 
-            // "New since you last opened this bundle", the read-state half of
-            // the same signal. Distinct from `updatedSinceAdded` above, which is
-            // permanent ("this moved at some point after you added it") — this
-            // one clears when the owner actually looks.
-            //
-            // The baseline takes whichever is LATER of the last visit and the
-            // moment the skill joined the bundle. Using lastViewedAt alone would
-            // present a skill added five minutes ago as carrying months of
-            // unread history; using addedAt alone would never clear.
-            const unreadSince = Math.max(
-              bundle.lastViewedAt ?? 0,
-              addedAt ?? 0,
-            );
-            const changedSinceViewed =
-              contentUpdatedAt !== undefined && contentUpdatedAt > unreadSince;
-
+            // No `updatedSinceAdded` / `changedSinceViewed` here any more. Both
+            // were computed per skill and read by nothing: the register renders
+            // neither, and their only former consumer (skill-card) no longer
+            // renders on this page. Worse, they derived from the FAT skills row
+            // while `resolveSkillChange` reads the `skillSummaries` mirror, so
+            // the two sources could hold different histories — a third,
+            // divergent definition of "changed" sitting in a shipped validator.
             return {
               source: s.source,
               skillId: s.skillId,
@@ -635,8 +611,6 @@ export const getByUrlId = query({
               name: skill?.name ?? s.skillId,
               description: skill?.description,
               installs: skill?.installs ?? 0,
-              updatedSinceAdded,
-              changedSinceViewed,
               contentUpdatedAt: skill?.contentUpdatedAt,
               createdAt: skill?._creationTime,
               isDelisted: skill?.isDelisted ?? false,

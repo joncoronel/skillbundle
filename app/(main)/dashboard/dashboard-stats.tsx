@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
+import { watchKey } from "@/lib/bundle-limits";
 
 type PlanData = FunctionReturnType<typeof api.plans.currentPlan>;
 
@@ -17,7 +18,7 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
   // in two lists is organisation, and organising is not what is being counted.
   const watched = new Set<string>();
   for (const b of bundles) {
-    for (const s of b.skills) watched.add(`${s.source}::${s.skillId}`);
+    for (const s of b.skills) watched.add(watchKey(s));
   }
 
   const max = limits.maxWatchedSkills;

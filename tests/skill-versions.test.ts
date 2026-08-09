@@ -27,7 +27,7 @@ import { vi, test, expect, beforeEach } from "vitest";
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { makeTest } from "./_setup";
-import { extractFrontmatterVersion } from "../convex/skills";
+import { extractFrontmatterVersion } from "../convex/skillVersions";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,7 +97,7 @@ async function writeContent(
       const storageId = await ctx.storage.store(
         new Blob([raw], { type: "text/markdown" }),
       );
-      await ctx.runMutation(internal.skills.recordSkillVersion, {
+      await ctx.runMutation(internal.skillVersions.recordSkillVersion, {
         skillDocId,
         rawStorageId: storageId,
         rawBytes: raw.length,
@@ -295,7 +295,7 @@ test("re-recording the same hash is a no-op and releases the blob", async () => 
     ctx.storage.store(new Blob([raw], { type: "text/markdown" })),
   );
 
-  await t.mutation(internal.skills.recordSkillVersion, {
+  await t.mutation(internal.skillVersions.recordSkillVersion, {
     skillDocId,
     rawStorageId: storageId,
     rawBytes: raw.length,
@@ -322,7 +322,7 @@ test("recording against a deleted skill releases the blob instead of orphaning i
     ctx.storage.store(new Blob(["gone"], { type: "text/markdown" })),
   );
 
-  await t.mutation(internal.skills.recordSkillVersion, {
+  await t.mutation(internal.skillVersions.recordSkillVersion, {
     skillDocId,
     rawStorageId: storageId,
     rawBytes: 4,

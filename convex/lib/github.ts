@@ -162,19 +162,34 @@ export const NOT_MODIFIED = "not_modified" as const;
 export type NotModified = typeof NOT_MODIFIED;
 
 /**
+ * Sentinel for "GitHub cut us off", distinct from "this repo has no tree".
+ *
+ * Both used to return null, which made an exhausted rate-limit budget
+ * indistinguishable from a quiet day: every remaining repo in the walk was
+ * skipped silently and the run still logged success with a low flagged count.
+ * Because the walk order is a stable cursor order, that starved the SAME tail
+ * of the catalog on every recurrence.
+ */
+export const RATE_LIMITED = "rate_limited" as const;
+export type RateLimited = typeof RATE_LIMITED;
+
+/**
  * Fetch the recursive file tree for a repo.
  * Tries branches in priority order (pass the default branch first).
  *
  * When `options.etag` is provided, sends `If-None-Match` for the first branch.
  * Returns `NOT_MODIFIED` on 304 (cache is still valid, no rate limit cost).
- * Returns null if the tree cannot be fetched (404, 409 too large, rate limit).
+ * Returns `RATE_LIMITED` when GitHub refuses on quota — callers should stop,
+ * not continue, because every subsequent request will fail the same way.
+ * Returns null if the tree cannot be fetched for a reason specific to this repo
+ * (404, 409 too large).
  */
 export async function fetchRepoTree(
   owner: string,
   repo: string,
   branches: string[],
   options?: { etag?: string; token?: string },
-): Promise<TreeResult | NotModified | null> {
+): Promise<TreeResult | NotModified | RateLimited | null> {
   if (!isSafeRepoPath(`${owner}/${repo}`)) return null;
   const baseHeaders = githubHeaders(options?.token);
 
@@ -214,7 +229,8 @@ export async function fetchRepoTree(
         );
         return null;
       }
-      // Rate limited — log details and bail
+      // Rate limited — log details and bail. Distinct from null: the caller
+      // must stop the whole walk, not skip this repo and keep burning requests.
       if (res.status === 403 || res.status === 429) {
         const retryAfter = res.headers.get("retry-after");
         const remaining = res.headers.get("x-ratelimit-remaining");
@@ -224,7 +240,7 @@ export async function fetchRepoTree(
             `status=${res.status}, remaining=${remaining}, ` +
             `retry-after=${retryAfter}, reset=${resetEpoch}`,
         );
-        return null;
+        return RATE_LIMITED;
       }
       console.error(
         `Tree API ${res.status} for ${owner}/${repo}/${branch}`,

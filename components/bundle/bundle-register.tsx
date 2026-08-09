@@ -31,17 +31,11 @@
  * finish review, the verdict, and DESIGN.md.
  */
 
-import { Fragment, useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { IconSvgElement } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
-  FileEditIcon,
-  SecurityWarningIcon,
-  TextAlignLeftIcon,
-  Alert02Icon,
-  ViewOffSlashIcon,
   Cancel01Icon,
   ArrowTurnBackwardIcon,
 } from "@hugeicons/core-free-icons";
@@ -57,8 +51,28 @@ import {
 import { Button } from "@/components/ui/cubby-ui/button";
 import { MarchingBorder } from "@/components/ui/cubby-ui/marching-border/marching-border";
 import { OfficialBadge } from "@/components/skill-badges";
+import {
+  CONDITION_META,
+  GROUP_LABEL,
+} from "@/components/monitoring/condition-meta";
+import { DescriptionDelta } from "@/components/monitoring/description-delta";
+import {
+  StatusLight,
+  TONE_OF_GROUP,
+} from "@/components/monitoring/status-light";
+import {
+  CONDITION_RANK,
+  GROUP_OF,
+  GROUP_ORDER,
+  resolveCondition,
+  type ChangeKind,
+  type Condition,
+  type GroupKey,
+} from "@/lib/monitoring/conditions";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
+
+export type { GroupKey };
 
 /** One skill as the bundle read returns it, plus whatever changed about it. */
 export type RegisterSkill = {
@@ -75,143 +89,27 @@ export type RegisterSkill = {
 
 export type RegisterChange = {
   key: string;
-  kind: "audit" | "description" | "content";
-  changedAt: number;
+  /** Absent on a fault row: the skill is wrong, but nothing happened to it. */
+  kind?: ChangeKind;
+  /** Null on a fault row — nothing records when a skill was delisted. */
+  changedAt: number | null;
   audit?: { from: string; to: string; riskLevel?: string; changedAt: number };
   version: { descriptionBefore?: string; descriptionAfter?: string } | null;
 };
-
-/**
- * Row condition, in consequence order. This single ranking is what makes the
- * register a triage without needing a separate "needs attention" section: sort
- * by it and the worst thing is always the first row.
- *
- * The first three are things that are WRONG (the bundle may not install, or may
- * not be safe). The next two are things that MOVED. Steady is the rest, and on
- * a healthy bundle it is every row — which is the state this page should make
- * look calm rather than empty.
- */
-type Condition =
-  | "audit"
-  | "delisted"
-  | "fetch-error"
-  | "description"
-  | "content"
-  | "steady";
-
-const RANK: Record<Condition, number> = {
-  audit: 5,
-  delisted: 4,
-  "fetch-error": 3,
-  description: 2,
-  content: 1,
-  steady: 0,
-};
-
-/**
- * The three sections the register groups into, and which condition belongs to
- * each. These are the same three the tally names, on purpose: the summary line
- * and the structure underneath it should not be two different taxonomies.
- *
- * One section per CONDITION was the obvious alternative and it is worse — six
- * headers for a set that rarely fills three of them, so most of the table
- * becomes labels for nothing.
- */
-export type GroupKey = "attention" | "changed" | "steady";
-
-const GROUP_OF: Record<Condition, GroupKey> = {
-  audit: "attention",
-  delisted: "attention",
-  "fetch-error": "attention",
-  description: "changed",
-  content: "changed",
-  steady: "steady",
-};
-
-const GROUP_META: Record<
-  GroupKey,
-  { label: string; dot: string; halo: string }
-> = {
-  attention: {
-    label: "Needs attention",
-    dot: "bg-danger-foreground",
-    halo: "bg-danger/20",
-  },
-  changed: {
-    label: "Changed",
-    dot: "bg-warning-foreground",
-    halo: "bg-warning/20",
-  },
-  steady: {
-    label: "Steady",
-    dot: "bg-success-foreground",
-    halo: "bg-success/20",
-  },
-};
-
-const GROUP_ORDER: GroupKey[] = ["attention", "changed", "steady"];
-
-const CONDITION_META: Record<
-  Condition,
-  { icon: IconSvgElement | null; label: string; tone: string }
-> = {
-  audit: {
-    icon: SecurityWarningIcon,
-    label: "Security verdict changed",
-    tone: "text-danger-foreground",
-  },
-  delisted: {
-    icon: ViewOffSlashIcon,
-    label: "No longer listed",
-    tone: "text-warning-foreground",
-  },
-  "fetch-error": {
-    icon: Alert02Icon,
-    label: "Install may fail",
-    tone: "text-warning-foreground",
-  },
-  description: {
-    icon: TextAlignLeftIcon,
-    label: "Description changed",
-    tone: "text-warning-foreground",
-  },
-  content: {
-    icon: FileEditIcon,
-    label: "Content edited",
-    tone: "text-muted-foreground",
-  },
-  // No glyph. `CheckmarkBadge02Icon` was here and it is the Official mark's
-  // icon (skill-badges.tsx) — the same shape meaning "verified first-party" in
-  // the catalog and "nothing wrong" here. Beyond the collision, a marker on
-  // every healthy row is not a marker: the column exists so the eye lands on
-  // the few rows that need something, and forty checkmarks defeat that. Steady
-  // reads as an empty cell, and says "Steady" to a screen reader.
-  steady: {
-    icon: null,
-    label: "Steady",
-    tone: "text-muted-foreground",
-  },
-};
-
-function conditionOf(
-  skill: RegisterSkill,
-  change: RegisterChange | undefined,
-): Condition {
-  if (change?.kind === "audit") return "audit";
-  if (skill.isDelisted) return "delisted";
-  if (skill.hasContentFetchError) return "fetch-error";
-  if (change?.kind === "description") return "description";
-  if (change?.kind === "content") return "content";
-  return "steady";
-}
 
 export type RegisterRow<S extends RegisterSkill = RegisterSkill> = {
   skill: S;
   change?: RegisterChange;
   condition: Condition;
-  /** Set only in edit mode, for skills staged but not yet saved. */
-  status?: "added" | "removed";
+  /**
+   * Staged but not yet saved. Only ever set when `buildRegister` was given a
+   * status map, which only edit mode does — so this and `RegisterActions`
+   * cannot get out of step.
+   */
+  status?: RegisterStatus;
 };
+
+export type RegisterStatus = "added" | "removed";
 
 /** Edit-mode handlers. Their presence is what puts the register in edit mode. */
 export type RegisterActions<S extends RegisterSkill = RegisterSkill> = {
@@ -220,55 +118,58 @@ export type RegisterActions<S extends RegisterSkill = RegisterSkill> = {
 };
 
 /**
+ * Build the register's rows and sections from a roster plus whatever the
+ * archive reported.
+ *
  * Generic over the caller's skill type rather than narrowing to
  * `RegisterSkill`: the bundle page feeds the consequence-ordered rows straight
  * back into its edit mode, which needs the full skill object, and a widened
  * return type would have forced a cast there.
- */
-/**
- * Section the rows, preserving consequence order inside each — so the worst
- * item is still the first row of the first section.
  *
- * Exported because edit mode re-derives its rows against the staged list and
- * has to regroup them; two copies of this would be two chances for the read and
- * edit views to disagree about where a row belongs.
+ * `statusByKey` is a parameter rather than something the caller re-attaches
+ * afterwards. Edit mode used to call this, throw away the grouping, re-map
+ * every row to add its staged status, and then regroup — which meant a second
+ * exported helper existed only to patch the gap, and the two paths could
+ * silently disagree about ordering the moment either was edited.
  */
-export function groupRows<S extends RegisterSkill>(
-  rows: RegisterRow<S>[],
-): Array<{ key: GroupKey; rows: RegisterRow<S>[] }> {
-  return GROUP_ORDER.map((key) => ({
-    key,
-    rows: rows.filter((r) => GROUP_OF[r.condition] === key),
-  })).filter((g) => g.rows.length > 0);
-}
-
 export function buildRegister<S extends RegisterSkill>(
   skills: S[],
   changes: RegisterChange[] | undefined,
+  statusByKey?: Map<string, RegisterStatus>,
 ): {
   rows: RegisterRow<S>[];
   groups: Array<{ key: GroupKey; rows: RegisterRow<S>[] }>;
   faults: number;
   changed: number;
-  steady: number;
 } {
   const byKey = new Map((changes ?? []).map((c) => [c.key, c]));
 
-  const rows = skills.map((skill) => {
-    const change = byKey.get(`${skill.source}::${skill.skillId}`);
-    return { skill, change, condition: conditionOf(skill, change) };
+  const rows: RegisterRow<S>[] = skills.map((skill) => {
+    const key = `${skill.source}::${skill.skillId}`;
+    const change = byKey.get(key);
+    return {
+      skill,
+      change,
+      condition: resolveCondition(skill, change?.kind),
+      status: statusByKey?.get(key),
+    };
   });
 
   // Consequence first, then recency, then name — so the order is stable for
   // the long tail of steady rows that share a rank.
   rows.sort(
     (a, b) =>
-      RANK[b.condition] - RANK[a.condition] ||
+      CONDITION_RANK[b.condition] - CONDITION_RANK[a.condition] ||
       (b.change?.changedAt ?? 0) - (a.change?.changedAt ?? 0) ||
       a.skill.name.localeCompare(b.skill.name),
   );
 
-  const groups = groupRows(rows);
+  // Section the rows, preserving consequence order inside each — so the worst
+  // item is still the first row of the first section.
+  const groups = GROUP_ORDER.map((key) => ({
+    key,
+    rows: rows.filter((r) => GROUP_OF[r.condition] === key),
+  })).filter((g) => g.rows.length > 0);
 
   const counts = { attention: 0, changed: 0, steady: 0 };
   for (const r of rows) counts[GROUP_OF[r.condition]]++;
@@ -278,7 +179,6 @@ export function buildRegister<S extends RegisterSkill>(
     groups,
     faults: counts.attention,
     changed: counts.changed,
-    steady: counts.steady,
   };
 }
 
@@ -360,71 +260,84 @@ export function BundleRegister<S extends RegisterSkill>({
           ) : null}
         </TableRow>
       </TableHeader>
-      <TableBody>
-        {groups.map((group) => {
-          const open = editing || !collapsed.has(group.key);
-          return (
-            <Fragment key={group.key}>
-              <GroupHeaderRow
-                group={group.key}
-                count={group.rows.length}
-                open={open}
-                columnCount={columnCount}
-                // Sections are fixed open while editing; a fold that cannot be
-                // unfolded is a control that lies.
-                onToggle={
-                  editing
-                    ? undefined
-                    : () =>
-                        setCollapsed((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(group.key)) next.delete(group.key);
-                          else next.add(group.key);
-                          return next;
-                        })
-                }
-              />
-              {open
-                ? group.rows.map((row) => (
-                    <RegisterRowView
-                      key={`${row.skill.source}::${row.skill.skillId}`}
-                      row={row}
-                      pending={pending}
-                      actions={actions}
-                      columnCount={columnCount}
-                    />
-                  ))
-                : null}
-            </Fragment>
-          );
-        })}
-      </TableBody>
+      {/*
+        One `<tbody>` PER SECTION, not one for the whole table.
+
+        A tbody is a rowgroup, so `aria-labelledby` on it is what tells a screen
+        reader that this row is inside "Needs attention". Previously the section
+        head was a `<td colSpan>` — a DATA cell, announced as a value, with no
+        programmatic relationship to the rows under it. The grouping that is the
+        entire point of the redesign existed visually only.
+
+        The cost is the component's corner rounding, which is scoped
+        `tr:first-child` / `tr:last-child` WITHIN a tbody and so would round
+        every section boundary into a seam. Reset it on all four corners and
+        re-apply on the outer edges of the first and last section.
+      */}
+      {groups.map((group, i) => {
+        const open = editing || !collapsed.has(group.key);
+        return (
+          <RegisterGroup
+            key={group.key}
+            group={group.key}
+            rows={group.rows}
+            open={open}
+            pending={pending}
+            actions={actions}
+            columnCount={columnCount}
+            isFirst={i === 0}
+            isLast={i === groups.length - 1}
+            // Sections are fixed open while editing; a fold that cannot be
+            // unfolded is a control that lies.
+            onToggle={
+              editing
+                ? undefined
+                : () =>
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(group.key)) next.delete(group.key);
+                      else next.add(group.key);
+                      return next;
+                    })
+            }
+          />
+        );
+      })}
     </Table>
   );
 }
 
 /**
- * A section header inside the table body.
+ * One section: its header row and its rows, as a single labelled rowgroup.
  *
- * A `<tr>` spanning every column rather than a separate table per group, so one
- * set of columns stays aligned down the whole register — the reader is
- * comparing conditions across sections, and three tables would each size their
- * columns independently.
+ * All sections share one `<table>` so the columns stay aligned down the whole
+ * register — the reader is comparing conditions across sections, and three
+ * tables would each size their columns independently.
  */
-function GroupHeaderRow({
+function RegisterGroup<S extends RegisterSkill>({
   group,
-  count,
+  rows,
   open,
+  pending,
+  actions,
   columnCount,
+  isFirst,
+  isLast,
   onToggle,
 }: {
   group: GroupKey;
-  count: number;
+  rows: RegisterRow<S>[];
   open: boolean;
+  pending: boolean;
+  actions?: RegisterActions<S>;
   columnCount: number;
+  isFirst: boolean;
+  isLast: boolean;
   onToggle?: () => void;
 }) {
-  const meta = GROUP_META[group];
+  const labelId = useId();
+  const bodyId = useId();
+
   const content = (
     <span className="flex items-center gap-2">
       {onToggle ? (
@@ -440,39 +353,59 @@ function GroupHeaderRow({
       ) : (
         <span aria-hidden className="size-3.5 shrink-0" />
       )}
-      <span
-        aria-hidden
-        className={cn(
-          "grid size-4 shrink-0 place-items-center rounded-full",
-          meta.halo,
-        )}
-      >
-        <span className={cn("size-1.5 rounded-full", meta.dot)} />
+      <StatusLight tone={TONE_OF_GROUP[group]} className="size-4" />
+      <span id={labelId} className="text-sm font-medium text-foreground">
+        {GROUP_LABEL[group]}
       </span>
-      <span className="text-sm font-medium text-foreground">{meta.label}</span>
       <span className="text-sm tabular-nums text-muted-foreground">
-        {count}
+        {rows.length}
       </span>
     </span>
   );
 
   return (
-    <TableRow className="[&>td]:bg-muted/60!">
-      <TableCell colSpan={columnCount} className="p-0">
-        {onToggle ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={open}
-            className="w-full cursor-pointer px-3 py-2 text-left transition-colors duration-100 hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
-          >
-            {content}
-          </button>
-        ) : (
-          <div className="px-3 py-2">{content}</div>
-        )}
-      </TableCell>
-    </TableRow>
+    <TableBody
+      id={bodyId}
+      aria-labelledby={labelId}
+      className={cn(
+        // Neutralise the per-tbody rounding, then restore only the register's
+        // real outer corners. See the comment at the call site.
+        "[&_tr:first-child_td:first-child]:rounded-none [&_tr:first-child_td:last-child]:rounded-none",
+        "[&_tr:last-child_td:first-child]:rounded-none [&_tr:last-child_td:last-child]:rounded-none",
+        isFirst &&
+          "[&_tr:first-child_td:first-child]:rounded-tl-lg [&_tr:first-child_td:last-child]:rounded-tr-lg",
+        isLast &&
+          "[&_tr:last-child_td:first-child]:rounded-bl-lg [&_tr:last-child_td:last-child]:rounded-br-lg",
+      )}
+    >
+      <TableRow className="[&>td]:bg-muted/60!">
+        <TableCell colSpan={columnCount} className="p-0">
+          {onToggle ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              aria-controls={bodyId}
+              className="w-full cursor-pointer px-3 py-2 text-left transition-colors duration-100 hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
+            >
+              {content}
+            </button>
+          ) : (
+            <div className="px-3 py-2">{content}</div>
+          )}
+        </TableCell>
+      </TableRow>
+      {open
+        ? rows.map((row) => (
+            <RegisterRowView
+              key={`${row.skill.source}::${row.skill.skillId}`}
+              row={row}
+              pending={pending}
+              actions={actions}
+            />
+          ))
+        : null}
+    </TableBody>
   );
 }
 
@@ -480,14 +413,11 @@ function RegisterRowView<S extends RegisterSkill>({
   row,
   pending,
   actions,
-  columnCount,
 }: {
   row: RegisterRow<S>;
   pending: boolean;
   actions?: RegisterActions<S>;
-  columnCount: number;
 }) {
-  void columnCount;
   const { skill, change, condition, status } = row;
   const isRemoved = status === "removed";
   const isAdded = status === "added";
@@ -537,10 +467,15 @@ function RegisterRowView<S extends RegisterSkill>({
         // trap for cards.) `surface-2` sits between the cell and the header
         // strip in both themes by construction.
         !status && "hover:[&>td]:bg-surface-2!",
-        isRemoved &&
-          "[&>td]:bg-danger/[0.10]! hover:[&>td]:bg-danger/[0.15]!",
-        isAdded &&
-          "[&>td]:bg-success/[0.10]! hover:[&>td]:bg-success/[0.15]!",
+        // Full-strength tokens, NOT an alpha step of them. `--danger` and
+        // `--success` are already the tinted BACKGROUND tokens (near-white in
+        // light, near-black in dark), so the 10% these carried composited to
+        // under 1.01:1 against the cell fill — invisible in both themes, which
+        // left the comment above claiming a signal that was not being rendered.
+        // The alpha step belongs on hover, where it is a delta from something
+        // visible rather than a delta from nothing.
+        isRemoved && "[&>td]:bg-danger! hover:[&>td]:bg-danger/70!",
+        isAdded && "[&>td]:bg-success! hover:[&>td]:bg-success/70!",
       )}
     >
       <TableCell className="align-top">
@@ -718,8 +653,11 @@ function ConditionDetail({
           and `fetch-error` outrank the change record, so a bare date under "No
           longer listed" reads as the date it was delisted when it is really the
           date of some unrelated content edit. When the two agree, the noun is
-          just the label again and the date stands alone. */}
-      {change ? (
+          just the label again and the date stands alone.
+
+          Both guards are load-bearing: a fault row carries no `kind` and no
+          `changedAt`, and there is no honest time to print for one. */}
+      {change?.kind && change.changedAt !== null ? (
         <p className="mt-1 text-xs text-muted-foreground">
           {change.kind === condition
             ? timeAgo(change.changedAt)
@@ -731,7 +669,7 @@ function ConditionDetail({
 }
 
 /** What the change record's timestamp actually refers to. */
-const CHANGE_NOUN: Record<RegisterChange["kind"], string> = {
+const CHANGE_NOUN: Record<ChangeKind, string> = {
   audit: "verdict changed",
   description: "description changed",
   content: "content edited",
@@ -774,47 +712,6 @@ function AuditCell({
 }
 
 /**
- * Before/after of a skill's description, inline in its row.
- *
- * The same two-line form the dashboard panel uses, deliberately: a reader who
- * saw the change announced there should meet the identical object here. `−`/`+`
- * are diff notation carrying the meaning on their own, because PRODUCT.md
- * commits to colour never being the sole indicator of state.
- */
-function DescriptionDelta({
-  before,
-  after,
-}: {
-  before?: string;
-  after?: string;
-}) {
-  return (
-    <div className="mt-1.5 max-w-[62ch] space-y-0.5 text-xs leading-relaxed">
-      {before ? (
-        <p className="flex gap-2">
-          <span aria-hidden className="font-mono text-danger-foreground">
-            &minus;
-          </span>
-          <span className="sr-only">Was: </span>
-          <span className="min-w-0 line-clamp-2 text-muted-foreground line-through decoration-muted-foreground/40">
-            {before}
-          </span>
-        </p>
-      ) : null}
-      {after ? (
-        <p className="flex gap-2">
-          <span aria-hidden className="font-mono text-success-foreground">
-            +
-          </span>
-          <span className="sr-only">Now: </span>
-          <span className="min-w-0 line-clamp-2 text-foreground">{after}</span>
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/**
  * The tally: the register's summary row, and the page's answer to "is anything
  * wrong?" before any of its contents.
  *
@@ -827,12 +724,20 @@ export function RegisterTally({
   faults,
   changed,
   pending,
+  suppressed = false,
 }: {
   total: number;
   faults: number;
   changed: number;
   /** The change data has not arrived yet. See the `pending` tone below. */
   pending: boolean;
+  /**
+   * The mass-change breaker tripped. The dashboard was the only surface wired
+   * to it, so a catalog-wide reprocess produced "holding these back" on the
+   * home page and a flat "Changed" on forty rows one click away — half the
+   * product asserting what the other half had just declined to.
+   */
+  suppressed?: boolean;
 }) {
   // `pending` and `empty` are their own tones, and both used to resolve to
   // green. That was the worst defect in this component: with the change query
@@ -841,52 +746,54 @@ export function RegisterTally({
   // flipping to red. Volunteering an all-clear you have not verified is the one
   // failure mode a monitoring product cannot afford. An empty bundle was the
   // same mistake in a quieter key: nothing to report is not the same as fine.
-  const tone: "pending" | "empty" | "clear" | "changed" | "fault" = pending
-    ? "pending"
-    : total === 0
-      ? "empty"
-      : faults > 0
-        ? "fault"
-        : changed > 0
-          ? "changed"
-          : "clear";
-
-  const dot = {
-    pending: "bg-muted-foreground animate-pulse motion-reduce:animate-none",
-    empty: "bg-muted-foreground",
-    clear: "bg-success-foreground",
-    changed: "bg-warning-foreground",
-    fault: "bg-danger-foreground",
-  }[tone];
-  const halo = {
-    pending: "bg-muted-foreground/15",
-    empty: "bg-muted-foreground/15",
-    clear: "bg-success/20",
-    changed: "bg-warning/20",
-    fault: "bg-danger/20",
-  }[tone];
+  const tone: "pending" | "empty" | "hold" | "clear" | "changed" | "fault" =
+    pending
+      ? "pending"
+      : total === 0
+        ? "empty"
+        : faults > 0
+          ? "fault"
+          : suppressed
+            ? "hold"
+            : changed > 0
+              ? "changed"
+              : "clear";
 
   // The empty panel below states this in full; a tally echoing it directly
-  // above is the same sentence twice.
+  // above is the same sentence twice. Nothing to announce either — there is no
+  // verdict, and the panel is not a status readout.
   if (tone === "empty") return null;
 
-  // Silent unless it has something the sections cannot say. With a fault or a
-  // change present, each section header already carries this dot beside the
-  // rows it describes — a summary line repeating them would be a second voice
-  // saying the same thing, and an empty one is just a gap above the table.
-  if (tone !== "pending" && tone !== "clear") return null;
+  // VISUALLY silent unless it has something the sections cannot say. With a
+  // fault or a change present, each section header already carries a dot beside
+  // the rows it describes, so a summary line repeating them is a second voice
+  // saying the same thing.
+  //
+  // The LIVE REGION is not silent, and that distinction is the fix here. This
+  // component used to `return null` for exactly the fault and changed tones,
+  // which removed the region from the DOM rather than updating it — and a
+  // removed live region never announces. So a screen-reader user was told
+  // "Checking 14 skills…" and then told the result only when the result was
+  // good. The announcement worked precisely when the news did not matter.
+  const visible = tone === "pending" || tone === "clear" || tone === "hold";
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span
-        aria-hidden
-        className={cn(
-          "grid size-5 shrink-0 place-items-center rounded-full",
-          halo,
-        )}
-      >
-        <span className={cn("size-1.5 rounded-full", dot)} />
-      </span>
+      {visible ? (
+        <StatusLight
+          tone={
+            tone === "pending"
+              ? "hold"
+              : tone === "hold"
+                ? "hold"
+                : TONE_OF_GROUP.steady
+          }
+          className={cn(
+            tone === "pending" &&
+              "[&>span]:animate-pulse motion-reduce:[&>span]:animate-none",
+          )}
+        />
+      ) : null}
 
       {/*
         No breakdown here any more. The register groups into the same three
@@ -896,8 +803,7 @@ export function RegisterTally({
 
         What the sections cannot say is the healthy verdict: a lone collapsed
         "Steady 13" is an inventory label, not the reassurance PRODUCT.md
-        principle 3 asks for. So this line speaks only when the structure
-        underneath cannot — while checking, and when everything is fine.
+        principle 3 asks for.
       */}
       <p aria-live="polite" className="flex-1 text-sm">
         {tone === "pending" ? (
@@ -912,7 +818,25 @@ export function RegisterTally({
               added them.
             </span>
           </>
-        ) : null}
+        ) : tone === "hold" ? (
+          <span className="text-muted-foreground">
+            A large share of the catalog changed at once, which usually means we
+            reprocessed content rather than authors editing it. Read these rows
+            with that in mind.
+          </span>
+        ) : (
+          // Sectioned visually, announced in words. `sr-only` rather than
+          // absent so the region stays mounted and actually fires.
+          <span className="sr-only">
+            {[
+              faults > 0 ? `${faults} need attention` : null,
+              changed > 0 ? `${changed} changed` : null,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+            .
+          </span>
+        )}
       </p>
     </div>
   );

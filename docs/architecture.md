@@ -44,7 +44,6 @@ svix
 | Route | Type | Data strategy |
 | ----- | ---- | ------------- |
 | `/` (home) | `○` Static (1h cacheLife) | Leaderboards server-cached via `'use cache'` + `cacheTag`, revalidated on-demand by Convex crons; search is client-side. Popular list renders its first page statically for SSR, then activates infinite scroll on the client |
-| `/explore` | `○` Static | All data client-fetched (Convex `useQuery`) |
 | `/compare` | `○` Static | Skills in `?skills=` param (nuqs), one client Convex query per column |
 | `/settings` | `○` Static | Clerk hooks client-side; sessions via server action, fetched on demand |
 | `/dashboard` | `○` Static | `listByUser` + `currentPlan` client-fetched over the authed websocket |
@@ -72,7 +71,7 @@ The home page's three leaderboards are cached with `'use cache'` + `cacheTag` (`
 
 > **All server caching uses `'use cache'`.** On Vercel, `'use cache'` is backed by the Data Cache, so cross-user snapshots persist across requests and instances. Every server-side cache in the app uses it — the home leaderboards, `official`, the catalog loaders, and the OG-image data loaders (`lib/og/images.tsx`) — with **no `unstable_cache` anywhere**. It's idiomatic and prerender-friendly (the cached result can land in the static shell).
 >
-> **OG image caching is separate from the data cache.** The OG routes are dynamic (`ƒ`) because they read `params`, so the `'use cache'` loaders only cache the *Convex data*. The rendered *PNG* for the data-backed OG routes (skill / org / repo / source / bundle) is cached at the CDN via an opt-in `Cache-Control: s-maxage=86400, stale-while-revalidate` header — `renderOg(node, { cache: true })` in `lib/og/templates.tsx` — restoring the daily route cache the old `export const revalidate` provided before Cache Components disallowed it. **That header is what keeps images from regenerating on every link**, independent of the data loaders. The static section cards (`/explore`, `/compare`, `/official`, `/pricing`, root) are `○` and keep Next's build-time static optimization (no header). The brand fonts are read once at module load (`lib/og/fonts.ts`), never inside a render: under Cache Components a render-time `readFile` counts as an async filesystem operation and would flip these otherwise-static routes to `ƒ` (it did, non-deterministically, before the read was hoisted to module scope).
+> **OG image caching is separate from the data cache.** The OG routes are dynamic (`ƒ`) because they read `params`, so the `'use cache'` loaders only cache the *Convex data*. The rendered *PNG* for the data-backed OG routes (skill / org / repo / source / bundle) is cached at the CDN via an opt-in `Cache-Control: s-maxage=86400, stale-while-revalidate` header — `renderOg(node, { cache: true })` in `lib/og/templates.tsx` — restoring the daily route cache the old `export const revalidate` provided before Cache Components disallowed it. **That header is what keeps images from regenerating on every link**, independent of the data loaders. The static section cards (`/compare`, `/official`, `/pricing`, root) are `○` and keep Next's build-time static optimization (no header). The brand fonts are read once at module load (`lib/og/fonts.ts`), never inside a render: under Cache Components a render-time `readFile` counts as an async filesystem operation and would flip these otherwise-static routes to `ƒ` (it did, non-deterministically, before the read was hoisted to module scope).
 
 ---
 
@@ -103,7 +102,7 @@ Each route wraps its params-reading client island in a `<Suspense>` whose fallba
 - Where the default state is unknowable (compare: column count lives in the URL), the fallback is a state-neutral skeleton instead.
 - **A prerendered client component must also avoid unstable reads during render** — `Date.now()`, `Math.random()`, or a library that reads them. The home Popular list uses `useInfiniteQuery`, whose observer reads `Date.now()` during render; `PopularList` therefore renders its server-cached first page statically and only mounts the query-backed infinite list once the client takes over (gated on the `useHydrated` hook — a `useSyncExternalStore` flag), keeping the prerender clean while the real leaderboard data still lands in the shell.
 
-Per-route fallbacks: `app/(main)/home-fallback.tsx`, `components/explore/explore-fallback.tsx`, `CustomSettingsPageView` (settings), `CompareFallback` (in compare's page.tsx).
+Per-route fallbacks: `app/(main)/home-fallback.tsx`, `CustomSettingsPageView` (settings), `CompareFallback` (in compare's page.tsx).
 
 ### Docs grounding
 
@@ -344,7 +343,7 @@ return <DashboardLoaded bundles={bundles} planData={planData} />;
 Two client-query flavors coexist:
 
 - **`useQuery` from `convex/react`** — when mutations with optimistic updates target the same query (dashboard): the optimistic `localStore` writes flow straight into these subscriptions.
-- **`useQuery(convexQuery(...))` via TanStack** — when React Query semantics help: `placeholderData: keepPreviousData` for search-as-you-type, `staleTime`/`gcTime` session caching (compare columns, pickers, explore).
+- **`useQuery(convexQuery(...))` via TanStack** — when React Query semantics help: `placeholderData: keepPreviousData` for search-as-you-type, `staleTime`/`gcTime` session caching (compare columns, pickers, skill history diffs).
 
 ### Pattern: `'use cache'` + `fetchQuery` server loaders (catalog routes)
 
@@ -453,7 +452,7 @@ getUserPlan() returns "pro"
 
 ## 12. Request Lifecycles
 
-### Static route (home, explore, compare, dashboard, settings)
+### Static route (home, compare, dashboard, settings)
 
 ```text
 1. CDN serves prerendered HTML immediately
@@ -513,7 +512,6 @@ hooks/
   use-hydrated.ts           # false during SSR/hydration render, true after
   use-user-plan.ts          # plan/limits, auth-aware skip + loading
   use-debounced-query-value.ts  # shared search debounce + cache bypass + spinner derivation
-  use-bundle-search.ts          # /explore bundle search (Convex-backed)
 
 convex/
   convex.config.ts          # registers @convex-dev/polar
@@ -530,7 +528,6 @@ app/
     layout.tsx              # AppHeader + children + GlobalBundleBar
     page.tsx                # static; Suspense + HomeFallback (mirrored default state)
     home-fallback.tsx
-    explore/                # static; Suspense + ExploreFallback
     compare/                # static; nuqs skills param, client columns, picker sheet
     dashboard/              # static; client useQuery + DashboardSkeleton gate
     settings/               # static; getSessions server action in actions.ts

@@ -1,11 +1,9 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
-import { useTheme } from "next-themes";
+import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
-import { parseDiffFromFile } from "@pierre/diffs";
-import { CodeView } from "@pierre/diffs/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 
@@ -25,132 +23,42 @@ import {
   SelectValue,
 } from "@/components/ui/cubby-ui/select";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
-import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { cn, formatDate, timeAgo } from "@/lib/utils";
+
+/**
+ * Loaded on demand. See the header of skill-history-diff.tsx: it pulls the full
+ * shiki bundle plus a second @shikijs/core, and this section is collapsed by
+ * default on the app's highest-traffic route. `ssr: false` because the renderer
+ * draws into a shadow root and has nothing to contribute to the server HTML.
+ */
+const VersionDiff = dynamic(
+  () => import("./skill-history-diff").then((m) => m.VersionDiff),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+        <DotMatrixRipple className="size-4" />
+        Loading diff
+      </div>
+    ),
+  },
+);
 
 type VersionEntry =
   (typeof api.skillVersions.listForSkill)["_returnType"][number];
 
-/**
- * Shiki themes match the app's own code blocks (see
- * code-block/lib/shiki-shared), so a diff and a fenced block on the same page
- * are the same material rather than two vendors' idea of syntax colour.
- *
- * `diffIndicators: "classic"` is an accessibility requirement, not a taste call:
- * it puts +/- marks in the gutter so additions and removals are distinguishable
- * without relying on the red/green wash. PRODUCT.md commits to colour never
- * being the sole indicator of state, and a diff is the easiest place to break
- * that promise.
- */
-const DIFF_OPTIONS = {
-  theme: { light: "github-light", dark: "github-dark" },
-  diffStyle: "unified",
-  diffIndicators: "classic",
-  /**
-   * Wrap long lines rather than scrolling them horizontally.
-   *
-   * This is forced, not preferred. CodeView's horizontal scroller is a `<code>`
-   * element inside its shadow root, while the vertical scroll has to live on a
-   * container out here (the library gives no way to cap its height internally).
-   * Two scrollers on two layers means the horizontal bar sits inside the
-   * vertically-scrolled content and slides out of sight the moment you scroll
-   * up. Measured, not assumed: with `overflow: "scroll"` the light-DOM container
-   * reports y-scroll only and the shadow `<code>` reports x-scroll only, and no
-   * placement of the height cap merges them — including putting
-   * `max-h-96 overflow-auto` directly on CodeView, which was tried.
-   *
-   * Wrapping deletes the horizontal axis, so one scroller remains.
-   *
-   * The cost is real and worth naming: a wrapped line occupies several rows
-   * under one line number, and fenced code or shell commands inside a SKILL.md
-   * lose their alignment. It lands acceptably here only because a SKILL.md is
-   * prose-dominant — its longest lines are description sentences, where wrapping
-   * beats clipping "…for risky package" mid-thought. If this ever hosts
-   * code-dominant files, revisit it as a user-facing wrap toggle rather than
-   * flipping the default back.
-   */
-  overflow: "wrap",
-  disableFileHeader: true,
-  lineDiffType: "word",
-  /**
-   * Repaint the code surface in the app's own palette.
-   *
-   * The Shiki theme ships its own page background — github-dark's blue-grey
-   * `#24292e` — which sat inside the violet-tinted muted tray as a foreign slab.
-   * The app's code block DOES have two layers, but both are its own neutrals: a
-   * `bg-muted` tray around a `--surface-3` panel. So the fix is to adopt
-   * `--surface-3`, not to go transparent — transparent would collapse a
-   * distinction the app's own code blocks deliberately make. Using the token
-   * also means light mode follows for free.
-   *
-   * It has to go through `unsafeCSS`. The theme writes `--diffs-dark-bg` /
-   * `--diffs-light-bg` onto `:host` from inside the shadow root, and a `:host`
-   * rule beats a custom property inherited from outside — so setting them on the
-   * wrapper does nothing, and neither does the `disableBackground` option. The
-   * component declares `@layer base, theme, rendered, unsafe`, and `unsafeCSS`
-   * lands in that last layer, the only thing that outranks the theme's output.
-   *
-   * Added and removed line tints are separate variables and survive untouched.
-   */
-  unsafeCSS: [
-    ":host {",
-    "  --diffs-dark-bg: var(--surface-3);",
-    "  --diffs-light-bg: var(--surface-3);",
-    // The collapsed-context bar. `--surface-4` was wrong: light mode collapses
-    // surfaces 3 through 8 to pure white, so the bar vanished against the panel.
-    // `--muted` is the same token the code block's tray uses and is darker than
-    // the surface-3 panel in BOTH themes (0.94 vs white in light, 0.24 vs 0.264
-    // in dark), so the bar stays legible either way.
-    "  --diffs-bg-separator: var(--muted);",
-    "}",
-  ].join("\n"),
-} as const;
 
 /**
- * Typography for the diff's shadow DOM.
+ * The History section.
  *
- * The renderer draws into a shadow root, so app CSS cannot reach it — but custom
- * properties DO inherit across the boundary, and the library reads these. Type
- * values are lifted verbatim from the app's code block (`font-mono
- * text-[.8125rem] leading-normal`).
- *
- * Only typography lives here. The surface colours have to go through
- * `unsafeCSS` in DIFF_OPTIONS instead — see the note there on why `--diffs-bg`
- * and `disableBackground` are both dead ends.
+ * Deferred until it is near the viewport. Skill detail is the app's
+ * highest-traffic route and is otherwise server-rendered and cacheable; this
+ * section mounted an unconditional Convex websocket subscription on every page
+ * view, held for the page's lifetime, to render a spinner in a region most
+ * readers never scroll to. A `#history` deep link still works — the anchor
+ * target is the outer section, which is always present, and the jump brings the
+ * sentinel into view immediately.
  */
-const DIFF_SURFACE_VARS = {
-  "--diffs-font-family": "var(--font-geist-mono)",
-  "--diffs-font-size": "0.8125rem",
-  "--diffs-line-height": "1.5",
-} as CSSProperties;
-
-/**
- * Resolve the diff's light/dark against the APP's theme rather than the OS.
- *
- * The library's default (`themeType: "system"`) reads `prefers-color-scheme`,
- * but this app drives its own theme through next-themes and ships a manual
- * switcher. Left on the default, someone who sets the app to light while their
- * OS is dark gets a dark diff embedded in a light page.
- *
- * Falls back to "system" until next-themes has mounted, which is its documented
- * hydration behaviour — `resolvedTheme` is undefined on the first client render.
- */
-function useDiffOptions() {
-  const { resolvedTheme } = useTheme();
-  return useMemo(
-    () => ({
-      ...DIFF_OPTIONS,
-      themeType:
-        resolvedTheme === "dark"
-          ? ("dark" as const)
-          : resolvedTheme === "light"
-            ? ("light" as const)
-            : ("system" as const),
-    }),
-    [resolvedTheme],
-  );
-}
-
 export function SkillHistory({
   source,
   skillId,
@@ -160,12 +68,52 @@ export function SkillHistory({
   skillId: string;
   className?: string;
 }) {
+  const [visible, setVisible] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (visible) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    // If the browser is jumping to #history, the target is already on screen
+    // and a fresh observer fires immediately for intersecting targets.
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setVisible(true);
+      },
+      { rootMargin: "400px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible]);
+
+  return (
+    <LabeledSection label="History" className={className} id="history">
+      <div ref={sentinelRef} aria-hidden />
+      {visible ? (
+        <SkillHistoryList source={source} skillId={skillId} />
+      ) : (
+        <div className="py-2 text-sm text-muted-foreground">
+          <span className="sr-only">History loads when you scroll to it.</span>
+        </div>
+      )}
+    </LabeledSection>
+  );
+}
+
+function SkillHistoryList({
+  source,
+  skillId,
+}: {
+  source: string;
+  skillId: string;
+}) {
   const { data: versions, isPending } = useQuery(
     convexQuery(api.skillVersions.listForSkill, { source, skillId }),
   );
 
   return (
-    <LabeledSection label="History" className={className} id="history">
+    <>
       {isPending ? (
         <div className="flex items-center gap-3 py-2 text-sm text-muted-foreground">
           <DotMatrixRipple className="size-4" />
@@ -195,7 +143,7 @@ export function SkillHistory({
           ))}
         </ol>
       )}
-    </LabeledSection>
+    </>
   );
 }
 
@@ -460,98 +408,3 @@ function DescriptionChange({ version }: { version: VersionEntry }) {
   );
 }
 
-/**
- * Fetches both versions' raw SKILL.md straight from storage and hands the two
- * strings to the renderer, which computes the diff client-side.
- *
- * Nothing routes content through a Convex function: queries return storage URLs
- * only, so a 15 KB file never crosses a serverless boundary and repeat views hit
- * the same cacheable URL.
- *
- * `from` is always the OLDER side. See the `pair` comment in HistoryRow.
- */
-function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry }) {
-  // Before the early returns below — hooks cannot be conditional.
-  const diffOptions = useDiffOptions();
-  const { data, isPending, isError } = useQuery({
-    queryKey: ["skillVersionDiff", from.versionId, to.versionId],
-    queryFn: async () => {
-      if (!from.contentUrl || !to.contentUrl) {
-        throw new Error("Version content is unavailable");
-      }
-      const [before, after] = await Promise.all([
-        fetch(from.contentUrl).then((r) => r.text()),
-        fetch(to.contentUrl).then((r) => r.text()),
-      ]);
-      return { before, after };
-    },
-    // Version content is immutable once written, so it never needs revalidating
-    // and re-expanding a row should be instant.
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
-
-  if (isPending) {
-    return (
-      <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
-        <DotMatrixRipple className="size-4" />
-        Loading diff
-      </div>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <p className="py-4 text-sm text-muted-foreground">
-        This version&apos;s file could not be loaded, so there is no diff to
-        show. The change itself is still recorded above.
-      </p>
-    );
-  }
-
-  const fileDiff = parseDiffFromFile(
-    { name: "SKILL.md", contents: data.before },
-    { name: "SKILL.md", contents: data.after },
-  );
-
-  return (
-    // ONE container, no tray. This matches how fenced code actually renders in
-    // skill content: markdown-content.tsx passes the outer CodeBlock
-    // `rounded-none bg-transparent p-0! shadow-none` and comments that it is
-    // "always a structureless wrapper (no padding, fill, or ring), so the code
-    // is a single container, never a box-in-a-box". The tray exists on the raw
-    // CodeBlock component but the app's own prose never shows it, so a diff
-    // rendering one was the odd surface out.
-    //
-    // The surface lives on the single panel below, as solidSurface(3) — the
-    // elevated card with its rim and shadow, exactly what CodeBlockPre carries.
-    <div className="w-full" style={DIFF_SURFACE_VARS}>
-      {/* CodeView rather than MultiFileDiff, on the library's own advice: the
-          lower-level components hand virtualization to the caller and blank when
-          nothing supplies a render window, which is exactly what they did here —
-          container mounted, stylesheet attached, <pre> with zero rows and no
-          console error. CodeView owns its rendering surface. */}
-      {/* The single surface, mirroring CodeBlockPre: `rounded-lg`, capped at
-          `max-h-96`, carrying solidSurface(3)'s elevated fill, rim and shadow.
-
-          The height cap and the scroll must be on the SAME element. Putting
-          `max-h-96` on CodeView's own className capped a div whose `overflow` is
-          `visible`, so expanding a collapsed hunk pushed content past the cap
-          and an outer `overflow-hidden` simply clipped it — the extra lines
-          rendered but were unreachable, with nothing to scroll. */}
-      <div
-        className={cn("max-h-96 overflow-y-auto rounded-lg", solidSurface(3))}
-      >
-        <CodeView
-          // Keyed by the version pair so changing the comparison range is a new
-          // item rather than a mutated one.
-          items={[
-            { id: `${from.versionId}:${to.versionId}`, type: "diff", fileDiff },
-          ]}
-          options={diffOptions}
-          disableWorkerPool
-        />
-      </div>
-    </div>
-  );
-}

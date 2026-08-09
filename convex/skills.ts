@@ -28,10 +28,12 @@ import {
   resolveDefaultBranch,
   fetchRepoTree,
   NOT_MODIFIED,
+  RATE_LIMITED,
 } from "./lib/github";
 import { revalidateHomeTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
+import { extractFrontmatterVersion } from "./skillVersions";
 import {
   fetchRawText,
   indexSkillMds,
@@ -850,29 +852,11 @@ function extractBodyContent(raw: string): string | null {
   return trimmed || null;
 }
 
-/**
- * Pull `version` out of SKILL.md frontmatter, for the version archive's
- * timeline ("4.0.3 → 4.0.4" reads far better than a hash delta, and a major
- * bump is a real severity signal).
- *
- * Deliberately STRICT where `extractFrontmatterDescription` above is forgiving.
- * A description is prose that authors wrap, quote, and fold across lines, so its
- * parser has to cope with block scalars. A version is a short scalar on one line
- * or it is not a version. Matching anything looser would turn a malformed field
- * into a fake "version changed" event, and the entire value of this field is
- * that when it does report a bump, the bump is real.
- *
- * Returns null when absent, which is the common case — most skills declare no
- * version, so this enriches the timeline rather than carrying it.
- */
-export function extractFrontmatterVersion(content: string): string | null {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const single = match[1].match(
-    /^version:[ \t]*["']?([A-Za-z0-9][A-Za-z0-9.+_-]*)["']?[ \t]*$/m,
-  );
-  return single ? single[1].trim() : null;
-}
+// `extractFrontmatterVersion` and `recordSkillVersion` moved to
+// convex/skillVersions.ts — the archive owns both halves now. See the note
+// at the top of that file. `archiveSkillVersion` below stays here: it is the
+// action-side helper the sync pipeline calls, and it needs pipeline context.
+
 
 // ---------------------------------------------------------------------------
 // Phase 1 — URL Discovery (GitHub Tree API)
@@ -958,7 +942,13 @@ export const discoverSkillMdUrls = internalAction({
     if (!branches.includes("master")) branches.push("master");
 
     const treeResult = await fetchRepoTree(owner, repo, branches);
-    const tree = treeResult === NOT_MODIFIED ? null : treeResult;
+    // Both sentinels collapse to "no tree" for discovery. A rate limit here
+    // leaves the row's `needsDiscovery` flag set, so the next run retries it —
+    // unlike the freshness sweep, which walks the whole catalog and has to stop.
+    const tree =
+      treeResult === NOT_MODIFIED || treeResult === RATE_LIMITED
+        ? null
+        : treeResult;
     const resolvedBranch = tree?.branch ?? defaultBranch;
 
     const matchedSkillIds = new Set<string>();
@@ -1754,84 +1744,6 @@ export const updateDescription = internalMutation({
   },
 });
 
-/**
- * Append one row to the version archive, taking ownership of an already-stored
- * raw blob.
- *
- * Split from the content write on purpose: `ctx.storage.store` is action-only in
- * Convex, so the blob has to exist before this mutation runs, which means this
- * function is responsible for deleting it again on every path that decides not
- * to keep it. Every early return below does that.
- */
-export const recordSkillVersion = internalMutation({
-  args: {
-    skillDocId: v.id("skills"),
-    rawStorageId: v.id("_storage"),
-    rawBytes: v.number(),
-    syncHash: v.string(),
-    previousSyncHash: v.optional(v.string()),
-    frontmatterVersion: v.optional(v.string()),
-    descriptionBefore: v.optional(v.string()),
-    descriptionAfter: v.optional(v.string()),
-    descriptionChanged: v.boolean(),
-    contentChanged: v.boolean(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const skill = await ctx.db.get(args.skillDocId);
-    if (!skill) {
-      // Row deleted between the content write and this call. Drop the blob
-      // rather than orphan it — nothing would ever reference it again, and file
-      // storage has no reaper of its own.
-      await ctx.storage.delete(args.rawStorageId);
-      return null;
-    }
-
-    const latest = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_skill_changedAt", (q) =>
-        q.eq("skillDocId", args.skillDocId),
-      )
-      .order("desc")
-      .first();
-
-    // Idempotency. `fetchSkillContent` retries up to three times, and the whole
-    // content chain can be re-triggered by hand from /dev, so the same hash can
-    // legitimately arrive twice. Without this guard a retry writes a duplicate
-    // row and a phantom "changed" event — precisely the noise that PRODUCT.md's
-    // "earn every alert" principle exists to prevent.
-    if (latest && latest.syncHash === args.syncHash) {
-      await ctx.storage.delete(args.rawStorageId);
-      return null;
-    }
-
-    await ctx.db.insert("skillVersions", {
-      skillDocId: args.skillDocId,
-      source: skill.source,
-      skillId: skill.skillId,
-      changedAt: Date.now(),
-      syncHash: args.syncHash,
-      previousSyncHash: args.previousSyncHash,
-      rawStorageId: args.rawStorageId,
-      rawBytes: args.rawBytes,
-      frontmatterVersion: args.frontmatterVersion,
-      // Read off the predecessor row rather than passed in by the caller: the
-      // caller knows what the file says now, only the archive knows what it said
-      // last time.
-      previousFrontmatterVersion: latest?.frontmatterVersion,
-      descriptionBefore: args.descriptionBefore,
-      descriptionAfter: args.descriptionAfter,
-      descriptionChanged: args.descriptionChanged,
-      contentChanged: args.contentChanged,
-      // No predecessor blob means no body diff is possible against this row.
-      // Description-level reporting still works, because `descriptionBefore`
-      // comes off the live skills row rather than the archive.
-      isBaseline: latest === null,
-    });
-
-    return null;
-  },
-});
 
 /**
  * Store a fetched SKILL.md verbatim and record the version row that points at
@@ -1857,10 +1769,17 @@ async function archiveSkillVersion(
     contentChanged: boolean;
   },
 ): Promise<void> {
+  // Declared outside the try so the catch can release it. The blob is stored
+  // BEFORE the row that references it exists, so a mutation failure (OCC
+  // conflict, transaction limit, transient error) leaves a file nothing points
+  // at and no query can find. Convex storage has no reaper, so that is silent
+  // unbounded growth — `recordSkillVersion` already releases the blob on every
+  // one of its own early returns; this path was the one that did not.
+  let rawStorageId: Id<"_storage"> | undefined;
   try {
     const blob = new Blob([args.raw], { type: "text/markdown" });
-    const rawStorageId = await ctx.storage.store(blob);
-    await ctx.runMutation(internal.skills.recordSkillVersion, {
+    rawStorageId = await ctx.storage.store(blob);
+    await ctx.runMutation(internal.skillVersions.recordSkillVersion, {
       skillDocId: args.skillDocId,
       rawStorageId,
       rawBytes: blob.size,
@@ -1879,6 +1798,16 @@ async function archiveSkillVersion(
     // timeline, whereas letting it throw would abort the surrounding content
     // chain and stall every skill queued behind it. Trade the gap.
     console.error(`Failed to archive version for skill ${args.skillDocId}:`, e);
+    if (rawStorageId) {
+      // Wrapped: cleanup failing must not replace the original error with a
+      // second one, and there is nothing further to do about it either way.
+      await ctx.storage.delete(rawStorageId).catch((cleanupError: unknown) => {
+        console.error(
+          `Failed to release orphaned blob ${rawStorageId}:`,
+          cleanupError,
+        );
+      });
+    }
   }
 }
 

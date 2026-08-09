@@ -21,11 +21,21 @@
  * server-side, which is why none is stored — see the schema comment on
  * `skillVersions`.
  */
-import { internalQuery, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  query,
+} from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { getCurrentUser } from "./users";
+import {
+  CONDITION_RANK,
+  isFault,
+  resolveCondition,
+  type ChangeKind,
+} from "../lib/monitoring/conditions";
 
 /**
  * Timeline page size. Generous because entries are small and the common skill
@@ -36,6 +46,15 @@ import { getCurrentUser } from "./users";
 const DEFAULT_VERSION_LIMIT = 50;
 const MAX_VERSION_LIMIT = 200;
 
+/**
+ * How many watched skills the dashboard feed will actually resolve per load.
+ *
+ * See the fan-out comment in `listRecentChangesForUser`. 500 is far above any
+ * plausible personal setup (free accounts cap at 25 distinct skills) and well
+ * inside the per-query read budget at 2-3 reads apiece.
+ */
+const MAX_FEED_CANDIDATES = 500;
+
 /** Severity ordering for audit verdicts. Higher is worse. */
 const AUDIT_RANK: Record<string, number> = {
   unknown: 0,
@@ -45,18 +64,28 @@ const AUDIT_RANK: Record<string, number> = {
 };
 
 /**
- * Consequence ordering for the dashboard feed, per PRODUCT.md principle 4: a
- * security regression outranks a description change, which outranks a body
- * edit. Not chronological — a verdict that went `pass → fail` three weeks ago
- * still matters more than a typo fix an hour ago, and a monitoring panel that
- * buries it under fresher noise has failed at its one job.
+ * Consequence ordering comes from `CONDITION_RANK` in lib/monitoring — the same
+ * table the register sorts by. It used to be a second, shorter list here
+ * (`FEED_RANK`, audit/description/content only), which is precisely how the
+ * dashboard ended up unable to rank a delisted skill: the ordering it owned had
+ * no row for one.
+ *
+ * Not chronological, per PRODUCT.md principle 4 — a verdict that went
+ * `pass → fail` three weeks ago still matters more than a typo fix an hour ago.
  */
-const FEED_RANK: Record<FeedKind, number> = {
-  audit: 3,
-  description: 2,
-  content: 1,
-};
-type FeedKind = "audit" | "description" | "content";
+const CONDITION_VALIDATOR = v.union(
+  v.literal("audit"),
+  v.literal("delisted"),
+  v.literal("fetch-error"),
+  v.literal("description"),
+  v.literal("content"),
+);
+
+const CHANGE_KIND_VALIDATOR = v.union(
+  v.literal("audit"),
+  v.literal("description"),
+  v.literal("content"),
+);
 
 /**
  * Mass-change circuit breaker.
@@ -300,14 +329,20 @@ const feedItem = v.object({
   bundleId: v.id("bundles"),
   bundleName: v.string(),
   bundleUrlId: v.string(),
-  /** The headline event, already ranked by consequence. */
-  kind: v.union(
-    v.literal("audit"),
-    v.literal("description"),
-    v.literal("content"),
-  ),
-  /** Most recent of the events present on this row. */
-  changedAt: v.number(),
+  /**
+   * The row's condition, already ranked by consequence. Includes the two FAULT
+   * states (`delisted`, `fetch-error`), which are conditions of the skill
+   * rather than events in the archive — see `isFault` in lib/monitoring.
+   */
+  condition: CONDITION_VALIDATOR,
+  /** The archive event, absent on a fault row (nothing happened; it IS wrong). */
+  kind: v.optional(CHANGE_KIND_VALIDATOR),
+  /**
+   * Most recent of the events present on this row. NULL on a fault: nothing
+   * records when a skill was delisted, and the UI must render no time rather
+   * than a confident wrong one.
+   */
+  changedAt: v.union(v.number(), v.null()),
   /** Present only when the verdict got worse since the baseline. */
   audit: v.optional(
     v.object({
@@ -336,10 +371,22 @@ export const listRecentChangesForUser = query({
     suppressed: v.boolean(),
     /** Skills the user watches, for the all-clear readout's denominator. */
     watchedSkillCount: v.number(),
+    /**
+     * More watched skills than one load can resolve; some were not checked.
+     * See `MAX_FEED_CANDIDATES`. The panel must say so rather than imply the
+     * list it shows is the whole answer.
+     */
+    truncated: v.boolean(),
   }),
   handler: async (ctx, { limit }) => {
     const user = await getCurrentUser(ctx);
-    if (!user) return { items: [], suppressed: false, watchedSkillCount: 0 };
+    if (!user)
+      return {
+        items: [],
+        suppressed: false,
+        watchedSkillCount: 0,
+        truncated: false,
+      };
 
     const bundles = await ctx.db
       .query("bundles")
@@ -371,11 +418,27 @@ export const listRecentChangesForUser = query({
 
     const watchedSkillCount = candidates.size;
 
+    // BOUNDED FAN-OUT. `resolveSkillChange` costs 2-3 indexed reads per
+    // candidate, and the `limit` arg trims the RESPONSE, not the work — so this
+    // query's cost scaled with everything the user watches, on every dashboard
+    // load and on every re-emit of any bundle mutation. Unbounded, a large
+    // enough account hits Convex's per-query read ceiling and the dashboard
+    // fails outright rather than degrading.
+    //
+    // Oldest baseline first, so the truncated tail is the part the reader has
+    // seen most recently. `truncated` is returned rather than swallowed: a
+    // monitoring product silently checking only part of your list is the same
+    // class of lie as a false all-clear.
+    const ordered = Array.from(candidates.values()).sort(
+      (a, b) => a.baseline - b.baseline,
+    );
+    const scanned = ordered.slice(0, MAX_FEED_CANDIDATES);
+
     const results = await Promise.all(
-      Array.from(candidates.values()).map(async (c) => {
+      scanned.map(async (c) => {
         const change = await resolveSkillChange(ctx, c);
         if (!change) return null;
-        const { summary, kind, changedAt, audit, version } = change;
+        const { summary, condition, kind, changedAt, audit, version } = change;
 
         return {
           source: c.source,
@@ -384,6 +447,7 @@ export const listRecentChangesForUser = query({
           bundleId: c.bundle._id,
           bundleName: c.bundle.name,
           bundleUrlId: c.bundle.urlId,
+          condition,
           kind,
           changedAt,
           audit,
@@ -394,19 +458,28 @@ export const listRecentChangesForUser = query({
 
     const items = results
       .filter((r): r is NonNullable<typeof r> => r !== null)
+      // Consequence, then recency, then name. Faults sort by name inside their
+      // rank because they have no date — falling back to 0 would order them
+      // arbitrarily and re-order them on unrelated writes.
       .sort(
         (a, b) =>
-          FEED_RANK[b.kind] - FEED_RANK[a.kind] || b.changedAt - a.changedAt,
+          CONDITION_RANK[b.condition] - CONDITION_RANK[a.condition] ||
+          (b.changedAt ?? 0) - (a.changedAt ?? 0) ||
+          a.name.localeCompare(b.name),
       )
       .slice(0, Math.min(limit ?? DEFAULT_VERSION_LIMIT, MAX_VERSION_LIMIT));
 
     return {
       items,
-      suppressed:
-        items.length >= SUPPRESSION_MIN_ROWS
-          ? await isCatalogWideChangeEvent(ctx)
-          : false,
+      // Counted over CHANGES only. A fault is not something the breaker can
+      // disbelieve — a delisted skill is delisted whatever the pipeline did —
+      // so faults neither trip suppression nor get held back by it.
+      suppressed: await resolveSuppression(
+        ctx,
+        items.filter((i) => !isFault(i.condition)).length,
+      ),
       watchedSkillCount,
+      truncated: ordered.length > scanned.length,
     };
   },
 });
@@ -434,6 +507,24 @@ async function isCatalogWideChangeEvent(ctx: QueryCtx): Promise<boolean> {
     .take(MASS_CHANGE_THRESHOLD);
 
   return realChanges.length >= MASS_CHANGE_THRESHOLD;
+}
+
+/**
+ * The gate in front of the breaker, shared by both surfaces.
+ *
+ * The scan is not free, so it only runs once a reader has enough changed rows
+ * for a wall of them to be a problem. Lifted out of the dashboard query because
+ * the register needs the identical answer: the breaker exists so the product
+ * does not assert changes it disbelieves, and it was only wired to the
+ * dashboard — so a catalog-wide reprocess produced "holding these back" on the
+ * home page and a flat "Changed" on forty rows one click away.
+ */
+async function resolveSuppression(
+  ctx: QueryCtx,
+  changeCount: number,
+): Promise<boolean> {
+  if (changeCount < SUPPRESSION_MIN_ROWS) return false;
+  return await isCatalogWideChangeEvent(ctx);
 }
 
 /**
@@ -503,18 +594,32 @@ async function resolveSkillChange(
         }
       : undefined;
 
-  if (!version && !audit) return null;
-
-  const kind: FeedKind = audit
+  const kind: ChangeKind | undefined = audit
     ? "audit"
-    : version?.descriptionChanged
-      ? "description"
-      : "content";
+    : version
+      ? version.descriptionChanged
+        ? "description"
+        : "content"
+      : undefined;
+
+  const condition = resolveCondition(summary, kind);
+
+  // Steady means nothing happened AND nothing is wrong — the only case with
+  // nothing to report. Faults reach here with no `kind`, which is exactly why
+  // the earlier `if (!version && !audit) return null` hid them: a delisted
+  // dependency produced no event, so the dashboard rendered a green all-clear
+  // over it while the register called it Needs attention.
+  if (condition === "steady") return null;
 
   return {
     summary,
+    condition,
     kind,
-    changedAt: Math.max(audit?.changedAt ?? 0, version?.changedAt ?? 0),
+    // Null for faults. Nothing records when a skill was delisted, and inventing
+    // a timestamp would put a confident "2 hours ago" on a fact we cannot date.
+    changedAt: kind
+      ? Math.max(audit?.changedAt ?? 0, version?.changedAt ?? 0)
+      : null,
     audit,
     version,
   };
@@ -540,26 +645,27 @@ async function resolveSkillChange(
  */
 export const listChangesForBundle = query({
   args: { urlId: v.string() },
-  returns: v.array(
-    v.object({
-      key: v.string(),
-      kind: v.union(
-        v.literal("audit"),
-        v.literal("description"),
-        v.literal("content"),
-      ),
-      changedAt: v.number(),
-      audit: v.optional(
-        v.object({
-          from: v.string(),
-          to: v.string(),
-          riskLevel: v.optional(v.string()),
-          changedAt: v.number(),
-        }),
-      ),
-      version: v.union(v.null(), versionEntry),
-    }),
-  ),
+  returns: v.object({
+    items: v.array(
+      v.object({
+        key: v.string(),
+        condition: CONDITION_VALIDATOR,
+        kind: v.optional(CHANGE_KIND_VALIDATOR),
+        changedAt: v.union(v.number(), v.null()),
+        audit: v.optional(
+          v.object({
+            from: v.string(),
+            to: v.string(),
+            riskLevel: v.optional(v.string()),
+            changedAt: v.number(),
+          }),
+        ),
+        version: v.union(v.null(), versionEntry),
+      }),
+    ),
+    /** Same meaning as on the dashboard feed — see `resolveSuppression`. */
+    suppressed: v.boolean(),
+  }),
   handler: async (ctx, { urlId }) => {
     const [bundle, currentUser] = await Promise.all([
       ctx.db
@@ -568,21 +674,28 @@ export const listChangesForBundle = query({
         .unique(),
       getCurrentUser(ctx),
     ]);
-    if (!bundle) return [];
+    if (!bundle) return { items: [], suppressed: false };
 
     const isOwner = currentUser !== null && currentUser._id === bundle.userId;
-    if (!bundle.isPublic && !isOwner) return [];
+    if (!bundle.isPublic && !isOwner) return { items: [], suppressed: false };
 
     const rows = await Promise.all(
       bundle.skills.map(async (s) => {
         const change = await resolveSkillChange(ctx, {
           source: s.source,
           skillId: s.skillId,
-          baseline: s.addedAt ?? 0,
+          // `bundle.createdAt`, not 0, for entries predating `addedAt`. Epoch 0
+          // would replay every version and every audit regression ever recorded
+          // for that skill, and because this surface never clears on view the
+          // row would sit in Needs attention forever, dated from before the
+          // user owned the bundle. The bundle's own creation is the earliest
+          // moment they could plausibly be accountable for it.
+          baseline: s.addedAt ?? bundle.createdAt,
         });
         if (!change) return null;
         return {
           key: `${s.source}::${s.skillId}`,
+          condition: change.condition,
           kind: change.kind,
           changedAt: change.changedAt,
           audit: change.audit,
@@ -593,7 +706,15 @@ export const listChangesForBundle = query({
       }),
     );
 
-    return rows.filter((r): r is NonNullable<typeof r> => r !== null);
+    const items = rows.filter((r): r is NonNullable<typeof r> => r !== null);
+
+    return {
+      items,
+      suppressed: await resolveSuppression(
+        ctx,
+        items.filter((i) => !isFault(i.condition)).length,
+      ),
+    };
   },
 });
 
@@ -660,5 +781,119 @@ export const changeRateHealth = internalQuery({
     }
 
     return { windows, threshold: MASS_CHANGE_THRESHOLD };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// WRITE PATH
+//
+// Moved here from skills.ts, which is 4.2k lines of sync pipeline. Nothing in
+// either function needs pipeline context — they touch `skillVersions` and
+// `_storage` and nothing else — so splitting the archive by CRUD verb meant a
+// reader looking for "how does a version get written" had to find it inside the
+// sync module. The action-side `archiveSkillVersion` stays in skills.ts,
+// because storing a blob is action-only and that IS pipeline work.
+// ---------------------------------------------------------------------------
+
+/**
+ * Pull `version` out of SKILL.md frontmatter, for the version archive's
+ * timeline ("4.0.3 → 4.0.4" reads far better than a hash delta, and a major
+ * bump is a real severity signal).
+ *
+ * Deliberately STRICT where `extractFrontmatterDescription` above is forgiving.
+ * A description is prose that authors wrap, quote, and fold across lines, so its
+ * parser has to cope with block scalars. A version is a short scalar on one line
+ * or it is not a version. Matching anything looser would turn a malformed field
+ * into a fake "version changed" event, and the entire value of this field is
+ * that when it does report a bump, the bump is real.
+ *
+ * Returns null when absent, which is the common case — most skills declare no
+ * version, so this enriches the timeline rather than carrying it.
+ */
+export function extractFrontmatterVersion(content: string): string | null {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const single = match[1].match(
+    /^version:[ \t]*["']?([A-Za-z0-9][A-Za-z0-9.+_-]*)["']?[ \t]*$/m,
+  );
+  return single ? single[1].trim() : null;
+}
+
+/**
+ * Append one row to the version archive, taking ownership of an already-stored
+ * raw blob.
+ *
+ * Split from the content write on purpose: `ctx.storage.store` is action-only in
+ * Convex, so the blob has to exist before this mutation runs, which means this
+ * function is responsible for deleting it again on every path that decides not
+ * to keep it. Every early return below does that.
+ */
+export const recordSkillVersion = internalMutation({
+  args: {
+    skillDocId: v.id("skills"),
+    rawStorageId: v.id("_storage"),
+    rawBytes: v.number(),
+    syncHash: v.string(),
+    previousSyncHash: v.optional(v.string()),
+    frontmatterVersion: v.optional(v.string()),
+    descriptionBefore: v.optional(v.string()),
+    descriptionAfter: v.optional(v.string()),
+    descriptionChanged: v.boolean(),
+    contentChanged: v.boolean(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillDocId);
+    if (!skill) {
+      // Row deleted between the content write and this call. Drop the blob
+      // rather than orphan it — nothing would ever reference it again, and file
+      // storage has no reaper of its own.
+      await ctx.storage.delete(args.rawStorageId);
+      return null;
+    }
+
+    const latest = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_changedAt", (q) =>
+        q.eq("skillDocId", args.skillDocId),
+      )
+      .order("desc")
+      .first();
+
+    // Idempotency. `fetchSkillContent` retries up to three times, and the whole
+    // content chain can be re-triggered by hand from /dev, so the same hash can
+    // legitimately arrive twice. Without this guard a retry writes a duplicate
+    // row and a phantom "changed" event — precisely the noise that PRODUCT.md's
+    // "earn every alert" principle exists to prevent.
+    if (latest && latest.syncHash === args.syncHash) {
+      await ctx.storage.delete(args.rawStorageId);
+      return null;
+    }
+
+    await ctx.db.insert("skillVersions", {
+      skillDocId: args.skillDocId,
+      source: skill.source,
+      skillId: skill.skillId,
+      changedAt: Date.now(),
+      syncHash: args.syncHash,
+      previousSyncHash: args.previousSyncHash,
+      rawStorageId: args.rawStorageId,
+      rawBytes: args.rawBytes,
+      frontmatterVersion: args.frontmatterVersion,
+      // Read off the predecessor row rather than passed in by the caller: the
+      // caller knows what the file says now, only the archive knows what it said
+      // last time.
+      previousFrontmatterVersion: latest?.frontmatterVersion,
+      descriptionBefore: args.descriptionBefore,
+      descriptionAfter: args.descriptionAfter,
+      descriptionChanged: args.descriptionChanged,
+      contentChanged: args.contentChanged,
+      // No predecessor blob means no body diff is possible against this row.
+      // Description-level reporting still works, because `descriptionBefore`
+      // comes off the live skills row rather than the archive.
+      isBaseline: latest === null,
+    });
+
+    return null;
   },
 });
