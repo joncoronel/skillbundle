@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import dynamic from "next/dynamic";
+import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
@@ -34,23 +33,24 @@ import { cn, formatDate, timeAgo } from "@/lib/utils";
  */
 
 /**
- * Still loaded on demand. See the header of skill-history-diff.tsx: it pulls the
- * full shiki bundle plus a second @shikijs/core, and only matters once someone
- * actually expands a row. `ssr: false` because the renderer draws into a shadow
- * root and has nothing to contribute to the server HTML.
+ * The renderer is still code-split — it pulls the full shiki bundle plus a
+ * second @shikijs/core (see the header of skill-history-diff.tsx), and only
+ * matters once someone expands a row.
+ *
+ * Deliberately NOT `next/dynamic`. Its `loading` fallback renders for at least
+ * one frame on first mount even when the module is already in the registry, so
+ * preloading could never remove the "Loading diff" flash — the row opened, then
+ * the diff appeared underneath it a beat later. Holding the resolved module in
+ * state instead means the component is in hand *before* anything opens, and the
+ * panel animates once, straight to its real height.
+ *
+ * The promise is module-scope so the second row a reader opens pays nothing.
  */
-const VersionDiff = dynamic(
-  () => import("./skill-history-diff").then((m) => m.VersionDiff),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
-        <DotMatrixRipple className="size-4" />
-        Loading diff
-      </div>
-    ),
-  },
-);
+type DiffModule = typeof import("./skill-history-diff");
+let diffModulePromise: Promise<DiffModule> | null = null;
+function loadDiffModule(): Promise<DiffModule> {
+  return (diffModulePromise ??= import("./skill-history-diff"));
+}
 
 export type VersionEntry =
   (typeof api.skillVersions.listForSkill)["_returnType"][number];
@@ -67,10 +67,16 @@ export function HistoryRow({
 }) {
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [Diff, setDiff] = useState<DiffModule["VersionDiff"] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [againstId, setAgainstId] = useState<string | undefined>(
     previous?.versionId,
   );
   const queryClient = useQueryClient();
+  // Guards against out-of-order range swaps: a slow first prefetch must not
+  // land after a later one and drag the selection backwards.
+  const swapToken = useRef(0);
 
   // The oldest row has no stored predecessor, so there is nothing to diff it
   // against. Deliberately NOT rendered as an all-additions diff: that would
@@ -131,14 +137,53 @@ export function HistoryRow({
   async function openWithDiff() {
     if (!pair) return;
     setOpening(true);
+    setLoadFailed(false);
     try {
-      await Promise.all([
-        import("./skill-history-diff"),
+      const [mod] = await Promise.all([
+        loadDiffModule(),
         queryClient.prefetchQuery(versionDiffQueryOptions(pair.from, pair.to)),
       ]);
+      setDiff(() => mod.VersionDiff);
+    } catch {
+      // The chunk itself failed (offline, a bad deploy). Content fetches are
+      // VersionDiff's own problem and it reports them in place; this is the one
+      // failure that would otherwise open an empty panel.
+      setLoadFailed(true);
     } finally {
       setOpening(false);
       setOpen(true);
+    }
+  }
+
+  /**
+   * Swap the comparison range without collapsing the panel.
+   *
+   * Changing `againstId` immediately swapped in a pair whose content was not
+   * cached, so the diff dropped to a short pending state and the panel
+   * collapsed to it before growing back — a full-height jump for what reads as
+   * a filter change. Prefetching first and switching after keeps the current
+   * diff on screen the whole time, so the height only moves once, to the new
+   * diff's own size.
+   */
+  async function changeRange(next: string) {
+    if (next === againstId) return;
+    const target = olderVersions?.find((v) => v.versionId === next);
+    if (!target) return;
+
+    const token = ++swapToken.current;
+    setSwapping(true);
+    try {
+      await queryClient.prefetchQuery(
+        versionDiffQueryOptions(target, version),
+      );
+    } catch {
+      // Fall through and switch anyway — VersionDiff surfaces the failure with
+      // more context than a select that silently ignores the click.
+    } finally {
+      if (token === swapToken.current) {
+        setSwapping(false);
+        setAgainstId(next);
+      }
     }
   }
 
@@ -176,19 +221,27 @@ export function HistoryRow({
               // instead of sitting inside the control. The prop also drives the
               // iconLeft compound variant that corrects the optical padding.
               disabled={opening}
+              // Both states render into the same 16px box. DotMatrixRipple
+              // sizes itself from a `size` preset (xs = 16px) via inline
+              // styles — a `size-*` class on it does nothing, which is why the
+              // ripple came in at the 28px default and grew the button.
+              // Centring both in a fixed box means the trigger cannot move
+              // while it loads.
               leadingIcon={
-                opening ? (
-                  <DotMatrixRipple className="size-3.5" />
-                ) : (
-                  <HugeiconsIcon
-                    icon={ArrowDown01Icon}
-                    size={14}
-                    className={cn(
-                      "transition-transform duration-100 ease-out",
-                      open && "rotate-180",
-                    )}
-                  />
-                )
+                <span className="grid size-4 shrink-0 place-items-center">
+                  {opening ? (
+                    <DotMatrixRipple size="xs" ariaLabel="Loading changes" />
+                  ) : (
+                    <HugeiconsIcon
+                      icon={ArrowDown01Icon}
+                      size={14}
+                      className={cn(
+                        "transition-transform duration-100 ease-out",
+                        open && "rotate-180",
+                      )}
+                    />
+                  )}
+                </span>
               }
               onClick={() => {
                 if (open) {
@@ -222,7 +275,7 @@ export function HistoryRow({
                     // value, which here is a Convex document id.
                     items={rangeLabels}
                     onValueChange={(v) => {
-                      if (typeof v === "string") setAgainstId(v);
+                      if (typeof v === "string") void changeRange(v);
                     }}
                   >
                     <SelectTrigger
@@ -240,6 +293,20 @@ export function HistoryRow({
                       ))}
                     </SelectContent>
                   </Select>
+                  {/* Occupies its slot in both states so the row cannot reflow
+                      when the swap starts. The diff below stays on screen while
+                      this runs — the indicator is the only thing that changes. */}
+                  <span
+                    aria-hidden={!swapping}
+                    className={cn(
+                      "grid size-4 shrink-0 place-items-center transition-opacity duration-100 ease-out",
+                      swapping ? "opacity-100" : "opacity-0",
+                    )}
+                  >
+                    {swapping ? (
+                      <DotMatrixRipple size="xs" ariaLabel="Loading comparison" />
+                    ) : null}
+                  </span>
                 </div>
               )}
 
@@ -248,12 +315,34 @@ export function HistoryRow({
                   the most recent step and would misrepresent the span. */}
               {comparingToPrevious && <DescriptionChange version={version} />}
 
-              <VersionDiff from={pair.from} to={pair.to} />
+              {Diff ? (
+                <Diff from={pair.from} to={pair.to} />
+              ) : loadFailed ? (
+                <DiffUnavailable onRetry={() => void openWithDiff()} />
+              ) : null}
             </div>
           )}
         </CollapsibleContent>
       </Collapsible>
     </li>
+  );
+}
+
+/**
+ * Shown only when the renderer chunk itself failed to load — offline, or a
+ * deploy that moved the file. Names the problem and the recovery rather than
+ * leaving an opened panel empty.
+ */
+function DiffUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        Couldn&apos;t load the diff viewer.
+      </p>
+      <Button variant="outline" size="xs" className="mt-3" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
   );
 }
 

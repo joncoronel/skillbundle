@@ -6,6 +6,47 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
+
+**Prize:** delete ~420 KB of client JS from the skill detail route entirely, and
+make expanding a history row instant instead of a load.
+
+The 420 KB is currently code-split and only downloads when someone expands a
+row (`loadDiffModule` in `components/skill-history-row.tsx`). Measured against a
+production build, it is absent from the skill page's initial load — so this is
+about making the *interaction* free, not fixing a regression.
+
+**Why it's a project, not a tweak.** Three things have to move together:
+
+1. **We use `CodeView`; the preloaders don't cover it.** `@pierre/diffs/ssr`
+   exposes `preloadFile`, `preloadFileDiff`, `preloadMultiFileDiff`,
+   `preloadPatchDiff`, `preloadPatchFile` — each spreads into the matching
+   `File` / `FileDiff` / `MultiFileDiff` / `PatchDiff` component. There is no
+   `preloadCodeView`. `components/skill-history-diff.tsx` documents why it uses
+   `CodeView` ("the library's own advice" — `FileDiff` conflicted over the
+   rendering surface and logged a console error), so this needs that decision
+   revisited first.
+2. **Content lives in Convex storage blobs.** `versionEntry.contentUrl` is a
+   storage URL fetched at view time; SSR means fetching both sides on the
+   server. That's fine inside the page's `'use cache'` scope (paid once per
+   cache period, not per reader) but it is new server work.
+3. **The range selector is combinatorial.** The newest row can compare against
+   any older version, up to the 50-version query limit. Prerendering every pair
+   is O(N²) for content behind a collapsed disclosure. Realistically only the
+   default pair per row (N-1 diffs) could be prerendered, with the rest still
+   loaded on demand — so the client renderer probably cannot be dropped
+   entirely unless the range selector also changes.
+
+**Encouraging fact:** `node_modules/@pierre/diffs/dist/react/` contains **no
+shiki reference at all**. The whole 420 KB comes from the main `@pierre/diffs`
+entry, which we import only for `parseDiffFromFile`. Move parsing to the server
+and the client could plausibly need nothing heavier than `/react`.
+
+Order of work if picked up: (a) confirm `FileDiff` can be styled to match what
+`CodeView` gives today, (b) prerender the default pair per row inside the
+existing cached loader, (c) measure the HTML weight added to every skill page
+before committing, since most readers never expand a row.
+
 ### Parked from the 16.3 adoption pass (Aug 2026)
 
 **TypeScript 7 — wait for 7.1.** `pnpm add -D typescript@^7` installs cleanly and
