@@ -89,6 +89,38 @@ test.describe("initial load", () => {
     );
   });
 
+  // /add and /pricing are fully static (`○`) today, so these pass trivially.
+  // That's the point: they're cheap tripwires. If someone adds an uncached
+  // Convex read or a cookie check to either page, it silently stops being
+  // static and these start failing.
+  test("/add serves its header in the shell", async ({ page }) => {
+    await instant(
+      page,
+      async () => {
+        await page.goto("/add");
+        await expect(page.locator("h1")).toContainText("Add a skill.");
+        await expect(
+          page.getByText("Paste its skills.sh link or its GitHub repo"),
+        ).toBeVisible();
+      },
+      { baseURL },
+    );
+  });
+
+  test("/pricing serves its header and plans in the shell", async ({ page }) => {
+    await instant(
+      page,
+      async () => {
+        await page.goto("/pricing");
+        await expect(page.locator("h1")).toContainText("Two plans. One product.");
+        await expect(
+          page.getByText("Both watch the skills you depend on"),
+        ).toBeVisible();
+      },
+      { baseURL },
+    );
+  });
+
   test("skill detail serves title and actions in the shell", async ({ page }) => {
     await instant(
       page,
