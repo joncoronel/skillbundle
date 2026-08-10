@@ -147,6 +147,22 @@ test.describe("initial load", () => {
       },
       { baseURL },
     );
+
+    // History is server-rendered with the rest of the body rather than fetched
+    // by the section itself. It used to defer behind an IntersectionObserver
+    // and then open its own Convex subscription, which meant a second spinner
+    // after the page had already loaded, plus layout shift as the section grew
+    // from empty, to spinner, to list.
+    //
+    // The assertion that actually distinguishes the two: the section has real
+    // content *without scrolling to it*. Under the old approach the body was an
+    // empty placeholder until the observer fired. Matching either the populated
+    // or the empty state keeps this independent of whether this particular
+    // skill has recorded versions.
+    await expect(page.locator("#history")).toContainText(
+      /No changes recorded yet|View changes|Earliest recorded version/,
+    );
+    await expect(page.getByText("Loading history")).toHaveCount(0);
   });
 
   test("org listing serves its column headers in the shell", async ({ page }) => {

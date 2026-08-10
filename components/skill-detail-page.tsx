@@ -77,6 +77,22 @@ export async function loadCopies(source: string, skillId: string) {
   return fetchQuery(api.duplicates.getSkillCopies, { source, skillId });
 }
 
+// Version history for the History section. Tagged "skill-sync" like the other
+// sync-written data: `skillVersions` rows are written from convex/skills.ts on
+// the content-refresh path, and that same module pings this tag via
+// /api/revalidate, so history refreshes in lockstep with the install count and
+// chart rather than lagging its own window.
+//
+// Loaded here rather than by the section itself so it joins the page's existing
+// Promise.all and lands in the same cached HTML — see the header of
+// components/skill-history.tsx for why that replaced a deferred subscription.
+export async function loadVersions(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  cacheTag(SKILL_SYNC_TAG);
+  return fetchQuery(api.skillVersions.listForSkill, { source, skillId });
+}
+
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
 // viewed skills) and cached 24h, so it piggybacks on the page's existing ISR
 // regeneration rather than adding a daily sync over thousands of repos.
@@ -196,12 +212,13 @@ async function SkillDetailBody({
   externalIcon: IconSvgElement;
   externalLabel: string;
 }) {
-  const [skill, audits, insights, stars, copies] = await Promise.all([
+  const [skill, audits, insights, stars, copies, versions] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
     loadInsights(source, skillId),
     loadStars(source),
     loadCopies(source, skillId),
+    loadVersions(source, skillId),
   ]);
 
   if (!skill) {
@@ -303,11 +320,7 @@ async function SkillDetailBody({
             is only a few rows, so it costs the reader almost nothing on the way
             past. Sits with the other supplemental sections rather than
             interrupting the Overview → Documentation run. */}
-        <SkillHistory
-          source={source}
-          skillId={skillId}
-          className="mt-10 lg:col-start-1"
-        />
+        <SkillHistory versions={versions} className="mt-10 lg:col-start-1" />
 
         {/* Spans all rows of column 2 (`grid-row: 1 / span 99`) so it never
             forces a column-1 row to its own height — placing it in just row 1

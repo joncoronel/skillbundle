@@ -78,6 +78,27 @@ shell is the page frame, both skeletons, and the list's column headers.
 
 **Static + client data (most routes).** The whole page shell — including a meaningful default state, see §8 — prerenders at build. Navigation between these routes is instant (full prefetch). Per-user or interactive data arrives via the client Convex connection, which the root provider keeps open and authenticated across the whole session, so in-app navigations pay no handshake.
 
+**A note on deferring sections to the client.** The History section on skill
+detail used to fetch its own data: deferred behind an IntersectionObserver, then
+a Convex `useQuery` subscription. The motivation was sound — don't open a live
+subscription on the app's highest-traffic route for a region most readers never
+scroll to — but the fix was aimed at the wrong layer. It produced a second
+loading phase after the page had already rendered, and layout shift as the
+section went from an empty placeholder, to a spinner, to a full list.
+
+`loadVersions` now sits in the page's existing `Promise.all` behind `'use cache'`
+with `cacheTag("skill-sync")`, and `SkillHistory` is a Server Component taking
+the rows as a prop. That removes the subscription entirely rather than deferring
+it, collapses three render phases into one, and puts the timeline in the cached
+HTML, so it costs one Convex call per cache period instead of one per reader.
+
+The general rule this illustrates: **on a cacheable server-rendered route, the
+answer to "this section is expensive on the client" is usually to move it to the
+server, not to defer it.** Deferring keeps the cost and adds a loading state.
+What legitimately stays lazy is genuinely per-interaction work — the diff
+renderer in `skill-history-row.tsx` pulls the full shiki bundle and only matters
+once a row is expanded.
+
 **Partial Prerender for the catalog routes.** Skill/org/repo pages are public, high-cardinality, and shared. `generateStaticParams` returns one representative param (`lib/representative-params.ts` picks the most popular skill of each source type at build — memoized at module scope so the scan runs once, not once per route — with a known-good fallback) so Next can prerender the route's App Shell. It only needs one real path because an unknown or even invalid param still extracts a working shell; the representative just gives Next one concrete page to fully prebuild. `dynamicParams: true` is the default: a visitor to an unknown path gets the App Shell instantly (the route's `loading.tsx` skeleton), the param-specific content streams in, and Next upgrades the path in the background so later visitors get the cached render. The data layer (`loadSkill`, `loadAudits`, etc. in `components/skill-detail-page.tsx`, plus per-page `loadOrg`/`loadRepo`/`loadSource`) uses `'use cache'` keyed by args, so `generateMetadata` and the page body share one Convex call, and the `skill-sync`-tagged loaders bust on the daily sync (see §1 caching).
 
 > `fetchQuery` forces `cache: "no-store"` on its underlying fetch, which would block prerendering. Wrapping it in a `'use cache'` function isolates that behind a cache boundary and lets the route prerender. This is the standard pattern for any server-side Convex read.
@@ -726,7 +747,9 @@ components/
   global-bundle-bar.tsx     # layout-mounted, pathname reserved-segment BLOCK-list, <Suspense fallback={null}>
   bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style
   data-error-boundary.tsx   # catchError() region boundary + retry() — wraps the data <Suspense>es
-  skill-detail-page.tsx     # loadSkill/loadAudits ('use cache' + cacheTag loaders)
+  skill-detail-page.tsx     # loadSkill/loadAudits/loadVersions ('use cache' + cacheTag loaders)
+  skill-history.tsx         # server: History timeline, data passed in as a prop
+  skill-history-row.tsx     # client: per-row open/compare state + lazy diff
   header-nav.tsx            # DesktopNav — usePathname read behind <Suspense>
 
 lib/
