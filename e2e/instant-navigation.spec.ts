@@ -3,6 +3,7 @@ import { instant } from "@next/playwright";
 import {
   BUNDLE_ID,
   GITHUB_ORG_PATH,
+  GITHUB_REPO_PATH,
   GITHUB_SKILL,
   GITHUB_SKILL_PATH,
 } from "./fixtures";
@@ -203,6 +204,35 @@ test.describe("client navigation", () => {
       await expect(page.getByText("Installs", { exact: true })).toBeVisible({
         timeout: SHELL_TIMEOUT,
       });
+    });
+  });
+
+  // The deepest hop of the primary traversal. A skill page's breadcrumb and
+  // title are both URL data, so there is nothing params-independent worth
+  // rendering in a shared shell — which is why this route keeps its
+  // `loading.tsx` and does NOT use the params-into-Suspense split the listing
+  // routes do. `loading.tsx` is its shell, and this asserts that shell commits
+  // with real structure ("Install" / "Overview" section labels) rather than the
+  // navigation blocking.
+  test("/[org]/[repo] -> skill detail commits its shell instantly", async ({
+    page,
+  }) => {
+    await page.goto(GITHUB_REPO_PATH);
+
+    const skill = page.locator(`a[href^="${GITHUB_REPO_PATH}/"]`).first();
+    await expect(skill).toBeVisible();
+    const href = await skill.getAttribute("href");
+    expect(href).toBeTruthy();
+
+    await instant(page, async () => {
+      await skill.click();
+      await page.waitForURL((url) => url.pathname === href);
+      await expect(
+        page.locator("*:visible", { hasText: /^Install$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+      await expect(
+        page.locator("*:visible", { hasText: /^Overview$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
   });
 

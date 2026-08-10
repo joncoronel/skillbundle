@@ -49,7 +49,7 @@ svix
 | `/dashboard` | `○` Static | `listByUser` + `currentPlan` client-fetched over the authed websocket |
 | `/add` | `○` Static | Public add-skill flow; auth resolves client-side (`useConvexAuth`), quota via `myGitHubAddQuota` over the websocket, adds via Convex actions |
 | `/official`, `/pricing` | `○` Static | official: `'use cache'` curated owners loader, `cacheTag('skill-sync')`. Its `cacheLife("days")` means the publisher list is cached content with `stale ≥ 5min`, so the **whole list is in the App Shell**, not just the header |
-| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly via `loading.tsx`, then upgrade. Data via `'use cache'` + `cacheTag('skill-sync')` loaders. **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
+| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` + `cacheTag('skill-sync')` loaders. **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
 | `/bundle/[id]`, `/dev`, `/dev/add-skill` | `◐` Partial Prerender | bundle: `loading.tsx` shell + `preloadQuery` authed content streams in, with `await io()` declaring the request-time boundary; dev: `verifyAdmin()` streams behind a Suspense gate |
 | `/opengraph-image` plus the compare / official / pricing OG images | `○` Static | Param-free OG routes prerender. (Only the *param-dependent* OG routes are `ƒ`.) |
 | `/[org]/**/opengraph-image`, `/site/**/opengraph-image`, `/bundle/[id]/og/[v]`, `/api/revalidate` | `ƒ` Dynamic | OG images (data via `'use cache'`, rendered PNG CDN-cached via `Cache-Control`); revalidate webhook (secret-gated, called by Convex crons) |
@@ -73,6 +73,32 @@ is **synchronous** and passes the `params` promise down into Suspense-wrapped
 children. URL-derived chrome (breadcrumb tail, `h1`) gets its own boundary with
 a shape-matching skeleton; the listing gets another. What lands in the shared
 shell is the page frame, both skeletons, and the list's column headers.
+
+### `loading.tsx` or an in-page shell — pick one, not both
+
+A route gets its instant shell from exactly one of two places, and which one
+depends on how much of the page is params-independent:
+
+- **Mostly params-independent → in-page `<Suspense>`, no `loading.tsx`.** The
+  listing routes have real structure that doesn't depend on the URL (the page
+  frame, the meta row, the "Source / Installs" column headers), so the page
+  renders its own shell and it is strictly more faithful than a generic one.
+- **Almost everything is params-dependent → `loading.tsx` IS the shell.** On the
+  skill detail routes the breadcrumb and the `h1` are both URL data, so there is
+  nothing worth rendering above a boundary. Those pages keep `await params` at
+  the top and let `loading.tsx` cover the whole route. That is the correct shape
+  for them, not an oversight.
+
+**Having both is the failure mode.** The listing routes briefly did: their
+`loading.tsx` painted an all-skeleton page, then the page's own shell replaced it
+with a differently-shaped one (skeleton column headers vs. real text, `h-12`
+title vs. a `clamp()` line box), then the content arrived. Three phases and two
+distinct skeletons on one load. `ListingPageLoading` and those three
+`loading.tsx` files were deleted once the pages grew their own shells.
+
+If you add the params-into-Suspense split to a route, delete its `loading.tsx`
+in the same change. If you keep `loading.tsx`, don't also add page-level
+fallbacks above the data boundary.
 
 ### Why each type
 
@@ -767,8 +793,10 @@ app/
     dashboard/              # static; client useQuery + DashboardSkeleton gate
     settings/               # static; getSessions server action in actions.ts
     bundle/[id]/            # ◐; loading.tsx shell + await io() + preloadQuery + generateMetadata
-    [org]/...  site/...     # ◐; gSP returns 1 representative param, 'use cache' loaders,
-                            #    SYNC page passing the params promise into Suspense (see §1)
+    [org]/...  site/...     # ◐; gSP returns 1 representative param, 'use cache' loaders.
+                            #    Listing routes: SYNC page, params promise into
+                            #    Suspense, NO loading.tsx. Skill routes: loading.tsx
+                            #    IS the shell (all content is params-derived). §1
 
 components/
   app-header.tsx            # server shell; client islands in Suspense
