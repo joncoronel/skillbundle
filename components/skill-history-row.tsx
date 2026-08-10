@@ -373,7 +373,13 @@ export function HistoryRow({
                     >
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    {/* Matches the catalog filter selects: the popup opens over
+                        the trigger with the current option aligned to it, rather
+                        than dropping below. Elevation stays at the component
+                        default — catalog-controls raises its popups to level 5
+                        because they sit on a raised toolbar, whereas this one is
+                        on the page background. */}
+                    <SelectContent alignItemWithTrigger>
                       {olderVersions.map((v) => (
                         <SelectItem
                           key={v.versionId}
