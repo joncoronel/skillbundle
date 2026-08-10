@@ -63,6 +63,15 @@ migrate once that ships. The bump is one line, and
 up the native `tsc` automatically. Do **not** work around it with
 `useTypeScriptCli: false` — with TS7 installed that makes `next build` exit.
 
+**Enable the /dev admin e2e.** `e2e/authenticated/dev.spec.ts` covers the
+admin *gate* today (a signed-in non-admin gets notFound, not a redirect or an
+empty dashboard) and that runs on every CI job. The admin-view half is behind
+`E2E_ADMIN=1` because it needs the e2e user in Convex's `ADMIN_EMAILS`, which is
+a deployment config change rather than a code one. To turn it on:
+`npx convex env set ADMIN_EMAILS "joncorone@gmail.com,e2e+clerk_test@skillbundle.dev"`
+on the dev deployment, then set `E2E_ADMIN=1` in the workflow env. Left off by
+default so a test identity is not silently granted admin.
+
 **Instant Insights: works — beware stale dev servers.** An earlier note here
 claimed the validator was broken upstream. That was wrong, and the correction is
 worth keeping: a `next dev` process that has been running a long time across many
