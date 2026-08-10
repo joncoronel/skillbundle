@@ -57,3 +57,6 @@ reviews/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Clerk e2e session state (written by e2e/auth.setup.ts)
+/playwright/.clerk/

@@ -580,6 +580,32 @@ pnpm e2e          # headless
 pnpm e2e:ui       # Playwright UI
 ```
 
+Three Playwright projects:
+
+| Project | Runs | Signed in? |
+| --- | --- | --- |
+| `chromium` | `e2e/*.spec.ts` — the instant-navigation guards | no |
+| `setup` | `e2e/auth.setup.ts` — signs in once, saves storage state | — |
+| `chromium-authed` | `e2e/authenticated/*.spec.ts` | yes |
+
+The last two only register when `CLERK_SECRET_KEY` is an `sk_test_*` key
+(see `playwright.config.ts`), so a checkout without Clerk dev keys just runs the
+signed-out half instead of failing on a missing storage-state file.
+
+**Authenticated tests are functional, not instant-navigation, coverage.**
+`/dashboard` and `/settings` are already `○` — their shells hold no user data,
+because per-user data arrives client-side over the Convex websocket. So they
+commit instantly by construction; what needed testing was that sign-in works,
+that the proxy doesn't bounce a signed-in user, and that the authed websocket
+actually resolves. `/dev` is the only `◐` route behind auth, and it's admin-only.
+
+Sign-in uses no mailbox: Clerk dev instances treat any address containing
+`+clerk_test` as a test identity with a fixed verification code, so
+`clerk.signIn({ strategy: 'email_code' })` works headlessly. `clerkSetup()`
+separately mints a Testing Token that stops bot protection blocking it. The test
+user is find-or-created through `@clerk/backend`, so a wiped Clerk instance needs
+no manual setup. `auth.setup.ts` refuses to run against a non-`sk_test_` key.
+
 Non-obvious things that will bite you:
 
 - **It runs against a production build**, not `next dev` — `playwright.config.ts`
@@ -597,6 +623,15 @@ Non-obvious things that will bite you:
 - **`e2e/` is Playwright; `tests/` is vitest.** Different runners, deliberately
   non-overlapping globs (`*.spec.ts` under `e2e/` vs `tests/**/*.test.ts`).
   Don't put one kind in the other's directory.
+- **Assertions inside an `instant()` scope use a long timeout** (`SHELL_TIMEOUT`).
+  That doesn't weaken them: the navigation is paused for the whole scope, so no
+  server data can arrive no matter how long you wait — the extra time only
+  absorbs local render scheduling, which made the client-nav assertions flaky
+  once the suite grew to three parallel projects.
+- **`playwright.config.ts` parses `.env.local` itself.** Next loads it for the
+  app it builds, but the Playwright process gets nothing, so the Clerk keys the
+  auth setup needs would otherwise be invisible. Existing env always wins, so CI
+  secrets are unaffected.
 
 **Instant Insights (the DevTools panel) is the other half of this**, and it does
 work — but with one trap. A `next dev` process left running across many HMR
@@ -667,8 +702,10 @@ components/
 lib/
   representative-params.ts  # picks 1 representative param per catalog route (popular skill + fallback)
 
-e2e/                        # Playwright instant() guards (see §13); NOT vitest — different runner
-  instant-navigation.spec.ts
+e2e/                        # Playwright (see §15); NOT vitest — different runner
+  instant-navigation.spec.ts  # signed-out instant() guards
+  auth.setup.ts               # signs in once, saves storage state
+  authenticated/              # signed-in functional coverage
   fixtures.ts
 playwright.config.ts        # webServer = `pnpm build && pnpm start`, E2E=1
 

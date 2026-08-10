@@ -1,10 +1,49 @@
+import fs from "node:fs";
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
+
+// Next loads .env.local for the app it builds, but the Playwright process gets
+// nothing — so the Clerk keys the auth setup needs are invisible without this.
+// Inlined rather than pulling in dotenv: it's a handful of lines and neither
+// dotenv nor @next/env is resolvable in this install.
+//
+// Existing env always wins, so CI (which sets real secrets) is unaffected.
+function loadEnvLocal() {
+  const file = path.join(process.cwd(), ".env.local");
+  if (!fs.existsSync(file)) return;
+  for (const raw of fs.readFileSync(file, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    if (process.env[key] !== undefined) continue;
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+loadEnvLocal();
 
 // Port 3100, not 3000: `pnpm dev` usually holds 3000 during local development
 // and the e2e server is a separate production build. Overridable for CI or for
 // pointing at an already-running server.
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
+
+// The authenticated projects only exist when there are Clerk dev keys to sign
+// in with. Registering them unconditionally means a contributor without keys
+// gets five ENOENT failures on a missing storage-state file, which says nothing
+// useful. This way the suite simply runs its signed-out half.
+const STORAGE_STATE = path.join(process.cwd(), "playwright/.clerk/user.json");
+const hasClerkDevKeys =
+  !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+  process.env.CLERK_SECRET_KEY?.startsWith("sk_test_") === true;
 
 // Next disables prefetching in `next dev`, and instant() asserts on what a
 // prefetch put in the client cache. Running these against the dev server would
@@ -23,7 +62,35 @@ export default defineConfig({
     ? [["github"], ["html", { open: "never" }]]
     : [["list"]],
   use: { baseURL, trace: "on-first-retry" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    // Signed-out. The instant-navigation guards live here — they're about the
+    // public catalog, which is the traffic that matters for those.
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: ["**/authenticated/**", "**/*.setup.ts"],
+    },
+    // Signs in once and writes the storage state the project below reuses, so
+    // each authenticated spec doesn't repeat a full Clerk sign-in.
+    ...(hasClerkDevKeys
+      ? [
+          {
+            name: "setup",
+            testMatch: /auth\.setup\.ts/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+          {
+            name: "chromium-authed",
+            dependencies: ["setup"],
+            testDir: "./e2e/authenticated",
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState: STORAGE_STATE,
+            },
+          },
+        ]
+      : []),
+  ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {

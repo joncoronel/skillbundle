@@ -37,6 +37,17 @@ import {
 
 const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3100";
 
+/**
+ * Generous timeout for assertions made *inside* an `instant()` scope.
+ *
+ * This does not weaken the guarantee. The navigation is paused for the whole
+ * scope, so no amount of waiting lets server data through — if the content
+ * weren't in the shell, the assertion would still fail at any timeout. All this
+ * absorbs is local render/CPU scheduling, which is what made the client-nav
+ * assertions flaky once the suite grew to three parallel projects.
+ */
+const SHELL_TIMEOUT = 15_000;
+
 test.describe("initial load", () => {
   test("/ serves its hero in the shell", async ({ page }) => {
     await instant(
@@ -170,8 +181,12 @@ test.describe("client navigation", () => {
     await instant(page, async () => {
       await publisher.click();
       await page.waitForURL((url) => url.pathname === href);
-      await expect(page.getByText("Source", { exact: true })).toBeVisible();
-      await expect(page.getByText("Installs", { exact: true })).toBeVisible();
+      await expect(page.getByText("Source", { exact: true })).toBeVisible({
+        timeout: SHELL_TIMEOUT,
+      });
+      await expect(page.getByText("Installs", { exact: true })).toBeVisible({
+        timeout: SHELL_TIMEOUT,
+      });
     });
   });
 
@@ -196,7 +211,7 @@ test.describe("client navigation", () => {
       // locator happily matches the outgoing page's DOM and reports "hidden".
       await expect(
         page.locator("span:visible", { hasText: /^Skill$/ }).first(),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
   });
 });
