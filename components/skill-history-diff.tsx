@@ -246,17 +246,32 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
           `visible`, so expanding a collapsed hunk pushed content past the cap
           and an outer `overflow-hidden` simply clipped it — the extra lines
           rendered but were unreachable, with nothing to scroll. */}
-      <div
-        className={cn("max-h-96 overflow-y-auto rounded-lg", solidSurface(3))}
-      >
-        {/* `items` is memoised alongside the diff — see above. A fresh array
-            literal here re-entered the highlight pipeline on every render even
-            when the diff itself was unchanged. */}
-        <CodeView
-          items={items}
-          options={diffOptions}
-          disableWorkerPool
-        />
+      {/* Two elements, and the split is load-bearing.
+
+          `solidSurface(3)`'s rim is a pair of INSET shadows (dark mode only —
+          in light `--surface-rim-3` is `0 0 transparent`, which is why this only
+          ever showed up dark). Chromium paints an inset shadow against an
+          element's scrollable overflow area, not its visible box, so when the
+          surface and the scroller were the same element the top rim scrolled up
+          and out of view with the content.
+
+          The surface stays on a non-scrolling outer box; the cap and the scroll
+          stay together on the inner one — which is the constraint the earlier
+          note here was about: `max-h-96` on CodeView's own className capped a
+          div whose `overflow` is `visible`, so expanding a collapsed hunk pushed
+          content past the cap with nothing to scroll. That still holds; it just
+          does not require the surface to ride along. */}
+      <div className={cn("overflow-hidden rounded-lg", solidSurface(3))}>
+        <div className="max-h-96 overflow-y-auto">
+          {/* `items` is memoised alongside the diff — see above. A fresh array
+              literal here re-entered the highlight pipeline on every render even
+              when the diff itself was unchanged. */}
+          <CodeView
+            items={items}
+            options={diffOptions}
+            disableWorkerPool
+          />
+        </div>
       </div>
     </div>
   );

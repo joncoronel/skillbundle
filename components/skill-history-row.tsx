@@ -340,21 +340,27 @@ export function HistoryRow({
           </div>
         )}
 
-        {/* `px-1 -mx-1` widens the clip box without moving the content.
-            CollapsibleContent needs `overflow-hidden` to animate its height, but
-            the diff surface inside sits flush with the panel's edges (measured:
-            0px gap on both sides), so its 1px rim — `0 0 0 1px` from
-            solidSurface(3) — was being shaved off on the left and right.
-            Padding the panel and pulling it back by the same amount moves the
-            clip boundary 4px outward on each side while leaving layout
-            identical. Horizontal only: the bottom shadow already has the inner
-            `pb-8` to breathe into, and vertical clipping is the thing the
-            open/close animation actually depends on.
+        {/* Widen the clip box without moving the content.
+            CollapsibleContent needs `overflow-hidden` to animate its height, so
+            anything painted outside a child's box — the diff surface's 1px rim,
+            a control's 2px focus ring at `outline-offset-2` — gets shaved
+            wherever that child sits flush with the panel edge.
 
-            4px fits inside the room already there — the row's own `pl-6` on the
-            left, the page container's `px-4` on the right — so this cannot
-            introduce horizontal scroll at any width. */}
-        <CollapsibleContent className="px-1 -mx-1">
+            Padding the panel and pulling it back by the same amount moves the
+            clip boundary outward while leaving layout identical: 4px on the
+            sides (enough for the rim) and 8px on top (enough for a focus ring,
+            which reaches 4px, plus margin).
+
+            TOP is safe but BOTTOM is not, and that asymmetry is the point.
+            Content is anchored at the panel's top, so a top margin only ever
+            reveals the empty band above it — the rim and ring we want. A bottom
+            margin would reveal real content below the panel while it collapses,
+            since that is the edge the animation clips against.
+
+            Safe at every breakpoint: 4px eats into padding that is fixed rather
+            than proportional — the row's own `pl-6` (24px) on the left, the page
+            container's `px-4` (16px) on the right. */}
+        <CollapsibleContent className="px-1 -mx-1 pt-2 -mt-2">
           {/* No `open &&` guard here, deliberately. CollapsibleContent animates
               its exit with `data-[ending-style]:h-0`, which needs Base UI to
               keep the panel mounted while that transition runs. Gating the
