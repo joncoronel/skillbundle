@@ -341,9 +341,27 @@ export function BundleView({
             }
           />
 
-          <Collapsible open={installOpen} onOpenChange={setInstallOpen}>
+          {/* `mb-0!` cancels the section's `space-y-4`, and the panel carries
+              that spacing internally as `pb-4` instead.
+
+              The section gives every child `margin-bottom: 16px`. While the
+              panel is mounted that 16px sits below it, but Base UI unmounts the
+              panel at the end of the close — the root becomes an empty box,
+              stops contributing the margin, and the gap vanished in one frame
+              *after* the height animation had finished. That was the jump.
+
+              Moving it inside makes it part of the animated height, so it
+              collapses with everything else. The closed layout is unchanged:
+              the root contributed nothing once empty anyway.
+
+              `!` because the `space-y-4` selector outranks a plain utility. */}
+          <Collapsible
+            open={installOpen}
+            onOpenChange={setInstallOpen}
+            className="mb-0!"
+          >
             <CollapsibleContent id={installPanelId}>
-              <div className="space-y-3 pb-1">
+              <div className="space-y-3 pb-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
                     Install commands
