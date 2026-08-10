@@ -50,6 +50,36 @@ test("settings is reachable and defaults to the profile tab", async ({ page }) =
   await expect(page.locator("h1")).toContainText("Account Settings");
 });
 
+// Tripwires, same idea as the /add and /pricing guards. Both routes are `○`
+// today because auth is enforced by proxy.ts and all user data arrives over the
+// Convex websocket — nothing is read on the server. The realistic future
+// regression is someone deciding to server-render this data (an `await auth()`
+// or a Convex read in the page), which would quietly turn these into blocking
+// routes. Signed-out testing can't cover it: the proxy redirects to /sign-in.
+test("settings shell commits with no server data", async ({ page }) => {
+  await instant(
+    page,
+    async () => {
+      await page.goto("/settings");
+      await expect(page.locator("h1")).toContainText("Account Settings");
+    },
+    { baseURL },
+  );
+});
+
+test("dashboard masthead is fully static", async ({ page }) => {
+  await instant(
+    page,
+    async () => {
+      await page.goto("/dashboard");
+      await expect(page.locator("h1")).toContainText("Your setup.");
+      // Prose beside the title, so a partial shell doesn't pass this.
+      await expect(page.locator("main p").first()).toBeVisible();
+    },
+    { baseURL },
+  );
+});
+
 test("signed-in user is not bounced to sign-in", async ({ page }) => {
   // Guards the proxy.ts private-route list: a regression there (or a broken
   // JWT template) sends signed-in users to /sign-in on every protected route.

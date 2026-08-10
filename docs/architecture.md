@@ -100,7 +100,37 @@ here: for *unstable values* the framework's own remedy list offers only
 
 The home page's three leaderboards are cached with `'use cache'` + `cacheTag` (`home-popular`, `home-trending`, `home-hot`) and a `cacheLife` window (`days` for Popular, `hours` for Trending/Hot). The Convex leaderboard crons POST to `/api/revalidate` (shared-secret gated, tag allowlist) right after writing new ranks; the handler calls `revalidateTag(tag, { expire: 0 })` — Next's documented immediate-expiry pattern for webhooks — so the next visit rebuilds the snapshot rather than serving it stale-while-revalidate. The `cacheLife` windows are a safety net for a missed ping. This gives fresh-enough data with zero per-request Convex calls and no stale-then-live flash (the tabs render the snapshot directly, no client subscription).
 
-> **All server caching uses `'use cache'`.** On Vercel, `'use cache'` is backed by the Data Cache, so cross-user snapshots persist across requests and instances. Every server-side cache in the app uses it — the home leaderboards, `official`, the catalog loaders, and the OG-image data loaders (`lib/og/images.tsx`) — with **no `unstable_cache` anywhere**. It's idiomatic and prerender-friendly (the cached result can land in the static shell).
+> **All server caching uses `'use cache'`.** Every server-side cache in the app uses it — the home leaderboards, `official`, the catalog loaders, and the OG-image data loaders (`lib/og/images.tsx`) — with **no `unstable_cache` anywhere**. It's idiomatic and prerender-friendly (the cached result can land in the static shell).
+
+**Does it actually persist across instances?** Measured on a preview deployment
+rather than assumed, because the wording matters and Vercel's own docs reserve
+`'use cache: remote'` for their Runtime Cache. Hitting a **cold, never-requested**
+catalog URL four times:
+
+```text
+hit1  X-Vercel-Cache: PRERENDER   sfo1
+hit2  X-Vercel-Cache: HIT         sfo1
+hit3  X-Vercel-Cache: HIT         sfo1::iad1     <- different region, still a hit
+hit4  X-Vercel-Cache: HIT         sfo1::iad1
+```
+
+So the practical answer is yes: the first visitor gets the App Shell
+(`PRERENDER`) and the page upgrades in the background — the 16.3 ISR behaviour —
+and every later request, **including from another region**, is served from
+Vercel's shared cache. Convex is not hit per request.
+
+The nuance worth keeping straight: what's shared here is the **rendered page
+cache**, which is what `revalidateTag` invalidates. Don't restate this as
+"`'use cache'` is the Data Cache" — plain `'use cache'` is documented as
+in-memory per instance, and `'use cache: remote'` is the explicit opt-in to
+Vercel's Runtime Cache. The app doesn't need `remote` today because its cached
+reads all sit inside prerenderable pages. A loader that ran outside one (a Route
+Handler, say) would not get this for free.
+
+**Still unverified:** that `/api/revalidate` busts that shared cache in
+production. It's standard ISR behaviour and there's no reason to think
+otherwise, but it hasn't been exercised end to end — it needs a POST with
+`REVALIDATE_SECRET` against a real deployment.
 >
 > **OG image caching is separate from the data cache.** The OG routes are dynamic (`ƒ`) because they read `params`, so the `'use cache'` loaders only cache the *Convex data*. The rendered *PNG* for the data-backed OG routes (skill / org / repo / source / bundle) is cached at the CDN via an opt-in `Cache-Control: s-maxage=86400, stale-while-revalidate` header — `renderOg(node, { cache: true })` in `lib/og/templates.tsx` — restoring the daily route cache the old `export const revalidate` provided before Cache Components disallowed it. **That header is what keeps images from regenerating on every link**, independent of the data loaders. The static section cards (`/compare`, `/official`, `/pricing`, root) are `○` and keep Next's build-time static optimization (no header). The brand fonts are read once at module load (`lib/og/fonts.ts`), never inside a render: under Cache Components a render-time `readFile` counts as an async filesystem operation and would flip these otherwise-static routes to `ƒ` (it did, non-deterministically, before the read was hoisted to module scope).
 
