@@ -20,6 +20,7 @@ import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { CodeView } from "@pierre/diffs/react";
+import { versionDiffQueryOptions } from "./skill-history-diff-query";
 
 import type { api } from "@/convex/_generated/api";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
@@ -161,23 +162,13 @@ function useDiffOptions() {
 export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry }) {
   // Before the early returns below — hooks cannot be conditional.
   const diffOptions = useDiffOptions();
-  const { data, isPending, isError } = useQuery({
-    queryKey: ["skillVersionDiff", from.versionId, to.versionId],
-    queryFn: async () => {
-      if (!from.contentUrl || !to.contentUrl) {
-        throw new Error("Version content is unavailable");
-      }
-      const [before, after] = await Promise.all([
-        fetch(from.contentUrl).then((r) => r.text()),
-        fetch(to.contentUrl).then((r) => r.text()),
-      ]);
-      return { before, after };
-    },
-    // Version content is immutable once written, so it never needs revalidating
-    // and re-expanding a row should be instant.
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
+  // Options live in skill-history-diff-query.ts so the row can prefetch with
+  // the identical key before it opens — by the time this mounts the content is
+  // usually already in the cache, so it renders at final height rather than
+  // growing into it. See the comment on the trigger in skill-history-row.tsx.
+  const { data, isPending, isError } = useQuery(
+    versionDiffQueryOptions(from, to),
+  );
 
   // Memoised, and above the early returns. `data` is frozen (staleTime and
   // gcTime are both Infinity), so the diff is a pure function of two immutable

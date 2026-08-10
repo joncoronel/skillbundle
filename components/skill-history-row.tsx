@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { useQueryClient } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { versionDiffQueryOptions } from "./skill-history-diff-query";
 
 import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/cubby-ui/badge";
@@ -64,9 +66,11 @@ export function HistoryRow({
   olderVersions: VersionEntry[] | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [againstId, setAgainstId] = useState<string | undefined>(
     previous?.versionId,
   );
+  const queryClient = useQueryClient();
 
   // The oldest row has no stored predecessor, so there is nothing to diff it
   // against. Deliberately NOT rendered as an all-additions diff: that would
@@ -101,6 +105,43 @@ export function HistoryRow({
   // history — the reason the pair is derived in one place.
   const pair = against ? { from: against, to: version } : undefined;
 
+  /**
+   * Load first, then reveal.
+   *
+   * Expanding immediately meant the panel animated open to a near-empty box and
+   * then jumped, because three things still had to happen behind it: the
+   * renderer chunk (~420 KB, deliberately code-split) had to download, both
+   * version blobs had to be fetched from Convex storage, and only then could the
+   * diff parse and highlight. The open animation finished long before any of
+   * that, so the content arrived as a second, unannounced layout change.
+   *
+   * Doing the work up front and opening once it lands means the collapsible
+   * animates straight to the content's real height — one motion, no jump. The
+   * cost is that the click is not instant, which is why the trigger takes a
+   * pending label rather than staying silent.
+   *
+   * Both halves are warmed together: the dynamic import populates the module
+   * registry so `VersionDiff` mounts synchronously, and the prefetch uses the
+   * same query key the component reads, so its `useQuery` is already resolved.
+   *
+   * Failures deliberately fall through to opening anyway — VersionDiff renders
+   * its own error state, which is a better place to explain the problem than a
+   * button that silently refuses to expand.
+   */
+  async function openWithDiff() {
+    if (!pair) return;
+    setOpening(true);
+    try {
+      await Promise.all([
+        import("./skill-history-diff"),
+        queryClient.prefetchQuery(versionDiffQueryOptions(pair.from, pair.to)),
+      ]);
+    } finally {
+      setOpening(false);
+      setOpen(true);
+    }
+  }
+
   return (
     <li className="relative pl-6">
       <Marker isAnchor={isAnchor} />
@@ -134,19 +175,34 @@ export function HistoryRow({
               // label flow, so an icon passed as one wraps onto its own line
               // instead of sitting inside the control. The prop also drives the
               // iconLeft compound variant that corrects the optical padding.
+              disabled={opening}
               leadingIcon={
-                <HugeiconsIcon
-                  icon={ArrowDown01Icon}
-                  size={14}
-                  className={cn(
-                    "transition-transform duration-100 ease-out",
-                    open && "rotate-180",
-                  )}
-                />
+                opening ? (
+                  <DotMatrixRipple className="size-3.5" />
+                ) : (
+                  <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    size={14}
+                    className={cn(
+                      "transition-transform duration-100 ease-out",
+                      open && "rotate-180",
+                    )}
+                  />
+                )
               }
-              onClick={() => setOpen((v) => !v)}
+              onClick={() => {
+                if (open) {
+                  setOpen(false);
+                } else {
+                  void openWithDiff();
+                }
+              }}
             >
-              {open ? "Hide changes" : "View changes"}
+              {opening
+                ? "Loading changes"
+                : open
+                  ? "Hide changes"
+                  : "View changes"}
             </Button>
           </div>
         )}
