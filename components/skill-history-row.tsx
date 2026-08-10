@@ -48,8 +48,18 @@ import { cn, formatDate, timeAgo } from "@/lib/utils";
  */
 type DiffModule = typeof import("./skill-history-diff");
 let diffModulePromise: Promise<DiffModule> | null = null;
+/**
+ * Set synchronously once the chunk lands, so a render can ask "is this already
+ * here?" without awaiting. That check is what keeps the busy state honest — see
+ * `openWithDiff`.
+ */
+let diffModule: DiffModule | null = null;
 function loadDiffModule(): Promise<DiffModule> {
-  return (diffModulePromise ??= import("./skill-history-diff"));
+  if (diffModule) return Promise.resolve(diffModule);
+  return (diffModulePromise ??= import("./skill-history-diff").then((m) => {
+    diffModule = m;
+    return m;
+  }));
 }
 
 export type VersionEntry =
@@ -134,10 +144,61 @@ export function HistoryRow({
    * its own error state, which is a better place to explain the problem than a
    * button that silently refuses to expand.
    */
+  /**
+   * True when everything this row needs is already in hand, checked
+   * synchronously so it can gate the busy state rather than trail it.
+   *
+   * Re-opening a row, or opening a second row after the chunk has landed, is
+   * genuinely instant — showing a ripple for it produces a flash that reports
+   * work nobody waited for. Deliberately NOT solved with an appearance delay or
+   * a minimum-visible floor: those add latency to the fast path and mask a
+   * dishonest signal instead of fixing it. Same approach as `isInputLoading` in
+   * hooks/use-debounced-cached-search.ts.
+   */
+  function alreadyLoaded(target: { from: VersionEntry; to: VersionEntry }) {
+    if (!diffModule) return false;
+    const { queryKey } = versionDiffQueryOptions(target.from, target.to);
+    return queryClient.getQueryData(queryKey) !== undefined;
+  }
+
+  /**
+   * Warm the renderer and a pair's content ahead of the click.
+   *
+   * This is the actual fix for the brief indicator, rather than padding it with
+   * a timer. Pointing at a control is a reliable signal of intent and buys a few
+   * hundred milliseconds of head start, which is enough for the two content
+   * fetches — so by the time the click lands `alreadyLoaded` is true and the row
+   * opens on that render with no busy state at all.
+   *
+   * Fire-and-forget on purpose: no state is set here, so hovering never causes a
+   * render. Both calls are idempotent — the module promise is memoised, and
+   * `prefetchQuery` is a no-op against data that is already fresh (these entries
+   * never go stale) or already in flight.
+   *
+   * The chunk is ~420 KB, so this does download it for someone who hovers and
+   * never clicks. That is the same trade any hover-prefetch makes, bounded here
+   * by the module being fetched once per session rather than per row.
+   */
+  function warm(target: { from: VersionEntry; to: VersionEntry } | undefined) {
+    if (!target) return;
+    void loadDiffModule();
+    void queryClient.prefetchQuery(
+      versionDiffQueryOptions(target.from, target.to),
+    );
+  }
+
   async function openWithDiff() {
     if (!pair) return;
-    setOpening(true);
     setLoadFailed(false);
+
+    // Nothing to wait for: open on this render, no busy state at all.
+    if (alreadyLoaded(pair) && diffModule) {
+      setDiff(() => diffModule!.VersionDiff);
+      setOpen(true);
+      return;
+    }
+
+    setOpening(true);
     try {
       const [mod] = await Promise.all([
         loadDiffModule(),
@@ -169,6 +230,13 @@ export function HistoryRow({
     if (next === againstId) return;
     const target = olderVersions?.find((v) => v.versionId === next);
     if (!target) return;
+
+    // Same honesty rule as opening: a range already fetched swaps on this
+    // render, with no indicator for work that isn't happening.
+    if (alreadyLoaded({ from: target, to: version })) {
+      setAgainstId(next);
+      return;
+    }
 
     const token = ++swapToken.current;
     setSwapping(true);
@@ -211,7 +279,16 @@ export function HistoryRow({
             Earliest recorded version.
           </p>
         ) : (
-          <div className="pb-3">
+          // `flex`, not a bare block. The Button is `inline-flex`, so in an
+          // inline formatting context it sits on a text baseline — and an
+          // inline-flex box takes its baseline from its first flex item. When
+          // the busy state swaps that item from the chevron SVG to the loader,
+          // the button's baseline moves, the line box grows to absorb it, and
+          // the trigger visibly drops. Measured: this wrapper went 40px to 49px
+          // and back while the button itself held 28px throughout. Making the
+          // wrapper a flex container removes the line box, so only the button's
+          // own height can affect it.
+          <div className="flex pb-3">
             <Button
               variant="outline"
               size="xs"
@@ -220,28 +297,32 @@ export function HistoryRow({
               // label flow, so an icon passed as one wraps onto its own line
               // instead of sitting inside the control. The prop also drives the
               // iconLeft compound variant that corrects the optical padding.
-              disabled={opening}
-              // Both states render into the same 16px box. DotMatrixRipple
-              // sizes itself from a `size` preset (xs = 16px) via inline
-              // styles — a `size-*` class on it does nothing, which is why the
-              // ripple came in at the 28px default and grew the button.
-              // Centring both in a fixed box means the trigger cannot move
-              // while it loads.
+              // The Button owns the busy visual. Its `inline` loading layout
+              // puts the DotMatrixRipple in the leading icon's own slot, so the
+              // control keeps its exact geometry — hand-swapping the icon here
+              // sized the ripple differently and nudged the trigger.
+              loading={opening}
+              // Head start on intent, across every input type:
+              //   onPointerEnter — mouse approach, hundreds of ms of warning.
+              //   onPointerDown  — the press itself. Fires on finger-down while
+              //                    `click` waits for release, so touch gets a
+              //                    head start too. There is no hover on touch,
+              //                    so without this the tap would always pay the
+              //                    full fetch.
+              //   onFocus        — keyboard, which fires neither of the above.
+              // All three are idempotent, so overlapping them costs nothing.
+              onPointerEnter={() => warm(pair)}
+              onPointerDown={() => warm(pair)}
+              onFocus={() => warm(pair)}
               leadingIcon={
-                <span className="grid size-4 shrink-0 place-items-center">
-                  {opening ? (
-                    <DotMatrixRipple size="xs" ariaLabel="Loading changes" />
-                  ) : (
-                    <HugeiconsIcon
-                      icon={ArrowDown01Icon}
-                      size={14}
-                      className={cn(
-                        "transition-transform duration-100 ease-out",
-                        open && "rotate-180",
-                      )}
-                    />
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={14}
+                  className={cn(
+                    "transition-transform duration-100 ease-out",
+                    open && "rotate-180",
                   )}
-                </span>
+                />
               }
               onClick={() => {
                 if (open) {
@@ -251,17 +332,24 @@ export function HistoryRow({
                 }
               }}
             >
-              {opening
-                ? "Loading changes"
-                : open
-                  ? "Hide changes"
-                  : "View changes"}
+              {/* Label held steady through the busy state. Swapping it to
+                  "Loading changes" changed the button's width mid-interaction,
+                  which reflowed the row. The ripple already says it. */}
+              {open ? "Hide changes" : "View changes"}
             </Button>
           </div>
         )}
 
         <CollapsibleContent>
-          {open && pair && (
+          {/* No `open &&` guard here, deliberately. CollapsibleContent animates
+              its exit with `data-[ending-style]:h-0`, which needs Base UI to
+              keep the panel mounted while that transition runs. Gating the
+              children on `open` tore them out the moment it flipped, so the
+              panel had nothing left to collapse from and only the opening
+              animation ever played. Base UI's Panel already unmounts its
+              children when closed — after the animation — so the guard was
+              redundant as well as harmful. */}
+          {pair && (
             <div className="pb-8">
               {canPickRange && (
                 <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -287,7 +375,14 @@ export function HistoryRow({
                     </SelectTrigger>
                     <SelectContent>
                       {olderVersions.map((v) => (
-                        <SelectItem key={v.versionId} value={v.versionId}>
+                        <SelectItem
+                          key={v.versionId}
+                          value={v.versionId}
+                          // Same reason as the trigger, same three inputs.
+                          onPointerEnter={() => warm({ from: v, to: version })}
+                          onPointerDown={() => warm({ from: v, to: version })}
+                          onFocus={() => warm({ from: v, to: version })}
+                        >
                           {rangeLabel(v)}
                         </SelectItem>
                       ))}
