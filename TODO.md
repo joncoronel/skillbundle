@@ -6,6 +6,48 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Parked from the 16.3 adoption pass (Aug 2026)
+
+**TypeScript 7 — wait for 7.1.** `pnpm add -D typescript@^7` installs cleanly and
+`tsc --noEmit` passes on this codebase (326 unit tests green too), but
+`pnpm lint` dies with
+`TypeError: Cannot read properties of undefined (reading 'Cjs')` from
+`@typescript-eslint/typescript-estree`. Not a version-pin problem: even the
+latest `typescript-eslint@8.66.0` declares `typescript: ">=4.8.4 <6.1.0"` and
+there is no v9 line. Reverted to `^5`.
+
+This is a known, reported issue and the fix is expected in **TypeScript 7.1** —
+migrate once that ships. The bump is one line, and
+`experimental.useTypeScriptCli` already defaults to `true`, so `next build` picks
+up the native `tsc` automatically. Do **not** work around it with
+`useTypeScriptCli: false` — with TS7 installed that makes `next build` exit.
+
+**Instant Insights: works — beware stale dev servers.** An earlier note here
+claimed the validator was broken upstream. That was wrong, and the correction is
+worth keeping: a `next dev` process that has been running a long time across many
+HMR cycles starts throwing
+`InvariantError: Cannot access "moduleLoading" without a work store`
+from `app-render/instant-validation/` on nearly every route, static and dynamic
+alike. It looks exactly like a framework bug. It isn't — restart `next dev` and
+every route validates clean, including non-prerendered dynamic params.
+
+If Instant Insights reports that invariant, restart the dev server before
+believing it or filing anything.
+
+`experimental.instantInsights.validationLevel` is still pinned to `'warning'` in
+`next.config.ts`, because the docs warn the framework default may change to a
+build-gating level without that counting as breaking.
+
+**Not adopted, with reasons** (so they don't get re-proposed): `supportsImmutableAssets`
+(an opt-*out* for adapters that already enabled it; the docs warn setting it
+against an unsupporting adapter breaks deployments — it's Vercel's call, not
+ours), `'use cache: private'` for the bundle auth read (owner-vs-viewer state
+going up to 5 minutes stale on a page with a visibility toggle is a correctness
+hazard), `next/root-params` (N/A — every dynamic segment lives under `(main)`, a
+route *group*; nothing exists above the root layout), and the Rust React
+Compiler (declined for now). `typedRoutes` would type-check the hand-built
+`skillHref`/`ownerHref`/`compareHref` strings and is worth a look later.
+
 ### Monitoring pivot: state, decisions, and what is left (Aug 2026)
 
 Why any of this exists: skills.sh (which is Vercel) launched Packs, which does

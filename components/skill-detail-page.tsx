@@ -20,6 +20,7 @@ import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
 import { SkillHistory } from "@/components/skill-history";
 import { skillHref } from "@/lib/skill-urls";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would block prerendering. Each loader is a `'use cache'`
@@ -159,18 +160,23 @@ export function SkillDetailPage({
         </Button>
       </div>
 
-      <Suspense
-        fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
-      >
-        <SkillDetailBody
-          source={source}
-          skillId={skillId}
-          installCommand={installCommand}
-          externalUrl={externalUrl}
-          externalIcon={externalIcon}
-          externalLabel={externalLabel}
-        />
-      </Suspense>
+      {/* Boundary sits around the Suspense, not inside it, so it covers the
+          fallback too. The breadcrumb, h1 and Compare action above stay
+          rendered if the body fails — the page remains navigable. */}
+      <DataErrorBoundary label="this skill">
+        <Suspense
+          fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
+        >
+          <SkillDetailBody
+            source={source}
+            skillId={skillId}
+            installCommand={installCommand}
+            externalUrl={externalUrl}
+            externalIcon={externalIcon}
+            externalLabel={externalLabel}
+          />
+        </Suspense>
+      </DataErrorBoundary>
     </div>
   );
 }

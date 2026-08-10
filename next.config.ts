@@ -4,6 +4,23 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   experimental: {
+    // The `instant()` helper from @next/playwright drives Next's testing API,
+    // which `next dev` exposes automatically but `next start` does not. The e2e
+    // suite runs against a production build (Next does no prefetching in dev,
+    // so instant() assertions there would be meaningless), hence this gate.
+    //
+    // Env-gated rather than always-on: the docs show it unconditional, but
+    // there's no reason to ship a testing hook to real users. `pnpm e2e` sets
+    // E2E=1 for both the build and the server it starts.
+    exposeTestingApiInProductionBuild: process.env.E2E === "1",
+    // Pin the current framework default. The docs warn this may change in a
+    // future release to opt users into stricter validation, and that such a
+    // change is NOT considered breaking because the feature is experimental —
+    // so leaving it unpinned means a patch bump could flip us to
+    // 'experimental-error', which gates `next build` on instant validation.
+    //
+    // 'warning' validates every navigation in dev without touching the build.
+    instantInsights: { validationLevel: "warning" },
     // Tree-shake icon barrels. lucide-react is on Next's default-optimized list
     // already; HugeIcons isn't, and it's imported broadly across the app.
     //

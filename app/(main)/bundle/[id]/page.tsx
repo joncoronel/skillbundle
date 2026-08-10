@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { io } from "next/cache";
 import { fetchQuery, preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { getAuthToken } from "@/lib/auth";
 import { BundleView } from "./bundle-view";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 // Bundle name/description in the title and OG tags so shared links unfurl
 // meaningfully in chat apps — sharing is the product's core loop. The route is
@@ -14,6 +16,13 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
+  // Same reason as the page body below: this reads an auth cookie, so it is
+  // per-request by nature, and declaring that up front keeps Convex's
+  // `Math.random()` in ConvexHttpClient from being reported as a stray
+  // unstable value. Metadata can't be wrapped in <Suspense>, so `io()` is the
+  // only way to express it here.
+  await io();
+
   const [{ id }, token] = await Promise.all([params, getAuthToken()]);
   // Deliberate conflation: transient Convex errors fall through to the same
   // generic-title + noindex branch as missing/private bundles. For metadata,
@@ -65,6 +74,24 @@ export default async function BundlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Declare this render as request-time before touching Convex.
+  //
+  // Without it, Next aborts the prerender here for the wrong reason: Convex's
+  // `preloadQuery` constructs a ConvexHttpClient, whose default logger calls
+  // `Math.random()` (convex/src/browser/logging.ts), and Next reports
+  // `blocking-prerender-random` pointing into node_modules. That insight is
+  // noise — this route is genuinely per-request because it reads an auth
+  // cookie — but it hides real unstable-value bugs behind a known-bad entry.
+  //
+  // `io()` is 16.3's replacement for `connection()`; unlike Suspense it is the
+  // sanctioned fix for *unstable values* (the error's own remedy list offers
+  // only [dynamic]/[cache]/[client] — notably not [stream]).
+  //
+  // The route still serves an instant shell: `loading.tsx` is its boundary, and
+  // e2e/instant-navigation.spec.ts asserts the header chrome paints before the
+  // bundle data arrives.
+  await io();
+
   // Read the route param and the auth token in parallel, then preload the
   // bundle with it.
   // The plan is no longer read here: closing a bundle used to be Pro-gated and
@@ -77,5 +104,9 @@ export default async function BundlePage({
     { token },
   );
 
-  return <BundleView preloadedBundle={preloadedBundle} urlId={id} />;
+  return (
+    <DataErrorBoundary label="this bundle">
+      <BundleView preloadedBundle={preloadedBundle} urlId={id} />
+    </DataErrorBoundary>
+  );
 }

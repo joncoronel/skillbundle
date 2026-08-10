@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { cacheLife } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { cn } from "@/lib/utils";
 import { ownerHref } from "@/lib/skill-urls";
 import { LinkPending } from "@/components/link-pending";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 export const metadata: Metadata = {
   title: "Official skills | SkillBundle",
@@ -15,9 +16,17 @@ export const metadata: Metadata = {
     "First-party skills curated by the makers — companies and orgs publishing skills for the technology they build.",
 };
 
+// Tagged "skill-sync" so the curated list busts in lockstep with the catalog
+// instead of drifting up to a day behind it. Both writers of this data already
+// ping that tag via /api/revalidate — convex/curatedRefresh.ts (weekly curated
+// refresh) and convex/skills.ts (daily sync) — so this needs no new tag and no
+// change to the allowlist in app/api/revalidate/route.ts. Without it, a newly
+// curated publisher stays invisible here even though its skill pages already
+// render. The cacheLife window is the fallback for a missed ping.
 async function loadCuratedOwners() {
   "use cache";
   cacheLife("days");
+  cacheTag("skill-sync");
   return fetchQuery(api.curated.listCuratedOwners, {});
 }
 
@@ -44,9 +53,11 @@ export default async function OfficialPage() {
       </header>
 
       <div className="mt-12">
-        <Suspense fallback={<OfficialPageSkeleton />}>
-          <OfficialContent />
-        </Suspense>
+        <DataErrorBoundary label="the curated publishers">
+          <Suspense fallback={<OfficialPageSkeleton />}>
+            <OfficialContent />
+          </Suspense>
+        </DataErrorBoundary>
       </div>
     </main>
   );

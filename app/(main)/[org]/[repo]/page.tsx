@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
 import { SourceSkillList } from "@/components/source-skill-list";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 type Params = Promise<{ org: string; repo: string }>;
 
@@ -56,12 +57,31 @@ export async function generateMetadata({
   };
 }
 
-export default async function RepoPage({ params }: { params: Params }) {
-  const { org, repo } = await params;
-  const source = `${org}/${repo}`;
-
+// `params` is passed into the boundaries rather than awaited here. See the
+// matching comment in app/(main)/[org]/page.tsx — awaiting above the Suspense
+// empties this route's shared App Shell and makes every client navigation into
+// it blocking, while direct page loads still look fine.
+export default function RepoPage({ params }: { params: Params }) {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+      <Suspense fallback={<RepoHeaderSkeleton />}>
+        <RepoHeader params={params} />
+      </Suspense>
+
+      <DataErrorBoundary label="this repository's skills">
+        <Suspense fallback={<RepoListSkeleton />}>
+          <RepoListContent params={params} />
+        </Suspense>
+      </DataErrorBoundary>
+    </div>
+  );
+}
+
+async function RepoHeader({ params }: { params: Params }) {
+  const { org, repo } = await params;
+
+  return (
+    <>
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -85,15 +105,34 @@ export default async function RepoPage({ params }: { params: Params }) {
         <wbr />
         <span>{repo}</span>
       </h1>
-
-      <Suspense fallback={<RepoListSkeleton />}>
-        <RepoListContent source={source} />
-      </Suspense>
-    </div>
+    </>
   );
 }
 
-async function RepoListContent({ source }: { source: string }) {
+function RepoHeaderSkeleton() {
+  return (
+    <>
+      <div className="mb-8 flex items-center gap-2 text-sm">
+        <Skeleton className="h-4 w-12" />
+        <span aria-hidden="true" className="text-muted-foreground/50">
+          /
+        </span>
+        <Skeleton className="h-4 w-20" />
+        <span aria-hidden="true" className="text-muted-foreground/50">
+          /
+        </span>
+        <Skeleton className="h-4 w-24" />
+      </div>
+      <div className="mb-6 font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero">
+        <Skeleton className="h-[1em] w-80 max-w-full" />
+      </div>
+    </>
+  );
+}
+
+async function RepoListContent({ params }: { params: Params }) {
+  const { org, repo } = await params;
+  const source = `${org}/${repo}`;
   const { skills, totalInstalls } = await loadSourceSkills(source);
 
   if (skills.length === 0) {

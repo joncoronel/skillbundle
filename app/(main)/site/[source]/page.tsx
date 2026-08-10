@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
 import { SourceSkillList } from "@/components/source-skill-list";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 type Params = Promise<{ source: string }>;
 
@@ -56,15 +57,31 @@ export async function generateMetadata({
   };
 }
 
-export default async function WellKnownSourcePage({
-  params,
-}: {
-  params: Params;
-}) {
+// `params` is passed into the boundaries rather than awaited here. See the
+// matching comment in app/(main)/[org]/page.tsx — awaiting above the Suspense
+// empties this route's shared App Shell and makes every client navigation into
+// it blocking, while direct page loads still look fine.
+export default function WellKnownSourcePage({ params }: { params: Params }) {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+      <Suspense fallback={<SourceHeaderSkeleton />}>
+        <SourceHeader params={params} />
+      </Suspense>
+
+      <DataErrorBoundary label="this source's skills">
+        <Suspense fallback={<SourceListSkeleton />}>
+          <SourceListContent params={params} />
+        </Suspense>
+      </DataErrorBoundary>
+    </div>
+  );
+}
+
+async function SourceHeader({ params }: { params: Params }) {
   const { source } = await params;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    <>
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -80,15 +97,29 @@ export default async function WellKnownSourcePage({
       <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-medium tracking-tight leading-hero text-balance mb-6">
         {source}
       </h1>
-
-      <Suspense fallback={<SourceListSkeleton />}>
-        <SourceListContent source={source} />
-      </Suspense>
-    </div>
+    </>
   );
 }
 
-async function SourceListContent({ source }: { source: string }) {
+function SourceHeaderSkeleton() {
+  return (
+    <>
+      <div className="mb-8 flex items-center gap-2 text-sm">
+        <Skeleton className="h-4 w-12" />
+        <span aria-hidden="true" className="text-muted-foreground/50">
+          /
+        </span>
+        <Skeleton className="h-4 w-28" />
+      </div>
+      <div className="mb-6 font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero">
+        <Skeleton className="h-[1em] w-64 max-w-full" />
+      </div>
+    </>
+  );
+}
+
+async function SourceListContent({ params }: { params: Params }) {
+  const { source } = await params;
   const { skills, totalInstalls } = await loadSourceSkills(source);
 
   if (skills.length === 0) {

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
 import { LinkPending } from "@/components/link-pending";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 type Params = Promise<{ org: string }>;
 
@@ -74,11 +75,41 @@ export async function generateMetadata({
   };
 }
 
-export default async function OrgPage({ params }: { params: Params }) {
+// The `params` promise is passed into the Suspense boundaries rather than
+// awaited here, and that is load-bearing: under Partial Prefetching, Next
+// builds ONE App Shell per route and reuses it for every link to that route, so
+// the shell is rendered without URL data. Awaiting `params` at the top of the
+// page would put every element below it — including the list skeleton — behind
+// that unknown value, leaving the shared shell empty and making every client
+// navigation into this route blocking.
+//
+// Direct page loads look fine either way (the URL is known), which is exactly
+// why this regressed silently. The e2e guard in e2e/instant-navigation.spec.ts
+// asserts the client-navigation case specifically.
+export default function OrgPage({ params }: { params: Params }) {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+      <Suspense fallback={<OrgHeaderSkeleton />}>
+        <OrgHeader params={params} />
+      </Suspense>
+
+      <DataErrorBoundary label="this organization's repositories">
+        <Suspense fallback={<OrgListSkeleton />}>
+          <OrgListContent params={params} />
+        </Suspense>
+      </DataErrorBoundary>
+    </div>
+  );
+}
+
+// Breadcrumb tail and title are the org name itself — URL data, so they can
+// never be part of the shared shell. They get their own boundary so the list
+// below isn't held back waiting on them.
+async function OrgHeader({ params }: { params: Params }) {
   const { org } = await params;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    <>
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -94,15 +125,31 @@ export default async function OrgPage({ params }: { params: Params }) {
       <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-medium tracking-tight leading-hero text-balance mb-6">
         {org}
       </h1>
-
-      <Suspense fallback={<OrgListSkeleton />}>
-        <OrgListContent org={org} />
-      </Suspense>
-    </div>
+    </>
   );
 }
 
-async function OrgListContent({ org }: { org: string }) {
+function OrgHeaderSkeleton() {
+  return (
+    <>
+      <div className="mb-8 flex items-center gap-2 text-sm">
+        <Skeleton className="h-4 w-12" />
+        <span aria-hidden="true" className="text-muted-foreground/50">
+          /
+        </span>
+        <Skeleton className="h-4 w-28" />
+      </div>
+      {/* Same font-size/leading as the real h1 so the swap doesn't shift the
+          list below it. */}
+      <div className="mb-6 font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero">
+        <Skeleton className="h-[1em] w-64 max-w-full" />
+      </div>
+    </>
+  );
+}
+
+async function OrgListContent({ params }: { params: Params }) {
+  const { org } = await params;
   const { repos, totalSkillCount, totalInstalls } = await loadOrg(org);
 
   if (repos.length === 0) {

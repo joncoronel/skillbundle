@@ -48,6 +48,15 @@ export async function POST(request: Request) {
   // documented pattern for external webhooks (our Convex cron) that need
   // immediate expiration, and it keeps Popular's cached page 1 aligned with
   // the live paginated pages 2+.
+  //
+  // Do NOT "modernise" this to `updateTag`, and do not drop the second
+  // argument. Verified against the 16.3 docs:
+  //   - The signature is `revalidateTag(tag, profile: string | { expire })`.
+  //     The two-argument form used here is current. What's deprecated is the
+  //     ONE-argument `revalidateTag(tag)`.
+  //   - `updateTag` is Server-Actions-only and throws anywhere else, so it is
+  //     not available to a Route Handler at all. `{ expire: 0 }` is the
+  //     Route-Handler-legal way to get updateTag's immediate-expiry semantics.
   revalidateTag(tag, { expire: 0 });
   return NextResponse.json({ revalidated: true, tag });
 }
