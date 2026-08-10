@@ -66,6 +66,15 @@ Two rules from that guide that are easy to break without noticing, because
   `app/(main)/error.tsx`, `components/data-error-boundary.tsx`). Use the
   innermost one that fits rather than adding `try/catch` inside a Server
   Component — that swallows the error and loses `retry()`.
+- **Restructuring a page means updating its `loading.tsx` / Suspense fallback in
+  the same change.** Nothing catches that drift — the e2e guards assert a shell
+  commits instantly, not that it resembles the page — and a stale fallback reads
+  to users as the skeleton being replaced by a second, different skeleton rather
+  than as a bug. See docs/architecture.md §2.
+- **A section that's expensive on the client usually belongs on the server, not
+  behind a deferral.** Deferring keeps the cost and adds a loading phase. Only
+  genuinely per-interaction work (e.g. the shiki diff in
+  `components/skill-history-row.tsx`) should stay lazy.
 
 `e2e/instant-navigation.spec.ts` guards the first one. See docs/architecture.md
 §1, §14 and §15.

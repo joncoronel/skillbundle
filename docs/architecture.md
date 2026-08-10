@@ -190,6 +190,35 @@ Per-route fallbacks: `HomeFallback` (exported from `app/(main)/home-content.tsx`
 
 Next.js recommends fallbacks that are "meaningful" and "match the dimensions of the content" (streaming guide); rendering the actual default UI is the maximal version of that. nuqs's own docs prescribe the same structure (server page → Suspense → client island).
 
+### Keeping fallbacks in step with the page
+
+**When you restructure a page, update its `loading.tsx` / Suspense fallback in
+the same change.** Nothing catches this drift automatically, and it fails in a
+way that doesn't look like drift.
+
+`/bundle/[id]` is the worked example. The page was rebuilt as a register table;
+its `loading.tsx` was left describing the version before that — a Fork/Star
+action row that no longer existed, a tall install block that had become a
+collapsed disclosure, and a three-column card grid where the page now rendered a
+table, with the sections in the old order. Every visitor got a shell that
+resolved into a visibly *different* layout, which reads as the skeleton being
+replaced by a second, different skeleton rather than as a stale fallback.
+
+Two habits that make a fallback survive the next redesign:
+
+- **Wrap type-scale, don't hardcode heights.** A bar inside
+  `<div className="text-4xl md:text-5xl">…<Skeleton className="h-[1em]" /></div>`
+  tracks the real element's line box at every breakpoint; `h-12 md:h-14` silently
+  stops matching the first time the type scale moves.
+- **Don't reserve space for conditional UI.** The bundle action row is
+  `empty:hidden` and renders nothing for non-owners — the common case for a
+  shared link — so drawing buttons there guaranteed a shift for exactly the
+  visitor the route exists for. Same for optional fields like a description.
+
+The e2e guards in `e2e/instant-navigation.spec.ts` assert that a shell *commits
+instantly*, not that it *resembles the page*. They cannot catch this; a look at
+the route after restructuring it can.
+
 ---
 
 ## 3. Authentication Setup
