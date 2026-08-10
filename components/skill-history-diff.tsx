@@ -24,7 +24,7 @@ import { versionDiffQueryOptions } from "./skill-history-diff-query";
 
 import type { api } from "@/convex/_generated/api";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
-import { solidSurface } from "@/lib/cubby-ui/elevated";
+import { elevatedSurface } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 
 type VersionEntry =
@@ -230,7 +230,7 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
     // CodeBlock component but the app's own prose never shows it, so a diff
     // rendering one was the odd surface out.
     //
-    // The surface lives on the single panel below, as solidSurface(3) — the
+    // The surface lives on the single panel below, as elevatedSurface(3) — the
     // elevated card with its rim and shadow, exactly what CodeBlockPre carries.
     <div className="w-full" style={DIFF_SURFACE_VARS}>
       {/* CodeView rather than MultiFileDiff, on the library's own advice: the
@@ -239,7 +239,7 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
           container mounted, stylesheet attached, <pre> with zero rows and no
           console error. CodeView owns its rendering surface. */}
       {/* The single surface, mirroring CodeBlockPre: `rounded-lg`, capped at
-          `max-h-96`, carrying solidSurface(3)'s elevated fill, rim and shadow.
+          `max-h-96`, carrying elevatedSurface(3)'s fill, rim and shadow.
 
           The height cap and the scroll must be on the SAME element. Putting
           `max-h-96` on CodeView's own className capped a div whose `overflow` is
@@ -248,12 +248,23 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
           rendered but were unreachable, with nothing to scroll. */}
       {/* Two elements, and the split is load-bearing.
 
-          `solidSurface(3)`'s rim is a pair of INSET shadows (dark mode only —
-          in light `--surface-rim-3` is `0 0 transparent`, which is why this only
-          ever showed up dark). Chromium paints an inset shadow against an
-          element's scrollable overflow area, not its visible box, so when the
-          surface and the scroller were the same element the top rim scrolled up
-          and out of view with the content.
+          The rim only exists in dark mode (`--surface-rim-3` is
+          `0 0 transparent` in light), which is why this only ever showed up
+          there. Two separate things were eating it.
+
+          First, it is an INSET shadow, and Chromium paints those against an
+          element's scrollable overflow area rather than its visible box — so
+          while the surface and the scroller were one element, the rim scrolled
+          away with the content.
+
+          Second, an inset shadow paints BEHIND its children, and the diff's
+          rows carry opaque tints right up to the container's edges, so they
+          covered it. `elevatedSurface` is the house answer: same fill and drop
+          shadow, but the rim moves to an `::after` overlay that re-paints above
+          the children. `solidSurface`'s own doc says to switch to it the moment
+          a container gains opaque children near its edges — which this one
+          always had. It requires a positioned host, a radius, and clipped
+          overflow; all three are on the div below.
 
           The surface stays on a non-scrolling outer box; the cap and the scroll
           stay together on the inner one — which is the constraint the earlier
@@ -261,7 +272,9 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
           div whose `overflow` is `visible`, so expanding a collapsed hunk pushed
           content past the cap with nothing to scroll. That still holds; it just
           does not require the surface to ride along. */}
-      <div className={cn("overflow-hidden rounded-lg", solidSurface(3))}>
+      <div
+        className={cn("relative overflow-hidden rounded-lg", elevatedSurface(3))}
+      >
         <div className="max-h-96 overflow-y-auto">
           {/* `items` is memoised alongside the diff — see above. A fresh array
               literal here re-entered the highlight pipeline on every render even
