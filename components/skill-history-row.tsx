@@ -340,7 +340,21 @@ export function HistoryRow({
           </div>
         )}
 
-        <CollapsibleContent>
+        {/* `px-1 -mx-1` widens the clip box without moving the content.
+            CollapsibleContent needs `overflow-hidden` to animate its height, but
+            the diff surface inside sits flush with the panel's edges (measured:
+            0px gap on both sides), so its 1px rim — `0 0 0 1px` from
+            solidSurface(3) — was being shaved off on the left and right.
+            Padding the panel and pulling it back by the same amount moves the
+            clip boundary 4px outward on each side while leaving layout
+            identical. Horizontal only: the bottom shadow already has the inner
+            `pb-8` to breathe into, and vertical clipping is the thing the
+            open/close animation actually depends on.
+
+            4px fits inside the room already there — the row's own `pl-6` on the
+            left, the page container's `px-4` on the right — so this cannot
+            introduce horizontal scroll at any width. */}
+        <CollapsibleContent className="px-1 -mx-1">
           {/* No `open &&` guard here, deliberately. CollapsibleContent animates
               its exit with `data-[ending-style]:h-0`, which needs Base UI to
               keep the panel mounted while that transition runs. Gating the
