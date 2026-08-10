@@ -92,21 +92,35 @@ export default async function BundlePage({
   // bundle data arrives.
   await io();
 
-  // Read the route param and the auth token in parallel, then preload the
-  // bundle with it.
-  // The plan is no longer read here: closing a bundle used to be Pro-gated and
-  // the card grid needed to know whether the viewer could quick-add. Neither is
-  // true now, so the page preloads one query instead of two.
+  // Read the route param and the auth token in parallel, then preload with it.
+  //
+  // Both queries are preloaded together. The change list used to be fetched
+  // client-side by BundleView (`useQuery`), which meant the register painted
+  // every row as Steady with a "Checking N skills…" line *after* the page
+  // content had already arrived — a second loading phase on a page that had
+  // finished loading. Preloading it here removes that phase; `usePreloadedQuery`
+  // keeps the subscription live afterwards, so edits still stream in.
+  //
+  // It cannot be `'use cache'` like the catalog loaders: `listChangesForBundle`
+  // reads `getCurrentUser`, so its result is per-viewer and has no business in
+  // a shared cache. Preloading with the token is the per-user equivalent.
   const [{ id }, token] = await Promise.all([params, getAuthToken()]);
-  const preloadedBundle = await preloadQuery(
-    api.bundles.getByUrlId,
-    { urlId: id },
-    { token },
-  );
+  const [preloadedBundle, preloadedChanges] = await Promise.all([
+    preloadQuery(api.bundles.getByUrlId, { urlId: id }, { token }),
+    preloadQuery(
+      api.skillVersions.listChangesForBundle,
+      { urlId: id },
+      { token },
+    ),
+  ]);
 
   return (
     <DataErrorBoundary label="this bundle">
-      <BundleView preloadedBundle={preloadedBundle} urlId={id} />
+      <BundleView
+        preloadedBundle={preloadedBundle}
+        preloadedChanges={preloadedChanges}
+        urlId={id}
+      />
     </DataErrorBoundary>
   );
 }

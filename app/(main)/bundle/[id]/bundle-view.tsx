@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   usePreloadedQuery,
   useMutation,
-  useQuery,
   type Preloaded,
 } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -64,6 +63,7 @@ import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
+  preloadedChanges: Preloaded<typeof api.skillVersions.listChangesForBundle>;
   urlId: string;
 }
 
@@ -86,7 +86,11 @@ const EMPTY_SKILLS: BundleSkill[] = [];
 const descriptionDialogHandle = createDialogHandle();
 const renameBundleDialogHandle = createDialogHandle();
 
-export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
+export function BundleView({
+  preloadedBundle,
+  preloadedChanges,
+  urlId,
+}: BundleViewProps) {
   const bundle = usePreloadedQuery(preloadedBundle);
   const [editingSkills, setEditingSkills] = useState(false);
   // Above the `bundle === null` early return below — hooks cannot sit after it
@@ -114,17 +118,27 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   // Per-skill change payloads for the register, baselined on when each skill
   // joined the bundle. Separate from the bundle read because it touches the
   // version archive and the audit table, which the roster itself does not need.
-  const changes = useQuery(api.skillVersions.listChangesForBundle, { urlId });
+  //
+  // Preloaded on the server (see page.tsx) rather than fetched here. As a
+  // `useQuery` this resolved after the page content had already painted, so the
+  // register showed every row as Steady under a "Checking N skills…" line —
+  // a second loading phase on a page that had finished loading. It stays a live
+  // subscription after hydration, so edits and new changes still stream in.
+  const changes = usePreloadedQuery(preloadedChanges);
 
   useEffect(() => {
-    // Gated on `changes`, not just on ownership. The stamp is earned by the
-    // page having SHOWN the changes, and until this query resolves every row
-    // still reads Steady — so an unconditional effect marked the bundle read on
-    // first paint, and did it even if the reader bounced immediately or the
-    // query errored. The dashboard then drops those changes forever, including
-    // a security regression nobody saw. That is the exact failure
+    // The stamp is earned by the page having SHOWN the changes. That used to
+    // need an explicit gate, because the change list arrived after first paint
+    // and every row read Steady until it did — so firing unconditionally marked
+    // a bundle read whose changes nobody had seen, and the dashboard then drops
+    // them forever, including a security regression. That is the failure
     // `markBundleViewed`'s own docstring calls the one thing a monitoring
-    // product cannot do, and it is why the call was pulled once already.
+    // product cannot do.
+    //
+    // Preloading closed that hole at the source: `changes` is server-rendered,
+    // so if this page painted at all, the changes were on it. The gate is kept
+    // as a guard rather than deleted — if this ever goes back to a client fetch,
+    // it must not silently start stamping early again.
     if (!ownedBundleId || changes === undefined) return;
     void markViewed({ bundleId: ownedBundleId });
   }, [ownedBundleId, changes, markViewed]);
@@ -177,7 +191,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
     // `changes` streams in after the preloaded bundle — the register renders
     // immediately with every row Steady and settles as the archive answers,
     // rather than holding the whole page behind a second round trip.
-    () => buildRegister(skills, changes?.items),
+    () => buildRegister(skills, changes.items),
     [skills, changes],
   );
   const commandCount = useMemo(
@@ -193,7 +207,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
     bundleId: bundle?._id,
     queryArgs,
     initialSkills: skills,
-    changes: changes?.items,
+    changes: changes.items,
     onExit: () => setEditingSkills(false),
   });
 
@@ -349,8 +363,11 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
               total={skillCount}
               faults={register.faults}
               changed={register.changed}
-              pending={changes === undefined}
-              suppressed={changes?.suppressed ?? false}
+              // Never pending: the change list is preloaded on the server,
+              // so it is present on the first render rather than arriving after
+              // it. The register keeps the prop for its own sake.
+              pending={false}
+              suppressed={changes.suppressed}
             />
           )}
 
@@ -368,7 +385,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
           {skillCount > 0 || editing ? (
             <BundleRegister
               groups={editing ? editSession.rows.groups : register.groups}
-              pending={changes === undefined}
+              pending={false}
               actions={editing ? editSession.actions : undefined}
             />
           ) : (
