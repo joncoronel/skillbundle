@@ -18,12 +18,20 @@ const STATUS_PILL: Record<string, string> = {
   fail: "bg-danger/15 text-danger-foreground border-danger-border",
 };
 
-// Spoken status for accessible names. The visible pill is uppercase ("WARN"),
-// but screen readers should hear a natural word.
+// Spoken status for accessible names. The visible pill is a short word
+// ("Warn"), but screen readers should hear a natural one.
 const STATUS_LABEL: Record<string, string> = {
   pass: "passed",
   warn: "warning",
   fail: "failed",
+};
+
+// The pill's visible word. The API hands us a lowercase enum; capitalising it
+// beats shouting it, and beats leaving a bare "warn" mid-sentence.
+const STATUS_TEXT: Record<string, string> = {
+  pass: "Pass",
+  warn: "Warn",
+  fail: "Fail",
 };
 
 // Risk-level → severity dot color (the verdict pill carries the loud signal;
@@ -59,12 +67,12 @@ export function AuditBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded border px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider",
+        "inline-flex items-center rounded border px-2 py-0.5 text-micro font-medium",
         STATUS_PILL[status] ?? "bg-muted text-muted-foreground border-border",
         className,
       )}
     >
-      {status}
+      {STATUS_TEXT[status] ?? status}
     </span>
   );
 }
@@ -86,17 +94,19 @@ export function SkillAuditSection({
   skillId,
   audits,
   className,
+  as,
 }: {
   source: string;
   skillId: string;
   audits: SkillAuditEntry[] | null | undefined;
   className?: string;
+  as?: "h2" | "h3" | "h4";
 }) {
   if (!audits || audits.length === 0) {
     return null;
   }
   return (
-    <LabeledSection label="Security Audits" className={className}>
+    <LabeledSection label="Security audits" className={className} as={as}>
       <AuditAccordion source={source} skillId={skillId} audits={audits} />
     </LabeledSection>
   );
@@ -124,7 +134,7 @@ function summaryDetail(summary: string, hasRiskField: boolean): string {
   return summary.replace(/^\s*risk:\s*[a-z]+\b\s*[·•\-–:]?\s*/i, "").trim();
 }
 
-/** One mono-labeled field in the metadata strip. */
+/** One labeled field in the metadata strip. */
 function MetaField({
   label,
   children,
@@ -134,9 +144,7 @@ function MetaField({
 }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <dt className="font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </dt>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd>{children}</dd>
     </div>
   );

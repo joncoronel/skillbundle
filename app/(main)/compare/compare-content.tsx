@@ -112,7 +112,7 @@ export function CompareContent() {
       ) : (
         <>
           <div className="mb-4 flex min-h-7 flex-wrap items-center justify-between gap-3">
-            <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               <span className="tabular-nums">
                 {refs.length} / {MAX_COMPARE_SKILLS}
               </span>{" "}
@@ -281,7 +281,7 @@ function CompareTrendSection({
 }) {
   return (
     <section className="mb-4 rounded-2xl border bg-card p-5 dark:border-border/50 md:mb-6">
-      <h2 className="mb-4 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+      <h2 className="mb-4 text-sm font-semibold text-foreground">
         Installs over time
       </h2>
       <Crossfade active={!loading}>
@@ -293,16 +293,14 @@ function CompareTrendSection({
 }
 
 /**
- * One stat strip cell: tiny mono label over a value. The strip rows align
+ * One stat strip cell: a small label over a value. The strip rows align
  * across columns because every shell renders the same strip at the same
  * position, which is what makes the columns comparable at a glance.
  */
 function StatCell({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0 px-4 py-3">
-      <dt className="font-mono text-label font-medium uppercase tracking-eyebrow text-muted-foreground">
-        {label}
-      </dt>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className="mt-1 flex h-5 min-w-0 items-center gap-1.5 text-sm font-medium">
         {children}
       </dd>
@@ -585,15 +583,16 @@ function CompareColumn({
               This skill is no longer listed on skills.sh
             </div>
           )}
+          {/* h3: the column's own skill name is the h2 above these. */}
           {skill.description && (
-            <LabeledSection label="Overview">
+            <LabeledSection label="Overview" as="h3">
               <p className="text-sm leading-relaxed text-pretty text-muted-foreground">
                 {skill.description}
               </p>
             </LabeledSection>
           )}
           {skill.content && (
-            <LabeledSection label="Documentation">
+            <LabeledSection label="Documentation" as="h3">
               <MarkdownContent baseUrl={skill.skillMdUrl ?? null} surface="card">
                 {skill.content}
               </MarkdownContent>

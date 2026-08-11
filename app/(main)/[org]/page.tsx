@@ -187,7 +187,7 @@ async function OrgListContent({ params }: { params: Params }) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
-        <div className="flex items-center gap-3 text-sm font-mono tabular-nums text-muted-foreground">
+        <div className="flex items-center gap-3 text-sm tabular-nums text-muted-foreground">
           <span>
             {repos.length} repositor{repos.length === 1 ? "y" : "ies"}
           </span>
@@ -223,7 +223,7 @@ async function OrgListContent({ params }: { params: Params }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
         <span>Source</span>
         <span>Installs</span>
       </div>
@@ -247,11 +247,11 @@ async function OrgListContent({ params }: { params: Params }) {
                     <span>{repo.repo}</span>
                     <LinkPending />
                   </Link>
-                  <span className="text-xs font-mono tabular-nums text-muted-foreground">
+                  <span className="text-xs tabular-nums text-muted-foreground">
                     {repo.skillCount} skill{repo.skillCount === 1 ? "" : "s"}
                   </span>
                 </div>
-                <div className="ml-auto shrink-0 text-xs font-mono tabular-nums text-muted-foreground">
+                <div className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                   {formatInstalls(repo.totalInstalls)}
                 </div>
               </div>
@@ -283,7 +283,7 @@ function OrgListSkeleton() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
         <span>Source</span>
         <span>Installs</span>
       </div>

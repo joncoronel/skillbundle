@@ -112,7 +112,7 @@ const TableHeadOverride: StreamdownComponents["thead"] = ({ children }) => (
 
 const TableThOverride: StreamdownComponents["th"] = ({ children, style }) => (
   <th
-    className="px-4 py-2.5 align-middle font-mono text-eyebrow font-medium tracking-eyebrow text-muted-foreground uppercase whitespace-nowrap"
+    className="px-4 py-2.5 align-middle font-semibold text-foreground whitespace-nowrap"
     style={style}
   >
     {children}

@@ -179,7 +179,7 @@ function SkillMeta({
         <HotMomentumChip change={skill.hotChange} />
       )}
       <span
-        className="inline-flex items-center gap-1 text-xs font-mono tabular-nums text-muted-foreground"
+        className="inline-flex items-center gap-1 text-xs tabular-nums text-muted-foreground"
         title={windowed !== undefined ? display?.title : undefined}
       >
         <HugeiconsIcon

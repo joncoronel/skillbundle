@@ -18,13 +18,12 @@ html {
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-geist-pixel-circle);
 
-  /* Typography — small mono labels (used uppercase with tracking-eyebrow) */
-  --text-label: 0.625rem; /* 10px */
-  --text-eyebrow: 0.6875rem; /* 11px */
+  /* Typography — the one step below text-xs, for pills and dense chips.
+     Sentence case in the body face; there is no uppercase label role. */
+  --text-micro: 0.6875rem; /* 11px */
 
-  /* Typography — page hero leading + eyebrow tracking */
+  /* Typography — page hero leading */
   --leading-hero: 0.95;
-  --tracking-eyebrow: 0.14em;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

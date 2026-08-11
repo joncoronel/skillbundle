@@ -38,11 +38,21 @@ typography:
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.6
+  section:
+    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 600
+    letterSpacing: "normal"
   label:
-    fontFamily: "var(--font-geist-mono), ui-monospace, monospace"
+    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 500
+    letterSpacing: "normal"
+  micro:
+    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 500
-    letterSpacing: "0.14em"
+    letterSpacing: "normal"
 rounded:
   md: "10px"
   lg: "12px"
@@ -137,23 +147,71 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 
 **Display Font:** Geist Pixel Circle (with `ui-monospace` fallback)
 **Body Font:** Geist Sans (with `system-ui, sans-serif` fallback)
-**Label/Mono Font:** Geist Mono (with `ui-monospace, monospace` fallback)
+**Code Font:** Geist Mono (with `ui-monospace, monospace` fallback)
 
-**Character:** A geometric, technical sans for everything functional, paired with a pixel-grid display face for headline moments and a true monospace for labels and data. The contrast is structural (sans vs. pixel vs. mono), not three competing sans-serifs.
+**Character:** A geometric, technical sans carries the entire interface. The pixel-grid display face marks hero moments, and the monospace is reserved for machine strings. The contrast is structural (sans vs. pixel vs. mono), not three competing sans-serifs.
 
 ### Hierarchy
 - **Display** (Geist Pixel Circle, `clamp(3.5rem, 6vw, 5rem)`, line-height 0.95): Hero headlines and large brand moments only.
 - **Headline** (Geist Sans 600, 1.875rem, -0.02em): Page and section headings.
 - **Title** (Geist Sans 600, 1.125rem): Card titles, panel headers.
+- **Section** (Geist Sans 600, 0.875rem, `text-foreground`): Named blocks inside a page — the `LabeledSection` heading, sidebar sections, comparison groups. A real heading element, sentence case.
 - **Body** (Geist Sans 400, 0.875rem, line-height 1.6): Default UI and prose; cap prose at 65–75ch.
-- **Label** (Geist Mono 500, 0.6875rem, 0.14em tracking, uppercase): Eyebrows, metadata, table headers, small mono captions.
+- **Field label** (Geist Sans 500, 0.75rem, `text-muted-foreground`): What names a column, a `dt`, or a value — table headers, stat cells, metadata. Sentence case, normal tracking.
+- **Micro** (Geist Sans 500, `text-micro` / 0.6875rem): Pills and dense chips only. The floor; nothing smaller.
 
 ### Named Rules
 **The Pixel Floor Rule.** Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; at small sizes it stops reading as pixel-grid and just looks like a broken mono. Display is for hero scale only.
 
-**The Mono-Label Rule.** Uppercase + wide tracking is reserved for short mono labels (≤4 words): metadata, table headers, eyebrows. Never set body copy in uppercase.
+**The Sentence Case Rule.** Nothing in this interface is set in `text-transform: uppercase`. Not eyebrows, not table headers, not status pills, not section labels. Wide-tracked capitals are the default costume of a generated dev-tool UI, and a small caps label is also the least legible way to set the smallest type on the screen. A word that arrives from an API as a raw enum (`warn`, `HIGH`) is normalised to sentence case before it is rendered — see `formatVerdict` in `components/monitoring/condition-meta.ts`. Literal machine constants that are genuinely written in caps (`500 INTERNAL_ERROR`, `SKILL.md`) are quoted as-is, in mono; that is content, not a type treatment.
 
-## 4. Elevation
+**The Mono-Is-Data Rule.** Geist Mono means "this is a machine string you could copy": install commands, code and `<pre>`, file paths, `owner/repo` identifiers, version strings, diff `−`/`+` markers, error digests. It is not a way to make a label look technical. Two consequences worth stating, because both were violated across the app: a label never gets mono just because it sits near data, and a metadata line like "42 skills · 1.2k installs" gets `tabular-nums` — which is the actual requirement, stable digit widths — not `font-mono`, because it is a sentence with numbers in it.
+
+## 4. Layout
+
+There is no container in the route shell. `app/(main)/layout.tsx` holds the
+sticky header, the children, and the global bundle bar; **every page owns its
+own width.** That is deliberate, because a catalog table and a sign-in form want
+different measures, but it means a new page inherits nothing and must state one.
+
+### Containers
+
+- **`max-w-6xl` (72rem) with `mx-auto px-4`** is the default page width, and the
+  one to reach for unless there is a reason not to. Catalog pages, leaderboards,
+  the dashboard, and the bundle page all use it.
+- **`max-w-4xl` / `max-w-2xl`** for reading surfaces, where measure beats
+  density. Prose inside them still caps at 65–75ch (§3).
+- **`max-w-md` / `max-w-sm`** for the auth column and other single-task forms.
+- Horizontal padding steps with the viewport on the header (`px-4 sm:px-6
+  lg:px-8`) but stays flat at `px-4` on page bodies. Match the page bodies.
+
+### Vertical rhythm
+
+`pt-12` above the first element and `pb-20`/`pb-24` below the last. The generous
+tail is intentional: the global bundle bar floats over the bottom of the
+viewport, and a short page with a tight `pb` puts its last row under the bar.
+
+Between sections, `mt-10` is the standard gap and `mt-12 lg:mt-14` marks a
+harder break (the skill page uses the larger step before Documentation). Inside
+a section, more space above a heading than below it.
+
+### Breakpoints
+
+Tailwind's defaults, unmodified: `sm` 640px, `md` 768px, `lg` 1024px, `xl`
+1280px. Two habits matter more than the values:
+
+- **Collapse, do not reflow type.** At small widths the sidebar collapses and
+  trailing table columns fold into the primary cell. Type size holds.
+- **`sm:sr-only`, never `sm:hidden`,** for anything that is the only thing
+  naming a column, a plan, or an owner (§8 Don'ts).
+
+### Anchors
+
+A section that is a link target takes `scroll-mt-20` so the sticky `h-14` header
+does not cover the heading the link just jumped to, plus `tabIndex={-1}` so
+focus moves with the jump. `LabeledSection` does both when given an `id`.
+
+## 5. Elevation
 
 Depth is a first-class system, not an afterthought. Eight surface levels (`surface-1`–`surface-8`) each combine three things: a tonal background that lightens as it rises (in dark mode) or stays near-white (in light mode), a layered drop shadow (`--surface-shadow-N`), and an inset rim highlight (`--surface-rim-N`) that simulates a lit top edge. The result is tactile but quiet; elevation reads as material, not as a glow.
 
@@ -167,7 +225,50 @@ In light mode, lift comes mostly from shadow over a near-white surface. In dark 
 ### Named Rules
 **The Material Depth Rule.** Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a `box-shadow`; use a `surface-N` level so light and dark stay coherent.
 
-## 5. Components
+## 6. Shapes
+
+One radius variable drives everything. `--radius: 0.75rem` (12px) is the root,
+and every step is computed from it (`--radius-xs` = root − 6px through
+`--radius-4xl` = root + 8px), so retuning the whole form language is a one-line
+change and no component carries a hardcoded corner.
+
+### The radius scale
+
+| Token | Value | Where |
+| --- | --- | --- |
+| `rounded-sm` | 8px | Nested chips, inline code |
+| `rounded-md` | 10px | Badges, `xs` buttons |
+| `rounded-lg` | 12px | Buttons, inputs, list rows. The default. |
+| `rounded-2xl` | 16px | Cards and panels |
+| `rounded-full` | circle | Avatars, dots, the status light ring, icon-only controls |
+
+### Borders
+
+The hairline (§2) at 1px is the only border on surfaces: cards, inputs, list
+rows, dividers, table cells. Two exceptions exist and both are deliberate, so do
+not "correct" them:
+
+- **`border-2` on a control whose stroke is the affordance,** not a container
+  edge. The slider thumb and the timeline node are the whole list.
+- **A coloured `border-l-2` as a gutter marker inside the code block,** where it
+  marks a line as added, removed, modified, or highlighted. This is the one
+  place a coloured left edge carries information. It stays banned on cards, list
+  rows, callouts, and alerts (§8 Don'ts), where it is decoration.
+
+### Named Rules
+
+**The One Elevation Signal Rule.** An element declares depth once, with a border
+or with a shadow, never both. A 1px border under a wide soft shadow is the ghost
+card: it reads as a mistake rather than as material. Cards use `surface-N`;
+flush elements use the hairline.
+
+**The Pill Floor Rule.** `rounded-full` is for things that are actually round:
+an avatar, a dot, a status ring, a square icon-only control. A text button, a
+card, or an input never goes to a pill, because the rectilinear grid is what the
+rest of the system is built on and one pill in a row of 12px corners reads as a
+different component.
+
+## 7. Components
 
 Built on the cubby-ui library (Base UI primitives + CVA variants). Components are crisp and tactile: subtle real depth, fast feedback, a physical press.
 
@@ -194,7 +295,7 @@ Built on the cubby-ui library (Base UI primitives + CVA variants). Components ar
 - **Invalid:** 2px offset `destructive` ring via `aria-invalid`.
 
 ### Navigation
-- Neutral by default, Signal Blue marks the active item. Mono labels for section headers; sidebar uses `surface-1` with a hairline border. Collapse the sidebar at small breakpoints rather than reflowing type.
+- Neutral by default, Signal Blue marks the active item. Section headers take the Section role (§3) at `text-xs` in the narrow sidebar column; sidebar uses `surface-1` with a hairline border. Collapse the sidebar at small breakpoints rather than reflowing type.
 
 ### Status light and condition vocabulary
 
@@ -255,7 +356,9 @@ for free. Notes that are easy to lose:
   percentage on the primary column at the narrowest breakpoint — under fixed
   layout the browser distributes leftover width across declared columns, which
   inflates a narrow marker column and squeezes the content beside it.
-- Header cells take the mono label treatment (§3), not the component default.
+- Header cells take the Field label role (§3), not the component default. Only
+  the size is overridden (`text-xs`); `TableHead` already supplies the weight
+  and the muted colour.
 - At narrow widths drop trailing columns and fold their content into the primary
   cell. Never leave a column parked off-screen behind a horizontal scroll: the
   column the reader came for is the first one to disappear that way.
@@ -279,7 +382,7 @@ for free. Notes that are easy to lose:
 ### Signature: Dot-Matrix Ripple
 The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in sequence, echoing the Nothing OS dot-matrix motif. It is the project's loading vocabulary everywhere a spinner would otherwise go.
 
-## 6. Do's and Don'ts
+## 8. Do's and Don'ts
 
 ### Do:
 - **Do** keep Signal Blue (`oklch(0.6 0.2 250)`) rare: primary action, active state, focus, links. One signal per screen.
@@ -298,7 +401,10 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Don't** use gradient hero blobs or any `background-clip: text` gradient text. The accent is a single solid color.
 - **Don't** use decorative glassmorphism; blur and glass are not the default surface.
 - **Don't** set the Geist Pixel face below ~40px; it collapses into broken mono.
-- **Don't** use uppercase for body copy; reserve it for short mono labels (≤4 words).
+- **Don't** apply `uppercase` to anything, at any size, in any role. There is no
+  label treatment that earns it back.
+- **Don't** reach for `font-mono` on a label, a heading, a count, or a status
+  word. Mono is for strings a machine produced and a user might copy.
 - **Don't** hand-roll `box-shadow`; use the `surface-N` elevation system.
 - **Don't** introduce a second accent hue or let two blue elements compete on one screen.
 - **Don't** make it look template-generated, cartoonish, or like a generic SaaS landing page.

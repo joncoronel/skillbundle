@@ -79,7 +79,7 @@ async function OfficialContent() {
 
   return (
     <>
-      <div className="flex items-center gap-3 text-sm font-mono tabular-nums text-muted-foreground mb-6 px-4">
+      <div className="flex items-center gap-3 text-sm tabular-nums text-muted-foreground mb-6 px-4">
         <span>
           {owners.length} publisher{owners.length === 1 ? "" : "s"}
         </span>
@@ -117,7 +117,7 @@ async function OfficialContent() {
                   </span>
                   <LinkPending />
                 </span>
-                <span className="ml-auto flex items-baseline gap-3 text-xs font-mono tabular-nums text-muted-foreground shrink-0">
+                <span className="ml-auto flex items-baseline gap-3 text-xs tabular-nums text-muted-foreground shrink-0">
                   <span>
                     {owner.repoCount} repo{owner.repoCount === 1 ? "" : "s"}
                   </span>

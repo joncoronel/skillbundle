@@ -10,7 +10,10 @@ import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
-import { CONDITION_META } from "@/components/monitoring/condition-meta";
+import {
+  CONDITION_META,
+  formatVerdict,
+} from "@/components/monitoring/condition-meta";
 import { DescriptionDelta } from "@/components/monitoring/description-delta";
 import {
   StatusLight,
@@ -375,9 +378,12 @@ function ChangeRow({ item }: { item: FeedItem }) {
           </div>
 
           {item.audit ? (
-            <p className="mt-1 font-mono text-xs uppercase tracking-eyebrow text-danger-foreground">
-              {item.audit.from} &rarr; {item.audit.to}
-              {item.audit.riskLevel ? ` · ${item.audit.riskLevel}` : null}
+            <p className="mt-1 text-xs font-medium text-danger-foreground">
+              {formatVerdict(item.audit.from)} &rarr;{" "}
+              {formatVerdict(item.audit.to)}
+              {item.audit.riskLevel
+                ? ` · ${formatVerdict(item.audit.riskLevel)} risk`
+                : null}
             </p>
           ) : null}
 

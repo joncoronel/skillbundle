@@ -257,8 +257,9 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
   // discovered upstream.
   return (
     <div className="space-y-8">
+      {/* h3: these sit under the sheet's own title, which is the h2 here. */}
       {skill.description && (
-        <LabeledSection label="Overview">
+        <LabeledSection label="Overview" as="h3">
           <p className="text-base leading-relaxed text-pretty text-muted-foreground">
             {skill.description}
           </p>
@@ -268,9 +269,10 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
         source={skill.source}
         skillId={skill.skillId}
         audits={audits}
+        as="h3"
       />
       {content && (
-        <LabeledSection label="Documentation">
+        <LabeledSection label="Documentation" as="h3">
           <MarkdownContent baseUrl={baseUrl} surface="card">
             {content}
           </MarkdownContent>

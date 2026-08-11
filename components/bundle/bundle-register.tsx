@@ -54,6 +54,7 @@ import { OfficialBadge } from "@/components/skill-badges";
 import {
   CONDITION_META,
   GROUP_LABEL,
+  formatVerdict,
 } from "@/components/monitoring/condition-meta";
 import { DescriptionDelta } from "@/components/monitoring/description-delta";
 import {
@@ -233,11 +234,10 @@ export function BundleRegister<S extends RegisterSkill>({
     // scrollbar at all.
     <Table className="table-fixed max-h-[70vh] md:max-w-none">
       <TableHeader>
-        {/* Mono, uppercase, eyebrow tracking — DESIGN.md assigns exactly that
-            to table headers, and the audit cells below already use it. The
-            TableHead default is body-size sans, which made the strip the one
-            place the register stepped outside its own world. */}
-        <TableRow className="hover:bg-transparent [&>th]:font-mono [&>th]:text-eyebrow [&>th]:uppercase [&>th]:tracking-eyebrow">
+        {/* Small sans, sentence case — the column-label role from DESIGN.md §3.
+            Only the size is overridden; TableHead's default is body-size, which
+            makes the strip compete with the rows it labels. */}
+        <TableRow className="hover:bg-transparent [&>th]:text-xs">
           <TableHead className="w-8">
             <span className="sr-only">Condition marker</span>
           </TableHead>
@@ -622,9 +622,12 @@ function ConditionDetail({
       )}
 
       {change?.audit ? (
-        <p className="mt-1 font-mono text-xs uppercase tracking-eyebrow text-danger-foreground">
-          {change.audit.from} &rarr; {change.audit.to}
-          {change.audit.riskLevel ? ` · ${change.audit.riskLevel}` : null}
+        <p className="mt-1 text-xs font-medium text-danger-foreground">
+          {formatVerdict(change.audit.from)} &rarr;{" "}
+          {formatVerdict(change.audit.to)}
+          {change.audit.riskLevel
+            ? ` · ${formatVerdict(change.audit.riskLevel)} risk`
+            : null}
         </p>
       ) : null}
 
@@ -671,7 +674,7 @@ function AuditCell({
 }) {
   if (!status || status === "unknown") {
     return (
-      <span className="font-mono text-xs uppercase tracking-eyebrow text-muted-foreground">
+      <span className="text-xs text-muted-foreground">
         <span className="sr-only">Not audited</span>
         <span aria-hidden>&mdash;</span>
       </span>
@@ -680,13 +683,15 @@ function AuditCell({
   return (
     <span
       className={cn(
-        "font-mono text-xs uppercase tracking-eyebrow",
+        "text-xs font-medium",
         AUDIT_TONE[status] ?? "text-muted-foreground",
       )}
     >
-      {status}
+      {formatVerdict(status)}
       {riskLevel && status !== "pass" ? (
-        <span className="block text-muted-foreground">{riskLevel}</span>
+        <span className="block font-normal text-muted-foreground">
+          {formatVerdict(riskLevel)} risk
+        </span>
       ) : null}
     </span>
   );

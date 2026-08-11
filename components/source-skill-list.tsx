@@ -141,7 +141,7 @@ export function SourceSkillList({ skills }: { skills: SkillData[] }) {
         )}
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
         <span>Skill</span>
         <span>Installs</span>
       </div>

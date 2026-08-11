@@ -280,7 +280,7 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
             {skill.description}
           </p>
         ) : null}
-        <p className="mt-1 text-[11px] font-mono tabular-nums text-muted-foreground/80">
+        <p className="mt-1 text-micro tabular-nums text-muted-foreground/80">
           {formatInstalls(skill.installs)} installs
         </p>
       </div>

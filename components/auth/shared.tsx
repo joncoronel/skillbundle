@@ -78,19 +78,18 @@ export function isExpiredCodeError(err: unknown): boolean {
   );
 }
 
+/**
+ * Field label for the auth forms. No override any more: this used to force
+ * 10px mono uppercase muted, which shrank "Verification code" to the smallest
+ * type on a page whose only job is that field. The Label default (14px sans,
+ * medium, full-strength) is the right treatment, and matching it keeps the auth
+ * forms in the same vocabulary as every other form in the product.
+ */
 export function AuthFieldLabel({
   className,
   ...props
 }: React.ComponentProps<typeof Label>) {
-  return (
-    <Label
-      className={cn(
-        "font-mono text-label uppercase tracking-eyebrow text-muted-foreground",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <Label className={className} {...props} />;
 }
 
 export function AuthArrowRight({ className }: { className?: string }) {
@@ -115,9 +114,7 @@ export function AuthDivider({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-4" aria-hidden="true">
       <span className="h-px flex-1 bg-border" />
-      <span className="font-mono text-label uppercase tracking-eyebrow text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-xs text-muted-foreground">{label}</span>
       <span className="h-px flex-1 bg-border" />
     </div>
   );

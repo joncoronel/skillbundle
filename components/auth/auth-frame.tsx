@@ -41,7 +41,7 @@ export function AuthFrame({
       </main>
 
       {footer ? (
-        <footer className="flex justify-end font-mono text-label uppercase tracking-eyebrow text-muted-foreground">
+        <footer className="flex justify-end text-xs text-muted-foreground">
           {footer}
         </footer>
       ) : null}
