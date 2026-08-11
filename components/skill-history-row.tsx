@@ -667,7 +667,7 @@ function DescriptionChange({
       )}
     >
       <div>
-        <dt className="mb-1 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+        <dt className="mb-1 text-xs font-medium text-muted-foreground">
           Description before
         </dt>
         <dd className="text-sm text-pretty text-muted-foreground">
@@ -675,7 +675,7 @@ function DescriptionChange({
         </dd>
       </div>
       <div>
-        <dt className="mb-1 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+        <dt className="mb-1 text-xs font-medium text-muted-foreground">
           Description after
         </dt>
         <dd className="text-sm text-pretty">

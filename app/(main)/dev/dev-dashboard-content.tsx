@@ -589,10 +589,10 @@ function EmbeddingSkillRow({
     <div className="flex items-center gap-3 px-4 py-2 text-sm">
       <span className="font-medium truncate">{skill.name}</span>
       <span className="text-muted-foreground truncate">{skill.source}</span>
-      <span className="ml-auto text-xs font-mono tabular-nums text-muted-foreground shrink-0">
+      <span className="ml-auto text-xs tabular-nums text-muted-foreground shrink-0">
         {formatInstalls(skill.installs)}
       </span>
-      <Badge variant={badge.variant} className="text-[10px] shrink-0">
+      <Badge variant={badge.variant} className="text-micro shrink-0">
         {badge.label}
       </Badge>
     </div>
@@ -615,7 +615,7 @@ function EmbeddingSkillList({
   if (skills === undefined) {
     return (
       <div>
-        <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">
           {title}
         </p>
         <Skeleton className="h-12 w-full rounded-lg" />
@@ -628,7 +628,7 @@ function EmbeddingSkillList({
       <Tooltip>
         <TooltipTrigger
           render={<p />}
-          className="mb-2 inline-block text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-help decoration-dashed decoration-muted-foreground/40 underline underline-offset-2"
+          className="mb-2 inline-block text-xs font-medium text-muted-foreground cursor-help decoration-dashed decoration-muted-foreground/40 underline underline-offset-2"
         >
           {title} ({skills.length})
         </TooltipTrigger>

@@ -64,3 +64,14 @@ export const GROUP_LABEL: Record<GroupKey, string> = {
   changed: "Changed",
   steady: "Steady",
 };
+
+/**
+ * Audit verdicts and risk levels arrive as raw enums — lowercase from our own
+ * audit rows, SHOUTED from some providers ("HIGH", "SAFE"). Both used to be
+ * printed as-is under `uppercase`, which hid the inconsistency behind a style.
+ * Without the uppercase they have to be normalised here instead: a verdict is a
+ * word in a sentence, not a constant.
+ */
+export function formatVerdict(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}

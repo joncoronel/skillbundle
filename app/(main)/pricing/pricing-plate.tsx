@@ -129,7 +129,7 @@ export function PricingPlate() {
         <PlateHead cycle={cycle} />
         {COMPARISON.map((group) => (
           <section key={group.title}>
-            <h3 className="border-t border-border bg-muted/50 px-4 py-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground sm:px-6">
+            <h3 className="border-t border-border bg-muted/50 px-4 py-2 text-xs font-semibold text-foreground sm:px-6">
               {group.title}
             </h3>
             <dl>
@@ -179,9 +179,7 @@ function PlanHead({ plan, cycle }: { plan: "free" | "pro"; cycle: Cycle }) {
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-          {info.name}
-        </p>
+        <p className="text-sm font-semibold text-foreground">{info.name}</p>
         <p className="mt-1 flex items-baseline gap-1">
           <span className="font-display text-3xl font-medium tabular-nums tracking-tight">
             ${amount}
@@ -373,7 +371,7 @@ function PlateCell({
           which. Visually hidden keeps it announced while the visible column
           header does the work sighted readers need. */}
       <span className="sm:sr-only">
-        <span className="font-mono text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+        <span className="text-xs font-medium text-muted-foreground">
           {isPro ? "Pro " : "Free "}
         </span>
       </span>

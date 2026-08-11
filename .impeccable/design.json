@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-06-14T00:00:00Z",
+  "generatedAt": "2026-08-11T00:00:00Z",
   "title": "Design System: SkillBundle",
   "extensions": {
     "colorMeta": {
@@ -19,6 +19,36 @@
           "oklch(0.95 0.04 250)"
         ]
       },
+      "signal-blue-ring": {
+        "role": "primary",
+        "displayName": "Signal Blue Ring",
+        "canonical": "oklch(0.55 0.2 250)",
+        "tonalRamp": [
+          "oklch(0.18 0.09 250)",
+          "oklch(0.27 0.13 250)",
+          "oklch(0.36 0.16 250)",
+          "oklch(0.45 0.19 250)",
+          "oklch(0.55 0.20 250)",
+          "oklch(0.68 0.17 250)",
+          "oklch(0.81 0.11 250)",
+          "oklch(0.94 0.04 250)"
+        ]
+      },
+      "on-signal": {
+        "role": "primary",
+        "displayName": "On Signal",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.26 0 0)",
+          "oklch(0.37 0 0)",
+          "oklch(0.48 0 0)",
+          "oklch(0.62 0 0)",
+          "oklch(0.78 0 0)",
+          "oklch(0.92 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
       "ink": {
         "role": "neutral",
         "displayName": "Ink",
@@ -32,6 +62,21 @@
           "oklch(0.78 0.004 270)",
           "oklch(0.92 0.004 270)",
           "oklch(0.97 0.002 270)"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Ink Muted",
+        "canonical": "oklch(0.5 0.004 270)",
+        "tonalRamp": [
+          "oklch(0.18 0.004 270)",
+          "oklch(0.28 0.004 270)",
+          "oklch(0.38 0.004 270)",
+          "oklch(0.50 0.004 270)",
+          "oklch(0.62 0.004 270)",
+          "oklch(0.76 0.004 270)",
+          "oklch(0.88 0.004 270)",
+          "oklch(0.96 0.002 270)"
         ]
       },
       "field": {
@@ -48,30 +93,237 @@
           "oklch(0.97 0 0)",
           "oklch(1 0 0)"
         ]
+      },
+      "surface-raised": {
+        "role": "neutral",
+        "displayName": "Surface Raised",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.205 0.004 270)",
+          "oklch(0.264 0.004 270)",
+          "oklch(0.321 0.004 270)",
+          "oklch(0.402 0.004 270)",
+          "oklch(0.75 0.002 270)",
+          "oklch(0.94 0 0)",
+          "oklch(0.985 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Fill",
+        "canonical": "oklch(0.92 0 0)",
+        "tonalRamp": [
+          "oklch(0.22 0 0)",
+          "oklch(0.32 0 0)",
+          "oklch(0.44 0 0)",
+          "oklch(0.56 0 0)",
+          "oklch(0.70 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.92 0 0)",
+          "oklch(0.97 0 0)"
+        ]
+      },
+      "border-hairline": {
+        "role": "neutral",
+        "displayName": "Hairline Border",
+        "canonical": "oklch(0 0 0 / 0.1)",
+        "tonalRamp": [
+          "oklch(0 0 0 / 0.60)",
+          "oklch(0 0 0 / 0.45)",
+          "oklch(0 0 0 / 0.32)",
+          "oklch(0 0 0 / 0.22)",
+          "oklch(0 0 0 / 0.16)",
+          "oklch(0 0 0 / 0.10)",
+          "oklch(0 0 0 / 0.06)",
+          "oklch(0 0 0 / 0.03)"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Destructive Red",
+        "canonical": "oklch(0.53 0.19 25)",
+        "tonalRamp": [
+          "oklch(0.20 0.09 25)",
+          "oklch(0.29 0.13 25)",
+          "oklch(0.38 0.16 25)",
+          "oklch(0.46 0.18 25)",
+          "oklch(0.53 0.19 25)",
+          "oklch(0.68 0.16 25)",
+          "oklch(0.83 0.10 25)",
+          "oklch(0.95 0.04 25)"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Success Green",
+        "canonical": "oklch(0.48 0.18 145)",
+        "tonalRamp": [
+          "oklch(0.18 0.08 145)",
+          "oklch(0.26 0.12 145)",
+          "oklch(0.34 0.15 145)",
+          "oklch(0.42 0.17 145)",
+          "oklch(0.48 0.18 145)",
+          "oklch(0.65 0.15 145)",
+          "oklch(0.82 0.09 145)",
+          "oklch(0.95 0.04 145)"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Warning Amber",
+        "canonical": "oklch(0.58 0.14 85)",
+        "tonalRamp": [
+          "oklch(0.22 0.06 85)",
+          "oklch(0.31 0.09 85)",
+          "oklch(0.40 0.12 85)",
+          "oklch(0.49 0.13 85)",
+          "oklch(0.58 0.14 85)",
+          "oklch(0.72 0.13 85)",
+          "oklch(0.86 0.09 85)",
+          "oklch(0.96 0.05 85)"
+        ]
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Info Blue",
+        "canonical": "oklch(0.45 0.2 250)",
+        "tonalRamp": [
+          "oklch(0.16 0.09 250)",
+          "oklch(0.24 0.13 250)",
+          "oklch(0.32 0.16 250)",
+          "oklch(0.39 0.18 250)",
+          "oklch(0.45 0.20 250)",
+          "oklch(0.62 0.18 250)",
+          "oklch(0.80 0.11 250)",
+          "oklch(0.94 0.04 250)"
+        ]
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "Geist Pixel Circle; hero headlines at ≥60px only." },
-      "headline": { "displayName": "Headline", "purpose": "Geist Sans 600; page and section headings." },
-      "label": { "displayName": "Label", "purpose": "Geist Mono uppercase + 0.14em tracking; metadata, table headers, eyebrows." }
+      "display": {
+        "displayName": "Display",
+        "purpose": "Geist Pixel Circle; hero headlines at 60px and up only. Below ~40px it collapses into broken mono."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Geist Sans 600 at 1.875rem; page titles and the largest section headings."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Geist Sans 600 at 1.125rem; card titles and panel headers."
+      },
+      "section": {
+        "displayName": "Section",
+        "purpose": "Geist Sans 600 at 0.875rem, full-strength foreground, sentence case. Names a block inside a page — the LabeledSection heading, sidebar sections, pricing comparison groups. Always a real heading element."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Geist Sans 400 at 0.875rem, line-height 1.6; default UI and prose, capped at 65-75ch."
+      },
+      "label": {
+        "displayName": "Field label",
+        "purpose": "Geist Sans 500 at 0.75rem, muted, sentence case, normal tracking. Names a column, a dt, or a value: table headers, stat cells, metadata. Replaced the former mono-uppercase eyebrow role; it is not mono and it is never uppercased."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Geist Sans 500 at 0.6875rem (text-micro). Pills and dense chips only. The floor; nothing renders smaller except glyphs fitted inside a fixed circle."
+      }
     },
     "shadows": [
-      { "name": "surface-1", "value": "0 0 0 1px oklch(0 0 0 / 0.06)", "purpose": "Flush hairline ring; default card shadow level." },
-      { "name": "surface-3", "value": "0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 1px -0.5px oklch(0 0 0 / 0.06), 0 3px 3px -1.5px oklch(0 0 0 / 0.05)", "purpose": "Resting cards and popovers." },
-      { "name": "surface-6", "value": "0 0 0 1px oklch(0 0 0 / 0.06), 0 6px 6px -3px oklch(0 0 0 / 0.05), 0 24px 24px -12px oklch(0 0 0 / 0.04)", "purpose": "Dialogs, menus, overlays." },
-      { "name": "badge-default", "value": "0 1px 3px 0 oklch(0.22 0 0 / 0.12)", "purpose": "Faint drop under the default Signal Blue badge." }
+      {
+        "name": "surface-1",
+        "value": "0 0 0 1px oklch(0 0 0 / 0.06)",
+        "purpose": "Flush hairline ring, no drop. The default card shadow level."
+      },
+      {
+        "name": "surface-2",
+        "value": "0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 1px -0.5px oklch(0 0 0 / 0.06)",
+        "purpose": "One step of lift. Also the opaque fill for table hover rows, where it sits between cell and header strip in both themes."
+      },
+      {
+        "name": "surface-3",
+        "value": "0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 1px -0.5px oklch(0 0 0 / 0.06), 0 3px 3px -1.5px oklch(0 0 0 / 0.05)",
+        "purpose": "Resting cards and popovers."
+      },
+      {
+        "name": "surface-6",
+        "value": "0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 1px -0.5px oklch(0 0 0 / 0.06), 0 3px 3px -1.5px oklch(0 0 0 / 0.05), 0 6px 6px -3px oklch(0 0 0 / 0.05), 0 12px 12px -6px oklch(0 0 0 / 0.04), 0 24px 24px -12px oklch(0 0 0 / 0.04)",
+        "purpose": "Dialogs, menus, and overlays. Six stacked layers; the far layers carry the ambient throw."
+      },
+      {
+        "name": "shadow-inset",
+        "value": "0 1px 2px 0 oklch(0 0 0 / 0.08)",
+        "purpose": "Recessed wells and inset frames."
+      },
+      {
+        "name": "shadow-inset-highlight",
+        "value": "0 -1px oklch(1 0 0 / 0.04)",
+        "purpose": "Lit top edge on a recessed element in dark mode."
+      },
+      {
+        "name": "badge-default",
+        "value": "0 1px 3px 0 oklch(0.22 0 0 / 0.12)",
+        "purpose": "Faint drop under the default Signal Blue badge; the one hand-set shadow in the system."
+      }
     ],
     "motion": [
-      { "name": "duration-fast", "value": "100ms", "purpose": "Default for button/badge/input state transitions." },
-      { "name": "duration-color", "value": "200ms", "purpose": "Input border-color transition." },
-      { "name": "ease-out-cubic", "value": "cubic-bezier(0.215, 0.61, 0.355, 1)", "purpose": "Standard ease-out for state changes." },
-      { "name": "ease-out-expo", "value": "cubic-bezier(0.19, 1, 0.22, 1)", "purpose": "Longer, decisive reveals." },
-      { "name": "active-press", "value": "scale(0.98)", "purpose": "Tactile press on button :active." }
+      {
+        "name": "duration-fast",
+        "value": "100ms",
+        "purpose": "Default for button, badge, and focus-ring state transitions."
+      },
+      {
+        "name": "duration-color",
+        "value": "200ms",
+        "purpose": "Input border-color transition; slower than the ring so the two read as separate events."
+      },
+      {
+        "name": "ease-out-cubic",
+        "value": "cubic-bezier(0.215, 0.61, 0.355, 1)",
+        "purpose": "Standard ease-out for state changes."
+      },
+      {
+        "name": "ease-in-cubic",
+        "value": "cubic-bezier(0.55, 0.055, 0.675, 0.19)",
+        "purpose": "Exits and collapses."
+      },
+      {
+        "name": "ease-in-out-cubic",
+        "value": "cubic-bezier(0.645, 0.045, 0.355, 1)",
+        "purpose": "Symmetric moves that start and end at rest."
+      },
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.19, 1, 0.22, 1)",
+        "purpose": "Longer, decisive reveals."
+      },
+      {
+        "name": "active-press",
+        "value": "scale(0.98)",
+        "purpose": "Tactile press. Applied to the button's ::before paint layer, not the element, so the label does not resample during the squeeze."
+      },
+      {
+        "name": "animate-scroll-stack",
+        "value": "scroll-stack 30s linear infinite",
+        "purpose": "The auth panel's endless skill listing; three DOM copies translated -33.333% for a seamless loop."
+      },
+      {
+        "name": "animate-fade-in-up",
+        "value": "fade-in-up 0.8s ease-out forwards",
+        "purpose": "Entrance for hero content."
+      },
+      {
+        "name": "otp-field-shake",
+        "value": "otp-field-shake-a 180ms ease-in-out",
+        "purpose": "Invalid OTP feedback. Two identical keyframe names alternate because CSS will not restart an animation of the same name."
+      }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },
       { "name": "md", "value": "768px" },
-      { "name": "lg", "value": "1024px" }
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
     ]
   },
   "components": [
@@ -79,75 +331,125 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The single high-emphasis action; Signal Blue fill.",
-      "html": "<button class=\"ds-btn-primary\">Save bundle</button>",
-      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 8px 16px; border: none; border-radius: 12px; background: oklch(0.6 0.2 250); color: oklch(1 0 0); font: 500 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); cursor: pointer; transition: background 0.1s cubic-bezier(0.215,0.61,0.355,1), scale 0.1s; } .ds-btn-primary:hover { background: oklch(0.56 0.2 250); } .ds-btn-primary:active { scale: 0.98; } .ds-btn-primary:focus-visible { outline: 2px solid oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
+      "description": "The single high-emphasis action; Signal Blue fill. One per screen.",
+      "html": "<button class=\"ds-btn-primary\">Add to bundle</button>",
+      "css": ".ds-btn-primary { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 14px; border: none; border-radius: 12px; background: transparent; color: oklch(1 0 0); font: 500 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); white-space: nowrap; cursor: pointer; outline: 2px solid transparent; outline-offset: 0; transition: outline-color 100ms cubic-bezier(0.215,0.61,0.355,1), outline-offset 100ms cubic-bezier(0.215,0.61,0.355,1); } .ds-btn-primary::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: oklch(0.6 0.2 250); transition: background-color 100ms cubic-bezier(0.215,0.61,0.355,1), scale 100ms cubic-bezier(0.215,0.61,0.355,1); } .ds-btn-primary:hover::before { background: color-mix(in oklch, oklch(0.6 0.2 250), black 5%); } .ds-btn-primary:active::before { scale: 0.98; } .ds-btn-primary:focus-visible { outline-color: oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
     },
     {
       "name": "Outline Button",
       "kind": "button",
       "refersTo": "button-outline",
-      "description": "Secondary action on a raised surface with a hairline border.",
+      "description": "Secondary action: raised surface behind a hairline border.",
       "html": "<button class=\"ds-btn-outline\">Compare</button>",
-      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 8px 16px; border: 1px solid oklch(0 0 0 / 0.1); border-radius: 12px; background: oklch(1 0 0); color: oklch(0.18 0.004 270); font: 500 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); cursor: pointer; transition: background 0.1s ease-out, scale 0.1s; } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:active { scale: 0.98; } .ds-btn-outline:focus-visible { outline: 2px solid oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
+      "css": ".ds-btn-outline { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 14px; border: none; border-radius: 12px; background: transparent; color: oklch(0.18 0.004 270); font: 500 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); white-space: nowrap; cursor: pointer; outline: 2px solid transparent; transition: outline-color 100ms ease-out, outline-offset 100ms ease-out; } .ds-btn-outline::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; border: 1px solid oklch(0 0 0 / 0.1); background: oklch(1 0 0); background-clip: padding-box; transition: background-color 100ms ease-out, scale 100ms ease-out; } .ds-btn-outline:hover::before { background: color-mix(in oklch, oklch(1 0 0), black 5%); } .ds-btn-outline:active::before { scale: 0.98; } .ds-btn-outline:focus-visible { outline-color: oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
     },
     {
       "name": "Ghost Button",
       "kind": "button",
       "refersTo": "button-ghost",
-      "description": "Lowest-emphasis action; muted text, fills on hover.",
+      "description": "Lowest-emphasis action; muted label that fills with surface-hover.",
       "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
-      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 8px 16px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: oklch(0.5 0.004 270); font: 500 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); cursor: pointer; transition: background 0.1s ease-out, color 0.1s ease-out; } .ds-btn-ghost:hover { background: oklch(0 0 0 / 0.06); color: oklch(0.18 0.004 270); } .ds-btn-ghost:focus-visible { outline: 2px solid oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
+      "css": ".ds-btn-ghost { position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 14px; border: none; border-radius: 12px; background: transparent; color: oklch(0.5 0.004 270); font: 500 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); cursor: pointer; outline: 2px solid transparent; transition: color 100ms ease-out, outline-color 100ms ease-out, outline-offset 100ms ease-out; } .ds-btn-ghost::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: transparent; transition: background-color 100ms ease-out, scale 100ms ease-out; } .ds-btn-ghost:hover { color: oklch(0.18 0.004 270); } .ds-btn-ghost:hover::before { background: oklch(0 0 0 / 0.06); } .ds-btn-ghost:active::before { scale: 0.98; } .ds-btn-ghost:focus-visible { outline-color: oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
     },
     {
       "name": "Default Badge",
       "kind": "chip",
       "refersTo": "badge-default",
-      "description": "Signal Blue status chip with a faint drop shadow.",
-      "html": "<span class=\"ds-badge\">Next.js</span>",
-      "css": ".ds-badge { display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border: 1px solid transparent; border-radius: 10px; background: oklch(0.6 0.2 250); color: oklch(1 0 0); font: 500 0.75rem/1 var(--font-geist-sans, system-ui, sans-serif); box-shadow: 0 1px 3px 0 oklch(0.22 0 0 / 0.12); }"
+      "description": "Signal Blue status chip with the system's one hand-set drop shadow.",
+      "html": "<span class=\"ds-badge\">Official</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; justify-content: center; width: fit-content; padding: 4px 10px; border: 1px solid transparent; border-radius: 10px; background: oklch(0.6 0.2 250); color: oklch(1 0 0); font: 500 0.75rem/1.35 var(--font-geist-sans, system-ui, sans-serif); white-space: nowrap; box-shadow: 0 1px 3px 0 oklch(0.22 0 0 / 0.12); }"
     },
     {
-      "name": "Info Badge",
+      "name": "Verdict Pill",
       "kind": "chip",
-      "refersTo": "badge-info",
-      "description": "Tinted semantic status chip (info variant shown).",
-      "html": "<span class=\"ds-badge-info\">Synced</span>",
-      "css": ".ds-badge-info { display: inline-flex; align-items: center; justify-content: center; padding: 4px 10px; border: 1px solid oklch(0.9 0.1 250); border-radius: 10px; background: oklch(0.97 0.04 250); color: oklch(0.45 0.2 250); font: 500 0.75rem/1 var(--font-geist-sans, system-ui, sans-serif); }"
+      "refersTo": "badge-warning",
+      "description": "Security audit verdict. Sentence case in the body face; the raw API enum is normalised through formatVerdict before it reaches the DOM.",
+      "html": "<span class=\"ds-pill-warn\">Warn</span>",
+      "css": ".ds-pill-warn { display: inline-flex; align-items: center; padding: 2px 8px; border: 1px solid oklch(0.92 0.1 85); border-radius: 4px; background: oklch(0.58 0.14 85 / 0.15); color: oklch(0.58 0.14 85); font: 500 0.6875rem/1.4 var(--font-geist-sans, system-ui, sans-serif); }"
     },
     {
       "name": "Text Input",
       "kind": "input",
       "refersTo": "input-default",
-      "description": "Hairline-bordered field with a Signal Blue focus ring.",
+      "description": "Hairline-bordered field. The border transition is deliberately slower than the focus ring so the two read as separate events.",
       "html": "<input class=\"ds-input\" placeholder=\"Search skills\" />",
-      "css": ".ds-input { display: flex; width: 240px; height: 36px; padding: 8px 12px; border: 1px solid oklch(0 0 0 / 0.1); border-radius: 12px; background: oklch(1 0 0); color: oklch(0.18 0.004 270); font: 400 0.875rem/1 var(--font-geist-sans, system-ui, sans-serif); transition: border-color 0.2s ease-out; } .ds-input::placeholder { color: oklch(0.5 0.004 270); } .ds-input:focus-visible { outline: 2px solid oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
+      "css": ".ds-input { display: flex; box-sizing: border-box; width: 240px; height: 36px; padding: 8px 12px; border: 1px solid oklch(0 0 0 / 0.1); border-radius: 12px; background: oklch(1 0 0); background-clip: padding-box; color: oklch(0.18 0.004 270); font: 400 0.875rem/1.4 var(--font-geist-sans, system-ui, sans-serif); outline: 2px solid transparent; outline-offset: 0; transition: border-color 200ms ease-out, outline-color 100ms ease-out, outline-offset 100ms ease-out; } .ds-input::placeholder { color: oklch(0.5 0.004 270); } .ds-input:focus-visible { outline-color: oklch(0.55 0.2 250 / 0.5); outline-offset: 2px; }"
     },
     {
       "name": "Card",
       "kind": "card",
       "refersTo": "card-default",
-      "description": "Raised surface panel; rounded-2xl with layered surface shadow.",
-      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">React Testing</div><div class=\"ds-card-desc\">12 skills matched for your stack.</div></div>",
+      "description": "Raised surface panel: 16px corners over a layered surface-3 shadow. Never a border and a shadow together.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">claude-api</div><div class=\"ds-card-desc\">Build, debug, and optimize Claude API apps.</div></div>",
       "css": ".ds-card { display: flex; flex-direction: column; gap: 8px; padding: 24px; border-radius: 16px; background: oklch(1 0 0); box-shadow: 0 0 0 1px oklch(0 0 0 / 0.06), 0 1px 1px -0.5px oklch(0 0 0 / 0.06), 0 3px 3px -1.5px oklch(0 0 0 / 0.05); } .ds-card-title { font: 600 1.125rem/1.3 var(--font-geist-sans, system-ui, sans-serif); color: oklch(0.18 0.004 270); } .ds-card-desc { font: 400 0.875rem/1.6 var(--font-geist-sans, system-ui, sans-serif); color: oklch(0.5 0.004 270); }"
+    },
+    {
+      "name": "Section Heading",
+      "kind": "custom",
+      "refersTo": "typography.section",
+      "description": "How a block is named anywhere in the app. A real heading element in the body face at full strength, sentence case, with 16px beneath it so it introduces a block instead of gluing to the first line of one.",
+      "html": "<section class=\"ds-section\"><h2 class=\"ds-section-heading\">Security audits</h2><p class=\"ds-section-body\">Two providers have scanned this skill.</p></section>",
+      "css": ".ds-section { display: block; } .ds-section-heading { margin: 0 0 16px; font: 600 0.875rem/1.3 var(--font-geist-sans, system-ui, sans-serif); color: oklch(0.18 0.004 270); } .ds-section-body { margin: 0; font: 400 0.875rem/1.6 var(--font-geist-sans, system-ui, sans-serif); color: oklch(0.5 0.004 270); }"
+    },
+    {
+      "name": "Status Light",
+      "kind": "custom",
+      "refersTo": "status-light",
+      "description": "The shared monitoring readout: a 6px dot centred in a 20px ring of its own hue. Small on purpose, because the healthy state is the common one and a large green mark would be learned as noise.",
+      "html": "<span class=\"ds-status ds-status-clear\"><span class=\"ds-status-dot\"></span></span><span class=\"ds-status ds-status-alert\"><span class=\"ds-status-dot\"></span></span><span class=\"ds-status ds-status-hold\"><span class=\"ds-status-dot\"></span></span>",
+      "css": ".ds-status { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border-radius: 9999px; flex-shrink: 0; } .ds-status-dot { width: 6px; height: 6px; border-radius: 9999px; } .ds-status-clear { background: oklch(0.48 0.18 145 / 0.2); } .ds-status-clear .ds-status-dot { background: oklch(0.48 0.18 145); } .ds-status-alert { background: oklch(0.55 0.18 25 / 0.2); } .ds-status-alert .ds-status-dot { background: oklch(0.55 0.18 25); } .ds-status-hold { background: oklch(0.5 0.004 270 / 0.15); } .ds-status-hold .ds-status-dot { background: oklch(0.5 0.004 270); animation: ds-status-pulse 2s ease-in-out infinite; } @keyframes ds-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } } @media (prefers-reduced-motion: reduce) { .ds-status-hold .ds-status-dot { animation: none; } }"
+    },
+    {
+      "name": "Register Row",
+      "kind": "custom",
+      "refersTo": "register-table",
+      "description": "One row of the dependency register: status light, skill identity in mono because it is a copyable machine string, and the condition in sentence-case body type. Column headers take the field-label role, not the table default.",
+      "html": "<table class=\"ds-register\"><thead><tr><th class=\"ds-register-marker\"></th><th>Skill</th><th>Condition</th></tr></thead><tbody><tr><td class=\"ds-register-marker\"><span class=\"ds-reg-light\"></span></td><td class=\"ds-register-name\">anthropics/skills</td><td class=\"ds-register-cond\">Description changed</td></tr></tbody></table>",
+      "css": ".ds-register { border-collapse: collapse; width: 100%; font: 400 0.875rem/1.5 var(--font-geist-sans, system-ui, sans-serif); background: oklch(1 0 0); border-radius: 12px; overflow: hidden; } .ds-register thead { background: oklch(0.94 0 0); } .ds-register th { padding: 8px 12px; text-align: left; font: 500 0.75rem/1.4 var(--font-geist-sans, system-ui, sans-serif); color: oklch(0.5 0.004 270); white-space: nowrap; } .ds-register td { padding: 10px 12px; vertical-align: top; border-top: 1px solid oklch(0 0 0 / 0.1); } .ds-register tbody tr:hover td { background: oklch(0.985 0 0); } .ds-register-marker { width: 32px; } .ds-reg-light { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 9999px; background: oklch(0.58 0.14 85 / 0.2); } .ds-reg-light::after { content: ''; width: 6px; height: 6px; border-radius: 9999px; background: oklch(0.58 0.14 85); } .ds-register-name { font-family: var(--font-geist-mono, ui-monospace, monospace); color: oklch(0.18 0.004 270); } .ds-register-cond { color: oklch(0.18 0.004 270); }"
     }
   ],
   "narrative": {
     "northStar": "The Control Panel",
-    "overview": "SkillBundle looks like a precision instrument for builders. The base is an almost-monochrome neutral field carrying a single blue signal color that means one thing: this is the action. Identity comes from contrast, exact alignment, and a few deliberate motifs (the Geist Pixel display face, the dot-matrix loading ripple) rather than from decoration. It borrows Firecrawl's restraint and Nothing OS's confidence. Neutrals are violet-tinted (hue 270, chroma 0.004), never flat gray, and depth is a real eight-step surface elevation system with equal light and dark themes.",
+    "overview": "SkillBundle looks like a precision instrument for builders. The base is an almost-monochrome neutral field carrying a single blue signal color that means one thing: this is the action. Identity comes from contrast, exact alignment, and a few deliberate motifs (the Geist Pixel display face, the dot-matrix loading ripple) rather than from decoration. It borrows Firecrawl's restraint (clean neutrals, generous gutters, one accent used sparingly) and Nothing OS's confidence (high contrast, bold typographic hierarchy, dot-matrix detailing on a monochrome base).\n\nThe neutral palette is hue-tinted, not flat gray: every neutral carries a trace of violet (--neutral-hue: 270 at chroma 0.004), which keeps large surfaces from reading as dead gray and gives dark mode a cool, considered cast. Depth is real but quiet, built from an eight-step surface elevation system (surface-1 through surface-8) where each level pairs a tonal background, a layered shadow, and an inset rim highlight. Light and dark are equal first-class themes driven by the same token names.\n\nThe body face carries the entire interface. The pixel display marks hero moments and the monospace is reserved for machine strings; neither is a costume applied to make ordinary chrome look technical. This system explicitly rejects: generic SaaS landing pages with gradient hero blobs, glassmorphism-heavy dashboards, playful/cartoon dev-tool styling, wide-tracked uppercase labels, and anything that reads as template-generated. The blue accent is a signal, never a gradient or a glow.",
     "keyCharacteristics": [
       "Near-monochrome neutral field, one blue accent used as a rare signal.",
       "Violet-tinted neutrals (hue 270, chroma 0.004), never pure gray.",
       "Eight-step tonal + shadow elevation system, equal light/dark themes.",
       "Geist Pixel display face and dot-matrix loader as deliberate identity marks.",
-      "Fast, tactile interactions: 100ms transitions, a 0.98 active-press scale."
+      "Fast, tactile interactions: 100ms transitions, a 0.98 active-press scale.",
+      "Sentence case everywhere; mono means machine string, never decoration."
     ],
     "rules": [
-      { "name": "The One Signal Rule", "body": "Signal Blue appears on a small fraction of any screen: primary action, current selection, focus. Its rarity is the entire point. If two blue things compete on a screen, one of them is wrong.", "section": "colors" },
-      { "name": "The No-Gray-Gray Rule", "body": "Neutrals are never chroma 0. Every neutral inherits hue 270 at chroma 0.004. Pure gray is forbidden; the violet trace keeps the interface from feeling dead.", "section": "colors" },
-      { "name": "The Pixel Floor Rule", "body": "Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; display is for hero scale only.", "section": "typography" },
-      { "name": "The Mono-Label Rule", "body": "Uppercase + wide tracking is reserved for short mono labels (≤4 words). Never set body copy in uppercase.", "section": "typography" },
-      { "name": "The Material Depth Rule", "body": "Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a box-shadow; use a surface-N level.", "section": "elevation" }
+      {
+        "name": "The One Signal Rule",
+        "body": "Signal Blue appears on a small fraction of any screen: primary action, current selection, focus. Its rarity is the entire point. If two blue things compete on a screen, one of them is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Gray-Gray Rule",
+        "body": "Neutrals are never chroma 0. Every neutral inherits --neutral-hue: 270 at --neutral-chroma: 0.004. Pure gray is forbidden; the violet trace is what keeps the interface from feeling dead.",
+        "section": "colors"
+      },
+      {
+        "name": "The Pixel Floor Rule",
+        "body": "Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; at small sizes it stops reading as pixel-grid and just looks like a broken mono. Display is for hero scale only.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Nothing in this interface is set in text-transform: uppercase. Not eyebrows, not table headers, not status pills, not section labels. Wide-tracked capitals are the default costume of a generated dev-tool UI, and a small caps label is also the least legible way to set the smallest type on the screen. A word that arrives from an API as a raw enum (warn, HIGH) is normalised to sentence case before it is rendered — see formatVerdict in components/monitoring/condition-meta.ts. Literal machine constants that are genuinely written in caps (500 INTERNAL_ERROR, SKILL.md) are quoted as-is, in mono; that is content, not a type treatment.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono-Is-Data Rule",
+        "body": "Geist Mono means \"this is a machine string you could copy\": install commands, code and <pre>, file paths, owner/repo identifiers, version strings, diff −/+ markers, error digests. It is not a way to make a label look technical. Two consequences worth stating, because both were violated across the app: a label never gets mono just because it sits near data, and a metadata line like \"42 skills · 1.2k installs\" gets tabular-nums — which is the actual requirement, stable digit widths — not font-mono, because it is a sentence with numbers in it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Material Depth Rule",
+        "body": "Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a box-shadow; use a surface-N level so light and dark stay coherent.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep Signal Blue (oklch(0.6 0.2 250)) rare: primary action, active state, focus, links. One signal per screen.",
@@ -156,16 +458,26 @@
       "Do keep Ink Muted (oklch(0.5 ...)) for secondary text; verify ≥4.5:1 before lightening anything.",
       "Do reserve the Geist Pixel display face for ≥60px hero moments.",
       "Do use the DotMatrixRipple for loading states, not a generic spinner.",
+      "Do give an unresolved state its own tone. Never let \"not checked yet\" or \"nothing here\" fall through to the success colour.",
+      "Do hold layout height across a loading→resolved transition; a placeholder that occupies no space makes every row jump when data lands.",
       "Do keep transitions fast (100ms ease-out) and let the 0.98 active scale carry the press."
     ],
     "donts": [
       "Don't use gradient hero blobs or any background-clip: text gradient text. The accent is a single solid color.",
       "Don't use decorative glassmorphism; blur and glass are not the default surface.",
       "Don't set the Geist Pixel face below ~40px; it collapses into broken mono.",
-      "Don't use uppercase for body copy; reserve it for short mono labels (≤4 words).",
+      "Don't apply uppercase to anything, at any size, in any role. There is no label treatment that earns it back.",
+      "Don't reach for font-mono on a label, a heading, a count, or a status word. Mono is for strings a machine produced and a user might copy.",
       "Don't hand-roll box-shadow; use the surface-N elevation system.",
       "Don't introduce a second accent hue or let two blue elements compete on one screen.",
-      "Don't make it look template-generated, cartoonish, or like a generic SaaS landing page."
+      "Don't make it look template-generated, cartoonish, or like a generic SaaS landing page.",
+      "Don't use a grid of same-size cards as the structure for a set whose items differ in state. Equal cards assert equal standing and bury the one that needs attention; that is what the register replaced on the bundle page.",
+      "Don't fade muted-foreground below its own value (/50, /60) for elegance — it is tuned to land at 4.5:1 and anything under it fails the contrast floor.",
+      "Don't strip outline-none from an interactive element without replacing the focus ring. A hover-identical underline is not a focus indicator.",
+      "Don't unmount an aria-live region to hide it. A removed live region never announces, so a status readout that returns null on its interesting outcomes speaks only when the news is good. Keep the region mounted and vary its contents, sr-only if it should be visually silent.",
+      "Don't apply an alpha step to --danger / --success / --warning and expect a visible tint. Those tokens are ALREADY the tinted background pair (near-white in light, near-black in dark); at 10% they composite to under 1.01:1 against the cell. Use them at full strength and reserve the alpha for hover.",
+      "Don't hide a label with sm:hidden when it is the only thing naming a column, a plan, or an owner. display: none removes it from the accessibility tree, so the layout gets wider and the reading gets worse; use sm:sr-only.",
+      "Don't express a table's grouping with a <td colSpan> header row. A data cell has no relationship to the rows under it, so the grouping exists only visually. One <tbody> per group with aria-labelledby is the version a screen reader can navigate."
     ]
   }
 }

@@ -166,7 +166,7 @@ async function RepoListContent({ params }: { params: Params }) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
-        <div className="flex items-center gap-3 text-sm font-mono tabular-nums text-muted-foreground">
+        <div className="flex items-center gap-3 text-sm tabular-nums text-muted-foreground">
           <span>
             {skills.length} skill{skills.length === 1 ? "" : "s"}
           </span>
@@ -230,7 +230,7 @@ function RepoListSkeleton() {
         <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
         <span>Skill</span>
         <span>Installs</span>
       </div>

@@ -5,12 +5,19 @@ export function LabeledSection({
   label,
   className,
   id,
+  as: Heading = "h2",
   children,
 }: {
   label: string;
   className?: string;
   /** Anchor target, so another surface can link straight to this section. */
   id?: string;
+  /**
+   * Heading level. Defaults to `h2` (a page with an `h1` title). Pass `h3`
+   * where the section sits inside a titled panel — a sheet, a dialog, or a
+   * compare column — so the outline does not skip back up a level.
+   */
+  as?: "h2" | "h3" | "h4";
   children: ReactNode;
 }) {
   return (
@@ -26,12 +33,17 @@ export function LabeledSection({
       {...(id ? { tabIndex: -1 } : {})}
       className={cn(id && "scroll-mt-20 outline-none", className)}
     >
-      <div className="mb-4 flex items-center gap-3">
-        <span className="shrink-0 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-          {label}
-        </span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
+      {/* A real heading in the body face, not a mono uppercase eyebrow over a
+          rule. The rule and the tracking were doing the work the heading's own
+          weight and colour should do, and the section was a <section> with no
+          accessible name, so the outline had nothing in it either. */}
+      {/* `mb-4`, not a tighter gap: several of these introduce content that
+          leads with its own heading (Documentation wraps a whole SKILL.md).
+          At 12px the label bound itself to that title and read as a kicker
+          over it, which is the shape this change existed to remove. */}
+      <Heading className="mb-4 text-sm font-semibold text-foreground">
+        {label}
+      </Heading>
       {children}
     </section>
   );

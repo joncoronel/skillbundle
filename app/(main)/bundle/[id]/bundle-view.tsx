@@ -369,7 +369,7 @@ export function BundleView({
             <CollapsibleContent id={installPanelId}>
               <div className="space-y-3 pb-4">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
+                  <p className="text-xs font-medium text-muted-foreground">
                     Install commands
                   </p>
                   <CopyAllCommandsButton skills={bundle.skills} />

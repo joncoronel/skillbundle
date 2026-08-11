@@ -273,9 +273,7 @@ function SideSection({
 }) {
   return (
     <section>
-      <h3 className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
-        {label}
-      </h3>
+      <h3 className="text-xs font-semibold text-foreground">{label}</h3>
       <div className="mt-2.5">{children}</div>
     </section>
   );
