@@ -178,14 +178,30 @@ once a row is expanded.
 **Partial Prerender for `/bundle/[id]`.** It's the shareable artifact — its most important traffic is cold loads of shared links by visitors with no warm Clerk/Convex session. Access control is the bundle's own `isPublic` flag plus optional auth; share tokens (`?share=`) were removed, and the page reads no `searchParams`. Its `loading.tsx` is the App Shell: the page reads auth cookies at the top, so the authed bundle content streams behind that boundary, and `generateMetadata` puts the bundle name/description in OG tags so links unfurl in chat apps. This is the only route using `preloadQuery`/`usePreloadedQuery`. It needs no `instant = false` — `loading.tsx` already makes it a valid `◐` route.
 
 Both the page body and `generateMetadata` call `await io()` before touching
-Convex. Without it, Next aborts the prerender for a misleading reason: Convex's
+Convex, and **both are required — removing either brings the insight back.**
+Without them, Next aborts the prerender for a misleading reason: Convex's
 `preloadQuery` constructs a `ConvexHttpClient` whose default logger calls
 `Math.random()`, and the resulting `blocking-prerender-random` insight points
 into `node_modules` rather than at the real cause. The route *is* genuinely
-per-request (it reads an auth cookie), so `io()` — 16.3's replacement for
-`connection()` — states that intent up front. `<Suspense>` cannot substitute
-here: for *unstable values* the framework's own remedy list offers only
-`[dynamic]`, `[cache]` and `[client]`, notably not `[stream]`.
+per-request (it reads an auth cookie), so `io()` states that intent up front.
+`<Suspense>` cannot substitute here: for *unstable values* the framework's own
+remedy list offers only `[dynamic]`, `[cache]` and `[client]`, notably not
+`[stream]`.
+
+Two things about this were checked rather than assumed, because both are easy to
+get wrong from memory:
+
+- **`io()` has not replaced `connection()`.** The docs say to prefer `io()` and
+  to reach for `connection()` when you need to wait for a real user request;
+  both still exist.
+- **The auth-cookie read does not make these calls redundant**, even though
+  `io.md`'s "When you don't need `io()`" says a request-time API is itself the
+  suspension point. Measured on a freshly restarted dev server against a real
+  bundle: with both calls present the route is clean, and with either one
+  removed `blocking-prerender-random` fires again. The mechanism was not chased
+  further. Don't generalise it to "wrap every Convex call in `io()`" — what is
+  established is the narrow case of a request-time route that preloads through a
+  `ConvexHttpClient`.
 
 **Deliberately NOT dynamic — compare.** `/compare` was briefly a path-param ISR route (`/compare/[[...refs]]`); it was reverted to a static page + `?skills=` query param because comparison combos are high-cardinality, order-sensitive, and rarely revisited — per-combo ISR entries (or per-request renders) pay for pages nobody loads twice, and crawlers could mint unbounded cache writes. With query params + client fetching there is exactly one route, and add/remove column is a shallow URL update with no navigation.
 

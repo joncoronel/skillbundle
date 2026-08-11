@@ -20,6 +20,10 @@ export async function generateMetadata({
   // `Math.random()` in ConvexHttpClient from being reported as a stray
   // unstable value. Metadata can't be wrapped in <Suspense>, so `io()` is the
   // only way to express it here.
+  //
+  // Load-bearing on its own: with the page body's `io()` in place and this one
+  // removed, `blocking-prerender-random` still fires. See the measurement table
+  // in the page body — the two are not interchangeable.
   await io();
 
   const [{ id }, token] = await Promise.all([params, getAuthToken()]);
@@ -87,14 +91,26 @@ export default async function BundlePage({
   // (node_modules/next/dist/docs/.../io.md, "How `io()` differs from
   // `connection()`"). It has not replaced `connection()`; both still exist.
   //
-  // Not verified: whether this call is what silences the insight. `io.md`'s
-  // "When you don't need `io()`" says a request-time API is itself the
-  // suspension point, and `getAuthToken()` reads a Clerk cookie before any
-  // `preloadQuery` runs — so this may be redundant. Do NOT generalise it into
-  // "wrap Convex calls in `io()`", which is the opposite of what the docs say.
-  // To settle it: drop this line, restart `next dev` (a long-lived one throws
-  // bogus instant-validation invariants — see TODO.md), and see if the insight
-  // returns.
+  // Measured, not assumed — and BOTH calls are required, independently. On a
+  // freshly restarted dev server, loading a real bundle page:
+  //
+  //   body io()   metadata io()   result
+  //   on          on              clean
+  //   off         off             blocking-prerender-random
+  //   on          off             blocking-prerender-random
+  //   off         on              blocking-prerender-random
+  //
+  // So removing either one brings the insight back. Worth recording because
+  // `io.md`'s "When you don't need `io()`" says a request-time API is itself
+  // the suspension point, and this route reads a Clerk cookie via
+  // `getAuthToken()` before any `preloadQuery` runs — by that reading these
+  // calls should be redundant. Empirically they are not. The mechanism was not
+  // chased further; the measurement is what this comment stands on.
+  //
+  // Still do NOT generalise it into "wrap every Convex call in `io()`". What is
+  // established is narrow: on THIS shape — a request-time route that preloads
+  // through a ConvexHttpClient — the cookie read does not stop the prerender
+  // reaching the client's `Math.random()`.
   //
   // The route still serves an instant shell: `loading.tsx` is its boundary, and
   // e2e/instant-navigation.spec.ts asserts the header chrome paints before the
