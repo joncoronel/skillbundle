@@ -23,6 +23,21 @@ import { HISTORY_SKILL_PATH } from "./fixtures";
  * after mount, so the height genuinely grows a frame or two later — that is the
  * known upstream behaviour the `duration-0` workaround exists for (see TODO.md).
  * Asserting it would encode a wish, not the contract.
+ *
+ * KNOWN GAP, stated rather than faked: nothing here checks the diff's
+ * *direction*. These tests prove content appears; they do not prove the older
+ * version is on the left. That is the one defect on this surface that would look
+ * completely normal to a reader while being wrong — `skill-history-row.tsx` calls
+ * it "a plausible but completely wrong history", and it is why the older→newer
+ * pair is derived in exactly one place.
+ *
+ * It is unasserted because a cheap version would be worse than none: the diff is
+ * rendered into a shadow root by a third-party component, and matching its text
+ * against catalog content would bind this spec to whatever a live skill happens
+ * to say today. Closing it properly means seeding a fixture skill with two known
+ * versions and asserting that the added lines are the newer one's — worth doing
+ * if the pair derivation is ever touched, which is the change that would break
+ * it.
  */
 
 /** Requests that mean real work: the diff chunk, or version content from Convex storage. */

@@ -6,60 +6,6 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
-### Two refactors deferred out of PR #62's panel review (Aug 2026)
-
-Both are from `reviews/pr-62-review.md` (findings 32 and 14). Neither is a bug;
-both were judged worth doing later rather than in a branch that was ready to
-merge. Recorded so the next reader knows they were weighed, not missed.
-
-**1. `components/skill-history-row.tsx` carries two sources of truth and two
-copies of one flow.** `openWithDiff` and `changeRange` are the same four steps
-(already in hand? → commit; else flag busy → fetch → hold the floor → commit →
-clear) written twice, with two busy booleans. Only one had the stale-guard
-token, which is exactly how the range-swap bug in that review happened.
-
-The hover-prefetch layer has since been removed and both paths simplified, so
-the duplication is smaller than when this was first written — but it is still
-two copies. The suggested shape: derive `Diff` from the module-scope
-`diffModule` instead of mirroring it in state, extract one
-`commitWhenReady(target, setBusy, commit)` holding the readiness check, the
-stale-guard token and the `MIN_BUSY_MS` floor, and split the newest row into its
-own component so `olderVersions` stops doubling as an "am I newest?" flag.
-
-**The test coverage is now done** — `e2e/skill-history.spec.ts` covers the three
-behaviours this refactor could break: that hovering fetches nothing, that a real
-load holds the busy state past `MIN_BUSY_MS`, that a cached re-open skips it
-entirely, and that a range swap never collapses the panel. Each assertion was
-mutation-tested (hover warming reintroduced, readiness check removed) and both
-mutations were caught, so it is a real net rather than a passing suite.
-
-That was always the valuable half; the refactor itself is now optional. If it is
-picked up, two of the proposals are subtler than they read: deriving `Diff` works only
-because every path that sets it also sets `open` (module scope is not reactive),
-and splitting the newest row changes the contract that derives the older→newer
-pair, which the file's own comment warns renders "a plausible but completely
-wrong history" if reversed. On a monitoring product a confidently-wrong diff is
-the worst available failure, so this wants a net under it before it moves.
-
-**2. The three catalog listing pages hold near-identical skeleton/content
-pairs.** `/[org]`, `/[org]/[repo]` and `/site/[source]` each carry ~50-line list
-skeletons differing only in row count and column label, plus near-identical
-stats bars. The suggested extraction is `ListingStatsBar` /
-`ListingRowsSkeleton({ rows, columnLabel })` / `ListingTitleSkeleton({ crumbs })`
-with each page keeping only its loader, crumbs and external link.
-
-Two pieces are already done and were the parts that mattered: all four inline
-re-implementations now call the canonical `rowPositionClassName` (which is where
-a real divergence had appeared — the content branch handled the single-row case
-and its own skeleton did not), and the title type scale lives in
-`lib/listing-styles.ts` so a skeleton cannot drift from the `<h1>` it stands in
-for — alongside `rowPositionClassName`, which had to move there anyway because
-`components/skill-card.tsx` is `"use client"` and a Server Component cannot call
-into it. What is left is genuine duplication with no known defect in it. Weigh it
-against the reason `components/listing-page-loading.tsx` was deleted in that same
-PR: one shared skeleton for three pages produced shells that did not match any of
-them, and fallback fidelity is the property that branch was fixing.
-
 ### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
 
 **Prize:** delete ~420 KB of client JS from the skill detail route entirely, and
@@ -1000,6 +946,39 @@ patches were wiped by the re-install, while the upstreamed `squash` variant came
 back.
 
 ## Parked decisions (context lives elsewhere)
+
+- **Two refactors from PR #62's panel review (findings 32 and 14)** — both
+  considered and declined, Aug 2026. Recorded so a re-run of the review does not
+  re-propose them.
+
+  *Collapse `openWithDiff` and `changeRange` in `components/skill-history-row.tsx`
+  into one helper.* Fair when written, stale by the time it was weighed. The
+  review saw two busy booleans, a cached fast path with its own rules, `warm`,
+  `warmSoon`, a debounce timer, and a stale-guard token on only one of the two
+  paths. Replacing hover prefetching with a click-time busy floor deleted most of
+  that. What remains is ~20 lines each sharing about six lines of shape, differing
+  in four ways: only the open path loads the renderer chunk and records failure,
+  only the swap path carries the token guard, and they commit different things. A
+  shared helper would need three flags to absorb that, which reads worse than the
+  two straight-through functions. The related suggestions were declined too:
+  deriving `Diff` from the module-scope binding swaps explicit state for an
+  implicit dependency on `open` changing in the same tick, and splitting the
+  newest row into its own component creates two components sharing most of their
+  body to remove one prop's double duty.
+
+  The behaviour is covered either way — `e2e/skill-history.spec.ts`, mutation-
+  tested — so this is a taste call with a net under it, not a risk being carried.
+
+  *Extract a shared listing shell across `/[org]`, `/[org]/[repo]` and
+  `/site/[source]`.* The two things that could drift silently are already fixed:
+  all four copies of the row-corner logic call `rowPositionClassName`, and the
+  title scale lives in `lib/listing-styles.ts` so a skeleton cannot fall out of
+  step with the `<h1>` it stands in for. What is left is duplication with no known
+  defect, across three pages that are deliberately diverging. Weigh any revival
+  against why `components/listing-page-loading.tsx` was deleted in that same PR:
+  one shared skeleton for three pages produced shells matching none of them, and
+  fallback fidelity was the property being fixed. Revisit only if a fourth listing
+  page appears.
 
 - **Re-slugging a mis-slugged GitHub-only row** — no repair tool, deliberately. Full
   context in `convex/githubOnlyAudit.ts`'s header (why there is a find button and no fix
