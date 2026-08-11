@@ -6,6 +6,169 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
+
+**Prize:** delete ~420 KB of client JS from the skill detail route entirely, and
+make expanding a history row instant instead of a load.
+
+The 420 KB is currently code-split and only downloads when someone expands a
+row (`loadDiffModule` in `components/skill-history-row.tsx`). Measured against a
+production build, it is absent from the skill page's initial load — so this is
+about making the *interaction* free, not fixing a regression.
+
+**Why it's a project, not a tweak.** Three things have to move together:
+
+1. **We use `CodeView`; the preloaders don't cover it.** `@pierre/diffs/ssr`
+   exposes `preloadFile`, `preloadFileDiff`, `preloadMultiFileDiff`,
+   `preloadPatchDiff`, `preloadPatchFile` — each spreads into the matching
+   `File` / `FileDiff` / `MultiFileDiff` / `PatchDiff` component. There is no
+   `preloadCodeView`. `components/skill-history-diff.tsx` documents why it uses
+   `CodeView` ("the library's own advice" — `FileDiff` conflicted over the
+   rendering surface and logged a console error), so this needs that decision
+   revisited first.
+2. **Content lives in Convex storage blobs.** `versionEntry.contentUrl` is a
+   storage URL fetched at view time; SSR means fetching both sides on the
+   server. That's fine inside the page's `'use cache'` scope (paid once per
+   cache period, not per reader) but it is new server work.
+3. **The range selector is combinatorial.** The newest row can compare against
+   any older version, up to the 50-version query limit. Prerendering every pair
+   is O(N²) for content behind a collapsed disclosure. Realistically only the
+   default pair per row (N-1 diffs) could be prerendered, with the rest still
+   loaded on demand — so the client renderer probably cannot be dropped
+   entirely unless the range selector also changes.
+
+**Encouraging fact:** `node_modules/@pierre/diffs/dist/react/` contains **no
+shiki reference at all**. The whole 420 KB comes from the main `@pierre/diffs`
+entry, which we import only for `parseDiffFromFile`. Move parsing to the server
+and the client could plausibly need nothing heavier than `/react`.
+
+Order of work if picked up: (a) confirm `FileDiff` can be styled to match what
+`CodeView` gives today, (b) prerender the default pair per row inside the
+existing cached loader, (c) measure the HTML weight added to every skill page
+before committing, since most readers never expand a row.
+
+### CodeView renders late, so the diff panel can't be animated (Aug 2026)
+
+`components/skill-history-row.tsx` opens its diff panel with `duration-0`. That
+is a deliberate workaround, not an oversight — the animation cannot be made
+correct while `CodeView` behaves the way it does.
+
+**What happens.** `@pierre/diffs`' `CodeView` populates its shadow root
+*asynchronously after mount*. Measured on a real ~11 KB SKILL.md:
+
+```text
++  0ms  rows=0    ← panel opens; Base UI measures here, writes var=352
++ 45ms  rows=10   ← content appears, +72px
++236ms  panel=424 ← transition ends, height reverts to auto, snaps
+```
+
+Base UI's Collapsible reads the panel height **once** on open and never
+re-reads. So it animated toward a number that was already 72px stale by 45ms,
+then jumped when the transition finished. Not fonts — `document.fonts.status`
+was `loaded` for the whole capture, with `document.fonts.ready` awaited first.
+
+**Why it looked fine locally.** Purely content size. A ~600-byte seeded fixture
+renders inside one frame; a real SKILL.md takes 45–77ms. Every local skill had
+tiny seeded history, so this only ever reproduced on production data.
+
+**What does NOT work** (tried, measured, reverted): `CodeView` exposes a ref
+handle with `getInstance()`, and the instance has `render(immediate?: boolean)`.
+Calling `render(true)` from a `useLayoutEffect` — which runs before the parent
+Panel measures, since child layout effects run first — changed nothing; the
+shadow root still held zero rows at open. There is also no post-render hook:
+`onPostRender` exists on `UnresolvedFile` only, not `CodeView`.
+
+**If revisited**, roughly in order of preference:
+
+1. Report upstream — a way to render synchronously, or a mounted/ready callback
+   on `CodeView`, fixes this properly.
+2. Retarget the panel: `ResizeObserver` on the content rewriting
+   `--collapsible-panel-height` so an in-flight transition follows. Verified to
+   work, but it is a workaround, and it belongs next to `CodeView` rather than
+   in the shared `cubby-ui/collapsible.tsx` — the collapsible is not at fault.
+3. Leave `duration-0`.
+
+**To reproduce locally** you need real content, since seeded fixtures are too
+small. Read a skill's versions off production (public query, read-only):
+
+```bash
+npx convex run --prod skillVersions:listForSkill '{"source":"pbakaus/impeccable","skillId":"impeccable"}'
+```
+
+then seed those `contentUrl`s into dev. `devSeed.ts` has no importer for that
+today — it was written and removed once. `seedVersions`' shape is the model:
+an `internalAction` that fetches each URL, `ctx.storage.store`s the blob, and
+calls `insertSeededVersion` oldest→newest to keep the `previousSyncHash` chain
+intact. Note it overwrites the target skill's history, so seed onto a throwaway
+skill rather than one you rely on for the History UI.
+
+### Parked from the 16.3 adoption pass (Aug 2026)
+
+**TypeScript 7 — wait for 7.1.** `pnpm add -D typescript@^7` installs cleanly and
+`tsc --noEmit` passes on this codebase (326 unit tests green too), but
+`pnpm lint` dies with
+`TypeError: Cannot read properties of undefined (reading 'Cjs')` from
+`@typescript-eslint/typescript-estree`. Not a version-pin problem: even the
+latest `typescript-eslint@8.66.0` declares `typescript: ">=4.8.4 <6.1.0"` and
+there is no v9 line. Reverted to `^5`.
+
+This is a known, reported issue and the fix is expected in **TypeScript 7.1** —
+migrate once that ships. The bump is one line, and
+`experimental.useTypeScriptCli` already defaults to `true`, so `next build` picks
+up the native `tsc` automatically. Do **not** work around it with
+`useTypeScriptCli: false` — with TS7 installed that makes `next build` exit.
+
+**Enable the /dev admin e2e.** `e2e/authenticated/dev.spec.ts` covers the
+admin *gate* today (a signed-in non-admin gets notFound, not a redirect or an
+empty dashboard) and that runs on every CI job. The admin-view half is behind
+`E2E_ADMIN=1` because it needs the e2e user in Convex's `ADMIN_EMAILS`, which is
+a deployment config change rather than a code one. To turn it on:
+`npx convex env set ADMIN_EMAILS "joncorone@gmail.com,e2e+clerk_test@skillbundle.dev"`
+on the dev deployment, then set `E2E_ADMIN=1` in the workflow env. Left off by
+default so a test identity is not silently granted admin.
+
+**Instant Insights: works — beware stale dev servers.** An earlier note here
+claimed the validator was broken upstream. That was wrong, and the correction is
+worth keeping: a `next dev` process that has been running a long time across many
+HMR cycles starts throwing
+`InvariantError: Cannot access "moduleLoading" without a work store`
+from `app-render/instant-validation/` on nearly every route, static and dynamic
+alike. It looks exactly like a framework bug. It isn't — restart `next dev` and
+every route validates clean, including non-prerendered dynamic params.
+
+If Instant Insights reports that invariant, restart the dev server before
+believing it or filing anything.
+
+`experimental.instantInsights.validationLevel` is still pinned to `'warning'` in
+`next.config.ts`, because the docs warn the framework default may change to a
+build-gating level without that counting as breaking.
+
+**Not adopted, with reasons** (so they don't get re-proposed): `supportsImmutableAssets`
+(an opt-*out* for adapters that already enabled it; the docs warn setting it
+against an unsupporting adapter breaks deployments — it's Vercel's call, not
+ours), `'use cache: private'` for the bundle auth read (owner-vs-viewer state
+going up to 5 minutes stale on a page with a visibility toggle is a correctness
+hazard), `next/root-params` (N/A — every dynamic segment lives under `(main)`, a
+route *group*; nothing exists above the root layout), and the Rust React
+Compiler (declined for now). `typedRoutes` would type-check the hand-built
+`skillHref`/`ownerHref`/`compareHref` strings and is worth a look later.
+
+**Runtime prefetching — declined, not missed.** The params-into-Suspense split
+on the catalog routes is the prerequisite the guide names, not the finish line:
+a default link warms only the shared App Shell, so every client navigation into
+`/[org]`, `/[org]/[repo]` and `/site/[source]` commits a real breadcrumb whose
+URL-dependent crumbs are Skeletons, plus a skeleton `h1`, and resolves the org
+name a beat later — even though it was in the href that was clicked. Resolving it ahead of the click means
+`<Link prefetch={true}>` plus caching behind the URL-data read
+(`node_modules/next/dist/docs/01-app/02-guides/runtime-prefetching.md`).
+
+Declined because each per-link runtime prefetch is a **server invocation per
+prefetchable link**. A listing page renders ~100 rows, so viewport prefetching
+would turn one shell fetch into a hundred function calls — precisely the load
+this app pushes onto the CDN and Convex instead (see the Vercel-plan note in
+docs/architecture.md). If it's revisited, hover-triggered prefetch on the
+highest-intent links is the version worth measuring, not the viewport default.
+
 ### Monitoring pivot: state, decisions, and what is left (Aug 2026)
 
 Why any of this exists: skills.sh (which is Vercel) launched Packs, which does
@@ -783,6 +946,39 @@ patches were wiped by the re-install, while the upstreamed `squash` variant came
 back.
 
 ## Parked decisions (context lives elsewhere)
+
+- **Two refactors from PR #62's panel review (findings 32 and 14)** — both
+  considered and declined, Aug 2026. Recorded so a re-run of the review does not
+  re-propose them.
+
+  *Collapse `openWithDiff` and `changeRange` in `components/skill-history-row.tsx`
+  into one helper.* Fair when written, stale by the time it was weighed. The
+  review saw two busy booleans, a cached fast path with its own rules, `warm`,
+  `warmSoon`, a debounce timer, and a stale-guard token on only one of the two
+  paths. Replacing hover prefetching with a click-time busy floor deleted most of
+  that. What remains is ~20 lines each sharing about six lines of shape, differing
+  in four ways: only the open path loads the renderer chunk and records failure,
+  only the swap path carries the token guard, and they commit different things. A
+  shared helper would need three flags to absorb that, which reads worse than the
+  two straight-through functions. The related suggestions were declined too:
+  deriving `Diff` from the module-scope binding swaps explicit state for an
+  implicit dependency on `open` changing in the same tick, and splitting the
+  newest row into its own component creates two components sharing most of their
+  body to remove one prop's double duty.
+
+  The behaviour is covered either way — `e2e/skill-history.spec.ts`, mutation-
+  tested — so this is a taste call with a net under it, not a risk being carried.
+
+  *Extract a shared listing shell across `/[org]`, `/[org]/[repo]` and
+  `/site/[source]`.* The two things that could drift silently are already fixed:
+  all four copies of the row-corner logic call `rowPositionClassName`, and the
+  title scale lives in `lib/listing-styles.ts` so a skeleton cannot fall out of
+  step with the `<h1>` it stands in for. What is left is duplication with no known
+  defect, across three pages that are deliberately diverging. Weigh any revival
+  against why `components/listing-page-loading.tsx` was deleted in that same PR:
+  one shared skeleton for three pages produced shells matching none of them, and
+  fallback fidelity was the property being fixed. Revisit only if a fourth listing
+  page appears.
 
 - **Re-slugging a mis-slugged GitHub-only row** — no repair tool, deliberately. Full
   context in `convex/githubOnlyAudit.ts`'s header (why there is a find button and no fix

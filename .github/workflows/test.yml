@@ -38,3 +38,107 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  # Instant-navigation guards (e2e/instant-navigation.spec.ts). This is also the
+  # only job that runs `next build`, so it's what catches `blocking-prerender-*`
+  # regressions — lint/typecheck/vitest never touch the render path.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: test
+    # Secrets aren't exposed to fork PRs, so this would be a permanent red X on
+    # every outside contribution. Skip it there rather than reaching for
+    # pull_request_target, which would run fork code with our secrets.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      # Turns on experimental.exposeTestingApiInProductionBuild so instant()
+      # can drive the testing API against `next start`. Must be set for the
+      # build, not just the server.
+      E2E: "1"
+      # Point at a seeded preview deployment — never production.
+      NEXT_PUBLIC_CONVEX_URL: ${{ secrets.E2E_CONVEX_URL }}
+      NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.E2E_CONVEX_SITE_URL }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      # CLERK_SECRET_KEY is deliberately NOT here. It is the backend key
+      # e2e/auth.setup.ts uses to create users, and a job-level env hands it to
+      # every step including `pnpm install` — where a compromised transitive
+      # dependency's install script could read it straight out of the
+      # environment. pnpm blocks lifecycle scripts by default, so this is
+      # defence in depth, but the key only needs to exist for the run step.
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+      # urlId of a public bundle in that deployment. Unset => the bundle spec
+      # test.skip()s instead of failing.
+      E2E_BUNDLE_ID: ${{ secrets.E2E_BUNDLE_ID }}
+    steps:
+      # Everything below is gated on this. Without the E2E_* repository secrets
+      # the runner has no Convex/Clerk credentials, `next build` fails on the
+      # Convex call in generateStaticParams, and the job goes red for a reason
+      # that has nothing to do with the commit. Skipping keeps the workflow
+      # honest until the secrets are configured — see docs/architecture.md §15.
+      #
+      # The `secrets` context is not available in a job-level `if:`, which is
+      # why this is a step rather than a job condition. Secrets are read via
+      # `env` rather than interpolated into the script body.
+      - name: Check for E2E secrets
+        id: guard
+        env:
+          CONVEX_URL: ${{ secrets.E2E_CONVEX_URL }}
+          CLERK_SECRET: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+        run: |
+          if [ -n "$CONVEX_URL" ] && [ -n "$CLERK_SECRET" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Instant-navigation e2e skipped::Set the E2E_* repository secrets to enable these tests. See docs/architecture.md section 15."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.configured == 'true'
+
+      - uses: pnpm/action-setup@v4
+        if: steps.guard.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.guard.outputs.configured == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # Turbopack's build FileSystem cache is on by default in 16.3 but only
+      # pays off when .next/cache is restored between runs (locally it took the
+      # compile step from 6.8s to 1.1s).
+      #
+      # The key globs source directories rather than `**/*.[jt]s(x)`. This step
+      # runs after `pnpm install`, and `hashFiles` globs from the workspace root
+      # without honouring .gitignore — so the broad pattern hashed the whole
+      # installed node_modules tree (following pnpm's symlinks into .pnpm) on
+      # every run, to compute a component the lockfile hash already covers.
+      - name: Restore Next build cache
+        if: steps.guard.outputs.configured == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('app/**', 'components/**', 'lib/**', 'hooks/**', 'convex/**', 'next.config.ts') }}
+          restore-keys: |
+            next-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - name: Install Playwright browser
+        if: steps.guard.outputs.configured == 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      # playwright.config.ts's webServer runs `pnpm build && pnpm start`.
+      - name: Run instant-navigation e2e
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+        run: pnpm e2e
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.guard.outputs.configured == 'true' }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

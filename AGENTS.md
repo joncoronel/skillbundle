@@ -19,10 +19,25 @@ ideas get lost in chat.
 - `pnpm dev` — Start Next.js dev server
 - `pnpm build` — Production build
 - `pnpm lint` — Run ESLint
+- `pnpm test` — Unit tests (vitest, `tests/**/*.test.ts` — Convex backend logic)
+- `pnpm e2e` / `pnpm e2e:ui` — Playwright (`e2e/**/*.spec.ts`): instant-navigation
+  guards signed out, plus signed-in functional coverage in `e2e/authenticated/`
 - `npx convex dev` — Start Convex dev server (runs alongside Next.js dev)
 - `npx convex deploy` — Deploy Convex functions to production
 
 Both `pnpm dev` and `npx convex dev` must be running during local development.
+
+**`pnpm build` needs a reachable Convex deployment.** Every `generateStaticParams`
+calls `fetchQuery` (via `lib/representative-params.ts`), and prerendering those
+paths runs the `'use cache'` loaders. A fresh clone without `.env.local` cannot
+build. The hardcoded fallbacks in `representative-params.ts` harden *param
+selection*, not the render.
+
+**Two test suites, deliberately non-overlapping.** `pnpm test` is vitest over
+`tests/**/*.test.ts`; `pnpm e2e` is Playwright over `e2e/**/*.spec.ts`, against a
+production build on port 3100. Don't put one kind of test in the other's
+directory — the globs are what keep the runners apart. `pnpm check` is
+lint + typecheck + unit tests only; e2e is separate because it builds the app.
 
 ## Tech Stack
 
@@ -40,6 +55,30 @@ Both `pnpm dev` and `npx convex dev` must be running during local development.
 This is a high-level map. The detailed, authoritative guides are:
 
 - **[docs/architecture.md](docs/architecture.md)** — frontend & platform: Next.js 16 static-first rendering + caching, the route inventory (static / ISR / dynamic), the Suspense-default-state pattern, Clerk auth wiring, the provider tree, data-fetching patterns, nuqs URL state, and Polar billing. **Read this before any frontend / rendering / caching / auth work.**
+Two rules from that guide that are easy to break without noticing, because
+**direct page loads keep working either way**:
+
+- Catalog pages (`/[org]`, `/[org]/[repo]`, `/site/[source]`) must **not**
+  `await params` above their `<Suspense>` boundaries. Doing so empties the
+  route's shared App Shell and makes every client navigation into it blocking.
+  Keep the page component synchronous and pass the `params` promise down.
+- Error handling has three layers (`app/global-error.tsx`,
+  `app/(main)/error.tsx`, `components/data-error-boundary.tsx`). Use the
+  innermost one that fits rather than adding `try/catch` inside a Server
+  Component — that swallows the error and loses `retry()`.
+- **Restructuring a page means updating its `loading.tsx` / Suspense fallback in
+  the same change.** Nothing catches that drift — the e2e guards assert a shell
+  commits instantly, not that it resembles the page — and a stale fallback reads
+  to users as the skeleton being replaced by a second, different skeleton rather
+  than as a bug. See docs/architecture.md §2.
+- **A section that's expensive on the client usually belongs on the server, not
+  behind a deferral.** Deferring keeps the cost and adds a loading phase. Only
+  genuinely per-interaction work (e.g. the shiki diff in
+  `components/skill-history-row.tsx`) should stay lazy.
+
+`e2e/instant-navigation.spec.ts` guards the first one. See docs/architecture.md
+§1, §14 and §15.
+
 - **[docs/skill-lifecycle.md](docs/skill-lifecycle.md)** — backend skill pipeline: how skills enter the catalog, the sync / reconcile / curated / duplicate-detection jobs, "seen" + delisting rules, snapshots, and the `needs*` work-set patterns. **Read this before touching the sync or skill-lifecycle code.**
 
 ### Frontend → backend
@@ -89,6 +128,8 @@ asked to add technology tagging, treat it as new work, not a refactor.
 
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->

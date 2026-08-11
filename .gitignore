@@ -51,3 +51,12 @@ reviews/
 
 # Playwright MCP scratch output (snapshots, console logs) — not for the repo
 .playwright-mcp/
+
+# Playwright e2e output (see playwright.config.ts, e2e/)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Clerk e2e session state (written by e2e/auth.setup.ts)
+/playwright/.clerk/

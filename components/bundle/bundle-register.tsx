@@ -197,11 +197,9 @@ export function buildRegister<S extends RegisterSkill>(
  */
 export function BundleRegister<S extends RegisterSkill>({
   groups,
-  pending,
   actions,
 }: {
   groups: Array<{ key: GroupKey; rows: RegisterRow<S>[] }>;
-  pending: boolean;
   actions?: RegisterActions<S>;
 }) {
   const editing = actions !== undefined;
@@ -282,7 +280,6 @@ export function BundleRegister<S extends RegisterSkill>({
             group={group.key}
             rows={group.rows}
             open={open}
-            pending={pending}
             actions={actions}
             columnCount={columnCount}
             isFirst={i === 0}
@@ -318,7 +315,6 @@ function RegisterGroup<S extends RegisterSkill>({
   group,
   rows,
   open,
-  pending,
   actions,
   columnCount,
   isFirst,
@@ -328,7 +324,6 @@ function RegisterGroup<S extends RegisterSkill>({
   group: GroupKey;
   rows: RegisterRow<S>[];
   open: boolean;
-  pending: boolean;
   actions?: RegisterActions<S>;
   columnCount: number;
   isFirst: boolean;
@@ -400,7 +395,6 @@ function RegisterGroup<S extends RegisterSkill>({
             <RegisterRowView
               key={`${row.skill.source}::${row.skill.skillId}`}
               row={row}
-              pending={pending}
               actions={actions}
             />
           ))
@@ -411,19 +405,15 @@ function RegisterGroup<S extends RegisterSkill>({
 
 function RegisterRowView<S extends RegisterSkill>({
   row,
-  pending,
   actions,
 }: {
   row: RegisterRow<S>;
-  pending: boolean;
   actions?: RegisterActions<S>;
 }) {
   const { skill, change, condition, status } = row;
   const isRemoved = status === "removed";
   const isAdded = status === "added";
   const meta = CONDITION_META[condition];
-  // A steady marker is a claim. Do not make it before the data lands.
-  const markerHidden = pending && condition === "steady";
   const delta =
     condition === "description"
       ? {
@@ -493,7 +483,7 @@ function RegisterRowView<S extends RegisterSkill>({
             )}
           />
         ) : null}
-        {markerHidden || !meta.icon ? null : (
+        {!meta.icon ? null : (
           <HugeiconsIcon
             icon={meta.icon}
             strokeWidth={2}
@@ -544,7 +534,6 @@ function RegisterRowView<S extends RegisterSkill>({
             label={meta.label}
             change={change}
             delta={hasDelta ? delta : null}
-            pending={pending}
           />
         </div>
       </TableCell>
@@ -555,7 +544,6 @@ function RegisterRowView<S extends RegisterSkill>({
           label={meta.label}
           change={change}
           delta={hasDelta ? delta : null}
-          pending={pending}
         />
       </TableCell>
 
@@ -612,26 +600,19 @@ function ConditionDetail({
   label,
   change,
   delta,
-  pending,
 }: {
   condition: Condition;
   label: string;
   change?: RegisterChange;
   delta: { before?: string; after?: string } | null;
-  pending: boolean;
 }) {
-  // While pending, drop the CLAIM but keep the row's height. Returning nothing
-  // here made every steady row grow when the query landed — on mobile the
-  // condition lives inside the skill cell, so a 20-skill all-steady bundle (the
-  // common case) jumped ~480px on resolve.
-  const unresolvedSteady = pending && condition === "steady";
   return (
     <div className="mt-1 sm:mt-0">
       {condition === "steady" ? (
         <>
           {/* Steady still announces itself to a screen reader; it just does not
               spend a line of the reader's attention on every quiet row. */}
-          <span className="sr-only">{unresolvedSteady ? "Checking" : label}</span>
+          <span className="sr-only">{label}</span>
           <span aria-hidden className="text-sm text-muted-foreground">
             &mdash;
           </span>
@@ -723,14 +704,11 @@ export function RegisterTally({
   total,
   faults,
   changed,
-  pending,
   suppressed = false,
 }: {
   total: number;
   faults: number;
   changed: number;
-  /** The change data has not arrived yet. See the `pending` tone below. */
-  pending: boolean;
   /**
    * The mass-change breaker tripped. The dashboard was the only surface wired
    * to it, so a catalog-wide reprocess produced "holding these back" on the
@@ -739,22 +717,29 @@ export function RegisterTally({
    */
   suppressed?: boolean;
 }) {
-  // `pending` and `empty` are their own tones, and both used to resolve to
-  // green. That was the worst defect in this component: with the change query
-  // still in flight every row looks steady, so a bundle carrying a CRITICAL
-  // regression painted a success light and the words "nothing changed" before
-  // flipping to red. Volunteering an all-clear you have not verified is the one
-  // failure mode a monitoring product cannot afford. An empty bundle was the
-  // same mistake in a quieter key: nothing to report is not the same as fine.
+  // `empty` is its own tone rather than resolving to green: nothing to report
+  // is not the same as fine.
+  //
+  // There used to be a `pending` tone here too, for the window where the change
+  // query was still in flight — every row looks steady until it lands, so a
+  // bundle carrying a CRITICAL regression painted a success light and the words
+  // "nothing changed" before flipping to red. Volunteering an all-clear you
+  // have not verified is the one failure mode a monitoring product cannot
+  // afford.
+  //
+  // That window no longer exists: the change list is preloaded on the server
+  // (see the `preloadQuery` in app/(main)/bundle/[id]/page.tsx), so this
+  // component never renders before the data. The rule still stands — if this is
+  // ever fed from a client fetch again, the unverified state needs its own tone
+  // before anything green can render.
   // Suppression is NOT a tone. It used to be one, ranked below `fault`, so a
   // single delisted skill swallowed the caveat entirely: one fault plus forty
   // suppressed changes rendered no hold notice at all, while the dashboard one
   // click away said "holding these back". The two are orthogonal — a fault is
   // something that IS wrong, suppression is doubt about the change list — so
   // the caveat renders alongside whatever tone the light is showing.
-  const tone: "pending" | "empty" | "clear" | "changed" | "fault" = pending
-    ? "pending"
-    : total === 0
+  const tone: "empty" | "clear" | "changed" | "fault" =
+    total === 0
       ? "empty"
       : faults > 0
         ? "fault"
@@ -778,19 +763,13 @@ export function RegisterTally({
   // removed live region never announces. So a screen-reader user was told
   // "Checking 14 skills…" and then told the result only when the result was
   // good. The announcement worked precisely when the news did not matter.
-  const visible = tone === "pending" || tone === "clear" || suppressed;
+  const visible = tone === "clear" || suppressed;
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {visible ? (
         <StatusLight
-          tone={
-            tone === "pending" || suppressed ? "hold" : TONE_OF_GROUP.steady
-          }
-          className={cn(
-            tone === "pending" &&
-              "[&>span]:animate-pulse motion-reduce:[&>span]:animate-none",
-          )}
+          tone={suppressed ? "hold" : TONE_OF_GROUP.steady}
         />
       ) : null}
 
@@ -805,12 +784,7 @@ export function RegisterTally({
         principle 3 asks for.
       */}
       <p aria-live="polite" className="flex-1 text-sm">
-        {tone === "pending" ? (
-          <span className="text-muted-foreground tabular-nums">
-            Checking {total} skill{total === 1 ? "" : "s"}&hellip;
-          </span>
-        ) : (
-          <>
+        <>
             {/* The verdict. Visible only when it says something the sections
                 cannot; otherwise `sr-only`, so the live region stays mounted
                 and actually fires. */}
@@ -844,8 +818,7 @@ export function RegisterTally({
                 Read these rows with that in mind.
               </span>
             ) : null}
-          </>
-        )}
+        </>
       </p>
     </div>
   );

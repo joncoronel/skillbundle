@@ -17,7 +17,17 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
+// The canonical row-corner helper and title scale. Re-implementing either
+// inline is how the skeletons and their content branches drifted apart: the
+// content branch handled the single-row case, its own skeleton did not. Both
+// come from lib/ because this is a Server Component — the client module that
+// re-exports them cannot be called from here.
+import {
+  LISTING_TITLE_SCALE,
+  rowPositionClassName,
+} from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
+import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 type Params = Promise<{ source: string }>;
 
@@ -36,7 +46,14 @@ export async function generateMetadata({
   params: Params;
 }): Promise<Metadata> {
   const { source } = await params;
-  const { skills } = await loadSourceSkills(source);
+  // Guarded for the same reason as the org route: `generateMetadata` runs
+  // outside every boundary and awaits the same `'use cache'` loader the body
+  // does, so an unguarded throw takes the route down before DataErrorBoundary
+  // can render its fallback. A transient failure falls into the not-found
+  // branch, the safe direction for metadata.
+  const { skills } = (await loadSourceSkills(source).catch(() => null)) ?? {
+    skills: [],
+  };
 
   if (skills.length === 0) {
     return { title: "Source not found | SkillBundle" };
@@ -56,15 +73,31 @@ export async function generateMetadata({
   };
 }
 
-export default async function WellKnownSourcePage({
-  params,
-}: {
-  params: Params;
-}) {
+// `params` is passed into the boundaries rather than awaited here. See the
+// matching comment in app/(main)/[org]/page.tsx — awaiting above the Suspense
+// empties this route's shared App Shell and makes every client navigation into
+// it blocking, while direct page loads still look fine.
+export default function WellKnownSourcePage({ params }: { params: Params }) {
+  return (
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+      <Suspense fallback={<SourceHeaderSkeleton />}>
+        <SourceHeader params={params} />
+      </Suspense>
+
+      <DataErrorBoundary label="this source's skills">
+        <Suspense fallback={<SourceListSkeleton />}>
+          <SourceListContent params={params} />
+        </Suspense>
+      </DataErrorBoundary>
+    </div>
+  );
+}
+
+async function SourceHeader({ params }: { params: Params }) {
   const { source } = await params;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    <>
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -77,18 +110,40 @@ export default async function WellKnownSourcePage({
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-medium tracking-tight leading-hero text-balance mb-6">
+      <h1 className={cn(LISTING_TITLE_SCALE, "font-medium tracking-tight text-balance mb-6")}>
         {source}
       </h1>
-
-      <Suspense fallback={<SourceListSkeleton />}>
-        <SourceListContent source={source} />
-      </Suspense>
-    </div>
+    </>
   );
 }
 
-async function SourceListContent({ source }: { source: string }) {
+function SourceHeaderSkeleton() {
+  return (
+    <>
+      {/* Real breadcrumb primitives, so the shell's separator matches the
+          chevron the resolved header renders instead of swapping a "/" for it
+          on every client navigation. "Home" is static, so it is genuine shell
+          content; only the URL-dependent crumbs are Skeletons. */}
+      <Breadcrumb size="sm" className="mb-8">
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink render={<Link href="/" />}>Home</BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <Skeleton className="h-4 w-28" />
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+      <div className={cn("mb-6", LISTING_TITLE_SCALE)}>
+        <Skeleton className="h-[1em] w-64 max-w-full" />
+      </div>
+    </>
+  );
+}
+
+async function SourceListContent({ params }: { params: Params }) {
+  const { source } = await params;
   const { skills, totalInstalls } = await loadSourceSkills(source);
 
   if (skills.length === 0) {
@@ -147,8 +202,19 @@ function SourceListSkeleton() {
           <Skeleton className="h-4 w-24" />
         </div>
         <div className="ml-auto">
-          <Skeleton className="h-8 w-32 rounded-lg" />
+          <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
         </div>
+      </div>
+
+      {/* The selection row SourceSkillList renders above the column headers
+          ("N skills from this source" + Add all / Remove all). Omitting it left
+          ~44px unreserved, so the headers and every placeholder row below them
+          jumped down the moment the list resolved. That shift used to hide on
+          the ISR-miss path; deleting this route's loading.tsx made this
+          fallback the only loading surface, which put it on the common one. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Skeleton className="h-4 w-48 max-w-[60%]" />
+        <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
       </div>
 
       <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
@@ -158,18 +224,12 @@ function SourceListSkeleton() {
 
       <div className="grid">
         {Array.from({ length: 4 }).map((_, i) => {
-          const isFirst = i === 0;
-          const isLast = i === 3;
           return (
             <div
               key={i}
               className={cn(
                 "bg-card rounded-2xl border dark:border-border/50 py-3",
-                isFirst
-                  ? "rounded-b-none"
-                  : isLast
-                    ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0",
+                rowPositionClassName(i, 4),
               )}
             >
               <div className="flex items-center gap-3 px-4">

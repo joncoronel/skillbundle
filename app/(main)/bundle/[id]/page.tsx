@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { io } from "next/cache";
 import { fetchQuery, preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { getAuthToken } from "@/lib/auth";
@@ -14,6 +15,17 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
+  // Same reason as the page body below: this reads an auth cookie, so it is
+  // per-request by nature, and declaring that up front keeps Convex's
+  // `Math.random()` in ConvexHttpClient from being reported as a stray
+  // unstable value. Metadata can't be wrapped in <Suspense>, so `io()` is the
+  // only way to express it here.
+  //
+  // Load-bearing on its own: with the page body's `io()` in place and this one
+  // removed, `blocking-prerender-random` still fires. See the measurement table
+  // in the page body — the two are not interchangeable.
+  await io();
+
   const [{ id }, token] = await Promise.all([params, getAuthToken()]);
   // Deliberate conflation: transient Convex errors fall through to the same
   // generic-title + noindex branch as missing/private bundles. For metadata,
@@ -65,17 +77,84 @@ export default async function BundlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // Read the route param and the auth token in parallel, then preload the
-  // bundle with it.
-  // The plan is no longer read here: closing a bundle used to be Pro-gated and
-  // the card grid needed to know whether the viewer could quick-add. Neither is
-  // true now, so the page preloads one query instead of two.
-  const [{ id }, token] = await Promise.all([params, getAuthToken()]);
-  const preloadedBundle = await preloadQuery(
-    api.bundles.getByUrlId,
-    { urlId: id },
-    { token },
-  );
+  // Declare this render as request-time before touching Convex.
+  //
+  // Without it, Next aborts the prerender here for the wrong reason: Convex's
+  // `preloadQuery` constructs a ConvexHttpClient, whose default logger calls
+  // `Math.random()` (convex/src/browser/logging.ts), and Next reports
+  // `blocking-prerender-random` pointing into node_modules. That insight is
+  // noise — this route is genuinely per-request because it reads an auth
+  // cookie — but it hides real unstable-value bugs behind a known-bad entry.
+  //
+  // `io()` rather than `connection()`: the docs say to prefer it and keep
+  // `connection()` for when you need to wait for a real user request
+  // (node_modules/next/dist/docs/.../io.md, "How `io()` differs from
+  // `connection()`"). It has not replaced `connection()`; both still exist.
+  //
+  // Measured, not assumed — and BOTH calls are required, independently. On a
+  // freshly restarted dev server, loading a real bundle page:
+  //
+  //   body io()   metadata io()   result
+  //   on          on              clean
+  //   off         off             blocking-prerender-random
+  //   on          off             blocking-prerender-random
+  //   off         on              blocking-prerender-random
+  //
+  // So removing either one brings the insight back. Worth recording because
+  // `io.md`'s "When you don't need `io()`" says a request-time API is itself
+  // the suspension point, and this route reads a Clerk cookie via
+  // `getAuthToken()` before any `preloadQuery` runs — by that reading these
+  // calls should be redundant. Empirically they are not. The mechanism was not
+  // chased further; the measurement is what this comment stands on.
+  //
+  // Still do NOT generalise it into "wrap every Convex call in `io()`". What is
+  // established is narrow: on THIS shape — a request-time route that preloads
+  // through a ConvexHttpClient — the cookie read does not stop the prerender
+  // reaching the client's `Math.random()`.
+  //
+  // The route still serves an instant shell: `loading.tsx` is its boundary, and
+  // e2e/instant-navigation.spec.ts asserts the header chrome paints before the
+  // bundle data arrives.
+  await io();
 
-  return <BundleView preloadedBundle={preloadedBundle} urlId={id} />;
+  // Read the route param and the auth token in parallel, then preload with it.
+  //
+  // Both queries are preloaded together. The change list used to be fetched
+  // client-side by BundleView (`useQuery`), which meant the register painted
+  // every row as Steady with a "Checking N skills…" line *after* the page
+  // content had already arrived — a second loading phase on a page that had
+  // finished loading. Preloading it here removes that phase; `usePreloadedQuery`
+  // keeps the subscription live afterwards, so edits still stream in.
+  //
+  // It cannot be `'use cache'` like the catalog loaders: `listChangesForBundle`
+  // reads `getCurrentUser`, so its result is per-viewer and has no business in
+  // a shared cache. Preloading with the token is the per-user equivalent.
+  const [{ id }, token] = await Promise.all([params, getAuthToken()]);
+  const [preloadedBundle, preloadedChanges] = await Promise.all([
+    preloadQuery(api.bundles.getByUrlId, { urlId: id }, { token }),
+    preloadQuery(
+      api.skillVersions.listChangesForBundle,
+      { urlId: id },
+      { token },
+    ),
+  ]);
+
+  // Deliberately NO region `DataErrorBoundary` here, for the same reason
+  // app/(main)/page.tsx has none: the awaits above run in the page body, so a
+  // `preloadQuery` rejection happens before this element tree exists and would
+  // escape any boundary declared in it. One wrapped `BundleView` and looked
+  // like insurance while catching nothing but client render errors.
+  //
+  // The fix is not to add a `<Suspense>` and move the awaits inside it — this
+  // route's shell is `loading.tsx`, and adding an in-page boundary would give
+  // it two loading surfaces, the exact "pick one, not both" failure documented
+  // in docs/architecture.md §1. `app/(main)/error.tsx` covers this route: it
+  // keeps the header and bundle bar and offers the same `retry()`.
+  return (
+    <BundleView
+      preloadedBundle={preloadedBundle}
+      preloadedChanges={preloadedChanges}
+      urlId={id}
+    />
+  );
 }

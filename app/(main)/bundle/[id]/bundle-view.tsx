@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   usePreloadedQuery,
   useMutation,
-  useQuery,
   type Preloaded,
 } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -57,13 +56,14 @@ import {
   LockIcon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
 import { useBundleEditSession } from "@/hooks/use-bundle-edit-session";
 import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
+  preloadedChanges: Preloaded<typeof api.skillVersions.listChangesForBundle>;
   urlId: string;
 }
 
@@ -86,7 +86,11 @@ const EMPTY_SKILLS: BundleSkill[] = [];
 const descriptionDialogHandle = createDialogHandle();
 const renameBundleDialogHandle = createDialogHandle();
 
-export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
+export function BundleView({
+  preloadedBundle,
+  preloadedChanges,
+  urlId,
+}: BundleViewProps) {
   const bundle = usePreloadedQuery(preloadedBundle);
   const [editingSkills, setEditingSkills] = useState(false);
   // Above the `bundle === null` early return below — hooks cannot sit after it
@@ -114,20 +118,36 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
   // Per-skill change payloads for the register, baselined on when each skill
   // joined the bundle. Separate from the bundle read because it touches the
   // version archive and the audit table, which the roster itself does not need.
-  const changes = useQuery(api.skillVersions.listChangesForBundle, { urlId });
+  //
+  // Preloaded on the server (see page.tsx) rather than fetched here. As a
+  // `useQuery` this resolved after the page content had already painted, so the
+  // register showed every row as Steady under a "Checking N skills…" line —
+  // a second loading phase on a page that had finished loading. It stays a live
+  // subscription after hydration, so edits and new changes still stream in.
+  const changes = usePreloadedQuery(preloadedChanges);
+  const changesReady = changes !== undefined;
 
   useEffect(() => {
-    // Gated on `changes`, not just on ownership. The stamp is earned by the
-    // page having SHOWN the changes, and until this query resolves every row
-    // still reads Steady — so an unconditional effect marked the bundle read on
-    // first paint, and did it even if the reader bounced immediately or the
-    // query errored. The dashboard then drops those changes forever, including
-    // a security regression nobody saw. That is the exact failure
+    // The stamp is earned by the page having SHOWN the changes. That used to
+    // need an explicit gate, because the change list arrived after first paint
+    // and every row read Steady until it did — so firing unconditionally marked
+    // a bundle read whose changes nobody had seen, and the dashboard then drops
+    // them forever, including a security regression. That is the failure
     // `markBundleViewed`'s own docstring calls the one thing a monitoring
-    // product cannot do, and it is why the call was pulled once already.
-    if (!ownedBundleId || changes === undefined) return;
+    // product cannot do.
+    //
+    // Preloading closed that hole at the source: `changes` is server-rendered,
+    // so if this page painted at all, the changes were on it. The gate is kept
+    // as a guard rather than deleted — if this ever goes back to a client fetch,
+    // it must not silently start stamping early again.
+    if (!ownedBundleId || !changesReady) return;
     void markViewed({ bundleId: ownedBundleId });
-  }, [ownedBundleId, changes, markViewed]);
+    // Depends on `changesReady`, NOT on `changes` itself. `usePreloadedQuery`
+    // returns the deserialized preload on the first render and then a fresh
+    // object once the subscription resolves, so a `changes` dependency moves at
+    // least twice per visit — and again on every re-emit, i.e. once per edit.
+    // Each move re-fired the mutation. The boolean settles once.
+  }, [ownedBundleId, changesReady, markViewed]);
 
   const updateVisibilityMutation = useMutation(
     api.bundles.updateBundleVisibility,
@@ -177,7 +197,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
     // `changes` streams in after the preloaded bundle — the register renders
     // immediately with every row Steady and settles as the archive answers,
     // rather than holding the whole page behind a second round trip.
-    () => buildRegister(skills, changes?.items),
+    () => buildRegister(skills, changes.items),
     [skills, changes],
   );
   const commandCount = useMemo(
@@ -193,7 +213,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
     bundleId: bundle?._id,
     queryArgs,
     initialSkills: skills,
-    changes: changes?.items,
+    changes: changes.items,
     onExit: () => setEditingSkills(false),
   });
 
@@ -327,9 +347,27 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
             }
           />
 
-          <Collapsible open={installOpen} onOpenChange={setInstallOpen}>
+          {/* `mb-0!` cancels the section's `space-y-4`, and the panel carries
+              that spacing internally as `pb-4` instead.
+
+              The section gives every child `margin-bottom: 16px`. While the
+              panel is mounted that 16px sits below it, but Base UI unmounts the
+              panel at the end of the close — the root becomes an empty box,
+              stops contributing the margin, and the gap vanished in one frame
+              *after* the height animation had finished. That was the jump.
+
+              Moving it inside makes it part of the animated height, so it
+              collapses with everything else. The closed layout is unchanged:
+              the root contributed nothing once empty anyway.
+
+              `!` because the `space-y-4` selector outranks a plain utility. */}
+          <Collapsible
+            open={installOpen}
+            onOpenChange={setInstallOpen}
+            className="mb-0!"
+          >
             <CollapsibleContent id={installPanelId}>
-              <div className="space-y-3 pb-1">
+              <div className="space-y-3 pb-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
                     Install commands
@@ -349,8 +387,7 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
               total={skillCount}
               faults={register.faults}
               changed={register.changed}
-              pending={changes === undefined}
-              suppressed={changes?.suppressed ?? false}
+              suppressed={changes.suppressed}
             />
           )}
 
@@ -368,7 +405,6 @@ export function BundleView({ preloadedBundle, urlId }: BundleViewProps) {
           {skillCount > 0 || editing ? (
             <BundleRegister
               groups={editing ? editSession.rows.groups : register.groups}
-              pending={changes === undefined}
               actions={editing ? editSession.actions : undefined}
             />
           ) : (
@@ -421,7 +457,28 @@ function MetadataItems({ createdAt }: { createdAt: number }) {
   // Skill count deliberately absent: the section heading and the tally both
   // state it, and three copies in one viewport is two too many. That leaves one
   // item, so this is a string and not a list with an unreachable separator.
-  return <>Created {timeAgo(createdAt)}</>;
+  //
+  // Absolute, unlike the change times in the register below. The split is the
+  // question each answers: a change time is the monitoring signal ("did
+  // something move recently?"), where "2d ago" is the answer and a date makes
+  // you compute it. When a list was created is provenance — nobody monitors it,
+  // and "8mo ago" is a worse way to say a date you might want to cite.
+  //
+  // Not a prerender-hazard fix, and it would be wrong to read it as one: the
+  // register below server-renders `timeAgo` too (both `addedAt` and the change
+  // lines, since their data is preloaded rather than fetched on the client), so
+  // this is not the only clock read on the page. Those stay relative on
+  // purpose — they are the monitoring answer, and the route is request-time
+  // (auth + `io()`), so there is no shared shell for a clock read to poison.
+  // See the `timeAgo` note in lib/utils.ts for where it does bite.
+  return (
+    <>
+      Created{" "}
+      <time dateTime={new Date(createdAt).toISOString()}>
+        {formatDate(createdAt)}
+      </time>
+    </>
+  );
 }
 
 

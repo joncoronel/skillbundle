@@ -7,7 +7,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/cubby-ui/accordion";
 import { LabeledSection } from "@/components/labeled-section";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { externalAuditDetailUrl } from "@/lib/skill-urls";
 
 // Verdict pill — the at-a-glance trust signal. Unknown statuses fall back to a
@@ -163,7 +163,18 @@ export function AuditAccordion({
       {audits.map((audit) => {
         const detailUrl = externalAuditDetailUrl(source, skillId, audit.slug);
         const ts = Date.parse(audit.auditedAt);
-        const audited = Number.isNaN(ts) ? null : timeAgo(ts);
+        // Absolute, and it sits in a <dl> beside Risk and Detected because it is
+        // the same kind of thing: a fact about the audit, not a freshness
+        // signal. The question this field answers is "did this verdict see the
+        // current file?", which is only answerable against the dates in the
+        // History timeline right below it. "3w ago" makes the reader do that
+        // arithmetic; a date lets them compare two dates.
+        //
+        // It also has to be absolute. This renders on the server (skill detail's
+        // sidebar), and timeAgo reads Date.now() — see the note on it in
+        // lib/utils.ts. Today the dialog saves us by not mounting its content
+        // until opened; that is a mounting detail, not a guarantee.
+        const audited = Number.isNaN(ts) ? null : formatDate(ts);
         const detail = summaryDetail(audit.summary, !!audit.riskLevel);
         const categories = audit.categories?.map(humanizeCategory) ?? [];
 
@@ -219,9 +230,12 @@ export function AuditAccordion({
 
                   {audited && (
                     <MetaField label="Audited">
-                      <span className="text-xs text-muted-foreground">
+                      <time
+                        dateTime={new Date(ts).toISOString()}
+                        className="text-xs text-muted-foreground"
+                      >
                         {audited}
-                      </span>
+                      </time>
                     </MetaField>
                   )}
                 </dl>
