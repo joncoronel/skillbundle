@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useId } from "react";
 import Link from "next/link";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Copy01Icon,
   Download04Icon,
@@ -30,41 +30,14 @@ import {
 import { skillHref } from "@/lib/skill-urls";
 import { renderHighlight } from "@/lib/search/highlight";
 
-export interface SkillEditControls {
-  onRemove: () => void;
-  /**
-   * Override the default `×` icon. Used by the edit-mode diff view to swap in
-   * a restore (↶) icon for cards that are marked as pending-remove, so the
-   * same button slot communicates "put it back" instead of "remove again."
-   */
-  removeIcon?: IconSvgElement;
-  /** Override aria-label / title for the remove button. */
-  removeLabel?: string;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Types & helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Corner/border classes for a row inside a stacked list (SkillRowGrid, repo
- * match results): first row keeps top corners, last keeps bottom corners,
- * middles are square, and every non-first row drops its top border so the
- * stack reads as one framed unit.
- */
-export function rowPositionClassName(
-  index: number,
-  length: number,
-): string | undefined {
-  if (length === 1) return undefined;
-  if (index === 0) return "rounded-b-none";
-  if (index === length - 1) return "rounded-t-none border-t-0";
-  return "rounded-none border-t-0";
-}
+// Defined in lib/listing-styles.ts, not here: this module is `"use client"`,
+// and the listing pages that also need it are Server Components. Re-exported so
+// this file stays the one import site for everything a skill row needs.
+export { rowPositionClassName } from "@/lib/listing-styles";
 
 export interface SkillData {
   name: string;
@@ -312,20 +285,6 @@ interface SkillViewProps {
    *  "hot" adds the momentum chip and shows hourly installs; "trending" shows
    *  ~24h installs. Only the home page's Hot/Trending tabs set it. */
   metric?: LeaderboardMetric;
-  /** When set, the card renders edit controls (remove + optional reorder)
-   *  in place of the install-count meta. Owner-only on the bundle detail
-   *  page's edit mode. */
-  editControls?: SkillEditControls;
-  /** Render a "+" affordance next to install count that opens the
-   *  "add to existing bundle" picker. Opt-in per usage site so it doesn't
-   *  conflict with selection-based screens (homepage tabs). Ignored when
-   *  `editControls` is set. */
-  enableQuickAdd?: boolean;
-  /** When rendering inside a bundle detail page, pass the current bundle's
-   *  id so the QuickAddPopover can mark that bundle's row as "CURRENT" and
-   *  disable its checkbox — removal from the current bundle should go
-   *  through Edit skills, not the popover. */
-  currentBundleId?: string;
   /** Hide the per-row source label. See SkillRowContent's `hideSource`. */
   hideSource?: boolean;
 }

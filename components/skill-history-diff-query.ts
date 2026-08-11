@@ -1,3 +1,5 @@
+import { queryOptions } from "@tanstack/react-query";
+
 import type { api } from "@/convex/_generated/api";
 
 /**
@@ -15,28 +17,68 @@ import type { api } from "@/convex/_generated/api";
  * dynamic import exists for.
  */
 
-type VersionEntry =
+/**
+ * One history entry. Declared here, next to the key that is derived from it,
+ * and imported by both consumers — it used to be spelled out identically in
+ * three files, which left the boundary this module exists to guarantee resting
+ * on nobody editing one copy.
+ */
+export type VersionEntry =
   (typeof api.skillVersions.listForSkill)["_returnType"][number];
 
-export function versionDiffQueryOptions(
-  from: Pick<VersionEntry, "versionId" | "contentUrl">,
-  to: Pick<VersionEntry, "versionId" | "contentUrl">,
-) {
-  return {
+/**
+ * A comparison, always OLDER → NEWER. Named rather than passed as two
+ * positional arguments so callers cannot silently transpose them: reversing the
+ * pair renders a diff with additions and deletions swapped, which reads as a
+ * plausible but completely wrong history.
+ */
+export type DiffPair = {
+  from: Pick<VersionEntry, "versionId" | "contentUrl">;
+  to: Pick<VersionEntry, "versionId" | "contentUrl">;
+};
+
+export function versionDiffQueryOptions({ from, to }: DiffPair) {
+  // `queryOptions()` rather than a bare object literal: it binds the key to the
+  // fetcher's return type, so `queryClient.getQueryData(queryKey)` comes back
+  // typed instead of `unknown`. That call is what `alreadyLoaded()` in
+  // skill-history-row.tsx uses to decide whether to show a busy state at all,
+  // so it is exactly the place the types should be doing work.
+  return queryOptions({
     queryKey: ["skillVersionDiff", from.versionId, to.versionId] as const,
     queryFn: async () => {
       if (!from.contentUrl || !to.contentUrl) {
         throw new Error("Version content is unavailable");
       }
+      // `fetch` resolves on 4xx/5xx, so without this check a storage error
+      // payload is handed to the diff parser as if it were the file, and the
+      // reader gets a confident, fully-rendered diff claiming the whole
+      // SKILL.md was replaced by a JSON error object. On a product whose job
+      // is reporting what changed, a plausible wrong answer is worse than an
+      // error state — and `staleTime: Infinity` would pin it. `loadVersions`
+      // is cached for days, so a `contentUrl` can outlive its blob.
+      const read = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`Version content unavailable (${res.status})`);
+        }
+        return res.text();
+      };
       const [before, after] = await Promise.all([
-        fetch(from.contentUrl).then((r) => r.text()),
-        fetch(to.contentUrl).then((r) => r.text()),
+        read(from.contentUrl),
+        read(to.contentUrl),
       ]);
       return { before, after };
     },
-    // Version content is immutable once written, so it never needs revalidating
-    // and re-expanding a row should be instant.
+    // Version content is immutable once written, so it never needs
+    // revalidating and re-expanding a row should be instant.
     staleTime: Infinity,
-    gcTime: Infinity,
-  };
+    // Finite, unlike staleTime. Hover warming prefetches a pair per row and per
+    // select option, so sweeping the pointer down a long timeline (the version
+    // list is capped at 50) can pull two SKILL.md strings per row. With
+    // `gcTime: Infinity` every one of them stayed resident for the whole
+    // session, including for rows the reader passed over and never opened.
+    // 30 minutes keeps re-expanding instant across any realistic visit while
+    // letting the swept-past ones fall out.
+    gcTime: 30 * 60 * 1000,
+  });
 }

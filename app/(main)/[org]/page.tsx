@@ -19,6 +19,15 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn, formatInstalls } from "@/lib/utils";
+// The canonical row-corner helper and title scale. Re-implementing either
+// inline is how the skeletons and their content branches drifted apart: the
+// content branch handled the single-row case, its own skeleton did not. Both
+// come from lib/ because this is a Server Component — the client module that
+// re-exports them cannot be called from here.
+import {
+  LISTING_TITLE_SCALE,
+  rowPositionClassName,
+} from "@/lib/listing-styles";
 import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 
@@ -53,7 +62,15 @@ export async function generateMetadata({
   params: Params;
 }): Promise<Metadata> {
   const { org } = await params;
-  const { repos, totalSkillCount } = await loadOrg(org);
+  // Guarded so a Convex outage degrades to the region fallback instead of
+  // taking the whole route down. `generateMetadata` runs outside every
+  // boundary, and it awaits the same `'use cache'` loader the body does — so an
+  // unguarded throw here rejects before `DataErrorBoundary` can render, making
+  // the graceful degradation it was added for unreachable on this route.
+  // Same conflation as the bundle route: a transient failure falls into the
+  // not-found branch, which is the safe direction for metadata.
+  const org_ = await loadOrg(org).catch(() => null);
+  const { repos, totalSkillCount } = org_ ?? { repos: [], totalSkillCount: 0 };
 
   if (repos.length === 0) {
     return { title: "Organization not found | SkillBundle" };
@@ -122,7 +139,7 @@ async function OrgHeader({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className="font-display text-[clamp(2.25rem,5vw,3.5rem)] font-medium tracking-tight leading-hero text-balance mb-6">
+      <h1 className={cn(LISTING_TITLE_SCALE, "font-medium tracking-tight text-balance mb-6")}>
         {org}
       </h1>
     </>
@@ -132,16 +149,27 @@ async function OrgHeader({ params }: { params: Params }) {
 function OrgHeaderSkeleton() {
   return (
     <>
-      <div className="mb-8 flex items-center gap-2 text-sm">
-        <Skeleton className="h-4 w-12" />
-        <span aria-hidden="true" className="text-muted-foreground/50">
-          /
-        </span>
-        <Skeleton className="h-4 w-28" />
-      </div>
+      {/* Built from the real breadcrumb primitives, not hand-drawn bars. This
+          is the shared App Shell, so it is the first paint of every client
+          navigation into this route — a hand-rolled "/" separator meant the
+          shell painted `▭ / ▭` and then swapped to the chevron
+          `BreadcrumbSeparator` actually renders. "Home" is a static literal, so
+          it is real shell content rather than a placeholder; only the
+          URL-dependent crumb is a Skeleton. */}
+      <Breadcrumb size="sm" className="mb-8">
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink render={<Link href="/" />}>Home</BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <Skeleton className="h-4 w-28" />
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
       {/* Same font-size/leading as the real h1 so the swap doesn't shift the
           list below it. */}
-      <div className="mb-6 font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero">
+      <div className={cn("mb-6", LISTING_TITLE_SCALE)}>
         <Skeleton className="h-[1em] w-64 max-w-full" />
       </div>
     </>
@@ -202,21 +230,12 @@ async function OrgListContent({ params }: { params: Params }) {
 
       <div className="grid">
         {repos.map((repo, i) => {
-          const isFirst = i === 0;
-          const isLast = i === repos.length - 1;
-          const isSolo = repos.length === 1;
           return (
             <div
               key={repo.source}
               className={cn(
                 "bg-card rounded-2xl border dark:border-border/50 py-3",
-                isSolo
-                  ? undefined
-                  : isFirst
-                    ? "rounded-b-none"
-                    : isLast
-                      ? "rounded-t-none border-t-0"
-                      : "rounded-none border-t-0",
+                rowPositionClassName(i, repos.length),
               )}
             >
               <div className="flex items-center gap-3 px-4">
@@ -271,18 +290,12 @@ function OrgListSkeleton() {
 
       <div className="grid">
         {Array.from({ length: 6 }).map((_, i) => {
-          const isFirst = i === 0;
-          const isLast = i === 5;
           return (
             <div
               key={i}
               className={cn(
                 "bg-card rounded-2xl border dark:border-border/50 py-3",
-                isFirst
-                  ? "rounded-b-none"
-                  : isLast
-                    ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0",
+                rowPositionClassName(i, 6),
               )}
             >
               <div className="flex items-center gap-3 px-4">

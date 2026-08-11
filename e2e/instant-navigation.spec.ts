@@ -4,8 +4,8 @@ import {
   BUNDLE_ID,
   GITHUB_ORG_PATH,
   GITHUB_REPO_PATH,
-  GITHUB_SKILL,
   GITHUB_SKILL_PATH,
+  WELL_KNOWN_SOURCE_PATH,
 } from "./fixtures";
 
 /**
@@ -138,12 +138,24 @@ test.describe("initial load", () => {
       page,
       async () => {
         await page.goto(GITHUB_SKILL_PATH);
-        // h1 and the Compare action sit above SkillDetailPage's Suspense
-        // boundary, so they belong to the shell. Compare is a cubby-ui
-        // Button rendering a Link — role=button, not link.
-        await expect(page.locator("h1")).toContainText(GITHUB_SKILL.skillId);
+        // Assert the shell this route actually has, which is `loading.tsx` —
+        // `SkillPage` awaits `params` at the top (deliberate: everything on the
+        // page is URL data, see docs/architecture.md §1), so nothing below it
+        // is in the shared App Shell and `SkillDetailPageLoading` renders a
+        // Skeleton where the h1 goes.
+        //
+        // An earlier version asserted the h1 and the Compare button here,
+        // reasoning that they sit above the Suspense boundary. They do, but
+        // that only puts them in *this URL's own prerender*, not in the shell —
+        // so the assertion silently depended on GITHUB_SKILL_PATH happening to
+        // be the param `generateStaticParams` picked, which is the live
+        // top-popular GitHub skill and only falls back to this pinned one. It
+        // would have gone red on a healthy route the day the catalog shifted.
         await expect(
-          page.getByRole("button", { name: "Compare" }).first(),
+          page.locator("*:visible", { hasText: /^Install$/ }).first(),
+        ).toBeVisible();
+        await expect(
+          page.locator("*:visible", { hasText: /^Overview$/ }).first(),
         ).toBeVisible();
       },
       { baseURL },
@@ -176,7 +188,29 @@ test.describe("initial load", () => {
         // route's shared App Shell. The column headers appear in both
         // OrgListSkeleton and the real list, so they are genuine shell
         // content and survive a shared-shell prefetch.
+        // NOT asserting an absent <h1> here, even though this route's header
+        // skeleton has none. GITHUB_ORG_PATH is the pinned representative, so
+        // Next prerendered this exact URL and a direct load serves that
+        // prerender — params resolved and all. The shared App Shell is only
+        // what a *client* navigation commits, which is where the shell tripwire
+        // lives (see the client-navigation block below).
         await expect(page.getByText("Source", { exact: true })).toBeVisible();
+        await expect(page.getByText("Installs", { exact: true })).toBeVisible();
+      },
+      { baseURL },
+    );
+  });
+
+  test("source listing serves its column headers in the shell", async ({
+    page,
+  }) => {
+    await instant(
+      page,
+      async () => {
+        await page.goto(WELL_KNOWN_SOURCE_PATH);
+        // "Skill", not "Source" — this route's header differs from `/[org]`'s,
+        // which is exactly why the org guards do not cover it.
+        await expect(page.getByText("Skill", { exact: true })).toBeVisible();
         await expect(page.getByText("Installs", { exact: true })).toBeVisible();
       },
       { baseURL },
@@ -190,7 +224,17 @@ test.describe("client navigation", () => {
 
     // Discovered, not pinned: read a real publisher row so the test follows
     // the actual user path and can't rot when the curated list changes.
-    const publisher = page.getByRole("link", { name: /\d+ repos?\b/ }).first();
+    //
+    // Filtered to a non-`/site/` href on purpose. `ownerHref` sends any owner
+    // containing a dot to `/site/[source]` (lib/skill-urls.ts), and `/official`
+    // mixes both kinds of publisher in one list — so an unfiltered `.first()`
+    // can land on a different route whose shell says "Skill", not "Source",
+    // and fail while claiming to test `/[org]`. That route has its own test
+    // below.
+    const publisher = page
+      .getByRole("link", { name: /\d+ repos?\b/ })
+      .and(page.locator(':not([href^="/site/"])'))
+      .first();
     await expect(publisher).toBeVisible();
     const href = await publisher.getAttribute("href");
     expect(href).toBeTruthy();
@@ -198,12 +242,70 @@ test.describe("client navigation", () => {
     await instant(page, async () => {
       await publisher.click();
       await page.waitForURL((url) => url.pathname === href);
-      await expect(page.getByText("Source", { exact: true })).toBeVisible({
-        timeout: SHELL_TIMEOUT,
-      });
-      await expect(page.getByText("Installs", { exact: true })).toBeVisible({
-        timeout: SHELL_TIMEOUT,
-      });
+      // `:visible` for the same reason as the sibling tests: Cache Components
+      // keeps the outgoing route mounted under <Activity>, so an unscoped
+      // locator can match the page being navigated away from.
+      await expect(
+        page.locator("span:visible", { hasText: /^Source$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+      await expect(
+        page.locator("span:visible", { hasText: /^Installs$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+
+      // The suite's tripwire, and it has to be a *client* navigation.
+      //
+      // `instant()` sets a cookie the testing API reads, and that API is only
+      // compiled in when the build ran with E2E=1. Point the suite at a
+      // deployment via E2E_BASE_URL, or let `reuseExistingServer` adopt a
+      // `pnpm start` built without it, and the cookie is inert. Every positive
+      // assertion in this file is equally true of a fully loaded page, so they
+      // would all still pass and report green.
+      //
+      // An absent <h1> can: it is `{org}` from `await params`, so it lives in
+      // no shared App Shell and only arrives when the server resumes.
+      //
+      // The wait is load-bearing, and this was wrong once without it. A bare
+      // `toHaveCount(0)` is satisfied by "has not rendered yet", which is true
+      // in BOTH modes for the first instant after `waitForURL` — verified by
+      // running this suite against a build without E2E=1, where it passed
+      // happily. Holding for a beat first is what separates them: with the lock
+      // engaged the resume never happens, so the h1 is still absent; without
+      // it, the navigation has long since completed and the h1 is on screen.
+      await page.waitForTimeout(1500);
+      await expect(page.locator("h1:visible")).toHaveCount(0);
+    });
+
+    // ...and the URL data still arrives once the resume completes.
+    await expect(page.locator("h1:visible")).toBeVisible();
+  });
+
+  // `/site/[source]` is the third route the params-into-Suspense split was
+  // applied to, and it had no guard of either kind. Its shell is NOT
+  // interchangeable with `/[org]`'s: the column header is "Skill", the loader
+  // and `generateStaticParams` source differ, and the route is reached by a
+  // different link shape on `/official`.
+  test("/official -> /site/[source] commits its shell instantly", async ({
+    page,
+  }) => {
+    await page.goto("/official");
+
+    const wellKnown = page.locator('a[href^="/site/"]').first();
+    test.skip(
+      (await wellKnown.count()) === 0,
+      "no well-known publisher in the curated list",
+    );
+    const href = await wellKnown.getAttribute("href");
+    expect(href).toBeTruthy();
+
+    await instant(page, async () => {
+      await wellKnown.click();
+      await page.waitForURL((url) => url.pathname === href);
+      await expect(
+        page.locator("span:visible", { hasText: /^Skill$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+      await expect(
+        page.locator("span:visible", { hasText: /^Installs$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
   });
 
@@ -272,8 +374,13 @@ test.describe("bundle route", () => {
       page,
       async () => {
         await page.goto(`/bundle/${BUNDLE_ID}`);
-        // Header chrome is layout-level and must be present immediately.
-        await expect(page.getByRole("link", { name: "skillbundle" })).toBeVisible();
+        // Something `loading.tsx` itself draws. The brand link used to stand
+        // here, but `AppHeader` renders it on every route from the layout, so
+        // it was visible whether or not this route committed a shell of its
+        // own — it proved nothing.
+        await expect(
+          page.locator('[data-slot="skeleton"]').first(),
+        ).toBeVisible();
         // The bundle's own name is Convex data behind the boundary, so it
         // must not be in the shell.
         await expect(page.locator("h1")).toHaveCount(0);

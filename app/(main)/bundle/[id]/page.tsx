@@ -4,7 +4,6 @@ import { fetchQuery, preloadQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { getAuthToken } from "@/lib/auth";
 import { BundleView } from "./bundle-view";
-import { DataErrorBoundary } from "@/components/data-error-boundary";
 
 // Bundle name/description in the title and OG tags so shared links unfurl
 // meaningfully in chat apps — sharing is the product's core loop. The route is
@@ -83,9 +82,19 @@ export default async function BundlePage({
   // noise — this route is genuinely per-request because it reads an auth
   // cookie — but it hides real unstable-value bugs behind a known-bad entry.
   //
-  // `io()` is 16.3's replacement for `connection()`; unlike Suspense it is the
-  // sanctioned fix for *unstable values* (the error's own remedy list offers
-  // only [dynamic]/[cache]/[client] — notably not [stream]).
+  // `io()` rather than `connection()`: the docs say to prefer it and keep
+  // `connection()` for when you need to wait for a real user request
+  // (node_modules/next/dist/docs/.../io.md, "How `io()` differs from
+  // `connection()`"). It has not replaced `connection()`; both still exist.
+  //
+  // Not verified: whether this call is what silences the insight. `io.md`'s
+  // "When you don't need `io()`" says a request-time API is itself the
+  // suspension point, and `getAuthToken()` reads a Clerk cookie before any
+  // `preloadQuery` runs — so this may be redundant. Do NOT generalise it into
+  // "wrap Convex calls in `io()`", which is the opposite of what the docs say.
+  // To settle it: drop this line, restart `next dev` (a long-lived one throws
+  // bogus instant-validation invariants — see TODO.md), and see if the insight
+  // returns.
   //
   // The route still serves an instant shell: `loading.tsx` is its boundary, and
   // e2e/instant-navigation.spec.ts asserts the header chrome paints before the
@@ -114,13 +123,22 @@ export default async function BundlePage({
     ),
   ]);
 
+  // Deliberately NO region `DataErrorBoundary` here, for the same reason
+  // app/(main)/page.tsx has none: the awaits above run in the page body, so a
+  // `preloadQuery` rejection happens before this element tree exists and would
+  // escape any boundary declared in it. One wrapped `BundleView` and looked
+  // like insurance while catching nothing but client render errors.
+  //
+  // The fix is not to add a `<Suspense>` and move the awaits inside it — this
+  // route's shell is `loading.tsx`, and adding an in-page boundary would give
+  // it two loading surfaces, the exact "pick one, not both" failure documented
+  // in docs/architecture.md §1. `app/(main)/error.tsx` covers this route: it
+  // keeps the header and bundle bar and offers the same `retry()`.
   return (
-    <DataErrorBoundary label="this bundle">
-      <BundleView
-        preloadedBundle={preloadedBundle}
-        preloadedChanges={preloadedChanges}
-        urlId={id}
-      />
-    </DataErrorBoundary>
+    <BundleView
+      preloadedBundle={preloadedBundle}
+      preloadedChanges={preloadedChanges}
+      urlId={id}
+    />
   );
 }

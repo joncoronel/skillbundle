@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import { versionDiffQueryOptions } from "./skill-history-diff-query";
+import {
+  versionDiffQueryOptions,
+  type DiffPair,
+  type VersionEntry,
+} from "./skill-history-diff-query";
 
-import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
@@ -56,14 +59,54 @@ let diffModulePromise: Promise<DiffModule> | null = null;
 let diffModule: DiffModule | null = null;
 function loadDiffModule(): Promise<DiffModule> {
   if (diffModule) return Promise.resolve(diffModule);
-  return (diffModulePromise ??= import("./skill-history-diff").then((m) => {
-    diffModule = m;
-    return m;
-  }));
+  return (diffModulePromise ??= import("./skill-history-diff")
+    .then((m) => {
+      diffModule = m;
+      return m;
+    })
+    // Clear the memo on failure, or the FIRST rejection is cached for the life
+    // of the page: `??=` stores the promise, not the module, so every later
+    // call re-rejects with the original error and the panel's "Try again"
+    // button can never succeed. Bundlers evict a failed chunk and will retry
+    // the import, so dropping the memo is all that's needed to let them.
+    .catch((error: unknown) => {
+      diffModulePromise = null;
+      throw error;
+    }));
 }
 
-export type VersionEntry =
-  (typeof api.skillVersions.listForSkill)["_returnType"][number];
+// Re-exported from the query module, which owns it now: the type and the cache
+// key derived from it belong together.
+export type { VersionEntry };
+
+/**
+ * How long a busy state stays up once it appears.
+ *
+ * The row fetches on click rather than on hover, so a warm cache or a fast
+ * connection can resolve in well under a tenth of a second — fast enough that
+ * the indicator appears and vanishes as a flicker, which reads as a glitch
+ * rather than as progress. Holding it for a beat makes the wait legible: the
+ * reader sees that the click registered and that something is loading.
+ *
+ * The floor applies ONLY when there is something to wait for. Content is
+ * cached for 30 minutes with `staleTime: Infinity`, so re-opening a row it has
+ * already fetched resolves in about a millisecond — padding that out is not a
+ * loading state, it is a delay reporting work nobody is doing. See `isReady`.
+ *
+ * An earlier design chased the same goal from the other side, prefetching on
+ * hover so the indicator would rarely be needed at all. That removed the
+ * flicker but paid for it with a background fetch per row a reader merely
+ * passed over.
+ */
+const MIN_BUSY_MS = 250;
+
+/** Resolves once `ms` has elapsed since `startedAt`, immediately if it already has. */
+function holdFor(startedAt: number, ms: number) {
+  const remaining = ms - (Date.now() - startedAt);
+  return remaining > 0
+    ? new Promise((resolve) => setTimeout(resolve, remaining))
+    : Promise.resolve();
+}
 
 export function HistoryRow({
   version,
@@ -75,6 +118,12 @@ export function HistoryRow({
   /** Present only on the newest row: everything it can be compared back to. */
   olderVersions: VersionEntry[] | undefined;
 }) {
+  // Links the trigger to the panel it discloses. `aria-controls` is optional in
+  // the APG disclosure pattern, but this row bypasses `CollapsibleTrigger` (it
+  // needs a Button with its own busy state), which is what would otherwise wire
+  // it — and the install disclosure in bundle-view.tsx already does this, so
+  // the two would disagree within one change.
+  const panelId = useId();
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const [swapping, setSwapping] = useState(false);
@@ -84,8 +133,8 @@ export function HistoryRow({
     previous?.versionId,
   );
   const queryClient = useQueryClient();
-  // Guards against out-of-order range swaps: a slow first prefetch must not
-  // land after a later one and drag the selection backwards.
+  // Guards against out-of-order range swaps: a slow first fetch must not land
+  // after a later one and drag the selection backwards.
   const swapToken = useRef(0);
 
   // The oldest row has no stored predecessor, so there is nothing to diff it
@@ -122,6 +171,21 @@ export function HistoryRow({
   const pair = against ? { from: against, to: version } : undefined;
 
   /**
+   * True when this row needs to fetch nothing, checked synchronously so it can
+   * gate the busy state rather than trail it.
+   *
+   * Independent of how the content got there. Nothing prefetches any more, so
+   * in practice this is true when re-opening a row, or opening one whose exact
+   * comparison was viewed earlier — cases where showing a timed indicator would
+   * be reporting work that is not happening.
+   */
+  function isReady(target: DiffPair) {
+    if (!diffModule) return false;
+    const { queryKey } = versionDiffQueryOptions(target);
+    return queryClient.getQueryData(queryKey) !== undefined;
+  }
+
+  /**
    * Load first, then reveal.
    *
    * Expanding immediately meant the panel animated open to a near-empty box and
@@ -132,77 +196,37 @@ export function HistoryRow({
    * that, so the content arrived as a second, unannounced layout change.
    *
    * Doing the work up front and opening once it lands means the collapsible
-   * animates straight to the content's real height — one motion, no jump. The
-   * cost is that the click is not instant, which is why the trigger takes a
-   * pending label rather than staying silent.
+   * animates straight to the content's real height — one motion, no jump.
    *
-   * Both halves are warmed together: the dynamic import populates the module
-   * registry so `VersionDiff` mounts synchronously, and the prefetch uses the
-   * same query key the component reads, so its `useQuery` is already resolved.
+   * The work starts on the click, not before it. Nothing is warmed on hover or
+   * focus. When there IS work, `MIN_BUSY_MS` keeps the indicator on screen long
+   * enough to read; when there is not, the row opens on this render.
    *
    * Failures deliberately fall through to opening anyway — VersionDiff renders
    * its own error state, which is a better place to explain the problem than a
    * button that silently refuses to expand.
    */
-  /**
-   * True when everything this row needs is already in hand, checked
-   * synchronously so it can gate the busy state rather than trail it.
-   *
-   * Re-opening a row, or opening a second row after the chunk has landed, is
-   * genuinely instant — showing a ripple for it produces a flash that reports
-   * work nobody waited for. Deliberately NOT solved with an appearance delay or
-   * a minimum-visible floor: those add latency to the fast path and mask a
-   * dishonest signal instead of fixing it. Same approach as `isInputLoading` in
-   * hooks/use-debounced-cached-search.ts.
-   */
-  function alreadyLoaded(target: { from: VersionEntry; to: VersionEntry }) {
-    if (!diffModule) return false;
-    const { queryKey } = versionDiffQueryOptions(target.from, target.to);
-    return queryClient.getQueryData(queryKey) !== undefined;
-  }
-
-  /**
-   * Warm the renderer and a pair's content ahead of the click.
-   *
-   * This is the actual fix for the brief indicator, rather than padding it with
-   * a timer. Pointing at a control is a reliable signal of intent and buys a few
-   * hundred milliseconds of head start, which is enough for the two content
-   * fetches — so by the time the click lands `alreadyLoaded` is true and the row
-   * opens on that render with no busy state at all.
-   *
-   * Fire-and-forget on purpose: no state is set here, so hovering never causes a
-   * render. Both calls are idempotent — the module promise is memoised, and
-   * `prefetchQuery` is a no-op against data that is already fresh (these entries
-   * never go stale) or already in flight.
-   *
-   * The chunk is ~420 KB, so this does download it for someone who hovers and
-   * never clicks. That is the same trade any hover-prefetch makes, bounded here
-   * by the module being fetched once per session rather than per row.
-   */
-  function warm(target: { from: VersionEntry; to: VersionEntry } | undefined) {
-    if (!target) return;
-    void loadDiffModule();
-    void queryClient.prefetchQuery(
-      versionDiffQueryOptions(target.from, target.to),
-    );
-  }
-
   async function openWithDiff() {
     if (!pair) return;
     setLoadFailed(false);
 
-    // Nothing to wait for: open on this render, no busy state at all.
-    if (alreadyLoaded(pair) && diffModule) {
-      setDiff(() => diffModule!.VersionDiff);
+    // Already in hand: open on this render, with no indicator at all.
+    // Captured into a const because `diffModule` is a mutable module-scope
+    // binding, so TypeScript cannot keep the narrowing inside the closure.
+    const loaded = diffModule;
+    if (loaded && isReady(pair)) {
+      setDiff(() => loaded.VersionDiff);
       setOpen(true);
       return;
     }
 
     setOpening(true);
+    const startedAt = Date.now();
+
     try {
       const [mod] = await Promise.all([
         loadDiffModule(),
-        queryClient.prefetchQuery(versionDiffQueryOptions(pair.from, pair.to)),
+        queryClient.prefetchQuery(versionDiffQueryOptions(pair)),
       ]);
       setDiff(() => mod.VersionDiff);
     } catch {
@@ -211,6 +235,7 @@ export function HistoryRow({
       // failure that would otherwise open an empty panel.
       setLoadFailed(true);
     } finally {
+      await holdFor(startedAt, MIN_BUSY_MS);
       setOpening(false);
       setOpen(true);
     }
@@ -222,31 +247,46 @@ export function HistoryRow({
    * Changing `againstId` immediately swapped in a pair whose content was not
    * cached, so the diff dropped to a short pending state and the panel
    * collapsed to it before growing back — a full-height jump for what reads as
-   * a filter change. Prefetching first and switching after keeps the current
-   * diff on screen the whole time, so the height only moves once, to the new
-   * diff's own size.
+   * a filter change. Fetching first and switching after keeps the current diff
+   * on screen the whole time, so the height only moves once, to the new diff's
+   * own size.
+   *
+   * The busy state carries the same `MIN_BUSY_MS` floor as opening, so a fast
+   * fetch does not flash the indicator on and off — and the same readiness
+   * check, so a comparison already viewed swaps instantly instead of waiting
+   * out a floor for work that is not happening.
    */
   async function changeRange(next: string) {
     if (next === againstId) return;
     const target = olderVersions?.find((v) => v.versionId === next);
     if (!target) return;
 
-    // Same honesty rule as opening: a range already fetched swaps on this
-    // render, with no indicator for work that isn't happening.
-    if (alreadyLoaded({ from: target, to: version })) {
+    // The select stays enabled during a swap, so a reader can pick again before
+    // the first fetch lands. Every swap takes a token and only the newest one
+    // is allowed to apply its result — without that, a slow first pick resolves
+    // after a later one and drags the selection back to a range the reader had
+    // already moved off.
+    const token = ++swapToken.current;
+
+    // Same rule as opening: a comparison already fetched swaps on this render.
+    if (isReady({ from: target, to: version })) {
+      setSwapping(false);
       setAgainstId(next);
       return;
     }
 
-    const token = ++swapToken.current;
+    const startedAt = Date.now();
     setSwapping(true);
     try {
-      await queryClient.prefetchQuery(versionDiffQueryOptions(target, version));
+      await queryClient.prefetchQuery(
+        versionDiffQueryOptions({ from: target, to: version }),
+      );
     } catch {
       // Fall through and switch anyway — VersionDiff surfaces the failure with
       // more context than a select that silently ignores the click.
     } finally {
       if (token === swapToken.current) {
+        await holdFor(startedAt, MIN_BUSY_MS);
         setSwapping(false);
         setAgainstId(next);
       }
@@ -309,6 +349,7 @@ export function HistoryRow({
               variant="outline"
               size="xs"
               aria-expanded={open}
+              aria-controls={panelId}
               // `leadingIcon`, not a child: the Button places children in the
               // label flow, so an icon passed as one wraps onto its own line
               // instead of sitting inside the control. The prop also drives the
@@ -318,18 +359,6 @@ export function HistoryRow({
               // control keeps its exact geometry — hand-swapping the icon here
               // sized the ripple differently and nudged the trigger.
               loading={opening}
-              // Head start on intent, across every input type:
-              //   onPointerEnter — mouse approach, hundreds of ms of warning.
-              //   onPointerDown  — the press itself. Fires on finger-down while
-              //                    `click` waits for release, so touch gets a
-              //                    head start too. There is no hover on touch,
-              //                    so without this the tap would always pay the
-              //                    full fetch.
-              //   onFocus        — keyboard, which fires neither of the above.
-              // All three are idempotent, so overlapping them costs nothing.
-              onPointerEnter={() => warm(pair)}
-              onPointerDown={() => warm(pair)}
-              onFocus={() => warm(pair)}
               leadingIcon={
                 <HugeiconsIcon
                   icon={ArrowDown01Icon}
@@ -376,7 +405,10 @@ export function HistoryRow({
             Safe at every breakpoint: 4px eats into padding that is fixed rather
             than proportional — the row's own `pl-6` (24px) on the left, the page
             container's `px-4` (16px) on the right. */}
-        <CollapsibleContent className="px-1 -mx-1 pt-2 -mt-2 duration-0">
+        <CollapsibleContent
+          id={panelId}
+          className="px-1 -mx-1 pt-2 -mt-2 duration-0"
+        >
           {/* No `open &&` guard here, deliberately. CollapsibleContent animates
               its exit with `data-[ending-style]:h-0`, which needs Base UI to
               keep the panel mounted while that transition runs. Gating the
@@ -421,15 +453,27 @@ export function HistoryRow({
                           key={v.versionId}
                           value={v.versionId}
                           // Same reason as the trigger, same three inputs.
-                          onPointerEnter={() => warm({ from: v, to: version })}
-                          onPointerDown={() => warm({ from: v, to: version })}
-                          onFocus={() => warm({ from: v, to: version })}
                         >
                           {rangeLabel(v)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {/* A real text live region, because the visual one below
+                      cannot announce.
+
+                      Hold-then-swap means the trigger keeps reading the OLD
+                      version for the whole fetch: the popup closes, focus
+                      returns to the trigger, and nothing about the control says
+                      work is in flight. Toggling `aria-hidden` on the span
+                      below does not fix that — a live region announces on
+                      *content* change, not on visibility. Without this, a
+                      non-visual user picks a range, hears the previous value
+                      read back, and the diff changes unannounced some hundreds
+                      of milliseconds later. */}
+                  <span role="status" aria-live="polite" className="sr-only">
+                    {swapping ? "Loading comparison" : ""}
+                  </span>
                   {/* Occupies its slot in both states so the row cannot reflow
                       when the swap starts. The diff below stays on screen while
                       this runs — the indicator is the only thing that changes. */}

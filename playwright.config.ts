@@ -74,10 +74,24 @@ export default defineConfig({
     // each authenticated spec doesn't repeat a full Clerk sign-in.
     ...(hasClerkDevKeys
       ? [
+          // `trace: "off"` on both authenticated projects, overriding the
+          // global `on-first-retry`.
+          //
+          // This repo is public, and the workflow uploads `playwright-report/`
+          // on failure — the HTML reporter copies `trace.zip` into its `data/`
+          // directory, and a trace records request and response headers. A
+          // single flaky authenticated spec would therefore publish a usable
+          // Clerk session token for the e2e user, and the setup project's trace
+          // would capture the sign-in exchange itself. Bounded to the dev Clerk
+          // instance rather than production, but it is the one path where a
+          // credential leaves the runner.
+          //
+          // The signed-out project keeps traces: it carries no credentials and
+          // is where debugging value actually is.
           {
             name: "setup",
             testMatch: /auth\.setup\.ts/,
-            use: { ...devices["Desktop Chrome"] },
+            use: { ...devices["Desktop Chrome"], trace: "off" as const },
           },
           {
             name: "chromium-authed",
@@ -86,6 +100,7 @@ export default defineConfig({
             use: {
               ...devices["Desktop Chrome"],
               storageState: STORAGE_STATE,
+              trace: "off" as const,
             },
           },
         ]

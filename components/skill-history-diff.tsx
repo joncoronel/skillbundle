@@ -20,15 +20,14 @@ import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { parseDiffFromFile } from "@pierre/diffs";
 import { CodeView } from "@pierre/diffs/react";
-import { versionDiffQueryOptions } from "./skill-history-diff-query";
+import {
+  versionDiffQueryOptions,
+  type VersionEntry,
+} from "./skill-history-diff-query";
 
-import type { api } from "@/convex/_generated/api";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 import { elevatedSurface } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
-
-type VersionEntry =
-  (typeof api.skillVersions.listForSkill)["_returnType"][number];
 
 /**
  * Shiki themes match the app's own code blocks (see
@@ -167,7 +166,7 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
   // usually already in the cache, so it renders at final height rather than
   // growing into it. See the comment on the trigger in skill-history-row.tsx.
   const { data, isPending, isError } = useQuery(
-    versionDiffQueryOptions(from, to),
+    versionDiffQueryOptions({ from, to }),
   );
 
   // Memoised, and above the early returns. `data` is frozen (staleTime and

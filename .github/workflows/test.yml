@@ -58,7 +58,12 @@ jobs:
       NEXT_PUBLIC_CONVEX_URL: ${{ secrets.E2E_CONVEX_URL }}
       NEXT_PUBLIC_CONVEX_SITE_URL: ${{ secrets.E2E_CONVEX_SITE_URL }}
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
-      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      # CLERK_SECRET_KEY is deliberately NOT here. It is the backend key
+      # e2e/auth.setup.ts uses to create users, and a job-level env hands it to
+      # every step including `pnpm install` — where a compromised transitive
+      # dependency's install script could read it straight out of the
+      # environment. pnpm blocks lifecycle scripts by default, so this is
+      # defence in depth, but the key only needs to exist for the run step.
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
       # urlId of a public bundle in that deployment. Unset => the bundle spec
       # test.skip()s instead of failing.
@@ -105,12 +110,18 @@ jobs:
       # Turbopack's build FileSystem cache is on by default in 16.3 but only
       # pays off when .next/cache is restored between runs (locally it took the
       # compile step from 6.8s to 1.1s).
+      #
+      # The key globs source directories rather than `**/*.[jt]s(x)`. This step
+      # runs after `pnpm install`, and `hashFiles` globs from the workspace root
+      # without honouring .gitignore — so the broad pattern hashed the whole
+      # installed node_modules tree (following pnpm's symlinks into .pnpm) on
+      # every run, to compute a component the lockfile hash already covers.
       - name: Restore Next build cache
         if: steps.guard.outputs.configured == 'true'
         uses: actions/cache@v4
         with:
           path: .next/cache
-          key: next-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('**/*.[jt]s', '**/*.[jt]sx') }}
+          key: next-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('app/**', 'components/**', 'lib/**', 'hooks/**', 'convex/**', 'next.config.ts') }}
           restore-keys: |
             next-${{ hashFiles('pnpm-lock.yaml') }}-
 
@@ -121,6 +132,8 @@ jobs:
       # playwright.config.ts's webServer runs `pnpm build && pnpm start`.
       - name: Run instant-navigation e2e
         if: steps.guard.outputs.configured == 'true'
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
         run: pnpm e2e
 
       - uses: actions/upload-artifact@v4

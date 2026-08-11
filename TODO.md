@@ -6,6 +6,54 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Two refactors deferred out of PR #62's panel review (Aug 2026)
+
+Both are from `reviews/pr-62-review.md` (findings 32 and 14). Neither is a bug;
+both were judged worth doing later rather than in a branch that was ready to
+merge. Recorded so the next reader knows they were weighed, not missed.
+
+**1. `components/skill-history-row.tsx` carries two sources of truth and two
+copies of one flow.** `openWithDiff` and `changeRange` are the same four steps
+(already in hand? → commit; else flag busy → fetch → hold the floor → commit →
+clear) written twice, with two busy booleans. Only one had the stale-guard
+token, which is exactly how the range-swap bug in that review happened.
+
+The hover-prefetch layer has since been removed and both paths simplified, so
+the duplication is smaller than when this was first written — but it is still
+two copies. The suggested shape: derive `Diff` from the module-scope
+`diffModule` instead of mirroring it in state, extract one
+`commitWhenReady(target, setBusy, commit)` holding the readiness check, the
+stale-guard token and the `MIN_BUSY_MS` floor, and split the newest row into its
+own component so `olderVersions` stops doubling as an "am I newest?" flag.
+
+**Do the test coverage first.** Nothing automated opens a diff, swaps a range or
+checks a busy state — the e2e suite only asserts that shells commit instantly.
+Two of the proposals are also subtler than they read: deriving `Diff` works only
+because every path that sets it also sets `open` (module scope is not reactive),
+and splitting the newest row changes the contract that derives the older→newer
+pair, which the file's own comment warns renders "a plausible but completely
+wrong history" if reversed. On a monitoring product a confidently-wrong diff is
+the worst available failure, so this wants a net under it before it moves.
+
+**2. The three catalog listing pages hold near-identical skeleton/content
+pairs.** `/[org]`, `/[org]/[repo]` and `/site/[source]` each carry ~50-line list
+skeletons differing only in row count and column label, plus near-identical
+stats bars. The suggested extraction is `ListingStatsBar` /
+`ListingRowsSkeleton({ rows, columnLabel })` / `ListingTitleSkeleton({ crumbs })`
+with each page keeping only its loader, crumbs and external link.
+
+Two pieces are already done and were the parts that mattered: all four inline
+re-implementations now call the canonical `rowPositionClassName` (which is where
+a real divergence had appeared — the content branch handled the single-row case
+and its own skeleton did not), and the title type scale lives in
+`lib/listing-styles.ts` so a skeleton cannot drift from the `<h1>` it stands in
+for — alongside `rowPositionClassName`, which had to move there anyway because
+`components/skill-card.tsx` is `"use client"` and a Server Component cannot call
+into it. What is left is genuine duplication with no known defect in it. Weigh it
+against the reason `components/listing-page-loading.tsx` was deleted in that same
+PR: one shared skeleton for three pages produced shells that did not match any of
+them, and fallback fidelity is the property that branch was fixing.
+
 ### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
 
 **Prize:** delete ~420 KB of client JS from the skill detail route entirely, and
@@ -152,6 +200,22 @@ hazard), `next/root-params` (N/A — every dynamic segment lives under `(main)`,
 route *group*; nothing exists above the root layout), and the Rust React
 Compiler (declined for now). `typedRoutes` would type-check the hand-built
 `skillHref`/`ownerHref`/`compareHref` strings and is worth a look later.
+
+**Runtime prefetching — declined, not missed.** The params-into-Suspense split
+on the catalog routes is the prerequisite the guide names, not the finish line:
+a default link warms only the shared App Shell, so every client navigation into
+`/[org]`, `/[org]/[repo]` and `/site/[source]` commits a real breadcrumb whose
+URL-dependent crumbs are Skeletons, plus a skeleton `h1`, and resolves the org
+name a beat later — even though it was in the href that was clicked. Resolving it ahead of the click means
+`<Link prefetch={true}>` plus caching behind the URL-data read
+(`node_modules/next/dist/docs/01-app/02-guides/runtime-prefetching.md`).
+
+Declined because each per-link runtime prefetch is a **server invocation per
+prefetchable link**. A listing page renders ~100 rows, so viewport prefetching
+would turn one shell fetch into a hundred function calls — precisely the load
+this app pushes onto the CDN and Convex instead (see the Vercel-plan note in
+docs/architecture.md). If it's revisited, hover-triggered prefetch on the
+highest-intent links is the version worth measuring, not the viewport default.
 
 ### Monitoring pivot: state, decisions, and what is left (Aug 2026)
 

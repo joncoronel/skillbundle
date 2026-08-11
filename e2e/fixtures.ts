@@ -5,8 +5,13 @@
  *
  * - **Pinned** values for direct page loads. These reuse the same slugs
  *   `lib/representative-params.ts` falls back to, so they are already
- *   load-bearing elsewhere in the app and are the params Next prerenders at
- *   build time.
+ *   load-bearing elsewhere in the app.
+ *
+ *   They are NOT necessarily the params Next prerenders. `representativeGitHubSkill()`
+ *   returns the live top-popular skill and only falls back to these, so a test
+ *   here must assert what the route's *shell* contains, never content that only
+ *   exists in one URL's own prerender — otherwise it goes red the day the
+ *   catalog reshuffles, against a route that is working fine.
  * - **Discovered** values for client navigations — the specs read a real link
  *   off a listing page and click it, which mirrors the actual user path and
  *   can't rot when the catalog changes.

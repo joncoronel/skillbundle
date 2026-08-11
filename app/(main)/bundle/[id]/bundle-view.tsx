@@ -125,6 +125,7 @@ export function BundleView({
   // a second loading phase on a page that had finished loading. It stays a live
   // subscription after hydration, so edits and new changes still stream in.
   const changes = usePreloadedQuery(preloadedChanges);
+  const changesReady = changes !== undefined;
 
   useEffect(() => {
     // The stamp is earned by the page having SHOWN the changes. That used to
@@ -139,9 +140,14 @@ export function BundleView({
     // so if this page painted at all, the changes were on it. The gate is kept
     // as a guard rather than deleted — if this ever goes back to a client fetch,
     // it must not silently start stamping early again.
-    if (!ownedBundleId || changes === undefined) return;
+    if (!ownedBundleId || !changesReady) return;
     void markViewed({ bundleId: ownedBundleId });
-  }, [ownedBundleId, changes, markViewed]);
+    // Depends on `changesReady`, NOT on `changes` itself. `usePreloadedQuery`
+    // returns the deserialized preload on the first render and then a fresh
+    // object once the subscription resolves, so a `changes` dependency moves at
+    // least twice per visit — and again on every re-emit, i.e. once per edit.
+    // Each move re-fired the mutation. The boolean settles once.
+  }, [ownedBundleId, changesReady, markViewed]);
 
   const updateVisibilityMutation = useMutation(
     api.bundles.updateBundleVisibility,
@@ -381,10 +387,6 @@ export function BundleView({
               total={skillCount}
               faults={register.faults}
               changed={register.changed}
-              // Never pending: the change list is preloaded on the server,
-              // so it is present on the first render rather than arriving after
-              // it. The register keeps the prop for its own sake.
-              pending={false}
               suppressed={changes.suppressed}
             />
           )}
@@ -403,7 +405,6 @@ export function BundleView({
           {skillCount > 0 || editing ? (
             <BundleRegister
               groups={editing ? editSession.rows.groups : register.groups}
-              pending={false}
               actions={editing ? editSession.actions : undefined}
             />
           ) : (
@@ -463,10 +464,13 @@ function MetadataItems({ createdAt }: { createdAt: number }) {
   // you compute it. When a list was created is provenance — nobody monitors it,
   // and "8mo ago" is a worse way to say a date you might want to cite.
   //
-  // It is also the one timestamp on this page that reaches server HTML on a
-  // shared link, so keeping the clock out of it removes the prerender hazard
-  // described on `timeAgo` in lib/utils.ts. The route is dynamic today (auth +
-  // io()), so that is insurance rather than a fix.
+  // Not a prerender-hazard fix, and it would be wrong to read it as one: the
+  // register below server-renders `timeAgo` too (both `addedAt` and the change
+  // lines, since their data is preloaded rather than fetched on the client), so
+  // this is not the only clock read on the page. Those stay relative on
+  // purpose — they are the monitoring answer, and the route is request-time
+  // (auth + `io()`), so there is no shared shell for a clock read to poison.
+  // See the `timeAgo` note in lib/utils.ts for where it does bite.
   return (
     <>
       Created{" "}

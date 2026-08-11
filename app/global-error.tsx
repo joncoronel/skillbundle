@@ -69,7 +69,7 @@ export default function GlobalError({
           </h1>
 
           <p style={{ opacity: 0.7, margin: "0 0 2rem" }}>
-            The page failed to load. This is usually temporary — trying again
+            The page failed to load. This is usually temporary. Trying again
             often works.
           </p>
 
@@ -118,7 +118,9 @@ export default function GlobalError({
               style={{
                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                 fontSize: "0.75rem",
-                opacity: 0.5,
+                // Matches the eyebrow above rather than sitting below it: this
+                // is the string a user is asked to quote in a bug report.
+                opacity: 0.6,
                 marginTop: "2rem",
               }}
             >

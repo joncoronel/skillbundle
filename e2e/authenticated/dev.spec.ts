@@ -46,11 +46,18 @@ test.describe("admin view", () => {
   }) => {
     // The gate is a server call behind <Suspense>, so the skeleton belongs to
     // the shell — this is what stops the whole route blocking on Convex.
+    //
+    // Assert the fallback specifically. `main, body` was useless: <body> is
+    // visible on literally every response, including an empty shell or a 404,
+    // so the test could only ever pass trivially — or blow up on a strict-mode
+    // violation if the page grew a <main>.
     await instant(
       page,
       async () => {
         await page.goto("/dev");
-        await expect(page.locator("main, body")).toBeVisible();
+        await expect(
+          page.locator('[data-slot="skeleton"]').first(),
+        ).toBeVisible();
       },
       { baseURL },
     );

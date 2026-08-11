@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { Button } from "@/components/ui/cubby-ui/button";
+import { RouteErrorBody } from "@/components/route-error-body";
 
 /**
  * Segment boundary for every user-facing page: home, compare, official,
@@ -30,32 +29,10 @@ export default function MainError({
   retry: () => void;
 }) {
   return (
-    <div className="mx-auto max-w-2xl px-4 pt-24 pb-24">
-      <p className="font-mono text-xs text-muted-foreground mb-8 tabular-nums">
-        500 INTERNAL_ERROR
-      </p>
-
-      <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] font-medium tracking-tight leading-hero text-balance mb-6">
-        That didn&apos;t load.
-      </h1>
-
-      <p className="text-base text-muted-foreground leading-relaxed mb-10 max-w-md">
-        Something broke while fetching this page. It&apos;s usually temporary —
-        try again, or head back and take another route.
-      </p>
-
-      <div className="flex flex-wrap gap-3">
-        <Button onClick={() => retry()}>Try again</Button>
-        <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
-          Back home
-        </Button>
-      </div>
-
-      {error.digest ? (
-        <p className="font-mono text-xs text-muted-foreground/70 mt-10 tabular-nums">
-          Error ID: {error.digest}
-        </p>
-      ) : null}
-    </div>
+    <RouteErrorBody
+      error={error}
+      retry={retry}
+      description="This page failed to load. It's usually temporary. Try again, or go back home."
+    />
   );
 }

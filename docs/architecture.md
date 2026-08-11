@@ -121,10 +121,30 @@ The symptom to watch for: a cached `x-vercel-cache: HIT` that is materially
 smaller than the on-demand `PRERENDER` of the same URL. Compare the two and look
 for content that is present in one and absent in the other.
 
-Use `formatDate` for anything server-rendered. If a surface genuinely needs
-relative time, swap to it on the client after hydration — it cannot come from
-the server. Existing `timeAgo` callers are fine only because their labels are
-client-side or conditional; adding one to server output re-opens this.
+Use `formatDate` for anything that can land in a *prerenderable* route's output.
+If such a surface genuinely needs relative time, swap to it on the client after
+hydration — it cannot come from the server.
+
+The qualifier matters, because the remaining `timeAgo` callers are safe for
+three different reasons and it's worth knowing which one you're relying on
+before you move code between them:
+
+- **`/bundle/[id]` server-renders relative times on purpose.** The register's
+  `addedAt` column and its change lines both reach server HTML, because their
+  data is preloaded rather than fetched on the client. That is fine here and
+  only here: the route reads auth and calls `io()`, so it is request-time with
+  no shared shell to poison, and those change times are the monitoring answer
+  the page exists to give. The residual cost is a possible hydration text patch
+  when the clock crosses a bucket between render and hydration.
+- **The dashboard's callers never reach server output at all** — `bundle-card`
+  and the change feed are fed by a client `useQuery`, and `dashboard-content`
+  renders a skeleton while it is `undefined`. That gate was written for the
+  Clerk-to-Convex handshake, not for prerender safety, so it is load-bearing by
+  accident; don't remove it without checking this.
+- **`/dev` never prerenders**, because it sits behind an admin check inside
+  `<Suspense>`.
+
+Adding a clock read to a route that *is* prerenderable re-opens the hazard.
 
 ### Why each type
 
@@ -689,9 +709,17 @@ loses `retry()`.
 | --- | --- | --- | --- |
 | Global | `app/global-error.tsx` | failures in the root layout itself | nothing — it replaces the document |
 | Segment | `app/(main)/error.tsx` | anything thrown by a page in `(main)` | `AppHeader`, `GlobalBundleBar` |
+| Segment | `app/(auth)/error.tsx` | a throw during sign-in / sign-up or an SSO callback | whatever `(auth)/layout.tsx` renders |
 | Region | `components/data-error-boundary.tsx` | one data region's Suspense subtree | the whole page around it |
 
-Three things worth knowing:
+**There are two segment boundaries because `error.js` only wraps its own
+segment.** Without the `(auth)` one, a Clerk render failure escaped all the way
+to `global-error.tsx` — an unstyled document with no header and no route back
+into the app, on the one flow a user cannot skip. Both segment files are thin:
+the markup lives in `components/route-error-body.tsx` so the two cannot drift
+into showing a user two different products for the same condition.
+
+Four things worth knowing:
 
 - **`retry()`, not `reset()`.** `reset()` only clears client state and
   re-renders; it cannot recover from a failed *Server Component* render, which
@@ -714,6 +742,19 @@ loaders run in a `Promise.all` *above* the Suspense, so a boundary there would
 never see their failure, and restructuring the home page's static-shell pattern
 is exactly the risk the history note at the top of this doc warns about. The
 segment boundary covers it.
+
+`app/(main)/bundle/[id]/page.tsx` has none for the same reason, plus one of its
+own. Its awaits (`params`, `getAuthToken`, both `preloadQuery` calls) run in the
+page body, so a rejection escapes before any boundary in the returned tree
+exists — a `DataErrorBoundary` there catches only client render errors while
+reading as protection against a Convex outage. And the obvious repair, moving
+the awaits into a Suspense-wrapped child, is unavailable: this route's shell is
+`loading.tsx`, so an in-page boundary would give it two loading surfaces, the
+"pick one, not both" failure in §1. The segment boundary covers it.
+
+The general rule: **a region boundary is only worth adding where the awaiting
+component sits inside it.** That holds on skill detail and the three listing
+routes, and does not hold anywhere the loaders run in the page body.
 
 ---
 

@@ -33,7 +33,14 @@ function DataErrorFallback(
       : undefined;
 
   return (
-    <div className="rounded-2xl border border-dashed dark:border-border/50 px-4 py-10 text-center">
+    // `role="alert"` because this swaps in *after* the page has committed,
+    // replacing a region the reader was already waiting on. Sighted users get
+    // the dashed box; without the role, a screen-reader user gets nothing at
+    // all and cannot distinguish this from a fallback that never resolved.
+    <div
+      role="alert"
+      className="rounded-2xl border border-dashed dark:border-border/50 px-4 py-10 text-center"
+    >
       <p className="text-sm font-medium mb-1">Couldn&apos;t load {label}.</p>
       <p className="text-sm text-muted-foreground mb-5">
         This is usually temporary.
@@ -41,9 +48,13 @@ function DataErrorFallback(
       <Button variant="outline" size="sm" onClick={() => retry()}>
         Try again
       </Button>
+      {/* Labelled, and at full muted contrast, matching the other two error
+          surfaces. This is the one string on the page a user is asked to
+          transcribe into a bug report, so it should not be the least legible
+          thing on it — and an unlabelled hash reads as debug leakage. */}
       {digest ? (
-        <p className="font-mono text-xs text-muted-foreground/60 mt-5 tabular-nums">
-          {digest}
+        <p className="font-mono text-xs text-muted-foreground mt-5 tabular-nums">
+          Error ID: {digest}
         </p>
       ) : null}
     </div>
