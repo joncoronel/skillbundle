@@ -42,3 +42,17 @@ export const WELL_KNOWN_SOURCE_PATH = `/site/${WELL_KNOWN.source}`;
  * it's unset rather than failing on a fork or a fresh deployment.
  */
 export const BUNDLE_ID = process.env.E2E_BUNDLE_ID;
+
+/**
+ * A skill with enough recorded history to expand a diff AND pick a comparison
+ * range — the History section needs three versions for both (two diffable rows,
+ * and a range selector that only appears with more than one older version).
+ *
+ * Overridable, because which skills have history depends on what the sync has
+ * actually seen in the target deployment. `skill-history.spec.ts` skips itself
+ * when the page has no expandable row rather than failing, so pointing this at
+ * a thin deployment degrades instead of going red.
+ */
+export const HISTORY_SKILL_PATH =
+  process.env.E2E_HISTORY_PATH ??
+  "/makieali/claude-code-engineer/architect";

@@ -26,9 +26,15 @@ two copies. The suggested shape: derive `Diff` from the module-scope
 stale-guard token and the `MIN_BUSY_MS` floor, and split the newest row into its
 own component so `olderVersions` stops doubling as an "am I newest?" flag.
 
-**Do the test coverage first.** Nothing automated opens a diff, swaps a range or
-checks a busy state — the e2e suite only asserts that shells commit instantly.
-Two of the proposals are also subtler than they read: deriving `Diff` works only
+**The test coverage is now done** — `e2e/skill-history.spec.ts` covers the three
+behaviours this refactor could break: that hovering fetches nothing, that a real
+load holds the busy state past `MIN_BUSY_MS`, that a cached re-open skips it
+entirely, and that a range swap never collapses the panel. Each assertion was
+mutation-tested (hover warming reintroduced, readiness check removed) and both
+mutations were caught, so it is a real net rather than a passing suite.
+
+That was always the valuable half; the refactor itself is now optional. If it is
+picked up, two of the proposals are subtler than they read: deriving `Diff` works only
 because every path that sets it also sets `open` (module scope is not reactive),
 and splitting the newest row changes the contract that derives the older→newer
 pair, which the file's own comment warns renders "a plausible but completely
