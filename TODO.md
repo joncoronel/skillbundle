@@ -47,6 +47,61 @@ Order of work if picked up: (a) confirm `FileDiff` can be styled to match what
 existing cached loader, (c) measure the HTML weight added to every skill page
 before committing, since most readers never expand a row.
 
+### CodeView renders late, so the diff panel can't be animated (Aug 2026)
+
+`components/skill-history-row.tsx` opens its diff panel with `duration-0`. That
+is a deliberate workaround, not an oversight — the animation cannot be made
+correct while `CodeView` behaves the way it does.
+
+**What happens.** `@pierre/diffs`' `CodeView` populates its shadow root
+*asynchronously after mount*. Measured on a real ~11 KB SKILL.md:
+
+```text
++  0ms  rows=0    ← panel opens; Base UI measures here, writes var=352
++ 45ms  rows=10   ← content appears, +72px
++236ms  panel=424 ← transition ends, height reverts to auto, snaps
+```
+
+Base UI's Collapsible reads the panel height **once** on open and never
+re-reads. So it animated toward a number that was already 72px stale by 45ms,
+then jumped when the transition finished. Not fonts — `document.fonts.status`
+was `loaded` for the whole capture, with `document.fonts.ready` awaited first.
+
+**Why it looked fine locally.** Purely content size. A ~600-byte seeded fixture
+renders inside one frame; a real SKILL.md takes 45–77ms. Every local skill had
+tiny seeded history, so this only ever reproduced on production data.
+
+**What does NOT work** (tried, measured, reverted): `CodeView` exposes a ref
+handle with `getInstance()`, and the instance has `render(immediate?: boolean)`.
+Calling `render(true)` from a `useLayoutEffect` — which runs before the parent
+Panel measures, since child layout effects run first — changed nothing; the
+shadow root still held zero rows at open. There is also no post-render hook:
+`onPostRender` exists on `UnresolvedFile` only, not `CodeView`.
+
+**If revisited**, roughly in order of preference:
+
+1. Report upstream — a way to render synchronously, or a mounted/ready callback
+   on `CodeView`, fixes this properly.
+2. Retarget the panel: `ResizeObserver` on the content rewriting
+   `--collapsible-panel-height` so an in-flight transition follows. Verified to
+   work, but it is a workaround, and it belongs next to `CodeView` rather than
+   in the shared `cubby-ui/collapsible.tsx` — the collapsible is not at fault.
+3. Leave `duration-0`.
+
+**To reproduce locally** you need real content, since seeded fixtures are too
+small. Read a skill's versions off production (public query, read-only):
+
+```bash
+npx convex run --prod skillVersions:listForSkill '{"source":"pbakaus/impeccable","skillId":"impeccable"}'
+```
+
+then seed those `contentUrl`s into dev. `devSeed.ts` has no importer for that
+today — it was written and removed once. `seedVersions`' shape is the model:
+an `internalAction` that fetches each URL, `ctx.storage.store`s the blob, and
+calls `insertSeededVersion` oldest→newest to keep the `previousSyncHash` chain
+intact. Note it overwrites the target skill's history, so seed onto a throwaway
+skill rather than one you rely on for the History UI.
+
 ### Parked from the 16.3 adoption pass (Aug 2026)
 
 **TypeScript 7 — wait for 7.1.** `pnpm add -D typescript@^7` installs cleanly and

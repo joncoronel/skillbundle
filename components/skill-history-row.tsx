@@ -241,9 +241,7 @@ export function HistoryRow({
     const token = ++swapToken.current;
     setSwapping(true);
     try {
-      await queryClient.prefetchQuery(
-        versionDiffQueryOptions(target, version),
-      );
+      await queryClient.prefetchQuery(versionDiffQueryOptions(target, version));
     } catch {
       // Fall through and switch anyway — VersionDiff surfaces the failure with
       // more context than a select that silently ignores the click.
@@ -360,7 +358,7 @@ export function HistoryRow({
             Safe at every breakpoint: 4px eats into padding that is fixed rather
             than proportional — the row's own `pl-6` (24px) on the left, the page
             container's `px-4` (16px) on the right. */}
-        <CollapsibleContent className="px-1 -mx-1 pt-2 -mt-2">
+        <CollapsibleContent className="px-1 -mx-1 pt-2 -mt-2 duration-0">
           {/* No `open &&` guard here, deliberately. CollapsibleContent animates
               its exit with `data-[ending-style]:h-0`, which needs Base UI to
               keep the panel mounted while that transition runs. Gating the
@@ -425,7 +423,10 @@ export function HistoryRow({
                     )}
                   >
                     {swapping ? (
-                      <DotMatrixRipple size="xs" ariaLabel="Loading comparison" />
+                      <DotMatrixRipple
+                        size="xs"
+                        ariaLabel="Loading comparison"
+                      />
                     ) : null}
                   </span>
                 </div>
