@@ -200,10 +200,27 @@ Vercel's Runtime Cache. The app doesn't need `remote` today because its cached
 reads all sit inside prerenderable pages. A loader that ran outside one (a Route
 Handler, say) would not get this for free.
 
-**Still unverified:** that `/api/revalidate` busts that shared cache in
-production. It's standard ISR behaviour and there's no reason to think
-otherwise, but it hasn't been exercised end to end — it needs a POST with
-`REVALIDATE_SECRET` against a real deployment.
+**Verified in production (Aug 2026).** `/api/revalidate` does bust that shared
+cache. Against `skillbundle.dev`, on a skill detail page:
+
+```text
+before   X-Vercel-Cache: HIT
+POST /api/revalidate  {"tag":"skill-sync"}  ->  {"revalidated":true,"tag":"skill-sync"}
+after    X-Vercel-Cache: REVALIDATED
+```
+
+`REVALIDATED` is the confirmation: Vercel held the entry, saw it invalidated, and
+regenerated it. So the daily sync's ping reaches the shared cache and skill pages
+refresh in lockstep with it, rather than drifting a full `cacheLife` window
+behind. This closes the question of whether `'use cache: remote'` is needed for
+the skill-detail loaders — it isn't.
+
+The route's own logic was verified separately against a local production build:
+401 on a wrong secret, `400 invalid_tag` outside the allowlist, and after a valid
+POST the next request re-rendered before re-caching. That last check is the one
+worth repeating if this code is ever touched — the deprecated one-argument
+`revalidateTag(tag)` and `updateTag` (which throws outside a Server Action) would
+both fail silently here, with a 200 and no invalidation.
 >
 > **OG image caching is separate from the data cache.** The OG routes are dynamic (`ƒ`) because they read `params`, so the `'use cache'` loaders only cache the *Convex data*. The rendered *PNG* for the data-backed OG routes (skill / org / repo / source / bundle) is cached at the CDN via an opt-in `Cache-Control: s-maxage=86400, stale-while-revalidate` header — `renderOg(node, { cache: true })` in `lib/og/templates.tsx` — restoring the daily route cache the old `export const revalidate` provided before Cache Components disallowed it. **That header is what keeps images from regenerating on every link**, independent of the data loaders. The static section cards (`/compare`, `/official`, `/pricing`, root) are `○` and keep Next's build-time static optimization (no header). The brand fonts are read once at module load (`lib/og/fonts.ts`), never inside a render: under Cache Components a render-time `readFile` counts as an async filesystem operation and would flip these otherwise-static routes to `ƒ` (it did, non-deterministically, before the read was hoisted to module scope).
 
