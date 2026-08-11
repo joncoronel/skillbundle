@@ -215,7 +215,7 @@ function RepoListSkeleton() {
           <Skeleton className="h-4 w-24" />
         </div>
         <div className="ml-auto">
-          <Skeleton className="h-8 w-32 rounded-lg" />
+          <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
         </div>
       </div>
 
@@ -227,7 +227,7 @@ function RepoListSkeleton() {
           fallback the only loading surface, which put it on the common one. */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Skeleton className="h-4 w-48 max-w-[60%]" />
-        <Skeleton className="h-8 w-32 rounded-lg" />
+        <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
       </div>
 
       <div className="flex items-center justify-between px-4 mb-2 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">

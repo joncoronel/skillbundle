@@ -17,6 +17,10 @@ import { Button } from "@/components/ui/cubby-ui/button";
  * without it a screen-reader user gets no signal the content changed and no
  * landmark to jump to.
  */
+function focusOnMount(node: HTMLElement | null) {
+  node?.focus();
+}
+
 export function RouteErrorBody({
   error,
   retry,
@@ -29,7 +33,11 @@ export function RouteErrorBody({
 }) {
   return (
     <main
-      ref={(node) => node?.focus()}
+      // A stable callback, not an inline arrow: an inline one is a new function
+      // on every render, so React detaches and re-runs it each time and the
+      // boundary would re-steal focus mid-interaction. Rare here, but free to
+      // get right.
+      ref={focusOnMount}
       tabIndex={-1}
       className="mx-auto max-w-2xl px-4 pt-24 pb-24 outline-none"
     >

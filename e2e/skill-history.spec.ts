@@ -121,15 +121,32 @@ test.describe("skill history diff panel", () => {
     // Nothing left to fetch, so the floor must not apply. Showing a timed
     // indicator here would be reporting work that is not happening — the rule
     // `isReady` exists to enforce.
-    const startedAt = Date.now();
+    //
+    // Watched with a MutationObserver rather than timed. An earlier version
+    // asserted that the click-to-open span was under the floor, which measured
+    // Playwright's own round trip as much as the app: the behaviour is
+    // synchronous but `click()` is not, and CI runs single-worker on a shared
+    // machine. The observer records any transition into the busy state
+    // regardless of how slow the harness is, so it cannot flake and cannot pass
+    // by accident.
+    await trigger.evaluate((el) => {
+      const w = window as unknown as { __busySeen?: boolean };
+      w.__busySeen = false;
+      new MutationObserver(() => {
+        if (el.getAttribute("aria-busy") === "true") w.__busySeen = true;
+      }).observe(el, { attributes: true, attributeFilter: ["aria-busy"] });
+    });
+
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true", {
       timeout: 20_000,
     });
     expect(
-      Date.now() - startedAt,
-      "a cached re-open should not wait out the busy floor",
-    ).toBeLessThan(BUSY_FLOOR_MS);
+      await page.evaluate(
+        () => (window as unknown as { __busySeen?: boolean }).__busySeen,
+      ),
+      "a cached re-open must not show a busy state at all",
+    ).toBe(false);
   });
 
   test("changing the comparison range keeps the panel open", async ({ page }) => {

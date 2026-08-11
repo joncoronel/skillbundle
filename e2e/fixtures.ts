@@ -18,7 +18,7 @@
  */
 
 /** GitHub-sourced skill. Matches `GITHUB_FALLBACK` in lib/representative-params.ts. */
-export const GITHUB_SKILL = {
+const GITHUB_SKILL = {
   org: "vercel-labs",
   repo: "skills",
   skillId: "find-skills",
@@ -29,7 +29,7 @@ export const GITHUB_REPO_PATH = `/${GITHUB_SKILL.org}/${GITHUB_SKILL.repo}`;
 export const GITHUB_ORG_PATH = `/${GITHUB_SKILL.org}`;
 
 /** Well-known (dotted-domain) source. Matches `WELL_KNOWN_FALLBACK`. */
-export const WELL_KNOWN = {
+const WELL_KNOWN = {
   source: "open.feishu.cn",
   skillId: "lark-approval",
 } as const;

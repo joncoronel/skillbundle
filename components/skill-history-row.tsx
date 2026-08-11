@@ -97,6 +97,15 @@ export type { VersionEntry };
  * hover so the indicator would rarely be needed at all. That removed the
  * flicker but paid for it with a background fetch per row a reader merely
  * passed over.
+ *
+ * Worth naming explicitly, because the codebase holds the opposite rule
+ * elsewhere: `deriveInputLoading` in hooks/use-debounced-query-value.ts spells
+ * out a derived-loading-state rule with no timers, and search inputs follow it.
+ * The two coexist deliberately. That rule is about never spinning over results
+ * the reader already has, which `isReady` enforces here too — this floor only
+ * ever applies to a fetch that genuinely happened, and never delays the ready
+ * path. If it ever gates a path with nothing to wait for, it has become the
+ * thing that rule forbids.
  */
 const MIN_BUSY_MS = 250;
 
@@ -285,11 +294,19 @@ export function HistoryRow({
       // Fall through and switch anyway — VersionDiff surfaces the failure with
       // more context than a select that silently ignores the click.
     } finally {
-      if (token === swapToken.current) {
-        await holdFor(startedAt, MIN_BUSY_MS);
-        setSwapping(false);
-        setAgainstId(next);
-      }
+      // Hold FIRST, then check the token. Checking before the hold looks
+      // equivalent and is not: `holdFor` is a real `setTimeout`, so the
+      // function yields for up to MIN_BUSY_MS between the check and the
+      // commit, and a swap that passed the check can be superseded inside that
+      // window. Concretely — pick an uncached range whose fetch takes 100ms,
+      // then pick an already-viewed one at 150ms: the second applies instantly
+      // through the readiness path above, and at 250ms the first wakes up and
+      // overwrites it. That is the exact failure this token exists to prevent,
+      // reintroduced by the floor rather than by the original fast path.
+      await holdFor(startedAt, MIN_BUSY_MS);
+      if (token !== swapToken.current) return;
+      setSwapping(false);
+      setAgainstId(next);
     }
   }
 

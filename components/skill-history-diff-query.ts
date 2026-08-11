@@ -40,7 +40,7 @@ export type DiffPair = {
 export function versionDiffQueryOptions({ from, to }: DiffPair) {
   // `queryOptions()` rather than a bare object literal: it binds the key to the
   // fetcher's return type, so `queryClient.getQueryData(queryKey)` comes back
-  // typed instead of `unknown`. That call is what `alreadyLoaded()` in
+  // typed instead of `unknown`. That call is what `isReady()` in
   // skill-history-row.tsx uses to decide whether to show a busy state at all,
   // so it is exactly the place the types should be doing work.
   return queryOptions({
@@ -69,16 +69,23 @@ export function versionDiffQueryOptions({ from, to }: DiffPair) {
       ]);
       return { before, after };
     },
+    // One retry, not TanStack's default three.
+    //
+    // The failure this query is built to surface is a `contentUrl` whose blob
+    // is gone — `loadVersions` is cached for days, so a URL can outlive what it
+    // points at. That is permanent, and the default 1s/2s/4s backoff meant the
+    // row's trigger sat disabled and spinning for about seven seconds before
+    // opening to the error state. One retry still absorbs a transient blip and
+    // gets a genuine 404 on screen in about a second.
+    retry: 1,
     // Version content is immutable once written, so it never needs
     // revalidating and re-expanding a row should be instant.
     staleTime: Infinity,
-    // Finite, unlike staleTime. Hover warming prefetches a pair per row and per
-    // select option, so sweeping the pointer down a long timeline (the version
-    // list is capped at 50) can pull two SKILL.md strings per row. With
-    // `gcTime: Infinity` every one of them stayed resident for the whole
-    // session, including for rows the reader passed over and never opened.
-    // 30 minutes keeps re-expanding instant across any realistic visit while
-    // letting the swept-past ones fall out.
+    // Finite, unlike staleTime. Each entry is a pair of whole SKILL.md files,
+    // and the version list is capped at 50, so a reader working through a long
+    // history can accumulate a lot of them. `gcTime: Infinity` kept every one
+    // resident for the entire session; 30 minutes keeps re-expanding instant
+    // across any realistic visit while letting the rest fall out.
     gcTime: 30 * 60 * 1000,
   });
 }
