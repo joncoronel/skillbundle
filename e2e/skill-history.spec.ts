@@ -130,23 +130,36 @@ test.describe("skill history diff panel", () => {
     // regardless of how slow the harness is, so it cannot flake and cannot pass
     // by accident.
     await trigger.evaluate((el) => {
-      const w = window as unknown as { __busySeen?: boolean };
+      const w = window as unknown as {
+        __busySeen?: boolean;
+        __busyObserver?: MutationObserver;
+      };
       w.__busySeen = false;
-      new MutationObserver(() => {
+      w.__busyObserver?.disconnect();
+      w.__busyObserver = new MutationObserver(() => {
         if (el.getAttribute("aria-busy") === "true") w.__busySeen = true;
-      }).observe(el, { attributes: true, attributeFilter: ["aria-busy"] });
+      });
+      w.__busyObserver.observe(el, {
+        attributes: true,
+        attributeFilter: ["aria-busy"],
+      });
     });
 
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true", {
       timeout: 20_000,
     });
-    expect(
-      await page.evaluate(
-        () => (window as unknown as { __busySeen?: boolean }).__busySeen,
-      ),
-      "a cached re-open must not show a busy state at all",
-    ).toBe(false);
+    const busySeen = await page.evaluate(() => {
+      const w = window as unknown as {
+        __busySeen?: boolean;
+        __busyObserver?: MutationObserver;
+      };
+      w.__busyObserver?.disconnect();
+      return w.__busySeen;
+    });
+    expect(busySeen, "a cached re-open must not show a busy state at all").toBe(
+      false,
+    );
   });
 
   test("changing the comparison range keeps the panel open", async ({ page }) => {

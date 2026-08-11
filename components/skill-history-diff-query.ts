@@ -37,6 +37,16 @@ export type DiffPair = {
   to: Pick<VersionEntry, "versionId" | "contentUrl">;
 };
 
+/**
+ * Thrown when a version has no stored content at all.
+ *
+ * Its own type rather than a bare Error so `retry` can tell it apart: this
+ * failure is decided from data the caller already holds, before any request, so
+ * retrying it only burns backoff before showing the error that was knowable
+ * immediately.
+ */
+class MissingVersionContent extends Error {}
+
 export function versionDiffQueryOptions({ from, to }: DiffPair) {
   // `queryOptions()` rather than a bare object literal: it binds the key to the
   // fetcher's return type, so `queryClient.getQueryData(queryKey)` comes back
@@ -47,7 +57,7 @@ export function versionDiffQueryOptions({ from, to }: DiffPair) {
     queryKey: ["skillVersionDiff", from.versionId, to.versionId] as const,
     queryFn: async () => {
       if (!from.contentUrl || !to.contentUrl) {
-        throw new Error("Version content is unavailable");
+        throw new MissingVersionContent("Version content is unavailable");
       }
       // `fetch` resolves on 4xx/5xx, so without this check a storage error
       // payload is handed to the diff parser as if it were the file, and the
@@ -69,15 +79,21 @@ export function versionDiffQueryOptions({ from, to }: DiffPair) {
       ]);
       return { before, after };
     },
-    // One retry, not TanStack's default three.
+    // At most one retry, and none at all when the answer was already known.
     //
     // The failure this query is built to surface is a `contentUrl` whose blob
     // is gone — `loadVersions` is cached for days, so a URL can outlive what it
-    // points at. That is permanent, and the default 1s/2s/4s backoff meant the
-    // row's trigger sat disabled and spinning for about seven seconds before
-    // opening to the error state. One retry still absorbs a transient blip and
-    // gets a genuine 404 on screen in about a second.
-    retry: 1,
+    // points at. That is permanent, and TanStack's default of three attempts
+    // with 1s/2s/4s backoff meant the row's trigger sat disabled and spinning
+    // for about seven seconds before opening to the error state. One retry
+    // still absorbs a transient blip and gets a genuine 404 on screen quickly.
+    //
+    // A missing `contentUrl` is different again: the nulls are already in the
+    // entries the row is holding, so no request is even attempted and no amount
+    // of retrying can change the outcome. Skipping the backoff there means the
+    // panel opens to its explanation immediately.
+    retry: (failureCount, error) =>
+      failureCount < 1 && !(error instanceof MissingVersionContent),
     // Version content is immutable once written, so it never needs
     // revalidating and re-expanding a row should be instant.
     staleTime: Infinity,

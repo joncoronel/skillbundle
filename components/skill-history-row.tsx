@@ -303,10 +303,16 @@ export function HistoryRow({
       // through the readiness path above, and at 250ms the first wakes up and
       // overwrites it. That is the exact failure this token exists to prevent,
       // reintroduced by the floor rather than by the original fast path.
+      // Guarded with a positive condition rather than an early `return`. A
+      // `return` inside `finally` overrides whatever the `try`/`catch` was
+      // doing, so it is correct only as long as neither of them ever returns or
+      // rethrows — a constraint that is invisible at the point someone would
+      // break it.
       await holdFor(startedAt, MIN_BUSY_MS);
-      if (token !== swapToken.current) return;
-      setSwapping(false);
-      setAgainstId(next);
+      if (token === swapToken.current) {
+        setSwapping(false);
+        setAgainstId(next);
+      }
     }
   }
 

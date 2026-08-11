@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/cubby-ui/button";
 
+/** Stable ref callback — see the note on the `<main>` element below. */
+function focusOnMount(node: HTMLElement | null) {
+  node?.focus();
+}
+
 /**
  * The shared body for the segment error boundaries — `app/(main)/error.tsx` and
  * `app/(auth)/error.tsx`.
@@ -17,10 +22,6 @@ import { Button } from "@/components/ui/cubby-ui/button";
  * without it a screen-reader user gets no signal the content changed and no
  * landmark to jump to.
  */
-function focusOnMount(node: HTMLElement | null) {
-  node?.focus();
-}
-
 export function RouteErrorBody({
   error,
   retry,

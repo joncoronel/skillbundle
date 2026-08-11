@@ -31,7 +31,6 @@ export const GITHUB_ORG_PATH = `/${GITHUB_SKILL.org}`;
 /** Well-known (dotted-domain) source. Matches `WELL_KNOWN_FALLBACK`. */
 const WELL_KNOWN = {
   source: "open.feishu.cn",
-  skillId: "lark-approval",
 } as const;
 
 export const WELL_KNOWN_SOURCE_PATH = `/site/${WELL_KNOWN.source}`;
