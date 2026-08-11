@@ -354,9 +354,25 @@ export function HistoryRow({
         </div>
 
         {isAnchor ? (
-          <p className="pb-8 text-sm text-muted-foreground">
-            Earliest recorded version.
-          </p>
+          // An anchor can still carry a REAL description change, and used to
+          // say only "Earliest recorded version" while the row's own
+          // "Description changed" badge sat directly above it — a flat
+          // contradiction to anyone reading the two together.
+          //
+          // Both sides of the description live on the row itself rather than in
+          // the predecessor blob, so the high-consequence half of the change is
+          // available here even though the body diff never can be. Same
+          // component the diff view uses, so the two paths present the change
+          // identically.
+          <div className="pb-8">
+            <p className="text-sm text-muted-foreground">
+              Earliest recorded version.
+              {version.descriptionChanged
+                ? " There is no earlier copy of the file to compare against, so only the description change is shown."
+                : ""}
+            </p>
+            <DescriptionChange version={version} className="mt-3 mb-0" />
+          </div>
         ) : (
           // `flex`, not a bare block. The Button is `inline-flex`, so in an
           // inline formatting context it sits on a text baseline — and an
@@ -634,11 +650,22 @@ function VersionLabel({
  *
  * Both sides are stored inline on the version row, so this costs no fetch.
  */
-function DescriptionChange({ version }: { version: VersionEntry }) {
+function DescriptionChange({
+  version,
+  className,
+}: {
+  version: VersionEntry;
+  className?: string;
+}) {
   if (!version.descriptionChanged) return null;
 
   return (
-    <dl className="mb-5 space-y-3 rounded-xl border border-border p-4">
+    <dl
+      className={cn(
+        "mb-5 space-y-3 rounded-xl border border-border p-4",
+        className,
+      )}
+    >
       <div>
         <dt className="mb-1 font-mono text-eyebrow font-medium uppercase tracking-eyebrow text-muted-foreground">
           Description before

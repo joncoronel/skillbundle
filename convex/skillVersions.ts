@@ -22,6 +22,7 @@
  * `skillVersions`.
  */
 import {
+  internalAction,
   internalMutation,
   internalQuery,
   query,
@@ -29,6 +30,9 @@ import {
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { appDay } from "./lib/appDay";
+import { isGitHubSource } from "./lib/source";
 import { getCurrentUser } from "./users";
 import {
   CONDITION_RANK,
@@ -789,6 +793,349 @@ export const changeRateHealth = internalQuery({
     }
 
     return { windows, threshold: MASS_CHANGE_THRESHOLD };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Baseline-label audit (read-only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find rows flagged `isBaseline` that are provably NOT baselines.
+ *
+ * A baseline is a starting point: the first copy of a file we had no prior
+ * record of. `previousSyncHash` is set exactly when a prior copy DID exist, so
+ * `isBaseline && previousSyncHash !== undefined` is a contradiction — the row
+ * is a real, detected change wearing a baseline's label. See the note on
+ * `isBaseline` in `recordSkillVersion` for how that happened: the flag used to
+ * mean "first row for this skill", which is a different thing.
+ *
+ * Why this matters more than a mislabel: the feed drops baselines
+ * (`resolveSkillChange`), so every one of these is a change no watcher was ever
+ * told about, even though the row carries both sides of the description.
+ *
+ * READ-ONLY. This is the pre-flight for a repair, not the repair. Run it first
+ * and read `newestMislabeledAt`: if that is recent, rows are STILL being
+ * written wrong and the fix is not live yet — repair before deploying and the
+ * pipeline just makes more.
+ *
+ *     npx convex run skillVersions:auditBaselineLabels --prod
+ */
+const BASELINE_AUDIT_PAGE = 400;
+
+export const scanBaselineLabelsPage = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  returns: v.object({
+    scanned: v.number(),
+    mislabeled: v.number(),
+    mislabeledGitHub: v.number(),
+    mislabeledWellKnown: v.number(),
+    // Of the mislabeled, how many carry a description edit. These are the ones
+    // whose suppression cost a reader something concrete and reportable — the
+    // rest changed only in the body, which has no predecessor blob to diff.
+    mislabeledWithDescriptionChange: v.number(),
+    newestMislabeledAt: v.union(v.number(), v.null()),
+    // Mislabeled rows per app-day, so "is this still happening" is answerable
+    // without knowing when the deploy landed.
+    byDay: v.record(v.string(), v.number()),
+    nextCursor: v.union(v.string(), v.null()),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { cursor, pageSize }) => {
+    // Seeks only baseline rows. Real changes are the majority of the archive's
+    // future and none of them can be mislabeled this way, so walking them would
+    // be pure cost.
+    const numItems = Math.min(
+      Math.max(pageSize ?? BASELINE_AUDIT_PAGE, 1),
+      BASELINE_AUDIT_PAGE,
+    );
+    const result = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_isBaseline_changedAt", (q) => q.eq("isBaseline", true))
+      .paginate({ numItems, cursor: cursor ?? null });
+
+    let mislabeled = 0;
+    let mislabeledGitHub = 0;
+    let mislabeledWellKnown = 0;
+    let mislabeledWithDescriptionChange = 0;
+    let newestMislabeledAt: number | null = null;
+    const byDay: Record<string, number> = {};
+
+    for (const row of result.page) {
+      if (row.previousSyncHash === undefined) continue;
+      mislabeled++;
+      if (isGitHubSource(row.source)) mislabeledGitHub++;
+      else mislabeledWellKnown++;
+      if (row.descriptionChanged) mislabeledWithDescriptionChange++;
+      if (newestMislabeledAt === null || row.changedAt > newestMislabeledAt) {
+        newestMislabeledAt = row.changedAt;
+      }
+      const day = appDay(row.changedAt);
+      byDay[day] = (byDay[day] ?? 0) + 1;
+    }
+
+    return {
+      scanned: result.page.length,
+      mislabeled,
+      mislabeledGitHub,
+      mislabeledWellKnown,
+      mislabeledWithDescriptionChange,
+      newestMislabeledAt,
+      byDay,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const auditBaselineLabels = internalAction({
+  args: { maxPages: v.optional(v.number()), pageSize: v.optional(v.number()) },
+  returns: v.object({
+    baselineRowsScanned: v.number(),
+    mislabeled: v.number(),
+    mislabeledGitHub: v.number(),
+    mislabeledWellKnown: v.number(),
+    mislabeledWithDescriptionChange: v.number(),
+    newestMislabeledAt: v.union(v.number(), v.null()),
+    newestMislabeledDay: v.union(v.string(), v.null()),
+    byDay: v.record(v.string(), v.number()),
+    pages: v.number(),
+    // False means the page budget ran out before the scan drained, so every
+    // count above is a FLOOR. Reported rather than inferred, because a floor
+    // that looks like a total is how the backfill got called finished twice.
+    complete: v.boolean(),
+  }),
+  handler: async (ctx, { maxPages, pageSize }) => {
+    // Loops in one invocation rather than self-chaining. The whole point of a
+    // pre-flight is one command with one answer, and a chained job reports
+    // through logs that Convex may evict — which is exactly how the evidence for
+    // the sweep failure was lost. ~13k baseline rows at 400/page is ~34 fast
+    // indexed pages, comfortably inside an action's budget.
+    const budget = Math.min(Math.max(maxPages ?? 200, 1), 500);
+
+    let cursor: string | undefined;
+    let pages = 0;
+    let baselineRowsScanned = 0;
+    let mislabeled = 0;
+    let mislabeledGitHub = 0;
+    let mislabeledWellKnown = 0;
+    let mislabeledWithDescriptionChange = 0;
+    let newestMislabeledAt: number | null = null;
+    const byDay: Record<string, number> = {};
+    let complete = false;
+
+    while (pages < budget) {
+      const page: {
+        scanned: number;
+        mislabeled: number;
+        mislabeledGitHub: number;
+        mislabeledWellKnown: number;
+        mislabeledWithDescriptionChange: number;
+        newestMislabeledAt: number | null;
+        byDay: Record<string, number>;
+        nextCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.skillVersions.scanBaselineLabelsPage,
+        { cursor, pageSize },
+      );
+      pages++;
+      baselineRowsScanned += page.scanned;
+      mislabeled += page.mislabeled;
+      mislabeledGitHub += page.mislabeledGitHub;
+      mislabeledWellKnown += page.mislabeledWellKnown;
+      mislabeledWithDescriptionChange += page.mislabeledWithDescriptionChange;
+      if (
+        page.newestMislabeledAt !== null &&
+        (newestMislabeledAt === null ||
+          page.newestMislabeledAt > newestMislabeledAt)
+      ) {
+        newestMislabeledAt = page.newestMislabeledAt;
+      }
+      for (const [day, n] of Object.entries(page.byDay)) {
+        byDay[day] = (byDay[day] ?? 0) + n;
+      }
+      if (page.isDone) {
+        complete = true;
+        break;
+      }
+      cursor = page.nextCursor ?? undefined;
+    }
+
+    const summary = {
+      baselineRowsScanned,
+      mislabeled,
+      mislabeledGitHub,
+      mislabeledWellKnown,
+      mislabeledWithDescriptionChange,
+      newestMislabeledAt,
+      newestMislabeledDay:
+        newestMislabeledAt === null ? null : appDay(newestMislabeledAt),
+      byDay,
+      pages,
+      complete,
+    };
+    console.log(
+      `baseline-label audit: ${mislabeled} mislabeled of ${baselineRowsScanned} baseline rows` +
+        ` (${mislabeledGitHub} github, ${mislabeledWellKnown} well-known,` +
+        ` ${mislabeledWithDescriptionChange} with a description edit)` +
+        `${complete ? "" : " — INCOMPLETE, counts are floors"}`,
+    );
+    return summary;
+  },
+});
+
+/**
+ * Clear the baseline flag on rows the audit above proves are real changes.
+ *
+ * Run `auditBaselineLabels` FIRST and read `newestMislabeledDay`. If rows are
+ * still being written wrong, repairing now just leaves more behind tomorrow.
+ *
+ *     npx convex run skillVersions:repairBaselineLabels --prod
+ *
+ * Idempotent: a repaired row leaves the `isBaseline: true` index, so a second
+ * run finds nothing. Safe to re-run after an abort.
+ *
+ * The consequence is entirely in the FEED. `resolveSkillChange` drops baselines,
+ * so these changes were never reported to anyone watching those skills; clearing
+ * the flag makes them visible with their descriptions intact. It does not change
+ * the timeline UI, which anchors the oldest row on `isBaseline || !previous` and
+ * so renders these identically either way.
+ */
+const REPAIR_PATCH_BATCH = 100;
+
+/**
+ * Collect ids to repair, WITHOUT writing. Reading and writing are two passes on
+ * purpose: patching a row clears the flag this scan filters on, so mutating
+ * mid-pagination would shift the index under its own cursor and skip rows. The
+ * mislabeled set is small enough (hundreds) to hold in one list.
+ */
+export const listMislabeledBaselineIds = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  returns: v.object({
+    ids: v.array(v.id("skillVersions")),
+    scanned: v.number(),
+    nextCursor: v.union(v.string(), v.null()),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { cursor, pageSize }) => {
+    const numItems = Math.min(
+      Math.max(pageSize ?? BASELINE_AUDIT_PAGE, 1),
+      BASELINE_AUDIT_PAGE,
+    );
+    const result = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_isBaseline_changedAt", (q) => q.eq("isBaseline", true))
+      .paginate({ numItems, cursor: cursor ?? null });
+
+    return {
+      ids: result.page
+        .filter((row) => row.previousSyncHash !== undefined)
+        .map((row) => row._id),
+      scanned: result.page.length,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const clearBaselineFlags = internalMutation({
+  args: { ids: v.array(v.id("skillVersions")) },
+  returns: v.number(),
+  handler: async (ctx, { ids }) => {
+    let patched = 0;
+    for (const id of ids) {
+      const row = await ctx.db.get(id);
+      // Re-checked here rather than trusted from the scan. The ids were
+      // gathered in an earlier pass, and this mutation must not be able to
+      // invent a change on a row that is a genuine baseline — that is the one
+      // failure mode worse than the silence being fixed.
+      if (!row || !row.isBaseline || row.previousSyncHash === undefined) {
+        continue;
+      }
+      await ctx.db.patch(id, { isBaseline: false });
+      patched++;
+    }
+    return patched;
+  },
+});
+
+export const repairBaselineLabels = internalAction({
+  args: { maxPages: v.optional(v.number()), maxRows: v.optional(v.number()) },
+  returns: v.object({
+    found: v.number(),
+    patched: v.number(),
+    baselineRowsScanned: v.number(),
+    pages: v.number(),
+    scanComplete: v.boolean(),
+    aborted: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { maxPages, maxRows }) => {
+    const pageBudget = Math.min(Math.max(maxPages ?? 200, 1), 500);
+    // A ceiling on how much this is allowed to touch. The audit reported 605;
+    // anything near this cap means the match condition is wrong, and stopping
+    // beats patching the archive on a bad predicate.
+    const rowCap = Math.min(Math.max(maxRows ?? 5_000, 1), 20_000);
+
+    let cursor: string | undefined;
+    let pages = 0;
+    let baselineRowsScanned = 0;
+    let scanComplete = false;
+    let aborted: string | null = null;
+    const ids: Id<"skillVersions">[] = [];
+
+    while (pages < pageBudget) {
+      const page: {
+        ids: Id<"skillVersions">[];
+        scanned: number;
+        nextCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(internal.skillVersions.listMislabeledBaselineIds, {
+        cursor,
+      });
+      pages++;
+      baselineRowsScanned += page.scanned;
+      ids.push(...page.ids);
+      if (ids.length > rowCap) {
+        aborted = `match count ${ids.length} exceeded maxRows ${rowCap} — nothing patched`;
+        console.error(`repairBaselineLabels aborted: ${aborted}`);
+        return {
+          found: ids.length,
+          patched: 0,
+          baselineRowsScanned,
+          pages,
+          scanComplete: false,
+          aborted,
+        };
+      }
+      if (page.isDone) {
+        scanComplete = true;
+        break;
+      }
+      cursor = page.nextCursor ?? undefined;
+    }
+
+    let patched = 0;
+    for (let i = 0; i < ids.length; i += REPAIR_PATCH_BATCH) {
+      patched += await ctx.runMutation(
+        internal.skillVersions.clearBaselineFlags,
+        { ids: ids.slice(i, i + REPAIR_PATCH_BATCH) },
+      );
+    }
+
+    console.log(
+      `repairBaselineLabels: patched ${patched} of ${ids.length} matched` +
+        ` across ${baselineRowsScanned} baseline rows` +
+        `${scanComplete ? "" : " — SCAN INCOMPLETE, re-run to finish"}`,
+    );
+    return {
+      found: ids.length,
+      patched,
+      baselineRowsScanned,
+      pages,
+      scanComplete,
+      aborted,
+    };
   },
 });
 

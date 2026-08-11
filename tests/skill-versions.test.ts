@@ -372,3 +372,213 @@ test("recording against a deleted skill releases the blob instead of orphaning i
   expect(await versionsFor(t, skillDocId)).toHaveLength(0);
   expect(await t.run(async (ctx) => ctx.storage.getUrl(storageId))).toBeNull();
 });
+
+// ---------------------------------------------------------------------------
+// Baseline-label audit
+// ---------------------------------------------------------------------------
+
+/** Insert an archive row directly, bypassing the write path. */
+async function insertVersion(
+  t: ReturnType<typeof makeTest>,
+  opts: {
+    source: string;
+    skillId: string;
+    changedAt: number;
+    isBaseline: boolean;
+    previousSyncHash?: string;
+    descriptionChanged?: boolean;
+  },
+) {
+  await t.run(async (ctx) => {
+    const skillDocId = await ctx.db.insert("skills", {
+      source: opts.source,
+      skillId: opts.skillId,
+      name: opts.skillId,
+      installs: 1,
+      leaderboard: "all-time",
+      lastSynced: opts.changedAt,
+      lastSeenInApi: opts.changedAt,
+      isDelisted: false,
+      needsContentFetch: false,
+      needsDiscovery: false,
+    });
+    const rawStorageId = await ctx.storage.store(
+      new Blob(["x"], { type: "text/markdown" }),
+    );
+    await ctx.db.insert("skillVersions", {
+      skillDocId,
+      source: opts.source,
+      skillId: opts.skillId,
+      changedAt: opts.changedAt,
+      syncHash: `hash-${opts.skillId}`,
+      previousSyncHash: opts.previousSyncHash,
+      rawStorageId,
+      rawBytes: 1,
+      descriptionChanged: opts.descriptionChanged ?? false,
+      contentChanged: true,
+      isBaseline: opts.isBaseline,
+    });
+  });
+}
+
+test("the baseline audit counts only rows that are provably mislabeled", async () => {
+  // Pre-flight for the repair. A row is mislabeled when it claims to be a
+  // starting point while `previousSyncHash` proves a previous copy existed —
+  // those are real changes the feed dropped. Everything else must be left
+  // alone, because a repair that over-matches invents changes that never
+  // happened, which is worse than the silence it is fixing.
+  const t = makeTest();
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  // Mislabeled: GitHub, with a description edit — the costly case.
+  await insertVersion(t, {
+    source: "owner/repo",
+    skillId: "gh-mislabeled",
+    changedAt: now - day,
+    isBaseline: true,
+    previousSyncHash: "had-a-previous-copy",
+    descriptionChanged: true,
+  });
+  // Mislabeled: well-known, body-only edit.
+  await insertVersion(t, {
+    source: "example.com",
+    skillId: "wk-mislabeled",
+    changedAt: now - 2 * day,
+    isBaseline: true,
+    previousSyncHash: "had-a-previous-copy",
+  });
+  // A GENUINE baseline: the backfill, or a first-ever content fetch.
+  await insertVersion(t, {
+    source: "owner/repo",
+    skillId: "real-baseline",
+    changedAt: now - 3 * day,
+    isBaseline: true,
+  });
+  // A real change already labelled correctly — must not be counted or touched.
+  await insertVersion(t, {
+    source: "owner/repo",
+    skillId: "real-change",
+    changedAt: now,
+    isBaseline: false,
+    previousSyncHash: "had-a-previous-copy",
+    descriptionChanged: true,
+  });
+
+  const report = await t.action(
+    internal.skillVersions.auditBaselineLabels,
+    {},
+  );
+
+  expect(report.complete).toBe(true);
+  // Seeks the baseline index only, so the correctly-labelled change is never
+  // read — that is the point of using `by_isBaseline_changedAt`.
+  expect(report.baselineRowsScanned).toBe(3);
+  expect(report.mislabeled).toBe(2);
+  expect(report.mislabeledGitHub).toBe(1);
+  expect(report.mislabeledWellKnown).toBe(1);
+  expect(report.mislabeledWithDescriptionChange).toBe(1);
+  expect(report.newestMislabeledAt).toBe(now - day);
+  // Two distinct days, one row each.
+  expect(Object.values(report.byDay).sort()).toEqual([1, 1]);
+});
+
+test("the baseline audit reports a truncated scan as incomplete", async () => {
+  // A floor that reads like a total is how the archive backfill was declared
+  // finished twice off a saturated counter. The repair sizes itself off these
+  // numbers, so truncation has to be loud.
+  const t = makeTest();
+  const now = Date.now();
+  for (let i = 0; i < 3; i++) {
+    await insertVersion(t, {
+      source: "owner/repo",
+      skillId: `skill-${i}`,
+      changedAt: now - i * 1000,
+      isBaseline: true,
+      previousSyncHash: "had-a-previous-copy",
+    });
+  }
+
+  const report = await t.action(internal.skillVersions.auditBaselineLabels, {
+    maxPages: 1,
+    pageSize: 2,
+  });
+
+  expect(report.pages).toBe(1);
+  expect(report.complete).toBe(false);
+  // The count is a floor, and says so rather than reading as a total.
+  expect(report.mislabeled).toBe(2);
+});
+
+test("the repair clears only the mislabeled rows, and is idempotent", async () => {
+  const t = makeTest();
+  const now = Date.now();
+
+  await insertVersion(t, {
+    source: "owner/repo",
+    skillId: "mislabeled",
+    changedAt: now - 1000,
+    isBaseline: true,
+    previousSyncHash: "had-a-previous-copy",
+    descriptionChanged: true,
+  });
+  await insertVersion(t, {
+    source: "owner/repo",
+    skillId: "real-baseline",
+    changedAt: now - 2000,
+    isBaseline: true,
+  });
+
+  const first = await t.action(
+    internal.skillVersions.repairBaselineLabels,
+    {},
+  );
+  expect(first.scanComplete).toBe(true);
+  expect(first.aborted).toBeNull();
+  expect(first.found).toBe(1);
+  expect(first.patched).toBe(1);
+
+  const rows = await t.run(async (ctx) =>
+    ctx.db.query("skillVersions").collect(),
+  );
+  const byId = Object.fromEntries(rows.map((r) => [r.skillId, r]));
+  expect(byId.mislabeled.isBaseline).toBe(false);
+  // The genuine baseline is untouched. A repair that invents a change on a real
+  // starting point is worse than the silence it fixes.
+  expect(byId["real-baseline"].isBaseline).toBe(true);
+
+  // Re-running finds nothing: a patched row leaves the isBaseline index.
+  const second = await t.action(
+    internal.skillVersions.repairBaselineLabels,
+    {},
+  );
+  expect(second.found).toBe(0);
+  expect(second.patched).toBe(0);
+});
+
+test("the repair patches nothing when the match count blows its ceiling", async () => {
+  // The guard that would have caught a wrong predicate before it rewrote the
+  // archive, rather than after.
+  const t = makeTest();
+  const now = Date.now();
+  for (let i = 0; i < 3; i++) {
+    await insertVersion(t, {
+      source: "owner/repo",
+      skillId: `over-${i}`,
+      changedAt: now - i * 1000,
+      isBaseline: true,
+      previousSyncHash: "had-a-previous-copy",
+    });
+  }
+
+  const report = await t.action(internal.skillVersions.repairBaselineLabels, {
+    maxRows: 2,
+  });
+
+  expect(report.aborted).toContain("exceeded maxRows");
+  expect(report.patched).toBe(0);
+  const stillBaseline = await t.run(async (ctx) =>
+    ctx.db.query("skillVersions").collect(),
+  );
+  expect(stillBaseline.every((r) => r.isBaseline)).toBe(true);
+});
