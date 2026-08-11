@@ -56,7 +56,7 @@ import {
   LockIcon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
 import { useBundleEditSession } from "@/hooks/use-bundle-edit-session";
 import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
@@ -456,7 +456,25 @@ function MetadataItems({ createdAt }: { createdAt: number }) {
   // Skill count deliberately absent: the section heading and the tally both
   // state it, and three copies in one viewport is two too many. That leaves one
   // item, so this is a string and not a list with an unreachable separator.
-  return <>Created {timeAgo(createdAt)}</>;
+  //
+  // Absolute, unlike the change times in the register below. The split is the
+  // question each answers: a change time is the monitoring signal ("did
+  // something move recently?"), where "2d ago" is the answer and a date makes
+  // you compute it. When a list was created is provenance — nobody monitors it,
+  // and "8mo ago" is a worse way to say a date you might want to cite.
+  //
+  // It is also the one timestamp on this page that reaches server HTML on a
+  // shared link, so keeping the clock out of it removes the prerender hazard
+  // described on `timeAgo` in lib/utils.ts. The route is dynamic today (auth +
+  // io()), so that is insurance rather than a fix.
+  return (
+    <>
+      Created{" "}
+      <time dateTime={new Date(createdAt).toISOString()}>
+        {formatDate(createdAt)}
+      </time>
+    </>
+  );
 }
 
 

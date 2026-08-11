@@ -4,20 +4,9 @@ import { memo, useCallback, useId } from "react";
 import Link from "next/link";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
-  ArrowDown01Icon,
-  ArrowUp01Icon,
-  Cancel01Icon,
   Copy01Icon,
   Download04Icon,
 } from "@hugeicons/core-free-icons";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter,
-} from "@/components/ui/cubby-ui/card";
-import { Button } from "@/components/ui/cubby-ui/button";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { SheetTrigger } from "@/components/ui/cubby-ui/sheet";
@@ -26,7 +15,7 @@ import {
   useIsSelectionAtCap,
   useIsSkillSelected,
 } from "@/lib/bundle-selection";
-import { cn, formatInstalls, timeAgo } from "@/lib/utils";
+import { cn, formatInstalls } from "@/lib/utils";
 import { useSkillDetailHandle } from "@/components/skill-detail-sheet";
 import {
   deriveSkillStatus,
@@ -40,7 +29,6 @@ import {
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { renderHighlight } from "@/lib/search/highlight";
-import { QuickAddPopover } from "@/components/quick-add-popover";
 
 export interface SkillEditControls {
   onRemove: () => void;
@@ -342,76 +330,6 @@ interface SkillViewProps {
   hideSource?: boolean;
 }
 
-const SkillEditControlButtons = memo(function SkillEditControlButtons({
-  controls,
-}: {
-  controls: SkillEditControls;
-}) {
-  const {
-    onRemove,
-    removeIcon,
-    removeLabel,
-    onMoveUp,
-    onMoveDown,
-    canMoveUp,
-    canMoveDown,
-  } = controls;
-  const showReorder = onMoveUp !== undefined || onMoveDown !== undefined;
-  const removeButtonLabel = removeLabel ?? "Remove skill from bundle";
-  return (
-    <div className="flex items-center gap-0.5">
-      {showReorder && (
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon_xs"
-            disabled={!canMoveUp}
-            onClick={onMoveUp}
-            aria-label="Move skill up"
-            title="Move up"
-          >
-            <HugeiconsIcon
-              icon={ArrowUp01Icon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon_xs"
-            disabled={!canMoveDown}
-            onClick={onMoveDown}
-            aria-label="Move skill down"
-            title="Move down"
-          >
-            <HugeiconsIcon
-              icon={ArrowDown01Icon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-          </Button>
-        </>
-      )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon_xs"
-        onClick={onRemove}
-        aria-label={removeButtonLabel}
-        title={removeButtonLabel}
-        className="text-muted-foreground hover:text-foreground"
-      >
-        <HugeiconsIcon
-          icon={removeIcon ?? Cancel01Icon}
-          strokeWidth={2}
-          className="size-3.5"
-        />
-      </Button>
-    </div>
-  );
-});
 
 // ---------------------------------------------------------------------------
 // Row variants
@@ -498,151 +416,6 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
         selectable
         checkboxId={checkboxId}
         hideSource={hideSource}
-      />
-    </SelectableWrapper>
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Card variants
-// ---------------------------------------------------------------------------
-
-const SkillCardContent = memo(function SkillCardContent({
-  skill,
-  selectable,
-  checkboxId,
-  metric,
-}: {
-  skill: SkillData;
-  selectable?: boolean;
-  checkboxId?: string;
-  metric?: LeaderboardMetric;
-}) {
-  const cardTimestamp = skill.contentUpdatedAt ?? skill.createdAt;
-  const cardTimeLabel =
-    skill.contentUpdatedAt !== undefined ? "Updated" : "Added";
-
-  // Audit signal: warn/fail get a short colored text line in the footer
-  // (paired with the timestamp). Pass/unknown render nothing — bundles full
-  // of clean skills stay quiet; the flagged few earn the attention.
-  const auditFail = skill.worstAuditStatus === "fail";
-  const auditWarn = skill.worstAuditStatus === "warn";
-  const showAudit = auditFail || auditWarn;
-
-  return (
-    <>
-      <CardHeader className="gap-1">
-        <div className="flex items-center gap-2">
-          {selectable && checkboxId ? (
-            <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
-          ) : null}
-          <CardTitle className="text-sm leading-snug flex items-center gap-1">
-            <SkillName
-              skill={skill}
-              className="[text-box:trim-both_cap_alphabetic]"
-            />
-            {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
-            {skill.isGitHubOnly && <GitHubOnlyBadge />}
-          </CardTitle>
-        </div>
-        <CardDescription className="text-xs line-clamp-2">
-          {skill.description ?? skill.source}
-        </CardDescription>
-      </CardHeader>
-      {/* Footer carries the skill metadata strip — install count + status
-          badge on the left, optional audit label, timestamp on the right.
-          Always rendered now (rather than conditional on timestamp/audit)
-          because install count is always present and the top-right corner
-          of the card is reserved for the quick-add affordance. */}
-      <CardFooter className="mt-auto pt-0 justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <SkillMeta skill={skill} metric={metric} />
-          {showAudit && (
-            <span
-              className={cn(
-                "text-[11px] font-medium",
-                auditFail
-                  ? "text-danger-foreground"
-                  : "text-warning-foreground",
-              )}
-              title={`Security audit ${auditFail ? "failed" : "flagged for review"}${
-                skill.worstAuditRiskLevel
-                  ? ` (${skill.worstAuditRiskLevel} risk)`
-                  : ""
-              }`}
-            >
-              {auditFail ? "Risk" : "Review"}
-              {skill.worstAuditRiskLevel
-                ? ` · ${skill.worstAuditRiskLevel}`
-                : ""}
-            </span>
-          )}
-        </div>
-        {cardTimestamp !== undefined && (
-          <span className="text-[11px] text-muted-foreground/60">
-            {cardTimeLabel} {timeAgo(cardTimestamp)}
-          </span>
-        )}
-      </CardFooter>
-    </>
-  );
-});
-
-export const SkillCardView = memo(function SkillCardView({
-  skill,
-  className,
-  metric,
-  editControls,
-  enableQuickAdd,
-  currentBundleId,
-}: SkillViewProps) {
-  // Edit controls and quick-add both live as absolutely-positioned overlays
-  // in the top-right corner. They're mutually exclusive — edit mode wins
-  // when both are active, since the card's primary affordance there is
-  // "remove / restore from this bundle," not "add to a different bundle."
-  // Keeping them out of the header flow means the title row has no
-  // competing actions to share space with.
-  const showQuickAdd = enableQuickAdd && !editControls;
-  return (
-    <Card className={cn("relative gap-3 py-4", className)}>
-      <SkillCardContent skill={skill} metric={metric} />
-      {editControls ? (
-        <div className="absolute right-2 top-2 z-10">
-          <SkillEditControlButtons controls={editControls} />
-        </div>
-      ) : showQuickAdd ? (
-        <div className="absolute right-2 top-2 z-10">
-          <QuickAddPopover
-            skill={{
-              source: skill.source,
-              skillId: skill.skillId,
-              name: skill.name,
-            }}
-            currentBundleId={currentBundleId}
-          />
-        </div>
-      ) : null}
-    </Card>
-  );
-});
-
-export const SelectableSkillCard = memo(function SelectableSkillCard({
-  skill,
-  className,
-  metric,
-}: SkillViewProps) {
-  const id = useId();
-  const checkboxId = `skill-${id}`;
-  return (
-    <SelectableWrapper
-      checkboxId={checkboxId}
-      className={cn("gap-3 py-4 h-full", className)}
-    >
-      <SkillCardContent
-        skill={skill}
-        metric={metric}
-        selectable
-        checkboxId={checkboxId}
       />
     </SelectableWrapper>
   );
