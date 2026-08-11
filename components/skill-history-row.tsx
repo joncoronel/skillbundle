@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/cubby-ui/select";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
-import { cn, formatDate, timeAgo } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 /**
  * The interactive half of the History section.
@@ -260,12 +260,30 @@ export function HistoryRow({
       <Collapsible open={open} onOpenChange={setOpen}>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-1">
           <VersionLabel version={version} isAnchor={isAnchor} />
+          {/* Absolute, via formatDate, and this is load-bearing rather than a
+              style preference: `timeAgo` reads `Date.now()`, and these rows now
+              render on the server (see the header of skill-history.tsx).
+
+              Under Cache Components that read is unstable IO, so the whole
+              SkillDetailBody subtree stops being prerenderable — and because the
+              body already sits inside a `<Suspense>`, nothing errors. The hole
+              is simply legal and permanent: Vercel persists only the static
+              shell, and every cached hit serves the skeleton and re-renders the
+              content on the client. Measured on preview deployments that
+              differed by this call alone: the cached HTML went from 366 KB with
+              the body to 231 KB without it.
+
+              lib/utils.ts says the same thing from the other side — formatDate
+              is deterministic "so it prerenders into the static shell".
+
+              If relative times are ever wanted back here, they have to come from
+              a client-side swap after hydration; they cannot be rendered on the
+              server. */}
           <time
             dateTime={new Date(version.changedAt).toISOString()}
-            title={formatDate(version.changedAt)}
             className="text-sm text-muted-foreground"
           >
-            {timeAgo(version.changedAt)}
+            {formatDate(version.changedAt)}
           </time>
           {version.descriptionChanged && (
             <Badge variant="warning">Description changed</Badge>
@@ -470,9 +488,12 @@ function DiffUnavailable({ onRetry }: { onRetry: () => void }) {
 
 /** Label for a lookback option: when it was, plus its version where declared. */
 function rangeLabel(v: VersionEntry) {
+  // formatDate, not timeAgo, for the same prerender reason as the row's <time>
+  // above: these labels are built during render, and the select's trigger shows
+  // the current one in the server HTML.
   return v.frontmatterVersion
-    ? `${timeAgo(v.changedAt)} · ${v.frontmatterVersion}`
-    : timeAgo(v.changedAt);
+    ? `${formatDate(v.changedAt)} · ${v.frontmatterVersion}`
+    : formatDate(v.changedAt);
 }
 
 function Marker({ isAnchor }: { isAnchor: boolean }) {

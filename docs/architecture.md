@@ -100,6 +100,32 @@ If you add the params-into-Suspense split to a route, delete its `loading.tsx`
 in the same change. If you keep `loading.tsx`, don't also add page-level
 fallbacks above the data boundary.
 
+### Never read the clock in server-rendered output
+
+`Date.now()` (and `new Date()`, `Math.random()`) during a prerender is unstable
+IO. Under Cache Components the surrounding subtree stops being prerenderable —
+and if it sits inside a `<Suspense>`, **nothing errors and the build stays
+green**. The boundary just becomes a permanent dynamic hole: only the static
+shell is persisted, so every cached hit serves the fallback and re-renders the
+content on the client. The route still says `◐` in the build output and direct
+loads still look correct, which is what makes this so easy to miss.
+
+This shipped once. Moving the History section to a Server Component pulled
+`timeAgo` (which reads `Date.now()`) into skill detail's prerender for the first
+time. Measured on preview deployments differing by that one call: the cached
+HTML went from 366 KB with the body to 231 KB without it, and the skeleton
+became visible on every reload. `lib/utils.ts` now carries the warning on
+`timeAgo` itself.
+
+The symptom to watch for: a cached `x-vercel-cache: HIT` that is materially
+smaller than the on-demand `PRERENDER` of the same URL. Compare the two and look
+for content that is present in one and absent in the other.
+
+Use `formatDate` for anything server-rendered. If a surface genuinely needs
+relative time, swap to it on the client after hydration — it cannot come from
+the server. Existing `timeAgo` callers are fine only because their labels are
+client-side or conditional; adding one to server output re-opens this.
+
 ### Why each type
 
 **Static + client data (most routes).** The whole page shell — including a meaningful default state, see §8 — prerenders at build. Navigation between these routes is instant (full prefetch). Per-user or interactive data arrives via the client Convex connection, which the root provider keeps open and authenticated across the whole session, so in-app navigations pay no handshake.

@@ -29,6 +29,21 @@ export function formatInstalls(n: number): string {
   return n.toString();
 }
 
+/**
+ * Relative time like "3w ago". CLIENT-ONLY — see the `Date.now()` below.
+ *
+ * Calling this from anything that renders on the server (including a client
+ * component's SSR pass) reads the clock during the prerender, which under Cache
+ * Components is unstable IO. The surrounding subtree then stops being
+ * prerenderable. If it sits inside a `<Suspense>`, nothing errors and the build
+ * stays green — the boundary just becomes a permanent dynamic hole, only the
+ * static shell is persisted, and every cached hit serves the fallback and
+ * re-renders on the client. That regression shipped once, on skill detail; see
+ * the comment on the `<time>` element in components/skill-history-row.tsx.
+ *
+ * Use `formatDate` for anything server-rendered, or swap to relative after
+ * hydration.
+ */
 export function timeAgo(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) return "just now";
