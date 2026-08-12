@@ -778,29 +778,43 @@ binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
-### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
+### Gate the content-chain ping (and, maybe, per-skill cache tags)
 
-`loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`
-all tag their cache entries with one fixed string, `SKILL_SYNC_TAG = "skill-sync"`.
-Each skill gets its own cache entry (keyed by `source` + `skillId`), but every entry
-carries the *same* tag, so `revalidateHomeTag("skill-sync")` invalidates the entire
-catalog at once. There is no way to refresh a single skill.
+Updated Aug 2026, after the cadence split (PR #65). The tags are now
+`skill-sync` (install counts, ranks, snapshots, versions, copies) and
+`skill-content` (the skill row) — see `lib/skill-cache.ts`. Both are still
+all-or-nothing across the catalog: every skill's entry carries the same two
+strings, so one ping invalidates all ~9.5k. There is no way to refresh a single
+skill.
 
-Fine today: invalidation only *marks* entries stale, so a page rebuilds only when
-someone actually visits it. Cost is bounded by traffic, not by the ~9.5k catalog.
-The tag is also only pinged a few times a day (syncSkills 06:00, reconcile 07:00,
-and now the content-chain terminal, see below).
+**The concrete problem left.** `markStaleContent` chains into
+`backfillDiscoverUrls` unconditionally, and both content terminals
+(`backfillFetchContent`, `fetchSkillDetailBatch`) schedule
+`internal.skills.publishSkillUpdate` with no "did we actually write content"
+gate. So `skill-content` is pinged ~4 times every morning even on a day when no
+SKILL.md changed, which is exactly what the split was supposed to stop. Until
+this is gated, `loadSkill`'s `cacheLife("weeks")` is doing the real work and the
+content tag is contributing little on the daily path.
 
-Idea: make the tag dynamic, `cacheTag("skill:" + source + "/" + skillId)`, and have
-the content-fetch step ping only the skills it actually touched. This is also the
-prerequisite for making the terminal ping fire "only when content changed" in any
-meaningful way, since a targeted check buys nothing while the tag nukes everything.
+**Why it isn't just an `if`.** The staggered per-skill `fetchSkillContent` calls
+are independent scheduled actions with no shared state, so there is nowhere to
+collect "which skills changed this run" without adding a counter table (or
+querying `skillVersions` for rows written today — a version row is archived
+exactly when content changes, so that may be the cheap version of this).
 
-Why deferred: the staggered per-skill `fetchSkillContent` calls are independent
-scheduled actions with no shared state, so there is nowhere to collect "which skills
-changed this run" without adding a counter table or similar; `/api/revalidate` would
-also need to accept a batch of tags. Not worth it until cache churn shows up as real
-Vercel function load (relevant on Hobby, so worth watching rather than ignoring).
+Note the sync path already does the gated thing where it can: `upsertSkillsBatch`
+returns a `nameChanges` count and `syncSkills` pings `skill-content` only when
+it's non-zero. The content chain is harder only because of the scheduling shape.
+
+Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) remain the fuller
+fix and would let the content step ping only what it touched, but note they do
+NOT help the daily `skill-sync` ping: `syncSkills` walks the entire leaderboard
+and legitimately moves nearly every install count, so "only the skills that
+changed" is "all of them". `/api/revalidate` would also need to accept a batch of
+tags. Sequence it after the gate, not before.
+
+Fine meanwhile: invalidation only *marks* entries stale, so a page rebuilds when
+someone visits it. Cost is bounded by traffic, not by the catalog.
 
 Context: this came out of fixing the content-publish ordering (Jul 2026). The content
 pipeline previously never pinged the tag itself; publishing relied on `reconcile`'s

@@ -444,7 +444,7 @@ function CompareColumn({
   // This hits Convex directly (one call per skill per visitor). If Convex
   // call volume or egress ever becomes a real cost, the escape hatch is a
   // GET route handler wrapping the already-cached `loadSkill` from
-  // components/skill-detail-page.tsx (+ s-maxage for CDN hits) and pointing
+  // lib/skill-cache.ts (+ s-maxage for CDN hits) and pointing
   // this queryFn (and the skill detail sheet's) at it — restoring cross-user
   // caching without changing the page architecture. Deliberately NOT built
   // today: on Vercel Hobby + Convex Pro, that trades calls against the plan

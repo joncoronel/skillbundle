@@ -26,6 +26,25 @@ import { api } from "@/convex/_generated/api";
  * page instead of 1. Keep install-count-only jobs (syncSkills, reconcile,
  * curatedRefresh — all of them go through drainRefreshBatch) pinging ONLY
  * "skill-sync"; anything that mutates the skill row must ping "skill-content".
+ *
+ * ── What this does NOT yet buy ────────────────────────────────────────────
+ *
+ * Be accurate about the current ceiling, because two things still invalidate
+ * the content entry daily and it is easy to assume otherwise:
+ *
+ *   1. The content chain fires end to end every morning whether or not any
+ *      SKILL.md changed (`markStaleContent` chains into `backfillDiscoverUrls`
+ *      unconditionally, and both terminals schedule `publishSkillUpdate` with
+ *      no "did we write anything" gate). Gating it needs somewhere to collect
+ *      which skills changed across independent staggered actions — parked in
+ *      TODO.md under "Per-skill cache invalidation".
+ *   2. `cacheLife` is orthogonal to `cacheTag`: an entry's own `revalidate`
+ *      timer fires regardless of tags. That is why `loadSkill` sits on "weeks"
+ *      below rather than "days" — on "days" it would rewrite itself every 24h
+ *      no matter how clean the tag routing got.
+ *
+ * So today the reliable per-visit saving comes from the loader consolidation in
+ * components/skill-detail-page.tsx and from (2), not from the tag split alone.
  */
 export const SKILL_SYNC_TAG = "skill-sync";
 export const SKILL_CONTENT_TAG = "skill-content";
@@ -49,10 +68,18 @@ export const SKILL_CONTENT_TAG = "skill-content";
  *
  * `'use cache'` also isolates `fetchQuery`'s forced `no-store` behind a cache
  * boundary, which is what lets these routes prerender a static shell at all.
+ *
+ * "weeks" (revalidate 7d / expire 30d), not "days" (revalidate 24h): the whole
+ * point of putting this entry on its own tag is that on-demand pings —
+ * `publishSkillUpdate`, `markDelistedSkills`, `syncCurated`, `kickPostAddChain`
+ * — now keep it fresh, so it does not need a 24h timer as well. 7d matches the
+ * content re-fetch backstop in `markStaleContent`. Leaving it on "days" would
+ * have made the tag work pointless: the entry would rewrite itself daily
+ * anyway.
  */
 export async function loadSkill(source: string, skillId: string) {
   "use cache";
-  cacheLife("days");
+  cacheLife("weeks");
   cacheTag(SKILL_CONTENT_TAG);
   return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
 }

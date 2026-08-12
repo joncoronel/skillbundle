@@ -29,8 +29,14 @@ export async function kickPostAddChain(
   args: { source: string; skillId: string; description?: string },
 ): Promise<void> {
   await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
-  await revalidateSiteTag("skill-content");
-  await revalidateSiteTag("skill-sync");
+  // In parallel, not sequentially: this runs inside the add request the user is
+  // waiting on, and each ping carries its own 5s timeout (see revalidateSiteTag),
+  // so serial awaits would put a 10s worst-case block in front of the response.
+  // Both calls swallow their own errors, so Promise.all cannot reject.
+  await Promise.all([
+    revalidateSiteTag("skill-content"),
+    revalidateSiteTag("skill-sync"),
+  ]);
   await ctx.scheduler.runAfter(0, internal.typesense.indexSkill, {
     source: args.source,
     skillId: args.skillId,

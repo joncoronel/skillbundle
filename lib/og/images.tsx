@@ -1,10 +1,10 @@
 import "server-only";
-import { cacheLife } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
-import { loadSkill } from "@/lib/skill-cache";
+import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 import { og } from "./theme";
 import { FONT } from "./fonts";
 import {
@@ -44,6 +44,23 @@ import {
 //
 // The loaders below stay local: each is specific to one OG surface, and none of
 // them has a second consumer to share with.
+
+// Install count for the skill card, kept OUT of the shared `loadSkill` entry on
+// purpose. `loadSkill` is "skill-content"-tagged and now lives for weeks; the
+// install number moves daily, so reading `skill.installs` off that row would
+// freeze the figure on every social card for up to 7 days. This mirrors what
+// components/skill-sidebar.tsx does for the page itself — the invariant is that
+// a daily-cadence number is only ever read from a "skill-sync"-tagged entry.
+async function loadSkillInstalls(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  cacheTag(SKILL_SYNC_TAG);
+  const insights = await fetchQuery(api.skills.getInsights, {
+    source,
+    skillId,
+  });
+  return insights.installs;
+}
 
 // Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only
 // so it becomes part of the cache key (`'use cache'` keys on the args). A new
@@ -158,7 +175,10 @@ export function sectionOgImage({
 
 /** Skill detail card. */
 export async function skillOgImage(source: string, skillId: string) {
-  const skill = await loadSkill(source, skillId);
+  const [skill, installs] = await Promise.all([
+    loadSkill(source, skillId),
+    loadSkillInstalls(source, skillId),
+  ]);
 
   if (!skill) {
     return sectionOgImage({
@@ -200,7 +220,13 @@ export async function skillOgImage(source: string, skillId: string) {
       >
         <PixelStatStrip
           top={0}
-          stats={[{ value: formatInstalls(skill.installs), label: "installs" }]}
+          stats={[
+            {
+              // null = orphaned skill row; a dash beats a confident "0".
+              value: installs == null ? "—" : formatInstalls(installs),
+              label: "installs",
+            },
+          ]}
         />
         <div
           style={{

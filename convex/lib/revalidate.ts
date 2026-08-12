@@ -4,25 +4,29 @@
  * snapshot. Drives every allowlisted tag, not just the home rails — the
  * allowlist itself lives in app/api/revalidate/route.ts.
  *
- * Which tag to ping — getting this wrong is expensive, not just wrong:
+ * Which tag to ping is decided by WHICH FIELDS MOVED, not by which job you are.
+ * A job that moves both kinds of data pings both (markDelistedSkills and
+ * syncCurated do exactly that). Getting this wrong is expensive, not just wrong:
  *
  *   "home-hot" / "home-trending" / "home-popular"
  *       Home rails. Pinged by their own leaderboard crons.
  *   "skill-sync"
- *       Install counts, ranks, snapshots, version history, copies. Ping this
- *       from anything that moves an install number. syncSkills rewrites the
- *       full ~9.5k-row leaderboard daily, so this tag churns the whole catalog
- *       every morning by design.
+ *       Install counts, ranks, snapshots, version history, copies — plus the
+ *       list surfaces that filter on `isDelisted` / read the curated rollup
+ *       (`lib/source-skills.ts`, `app/(main)/[org]`, `app/(main)/official`).
+ *       syncSkills rewrites the full ~9.5k-row leaderboard daily, so this tag
+ *       churns the whole catalog every morning by design.
  *   "skill-content"
- *       The skill row itself: SKILL.md content, description, isDelisted,
- *       curatedOwner. Only three callers: the content-chain terminal
- *       (skills.ts publishSkillUpdate), markDelistedSkills, and syncCurated.
+ *       The skill row read by `loadSkill`: SKILL.md content, description, name,
+ *       isDelisted, curatedOwner. Long-lived (`cacheLife("weeks")`), so it
+ *       depends on these pings for freshness rather than on a timer.
  *
- * Do NOT add "skill-content" to an install-count-only job (reconcile,
- * curatedRefresh, the syncSkills terminal). Those run daily across the whole
- * catalog, and pairing them with the content tag is exactly the coupling that
- * made one routine number update cost 4 ISR writes per visited skill page
- * instead of 1. See lib/skill-cache.ts.
+ * Do NOT add "skill-content" to a job that moved only install numbers
+ * (reconcile, curatedRefresh, and the unconditional part of the syncSkills
+ * terminal). Those run daily across the whole catalog, and pairing them with the
+ * content tag is exactly the coupling that made one routine number update cost 4
+ * ISR writes per visited skill page instead of 1. See lib/skill-cache.ts, which
+ * is also honest about what this does not yet buy.
  *
  * No-ops unless both env vars are set — they're configured on the PRODUCTION
  * Convex deployment only, so dev syncs never hit the live site. Set with:
@@ -33,7 +37,21 @@
  * Best-effort: a failed ping is logged, not thrown — the sync already
  * succeeded, and the cache's time-based `revalidate` is the safety net.
  */
-export async function revalidateSiteTag(tag: string): Promise<void> {
+/**
+ * Every tag `app/api/revalidate/route.ts` will accept. Kept as a union rather
+ * than a bare `string` so a typo is a compile error here instead of a 400 that
+ * `revalidateSiteTag` swallows and logs. The two deployments can't share a
+ * module, so this has to be mirrored by hand — `tests/revalidate-route.test.ts`
+ * asserts the Next side matches.
+ */
+export type SiteTag =
+  | "home-hot"
+  | "home-trending"
+  | "home-popular"
+  | "skill-sync"
+  | "skill-content";
+
+export async function revalidateSiteTag(tag: SiteTag): Promise<void> {
   const url = process.env.SITE_REVALIDATE_URL;
   const secret = process.env.REVALIDATE_SECRET;
   if (!url || !secret) return;

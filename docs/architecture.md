@@ -49,7 +49,7 @@ svix
 | `/dashboard` | `○` Static | `listByUser` + `currentPlan` client-fetched over the authed websocket |
 | `/add` | `○` Static | Public add-skill flow; auth resolves client-side (`useConvexAuth`), quota via `myGitHubAddQuota` over the websocket, adds via Convex actions |
 | `/official`, `/pricing` | `○` Static | official: `'use cache'` curated owners loader, `cacheTag('skill-sync')`. Its `cacheLife("days")` means the publisher list is cached content with `stale ≥ 5min`, so the **whole list is in the App Shell**, not just the header |
-| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` + `cacheTag('skill-sync')` loaders. **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
+| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` loaders split across two tags — `cacheTag('skill-sync')` for install/version data, `cacheTag('skill-content')` for the skill row (`lib/skill-cache.ts`). **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
 | `/bundle/[id]`, `/dev`, `/dev/add-skill` | `◐` Partial Prerender | bundle: `loading.tsx` shell + `preloadQuery` authed content streams in, with `await io()` declaring the request-time boundary; dev: `verifyAdmin()` streams behind a Suspense gate |
 | `/opengraph-image` plus the compare / official / pricing OG images | `○` Static | Param-free OG routes prerender. (Only the *param-dependent* OG routes are `ƒ`.) |
 | `/[org]/**/opengraph-image`, `/site/**/opengraph-image`, `/bundle/[id]/og/[v]`, `/api/revalidate`, `/api/skills-token` | `ƒ` Dynamic | OG images (data via `'use cache'`, rendered PNG CDN-cached via `Cache-Control`); revalidate webhook (secret-gated, called by Convex crons); skills-token relay (secret-gated, POST-only, mints a Vercel OIDC token for the Convex sync — see below) |
@@ -174,8 +174,9 @@ scroll to — but the fix was aimed at the wrong layer. It produced a second
 loading phase after the page had already rendered, and layout shift as the
 section went from an empty placeholder, to a spinner, to a full list.
 
-`loadVersions` now sits in the page's existing `Promise.all` behind `'use cache'`
-with `cacheTag("skill-sync")`, and `SkillHistory` is a Server Component taking
+The version rows now sit in the page's existing `Promise.all` behind `'use cache'`
+with `cacheTag("skill-sync")` (folded into `loadSkillSyncData` alongside insights
+and copies), and `SkillHistory` is a Server Component taking
 the rows as a prop. That removes the subscription entirely rather than deferring
 it, collapses three render phases into one, and puts the timeline in the cached
 HTML, so it costs one Convex call per cache period instead of one per reader.
@@ -187,7 +188,7 @@ What legitimately stays lazy is genuinely per-interaction work — the diff
 renderer in `skill-history-row.tsx` pulls the full shiki bundle and only matters
 once a row is expanded.
 
-**Partial Prerender for the catalog routes.** Skill/org/repo pages are public, high-cardinality, and shared. `generateStaticParams` returns one representative param (`lib/representative-params.ts` picks the most popular skill of each source type at build — memoized at module scope so the scan runs once, not once per route — with a known-good fallback) so Next can prerender the route's App Shell. It only needs one real path because an unknown or even invalid param still extracts a working shell; the representative just gives Next one concrete page to fully prebuild. `dynamicParams: true` is the default: a visitor to an unknown path gets the App Shell instantly (the route's `loading.tsx` skeleton), the param-specific content streams in, and Next upgrades the path in the background so later visitors get the cached render. The data layer (`loadSkill`, `loadAudits`, etc. in `components/skill-detail-page.tsx`, plus per-page `loadOrg`/`loadRepo`/`loadSource`) uses `'use cache'` keyed by args, so `generateMetadata` and the page body share one Convex call, and the `skill-sync`-tagged loaders bust on the daily sync (see §1 caching).
+**Partial Prerender for the catalog routes.** Skill/org/repo pages are public, high-cardinality, and shared. `generateStaticParams` returns one representative param (`lib/representative-params.ts` picks the most popular skill of each source type at build — memoized at module scope so the scan runs once, not once per route — with a known-good fallback) so Next can prerender the route's App Shell. It only needs one real path because an unknown or even invalid param still extracts a working shell; the representative just gives Next one concrete page to fully prebuild. `dynamicParams: true` is the default: a visitor to an unknown path gets the App Shell instantly (the route's `loading.tsx` skeleton), the param-specific content streams in, and Next upgrades the path in the background so later visitors get the cached render. The data layer (`loadSkill` in `lib/skill-cache.ts`; `loadAudits`/`loadSkillSyncData`/`loadStars` in `components/skill-detail-page.tsx`, plus per-page `loadOrg`/`loadRepo`/`loadSource`) uses `'use cache'` keyed by args, so `generateMetadata`, the page body and the OG route share one Convex call. The `skill-sync`-tagged loaders bust on the daily sync; `loadSkill` is `skill-content`-tagged and busts only when the row actually changes (see §1 caching).
 
 > `fetchQuery` forces `cache: "no-store"` on its underlying fetch, which would block prerendering. Wrapping it in a `'use cache'` function isolates that behind a cache boundary and lets the route prerender. This is the standard pattern for any server-side Convex read.
 
@@ -251,6 +252,12 @@ in-memory per instance, and `'use cache: remote'` is the explicit opt-in to
 Vercel's Runtime Cache. The app doesn't need `remote` today because its cached
 reads all sit inside prerenderable pages. A loader that ran outside one (a Route
 Handler, say) would not get this for free.
+
+The route accepts a fixed allowlist of tags: `home-hot`, `home-trending`,
+`home-popular`, `skill-sync`, and `skill-content`. The last two are split by
+cadence, not by skill — `lib/skill-cache.ts` has the reasoning and
+`convex/lib/revalidate.ts` mirrors the list as a `SiteTag` union so a typo on the
+Convex side is a compile error rather than a swallowed 400.
 
 **Verified in production (Aug 2026).** `/api/revalidate` does bust that shared
 cache. Against `skillbundle.dev`, on a skill detail page:
@@ -580,16 +587,18 @@ Two client-query flavors coexist:
 ### Pattern: `'use cache'` + `fetchQuery` server loaders (catalog routes)
 
 ```tsx
-// components/skill-detail-page.tsx
+// lib/skill-cache.ts
 export async function loadSkill(source: string, skillId: string) {
   "use cache";
-  cacheLife("days");
-  cacheTag("skill-sync");
+  cacheLife("weeks");
+  cacheTag(SKILL_CONTENT_TAG);
   return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
 }
 ```
 
-The cache key is derived from the args. Shared across `generateMetadata` + page body + any other importer. Cross-user — one Convex call per skill per `cacheLife` window, total. `cacheTag("skill-sync")` lets the daily sync bust every skill page's data in lockstep via `/api/revalidate`. The cached result lands in the route's static shell.
+The cache key is derived from the args (plus the build ID), so the entry is shared across `generateMetadata`, the page body, and the OG route — that sharing is why it lives in `lib/` rather than beside the page's other loaders. Cross-user: one Convex call per skill per `cacheLife` window, total. The cached result lands in the route's static shell.
+
+Note the two tags. `skill-content` covers the skill row and is pinged only by jobs that mutate it, which is what makes the long `cacheLife("weeks")` safe; `skill-sync` covers install counts and churns catalog-wide every morning. Never put a daily-cadence field behind `skill-content` — `lib/skill-cache.ts` is the canonical writeup, including what the split does *not* yet buy.
 
 > A considered-and-rejected extension: exposing `loadSkill` to the client via a GET route handler so compare/detail-sheet fetches share this cache. Rejected on plan economics (it trades Convex Pro calls for capped Vercel Hobby invocations) — see the note in `app/(main)/compare/compare-content.tsx`.
 
@@ -921,12 +930,13 @@ components/
   global-bundle-bar.tsx     # layout-mounted, pathname reserved-segment BLOCK-list, <Suspense fallback={null}>
   bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style
   data-error-boundary.tsx   # catchError() region boundary + retry() — wraps the data <Suspense>es
-  skill-detail-page.tsx     # loadSkill/loadAudits/loadVersions ('use cache' + cacheTag loaders)
+  skill-detail-page.tsx     # loadAudits/loadSkillSyncData/loadStars ('use cache' + cacheTag loaders)
   skill-history.tsx         # server: History timeline, data passed in as a prop
   skill-history-row.tsx     # client: per-row open/compare state + lazy diff
   header-nav.tsx            # DesktopNav — usePathname read behind <Suspense>
 
 lib/
+  skill-cache.ts            # SKILL_SYNC_TAG/SKILL_CONTENT_TAG + shared loadSkill (page + metadata + OG)
   representative-params.ts  # picks 1 representative param per catalog route (popular skill + fallback)
 
 e2e/                        # Playwright (see §15); NOT vitest — different runner

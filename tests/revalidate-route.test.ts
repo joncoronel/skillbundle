@@ -95,8 +95,18 @@ describe("POST /api/revalidate", () => {
   });
 
   describe("accepts", () => {
-    // Exactly the tags the Convex crons ping — convex/lib/revalidate.ts.
-    const ALLOWED = ["home-hot", "home-trending", "home-popular", "skill-sync"];
+    // Must mirror `SiteTag` in convex/lib/revalidate.ts exactly. The two
+    // deployments can't share a module, so this list is the only thing holding
+    // them together: a tag Convex pings that the route rejects returns 400,
+    // which revalidateSiteTag logs and swallows — the publish silently degrades
+    // to the time-based fallback and nothing fails.
+    const ALLOWED = [
+      "home-hot",
+      "home-trending",
+      "home-popular",
+      "skill-sync",
+      "skill-content",
+    ];
 
     for (const tag of ALLOWED) {
       it(`revalidates "${tag}" with immediate expiry`, async () => {

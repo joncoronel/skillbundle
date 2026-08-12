@@ -187,14 +187,23 @@ export const syncCurated = internalAction({
     );
 
     // `curatedOwner` is patched onto the skill row itself (Passes 1 and 2), and
-    // it drives the Official badge in the sidebar + OG card, both read through
-    // loadSkill on the "skill-content" tag. Like markDelistedSkills, this used
+    // Pass 3 rebuilds the owner rollup that /official reads. That spans BOTH
+    // tags: the Official badge on the detail page + OG card comes off loadSkill
+    // ("skill-content"), while `/official` (app/(main)/official/page.tsx) reads
+    // `listCuratedOwners` under "skill-sync". Like markDelistedSkills this used
     // to publish by accident off a broader ping; that ping is now
-    // install-counts-only, so the stamp has to announce itself. Gated on an
-    // actual change: after the first run of the day both counts are normally 0,
-    // and a curated set that didn't move shouldn't invalidate every skill page.
+    // install-counts-only, so the stamp has to announce itself — and it is the
+    // fields that moved, not the identity of this job, that picks the tags.
+    //
+    // Gated on an actual change: after the first run of the day both counts are
+    // normally 0, and a curated set that didn't move shouldn't invalidate
+    // anything. Issued in parallel — both calls swallow their own errors, so
+    // Promise.all cannot reject.
     if (totalStamped > 0 || totalCleared > 0) {
-      await revalidateSiteTag("skill-content");
+      await Promise.all([
+        revalidateSiteTag("skill-content"),
+        revalidateSiteTag("skill-sync"),
+      ]);
     }
 
     // Drain the discovery / content-fetch / audit chain for any rows Pass 0

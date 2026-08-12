@@ -113,9 +113,14 @@ export async function loadStars(source: string): Promise<number | null> {
 // The highlight is deterministic and expensive, so caching it (keyed by content)
 // freezes that read and keeps the skill body in the static shell.
 //
-// "max", not "days": the cache key IS the content, and the transform is pure, so
-// a given entry can never go stale — new content is a new key. On "days" this
-// re-ran shiki and rewrote an identical entry every 24h for every viewed skill.
+// "max", not "days": the cache key IS the content and the transform is pure, so
+// re-running on a timer can only ever reproduce the same bytes. On "days" that
+// meant re-running shiki and rewriting an identical entry every 24h for every
+// viewed skill; "max" stretches that to a 30-day revalidate (365-day expire).
+// Not "never" — no `'use cache'` profile is, and entries are keyed by build ID
+// anyway, so every deploy resets them. On a frequently-deployed app the real
+// ceiling here is deploy cadence, not cacheLife.
+//
 // The content-keying also means aliases and forks (which this app explicitly
 // tracks, see loadSkillSyncData) share a single entry rather than one each.
 async function highlightSkillContent(content: string) {
