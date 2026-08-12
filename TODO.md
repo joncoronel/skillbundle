@@ -813,6 +813,18 @@ Note the sync path already does the gated thing where it can: `upsertSkillsBatch
 returns a `contentFieldChanges` count and `syncSkills` pings `skill-content` only when
 it's non-zero. The content chain is harder only because of the scheduling shape.
 
+**Already tried and reverted (Aug 2026): a third `skill-audit` tag.** The idea
+was to move `loadAudits` off its 24h timer onto a weekly life plus a tag pinged
+by the audit chain. It banks nothing, for the reason above applied one level
+down: the chain's publish gate is a single OR over the whole day's drain
+(~1.3k skills), and `auditsChanged` counts a provider re-stamping `auditedAt`
+under an identical verdict — so the gate fires most days and the entry gets
+expired daily anyway, exactly as the timer did. It also traded a guaranteed 24h
+self-heal for a best-effort ping whose only signal lived in scheduler args, and
+moved `expire` from 7 to 30 days on a security surface. The full reasoning is at
+the loader in components/skill-detail-page.tsx. Do not retry it before per-skill
+tags exist — the same global-gate arithmetic sinks any per-tag variant.
+
 Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) remain the fuller
 fix and would let the content step ping only what it touched, but note they do
 NOT help the daily `skill-sync` ping: `syncSkills` walks the entire leaderboard

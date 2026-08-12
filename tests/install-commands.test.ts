@@ -118,6 +118,24 @@ describe("isSafeCommandSource / isSafeCommandSkillId", () => {
     expect(isSafeCommandSource("owner/re po")).toBe(false);
   });
 
+  // Dot segments are the one case the charset admits but URL path resolution
+  // treats specially: these values are interpolated into API paths, and
+  // `/repos/../x` collapses onto `/x`. encodeURIComponent does not help — `.`
+  // is unreserved, so ".." survives it untouched.
+  test("rejects exact dot segments in either position", () => {
+    expect(isSafeCommandSource("..")).toBe(false);
+    expect(isSafeCommandSource(".")).toBe(false);
+    expect(isSafeCommandSource("../x")).toBe(false);
+    expect(isSafeCommandSource("owner/..")).toBe(false);
+    expect(isSafeCommandSkillId("..")).toBe(false);
+  });
+
+  test("still accepts names that merely contain dots", () => {
+    expect(isSafeCommandSource("...")).toBe(true);
+    expect(isSafeCommandSource("a.b/c.d")).toBe(true);
+    expect(isSafeCommandSkillId("safe.id")).toBe(true);
+  });
+
   test("rejects empty and unsafe skill ids", () => {
     expect(isSafeCommandSkillId("")).toBe(false);
     expect(isSafeCommandSkillId("has space")).toBe(false);
