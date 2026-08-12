@@ -133,7 +133,7 @@ export async function fetchRelayToken(): Promise<RelayToken> {
     throw new Error(
       // Renders verbatim on /dev via lastRefreshError, so it follows the same
       // plain-prose copy convention as the panel itself.
-      `relay redirected; SKILLS_TOKEN_URL (${url}) is not the canonical host. ` +
+      `relay redirected (${res.status}); SKILLS_TOKEN_URL (${url}) is not the canonical host. ` +
         `The secret is deliberately not forwarded across the hop. Point it at the host that answers directly.`,
     );
   }
