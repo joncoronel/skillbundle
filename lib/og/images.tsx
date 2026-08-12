@@ -4,6 +4,7 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
+import { loadSkill } from "@/lib/skill-cache";
 import { og } from "./theme";
 import { FONT } from "./fonts";
 import {
@@ -35,11 +36,14 @@ import {
 
 // ── Cached loaders ──────────────────────────────────────────────────────────
 
-async function loadSkill(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
-}
+// `loadSkill` is imported from lib/skill-cache.ts rather than redeclared here.
+// It used to be a local copy, which meant every OG render wrote a second cache
+// entry for a row the detail page had already cached (`'use cache'` keys on
+// function identity, so identical bodies are still separate entries) — and,
+// being untagged, rewrote it every 24h instead of when the content changed.
+//
+// The loaders below stay local: each is specific to one OG surface, and none of
+// them has a second consumer to share with.
 
 // Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only
 // so it becomes part of the cache key (`'use cache'` keys on the args). A new

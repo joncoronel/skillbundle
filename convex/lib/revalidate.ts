@@ -1,8 +1,8 @@
 /**
  * Ping the Next.js site to invalidate one of its `'use cache'` tags, so the
  * next request rebuilds from fresh Convex data instead of serving the cached
- * snapshot. (Named for its original home-leaderboard use; it drives every
- * allowlisted tag now. The route's allowlist is in app/api/revalidate/route.ts.)
+ * snapshot. Drives every allowlisted tag, not just the home rails — the
+ * allowlist itself lives in app/api/revalidate/route.ts.
  *
  * Which tag to ping — getting this wrong is expensive, not just wrong:
  *
@@ -22,7 +22,7 @@
  * curatedRefresh, the syncSkills terminal). Those run daily across the whole
  * catalog, and pairing them with the content tag is exactly the coupling that
  * made one routine number update cost 4 ISR writes per visited skill page
- * instead of 1. See the header of components/skill-detail-page.tsx.
+ * instead of 1. See lib/skill-cache.ts.
  *
  * No-ops unless both env vars are set — they're configured on the PRODUCTION
  * Convex deployment only, so dev syncs never hit the live site. Set with:
@@ -33,7 +33,7 @@
  * Best-effort: a failed ping is logged, not thrown — the sync already
  * succeeded, and the cache's time-based `revalidate` is the safety net.
  */
-export async function revalidateHomeTag(tag: string): Promise<void> {
+export async function revalidateSiteTag(tag: string): Promise<void> {
   const url = process.env.SITE_REVALIDATE_URL;
   const secret = process.env.REVALIDATE_SECRET;
   if (!url || !secret) return;

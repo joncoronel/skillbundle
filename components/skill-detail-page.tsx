@@ -21,6 +21,7 @@ import { SkillCopies } from "@/components/skill-copies";
 import { SkillHistory } from "@/components/skill-history";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would block prerendering. Each loader is a `'use cache'`
@@ -28,37 +29,13 @@ import { DataErrorBoundary } from "@/components/data-error-boundary";
 // the result by its args (source, skillId), so the route prerenders a static
 // shell and the `generateMetadata` pass + body share one entry.
 //
-// Two tags, split by CADENCE rather than by skill. This split is the whole
-// reason the loaders are grouped the way they are, so read this before merging
-// or re-tagging any of them:
-//
-//   "skill-sync"    — install count, rank, snapshots, version history, copies.
-//                     syncSkills rewrites the ENTIRE leaderboard (~9.5k rows)
-//                     every morning, so this tag genuinely churns daily.
-//   "skill-content" — the skill row itself: SKILL.md content, description,
-//                     name, isDelisted, curatedOwner. Changes per-skill every
-//                     few WEEKS (markStaleContent only re-flags rows past the
-//                     7-day backstop).
-//
-// Both used to be one tag, which meant the daily install-count refresh
-// invalidated every skill's ~25 KB content entry too. Since ISR writes are
-// billed per entry, that made a routine number update cost 4 writes per visited
-// page instead of 1. Keep install-count-only jobs (syncSkills, reconcile,
-// curatedRefresh — all of them go through drainRefreshBatch) pinging ONLY
-// "skill-sync"; anything that mutates the skill row must ping "skill-content"
-// (see convex/lib/revalidate.ts for the caller list).
+// The skill row itself is loaded by `loadSkill` in lib/skill-cache.ts, which
+// also carries the canonical explanation of the two-tag split ("skill-sync" for
+// daily install data, "skill-content" for the row). Read that before re-tagging
+// or merging anything below.
 //
 // loadAudits/loadStars are written by other processes entirely, so they keep
 // their own independent daily cadence and stay untagged.
-const SKILL_SYNC_TAG = "skill-sync";
-const SKILL_CONTENT_TAG = "skill-content";
-
-export async function loadSkill(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag(SKILL_CONTENT_TAG);
-  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
-}
 
 export async function loadAudits(source: string, skillId: string) {
   "use cache";

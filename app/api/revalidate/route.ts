@@ -9,8 +9,8 @@ import { secretsMatch } from "@/lib/shared-secret";
 // of tags can be revalidated. Not a Clerk-private route, so the secret is the
 // only gate (see proxy.ts).
 //
-// The two skill tags are split by cadence, NOT by skill — see the header of
-// components/skill-detail-page.tsx for the full reasoning:
+// The two skill tags are split by cadence, NOT by skill — see lib/skill-cache.ts
+// for the full reasoning:
 //
 //   "skill-sync"    — install counts / ranks / snapshots / versions / copies.
 //                     Pinged daily by syncSkills, which rewrites the entire

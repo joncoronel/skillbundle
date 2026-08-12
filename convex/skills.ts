@@ -31,7 +31,7 @@ import {
   NOT_MODIFIED,
   RATE_LIMITED,
 } from "./lib/github";
-import { revalidateHomeTag } from "./lib/revalidate";
+import { revalidateSiteTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
 import { extractFrontmatterVersion } from "./skillVersions";
@@ -156,14 +156,14 @@ export const syncSkills = internalAction({
     // Lifetime installs + installRank just changed, so refresh the home "Popular"
     // tab (cached under this tag) in lockstep with the daily data instead of
     // letting it drift on its own 24h time-based window. Best-effort no-op in dev
-    // (see revalidateHomeTag); trending/hot ping their own tags from their crons.
-    await revalidateHomeTag("home-popular");
+    // (see revalidateSiteTag); trending/hot ping their own tags from their crons.
+    await revalidateSiteTag("home-popular");
 
     // Same idea for skill detail pages: their install count (loadSkill) and chart
     // (loadInsights) are both tagged "skill-sync" and cached on a 24h ISR window.
     // Ping the tag so every visited skill page refreshes its number and snapshot
     // series in lockstep with this sync rather than drifting up to a day behind.
-    await revalidateHomeTag("skill-sync");
+    await revalidateSiteTag("skill-sync");
 
     // Delist skills not seen for 30+ days.
     await ctx.scheduler.runAfter(5_000, internal.skills.markDelistedSkills, {});
@@ -1497,7 +1497,7 @@ export const fetchSkillContent = internalAction({
  * the only caller that touches "skill-content" on the daily path — the
  * install-count jobs (syncSkills, reconcile, curatedRefresh) deliberately do
  * not, so that the daily leaderboard refresh stops invalidating every skill's
- * content entry. See the header of components/skill-detail-page.tsx.
+ * content entry. See lib/skill-cache.ts.
  *
  * Every *other* caller pings before the content it means to publish exists:
  * `syncSkills` pings at its own terminal and only then schedules
@@ -1515,7 +1515,7 @@ export const fetchSkillContent = internalAction({
  * reconcile refreshed nothing or the content pipeline ran past 07:00. This step
  * is now the sole publisher of skill content, so do not drop it.
  *
- * Best-effort and idempotent (`revalidateHomeTag` swallows errors and no-ops
+ * Best-effort and idempotent (`revalidateSiteTag` swallows errors and no-ops
  * when the env vars are unset, i.e. everywhere but prod), so the extra pings
  * cost nothing when there was no content to write.
  */
@@ -1523,8 +1523,8 @@ export const publishSkillUpdate = internalAction({
   args: {},
   returns: v.null(),
   handler: async () => {
-    await revalidateHomeTag("skill-content");
-    await revalidateHomeTag("skill-sync");
+    await revalidateSiteTag("skill-content");
+    await revalidateSiteTag("skill-sync");
     return null;
   },
 });
@@ -2505,7 +2505,7 @@ export const markDelistedSkills = internalAction({
       // is now install-counts-only, so delisting has to announce itself.
       // Gated on the count so a no-op sweep (the overwhelmingly common case)
       // costs nothing.
-      await revalidateHomeTag("skill-content");
+      await revalidateSiteTag("skill-content");
     }
   },
 });

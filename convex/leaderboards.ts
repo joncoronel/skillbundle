@@ -24,7 +24,7 @@ import {
   SkillsApiRateLimitError,
 } from "./lib/skillsApi";
 import { loadSkillsAuth } from "./lib/skillsAuth";
-import { revalidateHomeTag } from "./lib/revalidate";
+import { revalidateSiteTag } from "./lib/revalidate";
 
 const TRENDING_LIMIT = 200; // top N to track
 const HOT_LIMIT = 50;
@@ -67,7 +67,7 @@ export const syncTrending = internalAction({
     }));
 
     await ctx.runMutation(internal.leaderboards.applyTrending, { ranked });
-    await revalidateHomeTag("home-trending");
+    await revalidateSiteTag("home-trending");
   },
 });
 
@@ -185,7 +185,7 @@ export const syncHot = internalAction({
     }));
 
     await ctx.runMutation(internal.leaderboards.applyHot, { ranked });
-    await revalidateHomeTag("home-hot");
+    await revalidateSiteTag("home-hot");
   },
 });
 

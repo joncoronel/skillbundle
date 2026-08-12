@@ -10,8 +10,8 @@ import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
  * highest-traffic route for a region most readers never scroll to — a real
  * problem, but deferring only moved it.
  *
- * The data is now loaded by `loadVersions` in skill-detail-page.tsx, in the same
- * `Promise.all` as the rest of the page and behind the same `'use cache'` +
+ * The data is now loaded by `loadSkillSyncData` in skill-detail-page.tsx, in the
+ * same `Promise.all` as the rest of the page and behind the same `'use cache'` +
  * `cacheTag("skill-sync")` treatment. That solves the original concern more
  * completely — there is no subscription at all now, deferred or otherwise — and
  * removes the two consequences of the old approach: a second spinner after the

@@ -32,7 +32,7 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { revalidateHomeTag } from "./lib/revalidate";
+import { revalidateSiteTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { drainRefreshBatch } from "./lib/detailRefresh";
 import { isDeadRenamedAlias } from "./lib/source";
@@ -279,7 +279,7 @@ export const reconcileUnseenSkills = internalAction({
       { day, leaderboard: "reconcile" },
     );
 
-    if (refreshed > 0) await revalidateHomeTag("skill-sync");
+    if (refreshed > 0) await revalidateSiteTag("skill-sync");
 
     if (rateLimitedAfter !== undefined) {
       console.warn(

@@ -21,7 +21,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getCurated } from "./lib/skillsApi";
 import { loadSkillsAuth } from "./lib/skillsAuth";
-import { revalidateHomeTag } from "./lib/revalidate";
+import { revalidateSiteTag } from "./lib/revalidate";
 
 const APPLY_BATCH_SIZE = 200;
 const CLEANUP_PAGE_SIZE = 200;
@@ -194,7 +194,7 @@ export const syncCurated = internalAction({
     // actual change: after the first run of the day both counts are normally 0,
     // and a curated set that didn't move shouldn't invalidate every skill page.
     if (totalStamped > 0 || totalCleared > 0) {
-      await revalidateHomeTag("skill-content");
+      await revalidateSiteTag("skill-content");
     }
 
     // Drain the discovery / content-fetch / audit chain for any rows Pass 0

@@ -12,7 +12,7 @@
  *      notFound comes from loadSkill ("skill-content"), while the sidebar's
  *      install/version data comes from loadSkillSyncData ("skill-sync"). A
  *      brand-new row moves both, so unlike the daily jobs this path is not a
- *      candidate for pinging just one. Best-effort — revalidateHomeTag
+ *      candidate for pinging just one. Best-effort — revalidateSiteTag
  *      swallows errors and no-ops in dev.
  *   3. Index this one skill into Typesense now instead of waiting for the
  *      daily mark-and-sweep, so it's searchable within seconds. `description`
@@ -22,15 +22,15 @@
 
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { revalidateHomeTag } from "./revalidate";
+import { revalidateSiteTag } from "./revalidate";
 
 export async function kickPostAddChain(
   ctx: ActionCtx,
   args: { source: string; skillId: string; description?: string },
 ): Promise<void> {
   await ctx.scheduler.runAfter(0, internal.skills.backfillDiscoverUrls, {});
-  await revalidateHomeTag("skill-content");
-  await revalidateHomeTag("skill-sync");
+  await revalidateSiteTag("skill-content");
+  await revalidateSiteTag("skill-sync");
   await ctx.scheduler.runAfter(0, internal.typesense.indexSkill, {
     source: args.source,
     skillId: args.skillId,

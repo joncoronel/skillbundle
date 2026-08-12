@@ -61,8 +61,8 @@ export function SkillSidebar({
 }) {
   // `installs` comes off `insights` rather than as its own prop. It used to be
   // passed separately, sourced from the skill row — which is what forced that
-  // row's cache entry onto the daily "skill-sync" tag. See the tag split at the
-  // top of components/skill-detail-page.tsx.
+  // row's cache entry onto the daily "skill-sync" tag. Tag split documented in
+  // lib/skill-cache.ts.
   const { snapshots, installRank, installs } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
