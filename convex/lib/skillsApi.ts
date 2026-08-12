@@ -4,9 +4,10 @@
  * Docs: https://skills.sh/docs/api
  *
  * Auth: every call takes a `SkillsAuth` from `loadSkillsAuth(ctx)` (see
- * lib/skillsAuth.ts). The documented credential is a Vercel OIDC token, which
- * we relay in from the site; the legacy `SKILLS_SH_API_KEY` is the fallback and
- * is read straight from the environment here.
+ * lib/skillsAuth.ts), which carries BOTH credentials. The documented one is a
+ * Vercel OIDC token relayed in from the site; the legacy `SKILLS_SH_API_KEY` is
+ * the fallback. This module reads no environment of its own, so what a call
+ * sends is fully determined by the object handed to it.
  *
  * There is no unauthenticated tier. Measured Aug 2026: the listing, search,
  * detail and curated endpoints all 401 with `authentication_required` when
@@ -38,11 +39,44 @@ export class SkillsApiNotFoundError extends Error {
 }
 
 /**
- * Credential for a batch of skills.sh calls, loaded once per action by
- * `loadSkillsAuth(ctx)`. `oidcToken` is null when no fresh token is cached, in
- * which case the legacy API key carries the request on its own.
+ * Both credentials were rejected (or the only one we had was). Distinct from a
+ * generic error because retrying is the one thing that cannot help: an
+ * unauthenticated request is unauthenticated on every attempt. Without this
+ * class `withTransientRetry` treats an auth failure as a blip and triples every
+ * call in the run.
  */
-export type SkillsAuth = { oidcToken: string | null };
+export class SkillsApiAuthError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "SkillsApiAuthError";
+    this.status = status;
+  }
+}
+
+/**
+ * Credentials for a batch of skills.sh calls, loaded once per action by
+ * `loadSkillsAuth(ctx)` and threaded through every call that action makes.
+ *
+ * Holds BOTH credentials so a reader can tell what a request will send without
+ * also knowing the deployment's environment. `oidcToken: null` means the legacy
+ * key carries the request; both null means the call goes out unauthenticated
+ * and will 401.
+ *
+ * Deliberately mutable: `request()` clears `oidcToken` the first time skills.sh
+ * rejects it, so the rest of the action skips straight to the key instead of
+ * re-proving the same rejection on every one of thousands of calls.
+ */
+export type SkillsAuth = {
+  oidcToken: string | null;
+  apiKey: string | null;
+  /**
+   * Invoked the first time skills.sh rejects the OIDC token, so the fallback
+   * becomes visible on /dev instead of only in the logs. Supplied by
+   * `loadSkillsAuth`; already de-duplicated per action.
+   */
+  onOidcRejected?: (status: number) => Promise<void>;
+};
 
 function headersFor(credential: string | null): Record<string, string> {
   const headers: Record<string, string> = {
@@ -53,22 +87,31 @@ function headersFor(credential: string | null): Record<string, string> {
   return headers;
 }
 
+function isAuthStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
 async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
   const url = `${BASE_URL}${path}`;
-  const key = process.env.SKILLS_SH_API_KEY ?? null;
 
-  let res = await fetch(url, { headers: headersFor(auth.oidcToken ?? key) });
+  let res = await fetch(url, {
+    headers: headersFor(auth.oidcToken ?? auth.apiKey),
+  });
 
   // Fall back to the legacy key only on an auth rejection, and only when the
   // OIDC token is what got rejected. Retrying a 429 with a second credential
   // would just spend both on the same per-(team, project) limit, and retrying a
   // 5xx is withTransientRetry's job.
-  if ((res.status === 401 || res.status === 403) && auth.oidcToken && key) {
+  if (isAuthStatus(res.status) && auth.oidcToken && auth.apiKey) {
     const body = await res.text().catch(() => "");
     console.error(
-      `skills.sh rejected the OIDC token (${res.status}: ${body.slice(0, 200)}); retrying with the legacy API key`,
+      `skills.sh rejected the OIDC token (${res.status}: ${body.slice(0, 200)}); falling back to the legacy API key for the rest of this action`,
     );
-    res = await fetch(url, { headers: headersFor(key) });
+    // Clear it before reporting: this is what stops the next few thousand calls
+    // in this action from repeating the rejected request.
+    auth.oidcToken = null;
+    await auth.onOidcRejected?.(res.status);
+    res = await fetch(url, { headers: headersFor(auth.apiKey) });
   }
 
   if (res.status === 429) {
@@ -77,6 +120,13 @@ async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
   }
   if (res.status === 404) {
     throw new SkillsApiNotFoundError(`skills.sh API 404: ${path}`);
+  }
+  if (isAuthStatus(res.status)) {
+    const body = await res.text().catch(() => "");
+    throw new SkillsApiAuthError(
+      res.status,
+      `skills.sh API ${res.status} on ${path} (no credential accepted): ${body.slice(0, 200)}`,
+    );
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -103,6 +153,8 @@ export async function withTransientRetry<T>(
     } catch (e) {
       if (e instanceof SkillsApiRateLimitError) throw e;
       if (e instanceof SkillsApiNotFoundError) throw e;
+      // Retrying an auth failure just triples the requests and the log lines.
+      if (e instanceof SkillsApiAuthError) throw e;
       lastErr = e;
       if (attempt < maxAttempts) {
         // Linear backoff: 500ms, 1000ms. Keeps total worst-case wait under

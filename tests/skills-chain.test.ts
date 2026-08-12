@@ -241,11 +241,11 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
     expect(skill!.needsContentFetch).toBe(false);
   });
 
-  // Verify the fetcher was actually called, not just bypassed. The leading
-  // auth argument is `{ oidcToken: null }` because no skillsAuthToken row is
-  // seeded here, so this also pins the key-only fallback path.
+  // Verify the fetcher was actually called, not just bypassed. `oidcToken` is
+  // null because no skillsAuthToken row is seeded here, so this also pins the
+  // key-only fallback path.
   expect(getSkillSyncData).toHaveBeenCalledWith(
-    { oidcToken: null },
+    expect.objectContaining({ oidcToken: null }),
     "example.com",
     "needs-fetch",
   );

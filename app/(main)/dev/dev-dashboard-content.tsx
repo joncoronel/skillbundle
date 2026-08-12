@@ -41,6 +41,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
+import { SkillsAuthPanel } from "./skills-auth-panel";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,12 +117,12 @@ export function DevDashboardContent() {
   return (
     <div className="space-y-8">
       <StatsCards stats={stats} loading={loading} />
-      <SkillsAuthPanel />
       <ErrorSkillsList
         activeFilter={activeFilter}
         onFilterChange={setActiveFilter}
         stats={stats}
       />
+      <SkillsAuthPanel admin={admin} />
       <EmbeddingPanel />
       <DelistedAnalysis />
       <AdminActions />
@@ -658,95 +659,6 @@ function EmbeddingSkillList({
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * Which credential the skills.sh sync is running on.
- *
- * The fallback to the legacy API key is silent by design — the catalog keeps
- * syncing either way — so without this panel a broken OIDC relay would go
- * unnoticed until the key itself stopped working. That is the whole point of
- * migrating, so it needs to be visible.
- */
-function SkillsAuthPanel() {
-  const { data: auth } = useQuery(
-    convexQuery(api.devStats.getSkillsAuthStatus, {}),
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>skills.sh API auth</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {auth === undefined ? (
-          <Skeleton className="h-16 w-full" />
-        ) : (
-          <div className="space-y-3 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              {auth.usingOidc ? (
-                <Badge variant="success">Vercel OIDC</Badge>
-              ) : auth.hasLegacyKey ? (
-                <Badge variant="warning">Legacy API key</Badge>
-              ) : (
-                <Badge variant="danger">No credential</Badge>
-              )}
-              <span className="text-muted-foreground">
-                {auth.usingOidc
-                  ? `token valid, refreshed ${auth.refreshedAt ? timeAgo(auth.refreshedAt) : "unknown"}`
-                  : auth.hasLegacyKey
-                    ? "no usable OIDC token — running on SKILLS_SH_API_KEY"
-                    : "no OIDC token and no SKILLS_SH_API_KEY — every call will 401"}
-              </span>
-            </div>
-
-            {auth.usingOidc && auth.expiresAt && (
-              <p className="text-xs text-muted-foreground">
-                Expires {new Date(auth.expiresAt).toISOString()}. Runtime tokens
-                live 2h; refreshed hourly by the{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-                  refresh skills.sh OIDC token
-                </code>{" "}
-                cron.
-              </p>
-            )}
-
-            {!auth.relayConfigured && (
-              <p className="text-xs text-muted-foreground">
-                Relay not configured on this deployment: set{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-                  SKILLS_TOKEN_URL
-                </code>{" "}
-                and{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-                  SKILLS_TOKEN_SECRET
-                </code>
-                . Expected on production only.
-              </p>
-            )}
-
-            {auth.lastRefreshError && (
-              <p className="text-xs text-warning-foreground">
-                Last refresh failed
-                {auth.lastRefreshErrorAt
-                  ? ` ${timeAgo(auth.lastRefreshErrorAt)}`
-                  : ""}
-                : {auth.lastRefreshError}
-              </p>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              Force a refresh with{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-                npx convex run skillsAuth:refreshToken
-              </code>
-              .
-            </p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 

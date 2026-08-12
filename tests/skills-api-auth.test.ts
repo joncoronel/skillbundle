@@ -6,14 +6,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getCurated,
+  withTransientRetry,
+  SkillsApiAuthError,
   SkillsApiNotFoundError,
   SkillsApiRateLimitError,
+  type SkillsAuth,
 } from "../convex/lib/skillsApi";
 
 const OIDC = "header.payload.signature";
 const KEY = "sk_live_test";
 
 let fetchMock: ReturnType<typeof vi.fn>;
+
+/**
+ * Both credentials are inputs, never ambient environment — that is the point of
+ * `SkillsAuth` carrying the pair, and it is what lets these tests describe the
+ * selection rule without mutating `process.env`.
+ */
+function auth(
+  oidcToken: string | null,
+  apiKey: string | null = KEY,
+): SkillsAuth & { rejections: number[] } {
+  const rejections: number[] = [];
+  return {
+    oidcToken,
+    apiKey,
+    rejections,
+    onOidcRejected: async (status: number) => {
+      rejections.push(status);
+    },
+  };
+}
 
 function jsonResponse(status: number, body: unknown = {}, headers: HeadersInit = {}) {
   return new Response(JSON.stringify(body), { status, headers });
@@ -28,7 +51,6 @@ function authOnCall(n: number): string | undefined {
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
-  process.env.SKILLS_SH_API_KEY = KEY;
 });
 
 afterEach(() => {
@@ -38,7 +60,7 @@ afterEach(() => {
 /**
  * The migration's core bet: OIDC is the credential we actually run on every
  * day, and the legacy `sk_live_` key is a fallback that only fires when OIDC is
- * rejected. Both halves matter — an OIDC path that silently never runs would
+ * rejected. Both halves matter. An OIDC path that silently never runs would
  * leave us on an undocumented key without knowing, and a fallback that fires on
  * the wrong failures would burn the key against rate limits it can't fix.
  */
@@ -46,7 +68,7 @@ describe("skills.sh client auth", () => {
   it("sends the OIDC token when one is cached", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
 
-    await getCurated({ oidcToken: OIDC });
+    await getCurated(auth(OIDC));
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(authOnCall(1)).toBe(`Bearer ${OIDC}`);
@@ -55,7 +77,7 @@ describe("skills.sh client auth", () => {
   it("sends the legacy key when no OIDC token is cached", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
 
-    await getCurated({ oidcToken: null });
+    await getCurated(auth(null));
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(authOnCall(1)).toBe(`Bearer ${KEY}`);
@@ -66,7 +88,7 @@ describe("skills.sh client auth", () => {
       .mockResolvedValueOnce(jsonResponse(401, { error: "invalid_token" }))
       .mockResolvedValueOnce(jsonResponse(200, { totalSkills: 3 }));
 
-    const result = await getCurated({ oidcToken: OIDC });
+    const result = await getCurated(auth(OIDC));
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(authOnCall(1)).toBe(`Bearer ${OIDC}`);
@@ -79,10 +101,46 @@ describe("skills.sh client auth", () => {
       .mockResolvedValueOnce(jsonResponse(403))
       .mockResolvedValueOnce(jsonResponse(200, { totalSkills: 1 }));
 
-    await getCurated({ oidcToken: OIDC });
+    await getCurated(auth(OIDC));
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(authOnCall(2)).toBe(`Bearer ${KEY}`);
+  });
+
+  it("reports the rejection so it can be surfaced on /dev", async () => {
+    // Without this the panel can only see "do we hold a fresh token", which
+    // stays true while skills.sh refuses every one of them.
+    const a = auth(OIDC);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401))
+      .mockResolvedValueOnce(jsonResponse(200, {}));
+
+    await getCurated(a);
+
+    expect(a.rejections).toEqual([401]);
+  });
+
+  it("stops re-sending a rejected token for the rest of the action", async () => {
+    // The amplification this prevents: without it every subsequent call in a
+    // batch re-proves the same rejection, doubling upstream requests against
+    // the same rate-limit budget and one log line per skill.
+    const a = auth(OIDC);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401))
+      // A fresh Response per call: a body can only be read once, so handing
+      // back the same instance would fail on the second call for the wrong
+      // reason.
+      .mockImplementation(async () => jsonResponse(200, {}));
+
+    await getCurated(a);
+    await getCurated(a);
+    await getCurated(a);
+
+    // 2 for the first call (rejected + fallback), then 1 each — not 2 each.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(authOnCall(3)).toBe(`Bearer ${KEY}`);
+    expect(authOnCall(4)).toBe(`Bearer ${KEY}`);
+    expect(a.rejections).toEqual([401]);
   });
 
   it("does not retry a rate limit with the key", async () => {
@@ -92,7 +150,7 @@ describe("skills.sh client auth", () => {
       jsonResponse(429, {}, { "Retry-After": "30" }),
     );
 
-    await expect(getCurated({ oidcToken: OIDC })).rejects.toBeInstanceOf(
+    await expect(getCurated(auth(OIDC))).rejects.toBeInstanceOf(
       SkillsApiRateLimitError,
     );
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -101,7 +159,7 @@ describe("skills.sh client auth", () => {
   it("does not retry a 404 with the key", async () => {
     fetchMock.mockResolvedValue(jsonResponse(404));
 
-    await expect(getCurated({ oidcToken: OIDC })).rejects.toBeInstanceOf(
+    await expect(getCurated(auth(OIDC))).rejects.toBeInstanceOf(
       SkillsApiNotFoundError,
     );
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -112,26 +170,52 @@ describe("skills.sh client auth", () => {
     // them here would double every attempt.
     fetchMock.mockResolvedValue(jsonResponse(503));
 
-    await expect(getCurated({ oidcToken: OIDC })).rejects.toThrow();
+    await expect(getCurated(auth(OIDC))).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("gives up on a 401 when there is no key to fall back to", async () => {
-    delete process.env.SKILLS_SH_API_KEY;
+  it("throws SkillsApiAuthError when no credential is accepted", async () => {
     fetchMock.mockResolvedValue(jsonResponse(401, { error: "invalid_token" }));
 
-    await expect(getCurated({ oidcToken: OIDC })).rejects.toThrow();
+    await expect(getCurated(auth(OIDC, null))).rejects.toBeInstanceOf(
+      SkillsApiAuthError,
+    );
+    // No key to fall back to, so exactly one attempt.
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("sends no Authorization header when neither credential exists", async () => {
     // Not a supported configuration, but it must fail as an upstream 401
     // rather than as a TypeError building the headers.
-    delete process.env.SKILLS_SH_API_KEY;
     fetchMock.mockResolvedValue(jsonResponse(200, { data: [] }));
 
-    await getCurated({ oidcToken: null });
+    await getCurated(auth(null, null));
 
     expect(authOnCall(1)).toBeUndefined();
+  });
+});
+
+describe("withTransientRetry", () => {
+  it("does not retry an auth failure", async () => {
+    // An unauthenticated request is unauthenticated on every attempt. Retrying
+    // turns one bad credential into 3x the requests and 3x the log noise across
+    // every skill in the run.
+    fetchMock.mockResolvedValue(jsonResponse(401));
+
+    await expect(
+      withTransientRetry(() => getCurated(auth(OIDC, null))),
+    ).rejects.toBeInstanceOf(SkillsApiAuthError);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("still retries a genuine transient failure", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(503))
+      .mockResolvedValueOnce(jsonResponse(200, { totalSkills: 2 }));
+
+    const result = await withTransientRetry(() => getCurated(auth(null)));
+
+    expect(result).toEqual({ totalSkills: 2 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

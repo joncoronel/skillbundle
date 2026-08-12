@@ -509,7 +509,7 @@ before building on them:
 Rejected alternative, still rejected: proxying every skills.sh call through a
 Vercel route. The sync is thousands of staggered per-skill actions carrying
 multi-MB `files[]` payloads, so that converts one cron chain into thousands of
-function invocations. The relay costs ~4 invocations a day and keeps all sync
+function invocations. The relay costs ~24 invocations a day and keeps all sync
 bandwidth on Convex.
 
 **Left to do (deployment only).** Until these are set, every call runs on the
@@ -520,7 +520,7 @@ key exactly as before, and /dev says so:
 
     npx convex env set SKILLS_TOKEN_URL https://skillbundle.dev/api/skills-token --prod
     npx convex env set SKILLS_TOKEN_SECRET <secret> --prod
-    npx convex run skillsAuth:refreshToken --prod   # don't wait up to 6h for the first cron
+    npx convex run skillsAuth:refreshToken --prod   # don't wait up to an hour for the first cron
 
 Keep `SKILLS_SH_API_KEY` set. It is the fallback now, and removing it would turn
 a relay outage into a sync outage.

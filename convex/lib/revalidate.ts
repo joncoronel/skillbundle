@@ -26,6 +26,11 @@ export async function revalidateHomeTag(tag: string): Promise<void> {
         "x-revalidate-secret": secret,
       },
       body: JSON.stringify({ tag }),
+      // A redirect would carry `x-revalidate-secret` to the hop target — the
+      // Fetch spec strips only Authorization / Cookie / Proxy-Authorization on
+      // cross-origin redirects, not custom headers. Surface the 3xx as a failed
+      // ping instead of quietly handing the secret to wherever it points.
+      redirect: "manual",
       // Fail fast — this is awaited inside the sync action, so a hung site
       // shouldn't pin the action open until Convex's action timeout.
       signal: AbortSignal.timeout(5000),

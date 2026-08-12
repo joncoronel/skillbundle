@@ -32,18 +32,21 @@ export type RefreshableSkill = {
 };
 
 /**
- * `auth` is passed in rather than loaded here: both callers walk many skills
- * per action, and loading it per skill would spend a query round-trip on every
- * row to re-read the same cached token.
+ * `auth` is an explicit parameter rather than loaded here: both callers walk
+ * many skills per action, and loading it per skill would spend a query
+ * round-trip on every row to re-read the same cached token. It sits ahead of
+ * `opts` — matching every other call site in the codebase — so a bearer
+ * credential isn't buried in a bag of domain metadata.
  */
 export async function refreshSkillFromDetail(
   ctx: ActionCtx,
+  auth: SkillsAuth,
   skill: RefreshableSkill,
-  opts: { day: string; leaderboard: string; auth: SkillsAuth },
+  opts: { day: string; leaderboard: string },
 ): Promise<RefreshOutcome> {
   try {
     const detail = await withTransientRetry(() =>
-      v1GetSkillDetail(opts.auth, skill.source, skill.skillId),
+      v1GetSkillDetail(auth, skill.source, skill.skillId),
     );
     // Fast-path upsert (existing row): updates installs, writes a day-pinned
     // snapshot, stamps lastSeenInApi. `leaderboard` is set-on-insert only, so the
@@ -92,7 +95,7 @@ export async function drainRefreshBatch(
   let refreshed = 0;
   let gone = 0;
   for (const skill of items) {
-    const outcome = await refreshSkillFromDetail(ctx, skill, { ...opts, auth });
+    const outcome = await refreshSkillFromDetail(ctx, auth, skill, opts);
     if (outcome.kind === "refreshed") {
       refreshed++;
     } else if (outcome.kind === "gone") {

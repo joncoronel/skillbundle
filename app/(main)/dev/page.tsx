@@ -27,15 +27,20 @@ async function DevLoader() {
   return <DevDashboardContent />;
 }
 
+// Mirrors DevDashboardContent's real layout: 7 stat cells (matching
+// StatsCards' xl:grid-cols-7), the error table, then the auth panel. Keep the
+// counts in step when either side changes — a fallback that doesn't match reads
+// to the user as a second, different skeleton rather than as the page arriving.
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        {Array.from({ length: 7 }).map((_, i) => (
           <Skeleton key={i} className="h-24 rounded-xl" />
         ))}
       </div>
       <Skeleton className="h-96 rounded-xl" />
+      <Skeleton className="h-40 rounded-xl" />
     </div>
   );
 }

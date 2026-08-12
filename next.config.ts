@@ -34,6 +34,14 @@ const nextConfig: NextConfig = {
     // rather than the root.
     optimizePackageImports: ["@hugeicons/react", "@hugeicons/core-free-icons"],
   },
+  // `@vercel/oidc` mints the token for /api/skills-token. Its async entry point
+  // unconditionally dynamic-imports a local-dev refresh path that requires
+  // node:fs and the Vercel CLI packages, and rethrows if those imports fail —
+  // even when it has already read a perfectly valid token. Bundling it means
+  // betting that tracing follows those dynamic requires; losing that bet 503s
+  // the relay and silently drops the skills.sh sync onto the legacy API key.
+  // Loading it via native require instead takes the bet off the table.
+  serverExternalPackages: ["@vercel/oidc"],
   turbopack: {
     resolveAlias: {
       // Upstream bug workaround, not a preference.

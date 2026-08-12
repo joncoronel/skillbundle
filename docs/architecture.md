@@ -52,7 +52,23 @@ svix
 | `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` + `cacheTag('skill-sync')` loaders. **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
 | `/bundle/[id]`, `/dev`, `/dev/add-skill` | `◐` Partial Prerender | bundle: `loading.tsx` shell + `preloadQuery` authed content streams in, with `await io()` declaring the request-time boundary; dev: `verifyAdmin()` streams behind a Suspense gate |
 | `/opengraph-image` plus the compare / official / pricing OG images | `○` Static | Param-free OG routes prerender. (Only the *param-dependent* OG routes are `ƒ`.) |
-| `/[org]/**/opengraph-image`, `/site/**/opengraph-image`, `/bundle/[id]/og/[v]`, `/api/revalidate` | `ƒ` Dynamic | OG images (data via `'use cache'`, rendered PNG CDN-cached via `Cache-Control`); revalidate webhook (secret-gated, called by Convex crons) |
+| `/[org]/**/opengraph-image`, `/site/**/opengraph-image`, `/bundle/[id]/og/[v]`, `/api/revalidate`, `/api/skills-token` | `ƒ` Dynamic | OG images (data via `'use cache'`, rendered PNG CDN-cached via `Cache-Control`); revalidate webhook (secret-gated, called by Convex crons); skills-token relay (secret-gated, POST-only, mints a Vercel OIDC token for the Convex sync — see below) |
+
+**The two secret-gated API routes.** `/api/revalidate` and `/api/skills-token`
+are the app's only unauthenticated write/credential surfaces. Both sit outside
+Clerk's private-route list on purpose (see §3), so a shared secret in a request
+header is the entire gate, compared with `timingSafeEqual` via
+`lib/shared-secret.ts` and failing closed when the secret is unset on the
+deployment. Convex calls both.
+
+`/api/skills-token` exists because skills.sh's documented credential is a Vercel
+OIDC token, which only a Vercel runtime can mint, while our whole sync runs on
+Convex crons. Convex POSTs here hourly, caches the token, and sends it upstream
+itself; the legacy `SKILLS_SH_API_KEY` stays wired as the fallback. Requires
+`SKILLS_TOKEN_SECRET` on Vercel plus `SKILLS_TOKEN_URL` / `SKILLS_TOKEN_SECRET`
+on the production Convex deployment. `/dev` shows which credential is live. The
+full rationale, including why proxying every upstream call through Vercel was
+rejected, is in TODO.md.
 
 ### Params and the shared App Shell
 
@@ -885,6 +901,7 @@ app/
   providers.tsx             # NuqsAdapter → Clerk(prefetchUI:false) → Convex → Theme → Toast
   ConvexClientProvider.tsx  # ConvexProviderWithClerk + TanStack wiring
   api/revalidate/route.ts   # secret-gated tag revalidation (Convex crons call it)
+  api/skills-token/route.ts # secret-gated Vercel OIDC token relay for the Convex skills.sh sync
   (main)/
     layout.tsx              # AppHeader + children + GlobalBundleBar
     error.tsx               # segment boundary for every user-facing page; keeps header, retry()

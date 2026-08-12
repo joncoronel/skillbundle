@@ -36,9 +36,25 @@ export async function POST(request: Request) {
   try {
     // Must be called per-request, not hoisted to module scope: the token is
     // request-scoped. Measured lifetime on a real deployment is 2h, minted
-    // fresh per request — NOT the ~12h the Vercel docs describe, which matches
-    // the token `vercel env pull` writes locally. Convex's refresh cadence is
-    // sized off the 2h figure; see convex/crons.ts.
+    // fresh per request. That is NOT the ~12h the Vercel docs describe, which
+    // matches the token `vercel env pull` writes locally. Convex's refresh
+    // cadence is sized off the 2h figure; see convex/crons.ts.
+    //
+    // Use the async variant, NOT getVercelOidcTokenSync(): the sync one is
+    // marked @deprecated in @vercel/oidc@3.8.4 in favour of this.
+    //
+    // The catch: this function reads the token synchronously first, then
+    // unconditionally dynamic-imports its local-dev refresh path
+    // (`token-util.js` / `token.js`, which pull node:fs and the Vercel CLI
+    // packages), and rethrows if those imports fail EVEN WHEN it already has a
+    // valid token. Bundled into a serverless function, an untraced import there
+    // would 503 this route with a good token in hand and silently drop Convex
+    // onto the legacy key — the exact outcome this route exists to prevent.
+    //
+    // `serverExternalPackages: ["@vercel/oidc"]` in next.config.ts is what
+    // makes that safe: the package stays out of the bundle and is loaded with
+    // native require at runtime, so its own dynamic imports resolve normally.
+    // Keep the two in step — dropping that config line re-arms this.
     token = await getVercelOidcToken();
   } catch (e) {
     // Most likely cause: OIDC Federation turned off for the project, or a

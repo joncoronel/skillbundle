@@ -40,20 +40,46 @@ import type { SkillsAuth } from "./skillsApi";
 export const EXPIRY_MARGIN_MS = 15 * 60 * 1000;
 
 /**
+ * The single definition of "this cached token is safe to send".
+ *
+ * Exported because three places need the answer (the loader below, the relay's
+ * write-time sanity check, and the /dev readout) and a hand-copied comparison
+ * in each is how the dashboard silently stops describing what the sync does.
+ */
+export function isTokenUsable(
+  token: { expiresAt: number } | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  return !!token && token.expiresAt - EXPIRY_MARGIN_MS > now;
+}
+
+/**
  * Load the auth an action should use for every skills.sh call it makes.
  *
  * Call this ONCE per action and thread the result through, rather than calling
  * it per request: it costs a query round-trip, and the sync fans out thousands
  * of upstream calls per run.
  *
- * Deliberately read-only — it never refreshes. Refresh is a scheduled job
- * (`skillsAuth.refreshToken`) precisely so that thousands of parallel actions
- * hitting an expired token can't stampede our own relay. A missing or stale
- * token here is not an outage: it degrades to the legacy API key.
+ * Deliberately read-only on the token — it never refreshes. Refresh is a
+ * scheduled job (`skillsAuth.refreshToken`) precisely so that thousands of
+ * parallel actions hitting an expired token can't stampede our own relay. A
+ * missing or stale token here is not an outage: it degrades to the legacy key.
  */
 export async function loadSkillsAuth(ctx: ActionCtx): Promise<SkillsAuth> {
   const cached = await ctx.runQuery(internal.skillsAuth.getToken, {});
-  if (!cached || cached.expiresAt - EXPIRY_MARGIN_MS <= Date.now()) {
+  const apiKey = process.env.SKILLS_SH_API_KEY ?? null;
+
+  // Reported at most once per action even though `request()` may call it from
+  // any of thousands of concurrent calls — the first rejection is the whole
+  // signal, and the rest would be a write storm at the worst possible moment.
+  let reported = false;
+  const onOidcRejected = async (status: number) => {
+    if (reported) return;
+    reported = true;
+    await ctx.runMutation(internal.skillsAuth.recordOidcRejected, { status });
+  };
+
+  if (!isTokenUsable(cached)) {
     // Logged once per action rather than per request, so a broken relay is
     // visible in the Convex logs without drowning them.
     console.warn(
@@ -61,9 +87,9 @@ export async function loadSkillsAuth(ctx: ActionCtx): Promise<SkillsAuth> {
         ? "skills.sh auth: cached OIDC token expired; falling back to API key"
         : "skills.sh auth: no cached OIDC token; falling back to API key",
     );
-    return { oidcToken: null };
+    return { oidcToken: null, apiKey, onOidcRejected };
   }
-  return { oidcToken: cached.token };
+  return { oidcToken: cached!.token, apiKey, onOidcRejected };
 }
 
 export type RelayToken = { token: string; expiresAt: number };
@@ -82,6 +108,13 @@ export async function fetchRelayToken(): Promise<RelayToken> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "x-skills-token-secret": secret },
+    // Do NOT follow redirects. Per the Fetch spec a cross-origin redirect
+    // strips only Authorization / Cookie / Proxy-Authorization, so a custom
+    // header like ours rides along to wherever the hop points. This secret
+    // gates a credential-minting endpoint, and the request would still
+    // succeed, so the leak would be invisible. "manual" turns any 3xx into a
+    // visible `relay 30x:` on /dev instead.
+    redirect: "manual",
     // Fail fast rather than pinning the action open until Convex's timeout.
     signal: AbortSignal.timeout(10_000),
   });
@@ -98,7 +131,7 @@ export async function fetchRelayToken(): Promise<RelayToken> {
   if (typeof data.expiresAt !== "number" || !Number.isFinite(data.expiresAt)) {
     throw new Error("relay returned no usable expiresAt");
   }
-  if (data.expiresAt - EXPIRY_MARGIN_MS <= Date.now()) {
+  if (!isTokenUsable({ expiresAt: data.expiresAt })) {
     // Already inside the margin: storing it would guarantee an immediate
     // fallback, and the real problem (clock skew, or a relay handing out stale
     // tokens) should surface here rather than as mystery key usage later.
