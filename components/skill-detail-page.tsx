@@ -34,8 +34,20 @@ import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 // daily install data, "skill-content" for the row). Read that before re-tagging
 // or merging anything below.
 //
-// loadAudits/loadStars are written by other processes entirely, so they keep
-// their own independent daily cadence and stay untagged.
+// loadAudits and loadStars stay untagged, for two different reasons: the audit chain writes audits but pinging for them does not
+// pay (see below), and nothing in this app writes star counts at all — that
+// loader calls GitHub directly, so a tag would have no publisher.
+//
+// loadAudits deliberately stays on "days" and untagged. A weekly life plus a
+// dedicated "skill-audit" tag was tried and reverted: that tag's publish gate is
+// a catalog-wide OR over the whole day's audit drain (~1.3k skills), and
+// `auditsChanged` counts a provider re-stamping `auditedAt` under an identical
+// verdict — so the gate fires most days and the entry gets expired daily anyway,
+// exactly as this timer does. It bought no writes while replacing a guaranteed
+// 24h self-heal with a best-effort ping whose only signal lived in scheduler
+// args, and moving `expire` from 7 days to 30 on a security surface. Revisit
+// only alongside per-skill tags (TODO.md), which is what would make such a gate
+// selective enough to pay.
 
 export async function loadAudits(source: string, skillId: string) {
   "use cache";
@@ -82,16 +94,59 @@ export async function loadSkillSyncData(source: string, skillId: string) {
 }
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
-// viewed skills) and cached 24h, so it piggybacks on the page's existing ISR
-// regeneration rather than adding a daily sync over thousands of repos.
+// viewed skills) rather than by a sync over thousands of repos.
 // GitHub sources only (source is "owner/repo"); well-known sources have no repo.
 // Set GITHUB_TOKEN to lift GitHub's 60/hr unauthenticated limit to 5000/hr.
+//
+// Untagged, so the cacheLife below is the whole mechanism — nothing in this
+// system writes star counts; the loader calls GitHub directly. Keyed by
+// `source`, not by skill, so every skill in a repo shares one entry.
+//
+// THREE different lifetimes, because `'use cache'` persists a failure exactly
+// like a success and this loader has three outcomes that mean different things:
+//
+//   no repo   — a well-known source has no GitHub repo, ever. Structural, so
+//               "max" (30d revalidate / 365d expire) rather than re-deciding
+//               it on a timer.
+//   a count   — "weeks" (7d revalidate / 30d expire), so a star count can read
+//               up to 30 days stale in the tail. Fine: it is decorative and
+//               drifts slowly, and each refresh is a live GitHub call, so
+//               stretching it cuts rate-limit pressure as much as cache writes.
+//   a failure — a 403 from the 60/hr unauthenticated ceiling (GITHUB_TOKEN is
+//               optional, so that is a supported setup), a 5xx, a dropped
+//               socket, or a malformed body. Must NOT inherit the long life:
+//               `null` hides the whole Stars section, the entry is keyed by
+//               repo so one 403 would blank it for every skill in that repo,
+//               and nothing can revalidate an untagged entry before a new
+//               build.
+//
+//               "hours" (1h revalidate / 24h expire), NOT "minutes". The
+//               dominant failure above is the hourly rate limit, and a 60s
+//               retry would re-request each viewed repo ~60 times per hour
+//               while the limit is tripped — contradicting the very argument
+//               made for the long life one line up. An hour matches the reset
+//               window and still recovers ~168x faster than "weeks". The cost
+//               is that a transient blip also hides the section for up to an
+//               hour, which for a decorative number is the better trade.
+//
+// Conditional cacheLife across branches is the documented pattern for exactly
+// this ("cache briefly when an item is missing but likely available later").
 export async function loadStars(source: string): Promise<number | null> {
   "use cache";
-  cacheLife("days");
-  if (!source.includes("/")) return null;
+  if (!source.includes("/")) {
+    cacheLife("max");
+    return null;
+  }
   try {
-    const res = await fetch(`https://api.github.com/repos/${source}`, {
+    // What actually keeps this on the /repos endpoint is `SAFE_SEGMENT` in
+    // lib/install-commands.ts rejecting exact dot segments — the route only
+    // renders once `buildSkillInstallCommand` returns non-null, which runs that
+    // check. encodeURIComponent is belt-and-braces for the rest of the charset
+    // and does NOT cover the dot case: `.` is unreserved, so it re-emits ".."
+    // unchanged and `/repos/../x` would still collapse onto `/x`, with the
+    // token attached. Do not treat this line as the guard.
+    const path = source.split("/").map(encodeURIComponent).join("/");
+    const res = await fetch(`https://api.github.com/repos/${path}`, {
       headers: {
         Accept: "application/vnd.github+json",
         ...(process.env.GITHUB_TOKEN
@@ -99,12 +154,19 @@ export async function loadStars(source: string): Promise<number | null> {
           : {}),
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      cacheLife("hours");
+      return null;
+    }
     const data = (await res.json()) as { stargazers_count?: unknown };
-    return typeof data.stargazers_count === "number"
-      ? data.stargazers_count
-      : null;
+    if (typeof data.stargazers_count !== "number") {
+      cacheLife("hours");
+      return null;
+    }
+    cacheLife("weeks");
+    return data.stargazers_count;
   } catch {
+    cacheLife("hours");
     return null;
   }
 }

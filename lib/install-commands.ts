@@ -19,7 +19,17 @@ export interface InstallCommand {
 // Anything outside this charset is excluded rather than escaped — correct
 // escaping is shell-dependent (bash/zsh/PowerShell/cmd), exclusion is
 // unambiguous, and a skill that needs escaping is a skill we don't trust.
-const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+//
+// The leading lookahead rejects a segment that is exactly "." or "..". The
+// charset alone admits both, and these values are also interpolated into URL
+// PATHS (e.g. the GitHub API call in loadStars, which carries a token), where
+// RFC 3986 dot-segment resolution would collapse `/repos/../x` onto `/x` — a
+// different endpoint. `encodeURIComponent` does NOT help: `.` is unreserved,
+// so it re-emits ".." unchanged. Rejecting here is the only thing that closes
+// it, and it costs nothing real — GitHub does not permit an owner or repo
+// named "." or "..", and only exact dot segments are special ("..." is an
+// ordinary name and still passes).
+const SAFE_SEGMENT = /^(?!\.{1,2}$)[A-Za-z0-9._-]+$/;
 
 export function isSafeCommandSource(source: string): boolean {
   const parts = source.split("/");
