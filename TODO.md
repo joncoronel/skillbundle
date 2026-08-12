@@ -6,42 +6,25 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
-### Sitemap with accurate `lastModified` — Aug 2026
+### Public bundle pages in the sitemap — Aug 2026
 
-Deferred out of the cache-tag split (PR #65). `app/robots.ts` shipped there;
-`app/sitemap.ts` did not, and the robots file deliberately emits **no `Sitemap:`
-line** — add one when this lands.
+Parked while shipping `app/sitemap.ts`, which covers the catalog (skills, orgs,
+repos, well-known sources) but lists no `/bundle/[id]`. Public bundles are real
+indexable pages with real titles, so this is a genuine gap rather than a
+decision — it just wants its own thinking:
 
-**Why it was held back, not just skipped.** Done carelessly a sitemap *adds*
-cost, which is the opposite of the PR's goal. The route would have to enumerate
-~9.5k skills, and an uncached sitemap hit by crawlers re-queries the whole
-catalog every time. It needs `'use cache'` + a `cacheLife` before it is safe to
-expose at all.
-
-**Why it's still worth doing.** `lastModified` is the lever. Crawlers currently
-walk the catalog with no freshness signal, so they re-fetch pages that haven't
-changed, and each cold fetch re-renders and rewrites cache entries. Feeding real
-`contentUpdatedAt` values lets them skip unchanged pages. That is the *same*
-saving the tag split chased, aimed at the crawl side instead of the cron side.
-Google honours `lastModified` only partially, so treat the win as real but
-unquantified.
-
-Design questions to settle before writing it:
-
-1. **Where does the data come from?** `listPopularSkills` is paginated at 100/page,
-   so a full walk is ~95 round trips per generation. A purpose-built query
-   returning just `(source, skillId, contentUpdatedAt)` would be far cheaper, but
-   check whether `skillSummaries` carries `contentUpdatedAt` — the detail page
-   reads it off the full `skills` row, and the summaries table is the slim one.
-2. **One file or `generateSitemaps`?** 9.5k URLs fits inside the 50k/50 MB limit,
-   so chunking is optional. Chunking mainly helps if generation cost per request
-   becomes the problem.
-3. **What gets included?** Skill pages, `/[org]`, `/[org]/[repo]`,
-   `/site/[source]`, `/official`. Exclude anything `robots.ts` disallows,
-   especially `/compare?` — a sitemap entry that contradicts robots.txt is worse
-   than no entry.
-4. **Delisted skills.** They still render (with a banner). Decide whether they
-   belong in the sitemap at all; probably not.
+- The set is user-generated and grows without bound, unlike the catalog, so it
+  needs a size story before it needs code. `generateSitemaps` chunking (see the
+  note in `app/sitemap.ts`) is the escape hatch if the two together approach
+  50k URLs.
+- `bundles.isPublic` can flip, and `app/(main)/bundle/[id]/page.tsx` already
+  emits `robots: { index: false }` when it is false. A sitemap that lags that
+  flip advertises a noindex page — decide whether the entry's cache tag can
+  track bundle writes closely enough, or whether the churn makes it not worth
+  listing them at all.
+- `lastmod` is easy here in a way it isn't for skills: `bundles.updatedAt`
+  (optional, falling back to the required `createdAt`) is exactly the timestamp
+  the field means, with no coalescing argument to make.
 
 ### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
 

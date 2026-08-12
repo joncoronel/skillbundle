@@ -7,19 +7,16 @@ import { GeistPixelCircle } from "geist/font/pixel";
 import { OpenPanelComponent } from "@openpanel/nextjs";
 
 import { Providers } from "./providers";
+import { SITE_URL } from "@/lib/site-url";
 import "./globals.css";
 
 // metadataBase makes every relative OG/Twitter image URL absolute (required by
-// crawlers). Prefer an explicit site URL, fall back to the Vercel-provided
-// deployment URL, then localhost for dev.
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : "http://localhost:3000");
+// crawlers). The origin itself lives in lib/site-url.ts, shared with the
+// robots and sitemap routes — those emit text and XML, so nothing resolves
+// relative URLs for them and they need the same value spelled out.
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL(SITE_URL),
   title: "SkillBundle",
   description:
     "Discover, compare, and bundle AI coding assistant skills for your tech stack",

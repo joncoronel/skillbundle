@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { SITE_URL } from "@/lib/site-url";
 
 /**
  * Crawler guidance. The site had none before this, which matters more here than
@@ -63,8 +64,12 @@ export default function robots(): MetadataRoute.Robots {
       ],
       crawlDelay: 10,
     },
-    // No `sitemap:` line yet — see the sitemap entry in TODO.md. Note that the
-    // OG image routes (app/**/opengraph-image.tsx, ~9.5k of them, one per
+    // Absolute by requirement, not by preference: a `Sitemap:` line is the one
+    // part of robots.txt that is not resolved against the host it was served
+    // from, so a relative path here is simply ignored. app/sitemap.ts explains
+    // what the file costs and why it is worth advertising.
+    sitemap: `${SITE_URL}/sitemap.xml`,
+    // Note that the OG image routes (app/**/opengraph-image.tsx, ~9.5k of them, one per
     // skill) are deliberately NOT blocked: social preview fetchers need them,
     // and they are advertised in every page's `og:image`. They are the most
     // expensive per-request surface in the catalog, so if crawler load on them

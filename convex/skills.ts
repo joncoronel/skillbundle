@@ -3444,6 +3444,69 @@ export const listPopularSkills = query({
 });
 
 /**
+ * The catalog reduced to what a sitemap needs: one row per indexable skill,
+ * carrying only its URL parts and the timestamp that answers "did this page's
+ * content change?".
+ *
+ * A purpose-built query rather than a reuse of `listPopularSkills` because the
+ * caller walks the WHOLE catalog (~9.5k rows) in one pass. Shipping the full
+ * ~200 B summary for every row would put ~2 MB on the wire to use three fields
+ * of it; this projection is ~60 B/row. The document reads are the same either
+ * way — the saving is bandwidth, not Convex read units.
+ *
+ * Both timestamps ship because neither alone is enough, and the caller
+ * (lib/sitemap-entries.ts) coalesces them:
+ *
+ *   `contentUpdatedAt` — the last time the SKILL.md actually MOVED. The value
+ *     we want, and NOT the daily install-count refresh: a `lastmod` that ticked
+ *     every morning because a number changed would tell crawlers to re-fetch
+ *     ~9.5k unchanged pages daily, which is worse than sending none at all.
+ *     But it is only written when a fetch finds the hash moved, so a skill
+ *     whose file has sat still since it was ingested simply has no value here.
+ *     That is most of the catalog today.
+ *   `contentFetchedAt` — the last time we PULLED the file, set on every content
+ *     fetch. Present on effectively every row, and a sound floor for the one
+ *     above: the freshness sweep re-fetches when a blob SHA moves, so "we read
+ *     this file at T and have detected no change since" is exactly the claim a
+ *     `lastmod` makes. It moves at most monthly per skill (the 30-day
+ *     markStaleContent backstop), so it does not reintroduce daily churn.
+ *
+ * Both stay optional: a row that has never been content-fetched has neither,
+ * and lib/sitemap-entries.ts omits `lastmod` for those rather than invent one.
+ *
+ * Same two exclusions as every browse surface, so the sitemap advertises only
+ * pages the site itself links to: `isDelisted` (walks the same
+ * `by_isDelisted_installs` index the popular list uses) and `isDuplicate`
+ * (filtered post-page, as in `listPopularSkills` — pages may come back short).
+ * Both pages still RENDER if visited directly; they just aren't submitted.
+ *
+ * Install-descending falls out of the index for free, which orders the sitemap
+ * most-popular-first — no guarantee to crawlers, but a better shape than
+ * insertion order if one ever truncates.
+ */
+export const listSitemapEntries = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted_installs", (q) => q.eq("isDelisted", false))
+      .order("desc")
+      .paginate(paginationOpts);
+    return {
+      ...result,
+      page: result.page
+        .filter((s) => !s.isDuplicate)
+        .map((s) => ({
+          source: s.source,
+          skillId: s.skillId,
+          contentUpdatedAt: s.contentUpdatedAt,
+          contentFetchedAt: s.contentFetchedAt,
+        })),
+    };
+  },
+});
+
+/**
  * Every skill summary belonging to a given source ("org/repo"). Powers the
  * repo directory page. Returns delisted rows too — the page filters them at
  * render time so a future "show delisted" toggle is a UI-only change.
