@@ -1,8 +1,28 @@
 /**
- * Ping the Next.js site to invalidate a cached home-page leaderboard tag, so
- * the next request rebuilds from fresh Convex data instead of serving the
- * `'use cache'` snapshot. Called from a leaderboard sync action right after
- * it writes new ranks.
+ * Ping the Next.js site to invalidate one of its `'use cache'` tags, so the
+ * next request rebuilds from fresh Convex data instead of serving the cached
+ * snapshot. (Named for its original home-leaderboard use; it drives every
+ * allowlisted tag now. The route's allowlist is in app/api/revalidate/route.ts.)
+ *
+ * Which tag to ping — getting this wrong is expensive, not just wrong:
+ *
+ *   "home-hot" / "home-trending" / "home-popular"
+ *       Home rails. Pinged by their own leaderboard crons.
+ *   "skill-sync"
+ *       Install counts, ranks, snapshots, version history, copies. Ping this
+ *       from anything that moves an install number. syncSkills rewrites the
+ *       full ~9.5k-row leaderboard daily, so this tag churns the whole catalog
+ *       every morning by design.
+ *   "skill-content"
+ *       The skill row itself: SKILL.md content, description, isDelisted,
+ *       curatedOwner. Only three callers: the content-chain terminal
+ *       (skills.ts publishSkillUpdate), markDelistedSkills, and syncCurated.
+ *
+ * Do NOT add "skill-content" to an install-count-only job (reconcile,
+ * curatedRefresh, the syncSkills terminal). Those run daily across the whole
+ * catalog, and pairing them with the content tag is exactly the coupling that
+ * made one routine number update cost 4 ISR writes per visited skill page
+ * instead of 1. See the header of components/skill-detail-page.tsx.
  *
  * No-ops unless both env vars are set — they're configured on the PRODUCTION
  * Convex deployment only, so dev syncs never hit the live site. Set with:

@@ -5,15 +5,28 @@ import { secretsMatch } from "@/lib/shared-secret";
 // On-demand cache invalidation for the home-page leaderboards and skill detail
 // pages. The Convex crons POST here right after they write new data, so the next
 // request rebuilds the `'use cache'` entry from fresh data instead of serving
-// a stale (or empty) one. "skill-sync" is pinged by syncSkills to refresh every
-// skill page's install count + chart in lockstep with the daily sync. Gated by a
-// shared secret, and only a fixed allowlist of tags can be revalidated. Not a
-// Clerk-private route, so the secret is the only gate (see proxy.ts).
+// a stale (or empty) one. Gated by a shared secret, and only a fixed allowlist
+// of tags can be revalidated. Not a Clerk-private route, so the secret is the
+// only gate (see proxy.ts).
+//
+// The two skill tags are split by cadence, NOT by skill — see the header of
+// components/skill-detail-page.tsx for the full reasoning:
+//
+//   "skill-sync"    — install counts / ranks / snapshots / versions / copies.
+//                     Pinged daily by syncSkills, which rewrites the entire
+//                     ~9.5k-row leaderboard, plus the reconcile and curated
+//                     refresh jobs. Churns every day, by design.
+//   "skill-content" — the skill row itself (SKILL.md content, description,
+//                     isDelisted, curatedOwner). Pinged only by jobs that
+//                     actually mutate that row. Must NOT be pinged by
+//                     install-count-only jobs, or the daily sync goes back to
+//                     invalidating every skill's ~25 KB content entry.
 const ALLOWED_TAGS = new Set([
   "home-hot",
   "home-trending",
   "home-popular",
   "skill-sync",
+  "skill-content",
 ]);
 
 export async function POST(request: Request) {

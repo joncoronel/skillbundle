@@ -1488,35 +1488,42 @@ export const fetchSkillContent = internalAction({
 });
 
 /**
- * Schedulable wrapper around `revalidateHomeTag("skill-sync")`, fired at the
- * terminal of each content chain — i.e. the first moment the content this
- * chain wrote is actually readable.
+ * Schedulable publish step, fired at the terminal of each content chain — i.e.
+ * the first moment the content this chain wrote is actually readable.
  *
- * Every *other* caller pings the tag before the content it means to publish
- * exists: `syncSkills` pings at its own terminal and only then schedules
+ * Pings BOTH skill tags because a content chain moves both kinds of data:
+ * "skill-content" for the skill row it just rewrote (content, description), and
+ * "skill-sync" for the `skillVersions` rows it archived alongside them. It is
+ * the only caller that touches "skill-content" on the daily path — the
+ * install-count jobs (syncSkills, reconcile, curatedRefresh) deliberately do
+ * not, so that the daily leaderboard refresh stops invalidating every skill's
+ * content entry. See the header of components/skill-detail-page.tsx.
+ *
+ * Every *other* caller pings before the content it means to publish exists:
+ * `syncSkills` pings at its own terminal and only then schedules
  * `markStaleContent` (+8s), which is what *starts* discovery → fetch; and
  * `addSkillManually` pings immediately after scheduling its backfill. Since
  * `loadSkill` reads through `'use cache'` on `cacheLife("days")`, a page
  * rendered in that gap caches a row whose `content` is still empty.
  *
- * On the daily path this was masked: `reconcileUnseenSkills` pings the same
- * tag at 07:00 (reconcile.ts), after the 06:00 content pipeline has settled,
- * so the day's content did get published. But that ping is incidental — it's
- * semantically "install counts changed", it's gated on `refreshed > 0`, and it
- * lands at a fixed hour rather than when content is ready. It silently fails
- * to publish when reconcile refreshes nothing, or when the content pipeline
- * runs past 07:00. Manual adds had no such backstop at all: the row could sit
- * contentless until the next reconcile that happened to refresh something.
+ * This used to be masked on the daily path: `reconcileUnseenSkills` pinged the
+ * same single tag at 07:00 (reconcile.ts), after the 06:00 content pipeline had
+ * settled, so the day's content got published as a side effect. That crutch is
+ * GONE now that reconcile only pings "skill-sync" — it was always incidental
+ * (semantically "install counts changed", gated on `refreshed > 0`, landing at
+ * a fixed hour rather than when content is ready), and it silently failed when
+ * reconcile refreshed nothing or the content pipeline ran past 07:00. This step
+ * is now the sole publisher of skill content, so do not drop it.
  *
- * Pinging here makes the publish explicit and unconditional instead of a side
- * effect of an unrelated job. Best-effort and idempotent (`revalidateHomeTag`
- * swallows errors and no-ops when the env vars are unset, i.e. everywhere but
- * prod), so the extra ping costs nothing when there was no content to write.
+ * Best-effort and idempotent (`revalidateHomeTag` swallows errors and no-ops
+ * when the env vars are unset, i.e. everywhere but prod), so the extra pings
+ * cost nothing when there was no content to write.
  */
-export const revalidateSkillSyncTag = internalAction({
+export const publishSkillUpdate = internalAction({
   args: {},
   returns: v.null(),
   handler: async () => {
+    await revalidateHomeTag("skill-content");
     await revalidateHomeTag("skill-sync");
     return null;
   },
@@ -1583,7 +1590,7 @@ export const backfillFetchContent = internalAction({
       // carry their new SKILL.md — this is the first moment a ping is useful.
       await ctx.scheduler.runAfter(
         finalDelay + 15_000,
-        internal.skills.revalidateSkillSyncTag,
+        internal.skills.publishSkillUpdate,
         {},
       );
     }
@@ -2336,7 +2343,7 @@ export const fetchSkillDetailBatch = internalAction({
       // their content here, so this branch needs its own ping.
       await ctx.scheduler.runAfter(
         15_000,
-        internal.skills.revalidateSkillSyncTag,
+        internal.skills.publishSkillUpdate,
         {},
       );
     }
@@ -2491,6 +2498,14 @@ export const markDelistedSkills = internalAction({
       console.log(
         `Delisted ${totalDelisted} skills not seen in API for 30+ days`,
       );
+      // `isDelisted` lives on the skill row and drives the "no longer listed"
+      // banner + the OG 404 card, both read through loadSkill on the
+      // "skill-content" tag. This job used to publish by accident: it runs 5s
+      // after syncSkills, whose ping covered the content entry too. That ping
+      // is now install-counts-only, so delisting has to announce itself.
+      // Gated on the count so a no-op sweep (the overwhelmingly common case)
+      // costs nothing.
+      await revalidateHomeTag("skill-content");
     }
   },
 });

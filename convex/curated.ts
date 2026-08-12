@@ -21,6 +21,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getCurated } from "./lib/skillsApi";
 import { loadSkillsAuth } from "./lib/skillsAuth";
+import { revalidateHomeTag } from "./lib/revalidate";
 
 const APPLY_BATCH_SIZE = 200;
 const CLEANUP_PAGE_SIZE = 200;
@@ -184,6 +185,17 @@ export const syncCurated = internalAction({
     console.log(
       `syncCurated: upserted ${totalUpserted}, stamped ${totalStamped}, cleared ${totalCleared}, owners ${ownerRows.length}`,
     );
+
+    // `curatedOwner` is patched onto the skill row itself (Passes 1 and 2), and
+    // it drives the Official badge in the sidebar + OG card, both read through
+    // loadSkill on the "skill-content" tag. Like markDelistedSkills, this used
+    // to publish by accident off a broader ping; that ping is now
+    // install-counts-only, so the stamp has to announce itself. Gated on an
+    // actual change: after the first run of the day both counts are normally 0,
+    // and a curated set that didn't move shouldn't invalidate every skill page.
+    if (totalStamped > 0 || totalCleared > 0) {
+      await revalidateHomeTag("skill-content");
+    }
 
     // Drain the discovery / content-fetch / audit chain for any rows Pass 0
     // just inserted. Without this, freshly-inserted curated rows wait for the

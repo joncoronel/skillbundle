@@ -41,7 +41,6 @@ export function SkillSidebar({
   externalIcon,
   externalLabel,
   curatedOwner,
-  installs,
   insights,
   updatedKind,
   updatedDate,
@@ -54,14 +53,17 @@ export function SkillSidebar({
   externalIcon: IconSvgElement;
   externalLabel: string;
   curatedOwner?: string;
-  installs: number;
   insights: SkillInsights;
   updatedKind: string;
   updatedDate: string;
   audits: SkillAuditEntry[] | null;
   stars: number | null;
 }) {
-  const { snapshots, installRank } = insights;
+  // `installs` comes off `insights` rather than as its own prop. It used to be
+  // passed separately, sourced from the skill row — which is what forced that
+  // row's cache entry onto the daily "skill-sync" tag. See the tag split at the
+  // top of components/skill-detail-page.tsx.
+  const { snapshots, installRank, installs } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
   // The sparkline is a recent-momentum glance over the trailing week. It reads
