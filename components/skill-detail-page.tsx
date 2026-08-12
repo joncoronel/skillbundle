@@ -22,6 +22,7 @@ import { SkillHistory } from "@/components/skill-history";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
+import { SKILL_AUDIT_TAG } from "@/lib/cache-tags";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would block prerendering. Each loader is a `'use cache'`
@@ -35,11 +36,21 @@ import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 // or merging anything below.
 //
 // loadAudits/loadStars are written by other processes entirely, so they keep
-// their own independent daily cadence and stay untagged.
+// their own independent cadence.
 
+// Security audits. On "skill-audit" (see lib/cache-tags.ts) with a weekly life,
+// because that is how often the data can actually move: the audit chain re-polls
+// skills.sh at most once every 7 days per skill, and the chain pings this tag
+// whenever a poll actually changed the stored row. A 24h life here was refreshing
+// a cache seven times more often than its source could change.
+//
+// Deliberately NOT on "skill-content", even though the same chain writes both.
+// That tag is also pinged by the ungated daily content chain, which would drag
+// this weekly entry back onto a daily invalidation.
 export async function loadAudits(source: string, skillId: string) {
   "use cache";
-  cacheLife("days");
+  cacheLife("weeks");
+  cacheTag(SKILL_AUDIT_TAG);
   const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
     source,
     skillId,
@@ -82,13 +93,23 @@ export async function loadSkillSyncData(source: string, skillId: string) {
 }
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
-// viewed skills) and cached 24h, so it piggybacks on the page's existing ISR
-// regeneration rather than adding a daily sync over thousands of repos.
+// viewed skills) rather than by a sync over thousands of repos.
 // GitHub sources only (source is "owner/repo"); well-known sources have no repo.
 // Set GITHUB_TOKEN to lift GitHub's 60/hr unauthenticated limit to 5000/hr.
+//
+// Untagged, so this timer is the whole mechanism — nothing in this system writes
+// star counts; the loader calls GitHub directly. "weeks" rather than "days"
+// because a star count is a decorative number that drifts slowly, and because
+// each refresh is a live GitHub API call: lengthening it cuts rate-limit
+// pressure as much as it cuts cache writes. The old 24h window was justified by
+// "it piggybacks on the page's existing ISR regeneration" — that stopped being
+// true when the skill row moved to a weekly life, so the number was chosen for a
+// reason that no longer holds.
+//
+// Keyed by `source`, not by skill, so every skill in a repo shares one entry.
 export async function loadStars(source: string): Promise<number | null> {
   "use cache";
-  cacheLife("days");
+  cacheLife("weeks");
   if (!source.includes("/")) return null;
   try {
     const res = await fetch(`https://api.github.com/repos/${source}`, {

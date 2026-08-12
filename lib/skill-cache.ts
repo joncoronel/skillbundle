@@ -10,8 +10,16 @@ import { api } from "@/convex/_generated/api";
  *
  * ── The tag split ─────────────────────────────────────────────────────────
  *
- * Two tags, divided by CADENCE rather than by skill. This is the canonical
- * description; convex/lib/revalidate.ts lists the callers.
+ * Three tags, divided by CADENCE rather than by skill. This is the canonical
+ * description; convex/lib/revalidate.ts lists the callers. The third one lives
+ * beside its loader in components/skill-detail-page.tsx rather than here,
+ * because nothing outside that file reads it:
+ *
+ *   "skill-audit"   — the per-skill security audit list. Weekly again, but its
+ *                     own weekly: skills.sh is re-polled at most every 7 days
+ *                     per skill and the audit chain pings on a real row change.
+ *                     Kept off "skill-content" precisely so the ungated daily
+ *                     content chain does not drag it back to a daily rewrite.
  *
  *   "skill-sync"    — install count, rank, snapshots, version history, copies.
  *                     syncSkills rewrites the ENTIRE leaderboard (~9.5k rows)
