@@ -2,6 +2,7 @@ import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
+import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
 
 // Shared loader for the two source-directory routes — the GitHub repo page
 // (`/[org]/[repo]`) and the well-known source page (`/site/[source]`). Both list
@@ -19,7 +20,7 @@ import { api } from "@/convex/_generated/api";
 export async function loadSourceSkills(source: string) {
   "use cache";
   cacheLife("days");
-  cacheTag("skill-sync");
+  cacheTag(SKILL_SYNC_TAG);
   const skills = await fetchQuery(api.skills.listBySource, { source });
   const visible = skills
     .filter((s) => !s.isDelisted)

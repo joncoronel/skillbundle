@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { secretsMatch } from "@/lib/shared-secret";
+import { SITE_TAGS } from "@/lib/cache-tags";
 
 // On-demand cache invalidation for the home-page leaderboards and skill detail
 // pages. The Convex crons POST here right after they write new data, so the next
 // request rebuilds the `'use cache'` entry from fresh data instead of serving
-// a stale (or empty) one. "skill-sync" is pinged by syncSkills to refresh every
-// skill page's install count + chart in lockstep with the daily sync. Gated by a
-// shared secret, and only a fixed allowlist of tags can be revalidated. Not a
-// Clerk-private route, so the secret is the only gate (see proxy.ts).
-const ALLOWED_TAGS = new Set([
-  "home-hot",
-  "home-trending",
-  "home-popular",
-  "skill-sync",
-]);
+// a stale (or empty) one. Gated by a shared secret, and only a fixed allowlist
+// of tags can be revalidated. Not a Clerk-private route, so the secret is the
+// only gate (see proxy.ts).
+//
+// Derived from lib/cache-tags.ts rather than restated, so the allowlist and the
+// `cacheTag(...)` call sites cannot drift apart. What each tag means, and why the
+// two skill tags are split by cadence rather than by skill, is documented once in
+// lib/skill-cache.ts; convex/lib/revalidate.ts takes its `SiteTag` union from
+// the same module by `import type`, so the caller side cannot drift either.
+// tests/revalidate-route.test.ts covers the runtime half.
+const ALLOWED_TAGS = new Set<string>(SITE_TAGS);
 
 export async function POST(request: Request) {
   const expected = process.env.REVALIDATE_SECRET;

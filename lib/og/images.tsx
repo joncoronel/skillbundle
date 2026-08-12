@@ -1,9 +1,10 @@
 import "server-only";
-import { cacheLife } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
+import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 import { og } from "./theme";
 import { FONT } from "./fonts";
 import {
@@ -35,10 +36,28 @@ import {
 
 // ── Cached loaders ──────────────────────────────────────────────────────────
 
-async function loadSkill(source: string, skillId: string) {
+// `loadSkill` is imported from lib/skill-cache.ts rather than redeclared here.
+// It used to be a local copy, which meant every OG render wrote a second cache
+// entry for a row the detail page had already cached (`'use cache'` keys on
+// function identity, so identical bodies are still separate entries) — and,
+// being untagged, rewrote it every 24h instead of when the content changed.
+//
+// The loaders below stay local: each is specific to one OG surface, and none of
+// them has a second consumer to share with.
+
+// Install count for the skill card, kept OUT of the shared `loadSkill` entry on
+// purpose. `loadSkill` is "skill-content"-tagged and now lives for weeks; the
+// install number moves daily, so reading `skill.installs` off that row would
+// freeze the figure on every social card for up to 7 days. This mirrors what
+// components/skill-sidebar.tsx does for the page itself — the invariant is that
+// a daily-cadence number is only ever read from a "skill-sync"-tagged entry.
+async function loadSkillInstalls(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
-  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
+  cacheTag(SKILL_SYNC_TAG);
+  // `getInstallCount`, not `getInsights` — the card shows one integer, and
+  // getInsights would collect 90 days of snapshot rows to produce it.
+  return fetchQuery(api.skills.getInstallCount, { source, skillId });
 }
 
 // Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only
@@ -154,7 +173,10 @@ export function sectionOgImage({
 
 /** Skill detail card. */
 export async function skillOgImage(source: string, skillId: string) {
-  const skill = await loadSkill(source, skillId);
+  const [skill, installs] = await Promise.all([
+    loadSkill(source, skillId),
+    loadSkillInstalls(source, skillId),
+  ]);
 
   if (!skill) {
     return sectionOgImage({
@@ -196,7 +218,13 @@ export async function skillOgImage(source: string, skillId: string) {
       >
         <PixelStatStrip
           top={0}
-          stats={[{ value: formatInstalls(skill.installs), label: "installs" }]}
+          stats={[
+            {
+              // null = orphaned skill row; a dash beats a confident "0".
+              value: installs == null ? "—" : formatInstalls(installs),
+              label: "installs",
+            },
+          ]}
         />
         <div
           style={{

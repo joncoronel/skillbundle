@@ -6,6 +6,43 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
+### Sitemap with accurate `lastModified` — Aug 2026
+
+Deferred out of the cache-tag split (PR #65). `app/robots.ts` shipped there;
+`app/sitemap.ts` did not, and the robots file deliberately emits **no `Sitemap:`
+line** — add one when this lands.
+
+**Why it was held back, not just skipped.** Done carelessly a sitemap *adds*
+cost, which is the opposite of the PR's goal. The route would have to enumerate
+~9.5k skills, and an uncached sitemap hit by crawlers re-queries the whole
+catalog every time. It needs `'use cache'` + a `cacheLife` before it is safe to
+expose at all.
+
+**Why it's still worth doing.** `lastModified` is the lever. Crawlers currently
+walk the catalog with no freshness signal, so they re-fetch pages that haven't
+changed, and each cold fetch re-renders and rewrites cache entries. Feeding real
+`contentUpdatedAt` values lets them skip unchanged pages. That is the *same*
+saving the tag split chased, aimed at the crawl side instead of the cron side.
+Google honours `lastModified` only partially, so treat the win as real but
+unquantified.
+
+Design questions to settle before writing it:
+
+1. **Where does the data come from?** `listPopularSkills` is paginated at 100/page,
+   so a full walk is ~95 round trips per generation. A purpose-built query
+   returning just `(source, skillId, contentUpdatedAt)` would be far cheaper, but
+   check whether `skillSummaries` carries `contentUpdatedAt` — the detail page
+   reads it off the full `skills` row, and the summaries table is the slim one.
+2. **One file or `generateSitemaps`?** 9.5k URLs fits inside the 50k/50 MB limit,
+   so chunking is optional. Chunking mainly helps if generation cost per request
+   becomes the problem.
+3. **What gets included?** Skill pages, `/[org]`, `/[org]/[repo]`,
+   `/site/[source]`, `/official`. Exclude anything `robots.ts` disallows,
+   especially `/compare?` — a sitemap entry that contradicts robots.txt is worse
+   than no entry.
+4. **Delisted skills.** They still render (with a banner). Decide whether they
+   belong in the sitemap at all; probably not.
+
 ### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
 
 **Prize:** delete ~420 KB of client JS from the skill detail route entirely, and
@@ -741,29 +778,50 @@ binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
-### Per-skill cache invalidation (the "skill-sync" tag is all-or-nothing)
+### Gate the content-chain ping (and, maybe, per-skill cache tags)
 
-`loadSkill` / `loadInsights` / `loadCopies` in `components/skill-detail-page.tsx`
-all tag their cache entries with one fixed string, `SKILL_SYNC_TAG = "skill-sync"`.
-Each skill gets its own cache entry (keyed by `source` + `skillId`), but every entry
-carries the *same* tag, so `revalidateHomeTag("skill-sync")` invalidates the entire
-catalog at once. There is no way to refresh a single skill.
+Updated Aug 2026, after the cadence split (PR #65). The tags are now
+`skill-sync` (install counts, ranks, snapshots, versions, copies) and
+`skill-content` (the skill row) — see `lib/skill-cache.ts`. Both are still
+all-or-nothing across the catalog: every skill's entry carries the same two
+strings, so one ping invalidates all ~9.5k. There is no way to refresh a single
+skill.
 
-Fine today: invalidation only *marks* entries stale, so a page rebuilds only when
-someone actually visits it. Cost is bounded by traffic, not by the ~9.5k catalog.
-The tag is also only pinged a few times a day (syncSkills 06:00, reconcile 07:00,
-and now the content-chain terminal, see below).
+**The concrete problem left.** `markStaleContent` chains into
+`backfillDiscoverUrls` unconditionally, and both content terminals
+(`backfillFetchContent`, `fetchSkillDetailBatch`) schedule
+`internal.skills.publishSkillUpdate` with no "did we actually write content"
+gate. So `skill-content` is pinged ~4 times every morning even on a day when no
+SKILL.md changed, which is exactly what the split was supposed to stop. Until
+this is gated, `loadSkill`'s `cacheLife("weeks")` is doing the real work and the
+content tag is contributing little on the daily path.
 
-Idea: make the tag dynamic, `cacheTag("skill:" + source + "/" + skillId)`, and have
-the content-fetch step ping only the skills it actually touched. This is also the
-prerequisite for making the terminal ping fire "only when content changed" in any
-meaningful way, since a targeted check buys nothing while the tag nukes everything.
+**Why the obvious gate isn't worth building.** Detecting the change is not the
+problem: `updateDescription` already returns a transactional `changed` flag,
+`skillVersions` carries a `by_changedAt` index (schema.ts:507), and
+`skillSummaries.contentUpdatedAt` mirrors "last time the file actually moved".
+Any of those answers "did content change since X" in one indexed lookup.
 
-Why deferred: the staggered per-skill `fetchSkillContent` calls are independent
-scheduled actions with no shared state, so there is nowhere to collect "which skills
-changed this run" without adding a counter table or similar; `/api/revalidate` would
-also need to accept a batch of tags. Not worth it until cache churn shows up as real
-Vercel function load (relevant on Hobby, so worth watching rather than ignoring).
+The problem is that the tag is catalog-wide. A global gate suppresses the ping
+only on a day when NOT ONE skill in ~9.5k changed its SKILL.md — and this app's
+headline feature is a change feed of exactly those events, so such days are
+close to nonexistent. Building it would be ~20 lines that fire anyway. Per-skill
+tags are the prerequisite that makes any freshness check meaningful, which is
+why they lead this entry now.
+
+Note the sync path already does the gated thing where it can: `upsertSkillsBatch`
+returns a `contentFieldChanges` count and `syncSkills` pings `skill-content` only when
+it's non-zero. The content chain is harder only because of the scheduling shape.
+
+Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) remain the fuller
+fix and would let the content step ping only what it touched, but note they do
+NOT help the daily `skill-sync` ping: `syncSkills` walks the entire leaderboard
+and legitimately moves nearly every install count, so "only the skills that
+changed" is "all of them". `/api/revalidate` would also need to accept a batch of
+tags. Sequence it after the gate, not before.
+
+Fine meanwhile: invalidation only *marks* entries stale, so a page rebuilds when
+someone visits it. Cost is bounded by traffic, not by the catalog.
 
 Context: this came out of fixing the content-publish ordering (Jul 2026). The content
 pipeline previously never pinged the tag itself; publishing relied on `reconcile`'s

@@ -2,10 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
-import {
-  loadSkill,
-  SkillDetailPage,
-} from "@/components/skill-detail-page";
+import { SkillDetailPage } from "@/components/skill-detail-page";
+import { loadSkill } from "@/lib/skill-cache";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
 import {
   Breadcrumb,

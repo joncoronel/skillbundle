@@ -41,7 +41,6 @@ export function SkillSidebar({
   externalIcon,
   externalLabel,
   curatedOwner,
-  installs,
   insights,
   updatedKind,
   updatedDate,
@@ -54,14 +53,17 @@ export function SkillSidebar({
   externalIcon: IconSvgElement;
   externalLabel: string;
   curatedOwner?: string;
-  installs: number;
   insights: SkillInsights;
   updatedKind: string;
   updatedDate: string;
   audits: SkillAuditEntry[] | null;
   stars: number | null;
 }) {
-  const { snapshots, installRank } = insights;
+  // `installs` comes off `insights` rather than as its own prop. It used to be
+  // passed separately, sourced from the skill row — which is what forced that
+  // row's cache entry onto the daily "skill-sync" tag. Tag split documented in
+  // lib/skill-cache.ts.
+  const { snapshots, installRank, installs } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
   // The sparkline is a recent-momentum glance over the trailing week. It reads
@@ -84,12 +86,26 @@ export function SkillSidebar({
             animates, since the digit-roll mask adds vertical space) so the
             stats line below never shifts. */}
         <div className="flex min-h-11 items-center">
-          <NumberFlow
-            value={hover ? hover.value : installs}
-            format={{ notation: "compact", maximumFractionDigits: 1 }}
-            className="text-2xl font-semibold leading-none text-foreground"
-            aria-label={`${installs} installs`}
-          />
+          {/* `installs` is null only for an orphaned skill row. Show a dash
+              rather than NumberFlow's 0 — a wrong number reads as fact, in the
+              accessible label as much as on screen. Hovering the sparkline
+              can't happen in that state (no snapshots), but the hover value
+              still wins when present. */}
+          {hover || installs != null ? (
+            <NumberFlow
+              value={hover ? hover.value : (installs as number)}
+              format={{ notation: "compact", maximumFractionDigits: 1 }}
+              className="text-2xl font-semibold leading-none text-foreground"
+              aria-label={`${hover ? hover.value : installs} installs`}
+            />
+          ) : (
+            <span
+              className="text-2xl font-semibold leading-none text-muted-foreground"
+              aria-label="Install count unavailable"
+            >
+              —
+            </span>
+          )}
         </div>
 
         {/* Reserve a line so swapping the stats for the hovered date doesn't

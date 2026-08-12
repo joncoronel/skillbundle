@@ -8,7 +8,9 @@ import type { CSSProperties } from "react";
 
 export type SkillInsights = {
   snapshots: { day: string; installs: number }[];
-  installs: number;
+  /** null only for an orphaned skill row (no skillSummaries mirror) — render a
+   *  dash rather than a zero. See getInsights in convex/skills.ts. */
+  installs: number | null;
   installRank: number | null;
 };
 

@@ -1,8 +1,36 @@
 /**
- * Ping the Next.js site to invalidate a cached home-page leaderboard tag, so
- * the next request rebuilds from fresh Convex data instead of serving the
- * `'use cache'` snapshot. Called from a leaderboard sync action right after
- * it writes new ranks.
+ * Ping the Next.js site to invalidate one of its `'use cache'` tags, so the
+ * next request rebuilds from fresh Convex data instead of serving the cached
+ * snapshot. Drives every allowlisted tag, not just the home rails — the tag
+ * vocabulary lives in lib/cache-tags.ts, which both this file and the route
+ * derive from.
+ *
+ * Which tag to ping is decided by WHICH FIELDS MOVED, not by which job you are.
+ * A job that moves both kinds of data pings both (markDelistedSkills and
+ * syncCurated do exactly that). Getting this wrong is expensive, not just wrong:
+ *
+ *   "home-hot" / "home-trending" / "home-popular"
+ *       Home rails. Pinged by their own leaderboard crons.
+ *   "skill-sync"
+ *       Install counts, ranks, snapshots, version history, copies — plus the
+ *       list surfaces that filter on `isDelisted` / read the curated rollup
+ *       (`lib/source-skills.ts`, `app/(main)/[org]`, `app/(main)/official`).
+ *       syncSkills rewrites the full ~9.5k-row leaderboard daily, so this tag
+ *       churns the whole catalog every morning by design.
+ *   "skill-content"
+ *       The skill row read by `loadSkill`: SKILL.md content, description, name,
+ *       isDelisted, curatedOwner, isGitHubOnly, and the denormalized audit
+ *       verdict (worstAuditStatus / worstAuditRiskLevel). Long-lived
+ *       (`cacheLife("weeks")`), so it depends on these pings for freshness
+ *       rather than on a timer — if you add a field to this list, find its
+ *       writer and give it a ping.
+ *
+ * Do NOT add "skill-content" to a job that moved only install numbers
+ * (reconcile, curatedRefresh, and the unconditional part of the syncSkills
+ * terminal). Those run daily across the whole catalog, and pairing them with the
+ * content tag is exactly the coupling that made one routine number update cost 4
+ * ISR writes per visited skill page instead of 1. See lib/skill-cache.ts, which
+ * is also honest about what this does not yet buy.
  *
  * No-ops unless both env vars are set — they're configured on the PRODUCTION
  * Convex deployment only, so dev syncs never hit the live site. Set with:
@@ -11,9 +39,18 @@
  * (REVALIDATE_SECRET must match the value set on Vercel.)
  *
  * Best-effort: a failed ping is logged, not thrown — the sync already
- * succeeded, and the cache's time-based `revalidate` is the safety net.
+ * succeeded. Note the time-based safety net is a weak one for "skill-content":
+ * `cacheLife("weeks")` means a dropped ping is up to 7 days of staleness, not
+ * the 24h it used to be.
  */
-export async function revalidateHomeTag(tag: string): Promise<void> {
+// The tag vocabulary is IMPORTED from the Next.js side, not mirrored by hand.
+// lib/cache-tags.ts is dependency-free precisely so this works: /api/revalidate
+// derives its allowlist from the same module, so a tag can no longer exist on
+// one side and not the other. Relative path, not the `@/` alias — convex/
+// typechecks under its own tsconfig, which defines no path aliases.
+import type { SiteTag } from "../../lib/cache-tags";
+
+export async function revalidateSiteTag(tag: SiteTag): Promise<void> {
   const url = process.env.SITE_REVALIDATE_URL;
   const secret = process.env.REVALIDATE_SECRET;
   if (!url || !secret) return;

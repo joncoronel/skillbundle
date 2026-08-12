@@ -30,6 +30,7 @@ import {
 } from "@/lib/listing-styles";
 import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
 
 type Params = Promise<{ org: string }>;
 
@@ -52,7 +53,7 @@ export async function generateStaticParams() {
 async function loadOrg(org: string) {
   "use cache";
   cacheLife("days");
-  cacheTag("skill-sync");
+  cacheTag(SKILL_SYNC_TAG);
   return fetchQuery(api.skills.listRepoAggregatesByOrg, { org });
 }
 

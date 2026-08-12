@@ -21,6 +21,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getCurated } from "./lib/skillsApi";
 import { loadSkillsAuth } from "./lib/skillsAuth";
+import { revalidateSiteTag } from "./lib/revalidate";
 
 const APPLY_BATCH_SIZE = 200;
 const CLEANUP_PAGE_SIZE = 200;
@@ -184,6 +185,26 @@ export const syncCurated = internalAction({
     console.log(
       `syncCurated: upserted ${totalUpserted}, stamped ${totalStamped}, cleared ${totalCleared}, owners ${ownerRows.length}`,
     );
+
+    // `curatedOwner` is patched onto the skill row itself (Passes 1 and 2), and
+    // Pass 3 rebuilds the owner rollup that /official reads. That spans BOTH
+    // tags: the Official badge on the detail page + OG card comes off loadSkill
+    // ("skill-content"), while `/official` (app/(main)/official/page.tsx) reads
+    // `listCuratedOwners` under "skill-sync". Like markDelistedSkills this used
+    // to publish by accident off a broader ping; that ping is now
+    // install-counts-only, so the stamp has to announce itself — and it is the
+    // fields that moved, not the identity of this job, that picks the tags.
+    //
+    // Gated on an actual change: after the first run of the day both counts are
+    // normally 0, and a curated set that didn't move shouldn't invalidate
+    // anything. Issued in parallel — both calls swallow their own errors, so
+    // Promise.all cannot reject.
+    if (totalStamped > 0 || totalCleared > 0) {
+      await Promise.all([
+        revalidateSiteTag("skill-content"),
+        revalidateSiteTag("skill-sync"),
+      ]);
+    }
 
     // Drain the discovery / content-fetch / audit chain for any rows Pass 0
     // just inserted. Without this, freshly-inserted curated rows wait for the

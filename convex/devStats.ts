@@ -8,7 +8,7 @@ import {
 import type { QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { revalidateHomeTag } from "./lib/revalidate";
+import { revalidateSiteTag } from "./lib/revalidate";
 import { summaryRefreshHealthy } from "./lib/skillHealth";
 import { EXPIRY_MARGIN_MS } from "./lib/skillsAuth";
 import { isDeadRenamedAlias } from "./lib/source";
@@ -328,7 +328,7 @@ export const recalculateStats = internalAction({
     // This keeps the cached page 1 aligned with the live Convex data that the
     // client's infinite-scroll pagination reads, so the two don't diverge at
     // the page boundary.
-    await revalidateHomeTag("home-popular");
+    await revalidateSiteTag("home-popular");
   },
 });
 

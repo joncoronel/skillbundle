@@ -21,6 +21,7 @@ import { SkillCopies } from "@/components/skill-copies";
 import { SkillHistory } from "@/components/skill-history";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 
 // Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
 // fetch, which would block prerendering. Each loader is a `'use cache'`
@@ -28,20 +29,13 @@ import { DataErrorBoundary } from "@/components/data-error-boundary";
 // the result by its args (source, skillId), so the route prerenders a static
 // shell and the `generateMetadata` pass + body share one entry.
 //
-// The loaders carrying syncSkills-written data (install count + rank +
-// snapshots) share the "skill-sync" `cacheTag`. The daily syncSkills cron pings
-// that tag via /api/revalidate (see convex/skills.ts), so every skill page's
-// number and chart refresh in lockstep with the sync instead of drifting up to
-// a day on the cacheLife window alone. loadAudits/loadStars are updated by other
-// processes, so they keep their own independent daily cadence and are untagged.
-const SKILL_SYNC_TAG = "skill-sync";
-
-export async function loadSkill(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag(SKILL_SYNC_TAG);
-  return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
-}
+// The skill row itself is loaded by `loadSkill` in lib/skill-cache.ts, which
+// also carries the canonical explanation of the two-tag split ("skill-sync" for
+// daily install data, "skill-content" for the row). Read that before re-tagging
+// or merging anything below.
+//
+// loadAudits/loadStars are written by other processes entirely, so they keep
+// their own independent daily cadence and stay untagged.
 
 export async function loadAudits(source: string, skillId: string) {
   "use cache";
@@ -53,44 +47,38 @@ export async function loadAudits(source: string, skillId: string) {
   return row?.audits ?? null;
 }
 
-// getInsights returns only daily-cadence fields (install count, installRank,
-// snapshots — all written by the daily syncSkills cron). Tagged "skill-sync" so
-// the sync refreshes it on demand; the 24h revalidate is the fallback if a ping
-// is missed. The faster-moving momentum fields (trending/hot) deliberately stay
-// off this page; they live on the home rails, kept fresh by their own crons.
-export async function loadInsights(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag(SKILL_SYNC_TAG);
-  return fetchQuery(api.skills.getInsights, { source, skillId });
-}
-
-// Duplicate/rename relationships (Phase 2): the live skill a renamed alias
-// points to, plus aliases (same repo, other names) and forks (different repos,
-// same content). Populated by resolveRepoIdentities. Tagged "skill-sync" so it
-// busts alongside the install data when a sync pings the revalidate route,
-// rather than lagging the full 24h ISR window after relationships change.
-export async function loadCopies(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag(SKILL_SYNC_TAG);
-  return fetchQuery(api.duplicates.getSkillCopies, { source, skillId });
-}
-
-// Version history for the History section. Tagged "skill-sync" like the other
-// sync-written data: `skillVersions` rows are written from convex/skills.ts on
-// the content-refresh path, and that same module pings this tag via
-// /api/revalidate, so history refreshes in lockstep with the install count and
-// chart rather than lagging its own window.
+// Everything on the "skill-sync" cadence, in ONE cache entry:
 //
-// Loaded here rather than by the section itself so it joins the page's existing
-// Promise.all and lands in the same cached HTML — see the header of
-// components/skill-history.tsx for why that replaced a deferred subscription.
-export async function loadVersions(source: string, skillId: string) {
+//   insights — install count, installRank, snapshots (daily syncSkills). The
+//              faster-moving momentum fields (trending/hot) deliberately stay
+//              off this page; they live on the home rails, kept fresh by their
+//              own crons.
+//   copies   — duplicate/rename relationships: the live skill a renamed alias
+//              points to, plus aliases (same repo, other names) and forks
+//              (different repos, same content). Populated by
+//              resolveRepoIdentities on the weekly duplicate chain.
+//   versions — version history for the History section, written on the
+//              content-refresh path.
+//
+// These were three separate `'use cache'` functions. They bought nothing:
+// SkillDetailBody awaits all of them in a single Promise.all inside a single
+// Suspense boundary, so there was never any independent streaming to gain, and
+// they share one tag so they were always invalidated together anyway. Three
+// entries meant three ISR writes per post-sync visit for one boundary's worth
+// of data. Only split them again if one of them moves behind its own Suspense
+// boundary or onto a different tag.
+//
+// The 24h cacheLife is the fallback if a revalidate ping is missed.
+export async function loadSkillSyncData(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
   cacheTag(SKILL_SYNC_TAG);
-  return fetchQuery(api.skillVersions.listForSkill, { source, skillId });
+  const [insights, copies, versions] = await Promise.all([
+    fetchQuery(api.skills.getInsights, { source, skillId }),
+    fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
+    fetchQuery(api.skillVersions.listForSkill, { source, skillId }),
+  ]);
+  return { insights, copies, versions };
 }
 
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
@@ -124,9 +112,20 @@ export async function loadStars(source: string): Promise<number | null> {
 // shiki reads `Date.now()` internally, which can't be baked into a prerender.
 // The highlight is deterministic and expensive, so caching it (keyed by content)
 // freezes that read and keeps the skill body in the static shell.
+//
+// "max", not "days": the cache key IS the content and the transform is pure, so
+// re-running on a timer can only ever reproduce the same bytes. On "days" that
+// meant re-running shiki and rewriting an identical entry every 24h for every
+// viewed skill; "max" stretches that to a 30-day revalidate (365-day expire).
+// Not "never" — no `'use cache'` profile is, and entries are keyed by build ID
+// anyway, so every deploy resets them. On a frequently-deployed app the real
+// ceiling here is deploy cadence, not cacheLife.
+//
+// The content-keying also means aliases and forks (which this app explicitly
+// tracks, see loadSkillSyncData) share a single entry rather than one each.
 async function highlightSkillContent(content: string) {
   "use cache";
-  cacheLife("days");
+  cacheLife("max");
   return highlightMarkdownCode(content);
 }
 
@@ -212,18 +211,18 @@ async function SkillDetailBody({
   externalIcon: IconSvgElement;
   externalLabel: string;
 }) {
-  const [skill, audits, insights, stars, copies, versions] = await Promise.all([
+  const [skill, audits, syncData, stars] = await Promise.all([
     loadSkill(source, skillId),
     loadAudits(source, skillId),
-    loadInsights(source, skillId),
+    loadSkillSyncData(source, skillId),
     loadStars(source),
-    loadCopies(source, skillId),
-    loadVersions(source, skillId),
   ]);
 
   if (!skill) {
     notFound();
   }
+
+  const { insights, copies, versions } = syncData;
 
   const preHighlighted = skill.content
     ? await highlightSkillContent(skill.content)
@@ -343,7 +342,6 @@ async function SkillDetailBody({
             externalIcon={externalIcon}
             externalLabel={externalLabel}
             curatedOwner={skill.curatedOwner}
-            installs={skill.installs}
             insights={insights}
             updatedKind={updatedKind}
             updatedDate={updatedDate}

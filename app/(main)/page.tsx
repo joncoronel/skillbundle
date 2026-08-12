@@ -5,6 +5,11 @@ import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { HomeContent, HomeFallback } from "./home-content";
+import {
+  HOME_HOT_TAG,
+  HOME_POPULAR_TAG,
+  HOME_TRENDING_TAG,
+} from "@/lib/cache-tags";
 
 // The page is static. <HomeContent> reads search params via nuqs' Next
 // adapter, which suspends during prerendering — the Suspense fallback below
@@ -49,7 +54,7 @@ export const metadata: Metadata = {
 async function getInitialPopularSkills() {
   "use cache";
   cacheLife("days");
-  cacheTag("home-popular");
+  cacheTag(HOME_POPULAR_TAG);
   return fetchQuery(api.skills.listPopularSkills, {
     paginationOpts: { numItems: 30, cursor: null },
   });
@@ -58,7 +63,7 @@ async function getInitialPopularSkills() {
 async function getInitialTrending() {
   "use cache";
   cacheLife("hours");
-  cacheTag("home-trending");
+  cacheTag(HOME_TRENDING_TAG);
   return fetchQuery(api.leaderboards.listTrending, {
     paginationOpts: { numItems: 60, cursor: null },
   });
@@ -67,7 +72,7 @@ async function getInitialTrending() {
 async function getInitialHot() {
   "use cache";
   cacheLife("hours");
-  cacheTag("home-hot");
+  cacheTag(HOME_HOT_TAG);
   return fetchQuery(api.leaderboards.listHot, { limit: 30 });
 }
 

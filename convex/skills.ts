@@ -31,7 +31,7 @@ import {
   NOT_MODIFIED,
   RATE_LIMITED,
 } from "./lib/github";
-import { revalidateHomeTag } from "./lib/revalidate";
+import { revalidateSiteTag } from "./lib/revalidate";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
 import { extractFrontmatterVersion } from "./skillVersions";
@@ -75,6 +75,10 @@ export const syncSkills = internalAction({
     let page = 0;
     let hasMore = true;
     let totalSynced = 0;
+    // Counts rows where a `loadSkill`-visible field moved — today `name` or an
+    // isGitHubOnly adoption. Gates the "skill-content" ping at the terminal;
+    // see there, and see upsertSkillsBatch for what qualifies.
+    let totalContentFieldChanges = 0;
 
     // Pin the snapshot day once, up front, so every batch this run writes lands
     // in the same day-bucket even if the run crosses the day boundary (LA
@@ -139,11 +143,15 @@ export const syncSkills = internalAction({
 
       for (let i = 0; i < normalized.length; i += BATCH_SIZE) {
         const batch = normalized.slice(i, i + BATCH_SIZE);
-        await ctx.runMutation(internal.skills.upsertSkillsBatch, {
-          skills: batch,
-          leaderboard: "all-time",
-          day,
-        });
+        const { contentFieldChanges } = await ctx.runMutation(
+          internal.skills.upsertSkillsBatch,
+          {
+            skills: batch,
+            leaderboard: "all-time",
+            day,
+          },
+        );
+        totalContentFieldChanges += contentFieldChanges;
       }
 
       totalSynced += normalized.length;
@@ -156,14 +164,34 @@ export const syncSkills = internalAction({
     // Lifetime installs + installRank just changed, so refresh the home "Popular"
     // tab (cached under this tag) in lockstep with the daily data instead of
     // letting it drift on its own 24h time-based window. Best-effort no-op in dev
-    // (see revalidateHomeTag); trending/hot ping their own tags from their crons.
-    await revalidateHomeTag("home-popular");
+    // (see revalidateSiteTag); trending/hot ping their own tags from their crons.
+    await revalidateSiteTag("home-popular");
 
-    // Same idea for skill detail pages: their install count (loadSkill) and chart
-    // (loadInsights) are both tagged "skill-sync" and cached on a 24h ISR window.
-    // Ping the tag so every visited skill page refreshes its number and snapshot
-    // series in lockstep with this sync rather than drifting up to a day behind.
-    await revalidateHomeTag("skill-sync");
+    // Same idea for skill detail pages: their install count, rank and snapshot
+    // series all live in `loadSkillSyncData` (lib/skill-cache.ts documents the
+    // split), tagged "skill-sync". Ping it so every visited skill page refreshes
+    // in lockstep with this sync rather than drifting up to a day behind.
+    //
+    // Deliberately NOT "skill-content". This walk rewrites the whole ~9.5k-row
+    // leaderboard daily, and the skill row it would invalidate (SKILL.md content,
+    // description) has not changed just because an install number moved — that
+    // coupling is exactly what the tag split removed. The fields this path DOES
+    // move that `loadSkill` renders are handled separately below.
+    await revalidateSiteTag("skill-sync");
+
+    // upsertSkillsBatch patches two `loadSkill`-visible fields on the skill row:
+    // `name` (page <title>, bundle toggle label) and the isGitHubOnly marker
+    // (the "only on GitHub" banner). Both read off the "skill-content" entry,
+    // which now lives for weeks, and neither sets
+    // needsContentFetch/needsDiscovery — so nothing else publishes them. Both
+    // are rare, so gate the ping on an actual count rather than firing
+    // unconditionally and undoing the split. Genuinely new rows don't need
+    // covering here: they ARE inserted with needsContentFetch/needsDiscovery,
+    // so they publish via the content chain's own publishSkillUpdate.
+    if (totalContentFieldChanges > 0) {
+      console.log(`${totalContentFieldChanges} skill row field(s) changed — publishing`);
+      await revalidateSiteTag("skill-content");
+    }
 
     // Delist skills not seen for 30+ days.
     await ctx.scheduler.runAfter(5_000, internal.skills.markDelistedSkills, {});
@@ -476,6 +504,7 @@ export const upsertSkillsBatch = internalMutation({
       v.object({ userId: v.id("users"), limit: v.number() }),
     ),
   },
+  returns: v.object({ contentFieldChanges: v.number() }),
   /**
    * Listing-call upsert. Two paths:
    *
@@ -507,11 +536,12 @@ export const upsertSkillsBatch = internalMutation({
       addedBy,
       enforceGitHubQuotaFor,
     },
-  ) => {
+  ): Promise<{ contentFieldChanges: number }> => {
     const now = Date.now();
     // Prefer the caller's pinned day (see the `day` arg doc); fall back to the
     // current app-timezone day for callers that don't pin.
     const day = pinnedDay ?? appDay(now);
+    let contentFieldChanges = 0;
 
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
@@ -545,6 +575,23 @@ export const upsertSkillsBatch = internalMutation({
         // which patches `lastSeenInApi` alone and would leave the marker set —
         // and with it reconcile's skip, permanently.
         const adopting = (summary.isGitHubOnly ?? false) && !isGitHubOnly;
+        // Both `name` and `isGitHubOnly` are rendered off `loadSkill` (page
+        // <title> / bundle label; the "only on GitHub" banner), which sits on
+        // the long-lived "skill-content" entry. Neither sets
+        // needsContentFetch/needsDiscovery, so neither reaches the content
+        // chain's publish — this path is their only publisher. Counted here and
+        // returned so the calling action pings once per run, not once per row.
+        //
+        // Anything added to this count must be a field `loadSkill` actually
+        // renders. Anything that only moves install data belongs on
+        // "skill-sync", which syncSkills already pings unconditionally.
+        //
+        // Known imprecision: syncCurated also calls this with a `name` from the
+        // curated snapshot, which its own comment notes lags ~weeks. A recently
+        // renamed row can flip stale at 06:30 and back at 06:00, counting a
+        // change each day. Harmless (the ping is idempotent) and pre-existing,
+        // but it makes this an upper bound rather than an exact count.
+        if (nameChanged || adopting) contentFieldChanges++;
         const nothingChanged =
           !wasRelisted &&
           !installsChanged &&
@@ -786,6 +833,11 @@ export const upsertSkillsBatch = internalMutation({
         await recordDailySnapshot(ctx, skillDocId, skill.installs, day);
       }
     }
+
+    // Only the fast path can observe these (the slow path is an insert or an
+    // orphan adoption, both of which route through the content chain and get
+    // published by its own terminal). Callers that don't care may ignore this.
+    return { contentFieldChanges };
   },
 });
 
@@ -1488,36 +1540,56 @@ export const fetchSkillContent = internalAction({
 });
 
 /**
- * Schedulable wrapper around `revalidateHomeTag("skill-sync")`, fired at the
- * terminal of each content chain — i.e. the first moment the content this
- * chain wrote is actually readable.
+ * Schedulable publish step, fired at the terminal of each content chain — i.e.
+ * the first moment the content this chain wrote is actually readable.
  *
- * Every *other* caller pings the tag before the content it means to publish
- * exists: `syncSkills` pings at its own terminal and only then schedules
+ * Pings BOTH skill tags because a content chain moves both kinds of data:
+ * "skill-content" for the skill row it just rewrote (content, description), and
+ * "skill-sync" for the `skillVersions` rows it archived alongside them.
+ *
+ * It is the main, but no longer the only, publisher of "skill-content" on the
+ * daily path: syncSkills also pings it when a `loadSkill`-visible field moved
+ * (gated on a count — see its terminal), and the audit chain pings it when a
+ * verdict moved. What none of them do is ping it merely because install numbers
+ * moved; that is the coupling the split removed. See lib/skill-cache.ts.
+ *
+ * Every *other* caller pings before the content it means to publish exists:
+ * `syncSkills` pings at its own terminal and only then schedules
  * `markStaleContent` (+8s), which is what *starts* discovery → fetch; and
  * `addSkillManually` pings immediately after scheduling its backfill. Since
- * `loadSkill` reads through `'use cache'` on `cacheLife("days")`, a page
- * rendered in that gap caches a row whose `content` is still empty.
+ * `loadSkill` reads through `'use cache'` on `cacheLife("weeks")`, a page
+ * rendered in that gap caches a row whose `content` is still empty — and now
+ * holds it for up to 7 days rather than 1, which is precisely why this step
+ * exists and why it must stay at the terminal.
  *
- * On the daily path this was masked: `reconcileUnseenSkills` pings the same
- * tag at 07:00 (reconcile.ts), after the 06:00 content pipeline has settled,
- * so the day's content did get published. But that ping is incidental — it's
- * semantically "install counts changed", it's gated on `refreshed > 0`, and it
- * lands at a fixed hour rather than when content is ready. It silently fails
- * to publish when reconcile refreshes nothing, or when the content pipeline
- * runs past 07:00. Manual adds had no such backstop at all: the row could sit
- * contentless until the next reconcile that happened to refresh something.
+ * This used to be masked on the daily path: `reconcileUnseenSkills` pinged the
+ * same single tag at 07:00 (reconcile.ts), after the 06:00 content pipeline had
+ * settled, so the day's content got published as a side effect. That crutch is
+ * GONE now that reconcile only pings "skill-sync" — it was always incidental
+ * (semantically "install counts changed", gated on `refreshed > 0`, landing at
+ * a fixed hour rather than when content is ready), and it silently failed when
+ * reconcile refreshed nothing or the content pipeline ran past 07:00. This step
+ * is the publisher for content the chain itself wrote — syncSkills and the
+ * audit terminal cover the fields they write, but neither covers this — so do
+ * not drop it.
  *
- * Pinging here makes the publish explicit and unconditional instead of a side
- * effect of an unrelated job. Best-effort and idempotent (`revalidateHomeTag`
- * swallows errors and no-ops when the env vars are unset, i.e. everywhere but
- * prod), so the extra ping costs nothing when there was no content to write.
+ * Best-effort and idempotent: `revalidateSiteTag` swallows errors, and it
+ * no-ops entirely outside prod (the env vars are only set there).
+ *
+ * In prod these pings are NOT free, and nothing here gates them on whether the
+ * chain actually wrote anything. Each one expires every skill's content entry
+ * catalog-wide, and the chain runs end to end every morning regardless — so
+ * "skill-content" is currently invalidated ~4x a day even when no SKILL.md
+ * moved. That is a known, deliberate gap, not an oversight: gating it only pays
+ * once the tag is per-skill, because a catalog-wide tag plus a catalog-wide
+ * "did anything change" check is still catalog-wide. TODO.md sequences the two.
  */
-export const revalidateSkillSyncTag = internalAction({
+export const publishSkillUpdate = internalAction({
   args: {},
   returns: v.null(),
   handler: async () => {
-    await revalidateHomeTag("skill-sync");
+    await revalidateSiteTag("skill-content");
+    await revalidateSiteTag("skill-sync");
     return null;
   },
 });
@@ -1583,7 +1655,7 @@ export const backfillFetchContent = internalAction({
       // carry their new SKILL.md — this is the first moment a ping is useful.
       await ctx.scheduler.runAfter(
         finalDelay + 15_000,
-        internal.skills.revalidateSkillSyncTag,
+        internal.skills.publishSkillUpdate,
         {},
       );
     }
@@ -2336,7 +2408,7 @@ export const fetchSkillDetailBatch = internalAction({
       // their content here, so this branch needs its own ping.
       await ctx.scheduler.runAfter(
         15_000,
-        internal.skills.revalidateSkillSyncTag,
+        internal.skills.publishSkillUpdate,
         {},
       );
     }
@@ -2491,6 +2563,21 @@ export const markDelistedSkills = internalAction({
       console.log(
         `Delisted ${totalDelisted} skills not seen in API for 30+ days`,
       );
+      // Delisting moves data behind BOTH tags, so ping both. `isDelisted` sits
+      // on the skill row ("skill-content": the "no longer listed" banner, the
+      // OG 404 card), but the directory and org loaders filter on it too
+      // (`lib/source-skills.ts`, `app/(main)/[org]/page.tsx`) and those are
+      // "skill-sync". This job used to publish by accident — it runs 5s after
+      // syncSkills, whose single ping covered everything. Now that the tags are
+      // split it has to announce itself, and "which fields moved" is what picks
+      // the tags, not "which job am I".
+      //
+      // Gated on the count so a no-op sweep (the overwhelmingly common case)
+      // costs nothing.
+      await Promise.all([
+        revalidateSiteTag("skill-content"),
+        revalidateSiteTag("skill-sync"),
+      ]);
     }
   },
 });
@@ -3136,6 +3223,28 @@ export const getBySourceAndSkillId = query({
 const INSIGHTS_HISTORY_DAYS = 90;
 
 /**
+ * Just the install count. The OG card renders one integer, and `getInsights`
+ * would make it collect every skillSnapshots row inside INSIGHTS_HISTORY_DAYS
+ * (90) to get there. Reads the ~200 B summary and stops.
+ *
+ * `null` rather than 0 when there is no summary row — same orphaned-skill-row
+ * reasoning as getInsights; a dash beats a confident zero.
+ */
+export const getInstallCount = query({
+  args: { source: v.string(), skillId: v.string() },
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, { source, skillId }) => {
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", source).eq("skillId", skillId),
+      )
+      .unique();
+    return summary?.installs ?? null;
+  },
+});
+
+/**
  * Analytics for one skill's detail page: the daily install time series plus the
  * count and all-time rank. Reads entirely from the cheap `skillSummaries` +
  * `skillSnapshots` tables — never the heavy `skills` row. The history is empty
@@ -3152,8 +3261,14 @@ export const getInsights = query({
       )
       .unique();
 
+    // `installs: null`, not 0. This is the orphaned-skill-row case (a `skills`
+    // row with no `skillSummaries` mirror — see the defensive index probe in
+    // upsertSkillsBatch's slow path). The sidebar reads its headline number from
+    // here rather than from the skill row, so returning 0 would render a
+    // confident, wrong "0 installs" including in the aria-label. null lets the
+    // caller show a dash instead.
     if (!summary) {
-      return { snapshots: [], installs: 0, installRank: null };
+      return { snapshots: [], installs: null, installRank: null };
     }
 
     const cutoffDay = appDay(Date.now() - INSIGHTS_HISTORY_DAYS * 86_400_000);
