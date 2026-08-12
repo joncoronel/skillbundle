@@ -112,7 +112,6 @@ describe("POST /api/revalidate", () => {
       "home-popular",
       "skill-sync",
       "skill-content",
-      "skill-audit",
     ];
 
     it("accepts exactly these tags and no others", () => {

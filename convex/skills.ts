@@ -2474,6 +2474,13 @@ export const delistSkillsBatch = internalMutation({
           needsContentFetch: false,
           needsDiscovery: false,
           needsEmbedding: false,
+          // Same reason again, and this one was missing: `writeAuditResult` is
+          // the only writer of `needsAudit: false`, and it is never reached for
+          // a delisted row (listSkillsNeedingAudit filters them out AFTER
+          // paginating). So a row delisted while flagged stayed in the
+          // by_needsAudit index forever, consuming a page slot on every audit
+          // chain run and pushing real work off the end of the batch.
+          needsAudit: false,
           // Drop out of the resolve work-set too — a row delisted before it was
           // ever resolved shouldn't burn a GitHub call resolving a dead repo. (If
           // it relists, upsertSkillsBatch re-flags it.) Same reason as the other
@@ -2511,6 +2518,8 @@ export const delistSkillsBatch = internalMutation({
           needsContentFetch: false,
           needsDiscovery: false,
           needsEmbedding: false,
+          // Mirrors the summary patch above — see the needsAudit note there.
+          needsAudit: false,
           // Mirror the leaderboard cleanup from skillSummaries above.
           trendingRank: undefined,
           trendingInstalls: undefined,

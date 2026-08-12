@@ -130,7 +130,6 @@ export const writeAuditResult = internalMutation({
   },
   returns: v.object({
     denormChanged: v.boolean(),
-    auditRowChanged: v.boolean(),
     isFirstRecord: v.boolean(),
   }),
   /**
@@ -253,35 +252,16 @@ export const writeAuditResult = internalMutation({
     // differs. The 404 caller uses this to avoid publishing an invisible
     // absent -> "unknown" transition; the success caller deliberately does not,
     // because a first audit coming back fail/warn makes a badge APPEAR.
-    // Two flags, because two cache entries move on different conditions:
-    //   denormChanged   — the rolled-up verdict on the SKILL row moved. Drives
-    //                     the OG card's badge, read through "skill-content".
-    //   auditRowChanged — the skillAudits row moved at all, which includes a
-    //                     provider re-writing a summary with the same verdict.
-    //                     Drives the page's audit section, read through
-    //                     "skill-audit". Strict superset of the above.
-    return {
-      denormChanged,
-      auditRowChanged: skillAuditsRowChanged,
-      isFirstRecord: !existing,
-    };
+    return { denormChanged, isFirstRecord: !existing };
   },
 });
 
 export const fetchAuditBatch = internalAction({
   // `denormChanges` accumulates across the self-chaining recursion so the
   // terminal knows whether any audit verdict actually moved this run.
-  args: {
-    cursor: v.optional(v.string()),
-    denormChanges: v.optional(v.number()),
-    auditRowChanges: v.optional(v.number()),
-  },
-  handler: async (
-    ctx,
-    { cursor, denormChanges = 0, auditRowChanges = 0 },
-  ): Promise<void> => {
+  args: { cursor: v.optional(v.string()), denormChanges: v.optional(v.number()) },
+  handler: async (ctx, { cursor, denormChanges = 0 }): Promise<void> => {
     let denormChangeCount = denormChanges;
-    let auditRowChangeCount = auditRowChanges;
     const result: {
       skills: Array<{
         skillDocId: Id<"skills">;
@@ -318,7 +298,7 @@ export const fetchAuditBatch = internalAction({
             );
             const audits = response.audits ?? [];
             const { worstStatus, worstRiskLevel } = reduceWorst(audits);
-            const { denormChanged, auditRowChanged } = await ctx.runMutation(
+            const { denormChanged } = await ctx.runMutation(
               internal.audits.writeAuditResult,
               {
                 skillDocId: s.skillDocId,
@@ -330,7 +310,6 @@ export const fetchAuditBatch = internalAction({
               },
             );
             if (denormChanged) denormChangeCount++;
-            if (auditRowChanged) auditRowChangeCount++;
             okCount++;
           } catch (e) {
             if (e instanceof SkillsApiRateLimitError) {
@@ -348,8 +327,7 @@ export const fetchAuditBatch = internalAction({
               // transition that makes a badge DISAPPEAR — so without this the
               // OG card keeps a stale "Risk · HIGH" for a cacheLife("weeks")
               // window after the verdict was withdrawn upstream.
-              const { denormChanged, auditRowChanged, isFirstRecord } =
-                await ctx.runMutation(
+              const { denormChanged, isFirstRecord } = await ctx.runMutation(
                 internal.audits.writeAuditResult,
                 {
                   skillDocId: s.skillDocId,
@@ -359,15 +337,12 @@ export const fetchAuditBatch = internalAction({
                   worstStatus: "unknown",
                 },
               );
-              // Not `isFirstRecord`, for both tags. A never-audited row 404ing
-              // writes "unknown" over an absent field and an empty audits array
-              // over no row: `auditTag` renders nothing for either status, and
-              // the page's audit section renders nothing for both null and [].
-              // So neither surface changes. New skills arrive daily, so counting
-              // those would pass the terminal's gates on most days for no
-              // visible reason.
+              // Not `isFirstRecord`: a never-audited row 404ing writes
+              // "unknown" over an absent field, and `auditTag` renders nothing
+              // for either, so there is no badge to refresh. New skills arrive
+              // daily, so counting those would pass the terminal's gate on most
+              // days for no visible reason.
               if (denormChanged && !isFirstRecord) denormChangeCount++;
-              if (auditRowChanged && !isFirstRecord) auditRowChangeCount++;
               unknownCount++;
               return;
             }
@@ -390,11 +365,7 @@ export const fetchAuditBatch = internalAction({
         await ctx.scheduler.runAfter(
           retryAfter * 1000,
           internal.audits.fetchAuditBatch,
-          {
-            cursor,
-            denormChanges: denormChangeCount,
-            auditRowChanges: auditRowChangeCount,
-          },
+          { cursor, denormChanges: denormChangeCount },
         );
         return;
       }
@@ -404,41 +375,26 @@ export const fetchAuditBatch = internalAction({
       await ctx.scheduler.runAfter(
         AUDIT_CHAIN_DELAY_MS,
         internal.audits.fetchAuditBatch,
-        {
-          cursor: result.nextCursor,
-          denormChanges: denormChangeCount,
-          auditRowChanges: auditRowChangeCount,
-        },
+        { cursor: result.nextCursor, denormChanges: denormChangeCount },
       );
     } else {
       console.log(
-        `Audit fetch chain drained (${denormChangeCount} verdict change(s), ` +
-          `${auditRowChangeCount} row change(s))`,
+        `Audit fetch chain drained (${denormChangeCount} verdict change(s))`,
       );
-      // Publish, on two tags with two different gates, because two entries read
-      // this data on two different conditions:
+      // Publish the badge. The audit chain is the only writer of
+      // `worstAuditStatus` / `worstAuditRiskLevel` on the skill row, and that
+      // row is `loadSkill`'s long-lived "skill-content" entry — so this is the
+      // only thing that can refresh the OG card's audit badge. It also drains
+      // well after the content chain's own publish (scheduled +10s vs +15s in
+      // syncSkills, then spread over AUDIT_CHAIN_DELAY_MS-spaced batches), so
+      // riding on that ping was never an option even before it gets gated.
       //
-      //   "skill-content" — the denormalized worst-status on the SKILL row,
-      //                     which the OG card's badge reads. Only moves when the
-      //                     rolled-up verdict moves. This chain is its only
-      //                     writer, and it drains well after the content chain's
-      //                     own publish (+10s vs +15s in syncSkills, then spread
-      //                     over AUDIT_CHAIN_DELAY_MS-spaced batches), so riding
-      //                     on that ping was never an option.
-      //   "skill-audit"   — the full audit list the detail page renders. Moves
-      //                     on any skillAudits row write, including a provider
-      //                     re-stating a summary under an unchanged verdict.
-      //                     Nothing else pings it, and loadAudits now lives a
-      //                     week, so a missed ping here is a week of staleness.
-      //
-      // Both gated: on a weekly poll the unchanged case is the common one, and
-      // an ungated ping would expire every skill's entry catalog-wide for
-      // nothing. Issued in parallel — revalidateSiteTag swallows its own errors,
-      // so Promise.all cannot reject.
-      const pings = [];
-      if (denormChangeCount > 0) pings.push(revalidateSiteTag("skill-content"));
-      if (auditRowChangeCount > 0) pings.push(revalidateSiteTag("skill-audit"));
-      if (pings.length > 0) await Promise.all(pings);
+      // Gated on a real verdict change — `writeAuditResult` already skips the
+      // denorm patch when the rolled-up status is unchanged, which on a weekly
+      // poll is the overwhelmingly common case.
+      if (denormChangeCount > 0) {
+        await revalidateSiteTag("skill-content");
+      }
     }
   },
 });

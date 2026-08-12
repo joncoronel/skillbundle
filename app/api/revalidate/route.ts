@@ -12,7 +12,7 @@ import { SITE_TAGS } from "@/lib/cache-tags";
 //
 // Derived from lib/cache-tags.ts rather than restated, so the allowlist and the
 // `cacheTag(...)` call sites cannot drift apart. What each tag means, and why the
-// three skill tags are split by cadence rather than by skill, is documented in
+// two skill tags are split by cadence rather than by skill, is documented once in
 // lib/skill-cache.ts; convex/lib/revalidate.ts takes its `SiteTag` union from
 // the same module by `import type`, so the caller side cannot drift either.
 // tests/revalidate-route.test.ts covers the runtime half.

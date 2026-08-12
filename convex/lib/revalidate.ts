@@ -17,11 +17,6 @@
  *       (`lib/source-skills.ts`, `app/(main)/[org]`, `app/(main)/official`).
  *       syncSkills rewrites the full ~9.5k-row leaderboard daily, so this tag
  *       churns the whole catalog every morning by design.
- *   "skill-audit"
- *       The per-skill security audit list (`loadAudits`). Pinged only by the
- *       audit chain terminal, gated on the skillAudits row actually moving.
- *       Weekly cadence; deliberately not folded into "skill-content", which the
- *       ungated daily content chain expires every morning.
  *   "skill-content"
  *       The skill row read by `loadSkill`: SKILL.md content, description, name,
  *       isDelisted, curatedOwner, isGitHubOnly, and the denormalized audit
