@@ -50,9 +50,9 @@ import { buildSitemapEntries, type SitemapSkillRow } from "@/lib/sitemap-entries
  * safe — generation is per cache entry, not per request, so the crawler-facing
  * cost is a CDN read of ~2.4 MB of XML.
  *
- * Both skill tags, because both halves of this file move independently: the URL
- * SET changes when a skill is added or delisted ("skill-sync"), and the
- * `lastmod` values change when content does. Both of those are "skill-content"
+ * One tag, not both, even though two independent things move this file: the URL
+ * SET changes when a skill is added or delisted, and the `lastmod` values
+ * change when content does. Both of those are "skill-content"
  * events: `markDelistedSkills` and the content chain's `publishSkillUpdate`
  * each ping BOTH tags, and a genuinely new row publishes through that chain
  * too (convex/skills.ts says so where it declines to ping "skill-content"
