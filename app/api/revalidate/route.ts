@@ -1,14 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { timingSafeEqual } from "node:crypto";
-
-// Constant-time compare that also fails closed on length mismatch (and avoids
-// timingSafeEqual's throw on unequal-length buffers).
-function secretsMatch(provided: string, expected: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
+import { secretsMatch } from "@/lib/shared-secret";
 
 // On-demand cache invalidation for the home-page leaderboards and skill detail
 // pages. The Convex crons POST here right after they write new data, so the next

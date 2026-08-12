@@ -710,6 +710,22 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   }),
 
+  // Single-row cache for the Vercel OIDC token skills.sh wants (see
+  // convex/skillsAuth.ts). Convex can't mint one itself, so it pulls a fresh
+  // token from the site's /api/skills-token relay every 6h and every sync, and
+  // parks it here for the ~9 thousand upstream calls in between.
+  //
+  // `token` is a bearer credential: it must never be returned from a public
+  // query or logged. `lastRefreshError` is what makes a fall back to the legacy
+  // API key visible on /dev instead of silent.
+  skillsAuthToken: defineTable({
+    token: v.string(),
+    expiresAt: v.number(),
+    refreshedAt: v.number(),
+    lastRefreshError: v.optional(v.string()),
+    lastRefreshErrorAt: v.optional(v.number()),
+  }),
+
   syncStats: defineTable({
     totalSkills: v.number(),
     contentFetchErrors: v.number(),

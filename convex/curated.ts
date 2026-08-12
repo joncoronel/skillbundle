@@ -20,6 +20,7 @@ import {
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getCurated } from "./lib/skillsApi";
+import { loadSkillsAuth } from "./lib/skillsAuth";
 
 const APPLY_BATCH_SIZE = 200;
 const CLEANUP_PAGE_SIZE = 200;
@@ -33,7 +34,7 @@ export const syncCurated = internalAction({
   handler: async (ctx) => {
     let response;
     try {
-      response = await getCurated();
+      response = await getCurated(await loadSkillsAuth(ctx));
     } catch (e) {
       console.error("syncCurated failed:", e);
       return;

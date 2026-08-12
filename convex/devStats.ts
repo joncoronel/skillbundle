@@ -10,6 +10,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { revalidateHomeTag } from "./lib/revalidate";
 import { summaryRefreshHealthy } from "./lib/skillHealth";
+import { EXPIRY_MARGIN_MS } from "./lib/skillsAuth";
 import { isDeadRenamedAlias } from "./lib/source";
 
 // Number of discovery attempts before a skill is considered exhausted
@@ -81,6 +82,48 @@ export const getSyncStats = query({
         recalculatedAt: 0,
       }
     );
+  },
+});
+
+/**
+ * Which credential the skills.sh sync is actually running on.
+ *
+ * Exists because the fallback is silent by design: if the OIDC relay breaks,
+ * every upstream call quietly reverts to the legacy `SKILLS_SH_API_KEY` and the
+ * catalog keeps syncing, so nothing else would ever tell us. `usable` mirrors
+ * `loadSkillsAuth`'s expiry margin exactly, so what this shows is what the next
+ * sync will actually do.
+ *
+ * Returns no token material — the cached token is a bearer credential carrying
+ * our Vercel team and project identity.
+ */
+export const getSkillsAuthStatus = query({
+  args: {},
+  returns: v.object({
+    relayConfigured: v.boolean(),
+    usingOidc: v.boolean(),
+    expiresAt: v.union(v.number(), v.null()),
+    refreshedAt: v.union(v.number(), v.null()),
+    lastRefreshError: v.union(v.string(), v.null()),
+    lastRefreshErrorAt: v.union(v.number(), v.null()),
+    hasLegacyKey: v.boolean(),
+  }),
+  handler: async (ctx) => {
+    await assertAdmin(ctx);
+    const row = await ctx.db.query("skillsAuthToken").first();
+    return {
+      relayConfigured: Boolean(
+        process.env.SKILLS_TOKEN_URL && process.env.SKILLS_TOKEN_SECRET,
+      ),
+      usingOidc: Boolean(
+        row && row.token && row.expiresAt - EXPIRY_MARGIN_MS > Date.now(),
+      ),
+      expiresAt: row?.expiresAt ?? null,
+      refreshedAt: row?.refreshedAt ?? null,
+      lastRefreshError: row?.lastRefreshError ?? null,
+      lastRefreshErrorAt: row?.lastRefreshErrorAt ?? null,
+      hasLegacyKey: Boolean(process.env.SKILLS_SH_API_KEY),
+    };
   },
 });
 

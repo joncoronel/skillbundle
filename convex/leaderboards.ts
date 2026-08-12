@@ -23,6 +23,7 @@ import {
   listSkills as v1ListSkills,
   SkillsApiRateLimitError,
 } from "./lib/skillsApi";
+import { loadSkillsAuth } from "./lib/skillsAuth";
 import { revalidateHomeTag } from "./lib/revalidate";
 
 const TRENDING_LIMIT = 200; // top N to track
@@ -35,9 +36,10 @@ const HOT_LIMIT = 50;
 export const syncTrending = internalAction({
   args: {},
   handler: async (ctx) => {
+    const auth = await loadSkillsAuth(ctx);
     let response;
     try {
-      response = await v1ListSkills({
+      response = await v1ListSkills(auth, {
         view: "trending",
         page: 0,
         perPage: TRENDING_LIMIT,
@@ -147,9 +149,10 @@ export const applyTrending = internalMutation({
 export const syncHot = internalAction({
   args: {},
   handler: async (ctx) => {
+    const auth = await loadSkillsAuth(ctx);
     let response;
     try {
-      response = await v1ListSkills({
+      response = await v1ListSkills(auth, {
         view: "hot",
         page: 0,
         perPage: HOT_LIMIT,

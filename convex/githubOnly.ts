@@ -44,7 +44,9 @@ import {
   SkillsApiNotFoundError,
   SkillsApiRateLimitError,
   withTransientRetry,
+  type SkillsAuth,
 } from "./lib/skillsApi";
+import { loadSkillsAuth } from "./lib/skillsAuth";
 import { canonicalSlug, matchesSkillIdExactly } from "./lib/skillMatch";
 import { probePathsFor } from "./lib/discoveryPlacement";
 import { pickSkillMd } from "./lib/resolvePlacement";
@@ -90,11 +92,12 @@ function parseAdminInput(input: string): {
  * redacted "Server Error".
  */
 async function checkSkillsShListing(
+  auth: SkillsAuth,
   source: string,
   skillId: string,
 ): Promise<"listed" | "not_listed"> {
   try {
-    await withTransientRetry(() => v1GetSkillDetail(source, skillId));
+    await withTransientRetry(() => v1GetSkillDetail(auth, source, skillId));
     return "listed";
   } catch (err) {
     if (err instanceof SkillsApiNotFoundError) return "not_listed";
@@ -444,6 +447,7 @@ function terminalFor(
 /** The same two lookups, run under a second candidate slug. */
 async function checkAliasSlug(
   ctx: ActionCtx,
+  auth: SkillsAuth,
   source: string,
   alias: string,
 ): Promise<{ precheck: Precheck; terminal: GitHubPreview | null }> {
@@ -452,7 +456,7 @@ async function checkAliasSlug(
       source,
       skillId: alias,
     }) as Promise<Precheck>,
-    checkSkillsShListing(source, alias),
+    checkSkillsShListing(auth, source, alias),
   ]);
   const precheck = unwrap(precheckR);
   return {
@@ -483,12 +487,13 @@ async function previewGitHubCore(
   // Well-known sources have no repo to read a SKILL.md out of.
   if (!isGitHubSource(source)) return { status: "not_github" };
 
+  const auth = await loadSkillsAuth(ctx);
   const [precheckR, listingR, resolvedR] = await Promise.allSettled([
     ctx.runQuery(internal.skills.getManualAddPrecheck, {
       source,
       skillId,
     }) as Promise<Precheck>,
-    checkSkillsShListing(source, skillId),
+    checkSkillsShListing(auth, source, skillId),
     resolveGitHubSkillMd(source, skillId, pathHint),
   ]);
 
@@ -535,7 +540,9 @@ async function previewGitHubCore(
     canonicalFmName: resolved.fmName ? canonicalSlug(resolved.fmName) : null,
     matchedBy: resolved.matchedBy,
   });
-  const aliasPass = alias ? await checkAliasSlug(ctx, source, alias) : null;
+  const aliasPass = alias
+    ? await checkAliasSlug(ctx, auth, source, alias)
+    : null;
   // A claimed alias is terminal here and never reaches decideSlug.
   if (aliasPass?.terminal) return aliasPass.terminal;
 

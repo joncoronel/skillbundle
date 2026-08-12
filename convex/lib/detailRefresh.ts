@@ -13,7 +13,9 @@ import {
   SkillsApiNotFoundError,
   SkillsApiRateLimitError,
   withTransientRetry,
+  type SkillsAuth,
 } from "./skillsApi";
+import { loadSkillsAuth } from "./skillsAuth";
 
 export type RefreshOutcome =
   | { kind: "refreshed" }
@@ -29,14 +31,19 @@ export type RefreshableSkill = {
   isDuplicate: boolean;
 };
 
+/**
+ * `auth` is passed in rather than loaded here: both callers walk many skills
+ * per action, and loading it per skill would spend a query round-trip on every
+ * row to re-read the same cached token.
+ */
 export async function refreshSkillFromDetail(
   ctx: ActionCtx,
   skill: RefreshableSkill,
-  opts: { day: string; leaderboard: string },
+  opts: { day: string; leaderboard: string; auth: SkillsAuth },
 ): Promise<RefreshOutcome> {
   try {
     const detail = await withTransientRetry(() =>
-      v1GetSkillDetail(skill.source, skill.skillId),
+      v1GetSkillDetail(opts.auth, skill.source, skill.skillId),
     );
     // Fast-path upsert (existing row): updates installs, writes a day-pinned
     // snapshot, stamps lastSeenInApi. `leaderboard` is set-on-insert only, so the
@@ -79,10 +86,13 @@ export async function drainRefreshBatch(
   items: RefreshableSkill[],
   opts: { day: string; leaderboard: string },
 ): Promise<{ refreshed: number; gone: number; rateLimitedAfter?: number }> {
+  // Both jobs call this once per action, so this is the natural place to load
+  // the skills.sh credential once for the whole batch.
+  const auth = await loadSkillsAuth(ctx);
   let refreshed = 0;
   let gone = 0;
   for (const skill of items) {
-    const outcome = await refreshSkillFromDetail(ctx, skill, opts);
+    const outcome = await refreshSkillFromDetail(ctx, skill, { ...opts, auth });
     if (outcome.kind === "refreshed") {
       refreshed++;
     } else if (outcome.kind === "gone") {

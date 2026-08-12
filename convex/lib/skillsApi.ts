@@ -1,11 +1,18 @@
 /**
- * Typed client for the skills.sh public v1 API.
+ * Typed client for the skills.sh v1 API.
  *
- * Docs: https://skills.sh/api/v1
+ * Docs: https://skills.sh/docs/api
  *
- * Auth: SKILLS_SH_API_KEY env var. Without it, requests are unauthenticated
- * (60 req/min per IP). With it, 600 req/min per key. Set via:
- *   npx convex env set SKILLS_SH_API_KEY sk_live_...
+ * Auth: every call takes a `SkillsAuth` from `loadSkillsAuth(ctx)` (see
+ * lib/skillsAuth.ts). The documented credential is a Vercel OIDC token, which
+ * we relay in from the site; the legacy `SKILLS_SH_API_KEY` is the fallback and
+ * is read straight from the environment here.
+ *
+ * There is no unauthenticated tier. Measured Aug 2026: the listing, search,
+ * detail and curated endpoints all 401 with `authentication_required` when
+ * called with no credential. (The audit endpoint still answers unauthenticated,
+ * but that looks like an enforcement gap rather than a promise — don't plan
+ * around it.)
  */
 
 // Hit www.skills.sh directly: the apex domain 307-redirects to www, and both
@@ -30,18 +37,40 @@ export class SkillsApiNotFoundError extends Error {
   }
 }
 
-function authHeaders(): Record<string, string> {
-  const key = process.env.SKILLS_SH_API_KEY;
+/**
+ * Credential for a batch of skills.sh calls, loaded once per action by
+ * `loadSkillsAuth(ctx)`. `oidcToken` is null when no fresh token is cached, in
+ * which case the legacy API key carries the request on its own.
+ */
+export type SkillsAuth = { oidcToken: string | null };
+
+function headersFor(credential: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "User-Agent": "SkillBundle",
   };
-  if (key) headers.Authorization = `Bearer ${key}`;
+  if (credential) headers.Authorization = `Bearer ${credential}`;
   return headers;
 }
 
-async function request<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, { headers: authHeaders() });
+async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
+  const url = `${BASE_URL}${path}`;
+  const key = process.env.SKILLS_SH_API_KEY ?? null;
+
+  let res = await fetch(url, { headers: headersFor(auth.oidcToken ?? key) });
+
+  // Fall back to the legacy key only on an auth rejection, and only when the
+  // OIDC token is what got rejected. Retrying a 429 with a second credential
+  // would just spend both on the same per-(team, project) limit, and retrying a
+  // 5xx is withTransientRetry's job.
+  if ((res.status === 401 || res.status === 403) && auth.oidcToken && key) {
+    const body = await res.text().catch(() => "");
+    console.error(
+      `skills.sh rejected the OIDC token (${res.status}: ${body.slice(0, 200)}); retrying with the legacy API key`,
+    );
+    res = await fetch(url, { headers: headersFor(key) });
+  }
+
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
     throw new SkillsApiRateLimitError(Number.isFinite(retryAfter) ? retryAfter : 60);
@@ -118,17 +147,20 @@ interface V1Pagination {
 
 export type LeaderboardView = "all-time" | "trending" | "hot";
 
-export async function listSkills(opts: {
-  view?: LeaderboardView;
-  page?: number;
-  perPage?: number;
-}): Promise<{ data: V1Skill[]; pagination: V1Pagination }> {
+export async function listSkills(
+  auth: SkillsAuth,
+  opts: {
+    view?: LeaderboardView;
+    page?: number;
+    perPage?: number;
+  },
+): Promise<{ data: V1Skill[]; pagination: V1Pagination }> {
   const params = new URLSearchParams();
   if (opts.view) params.set("view", opts.view);
   if (opts.page !== undefined) params.set("page", String(opts.page));
   if (opts.perPage !== undefined) params.set("per_page", String(opts.perPage));
   const qs = params.toString();
-  return request(`/skills${qs ? `?${qs}` : ""}`);
+  return request(`/skills${qs ? `?${qs}` : ""}`, auth);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,10 +184,14 @@ export interface V1SkillDetail {
  * gets misrouted as a 400 invalid_path.
  */
 export async function getSkillDetail(
+  auth: SkillsAuth,
   source: string,
   slug: string,
 ): Promise<V1SkillDetail> {
-  return request(`/skills/${encodeSource(source)}/${encodeURIComponent(slug)}`);
+  return request(
+    `/skills/${encodeSource(source)}/${encodeURIComponent(slug)}`,
+    auth,
+  );
 }
 
 /**
@@ -177,10 +213,11 @@ function encodeSource(source: string): string {
  * has no snapshot yet OR no SKILL.md file.
  */
 export async function getSkillSyncData(
+  auth: SkillsAuth,
   source: string,
   slug: string,
 ): Promise<{ hash: string | null; skillMdContents: string | null }> {
-  const detail = await getSkillDetail(source, slug);
+  const detail = await getSkillDetail(auth, source, slug);
   const skillMd = detail.files?.find((f) => f.path === "SKILL.md");
   return {
     hash: detail.hash,
@@ -200,13 +237,13 @@ export interface V1CuratedOwner {
   skills: V1Skill[];
 }
 
-export async function getCurated(): Promise<{
+export async function getCurated(auth: SkillsAuth): Promise<{
   data: V1CuratedOwner[];
   totalOwners: number;
   totalSkills: number;
   generatedAt: string;
 }> {
-  return request("/skills/curated");
+  return request("/skills/curated", auth);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,10 +271,12 @@ export interface V1AuditResponse {
 }
 
 export async function getSkillAudits(
+  auth: SkillsAuth,
   source: string,
   slug: string,
 ): Promise<V1AuditResponse> {
   return request(
     `/skills/audit/${encodeSource(source)}/${encodeURIComponent(slug)}`,
+    auth,
   );
 }

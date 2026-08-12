@@ -24,6 +24,7 @@ import {
   withTransientRetry,
   type V1SkillDetail,
 } from "./lib/skillsApi";
+import { loadSkillsAuth } from "./lib/skillsAuth";
 import {
   resolveDefaultBranch,
   fetchRepoTree,
@@ -70,6 +71,7 @@ const LIST_PER_PAGE = 500;
 export const syncSkills = internalAction({
   args: {},
   handler: async (ctx) => {
+    const auth = await loadSkillsAuth(ctx);
     let page = 0;
     let hasMore = true;
     let totalSynced = 0;
@@ -83,7 +85,7 @@ export const syncSkills = internalAction({
     while (hasMore) {
       let response;
       try {
-        response = await v1ListSkills({
+        response = await v1ListSkills(auth, {
           view: "all-time",
           page,
           perPage: LIST_PER_PAGE,
@@ -2213,6 +2215,7 @@ export const fetchSkillDetailBatch = internalAction({
     });
 
     if (result.skills.length > 0) {
+      const auth = await loadSkillsAuth(ctx);
       let rateLimited: SkillsApiRateLimitError | null = null;
 
       const processOne = async (s: {
@@ -2228,7 +2231,7 @@ export const fetchSkillDetailBatch = internalAction({
           // withTransientRetry absorbs flaky 5xx / network blips inline so a
           // single hiccup doesn't shove the row into 7-day refresh limbo.
           const { hash, skillMdContents } = await withTransientRetry(() =>
-            v1GetSkillSyncData(s.source, s.skillId),
+            v1GetSkillSyncData(auth, s.source, s.skillId),
           );
           if (!skillMdContents || !hash) {
             await ctx.runMutation(internal.skills.markDetailFetchFailed, {
@@ -3949,9 +3952,12 @@ async function manualAddCore(
   // thrown — see the returns-validator comment. Rate limits are wrapped in
   // ConvexError so the prod toast says something actionable instead of the
   // redacted "Server Error".
+  const auth = await loadSkillsAuth(ctx);
   let detail: V1SkillDetail;
   try {
-    detail = await withTransientRetry(() => v1GetSkillDetail(source, skillId));
+    detail = await withTransientRetry(() =>
+      v1GetSkillDetail(auth, source, skillId),
+    );
   } catch (err) {
     if (err instanceof SkillsApiNotFoundError) {
       // A live GitHub-only row that is STILL not on skills.sh: nothing to
