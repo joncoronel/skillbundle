@@ -62,9 +62,16 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           // The two route handlers under /api/: `revalidate` (secret-gated, see
           // app/api/revalidate/route.ts) and `skills-token` (mints a skills.sh
-          // token). Neither is a crawl target. This prefix is genuinely a prefix
-          // — /api/ is not shadowed by the `/[org]` catch-all, since no org page
-          // lives under it.
+          // token). Neither is a crawl target.
+          //
+          // This rule is NOT purely a prefix, contrary to what this comment
+          // used to claim. `/[org]` is a root-level catch-all and the catalog
+          // contains a GitHub org literally named `api` — `api/git`, 8 skills —
+          // so this also blocks 9 real catalog pages. They stay blocked for
+          // now, and `lib/sitemap-entries.ts` drops them from the sitemap so we
+          // are at least not submitting URLs we forbid. If those pages ever
+          // matter, the fix is to name the two handlers here rather than to
+          // weaken the sitemap filter.
           "/api/",
           // Private routes — the inverted private-route list in proxy.ts. A
           // crawler hitting them just eats a Clerk redirect. Anchored per the

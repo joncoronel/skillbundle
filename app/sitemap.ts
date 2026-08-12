@@ -124,14 +124,28 @@ async function loadSitemapRows(): Promise<SitemapSkillRow[]> {
       { paginationOpts: { numItems: PAGE_SIZE, cursor } },
     );
     rows.push(...result.page);
-    // A non-null `pageStatus` means Convex cut the page short against its own
-    // read limits rather than at `numItems`. The cursor still advances, so the
-    // walk would complete and simply be missing rows — the same invisible
-    // failure as the cap below, and the reason `numItems` alone is not proof
-    // of a complete page.
-    if (result.pageStatus) {
+    // Convex ends a page against its own read limits rather than at `numItems`,
+    // so `numItems` alone is not proof of a complete page. Its two statuses are
+    // NOT interchangeable (see the doc comment on `pageStatus` in
+    // convex/dist/cjs-types/server/pagination.d.ts):
+    //
+    //   "SplitRequired"    — the page MIGHT BE INCOMPLETE. Rows are missing and
+    //                        the cursor still advances past them, which is the
+    //                        same invisible truncation as the cap below.
+    //   "SplitRecommended" — the page is complete; Convex is advising a smaller
+    //                        one. Failing on this would break a sitemap that is
+    //                        perfectly good, and because this route prerenders,
+    //                        it would break `next build` rather than just a
+    //                        request. So: log it, and treat it as the signal to
+    //                        lower PAGE_SIZE before it becomes the other one.
+    if (result.pageStatus === "SplitRequired") {
       throw new Error(
-        `[sitemap] Convex returned pageStatus=${result.pageStatus} on page ${page}; the walk would be incomplete`,
+        `[sitemap] Convex returned pageStatus=SplitRequired on page ${page}; the page may be missing rows`,
+      );
+    }
+    if (result.pageStatus === "SplitRecommended") {
+      console.warn(
+        `[sitemap] Convex recommends splitting page ${page} (PAGE_SIZE=${PAGE_SIZE}); the walk is still complete, but lower it before this becomes SplitRequired`,
       );
     }
     if (result.isDone) return rows;

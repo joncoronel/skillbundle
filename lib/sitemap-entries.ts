@@ -163,8 +163,13 @@ function isRoutable(source: string, skillId: string): boolean {
     return false;
   }
   // Well-known sources live under `/site/`, a namespace of ours by
-  // construction, and their dotted domains cannot equal a reserved slug.
-  if (!isGitHubSource(source)) return true;
+  // construction, and their dotted domains cannot equal a reserved slug. But
+  // `isGitHubSource` calls anything dotted well-known, including a two-part
+  // `docs.example.com/x`, which `skillHref` would render as the 4-segment
+  // `/site/docs.example.com/x/<skillId>` — no route matches that, the same
+  // class of dead URL the checks above exist to remove. Nothing in the catalog
+  // has that shape today; this is the guard that keeps it that way.
+  if (!isGitHubSource(source)) return !source.includes("/");
   return !RESERVED_ROOT_SEGMENTS.has(orgOf(source).toLowerCase());
 }
 

@@ -103,6 +103,13 @@ describe("unroutable rows are dropped, not escaped", () => {
     expect(result).not.toContain(`${BASE}/owner/repo`);
     expect(result).not.toContain(`${BASE}/owner`);
   });
+
+  test("a dotted source with a path segment is dropped, not emitted 4 deep", () => {
+    // isGitHubSource calls anything dotted well-known, so without a guard this
+    // renders as /site/docs.example.com/x/a — matching no route.
+    const result = urls([{ source: "docs.example.com/x", skillId: "a" }]);
+    expect(result.some((u) => u.includes("docs.example.com"))).toBe(false);
+  });
 });
 
 describe("lastModified", () => {
