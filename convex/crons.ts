@@ -93,12 +93,19 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.leaderboards.syncTrending,
   );
 
-  // Every 30 min: hot view. The API explicitly compares the current hour to
-  // the same hour yesterday, so refreshing more than every 30 min just
-  // re-renders the same delta — but staler than that and the rail goes flat.
-  crons.cron(
+  // Hourly: hot view. The API compares the current hour to the same hour
+  // yesterday, so the underlying delta only moves once an hour — a 30-minute
+  // cadence was recomputing the same numbers half the time.
+  //
+  // Halved 2026-08-12 from "0,30 * * * *". Each run pings /api/revalidate,
+  // which uses `{ expire: 0 }` — an immediate catalog-wide expiry, not a
+  // stale-while-revalidate. Measured that day: /api/revalidate took 97 requests
+  // in 24h, and this cron was 48 of them, the single largest contributor. So
+  // the old cadence cost a function invocation plus a hard invalidation of the
+  // home rail every half hour to publish a number that had not changed.
+  crons.hourly(
     "sync hot",
-    "0,30 * * * *",
+    { minuteUTC: 45 },
     internal.leaderboards.syncHot,
   );
 
