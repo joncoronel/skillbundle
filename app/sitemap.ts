@@ -4,7 +4,7 @@ import { fetchQuery } from "convex/nextjs";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { CATALOG_MAX_ROWS, maxIterForRows } from "@/convex/lib/pagination";
-import { SKILL_CONTENT_TAG, SKILL_SYNC_TAG } from "@/lib/cache-tags";
+import { SKILL_CONTENT_TAG } from "@/lib/cache-tags";
 import { SITE_URL } from "@/lib/site-url";
 import { buildSitemapEntries, type SitemapSkillRow } from "@/lib/sitemap-entries";
 
@@ -52,15 +52,25 @@ import { buildSitemapEntries, type SitemapSkillRow } from "@/lib/sitemap-entries
  *
  * Both skill tags, because both halves of this file move independently: the URL
  * SET changes when a skill is added or delisted ("skill-sync"), and the
- * `lastmod` values change when content does ("skill-content"). The entry busts
- * on either. "skill-content" already churns catalog-wide a few times each
- * morning (see lib/skill-cache.ts), so in practice this regenerates ~5x/day:
- * ~50 Convex queries and ~5 ISR writes daily, against a crawl of ~18.7k pages.
- * `cacheLife("days")` is the backstop if every publisher for a day missed.
+ * `lastmod` values change when content does. Both of those are "skill-content"
+ * events: `markDelistedSkills` and the content chain's `publishSkillUpdate`
+ * each ping BOTH tags, and a genuinely new row publishes through that chain
+ * too (convex/skills.ts says so where it declines to ping "skill-content"
+ * itself). So tagging "skill-sync" as well would add no coverage the sitemap
+ * needs while inheriting its churn — that tag also fires from the per-batch
+ * install refreshes in reconcile.ts and curatedRefresh.ts, 20+ times a day,
+ * none of which move a single URL or `lastmod` here.
+ *
+ * That matters more than a regeneration count, because `/api/revalidate` uses
+ * `{ expire: 0 }`: the first crawler after any ping does not get a stale copy,
+ * it WAITS on the full catalog walk. Fewer pings means fewer crawlers paying
+ * for one. The one thing left uncovered is an `isDuplicate` flip (weekly job,
+ * no publisher), bounded to 24h by `cacheLife("days")` below — which is also
+ * the backstop if every publisher for a day missed.
  *
  * ── Size ──────────────────────────────────────────────────────────────────
  *
- * 18,701 URLs as of Aug 2026 (~9.5k skills plus their orgs, repos and
+ * ~18.6k URLs as of Aug 2026 (~9.5k skills plus their orgs, repos and
  * well-known sources) at ~130 B each. Both limits — 50k URLs and 50 MB — are far
  * off, so this stays a single file. `generateSitemaps` is the escape hatch if
  * the catalog ever approaches either, or if per-generation cost (not per
@@ -81,10 +91,29 @@ const MAX_PAGES = maxIterForRows(CATALOG_MAX_ROWS, PAGE_SIZE);
 // lib/representative-params.ts spells out its page type.
 type SitemapPage = FunctionReturnType<typeof api.skills.listSitemapEntries>;
 
+// The projection and the consumer's row type must name the same fields, and
+// nothing else enforces that: every field is optional, so dropping or renaming
+// one on the Convex side still assigns cleanly here and every `lastmod`
+// silently disappears — the one thing this route exists to emit. The tests
+// build their own rows, so they can't catch it either. Comparing the key sets
+// makes it a `pnpm check` failure instead of a production non-event.
+type Assert<T extends true> = T;
+type SameKeys<A, B> = [keyof A] extends [keyof B]
+  ? [keyof B] extends [keyof A]
+    ? true
+    : false
+  : false;
+// Named rather than inlined so the compiler error points somewhere legible;
+// the declaration IS the use, hence the disable.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _RowShapeMatchesQuery = Assert<
+  SameKeys<SitemapPage["page"][number], SitemapSkillRow>
+>;
+
 async function loadSitemapRows(): Promise<SitemapSkillRow[]> {
   "use cache";
   cacheLife("days");
-  cacheTag(SKILL_SYNC_TAG, SKILL_CONTENT_TAG);
+  cacheTag(SKILL_CONTENT_TAG);
 
   const rows: SitemapSkillRow[] = [];
   let cursor: string | null = null;
@@ -95,16 +124,28 @@ async function loadSitemapRows(): Promise<SitemapSkillRow[]> {
       { paginationOpts: { numItems: PAGE_SIZE, cursor } },
     );
     rows.push(...result.page);
+    // A non-null `pageStatus` means Convex cut the page short against its own
+    // read limits rather than at `numItems`. The cursor still advances, so the
+    // walk would complete and simply be missing rows — the same invisible
+    // failure as the cap below, and the reason `numItems` alone is not proof
+    // of a complete page.
+    if (result.pageStatus) {
+      throw new Error(
+        `[sitemap] Convex returned pageStatus=${result.pageStatus} on page ${page}; the walk would be incomplete`,
+      );
+    }
     if (result.isDone) return rows;
     cursor = result.continueCursor;
   }
 
-  // Never silently truncate: a short sitemap looks identical to a complete one,
-  // so the only symptom would be pages quietly dropping out of the index.
-  console.warn(
-    `[sitemap] stopped at the ${MAX_PAGES}-page cap with ${rows.length} rows; the sitemap is incomplete`,
+  // Throw rather than return what we have. A short sitemap is indistinguishable
+  // from a complete one, and because this function is cached, returning would
+  // persist the truncation and re-serve it as authoritative for a day, with a
+  // single `console.warn` buried in the function logs as the only trace.
+  // Throwing means no cache entry is written and the next crawler retries.
+  throw new Error(
+    `[sitemap] stopped at the ${MAX_PAGES}-page cap with ${rows.length} rows; refusing to cache a truncated sitemap`,
   );
-  return rows;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

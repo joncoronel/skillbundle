@@ -9,8 +9,10 @@
 import { test, expect, describe } from "vitest";
 import {
   buildSitemapEntries,
+  RESERVED_ROOT_SEGMENTS,
   type SitemapSkillRow,
 } from "../lib/sitemap-entries";
+import robots from "../app/robots";
 
 const BASE = "https://skillbundle.dev";
 
@@ -59,13 +61,47 @@ describe("URL shapes", () => {
   });
 
   test("path segments are encoded, so no slug can break the XML", () => {
-    // Not a slug shape we have today — the point is that if one ever appears,
-    // it lands as %-escapes rather than as raw markup inside <loc>.
-    const result = urls([{ source: "owner/re&po", skillId: "a<b" }]);
-    expect(result).toContain(`${BASE}/owner/re%26po/a%3Cb`);
-    for (const url of result) {
+    // Defence in depth beneath the routability filter: Next interpolates `url`
+    // into <loc> unescaped, so raw markup would invalidate the whole file.
+    for (const url of urls([{ source: "owner/repo", skillId: "a.b_c-d" }])) {
       expect(url).not.toMatch(/[<>&"]/);
     }
+  });
+});
+
+describe("unroutable rows are dropped, not escaped", () => {
+  // The skill routes call buildSkillInstallCommand and notFound() on null, so
+  // these slugs 404 whether they arrive raw or percent-encoded. Real catalog
+  // shapes: 126 rows as of Aug 2026.
+  test.each([
+    ["a colon in the skill id", "google-labs-code/stitch-skills", "react:components"],
+    ["an ampersand in the skill id", "claude-office-skills/skills", "pdf-merge-&-split"],
+    ["a slash in the skill id (4-segment path)", "claude-office-skills/skills", "facebook/meta-ads"],
+    ["a colon in the source", "owner/re:po", "fine-slug"],
+  ])("drops %s", (_label, source, skillId) => {
+    const result = urls([{ source, skillId }]);
+    for (const url of result) {
+      expect(url).not.toContain("%");
+    }
+    expect(result.some((u) => u.includes(skillId.split("/")[0]))).toBe(false);
+  });
+
+  test("an unroutable skill contributes nothing to its parents", () => {
+    const rows: SitemapSkillRow[] = [
+      { source: "owner/repo", skillId: "bad:id", contentUpdatedAt: FEB },
+      { source: "owner/repo", skillId: "good-id", contentUpdatedAt: JAN },
+    ];
+    // Only the good skill exists, and FEB never reaches the rollup.
+    expect(urls(rows)).toContain(`${BASE}/owner/repo/good-id`);
+    expect(find(rows, `${BASE}/owner/repo`)?.lastModified).toEqual(
+      new Date(JAN),
+    );
+  });
+
+  test("a source whose every skill is unroutable disappears entirely", () => {
+    const result = urls([{ source: "owner/repo", skillId: "bad:id" }]);
+    expect(result).not.toContain(`${BASE}/owner/repo`);
+    expect(result).not.toContain(`${BASE}/owner`);
   });
 });
 
@@ -98,6 +134,59 @@ describe("lastModified", () => {
     const entry = find(
       [{ source: "owner/repo", skillId: "a", contentFetchedAt: JAN }],
       `${BASE}/owner/repo/a`,
+    );
+    expect(entry?.lastModified).toEqual(new Date(JAN));
+  });
+
+  test("the fallback is refused where contentFetchedAt proves nothing", () => {
+    // Each of these stamps contentFetchedAt without having read an unchanged
+    // file, so honouring it would advertise a change that never happened.
+    const cases: Array<[string, SitemapSkillRow, string]> = [
+      [
+        "well-known sources are re-fetched daily",
+        { source: "open.feishu.cn", skillId: "a", contentFetchedAt: JAN },
+        `${BASE}/site/open.feishu.cn/a`,
+      ],
+      [
+        "the fetch is currently failing",
+        {
+          source: "owner/repo",
+          skillId: "b",
+          contentFetchedAt: JAN,
+          hasContentFetchError: true,
+        },
+        `${BASE}/owner/repo/b`,
+      ],
+      [
+        "there was never a SKILL.md URL to read",
+        {
+          source: "owner/repo",
+          skillId: "c",
+          contentFetchedAt: JAN,
+          hasSkillMdUrl: false,
+        },
+        `${BASE}/owner/repo/c`,
+      ],
+    ];
+    for (const [label, row, url] of cases) {
+      const entry = find([row], url);
+      expect(entry, label).toBeDefined();
+      expect(entry?.lastModified, label).toBeUndefined();
+    }
+  });
+
+  test("a real contentUpdatedAt still wins in all of those cases", () => {
+    const entry = find(
+      [
+        {
+          source: "open.feishu.cn",
+          skillId: "a",
+          contentUpdatedAt: JAN,
+          contentFetchedAt: FEB,
+          hasContentFetchError: true,
+        },
+      ],
+      `${BASE}/site/open.feishu.cn/a`,
     );
     expect(entry?.lastModified).toEqual(new Date(JAN));
   });
@@ -164,25 +253,52 @@ describe("lastModified", () => {
 });
 
 describe("agreement with robots.txt", () => {
-  test("nothing disallowed by app/robots.ts is listed", () => {
+  // Derived from app/robots.ts rather than hand-copied, so adding a disallow
+  // rule there without teaching the sitemap about it fails here. The previous
+  // version of this test duplicated the list and fed it only synthetic rows,
+  // which is why it passed while the real build shipped 10 `/api/git*` URLs
+  // that robots.txt forbids.
+  const wildcardDisallows = (() => {
+    const { rules } = robots();
+    const list = Array.isArray(rules) ? rules : [rules];
+    const wildcard = list.find((r) => r.userAgent === "*");
+    const disallow = wildcard?.disallow ?? [];
+    return (Array.isArray(disallow) ? disallow : [disallow])
+      // `/compare?` bans the query form, not the page; the sitemap never emits
+      // a query string, asserted separately below.
+      .filter((p) => !p.includes("?"))
+      .map((p) => p.replace(/\$$/, ""));
+  })();
+
+  test("every disallowed root segment is one the sitemap refuses to emit", () => {
+    expect(wildcardDisallows.length).toBeGreaterThan(0);
+    for (const prefix of wildcardDisallows) {
+      const segment = prefix.replace(/^\//, "").replace(/\/$/, "");
+      expect(RESERVED_ROOT_SEGMENTS.has(segment)).toBe(true);
+    }
+  });
+
+  test("a real colliding org (there is one named `api`) is dropped", () => {
+    const result = urls([
+      { source: "api/git", skillId: "agent-memory" },
+      { source: "owner/repo", skillId: "fine" },
+    ]);
+    expect(result.some((u) => u.includes("/api"))).toBe(false);
+    expect(result).toContain(`${BASE}/owner/repo/fine`);
+  });
+
+  test("nothing disallowed is listed, and no entry carries a query string", () => {
     const result = urls([
       { source: "owner/repo", skillId: "a" },
       { source: "open.feishu.cn", skillId: "b" },
+      { source: "dev/tools", skillId: "c" },
+      { source: "settings/x", skillId: "d" },
     ]);
-    const disallowed = [
-      "/api/",
-      "/dashboard",
-      "/settings",
-      "/dev",
-      "/sign-in",
-      "/sign-up",
-    ];
     for (const url of result) {
       const path = url.slice(BASE.length);
-      for (const prefix of disallowed) {
+      for (const prefix of wildcardDisallows) {
         expect(path.startsWith(prefix)).toBe(false);
       }
-      // `/compare?skills=...` is the disallowed form; the bare page is allowed.
       expect(path).not.toContain("?");
     }
   });

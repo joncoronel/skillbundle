@@ -1,5 +1,11 @@
 import type { MetadataRoute } from "next";
-import { isGitHubSource } from "@/lib/skill-urls";
+import { isSafeCommandSkillId, isSafeCommandSource } from "@/lib/install-commands";
+import {
+  isGitHubSource,
+  ownerHref,
+  skillHref,
+  sourceHref,
+} from "@/lib/skill-urls";
 
 /**
  * Turns the flat skill list into the full URL set for `app/sitemap.ts`.
@@ -16,34 +22,52 @@ import { isGitHubSource } from "@/lib/skill-urls";
  * sitemap on one catalog walk and — more importantly — makes it impossible for
  * a directory URL to appear whose page would render empty.
  *
+ * Paths come from `lib/skill-urls.ts` rather than being rebuilt here. That file
+ * asks callers not to hard-code the shape, and the `/site/` rule living in two
+ * places is exactly how the two drift.
+ *
+ * ── What is excluded, and why exclusion beats escaping ────────────────────
+ *
+ * A sitemap is a claim that these URLs resolve. Google reports one that doesn't
+ * as "Submitted URL not found (404)" against the whole file, so an entry that
+ * cannot resolve is worse than a missing one. Two classes cannot:
+ *
+ *   1. **Slugs the routes reject.** Both skill pages call
+ *      `buildSkillInstallCommand` and `notFound()` on null
+ *      (`app/(main)/[org]/[repo]/[skillId]/page.tsx`), so
+ *      `isSafeCommandSource` + `isSafeCommandSkillId` ARE the routing
+ *      predicate, not merely a shell-safety one. The catalog really carries
+ *      these: 126 rows as of Aug 2026, slugs holding `:` or `&`, plus four
+ *      with an embedded `/` that would emit a 4-segment path matching no
+ *      route at all. Percent-encoding makes those emittable, not reachable —
+ *      Next decodes params, so `react%3Acomponents` arrives as
+ *      `react:components` and 404s exactly as the raw form would.
+ *   2. **Sources whose org collides with one of our own root routes.** The
+ *      catalog contains an org literally named `api`, and `app/robots.ts`
+ *      disallows `/api/` — so those URLs were being submitted and forbidden at
+ *      the same time. See `RESERVED_ROOT_SEGMENTS`.
+ *
+ * `encodeURIComponent` stays on every segment underneath both filters. Next
+ * interpolates `url` into `<loc>` with NO XML escaping (verified in
+ * `next/dist/build/webpack/loaders/metadata/resolve-route-data.js`), so a
+ * stray `&` would invalidate the entire file rather than one entry. That is
+ * defence in depth for a case the filters should already have removed.
+ *
  * ── `lastModified` ────────────────────────────────────────────────────────
  *
- * Each skill's is `contentUpdatedAt ?? contentFetchedAt` — when the file last
- * moved, falling back to when we last read it. The fallback is not a
- * consolation prize: `contentUpdatedAt` is written only by a fetch that found
- * the hash changed, so a skill whose SKILL.md has sat still since ingest has
- * none, which is most of the catalog. Shipping ~9.5k URLs with no `lastmod`
- * would leave nothing for a crawler to act on — the one thing this file exists
- * to provide. "We read this file at T and have detected no change since" is a
- * sound claim: the daily freshness sweep re-fetches when a blob SHA moves, and
- * that same fetch overwrites both fields. See convex/skills.ts
- * `listSitemapEntries` for the full argument.
+ * `contentUpdatedAt` is the honest answer: the last time the SKILL.md actually
+ * moved. It is only written by a fetch that found the hash changed, though, so
+ * a skill whose file has sat still since ingest has none — most of the catalog.
+ * Shipping ~9.5k URLs with no `lastmod` would leave nothing for a crawler to
+ * act on, so `contentFetchedAt` (the last time we READ the file) stands in
+ * where it is a sound proxy, i.e. where "we read this at T and have detected no
+ * change since" is true. `lastChangedAt` below carries the three cases where it
+ * is NOT, each of which would tick a `lastmod` for a file that never moved.
  *
  * A directory page's content is its children, so its `lastmod` is the newest
- * among them. A skill with neither timestamp (never successfully
- * content-fetched) contributes nothing and gets no `lastmod` of its own: an
- * omitted `lastmod` tells a crawler "decide for yourself", which is exactly
- * right, while a guessed one is a lie it will cache.
- *
- * ── Escaping ──────────────────────────────────────────────────────────────
- *
- * Next interpolates `url` into `<loc>` raw — no XML escaping anywhere in
- * `next/dist/build/webpack/loaders/metadata/resolve-route-data.js`. So a `&` or
- * `<` reaching a slug would emit malformed XML and invalidate the whole file,
- * not just that entry. Encoding per path segment closes that off: it is the
- * correct URL encoding regardless, and `encodeURIComponent` escapes every
- * character XML treats as markup. Today's slugs are all `[A-Za-z0-9._-]` and
- * pass through untouched.
+ * among them. A skill with no trustworthy timestamp contributes nothing and
+ * gets no `lastmod` of its own: an omitted `lastmod` tells a crawler "decide
+ * for yourself", which is right, while a guessed one is a lie it will cache.
  */
 
 export type SitemapSkillRow = {
@@ -51,15 +75,59 @@ export type SitemapSkillRow = {
   skillId: string;
   contentUpdatedAt?: number;
   contentFetchedAt?: number;
+  hasContentFetchError?: boolean;
+  hasSkillMdUrl?: boolean;
 };
+
+/**
+ * Root path segments a GitHub org may not occupy in the sitemap.
+ *
+ * `/[org]` is a root-level catch-all, so an org slug and one of our own routes
+ * are the same URL, and ours wins. `app/robots.ts` documents the mirror image
+ * of this hazard for robots.txt prefixes, and `proxy.ts` for the Clerk matcher;
+ * this is the third face of it. Two reasons a segment is listed:
+ *
+ *   - **robots.txt forbids everything under it** (`/api/`, `/dashboard/`,
+ *     `/settings/`, `/dev/`, `/sign-in/`, `/sign-up/`). Submitting a URL our
+ *     own robots.txt disallows is the one thing TODO.md called worse than
+ *     omitting it. Only `api` exists in the catalog today (10 URLs), but it
+ *     exists, which is why this is a filter and not a comment.
+ *   - **one of our pages already answers there** (`add`, `pricing`, `compare`,
+ *     `official`, `bundle`, `site`). `/site/` is the worst of these: it is the
+ *     whole well-known-source namespace, so an org named `site` would collide
+ *     at every depth rather than just at the root.
+ *
+ * Whole rows are dropped rather than just the colliding org entry. Some deeper
+ * URLs under a shadowed org would technically still resolve (`/add/repo/skill`
+ * has no static route to lose to), but that reasoning is per-route and would
+ * rot the first time someone adds a page. An ambiguous namespace is not worth
+ * submitting.
+ *
+ * `tests/sitemap-entries.test.ts` asserts this covers every prefix
+ * `app/robots.ts` disallows, so a new rule there fails the test rather than
+ * silently contradicting the sitemap.
+ */
+export const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
+  "api",
+  "dashboard",
+  "settings",
+  "dev",
+  "sign-in",
+  "sign-up",
+  "add",
+  "pricing",
+  "compare",
+  "official",
+  "bundle",
+  "site",
+]);
 
 /**
  * Pages with no catalog data behind them. No `lastModified`: their content is
  * this repo's source, so the only honest value would be a deploy timestamp,
  * and a build-time `new Date()` would mark them modified on every unrelated
- * deploy. Everything here must be crawlable per `app/robots.ts` — `/compare`
- * appears in its bare form only, never with the `?skills=` query that file
- * disallows.
+ * deploy. `/compare` appears in its bare form only, never with the `?skills=`
+ * query `app/robots.ts` disallows.
  */
 const STATIC_PATHS = ["/add", "/pricing", "/compare"] as const;
 
@@ -85,14 +153,58 @@ function newest(a: number | undefined, b: number | undefined) {
   return Math.max(a, b);
 }
 
+function orgOf(source: string): string {
+  return source.slice(0, source.indexOf("/"));
+}
+
+/** Would this row's skill page actually render? See "What is excluded" above. */
+function isRoutable(source: string, skillId: string): boolean {
+  if (!isSafeCommandSource(source) || !isSafeCommandSkillId(skillId)) {
+    return false;
+  }
+  // Well-known sources live under `/site/`, a namespace of ours by
+  // construction, and their dotted domains cannot equal a reserved slug.
+  if (!isGitHubSource(source)) return true;
+  return !RESERVED_ROOT_SEGMENTS.has(orgOf(source).toLowerCase());
+}
+
+/**
+ * The timestamp to advertise, or `undefined` to advertise none.
+ *
+ * The three cases where `contentFetchedAt` is NOT evidence the file is
+ * unchanged — each would advertise a change that never happened, the failure
+ * the fallback exists to avoid:
+ *
+ *   1. **Well-known sources.** They have no tree to walk, so
+ *      `WELL_KNOWN_CONTENT_REFRESH_MS` re-fetches all ~170 of them DAILY
+ *      (convex/skills.ts) and the unchanged-hash path still stamps
+ *      `contentFetchedAt`. Their `lastmod` would tick every single day, and
+ *      roll up onto every `/site/[source]` page with it. The 30-day
+ *      `markStaleContent` backstop that makes this proxy sound applies only to
+ *      the GitHub branch.
+ *   2. **Rows erroring right now.** `markContentFetchFailed` stamps
+ *      `contentFetchedAt` on both of its branches, so a failed read looks
+ *      exactly like a successful one.
+ *   3. **Rows that never had a SKILL.md URL.** Same stamp, and nothing was
+ *      ever read.
+ */
+function lastChangedAt(row: SitemapSkillRow): number | undefined {
+  if (row.contentUpdatedAt !== undefined) return row.contentUpdatedAt;
+  if (!isGitHubSource(row.source)) return undefined;
+  if (row.hasContentFetchError) return undefined;
+  if (row.hasSkillMdUrl === false) return undefined;
+  return row.contentFetchedAt;
+}
+
 export function buildSitemapEntries(
   rows: readonly SitemapSkillRow[],
   baseUrl: string,
 ): MetadataRoute.Sitemap {
-  // Insertion order is the caller's order (install-descending), and Map
-  // preserves it, so the most-installed org/repo leads its section.
-  const sourceLastModified = new Map<string, number | undefined>();
-  const orgLastModified = new Map<string, number | undefined>();
+  // Keyed on the finished path, so the `/site/` decision is made once per row
+  // by `lib/skill-urls.ts` and never re-derived. Insertion order is the
+  // caller's, and Map preserves it.
+  const sourcePaths = new Map<string, number | undefined>();
+  const orgPaths = new Map<string, number | undefined>();
   let catalogLastModified: number | undefined;
 
   const skillEntries: MetadataRoute.Sitemap = [];
@@ -106,36 +218,25 @@ export function buildSitemapEntries(
 
   for (const row of rows) {
     const { source, skillId } = row;
-    const isGitHub = isGitHubSource(source);
-    const changedAt = row.contentUpdatedAt ?? row.contentFetchedAt;
+    if (!isRoutable(source, skillId)) continue;
 
-    skillEntries.push(
-      entry(
-        isGitHub ? `${source}/${skillId}` : `site/${source}/${skillId}`,
-        changedAt,
-      ),
-    );
+    const changedAt = lastChangedAt(row);
+    skillEntries.push(entry(skillHref(source, skillId), changedAt));
 
-    sourceLastModified.set(
-      source,
-      newest(sourceLastModified.get(source), changedAt),
-    );
-    if (isGitHub) {
-      const org = source.slice(0, source.indexOf("/"));
-      orgLastModified.set(org, newest(orgLastModified.get(org), changedAt));
+    const sourcePath = sourceHref(source);
+    sourcePaths.set(sourcePath, newest(sourcePaths.get(sourcePath), changedAt));
+    if (isGitHubSource(source)) {
+      const orgPath = ownerHref(orgOf(source));
+      orgPaths.set(orgPath, newest(orgPaths.get(orgPath), changedAt));
     }
     catalogLastModified = newest(catalogLastModified, changedAt);
   }
 
   return [
     ...CATALOG_ROOT_PATHS.map((path) => entry(path, catalogLastModified)),
-    ...STATIC_PATHS.map((path) => ({ url: absoluteUrl(baseUrl, path) })),
-    ...[...orgLastModified].map(([org, lastModified]) =>
-      entry(org, lastModified),
-    ),
-    ...[...sourceLastModified].map(([source, lastModified]) =>
-      entry(isGitHubSource(source) ? source : `site/${source}`, lastModified),
-    ),
+    ...STATIC_PATHS.map((path) => entry(path, undefined)),
+    ...[...orgPaths].map(([path, lastModified]) => entry(path, lastModified)),
+    ...[...sourcePaths].map(([path, lastModified]) => entry(path, lastModified)),
     ...skillEntries,
   ];
 }
