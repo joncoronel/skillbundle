@@ -8,10 +8,10 @@ delete them when shipped. Newest thinking near the top.
 
 ### Public bundle pages in the sitemap — Aug 2026
 
-Parked while shipping `app/sitemap.ts`, which covers the catalog (skills, orgs,
-repos, well-known sources) but lists no `/bundle/[id]`. Public bundles are real
-indexable pages with real titles, so this is a genuine gap rather than a
-decision — it just wants its own thinking:
+Parked while shipping `app/sitemap.ts` (PR #68), which covers the catalog
+(skills, orgs, repos, well-known sources) but lists no `/bundle/[id]`. Public
+bundles are real indexable pages with real titles, so this is a genuine gap
+rather than a decision — it just wants its own thinking:
 
 - The set is user-generated and grows without bound, unlike the catalog, so it
   needs a size story before it needs code. `generateSitemaps` chunking (see the

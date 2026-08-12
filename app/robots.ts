@@ -28,46 +28,76 @@ import { SITE_URL } from "@/lib/site-url";
  */
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: {
-      userAgent: "*",
-      allow: "/",
-      disallow: [
-        // The two route handlers under /api/: `revalidate` (secret-gated, see
-        // app/api/revalidate/route.ts) and `skills-token` (mints a skills.sh
-        // token). Neither is a crawl target. This prefix is genuinely a prefix
-        // — /api/ is not shadowed by the `/[org]` catch-all, since no org page
-        // lives under it.
-        "/api/",
-        // Private routes — the inverted private-route list in proxy.ts. A
-        // crawler hitting them just eats a Clerk redirect. Anchored per the
-        // note above; the `/x/` half covers /dev/add-skill and
-        // /sign-in/sso-callback.
-        "/dashboard$",
-        "/dashboard/",
-        "/settings$",
-        "/settings/",
-        "/dev$",
-        "/dev/",
-        "/sign-in$",
-        "/sign-in/",
-        "/sign-up$",
-        "/sign-up/",
-        // The one unbounded URL space on the site. `/compare` carries a
-        // `?skills=a,b,c` param (the only multi-value query param in the app,
-        // alongside the home page's bounded `?tab`), so the parameterised form
-        // is combinatorial over the whole catalog. Needs no anchoring: a
-        // literal `?` cannot appear in an org slug, and crawlers match the
-        // query string as part of the path. The bare `/compare` is left
-        // crawlable on purpose so shared comparison links still resolve for
-        // preview fetchers that consult robots.txt.
-        "/compare?",
-      ],
-      crawlDelay: 10,
-    },
+    rules: [
+      {
+        // Blocked outright, not throttled. Measured 2026-08-12 over 24h:
+        // amazonbot alone was 755 of ~5.1k total edge requests (15%), semrush
+        // another 163 — together ~18% of all traffic, and concentrated on the
+        // ~9.5k skill detail pages, which cache at only 5.3% because traffic
+        // that thin over that many URLs means an entry is almost never still
+        // alive when the next visitor arrives. So each of those crawls is a
+        // cold render.
+        //
+        // Neither sends referral traffic: amazonbot feeds Amazon's own
+        // assistants, SemrushBot feeds an SEO index. Contrast the crawlers left
+        // alone below. Deliberately NOT blocking gptbot (47 req, 89% cached) —
+        // being known to ChatGPT is a plausible discovery channel for a
+        // developer-tool catalog, and the volume is noise either way.
+        //
+        // Reversible in one line. Note the one real cost: if you ever run a
+        // Semrush site audit against this domain, check whether it uses this
+        // agent — the audit crawler is usually a different one, but confirm
+        // before concluding the tool is broken.
+        //
+        // Both are verified crawlers in Vercel's dashboard, so they honour
+        // this. If that ever stops being true, escalate to a Vercel firewall
+        // rule — robots.txt stops the request being made, a firewall rule only
+        // stops it reaching a function.
+        userAgent: ["Amazonbot", "SemrushBot"],
+        disallow: "/",
+      },
+      {
+        userAgent: "*",
+        allow: "/",
+        disallow: [
+          // The two route handlers under /api/: `revalidate` (secret-gated, see
+          // app/api/revalidate/route.ts) and `skills-token` (mints a skills.sh
+          // token). Neither is a crawl target. This prefix is genuinely a prefix
+          // — /api/ is not shadowed by the `/[org]` catch-all, since no org page
+          // lives under it.
+          "/api/",
+          // Private routes — the inverted private-route list in proxy.ts. A
+          // crawler hitting them just eats a Clerk redirect. Anchored per the
+          // note above; the `/x/` half covers /dev/add-skill and
+          // /sign-in/sso-callback.
+          "/dashboard$",
+          "/dashboard/",
+          "/settings$",
+          "/settings/",
+          "/dev$",
+          "/dev/",
+          "/sign-in$",
+          "/sign-in/",
+          "/sign-up$",
+          "/sign-up/",
+          // The one unbounded URL space on the site. `/compare` carries a
+          // `?skills=a,b,c` param (the only multi-value query param in the app,
+          // alongside the home page's bounded `?tab`), so the parameterised form
+          // is combinatorial over the whole catalog. Needs no anchoring: a
+          // literal `?` cannot appear in an org slug, and crawlers match the
+          // query string as part of the path. The bare `/compare` is left
+          // crawlable on purpose so shared comparison links still resolve for
+          // preview fetchers that consult robots.txt.
+          "/compare?",
+        ],
+        crawlDelay: 10,
+      },
+    ],
     // Absolute by requirement, not by preference: a `Sitemap:` line is the one
     // part of robots.txt that is not resolved against the host it was served
-    // from, so a relative path here is simply ignored. app/sitemap.ts explains
-    // what the file costs and why it is worth advertising.
+    // from, so a relative path here is simply ignored. The point of advertising
+    // it is the one measured in the block rule above: Googlebot made ONE
+    // request to this site in 24h. app/sitemap.ts carries the full argument.
     sitemap: `${SITE_URL}/sitemap.xml`,
     // Note that the OG image routes (app/**/opengraph-image.tsx, ~9.5k of them, one per
     // skill) are deliberately NOT blocked: social preview fetchers need them,
