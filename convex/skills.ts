@@ -75,8 +75,9 @@ export const syncSkills = internalAction({
     let page = 0;
     let hasMore = true;
     let totalSynced = 0;
-    // Counts rows whose `name` moved — the only `loadSkill`-visible field this
-    // path writes. Gates the "skill-content" ping at the terminal; see there.
+    // Counts rows where a `loadSkill`-visible field moved — today `name` or an
+    // isGitHubOnly adoption. Gates the "skill-content" ping at the terminal;
+    // see there, and see upsertSkillsBatch for what qualifies.
     let totalContentFieldChanges = 0;
 
     // Pin the snapshot day once, up front, so every batch this run writes lands
@@ -178,13 +179,15 @@ export const syncSkills = internalAction({
     // does move that `loadSkill` renders is `name`, handled separately below.
     await revalidateSiteTag("skill-sync");
 
-    // `name` is patched onto the skill row by upsertSkillsBatch, and `loadSkill`
-    // renders it (page <title>, bundle toggle label) off the "skill-content"
-    // entry — which now lives for weeks. Renames are rare, so gate the content
-    // ping on an actual count rather than pinging unconditionally and undoing
-    // the split. New rows don't need covering here: they're inserted with
-    // needsContentFetch/needsDiscovery set, so they publish via the content
-    // chain's own publishSkillUpdate.
+    // upsertSkillsBatch patches two `loadSkill`-visible fields on the skill row:
+    // `name` (page <title>, bundle toggle label) and the isGitHubOnly marker
+    // (the "only on GitHub" banner). Both read off the "skill-content" entry,
+    // which now lives for weeks, and neither sets
+    // needsContentFetch/needsDiscovery — so nothing else publishes them. Both
+    // are rare, so gate the ping on an actual count rather than firing
+    // unconditionally and undoing the split. Genuinely new rows don't need
+    // covering here: they ARE inserted with needsContentFetch/needsDiscovery,
+    // so they publish via the content chain's own publishSkillUpdate.
     if (totalContentFieldChanges > 0) {
       console.log(`${totalContentFieldChanges} skill row field(s) changed — publishing`);
       await revalidateSiteTag("skill-content");
@@ -501,6 +504,7 @@ export const upsertSkillsBatch = internalMutation({
       v.object({ userId: v.id("users"), limit: v.number() }),
     ),
   },
+  returns: v.object({ contentFieldChanges: v.number() }),
   /**
    * Listing-call upsert. Two paths:
    *
@@ -1565,7 +1569,9 @@ export const fetchSkillContent = internalAction({
  * (semantically "install counts changed", gated on `refreshed > 0`, landing at
  * a fixed hour rather than when content is ready), and it silently failed when
  * reconcile refreshed nothing or the content pipeline ran past 07:00. This step
- * is now the sole publisher of skill content, so do not drop it.
+ * is the publisher for content the chain itself wrote — syncSkills and the
+ * audit terminal cover the fields they write, but neither covers this — so do
+ * not drop it.
  *
  * Best-effort and idempotent: `revalidateSiteTag` swallows errors, and it
  * no-ops entirely outside prod (the env vars are only set there).
@@ -3217,13 +3223,6 @@ export const getBySourceAndSkillId = query({
 const INSIGHTS_HISTORY_DAYS = 90;
 
 /**
- * Analytics for one skill's detail page: the daily install time series plus the
- * count and all-time rank. Reads entirely from the cheap `skillSummaries` +
- * `skillSnapshots` tables — never the heavy `skills` row. The history is empty
- * until daily snapshots accumulate (skills.sh has no backfill), so the client
- * gates the chart on having enough points.
- */
-/**
  * Just the install count. The OG card renders one integer, and `getInsights`
  * would make it collect every skillSnapshots row inside INSIGHTS_HISTORY_DAYS
  * (90) to get there. Reads the ~200 B summary and stops.
@@ -3245,6 +3244,13 @@ export const getInstallCount = query({
   },
 });
 
+/**
+ * Analytics for one skill's detail page: the daily install time series plus the
+ * count and all-time rank. Reads entirely from the cheap `skillSummaries` +
+ * `skillSnapshots` tables — never the heavy `skills` row. The history is empty
+ * until daily snapshots accumulate (skills.sh has no backfill), so the client
+ * gates the chart on having enough points.
+ */
 export const getInsights = query({
   args: { source: v.string(), skillId: v.string() },
   handler: async (ctx, { source, skillId }) => {

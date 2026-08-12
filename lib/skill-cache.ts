@@ -90,9 +90,9 @@ export { SKILL_SYNC_TAG, SKILL_CONTENT_TAG } from "./cache-tags";
  * boundary, which is what lets these routes prerender a static shell at all.
  *
  * "weeks" (revalidate 7d / expire 30d), not "days" (revalidate 24h): the whole
- * point of putting this entry on its own tag is that on-demand pings —
- * `publishSkillUpdate`, `markDelistedSkills`, `syncCurated`, `kickPostAddChain`
- * — now keep it fresh, so it does not need a 24h timer as well. 7d matches the
+ * point of putting this entry on its own tag is that on-demand pings keep it
+ * fresh, so it does not need a 24h timer as well. The full publisher list is
+ * with the tag definition above; do not maintain a second copy here. 7d matches the
  * content re-fetch backstop in `markStaleContent`. Leaving it on "days" would
  * have made the tag work pointless: the entry would rewrite itself daily
  * anyway.

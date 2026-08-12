@@ -310,13 +310,22 @@ export const fetchAuditBatch = internalAction({
               // No audit yet — record empty + unknown. auditFetchedAt gets
               // set inside writeAuditResult, so the 7-day refresh window
               // applies and we won't immediately re-fetch.
-              await ctx.runMutation(internal.audits.writeAuditResult, {
-                skillDocId: s.skillDocId,
-                source: s.source,
-                skillId: s.skillId,
-                audits: [],
-                worstStatus: "unknown",
-              });
+              //
+              // Counts toward the publish exactly like the success arm: a row
+              // going fail/warn -> unknown IS a denorm move (writeAuditResult
+              // patches it), and it is the direction that leaves a stale
+              // "Risk · HIGH" badge on the OG card if nobody publishes it.
+              const { denormChanged } = await ctx.runMutation(
+                internal.audits.writeAuditResult,
+                {
+                  skillDocId: s.skillDocId,
+                  source: s.source,
+                  skillId: s.skillId,
+                  audits: [],
+                  worstStatus: "unknown",
+                },
+              );
+              if (denormChanged) denormChangeCount++;
               unknownCount++;
               return;
             }

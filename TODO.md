@@ -810,7 +810,7 @@ tags are the prerequisite that makes any freshness check meaningful, which is
 why they lead this entry now.
 
 Note the sync path already does the gated thing where it can: `upsertSkillsBatch`
-returns a `nameChanges` count and `syncSkills` pings `skill-content` only when
+returns a `contentFieldChanges` count and `syncSkills` pings `skill-content` only when
 it's non-zero. The content chain is harder only because of the scheduling shape.
 
 Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) remain the fuller
