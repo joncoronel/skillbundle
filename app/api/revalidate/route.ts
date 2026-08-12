@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { secretsMatch } from "@/lib/shared-secret";
+import { SITE_TAGS } from "@/lib/cache-tags";
 
 // On-demand cache invalidation for the home-page leaderboards and skill detail
 // pages. The Convex crons POST here right after they write new data, so the next
@@ -9,25 +10,13 @@ import { secretsMatch } from "@/lib/shared-secret";
 // of tags can be revalidated. Not a Clerk-private route, so the secret is the
 // only gate (see proxy.ts).
 //
-// The two skill tags are split by cadence, NOT by skill — see lib/skill-cache.ts
-// for the full reasoning:
-//
-//   "skill-sync"    — install counts / ranks / snapshots / versions / copies.
-//                     Pinged daily by syncSkills, which rewrites the entire
-//                     ~9.5k-row leaderboard, plus the reconcile and curated
-//                     refresh jobs. Churns every day, by design.
-//   "skill-content" — the skill row itself (SKILL.md content, description,
-//                     isDelisted, curatedOwner). Pinged only by jobs that
-//                     actually mutate that row. Must NOT be pinged by
-//                     install-count-only jobs, or the daily sync goes back to
-//                     invalidating every skill's ~25 KB content entry.
-const ALLOWED_TAGS = new Set([
-  "home-hot",
-  "home-trending",
-  "home-popular",
-  "skill-sync",
-  "skill-content",
-]);
+// Derived from lib/cache-tags.ts rather than restated, so the allowlist and the
+// `cacheTag(...)` call sites cannot drift apart. What each tag means, and why the
+// two skill tags are split by cadence rather than by skill, is documented once in
+// lib/skill-cache.ts; convex/lib/revalidate.ts mirrors the list for the caller
+// side. Convex is a separate deployment, so that mirror is by hand —
+// tests/revalidate-route.test.ts asserts the two agree.
+const ALLOWED_TAGS = new Set<string>(SITE_TAGS);
 
 export async function POST(request: Request) {
   const expected = process.env.REVALIDATE_SECRET;

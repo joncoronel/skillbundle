@@ -1,5 +1,6 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
+import { SKILL_CONTENT_TAG } from "./cache-tags";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 
@@ -35,9 +36,12 @@ import { api } from "@/convex/_generated/api";
  *   1. The content chain fires end to end every morning whether or not any
  *      SKILL.md changed (`markStaleContent` chains into `backfillDiscoverUrls`
  *      unconditionally, and both terminals schedule `publishSkillUpdate` with
- *      no "did we write anything" gate). Gating it needs somewhere to collect
- *      which skills changed across independent staggered actions — parked in
- *      TODO.md under "Per-skill cache invalidation".
+ *      no "did we write anything" gate). Detecting the change is easy — the
+ *      `skillVersions.by_changedAt` index answers it in one lookup — but a
+ *      global gate on a catalog-wide tag only suppresses the ping on days when
+ *      NOT ONE of ~9.5k skills changed, which for a catalog of live community
+ *      repos is close to never. Per-skill tags are what makes the check pay;
+ *      see TODO.md.
  *   2. `cacheLife` is orthogonal to `cacheTag`: an entry's own `revalidate`
  *      timer fires regardless of tags. That is why `loadSkill` sits on "weeks"
  *      below rather than "days" — on "days" it would rewrite itself every 24h
@@ -46,8 +50,10 @@ import { api } from "@/convex/_generated/api";
  * So today the reliable per-visit saving comes from the loader consolidation in
  * components/skill-detail-page.tsx and from (2), not from the tag split alone.
  */
-export const SKILL_SYNC_TAG = "skill-sync";
-export const SKILL_CONTENT_TAG = "skill-content";
+// Re-exported so the loaders below and their callers have one import site;
+// the literals themselves live in lib/cache-tags.ts, which /api/revalidate
+// also derives its allowlist from.
+export { SKILL_SYNC_TAG, SKILL_CONTENT_TAG } from "./cache-tags";
 
 /**
  * The skill row. Lives here rather than beside the detail page's other loaders

@@ -37,19 +37,12 @@
  * Best-effort: a failed ping is logged, not thrown — the sync already
  * succeeded, and the cache's time-based `revalidate` is the safety net.
  */
-/**
- * Every tag `app/api/revalidate/route.ts` will accept. Kept as a union rather
- * than a bare `string` so a typo is a compile error here instead of a 400 that
- * `revalidateSiteTag` swallows and logs. The two deployments can't share a
- * module, so this has to be mirrored by hand — `tests/revalidate-route.test.ts`
- * asserts the Next side matches.
- */
-export type SiteTag =
-  | "home-hot"
-  | "home-trending"
-  | "home-popular"
-  | "skill-sync"
-  | "skill-content";
+// The tag vocabulary is IMPORTED from the Next.js side, not mirrored by hand.
+// lib/cache-tags.ts is dependency-free precisely so this works: /api/revalidate
+// derives its allowlist from the same module, so a tag can no longer exist on
+// one side and not the other. Relative path, not the `@/` alias — convex/
+// typechecks under its own tsconfig, which defines no path aliases.
+import type { SiteTag } from "../../lib/cache-tags";
 
 export async function revalidateSiteTag(tag: SiteTag): Promise<void> {
   const url = process.env.SITE_REVALIDATE_URL;

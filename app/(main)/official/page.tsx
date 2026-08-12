@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ownerHref } from "@/lib/skill-urls";
 import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
 
 export const metadata: Metadata = {
   title: "Official skills | SkillBundle",
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 async function loadCuratedOwners() {
   "use cache";
   cacheLife("days");
-  cacheTag("skill-sync");
+  cacheTag(SKILL_SYNC_TAG);
   return fetchQuery(api.curated.listCuratedOwners, {});
 }
 

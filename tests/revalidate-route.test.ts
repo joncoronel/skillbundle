@@ -13,6 +13,7 @@ const { revalidateTagMock } = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidateTag: revalidateTagMock }));
 
 import { POST } from "../app/api/revalidate/route";
+import { SITE_TAGS } from "../lib/cache-tags";
 
 const SECRET = "test-secret-value";
 
@@ -95,11 +96,16 @@ describe("POST /api/revalidate", () => {
   });
 
   describe("accepts", () => {
-    // Must mirror `SiteTag` in convex/lib/revalidate.ts exactly. The two
-    // deployments can't share a module, so this list is the only thing holding
-    // them together: a tag Convex pings that the route rejects returns 400,
-    // which revalidateSiteTag logs and swallows — the publish silently degrades
-    // to the time-based fallback and nothing fails.
+    // Spelled out rather than imported from lib/cache-tags.ts on purpose: the
+    // route derives its allowlist from that module, so importing it here would
+    // make this test tautological. This literal is the independent statement of
+    // what the route must accept. `convex/lib/revalidate.ts` takes its `SiteTag`
+    // union from the same module, so the Convex side is checked by the compiler
+    // — this covers the runtime half.
+    //
+    // Worth keeping honest because the failure is silent: a tag Convex pings
+    // that the route rejects returns 400, which revalidateSiteTag logs and
+    // swallows, and the publish quietly degrades to the time-based fallback.
     const ALLOWED = [
       "home-hot",
       "home-trending",
@@ -107,6 +113,10 @@ describe("POST /api/revalidate", () => {
       "skill-sync",
       "skill-content",
     ];
+
+    it("accepts exactly these tags and no others", () => {
+      expect([...SITE_TAGS].sort()).toEqual([...ALLOWED].sort());
+    });
 
     for (const tag of ALLOWED) {
       it(`revalidates "${tag}" with immediate expiry`, async () => {

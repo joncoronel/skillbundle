@@ -796,11 +796,18 @@ SKILL.md changed, which is exactly what the split was supposed to stop. Until
 this is gated, `loadSkill`'s `cacheLife("weeks")` is doing the real work and the
 content tag is contributing little on the daily path.
 
-**Why it isn't just an `if`.** The staggered per-skill `fetchSkillContent` calls
-are independent scheduled actions with no shared state, so there is nowhere to
-collect "which skills changed this run" without adding a counter table (or
-querying `skillVersions` for rows written today — a version row is archived
-exactly when content changes, so that may be the cheap version of this).
+**Why the obvious gate isn't worth building.** Detecting the change is not the
+problem: `updateDescription` already returns a transactional `changed` flag,
+`skillVersions` carries a `by_changedAt` index (schema.ts:507), and
+`skillSummaries.contentUpdatedAt` mirrors "last time the file actually moved".
+Any of those answers "did content change since X" in one indexed lookup.
+
+The problem is that the tag is catalog-wide. A global gate suppresses the ping
+only on a day when NOT ONE skill in ~9.5k changed its SKILL.md — and this app's
+headline feature is a change feed of exactly those events, so such days are
+close to nonexistent. Building it would be ~20 lines that fire anyway. Per-skill
+tags are the prerequisite that makes any freshness check meaningful, which is
+why they lead this entry now.
 
 Note the sync path already does the gated thing where it can: `upsertSkillsBatch`
 returns a `nameChanges` count and `syncSkills` pings `skill-content` only when
