@@ -33,6 +33,29 @@ if (process.env.CRONS_ENABLED === "true") {
     {},
   );
 
+  // Hourly: pull a fresh Vercel OIDC token from the site relay for the
+  // skills.sh API (convex/skillsAuth.ts).
+  //
+  // Hourly because the runtime token lives TWO hours, not the ~12 the Vercel
+  // docs state. Measured Aug 12 2026 against a real deployment: `exp - iat` is
+  // exactly 2h, and the token is minted fresh per request, so each refresh gets
+  // a full window. (The 12h figure does hold for the token `vercel env pull`
+  // writes for local dev, which is probably where the docs' number comes from.
+  // Don't size this cron off a locally pulled token.)
+  //
+  // At hourly, a token always has ~1h of life left when the next refresh lands,
+  // so one failed refresh still can't strand us. A 6h cron against a 2h token
+  // would have left us on the fallback key two hours in every six.
+  //
+  // A failure here is not an outage: the calls fall back to the legacy
+  // SKILLS_SH_API_KEY, and /dev surfaces that we're running on it.
+  crons.hourly(
+    "refresh skills.sh OIDC token",
+    { minuteUTC: 20 },
+    internal.skillsAuth.refreshToken,
+    {},
+  );
+
   // Daily at 06:00 UTC: full sync. syncSkills walks the v1 listing endpoint,
   // upserts presence + installs, schedules markDelistedSkills, then chains
   // markStaleContent which re-flags rows older than 7 days for re-fetch and

@@ -241,8 +241,14 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
     expect(skill!.needsContentFetch).toBe(false);
   });
 
-  // Verify the fetcher was actually called, not just bypassed.
-  expect(getSkillSyncData).toHaveBeenCalledWith("example.com", "needs-fetch");
+  // Verify the fetcher was actually called, not just bypassed. `oidcToken` is
+  // null because no skillsAuthToken row is seeded here, so this also pins the
+  // key-only fallback path.
+  expect(getSkillSyncData).toHaveBeenCalledWith(
+    expect.objectContaining({ oidcToken: null }),
+    "example.com",
+    "needs-fetch",
+  );
 });
 
 test("updateSkillMdUrls: settles a mixed batch in one transaction", async () => {

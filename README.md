@@ -58,7 +58,19 @@ Convex (set with `npx convex env set …`):
 - `SKILLS_SH_API_KEY`, `VOYAGE_API_KEY`
 - `GITHUB_TOKEN` (optional), `ADMIN_EMAILS`
 - `TYPESENSE_HOST`, `TYPESENSE_ADMIN_API_KEY`, `TYPESENSE_COLLECTION` (required outside production — see `docs/search-overhaul.md`)
-- `REVALIDATE_SECRET`, `SITE_REVALIDATE_URL`
+- `REVALIDATE_SECRET`, `SITE_REVALIDATE_URL`. **Both this and
+  `SKILLS_TOKEN_URL` below must point at the canonical host** (the apex,
+  `https://skillbundle.dev/…` — `www` 308s to it). Convex sends their shared
+  secrets in a custom header and refuses to follow redirects, since a hop would
+  forward the secret to wherever it points, so a non-canonical URL fails every
+  call rather than silently working.
+- `SKILLS_TOKEN_URL`, `SKILLS_TOKEN_SECRET`: production only. Lets the sync
+  authenticate to skills.sh with a Vercel OIDC token (their documented
+  credential) instead of the undocumented `SKILLS_SH_API_KEY`, by pulling one
+  from `/api/skills-token` on the site. `SKILLS_TOKEN_SECRET` must be
+  byte-identical to the value set on Vercel, and ASCII (`openssl rand -hex 32`).
+  With these unset, every call falls back to `SKILLS_SH_API_KEY` — keep that set
+  either way.
 - `CRONS_ENABLED`: set to `true` on production only. Cron jobs (skill sync, leaderboards) are skipped unless this is `true`, so dev deployments don't run the sync. Populate a dev deployment on demand with `npx convex run skills:syncSkills`.
 
 ## Scripts

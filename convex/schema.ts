@@ -710,6 +710,35 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   }),
 
+  // Single-row cache for the Vercel OIDC token skills.sh wants (see
+  // convex/skillsAuth.ts). Convex can't mint one itself, so it pulls a fresh
+  // token from the site's /api/skills-token relay hourly (the runtime token
+  // lives 2h) and parks it here for the upstream calls in between.
+  //
+  // `token` is a bearer credential: it must never be returned from a public
+  // query or logged.
+  //
+  // The row doubles as the refresh-health record, which is what makes a fall
+  // back to the legacy API key visible on /dev instead of silent. Hence the
+  // token fields are OPTIONAL: "we have failure history but no token" is a real
+  // state (a relay that has never once succeeded), and it needs to be
+  // expressible directly rather than encoded as an empty string with a zero
+  // expiry that every reader has to remember to distrust.
+  //
+  // Two independent failure modes, and the panel needs both. `lastRefreshError`
+  // covers the relay refusing to hand us a token; `lastOidcRejected*` covers
+  // skills.sh refusing to accept one we did get, which is the more likely of
+  // the two and is invisible from the token's expiry alone.
+  skillsAuthToken: defineTable({
+    token: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    refreshedAt: v.optional(v.number()),
+    lastRefreshError: v.optional(v.string()),
+    lastRefreshErrorAt: v.optional(v.number()),
+    lastOidcRejectedAt: v.optional(v.number()),
+    lastOidcRejectedStatus: v.optional(v.number()),
+  }),
+
   syncStats: defineTable({
     totalSkills: v.number(),
     contentFetchErrors: v.number(),

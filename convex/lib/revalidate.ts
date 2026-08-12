@@ -26,11 +26,28 @@ export async function revalidateHomeTag(tag: string): Promise<void> {
         "x-revalidate-secret": secret,
       },
       body: JSON.stringify({ tag }),
+      // A redirect would carry `x-revalidate-secret` to the hop target: the
+      // Fetch spec strips only Authorization / Cookie / Proxy-Authorization on
+      // cross-origin redirects, not custom headers. Refuse the hop instead of
+      // quietly handing the secret to wherever it points.
+      //
+      // SITE_REVALIDATE_URL must therefore be the canonical host. Verified Aug
+      // 2026: the apex answers directly and `www` 308s to it, so the apex form
+      // in the setup command above is correct.
+      //
+      // The refused hop surfaces as a literal 3xx on the Convex runtime
+      // (measured), and as an opaque `status: 0` under a spec-exact fetch. The
+      // check below takes either.
+      redirect: "manual",
       // Fail fast — this is awaited inside the sync action, so a hung site
       // shouldn't pin the action open until Convex's action timeout.
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) {
+    if (res.status === 0 || (res.status >= 300 && res.status < 400)) {
+      console.error(
+        `revalidate ${tag}: SITE_REVALIDATE_URL (${url}) redirected (${res.status}); point it at the canonical host`,
+      );
+    } else if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error(`revalidate ${tag}: ${res.status} ${body.slice(0, 200)}`);
     }

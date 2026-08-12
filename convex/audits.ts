@@ -32,6 +32,7 @@ import {
   type AuditStatus,
   type AuditRiskLevel,
 } from "./lib/skillsApi";
+import { loadSkillsAuth } from "./lib/skillsAuth";
 import type { Id } from "./_generated/dataModel";
 
 const AUDIT_BATCH_SIZE = 10;
@@ -252,6 +253,7 @@ export const fetchAuditBatch = internalAction({
     });
 
     if (result.skills.length > 0) {
+      const auth = await loadSkillsAuth(ctx);
       let rateLimited: SkillsApiRateLimitError | null = null;
       // Per-batch counters for the summary log at the end. Gives at-a-glance
       // visibility into whether class-3 errors (non-429, non-404) are a
@@ -269,7 +271,7 @@ export const fetchAuditBatch = internalAction({
             // upstream hiccup doesn't shove the row into 7-day refresh
             // limbo. Rate-limit and 404 still bubble up unchanged.
             const response = await withTransientRetry(() =>
-              getSkillAudits(s.source, s.skillId),
+              getSkillAudits(auth, s.source, s.skillId),
             );
             const audits = response.audits ?? [];
             const { worstStatus, worstRiskLevel } = reduceWorst(audits);

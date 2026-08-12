@@ -10,6 +10,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { revalidateHomeTag } from "./lib/revalidate";
 import { summaryRefreshHealthy } from "./lib/skillHealth";
+import { EXPIRY_MARGIN_MS } from "./lib/skillsAuth";
 import { isDeadRenamedAlias } from "./lib/source";
 
 // Number of discovery attempts before a skill is considered exhausted
@@ -81,6 +82,65 @@ export const getSyncStats = query({
         recalculatedAt: 0,
       }
     );
+  },
+});
+
+/**
+ * Which credential the skills.sh sync is actually running on.
+ *
+ * Exists because the fallback is silent by design: if OIDC stops working, every
+ * upstream call quietly reverts to the legacy `SKILLS_SH_API_KEY` and the
+ * catalog keeps syncing, so nothing else would ever tell us.
+ *
+ * Returns raw facts, NOT a computed "are we on OIDC" boolean, for two reasons.
+ * A Convex query is reactive to its read set and nothing else, so a verdict
+ * derived from `Date.now()` here would be served from cache indefinitely in the
+ * exact scenario this panel exists to catch: the refresh cron not firing at all
+ * leaves the row untouched, so nothing would ever invalidate the cached `true`
+ * while every action had already fallen back. And `usableUntil` bakes in
+ * `loadSkillsAuth`'s margin at its single source, so the caller can't drift
+ * from it. The caller compares against a live clock.
+ *
+ * `lastOidcRejectedAt` is the other half of the picture: a token can be
+ * perfectly fresh and still be refused by skills.sh, in which case expiry alone
+ * says everything is fine. Compare it against `refreshedAt` — a rejection newer
+ * than the last successful refresh means the token we currently hold is the one
+ * that got refused.
+ *
+ * Returns no token material — the cached token is a bearer credential carrying
+ * our Vercel team and project identity.
+ */
+export const getSkillsAuthStatus = query({
+  args: {},
+  returns: v.object({
+    relayConfigured: v.boolean(),
+    hasLegacyKey: v.boolean(),
+    /** Wall-clock ms after which the cached token stops being sent, margin included. */
+    usableUntil: v.union(v.number(), v.null()),
+    expiresAt: v.union(v.number(), v.null()),
+    refreshedAt: v.union(v.number(), v.null()),
+    lastRefreshError: v.union(v.string(), v.null()),
+    lastRefreshErrorAt: v.union(v.number(), v.null()),
+    lastOidcRejectedAt: v.union(v.number(), v.null()),
+    lastOidcRejectedStatus: v.union(v.number(), v.null()),
+  }),
+  handler: async (ctx) => {
+    await assertAdmin(ctx);
+    const row = await ctx.db.query("skillsAuthToken").first();
+    const hasToken = Boolean(row?.token) && row?.expiresAt !== undefined;
+    return {
+      relayConfigured: Boolean(
+        process.env.SKILLS_TOKEN_URL && process.env.SKILLS_TOKEN_SECRET,
+      ),
+      hasLegacyKey: Boolean(process.env.SKILLS_SH_API_KEY),
+      usableUntil: hasToken ? row!.expiresAt! - EXPIRY_MARGIN_MS : null,
+      expiresAt: hasToken ? row!.expiresAt! : null,
+      refreshedAt: row?.refreshedAt ?? null,
+      lastRefreshError: row?.lastRefreshError ?? null,
+      lastRefreshErrorAt: row?.lastRefreshErrorAt ?? null,
+      lastOidcRejectedAt: row?.lastOidcRejectedAt ?? null,
+      lastOidcRejectedStatus: row?.lastOidcRejectedStatus ?? null,
+    };
   },
 });
 

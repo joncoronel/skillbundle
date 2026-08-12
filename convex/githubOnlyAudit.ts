@@ -169,11 +169,31 @@ const RETRY_DELAY_MS = 500;
  * semantics than the pipeline.
  *
  * Redirects are FOLLOWED and the host re-checked afterwards, rather than
- * refused. Under `redirect: "manual"` a 3xx arrives as an opaque response with
- * `status: 0`, so the 404 split above it could never fire for a redirected URL
- * and every redirect would be filed as transient — while the pipeline, which
- * follows redirects, fetches the file fine. Re-asserting the host on `res.url`
- * keeps the SSRF guard intact without throwing away the status.
+ * refused. The reason is this function's own control flow: the 404 split below
+ * tests `=== 404`, so a refused redirect — whatever shape it arrived in — would
+ * miss that branch and be filed as a transient failure, retried, and eventually
+ * recorded as broken, for a file that is actually fine. Re-asserting
+ * ALLOWED_HOST on `res.url` after the fact keeps the SSRF guard intact, so
+ * following them costs nothing.
+ *
+ * Two corrections to an earlier version of this note, both measured Aug 2026
+ * rather than reasoned about, because both were wrong:
+ *
+ *   - It claimed that under `redirect: "manual"` a 3xx arrives as an opaque
+ *     response with `status: 0`. That is the spec/browser behavior, but NOT
+ *     what the Convex runtime does: it returns the literal 3xx with a body.
+ *     Verified by pointing a dev deployment's relay URL at a known 308.
+ *     `convex/lib/skillsAuth.ts` (which does refuse redirects) therefore
+ *     accepts BOTH shapes rather than betting on either.
+ *   - A later revision justified following redirects with "GitHub redirects
+ *     constantly". It does not, for the only host this function will request.
+ *     Probed against `raw.githubusercontent.com`: a transferred owner
+ *     (`zeit/next.js`), a second transferred owner (`zeit/swr`), mismatched
+ *     casing (`Vercel/Next.js`) and a stale default branch
+ *     (`facebook/react/master`) all return 200 directly, and a missing ref
+ *     returns 404. No 3xx in any of them. So the redirect handling here is
+ *     insurance against a case that does not currently arise, which is fine —
+ *     just don't restate it as an observed fact.
  */
 export async function fetchSkillMd(
   url: string,

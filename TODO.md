@@ -425,61 +425,140 @@ That ambiguity is exactly how the loop bug survived being watched.
   CodeView). If this ever hosts code-dominant files, add a wrap toggle rather
   than flipping the default.
 
-### skills.sh API auth is moving to Vercel OIDC (build the token relay before the key dies)
+### skills.sh API auth: migrated to Vercel OIDC, key kept as fallback (Aug 2026)
 
-Measured Aug 2026. The skills.sh v1 API now rejects unauthenticated requests
-and the docs no longer mention API keys at all:
+Built. What is left is deployment config, listed at the bottom.
 
-    GET /api/v1/skills            401 authentication_required
-    GET /api/v1/skills/search     401
-    GET /api/v1/skills/audit/...  200   (enforcement inconsistent, for now)
+**What the API does now**, measured Aug 11 2026:
 
-The 401 body points at a Vercel OIDC token. Our `SKILLS_SH_API_KEY` (`sk_live_`)
-still works as of Aug 2026, so nothing is broken yet, but it is now an
-undocumented mechanism on a first-party API. Treat its removal as a matter of
-when. Emailed skills.sh asking whether keys are being retired; no reply.
+    GET /api/v1/skills             401 authentication_required   (no credential)
+    GET /api/v1/skills             200                           (sk_live_ key)
+    GET /api/v1/skills             200                           (relayed OIDC token)
+    GET /api/v1/skills/audit/...   200                           (no credential)
 
-**Why this is awkward for us:** the token is minted per-request inside a Vercel
-runtime, and our whole sync runs on Convex crons. Convex cannot get one.
+The audit endpoint answering unauthenticated is an enforcement gap, not a
+promise. Don't plan around it.
 
-**The migration, when needed (token relay):**
+**The awkward part:** the OIDC token is minted per-request inside a Vercel
+runtime, and our whole sync runs on Convex crons, which have no Vercel request
+context. So "use the documented credential" is not a header swap, it is a relay.
 
-1. A secret-gated route handler on our Vercel app returns
-   `await getVercelOidcToken()` from `@vercel/oidc`.
-2. Convex caches that token and refreshes every ~10h (lifetime is ~12h), or
-   lazily on a 401 from skills.sh.
-3. `authHeaders()` in `convex/lib/skillsApi.ts` sends the cached token.
+**What was built:**
 
-This works because skills.sh verifies the token the standard way: JWT signature
-against `oidc.vercel.com/[TEAM_SLUG]`'s JWKS, checking issuer / audience /
-`owner:...:project:...:environment:...` subject. There is no check that the
-request originated from Vercel infrastructure, so a relayed token validates.
+1. `app/api/skills-token/route.ts` mints a token via `getVercelOidcToken()`,
+   gated by `SKILLS_TOKEN_SECRET` (same arrangement as `/api/revalidate`).
+2. `convex/skillsAuth.ts` caches it in the single-row `skillsAuthToken` table,
+   refreshed hourly by cron. **Hourly because the runtime token lives 2h, not
+   the ~12h the Vercel docs claim** — see the measurement below.
+3. `loadSkillsAuth(ctx)` in `convex/lib/skillsAuth.ts` is called once per action
+   and threaded through, so a sync that fans out thousands of upstream calls
+   still costs one query. It never refreshes, deliberately: refresh is a
+   scheduled job so parallel actions can't stampede our own relay.
+4. `convex/lib/skillsApi.ts` sends the OIDC token, and retries once with
+   `SKILLS_SH_API_KEY` on 401/403 only. Not on 429 (the limit is per team and
+   project, so a second credential just spends both) and not on 5xx (that is
+   `withTransientRetry`'s job).
 
-Rejected alternative: proxying every skills.sh call through a Vercel route. Our
-sync is thousands of staggered per-skill scheduled actions carrying multi-MB
-`files[]` payloads, so that converts one cron chain into thousands of Hobby
-function invocations. The relay costs 2-3 invocations a day and keeps all sync
+**OIDC is primary and the key is the fallback, not the reverse.** An earlier
+draft of this entry had it backwards, on the reasoning that preferring the key
+changes nothing day to day. That is exactly the problem: a fallback that never
+executes is a fallback that is broken on the day it is needed. Running OIDC on
+every sync means a breakage shows up as a bad day, and the day the key is
+retired is a non-event.
+
+**The fallback is silent by design** (the catalog keeps syncing either way),
+which is why `/dev` has a "skills.sh API auth" panel. Without it, a broken relay
+would go unnoticed until the key itself died, which defeats the point of
+migrating. `getSkillsAuthStatus` mirrors `loadSkillsAuth`'s expiry margin
+exactly, so what /dev shows is what the next sync will do.
+
+**Verification that made this safe to build** (Aug 11 2026, from a non-Vercel
+machine, which is the case that matters):
+
+- A relayed token authenticates on all five endpoints: listing, search, curated,
+  detail, audit. skills.sh verifies the JWT (`iss` `https://oidc.vercel.com/jon-dev`,
+  `aud` `https://vercel.com/jon-dev`, subject
+  `owner:jon-dev:project:skillbundle:environment:development`) and does NOT
+  require the request to originate from Vercel infrastructure.
+- OIDC Federation is available on our plan (we are on Vercel Pro now).
+- A token minted by a real deployment (preview, PR #64) authenticates against
+  skills.sh too, so environment scoping is not a gate: subject
+  `owner:jon-dev:project:skillbundle:environment:preview` works the same.
+
+**Three documented things that turned out not to be true**, all worth knowing
+before building on them:
+
+- **The runtime OIDC token lives 2h, not ~12h.** Measured Aug 12 2026 against a
+  real deployment: `exp - iat` is exactly 7200s, and the token is minted fresh
+  per request. The docs' "rotated roughly every 12 hours" does describe the
+  token `vercel env pull` writes for local dev, which is almost certainly where
+  the number comes from. Do not size a refresh interval off a locally pulled
+  token: this was built as a 6h cron on the 12h figure and would have spent two
+  hours in every six on the fallback key while looking migrated. Caught only
+  because the preview deployment was tested before merge.
+
+- **No `X-RateLimit-*` headers on any response**, on either credential, despite
+  the docs promising them on every authenticated request. So there is no free
+  signal for which credential served a request, and no way to see how close to
+  600/min we are. Our own bookkeeping is the only source.
+- **The key is not an orphaned legacy path.** A garbage bearer token returns
+  `Expected a Vercel OIDC token (JWT) or an sk_live_... API key`, so their auth
+  layer still names it. It is undocumented, not abandoned. That is why this was
+  worth doing deliberately rather than urgently.
+
+Rejected alternative, still rejected: proxying every skills.sh call through a
+Vercel route. The sync is thousands of staggered per-skill actions carrying
+multi-MB `files[]` payloads, so that converts one cron chain into thousands of
+function invocations. The relay costs ~24 invocations a day and keeps all sync
 bandwidth on Convex.
 
-**Two things to check before building it:**
+**Left to do (deployment only).** Until these are set, every call runs on the
+key exactly as before, and /dev says so:
 
-- Whether OIDC Federation (Settings → OIDC Federation) is available on our
-  Vercel plan at all. This decides whether the plan works; unverified.
-- It moves a bearer credential carrying our team/project identity off Vercel.
-  Scoped to us and attributed to us either way, so not misrepresentation, but
-  keep it in Convex env/table, never log it, keep the relay secret-gated.
+    # Vercel (production), same value on both sides
+    SKILLS_TOKEN_SECRET=<secret>
 
-**Cheapest insurance, do this before migrating:** make `authHeaders()` prefer
-the key and fall back to a relayed OIDC token on a 401, so the day the key dies
-it is a config flip rather than an outage. Also fix the stale comment at the top
-of `convex/lib/skillsApi.ts`, which still documents a 60 req/min unauthenticated
-tier that no longer exists; a future reader would plan around it.
+    npx convex env set SKILLS_TOKEN_URL https://skillbundle.dev/api/skills-token --prod
+    npx convex env set SKILLS_TOKEN_SECRET <secret> --prod
+    npx convex run skillsAuth:refreshToken --prod   # don't wait up to an hour for the first cron
 
-Strategic note, not just an ops note: skills.sh is Vercel, and OIDC-only auth
-scopes every consumer to a Vercel team and project with `owner_id` /
-`project_id` / `environment` logged per request. Our entire catalog is
-downstream of an API that a competitor controls, meters, and can identify us on.
-That is the backdrop for any decision about what this app should be.
+Keep `SKILLS_SH_API_KEY` set. It is the fallback now, and removing it would turn
+a relay outage into a sync outage.
+
+Strategic note, not just an ops note: skills.sh is Vercel, and OIDC auth scopes
+every consumer to a Vercel team and project with `owner_id` / `project_id` /
+`environment` logged per request. Our entire catalog is downstream of an API
+that a competitor controls, meters, and can identify us on. Migrating to their
+documented credential does not change that, it just stops us depending on an
+undocumented path as well. That is the backdrop for any decision about what this
+app should be.
+
+**If we ever host somewhere other than Vercel (Railway, Fly, a VPS).** Nothing
+here has to be reverted. The whole chain degrades to the pre-migration behavior
+on its own: `getVercelOidcToken()` throws with no Vercel request context, the
+route returns 503 `oidc_unavailable`, `refreshToken` records that and stores no
+token, `loadSkillsAuth` finds nothing usable, and every call goes out on
+`SKILLS_SH_API_KEY`. That is not a prediction: it is exactly what happened
+testing the route on localhost, which hits the same root cause a non-Vercel host
+would. `/dev` reads "Legacy API key" with the relay error underneath, so it is
+visible rather than mysterious.
+
+One cleanup if that day comes: the hourly cron would keep logging a failed
+refresh forever. Unsetting `SKILLS_TOKEN_URL` does not silence it (the message
+just becomes "not configured"), so drop the cron entry in `crons.ts` instead.
+
+The real constraint is not this code, it is that skills.sh's only documented
+credential is a Vercel OIDC token. Hosting elsewhere means depending entirely on
+the undocumented `sk_live_` key with no supported path when they retire it,
+which was equally true before this migration.
+
+But the relay shape gives us an out a direct integration would not. Because what
+MINTS the token is decoupled from what USES it, the app could live on Railway
+while one minimal Vercel project keeps serving `/api/skills-token` alone. Convex
+calls it hourly, so 24 invocations a day, trivially inside a free plan. Worth
+recording because it inverts the obvious read: this migration lowers the cost of
+leaving Vercel rather than raising it. Without it, "authenticate the documented
+way" and "host on Vercel" would be the same decision.
 
 ### Embedding-powered catalog features (parked while monitoring is the focus)
 

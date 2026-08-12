@@ -1,11 +1,19 @@
 /**
- * Typed client for the skills.sh public v1 API.
+ * Typed client for the skills.sh v1 API.
  *
- * Docs: https://skills.sh/api/v1
+ * Docs: https://skills.sh/docs/api
  *
- * Auth: SKILLS_SH_API_KEY env var. Without it, requests are unauthenticated
- * (60 req/min per IP). With it, 600 req/min per key. Set via:
- *   npx convex env set SKILLS_SH_API_KEY sk_live_...
+ * Auth: every call takes a `SkillsAuth` from `loadSkillsAuth(ctx)` (see
+ * lib/skillsAuth.ts), which carries BOTH credentials. The documented one is a
+ * Vercel OIDC token relayed in from the site; the legacy `SKILLS_SH_API_KEY` is
+ * the fallback. This module reads no environment of its own, so what a call
+ * sends is fully determined by the object handed to it.
+ *
+ * There is no unauthenticated tier. Measured Aug 2026: the listing, search,
+ * detail and curated endpoints all 401 with `authentication_required` when
+ * called with no credential. (The audit endpoint still answers unauthenticated,
+ * but that looks like an enforcement gap rather than a promise — don't plan
+ * around it.)
  */
 
 // Hit www.skills.sh directly: the apex domain 307-redirects to www, and both
@@ -30,24 +38,110 @@ export class SkillsApiNotFoundError extends Error {
   }
 }
 
-function authHeaders(): Record<string, string> {
-  const key = process.env.SKILLS_SH_API_KEY;
+/**
+ * Both credentials were rejected (or the only one we had was). Distinct from a
+ * generic error because retrying is the one thing that cannot help: an
+ * unauthenticated request is unauthenticated on every attempt. Without this
+ * class `withTransientRetry` treats an auth failure as a blip and triples every
+ * call in the run.
+ */
+export class SkillsApiAuthError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "SkillsApiAuthError";
+    this.status = status;
+  }
+}
+
+/**
+ * Credentials for a batch of skills.sh calls, loaded once per action by
+ * `loadSkillsAuth(ctx)` and threaded through every call that action makes.
+ *
+ * Holds BOTH credentials so a reader can tell what a request will send without
+ * also knowing the deployment's environment. `oidcToken: null` means the legacy
+ * key carries the request; both null means the call goes out unauthenticated
+ * and will 401.
+ *
+ * Deliberately mutable: `request()` clears `oidcToken` the first time skills.sh
+ * rejects it, so the rest of the action skips straight to the key instead of
+ * re-proving the same rejection on every one of thousands of calls.
+ */
+export type SkillsAuth = {
+  oidcToken: string | null;
+  apiKey: string | null;
+  /**
+   * Invoked the first time skills.sh rejects the OIDC token, so the fallback
+   * becomes visible on /dev instead of only in the logs. Supplied by
+   * `loadSkillsAuth`; already de-duplicated per action.
+   */
+  onOidcRejected?: (status: number) => Promise<void>;
+};
+
+function headersFor(credential: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "User-Agent": "SkillBundle",
   };
-  if (key) headers.Authorization = `Bearer ${key}`;
+  if (credential) headers.Authorization = `Bearer ${credential}`;
   return headers;
 }
 
-async function request<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, { headers: authHeaders() });
+function isAuthStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
+  const url = `${BASE_URL}${path}`;
+
+  let res = await fetch(url, {
+    headers: headersFor(auth.oidcToken ?? auth.apiKey),
+  });
+
+  // Body of a rejected first attempt, read once. Kept because when there is no
+  // key to fall back to, `res` below IS this response and its body is already
+  // consumed — re-reading it would throw instead of reporting the rejection.
+  let rejectedBody: string | null = null;
+
+  // Handle an OIDC rejection whether or not a fallback is available. The
+  // recording deliberately sits OUTSIDE the `auth.apiKey` check: once the
+  // legacy key is retired (the stated end state — see lib/skillsAuth.ts), this
+  // is the only place that learns skills.sh has started refusing our tokens,
+  // and /dev would otherwise show a green OIDC badge while every call 401s.
+  //
+  // Note this fires only on an auth status. Retrying a 429 with a second
+  // credential would just spend both on the same per-(team, project) limit, and
+  // retrying a 5xx is withTransientRetry's job.
+  if (isAuthStatus(res.status) && auth.oidcToken) {
+    rejectedBody = await res.text().catch(() => "");
+    console.error(
+      auth.apiKey
+        ? `skills.sh rejected the OIDC token (${res.status}: ${rejectedBody.slice(0, 200)}); falling back to the legacy API key for the rest of this action`
+        : `skills.sh rejected the OIDC token (${res.status}: ${rejectedBody.slice(0, 200)}) and no legacy API key is configured`,
+    );
+    // Clear it before reporting: this is what stops the next few thousand calls
+    // in this action from repeating the rejected request.
+    auth.oidcToken = null;
+    await auth.onOidcRejected?.(res.status);
+    if (auth.apiKey) {
+      res = await fetch(url, { headers: headersFor(auth.apiKey) });
+      rejectedBody = null; // fresh response; its body is unread
+    }
+  }
+
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
     throw new SkillsApiRateLimitError(Number.isFinite(retryAfter) ? retryAfter : 60);
   }
   if (res.status === 404) {
     throw new SkillsApiNotFoundError(`skills.sh API 404: ${path}`);
+  }
+  if (isAuthStatus(res.status)) {
+    const body = rejectedBody ?? (await res.text().catch(() => ""));
+    throw new SkillsApiAuthError(
+      res.status,
+      `skills.sh API ${res.status} on ${path} (no credential accepted): ${body.slice(0, 200)}`,
+    );
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -74,6 +168,8 @@ export async function withTransientRetry<T>(
     } catch (e) {
       if (e instanceof SkillsApiRateLimitError) throw e;
       if (e instanceof SkillsApiNotFoundError) throw e;
+      // Retrying an auth failure just triples the requests and the log lines.
+      if (e instanceof SkillsApiAuthError) throw e;
       lastErr = e;
       if (attempt < maxAttempts) {
         // Linear backoff: 500ms, 1000ms. Keeps total worst-case wait under
@@ -118,17 +214,20 @@ interface V1Pagination {
 
 export type LeaderboardView = "all-time" | "trending" | "hot";
 
-export async function listSkills(opts: {
-  view?: LeaderboardView;
-  page?: number;
-  perPage?: number;
-}): Promise<{ data: V1Skill[]; pagination: V1Pagination }> {
+export async function listSkills(
+  auth: SkillsAuth,
+  opts: {
+    view?: LeaderboardView;
+    page?: number;
+    perPage?: number;
+  },
+): Promise<{ data: V1Skill[]; pagination: V1Pagination }> {
   const params = new URLSearchParams();
   if (opts.view) params.set("view", opts.view);
   if (opts.page !== undefined) params.set("page", String(opts.page));
   if (opts.perPage !== undefined) params.set("per_page", String(opts.perPage));
   const qs = params.toString();
-  return request(`/skills${qs ? `?${qs}` : ""}`);
+  return request(`/skills${qs ? `?${qs}` : ""}`, auth);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,10 +251,14 @@ export interface V1SkillDetail {
  * gets misrouted as a 400 invalid_path.
  */
 export async function getSkillDetail(
+  auth: SkillsAuth,
   source: string,
   slug: string,
 ): Promise<V1SkillDetail> {
-  return request(`/skills/${encodeSource(source)}/${encodeURIComponent(slug)}`);
+  return request(
+    `/skills/${encodeSource(source)}/${encodeURIComponent(slug)}`,
+    auth,
+  );
 }
 
 /**
@@ -177,10 +280,11 @@ function encodeSource(source: string): string {
  * has no snapshot yet OR no SKILL.md file.
  */
 export async function getSkillSyncData(
+  auth: SkillsAuth,
   source: string,
   slug: string,
 ): Promise<{ hash: string | null; skillMdContents: string | null }> {
-  const detail = await getSkillDetail(source, slug);
+  const detail = await getSkillDetail(auth, source, slug);
   const skillMd = detail.files?.find((f) => f.path === "SKILL.md");
   return {
     hash: detail.hash,
@@ -200,13 +304,13 @@ export interface V1CuratedOwner {
   skills: V1Skill[];
 }
 
-export async function getCurated(): Promise<{
+export async function getCurated(auth: SkillsAuth): Promise<{
   data: V1CuratedOwner[];
   totalOwners: number;
   totalSkills: number;
   generatedAt: string;
 }> {
-  return request("/skills/curated");
+  return request("/skills/curated", auth);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,10 +338,12 @@ export interface V1AuditResponse {
 }
 
 export async function getSkillAudits(
+  auth: SkillsAuth,
   source: string,
   slug: string,
 ): Promise<V1AuditResponse> {
   return request(
     `/skills/audit/${encodeSource(source)}/${encodeURIComponent(slug)}`,
+    auth,
   );
 }

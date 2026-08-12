@@ -41,6 +41,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/cubby-ui/tooltip";
+import { SkillsAuthPanel } from "./skills-auth-panel";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,6 +122,7 @@ export function DevDashboardContent() {
         onFilterChange={setActiveFilter}
         stats={stats}
       />
+      <SkillsAuthPanel admin={admin} />
       <EmbeddingPanel />
       <DelistedAnalysis />
       <AdminActions />
