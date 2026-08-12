@@ -175,8 +175,8 @@ export const syncSkills = internalAction({
     // Deliberately NOT "skill-content". This walk rewrites the whole ~9.5k-row
     // leaderboard daily, and the skill row it would invalidate (SKILL.md content,
     // description) has not changed just because an install number moved — that
-    // coupling is exactly what the tag split removed. The one field this path
-    // does move that `loadSkill` renders is `name`, handled separately below.
+    // coupling is exactly what the tag split removed. The fields this path DOES
+    // move that `loadSkill` renders are handled separately below.
     await revalidateSiteTag("skill-sync");
 
     // upsertSkillsBatch patches two `loadSkill`-visible fields on the skill row:

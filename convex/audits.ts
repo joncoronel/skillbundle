@@ -128,7 +128,10 @@ export const writeAuditResult = internalMutation({
     worstStatus: v.string(),
     worstRiskLevel: v.optional(v.string()),
   },
-  returns: v.object({ denormChanged: v.boolean() }),
+  returns: v.object({
+    denormChanged: v.boolean(),
+    isFirstRecord: v.boolean(),
+  }),
   /**
    * Compare-and-skip pattern (mirrors updateDescription's hash-skip):
    *   - audits payload unchanged → just touch fetchedAt on skillAudits and
@@ -242,7 +245,14 @@ export const writeAuditResult = internalMutation({
     // audit badge comes off exactly these. Nothing else in the app pings that
     // tag for audits, so without this the badge on every social card would go
     // stale for a full cacheLife("weeks") window.
-    return { denormChanged };
+    //
+    // `isFirstRecord` distinguishes "this verdict moved" from "we had never
+    // recorded one". Every *Changed flag above is `!existing || ...`, so a first
+    // write reports denormChanged: true even when nothing a reader can see
+    // differs. The 404 caller uses this to avoid publishing an invisible
+    // absent -> "unknown" transition; the success caller deliberately does not,
+    // because a first audit coming back fail/warn makes a badge APPEAR.
+    return { denormChanged, isFirstRecord: !existing };
   },
 });
 
@@ -311,11 +321,13 @@ export const fetchAuditBatch = internalAction({
               // set inside writeAuditResult, so the 7-day refresh window
               // applies and we won't immediately re-fetch.
               //
-              // Counts toward the publish exactly like the success arm: a row
-              // going fail/warn -> unknown IS a denorm move (writeAuditResult
-              // patches it), and it is the direction that leaves a stale
-              // "Risk · HIGH" badge on the OG card if nobody publishes it.
-              const { denormChanged } = await ctx.runMutation(
+              // Counts toward the publish, with one exclusion the success arm
+              // doesn't need (below). A row going fail/warn -> unknown IS a
+              // denorm move (writeAuditResult patches it), and it is the only
+              // transition that makes a badge DISAPPEAR — so without this the
+              // OG card keeps a stale "Risk · HIGH" for a cacheLife("weeks")
+              // window after the verdict was withdrawn upstream.
+              const { denormChanged, isFirstRecord } = await ctx.runMutation(
                 internal.audits.writeAuditResult,
                 {
                   skillDocId: s.skillDocId,
@@ -325,7 +337,12 @@ export const fetchAuditBatch = internalAction({
                   worstStatus: "unknown",
                 },
               );
-              if (denormChanged) denormChangeCount++;
+              // Not `isFirstRecord`: a never-audited row 404ing writes
+              // "unknown" over an absent field, and `auditTag` renders nothing
+              // for either, so there is no badge to refresh. New skills arrive
+              // daily, so counting those would pass the terminal's gate on most
+              // days for no visible reason.
+              if (denormChanged && !isFirstRecord) denormChangeCount++;
               unknownCount++;
               return;
             }
