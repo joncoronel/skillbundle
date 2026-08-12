@@ -15,7 +15,7 @@ import { secretsMatch } from "@/lib/shared-secret";
 // The alternative — proxying every skills.sh call through this app — was
 // rejected: the sync is thousands of staggered per-skill actions carrying
 // multi-MB files[] payloads, so it would convert one Convex cron chain into
-// thousands of Vercel invocations. This costs ~4 invocations a day and keeps
+// thousands of Vercel invocations. This costs 24 invocations a day and keeps
 // all sync bandwidth on Convex. See TODO.md.
 //
 // POST, not GET, so a stray browser navigation or prefetch can never reach it.
@@ -35,7 +35,10 @@ export async function POST(request: Request) {
   let token: string;
   try {
     // Must be called per-request, not hoisted to module scope: the token is
-    // request-scoped and rotates roughly every 12 hours.
+    // request-scoped. Measured lifetime on a real deployment is 2h, minted
+    // fresh per request — NOT the ~12h the Vercel docs describe, which matches
+    // the token `vercel env pull` writes locally. Convex's refresh cadence is
+    // sized off the 2h figure; see convex/crons.ts.
     token = await getVercelOidcToken();
   } catch (e) {
     // Most likely cause: OIDC Federation turned off for the project, or a

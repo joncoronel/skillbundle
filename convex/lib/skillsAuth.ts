@@ -8,6 +8,10 @@
  * this module pulls from it, parks the token in `skillsAuthToken`, and hands it
  * to `skillsApi.ts` for the thousands of upstream calls in between.
  *
+ * The runtime token lives 2h (measured; the docs' ~12h figure describes the one
+ * `vercel env pull` writes locally, not the one a deployment mints). An hourly
+ * cron refreshes it — see crons.ts.
+ *
  * The legacy `SKILLS_SH_API_KEY` (`sk_live_`) stays wired as the fallback. It
  * still works and skills.sh's own 401 body still names it, but it is absent
  * from their docs and returns none of the documented rate-limit headers, so it
@@ -29,7 +33,9 @@ import type { SkillsAuth } from "./skillsApi";
 /**
  * Refuse to hand out a token this close to its expiry. A sync action can run
  * for minutes across many upstream calls, so a token that is valid at the top
- * of the handler needs to still be valid at the bottom.
+ * of the handler needs to still be valid at the bottom. 15 minutes out of a 2h
+ * lifetime; keep it well under the hourly refresh interval or every token
+ * spends part of its life unusable.
  */
 export const EXPIRY_MARGIN_MS = 15 * 60 * 1000;
 

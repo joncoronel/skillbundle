@@ -448,7 +448,8 @@ context. So "use the documented credential" is not a header swap, it is a relay.
 1. `app/api/skills-token/route.ts` mints a token via `getVercelOidcToken()`,
    gated by `SKILLS_TOKEN_SECRET` (same arrangement as `/api/revalidate`).
 2. `convex/skillsAuth.ts` caches it in the single-row `skillsAuthToken` table,
-   refreshed by cron every 6h against a ~12h lifetime.
+   refreshed hourly by cron. **Hourly because the runtime token lives 2h, not
+   the ~12h the Vercel docs claim** — see the measurement below.
 3. `loadSkillsAuth(ctx)` in `convex/lib/skillsAuth.ts` is called once per action
    and threaded through, so a sync that fans out thousands of upstream calls
    still costs one query. It never refreshes, deliberately: refresh is a
@@ -479,11 +480,22 @@ machine, which is the case that matters):
   `aud` `https://vercel.com/jon-dev`, subject
   `owner:jon-dev:project:skillbundle:environment:development`) and does NOT
   require the request to originate from Vercel infrastructure.
-- Token lifetime is exactly 12h, matching the docs.
 - OIDC Federation is available on our plan (we are on Vercel Pro now).
+- A token minted by a real deployment (preview, PR #64) authenticates against
+  skills.sh too, so environment scoping is not a gate: subject
+  `owner:jon-dev:project:skillbundle:environment:preview` works the same.
 
-**Two documented things that turned out not to be true**, both worth knowing
+**Three documented things that turned out not to be true**, all worth knowing
 before building on them:
+
+- **The runtime OIDC token lives 2h, not ~12h.** Measured Aug 12 2026 against a
+  real deployment: `exp - iat` is exactly 7200s, and the token is minted fresh
+  per request. The docs' "rotated roughly every 12 hours" does describe the
+  token `vercel env pull` writes for local dev, which is almost certainly where
+  the number comes from. Do not size a refresh interval off a locally pulled
+  token: this was built as a 6h cron on the 12h figure and would have spent two
+  hours in every six on the fallback key while looking migrated. Caught only
+  because the preview deployment was tested before merge.
 
 - **No `X-RateLimit-*` headers on any response**, on either credential, despite
   the docs promising them on every authenticated request. So there is no free

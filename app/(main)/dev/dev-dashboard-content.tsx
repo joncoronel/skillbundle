@@ -703,8 +703,8 @@ function SkillsAuthPanel() {
 
             {auth.usingOidc && auth.expiresAt && (
               <p className="text-xs text-muted-foreground">
-                Expires {new Date(auth.expiresAt).toISOString()}. Refreshed
-                every 6h by the{" "}
+                Expires {new Date(auth.expiresAt).toISOString()}. Runtime tokens
+                live 2h; refreshed hourly by the{" "}
                 <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
                   refresh skills.sh OIDC token
                 </code>{" "}

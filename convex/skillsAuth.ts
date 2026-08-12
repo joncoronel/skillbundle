@@ -81,8 +81,9 @@ export const recordRefreshError = internalMutation({
 /**
  * Pull a fresh OIDC token from the site relay and cache it.
  *
- * Runs on its own 6h cron and at the head of the daily sync chain (see
- * crons.ts). Best-effort by design: a failure here is recorded and logged, not
+ * Runs on its own hourly cron (see crons.ts, which explains why hourly and not
+ * the docs' 12h lifetime). Best-effort by design: a failure is recorded and
+ * logged, not
  * thrown, because the calls it serves fall back to the legacy API key. Throwing
  * would take out the sync chain over what is currently a redundancy.
  */

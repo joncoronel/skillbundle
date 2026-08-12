@@ -712,8 +712,8 @@ export default defineSchema({
 
   // Single-row cache for the Vercel OIDC token skills.sh wants (see
   // convex/skillsAuth.ts). Convex can't mint one itself, so it pulls a fresh
-  // token from the site's /api/skills-token relay every 6h and every sync, and
-  // parks it here for the ~9 thousand upstream calls in between.
+  // token from the site's /api/skills-token relay hourly (the runtime token
+  // lives 2h) and parks it here for the upstream calls in between.
   //
   // `token` is a bearer credential: it must never be returned from a public
   // query or logged. `lastRefreshError` is what makes a fall back to the legacy
