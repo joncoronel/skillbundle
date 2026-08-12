@@ -98,20 +98,35 @@ async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
     headers: headersFor(auth.oidcToken ?? auth.apiKey),
   });
 
-  // Fall back to the legacy key only on an auth rejection, and only when the
-  // OIDC token is what got rejected. Retrying a 429 with a second credential
-  // would just spend both on the same per-(team, project) limit, and retrying a
-  // 5xx is withTransientRetry's job.
-  if (isAuthStatus(res.status) && auth.oidcToken && auth.apiKey) {
-    const body = await res.text().catch(() => "");
+  // Body of a rejected first attempt, read once. Kept because when there is no
+  // key to fall back to, `res` below IS this response and its body is already
+  // consumed — re-reading it would throw instead of reporting the rejection.
+  let rejectedBody: string | null = null;
+
+  // Handle an OIDC rejection whether or not a fallback is available. The
+  // recording deliberately sits OUTSIDE the `auth.apiKey` check: once the
+  // legacy key is retired (the stated end state — see lib/skillsAuth.ts), this
+  // is the only place that learns skills.sh has started refusing our tokens,
+  // and /dev would otherwise show a green OIDC badge while every call 401s.
+  //
+  // Note this fires only on an auth status. Retrying a 429 with a second
+  // credential would just spend both on the same per-(team, project) limit, and
+  // retrying a 5xx is withTransientRetry's job.
+  if (isAuthStatus(res.status) && auth.oidcToken) {
+    rejectedBody = await res.text().catch(() => "");
     console.error(
-      `skills.sh rejected the OIDC token (${res.status}: ${body.slice(0, 200)}); falling back to the legacy API key for the rest of this action`,
+      auth.apiKey
+        ? `skills.sh rejected the OIDC token (${res.status}: ${rejectedBody.slice(0, 200)}); falling back to the legacy API key for the rest of this action`
+        : `skills.sh rejected the OIDC token (${res.status}: ${rejectedBody.slice(0, 200)}) and no legacy API key is configured`,
     );
     // Clear it before reporting: this is what stops the next few thousand calls
     // in this action from repeating the rejected request.
     auth.oidcToken = null;
     await auth.onOidcRejected?.(res.status);
-    res = await fetch(url, { headers: headersFor(auth.apiKey) });
+    if (auth.apiKey) {
+      res = await fetch(url, { headers: headersFor(auth.apiKey) });
+      rejectedBody = null; // fresh response; its body is unread
+    }
   }
 
   if (res.status === 429) {
@@ -122,7 +137,7 @@ async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
     throw new SkillsApiNotFoundError(`skills.sh API 404: ${path}`);
   }
   if (isAuthStatus(res.status)) {
-    const body = await res.text().catch(() => "");
+    const body = rejectedBody ?? (await res.text().catch(() => ""));
     throw new SkillsApiAuthError(
       res.status,
       `skills.sh API ${res.status} on ${path} (no credential accepted): ${body.slice(0, 200)}`,

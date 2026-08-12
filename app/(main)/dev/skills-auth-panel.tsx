@@ -105,11 +105,18 @@ function AuthDetail({ auth }: { auth: AuthStatus }) {
         {auth.refreshedAt
           ? `Last successful refresh ${timeAgo(auth.refreshedAt)}.`
           : "No successful refresh recorded."}{" "}
-        {auth.expiresAt
-          ? tokenFresh
+        {/* Three states, not two. Between the margin cutoff and real expiry a
+            token is still valid but deliberately unused, and calling that
+            "expired" is a different diagnosis from the real thing. `timeAgo`
+            is also wrong there — it reads a future timestamp as "just now"
+            (see formatDuration below). */}
+        {!auth.expiresAt
+          ? "No token cached."
+          : tokenFresh
             ? `Token good for another ${formatDuration(auth.usableUntil! - now)}.`
-            : `Token expired ${timeAgo(auth.expiresAt)}.`
-          : "No token cached."}{" "}
+            : auth.expiresAt > now
+              ? `Token expires in ${formatDuration(auth.expiresAt - now)}, inside the safety margin, so calls already use the key.`
+              : `Token expired ${timeAgo(auth.expiresAt)}.`}{" "}
         Runtime tokens live 2h; refreshed hourly by the{" "}
         <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
           refresh skills.sh OIDC token

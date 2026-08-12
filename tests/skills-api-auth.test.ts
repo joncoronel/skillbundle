@@ -184,6 +184,19 @@ describe("skills.sh client auth", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("still reports the rejection when there is no key to fall back to", async () => {
+    // This is the state the migration is heading for. If the report only fired
+    // on the fallback path, retiring the key would make skills.sh refusing our
+    // tokens invisible on /dev — a green OIDC badge over a sync that 401s.
+    const a = auth(OIDC, null);
+    fetchMock.mockResolvedValue(jsonResponse(401, { error: "invalid_token" }));
+
+    await expect(getCurated(a)).rejects.toBeInstanceOf(SkillsApiAuthError);
+
+    expect(a.rejections).toEqual([401]);
+    expect(a.oidcToken).toBeNull();
+  });
+
   it("sends no Authorization header when neither credential exists", async () => {
     // Not a supported configuration, but it must fail as an upstream 401
     // rather than as a TypeError building the headers.

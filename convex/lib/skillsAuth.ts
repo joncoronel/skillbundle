@@ -112,13 +112,25 @@ export async function fetchRelayToken(): Promise<RelayToken> {
     // strips only Authorization / Cookie / Proxy-Authorization, so a custom
     // header like ours rides along to wherever the hop points. This secret
     // gates a credential-minting endpoint, and the request would still
-    // succeed, so the leak would be invisible. "manual" turns any 3xx into a
-    // visible `relay 30x:` on /dev instead.
+    // succeed, so the leak would be invisible.
+    //
+    // A 3xx then arrives as an opaque response with `status: 0` and a null
+    // body — not as the 30x itself. See the same note in
+    // `convex/githubOnlyAudit.ts`. That is why the check below tests for 0
+    // explicitly: `relay 0:` with an empty body would otherwise be the least
+    // informative possible message for the one failure this line exists to
+    // make visible.
     redirect: "manual",
     // Fail fast rather than pinning the action open until Convex's timeout.
     signal: AbortSignal.timeout(10_000),
   });
 
+  if (res.status === 0) {
+    throw new Error(
+      `relay redirected; SKILLS_TOKEN_URL (${url}) is not the canonical host. ` +
+        `The secret is deliberately not forwarded across the hop — point it at the host that answers directly.`,
+    );
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`relay ${res.status}: ${body.slice(0, 200)}`);
