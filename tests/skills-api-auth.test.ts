@@ -191,7 +191,12 @@ describe("skills.sh client auth", () => {
     const a = auth(OIDC, null);
     fetchMock.mockResolvedValue(jsonResponse(401, { error: "invalid_token" }));
 
-    await expect(getCurated(a)).rejects.toBeInstanceOf(SkillsApiAuthError);
+    // The message must still carry the upstream body. On this path `res` is the
+    // already-consumed first response, so the body has to come from the copy
+    // `request()` kept — and a second read would be swallowed by its
+    // `.catch(() => "")`, losing the only clue why the token was refused
+    // without failing anything. Pin it.
+    await expect(getCurated(a)).rejects.toThrow(/invalid_token/);
 
     expect(a.rejections).toEqual([401]);
     expect(a.oidcToken).toBeNull();

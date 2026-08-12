@@ -114,21 +114,27 @@ export async function fetchRelayToken(): Promise<RelayToken> {
     // gates a credential-minting endpoint, and the request would still
     // succeed, so the leak would be invisible.
     //
-    // A 3xx then arrives as an opaque response with `status: 0` and a null
-    // body — not as the 30x itself. See the same note in
-    // `convex/githubOnlyAudit.ts`. That is why the check below tests for 0
-    // explicitly: `relay 0:` with an empty body would otherwise be the least
-    // informative possible message for the one failure this line exists to
-    // make visible.
+    // What a 3xx then looks like is runtime-dependent, so the check below
+    // accepts both shapes. MEASURED on the Convex runtime, Aug 2026, by
+    // pointing a dev deployment's SKILLS_TOKEN_URL at the www host (which 308s
+    // to the apex) and running this action: it reports `relay 308:
+    // Redirecting...`, i.e. the real status, NOT the spec's opaque
+    // `status: 0`. The hop is genuinely not followed, so the secret does not
+    // leak either way. Browser/edge fetch does return the opaque 0 form, which
+    // is what `convex/githubOnlyAudit.ts` describes.
     redirect: "manual",
     // Fail fast rather than pinning the action open until Convex's timeout.
     signal: AbortSignal.timeout(10_000),
   });
 
-  if (res.status === 0) {
+  // `status === 0` is the opaque-redirect form; a literal 3xx is what the
+  // Convex runtime actually returns. Accept both rather than betting on one.
+  if (res.status === 0 || (res.status >= 300 && res.status < 400)) {
     throw new Error(
+      // Renders verbatim on /dev via lastRefreshError, so it follows the same
+      // plain-prose copy convention as the panel itself.
       `relay redirected; SKILLS_TOKEN_URL (${url}) is not the canonical host. ` +
-        `The secret is deliberately not forwarded across the hop — point it at the host that answers directly.`,
+        `The secret is deliberately not forwarded across the hop. Point it at the host that answers directly.`,
     );
   }
   if (!res.ok) {

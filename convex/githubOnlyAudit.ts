@@ -169,11 +169,19 @@ const RETRY_DELAY_MS = 500;
  * semantics than the pipeline.
  *
  * Redirects are FOLLOWED and the host re-checked afterwards, rather than
- * refused. Under `redirect: "manual"` a 3xx arrives as an opaque response with
- * `status: 0`, so the 404 split above it could never fire for a redirected URL
- * and every redirect would be filed as transient — while the pipeline, which
- * follows redirects, fetches the file fine. Re-asserting the host on `res.url`
- * keeps the SSRF guard intact without throwing away the status.
+ * refused. GitHub redirects constantly (renamed repos, moved default branches),
+ * and the pipeline this audit judges follows them, so refusing them here would
+ * file live files as broken. Re-asserting the host on `res.url` keeps the SSRF
+ * guard intact without throwing away the status.
+ *
+ * Correction, measured Aug 2026: an earlier version of this note claimed that
+ * under `redirect: "manual"` a 3xx arrives as an opaque response with
+ * `status: 0`. That is the spec/browser behavior, but NOT what the Convex
+ * runtime does — it returns the literal 3xx with a body. Verified by pointing a
+ * dev deployment's relay URL at a known 308 and reading what came back. The
+ * reason above stands on its own; the status claim did not, and
+ * `convex/lib/skillsAuth.ts` (which does refuse redirects) accepts both shapes
+ * rather than betting on either.
  */
 export async function fetchSkillMd(
   url: string,

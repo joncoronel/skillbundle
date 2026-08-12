@@ -533,6 +533,33 @@ documented credential does not change that, it just stops us depending on an
 undocumented path as well. That is the backdrop for any decision about what this
 app should be.
 
+**If we ever host somewhere other than Vercel (Railway, Fly, a VPS).** Nothing
+here has to be reverted. The whole chain degrades to the pre-migration behavior
+on its own: `getVercelOidcToken()` throws with no Vercel request context, the
+route returns 503 `oidc_unavailable`, `refreshToken` records that and stores no
+token, `loadSkillsAuth` finds nothing usable, and every call goes out on
+`SKILLS_SH_API_KEY`. That is not a prediction: it is exactly what happened
+testing the route on localhost, which hits the same root cause a non-Vercel host
+would. `/dev` reads "Legacy API key" with the relay error underneath, so it is
+visible rather than mysterious.
+
+One cleanup if that day comes: the hourly cron would keep logging a failed
+refresh forever. Unsetting `SKILLS_TOKEN_URL` does not silence it (the message
+just becomes "not configured"), so drop the cron entry in `crons.ts` instead.
+
+The real constraint is not this code, it is that skills.sh's only documented
+credential is a Vercel OIDC token. Hosting elsewhere means depending entirely on
+the undocumented `sk_live_` key with no supported path when they retire it,
+which was equally true before this migration.
+
+But the relay shape gives us an out a direct integration would not. Because what
+MINTS the token is decoupled from what USES it, the app could live on Railway
+while one minimal Vercel project keeps serving `/api/skills-token` alone. Convex
+calls it hourly, so 24 invocations a day, trivially inside a free plan. Worth
+recording because it inverts the obvious read: this migration lowers the cost of
+leaving Vercel rather than raising it. Without it, "authenticate the documented
+way" and "host on Vercel" would be the same decision.
+
 ### Embedding-powered catalog features (parked while monitoring is the focus)
 
 Context (Aug 2026): skills.sh launched Packs and their v1 search API now does

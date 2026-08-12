@@ -115,7 +115,7 @@ function AuthDetail({ auth }: { auth: AuthStatus }) {
           : tokenFresh
             ? `Token good for another ${formatDuration(auth.usableUntil! - now)}.`
             : auth.expiresAt > now
-              ? `Token expires in ${formatDuration(auth.expiresAt - now)}, inside the safety margin, so calls already use the key.`
+              ? `Token expires in ${formatDuration(auth.expiresAt - now)}, inside the safety margin, so calls ${auth.hasLegacyKey ? "already use the key" : "already go out unauthenticated"}.`
               : `Token expired ${timeAgo(auth.expiresAt)}.`}{" "}
         Runtime tokens live 2h; refreshed hourly by the{" "}
         <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
