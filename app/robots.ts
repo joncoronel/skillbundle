@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { SITE_URL } from "@/lib/site-url";
 
 /**
  * Crawler guidance. The site had none before this, which matters more here than
@@ -61,9 +62,16 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           // The two route handlers under /api/: `revalidate` (secret-gated, see
           // app/api/revalidate/route.ts) and `skills-token` (mints a skills.sh
-          // token). Neither is a crawl target. This prefix is genuinely a prefix
-          // — /api/ is not shadowed by the `/[org]` catch-all, since no org page
-          // lives under it.
+          // token). Neither is a crawl target.
+          //
+          // This rule is NOT purely a prefix, contrary to what this comment
+          // used to claim. `/[org]` is a root-level catch-all and the catalog
+          // contains a GitHub org literally named `api` — `api/git`, 8 skills —
+          // so this also blocks 9 real catalog pages. They stay blocked for
+          // now, and `lib/sitemap-entries.ts` drops them from the sitemap so we
+          // are at least not submitting URLs we forbid. If those pages ever
+          // matter, the fix is to name the two handlers here rather than to
+          // weaken the sitemap filter.
           "/api/",
           // Private routes — the inverted private-route list in proxy.ts. A
           // crawler hitting them just eats a Clerk redirect. Anchored per the
@@ -92,8 +100,13 @@ export default function robots(): MetadataRoute.Robots {
         crawlDelay: 10,
       },
     ],
-    // No `sitemap:` line yet — see the sitemap entry in TODO.md. Note that the
-    // OG image routes (app/**/opengraph-image.tsx, ~9.5k of them, one per
+    // Absolute by requirement, not by preference: a `Sitemap:` line is the one
+    // part of robots.txt that is not resolved against the host it was served
+    // from, so a relative path here is simply ignored. The point of advertising
+    // it is the one measured in the block rule above: Googlebot made ONE
+    // request to this site in 24h. app/sitemap.ts carries the full argument.
+    sitemap: `${SITE_URL}/sitemap.xml`,
+    // Note that the OG image routes (app/**/opengraph-image.tsx, ~9.5k of them, one per
     // skill) are deliberately NOT blocked: social preview fetchers need them,
     // and they are advertised in every page's `og:image`. They are the most
     // expensive per-request surface in the catalog, so if crawler load on them

@@ -3444,6 +3444,88 @@ export const listPopularSkills = query({
 });
 
 /**
+ * The catalog reduced to what a sitemap needs: one row per indexable skill,
+ * carrying only its URL parts and the timestamp that answers "did this page's
+ * content change?".
+ *
+ * A purpose-built query rather than a reuse of `listPopularSkills` because the
+ * caller walks the WHOLE catalog (~9.5k rows) in one pass. Shipping the full
+ * ~200 B summary for every row would put ~2 MB on the wire to use three fields
+ * of it; this projection is ~60 B/row. The document reads are the same either
+ * way — the saving is bandwidth, not Convex read units.
+ *
+ * Four fields ship because `lastmod` needs both timestamps AND the two flags
+ * that say whether the second one can be trusted. `lib/sitemap-entries.ts`
+ * (`lastChangedAt`) owns that decision and documents each case; in summary:
+ *
+ *   `contentUpdatedAt` — the last time the SKILL.md actually MOVED, and NOT the
+ *     daily install-count refresh: a `lastmod` that ticked every morning
+ *     because a number changed would tell crawlers to re-fetch ~9.5k unchanged
+ *     pages daily, worse than sending none at all. Only written when a fetch
+ *     finds the hash moved, so a skill whose file has sat still since ingest
+ *     has none — most of the catalog today.
+ *   `contentFetchedAt` — the last time we PULLED the file. Present on
+ *     effectively every row, and a sound stand-in for the above **on GitHub
+ *     sources that fetched successfully**: the freshness sweep re-fetches when
+ *     a blob SHA moves, and the only other trigger is the 30-day
+ *     `markStaleContent` backstop, so it does not reintroduce daily churn.
+ *   `hasContentFetchError` / `hasSkillMdUrl` — `markContentFetchFailed` stamps
+ *     `contentFetchedAt` on its failure branches too, so without these a file
+ *     we never managed to read looks freshly verified.
+ *
+ * Note what that 30-day bound does NOT cover: well-known sources are on
+ * `WELL_KNOWN_CONTENT_REFRESH_MS` (daily) and the unchanged-hash path still
+ * stamps `contentFetchedAt`, so their fallback would tick every day. The
+ * caller drops it for them; the source string is enough to tell.
+ *
+ * Every field stays optional: a row that has never been content-fetched has no
+ * timestamp at all, and the caller omits `lastmod` rather than invent one.
+ *
+ * Same two exclusions as every browse surface, so the sitemap advertises only
+ * pages the site itself links to: `isDelisted` (the index range) and
+ * `isDuplicate` (filtered post-page, as in `listPopularSkills` — pages may come
+ * back short). Both still RENDER if visited directly; they just aren't
+ * submitted.
+ *
+ * **`by_isDelisted`, not `by_isDelisted_installs`, and that is load-bearing.**
+ * The caller drains this across up to 60 SEPARATE `fetchQuery` calls, so every
+ * page is its own transaction at its own snapshot, and a Convex cursor is a
+ * position in the index key. Paging on a mutable sort key means a row whose
+ * `installs` changes mid-drain moves relative to the cursor: bumped rows fall
+ * behind it and are never returned (that skill's URL silently vanishes, and its
+ * repo/org entries with it if it was the last live skill there), while rows
+ * that fall are returned twice. `installs` is rewritten catalog-wide every
+ * morning and by the reconcile/curated drains, so this is a live hazard, not a
+ * theoretical one — docs/skill-lifecycle.md records the same rule for the
+ * Typesense mirror walk, which is where the mistake was made once already.
+ * `by_isDelisted`'s remaining key components (`_creationTime`, `_id`) are
+ * immutable. Cost is losing install-descending order, which the sitemap never
+ * promised anyone.
+ */
+export const listSitemapEntries = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const result = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_isDelisted", (q) => q.eq("isDelisted", false))
+      .paginate(paginationOpts);
+    return {
+      ...result,
+      page: result.page
+        .filter((s) => !s.isDuplicate)
+        .map((s) => ({
+          source: s.source,
+          skillId: s.skillId,
+          contentUpdatedAt: s.contentUpdatedAt,
+          contentFetchedAt: s.contentFetchedAt,
+          hasContentFetchError: s.hasContentFetchError,
+          hasSkillMdUrl: s.hasSkillMdUrl,
+        })),
+    };
+  },
+});
+
+/**
  * Every skill summary belonging to a given source ("org/repo"). Powers the
  * repo directory page. Returns delisted rows too — the page filters them at
  * render time so a future "show delisted" toggle is a UI-only change.

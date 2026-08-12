@@ -6,64 +6,25 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
-### Sitemap — the discovery fix, not a cost fix (Aug 2026)
+### Public bundle pages in the sitemap — Aug 2026
 
-`app/robots.ts` shipped in PR #65; `app/sitemap.ts` did not, and robots
-deliberately emits **no `Sitemap:` line** — add one when this lands.
+Parked while shipping `app/sitemap.ts` (PR #68), which covers the catalog
+(skills, orgs, repos, well-known sources) but lists no `/bundle/[id]`. Public
+bundles are real indexable pages with real titles, so this is a genuine gap
+rather than a decision — it just wants its own thinking:
 
-**Do this for traffic, not for the bill.** Measured in Vercel Observability on
-2026-08-12, over 24h: **googlebot made ONE request** to the whole site. bingbot
-17, applebot 20. Meanwhile amazonbot alone made 755 (now blocked, PR #67). A
-~9.5k-page catalog that Google is not crawling gets no organic search traffic,
-and organic search is the discovery path this product depends on. That is the
-reason to build this. It is a growth problem, not an infrastructure one.
-
-**Do NOT sell this as a caching win.** An earlier version of this entry claimed
-`lastModified` would cut cold renders by letting crawlers skip unchanged pages.
-That effect is real but much weaker than it sounded, because crawling is a sweep
-over DISTINCT URLs — a crawler has no reason to fetch the same skill page twice,
-so its requests are uncacheable by construction regardless of what the sitemap
-says. (Measured the same day: skill detail pages cache at **5.3%**, against 97%
-for `/compare`, which is one URL absorbing all its traffic. Same code, same
-settings; the only variable is how many URLs the traffic is split across.) If
-this lands and the bill does not move, that is expected.
-
-**Why it was held back.** Done carelessly a sitemap adds cost: the route has to
-enumerate ~9.5k skills, and an uncached sitemap re-queries the whole catalog on
-every crawler hit. It needs `'use cache'` + a `cacheLife` before it is safe to
-expose at all.
-
-Design questions — two of the four are now answered:
-
-1. **Where does the data come from? ANSWERED.** `skillSummaries` DOES carry
-   `contentUpdatedAt` (schema.ts:217, mirrored from the skills row for exactly
-   this kind of use — see the field's own note). So a purpose-built query can
-   return `(source, skillId, contentUpdatedAt)` off the ~200 B summary rows and
-   never touch the heavy `skills` documents. Do not walk `listPopularSkills` at
-   100/page (~95 round trips).
-2. **How to page it? ANSWERED.** `by_isDelisted_lastSeenInApi` gives an
-   exhaustive, indexed range over live rows via `q.eq("isDelisted", false)`, and
-   `isDelisted` is non-optional precisely so that range is complete. That also
-   settles question 4 below for free.
-3. **One file or `generateSitemaps`?** 9.5k URLs fits inside the 50k/50 MB limit,
-   so chunking is optional. It mainly helps if per-request generation cost
-   becomes the problem.
-4. **What gets included?** Skill pages, `/[org]`, `/[org]/[repo]`,
-   `/site/[source]`, `/official`. Exclude delisted skills (see 2 — the index
-   filters them for you). Exclude anything `robots.ts` disallows, especially
-   `/compare?`: a sitemap entry contradicting robots.txt is worse than no entry.
-
-Two things about `app/robots.ts` that changed after this entry was first written:
-
-- It now returns an **array** of rule objects, not a single object (PR #67 added
-  a block for `Amazonbot` / `SemrushBot`). The `sitemap:` line is a **top-level
-  field on the returned object**, a sibling of `rules` — not something you add
-  inside a rule.
-- The wildcard rule carries `crawlDelay: 10`. Googlebot ignores it, so it does
-  not affect the target here, but Bing honours it — advertising 9.5k URLs at
-  10s/request means a compliant crawler needs >26h for one full pass. Fine for a
-  continuous process; worth knowing before anyone reads the Bing crawl rate as a
-  problem.
+- The set is user-generated and grows without bound, unlike the catalog, so it
+  needs a size story before it needs code. `generateSitemaps` chunking (see the
+  note in `app/sitemap.ts`) is the escape hatch if the two together approach
+  50k URLs.
+- `bundles.isPublic` can flip, and `app/(main)/bundle/[id]/page.tsx` already
+  emits `robots: { index: false }` when it is false. A sitemap that lags that
+  flip advertises a noindex page — decide whether the entry's cache tag can
+  track bundle writes closely enough, or whether the churn makes it not worth
+  listing them at all.
+- `lastmod` is easy here in a way it isn't for skills: `bundles.updatedAt`
+  (optional, falling back to the required `createdAt`) is exactly the timestamp
+  the field means, with no coalescing argument to make.
 
 ### Server-render the version diffs (`@pierre/diffs/ssr`) — Aug 2026
 
