@@ -19,9 +19,14 @@ import { api } from "@/convex/_generated/api";
  *   "skill-content" — the skill row itself: SKILL.md content, description,
  *                     name, isDelisted, curatedOwner, isGitHubOnly, and the
  *                     denormalized audit verdict (worstAuditStatus /
- *                     worstAuditRiskLevel). Changes per-skill every few WEEKS
- *                     (markStaleContent only re-flags rows past the 7-day
- *                     backstop). Every writer of one of those fields pings this
+ *                     worstAuditRiskLevel). Changes per-skill rarely — most
+ *                     SKILL.md files sit still for weeks. Note that DETECTION
+ *                     is daily, not weekly: freshness.sweepRepoFreshness asks
+ *                     GitHub's Tree API at 04:00 UTC which blob SHAs moved and
+ *                     flags only those, and well-known sources are on a 24h
+ *                     timer. markStaleContent's 30-day window is a backstop for
+ *                     repos the sweep can't read, not the mechanism.
+ *                     Every writer of one of those fields pings this
  *                     tag: the content chain's publishSkillUpdate, syncSkills
  *                     (gated on a changed-field count), markDelistedSkills,
  *                     syncCurated, the audit chain terminal, kickPostAddChain.
@@ -92,10 +97,14 @@ export { SKILL_SYNC_TAG, SKILL_CONTENT_TAG } from "./cache-tags";
  * "weeks" (revalidate 7d / expire 30d), not "days" (revalidate 24h): the whole
  * point of putting this entry on its own tag is that on-demand pings keep it
  * fresh, so it does not need a 24h timer as well. The full publisher list is
- * with the tag definition above; do not maintain a second copy here. 7d matches the
- * content re-fetch backstop in `markStaleContent`. Leaving it on "days" would
- * have made the tag work pointless: the entry would rewrite itself daily
- * anyway.
+ * with the tag definition above; do not maintain a second copy here.
+ *
+ * The 7d is a FALLBACK, not a match to anything upstream. Real freshness comes
+ * from the daily sweep publishing when a file actually moves; this timer only
+ * matters if every publisher for a row failed. It is deliberately tighter than
+ * markStaleContent's 30-day content backstop, so it is not the weakest link in
+ * that chain. Leaving it on "days" would have made the tag work pointless: the
+ * entry would rewrite itself every 24h regardless of how clean the tags got.
  */
 export async function loadSkill(source: string, skillId: string) {
   "use cache";
