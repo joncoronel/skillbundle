@@ -1,8 +1,9 @@
 /**
  * Ping the Next.js site to invalidate one of its `'use cache'` tags, so the
  * next request rebuilds from fresh Convex data instead of serving the cached
- * snapshot. Drives every allowlisted tag, not just the home rails — the
- * allowlist itself lives in app/api/revalidate/route.ts.
+ * snapshot. Drives every allowlisted tag, not just the home rails — the tag
+ * vocabulary lives in lib/cache-tags.ts, which both this file and the route
+ * derive from.
  *
  * Which tag to ping is decided by WHICH FIELDS MOVED, not by which job you are.
  * A job that moves both kinds of data pings both (markDelistedSkills and
@@ -18,8 +19,11 @@
  *       churns the whole catalog every morning by design.
  *   "skill-content"
  *       The skill row read by `loadSkill`: SKILL.md content, description, name,
- *       isDelisted, curatedOwner. Long-lived (`cacheLife("weeks")`), so it
- *       depends on these pings for freshness rather than on a timer.
+ *       isDelisted, curatedOwner, isGitHubOnly, and the denormalized audit
+ *       verdict (worstAuditStatus / worstAuditRiskLevel). Long-lived
+ *       (`cacheLife("weeks")`), so it depends on these pings for freshness
+ *       rather than on a timer — if you add a field to this list, find its
+ *       writer and give it a ping.
  *
  * Do NOT add "skill-content" to a job that moved only install numbers
  * (reconcile, curatedRefresh, and the unconditional part of the syncSkills
@@ -35,7 +39,9 @@
  * (REVALIDATE_SECRET must match the value set on Vercel.)
  *
  * Best-effort: a failed ping is logged, not thrown — the sync already
- * succeeded, and the cache's time-based `revalidate` is the safety net.
+ * succeeded. Note the time-based safety net is a weak one for "skill-content":
+ * `cacheLife("weeks")` means a dropped ping is up to 7 days of staleness, not
+ * the 24h it used to be.
  */
 // The tag vocabulary is IMPORTED from the Next.js side, not mirrored by hand.
 // lib/cache-tags.ts is dependency-free precisely so this works: /api/revalidate

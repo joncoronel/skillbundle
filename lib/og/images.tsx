@@ -55,11 +55,9 @@ async function loadSkillInstalls(source: string, skillId: string) {
   "use cache";
   cacheLife("days");
   cacheTag(SKILL_SYNC_TAG);
-  const insights = await fetchQuery(api.skills.getInsights, {
-    source,
-    skillId,
-  });
-  return insights.installs;
+  // `getInstallCount`, not `getInsights` — the card shows one integer, and
+  // getInsights would collect 90 days of snapshot rows to produce it.
+  return fetchQuery(api.skills.getInstallCount, { source, skillId });
 }
 
 // Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only

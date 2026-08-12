@@ -6,10 +6,11 @@
  * import it without dragging a module graph along. `lib/skill-cache.ts` has the
  * reasoning behind the skill-tag split; this module is just the vocabulary.
  *
- * `convex/lib/revalidate.ts` mirrors this list as its own `SiteTag` union — the
- * two deployments can't share a module. `tests/revalidate-route.test.ts` asserts
- * the route accepts exactly `SITE_TAGS`, so a tag added on one side without the
- * other fails the suite rather than silently 400-ing in production.
+ * `convex/lib/revalidate.ts` imports `SiteTag` from here directly — `import
+ * type`, so it is erased before esbuild bundles the Convex functions and costs
+ * the deployment nothing. That makes the two sides one source of truth rather
+ * than a mirror. `tests/revalidate-route.test.ts` covers the runtime half by
+ * asserting the route accepts exactly `SITE_TAGS`.
  */
 
 /** Home rails, each pinged by its own leaderboard cron. */
@@ -27,8 +28,10 @@ export const SKILL_SYNC_TAG = "skill-sync";
 
 /**
  * The skill row read by `loadSkill`: SKILL.md content, description, name,
- * isDelisted, curatedOwner. Long-lived, so it depends on on-demand pings rather
- * than a timer for freshness.
+ * isDelisted, curatedOwner, isGitHubOnly, and the denormalized audit verdict
+ * (worstAuditStatus / worstAuditRiskLevel). Long-lived, so it depends on
+ * on-demand pings rather than a timer for freshness — every writer of those
+ * fields must ping this tag.
  */
 export const SKILL_CONTENT_TAG = "skill-content";
 

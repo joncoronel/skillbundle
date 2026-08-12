@@ -17,9 +17,15 @@ import { api } from "@/convex/_generated/api";
  *                     syncSkills rewrites the ENTIRE leaderboard (~9.5k rows)
  *                     every morning, so this tag genuinely churns daily.
  *   "skill-content" — the skill row itself: SKILL.md content, description,
- *                     name, isDelisted, curatedOwner. Changes per-skill every
- *                     few WEEKS (markStaleContent only re-flags rows past the
- *                     7-day backstop).
+ *                     name, isDelisted, curatedOwner, isGitHubOnly, and the
+ *                     denormalized audit verdict (worstAuditStatus /
+ *                     worstAuditRiskLevel). Changes per-skill every few WEEKS
+ *                     (markStaleContent only re-flags rows past the 7-day
+ *                     backstop). Every writer of one of those fields pings this
+ *                     tag: the content chain's publishSkillUpdate, syncSkills
+ *                     (gated on a changed-field count), markDelistedSkills,
+ *                     syncCurated, the audit chain terminal, kickPostAddChain.
+ *                     Add a field to this list and you owe it a publisher.
  *
  * Both used to be one tag, which meant the daily install-count refresh
  * invalidated every skill's ~25 KB content entry too. Since ISR writes are
@@ -47,8 +53,16 @@ import { api } from "@/convex/_generated/api";
  *      below rather than "days" — on "days" it would rewrite itself every 24h
  *      no matter how clean the tag routing got.
  *
- * So today the reliable per-visit saving comes from the loader consolidation in
- * components/skill-detail-page.tsx and from (2), not from the tag split alone.
+ * Be precise about what that means for (2): because (1) expires this entry
+ * catalog-wide ~4x every morning, and `/api/revalidate` uses `{ expire: 0 }`,
+ * the "weeks" profile below contributes nothing TODAY. It is not dead weight —
+ * it is what makes the saving land the moment (1) is gated, and without it that
+ * gate would buy nothing either (the 24h timer would just re-expire everything).
+ * The two only pay together.
+ *
+ * So the saving actually banked by this branch is the loader consolidation in
+ * components/skill-detail-page.tsx (3 entries -> 1) and the OG de-duplication,
+ * not the tag split.
  */
 // Re-exported so the loaders below and their callers have one import site;
 // the literals themselves live in lib/cache-tags.ts, which /api/revalidate
