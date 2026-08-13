@@ -561,10 +561,10 @@ export function SkillDetailPageSkeleton({
       <div className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0">
         <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
 
-        {/* The record panel's own frame, with only its values pending. Drawing
-            the container rather than a plain block keeps the sidebar the same
-            shape before and after. */}
-        <div className="mt-4 divide-y divide-border rounded-2xl border border-border">
+        {/* The record card itself, with only its values pending. Drawing the
+            container rather than a plain block keeps the sidebar the same shape
+            and the same material before and after. */}
+        <div className="mt-4 divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
           <div className="px-4 py-4">
             <Skeleton className="h-3 w-14" />
             <div className="mt-1.5 flex min-h-9 items-center">

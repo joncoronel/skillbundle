@@ -54,11 +54,18 @@ import { cn, formatInstalls } from "@/lib/utils";
  * value is a short phrase ("Not ranked") instead of a dash marooned in a wide
  * cell, and the panel occupies the space the lead was never going to use.
  *
- * Its material is deliberately not the Documentation sheet's. This panel is a
- * hairline frame with no shadow; the sheet is a shadow with no border. One page,
- * two containers, and they must not read as the same kind of object — the whole
- * point of the layout is that the reader can tell our record from their file
- * without being told.
+ * It is the ONE card on the page, and that is the rule rather than a
+ * coincidence: this panel is the only genuinely object-like thing here — a
+ * fixed instrument readout — while everything else, including the SKILL.md, is
+ * text flowing down a column. A card was tried on the document and abandoned
+ * for a reason that does not apply here: a card announces its edges, and a
+ * 20,000px document has no edge on screen for almost the whole time you are
+ * inside it. A ~400px sidebar panel is exactly the size where the device works,
+ * because all four edges are visible at once.
+ *
+ * `surface-3` at `shadowLevel` 1, matching the Card default — a tonal lift and
+ * a hairline ring, no drop shadow. Depth declared once (DESIGN.md §6), so do
+ * not add a border back on top of it.
  */
 export function SkillRecord({
   source,
@@ -102,7 +109,7 @@ export function SkillRecord({
   return (
     <div
       className={cn(
-        "divide-y divide-border rounded-2xl border border-border",
+        "divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]",
         className,
       )}
     >
