@@ -4,6 +4,8 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
 
+import { SN_Pro } from "next/font/google";
+
 import { OpenPanelComponent } from "@openpanel/nextjs";
 
 import { Providers } from "./providers";
@@ -14,6 +16,11 @@ import "./globals.css";
 // crawlers). The origin itself lives in lib/site-url.ts, shared with the
 // robots and sitemap routes — those emit text and XML, so nothing resolves
 // relative URLs for them and they need the same value spelled out.
+
+const snPro = SN_Pro({
+  subsets: ["latin"],
+  variable: "--font-sn-pro",
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -35,7 +42,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} font-sans antialiased`}
+        className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
       >
         <div className="root">
           <Providers>{children}</Providers>
