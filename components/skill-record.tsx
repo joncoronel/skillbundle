@@ -6,6 +6,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   ArrowUpRight01Icon,
+  StarIcon,
 } from "@hugeicons/core-free-icons";
 import {
   Dialog,
@@ -244,18 +245,25 @@ export function SkillRecord({
           />
         </a>
 
-        {/* Stars are a fact about the repo, not about the skill, so they live
-            under the repo that has them. In a list of their own they needed a
-            caption ("on the source repo") to explain what they were counting —
-            a caption that was only ever compensating for the wrong grouping.
-            A well-known source has no GitHub repo at all, and now simply has
-            no star row rather than a gap in an anonymous list. */}
+        {/* Stars as a meta line under the repo, the way a repo is captioned
+            everywhere a developer already reads one — glyph, then count, no
+            label. A labelled `GitHub stars … 40.5k` row said "GitHub" twice
+            (the repo link above it carries the mark) and set a secondary fact
+            in the same weight as the primary ones. The star does the naming,
+            which is what an icon this well known is for; the accessible name
+            still spells it out, because a glyph is not a word. */}
         {stars != null && (
-          <dl className="mt-2.5">
-            <FactRow label="GitHub stars">
-              <Value>{formatInstalls(stars)}</Value>
-            </FactRow>
-          </dl>
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <HugeiconsIcon
+              icon={StarIcon}
+              strokeWidth={2}
+              className="size-3.5 shrink-0"
+            />
+            <span className="font-medium tabular-nums text-foreground">
+              {formatInstalls(stars)}
+            </span>
+            <span className="sr-only">GitHub stars</span>
+          </p>
         )}
       </div>
 

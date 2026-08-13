@@ -2,16 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHandle,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerBody,
-} from "@/components/ui/cubby-ui/drawer/drawer";
 import { cn } from "@/lib/utils";
 
 export type SectionNavItem = {
@@ -32,11 +22,19 @@ export type SectionNavItem = {
 const ACTIVE_OFFSET = 96;
 
 /**
- * Marker geometry. Every marker is right-aligned inside a fixed 28px track, so
- * the label column starts at the same x for every level and nothing shifts when
- * a marker grows. Depth reads from the marker's LENGTH — the shorter the tick,
- * the deeper the heading — and the label picks up a matching indent so the
- * nesting survives for anyone who isn't reading 2px differences in a hairline.
+ * Marker geometry. Every marker starts at the same x inside a fixed 28px track
+ * and grows rightward; the label column also starts at the same x for every
+ * level, so nothing shifts when a marker animates. Depth reads from the
+ * marker's LENGTH — the shorter the mark, the deeper the heading — and the
+ * label picks up a matching indent so the nesting survives for anyone not
+ * measuring 18px differences in a 2px bar.
+ *
+ * Flush LEFT, not right, and that is the whole reason this rail sits on the
+ * trailing side of the page. The flush edge is the one that faces the document;
+ * everything that varies — mark length, label indent, line endings — runs away
+ * from the text into the outer margin. Mirror this (right-align the marks) only
+ * if the rail ever moves back to the leading side, and move it back only if
+ * you want a ragged edge against the content again.
  */
 const TRACK = 28;
 const REST_WIDTH = [28, 16, 10] as const;
@@ -108,17 +106,24 @@ function useActiveSection(ids: string[]) {
 }
 
 /**
- * The skill page's wayfinding, in two forms driven by one item list.
+ * The skill page's wayfinding: a sticky line rail in the left margin, from
+ * `xl` up and nowhere else.
  *
- * Desktop gets a sticky line rail in the left column. Its real job is not
- * shortcuts — it's evidence: seeing "Overview / History / Documentation" with
- * the file's own headings visibly nested one level under Documentation is what
- * tells a first-time reader that the page has parts and that only the last one
- * is the file. The scroll spy then keeps answering "where am I" as they read.
+ * Its real job is not shortcuts — it's evidence. Seeing "Overview / History /
+ * Documentation" with the file's own headings visibly nested one level under
+ * Documentation is what tells a first-time reader that the page has parts and
+ * that only the last one is the file. The scroll spy then keeps answering
+ * "where am I" as they read.
  *
- * Below `lg` the rail becomes a sticky bar naming the current section, which
- * opens the same list in a drawer. A 20,000px document needs that affordance
- * more on a phone, not less.
+ * It renders on wide screens only, and that is deliberate rather than a
+ * shortfall. This rail is pure navigation: every destination in it is still
+ * reachable by scrolling, and every fact it points at is still on the page, so
+ * dropping it costs the reader nothing but convenience. Below `xl` that
+ * convenience is worth less than the width it would take from the document,
+ * which is a code-bearing file that would rather have the pixels. There used to
+ * be a phone version — a sticky bar plus a drawer — and it was a second
+ * navigation system, with its own scroll-spy readout and its own list, built to
+ * serve the surface with the least room to spare.
  */
 export function SkillSectionNav({
   items,
@@ -130,7 +135,6 @@ export function SkillSectionNav({
   const ids = useMemo(() => items.map((item) => item.id), [items]);
   const activeId = useActiveSection(ids);
   const reduceMotion = useReducedMotion();
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const railRef = useRef<HTMLDivElement | null>(null);
   const activeItemRef = useRef<HTMLAnchorElement | null>(null);
@@ -166,7 +170,6 @@ export function SkillSectionNav({
       const el = document.getElementById(id);
       if (!el) return;
       event.preventDefault();
-      setDrawerOpen(false);
       history.pushState(null, "", `#${id}`);
 
       // Smooth only for a short hop. A SKILL.md runs to 20,000px, and animating
@@ -190,20 +193,15 @@ export function SkillSectionNav({
 
   if (items.length === 0) return null;
 
-  const activeTitle =
-    items.find((item) => item.id === activeId)?.title ?? items[0].title;
-
+  // Two nested elements, and which one is sticky is not interchangeable. The
+  // outer div is the GRID ITEM: it spans both content rows and stretches to the
+  // row height, so it is the travel space. The inner div is the sticky one,
+  // because a sticky box only pins its own border box — put `sticky` on the
+  // stretched outer element and its box already covers the whole page, so
+  // nothing ever appears to pin and the rail scrolls away like static content.
   return (
-    <>
-      {/* Desktop rail.
-          `sticky` goes on THIS element, not on an inner wrapper. A sticky box
-          travels inside its containing block, and an inner wrapper's containing
-          block would be this div — whose height is exactly the nav's, leaving
-          zero distance to travel and a rail that scrolls away like static
-          content. Sticking the outer element instead makes the containing block
-          the sidebar column, which spans the whole page. */}
-      <div className={cn("hidden lg:sticky lg:top-20 lg:block", className)}>
-        <div>
+    <div className={cn("hidden xl:block", className)}>
+      <div className="xl:sticky xl:top-20">
           <p className="mb-4 text-xs font-medium text-muted-foreground">
             On this page
           </p>
@@ -230,7 +228,7 @@ export function SkillSectionNav({
                             leaving the tick floating between them. */}
                         <span
                           aria-hidden="true"
-                          className="mt-[0.5625rem] flex shrink-0 justify-end"
+                          className="mt-[0.5625rem] flex shrink-0 justify-start"
                           style={{ width: TRACK }}
                         >
                           {/* 2px and pill-capped rather than a hairline. At
@@ -290,94 +288,6 @@ export function SkillSectionNav({
             </nav>
           </div>
         </div>
-      </div>
-
-      {/* Mobile: a sticky bar naming where you are, opening the same list. The
-          top margin only shows at rest, directly under the record panel; once
-          the bar pins at the header's lower edge it has no effect. */}
-      <div className="sticky top-14 z-30 -mx-4 mt-6 border-b border-border bg-background/85 backdrop-blur-sm lg:hidden">
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
-        >
-          <span className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 text-xs text-muted-foreground">
-              On this page
-            </span>
-            <span className="truncate text-sm font-medium text-foreground">
-              {activeTitle}
-            </span>
-          </span>
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            strokeWidth={2}
-            className="size-4 shrink-0 text-muted-foreground"
-          />
-        </button>
-      </div>
-
-      <Drawer direction="bottom" open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DrawerContent>
-          <DrawerHandle />
-          <DrawerHeader>
-            <DrawerTitle className="text-base">On this page</DrawerTitle>
-          </DrawerHeader>
-          <DrawerBody className="px-2 pb-4">
-            <nav aria-label="Sections of this page">
-              <ul>
-                {items.map((item) => {
-                  const active = item.id === activeId;
-                  return (
-                    <li key={item.id}>
-                      <a
-                        href={`#${item.id}`}
-                        aria-current={active ? "true" : undefined}
-                        onClick={(event) => goTo(event, item.id)}
-                        className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                          active
-                            ? "bg-surface-2 font-medium text-foreground"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="flex shrink-0 justify-end"
-                          style={{ width: TRACK }}
-                        >
-                          <span
-                            className={cn(
-                              "block h-0.5 rounded-full",
-                              active ? "bg-foreground" : "bg-foreground/25",
-                            )}
-                            style={{
-                              width: active ? TRACK : restWidth(item.level),
-                            }}
-                          />
-                        </span>
-                        {/* Indent on the label, not the row: the active row
-                            carries a fill, and shifting that fill by depth
-                            would read as the highlight being misplaced. */}
-                        <span
-                          className={cn(
-                            "line-clamp-2",
-                            LABEL_INDENT[
-                              Math.min(item.level, LABEL_INDENT.length - 1)
-                            ],
-                          )}
-                        >
-                          {item.title}
-                        </span>
-                      </a>
-                    </li>
-                  );
-                })}
-              </ul>
-            </nav>
-          </DrawerBody>
-        </DrawerContent>
-      </Drawer>
-    </>
+    </div>
   );
 }

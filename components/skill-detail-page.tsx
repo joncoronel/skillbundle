@@ -1,7 +1,7 @@
 import "server-only";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense, type ReactNode } from "react";
+import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -220,11 +220,37 @@ export function SkillDetailPage({
   breadcrumb,
 }: SkillDetailPageProps) {
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
-      {breadcrumb}
+    // `max-w-7xl` from `xl`, where the section rail appears. The app's default
+    // page width is `max-w-6xl` (DESIGN.md §4) and this is the one page that
+    // departs from it, deliberately: three columns inside 1152px would have
+    // taken 208px off the document to pay for a rail that is pure navigation.
+    // Widening the page instead means the rail costs the document ~80px rather
+    // than a quarter of its width. Below `xl` the page is exactly the app's
+    // default, so a reader moving between org, repo and skill pages sees no
+    // jump at the widths where those pages are actually compared.
+    <div
+      className="mx-auto max-w-6xl px-4 pt-12 pb-24 xl:max-w-[92rem]"
+      style={
+        {
+          "--skill-card": "17rem",
+          "--skill-rail": "12rem",
+          "--skill-gap": "2.5rem",
+        } as CSSProperties
+      }
+    >
+      {/* The masthead pads itself by exactly the two side columns, so from `xl`
+          the h1 sits on the content column's left edge and its Compare action
+          on that column's right edge. Without this the title would hang above
+          the record card, 312px away from the description it introduces — and
+          the description is the h1's subtitle, so that gap reads as a mistake.
+          Padding rather than a grid cell because the h1 lives OUTSIDE the
+          Suspense boundary (it is URL data, available on first paint) while
+          every grid child lives inside it. */}
+      <div className="xl:pl-[calc(var(--skill-card)_+_var(--skill-gap))] xl:pr-[calc(var(--skill-rail)_+_var(--skill-gap))]">
+        {breadcrumb}
 
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        {/* Geist Sans, not the Geist Pixel display face. Skill ids are long,
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          {/* Geist Sans, not the Geist Pixel display face. Skill ids are long,
             lowercase, hyphenated machine identifiers, and the pixel face
             collapses into broken mono under ~40px (DESIGN.md §3, the Pixel
             Floor Rule) — which is exactly what it was doing here at 30px.
@@ -235,29 +261,30 @@ export function SkillDetailPage({
             `id`/`tabIndex` make the masthead the section nav's first target;
             it lives in the static shell so the anchor resolves on first paint,
             before the body streams in. */}
-        <h1
-          id="overview"
-          tabIndex={-1}
-          className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
-        >
-          {skillId}
-        </h1>
-        <Button
-          nativeButton={false}
-          variant="outline"
-          size="sm"
-          className="mt-1 shrink-0"
-          render={<Link href={compareHref([{ source, skillId }])} />}
-          leadingIcon={
-            <HugeiconsIcon
-              icon={GitCompareIcon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-          }
-        >
-          Compare
-        </Button>
+          <h1
+            id="overview"
+            tabIndex={-1}
+            className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
+          >
+            {skillId}
+          </h1>
+          <Button
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+            className="mt-1 shrink-0"
+            render={<Link href={compareHref([{ source, skillId }])} />}
+            leadingIcon={
+              <HugeiconsIcon
+                icon={GitCompareIcon}
+                strokeWidth={2}
+                className="size-3.5"
+              />
+            }
+          >
+            Compare
+          </Button>
+        </div>
       </div>
 
       {/* Boundary sits around the Suspense, not inside it, so it covers the
@@ -354,10 +381,19 @@ async function SkillDetailBody({
     // capped at a readable measure leaves roughly 45% of a 1152px page empty,
     // and the facts had been laid across the full width underneath it instead
     // of into the hole beside it.
-    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-10 xl:grid-cols-[minmax(0,1fr)_18rem] xl:gap-x-12">
-      {/* Column 1, row 1: the lead, the warnings that qualify it, and the
-          command. */}
-      <div className="lg:col-start-1 lg:row-start-1">
+    // Two columns from `lg`, three from `xl`, and the sides SWAP at `xl`: the
+    // record card moves left and the section rail takes the right.
+    //
+    // The rail belongs on the trailing side because of which of its edges faces
+    // the document. Its entries indent rightward with heading depth, so on the
+    // left it turned a ragged column of line-ends toward the content and the
+    // gutter between them never resolved into a straight line. On the right the
+    // flush edge — every marker starting at the same x — is the one the reader
+    // sees against the text, and the depth indent runs away into the margin
+    // where raggedness costs nothing.
+    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-10 xl:grid-cols-[var(--skill-card)_minmax(0,1fr)_var(--skill-rail)] xl:gap-x-[var(--skill-gap)]">
+      {/* The lead, the warnings that qualify it, and the command. */}
+      <div className="lg:col-start-1 lg:row-start-1 xl:col-start-2">
         {skill.description && (
           // The lead, at full contrast. PRODUCT.md is explicit that a skill's
           // description is what decides when an agent invokes it, which makes
@@ -435,44 +471,51 @@ async function SkillDetailBody({
         </div>
       </div>
 
-      {/* The sidebar, spanning both content rows so its sticky child has the
-          whole page to travel through. It sits BETWEEN the two column-1 blocks
-          in DOM order, which is the only thing deciding where it lands once the
-          grid is off: below `lg` the action and the record follow the install
-          command and precede the document, instead of being stranded past
-          20,000px of someone else's markdown. */}
-      <aside className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0">
-        <BundleToggleButton
-          source={source}
-          skillId={skillId}
-          name={skill.name}
-        />
+      {/* The section rail, in its own column from `xl`. It spans both content
+          rows so its sticky child has the whole page to travel through, and it
+          renders nothing below `xl` — see SkillSectionNav for why that costs
+          the reader nothing. */}
+      <SkillSectionNav
+        items={navItems}
+        className="xl:col-start-3 xl:row-start-1 xl:row-span-2"
+      />
 
-        <SkillRecord
-          source={source}
-          skillId={skillId}
-          externalUrl={externalUrl}
-          externalIcon={externalIcon}
-          externalLabel={externalLabel}
-          curatedOwner={skill.curatedOwner}
-          insights={insights}
-          updatedKind={updatedKind}
-          updatedDate={updatedDate}
-          audits={audits}
-          stars={stars}
-          className="mt-4"
-        />
+      {/* The record sidebar, also spanning both rows. It sits BETWEEN the two
+          content blocks in DOM order, which is the only thing deciding where it
+          lands once the grid is off: below `lg` the action and the record
+          follow the install command and precede the document, instead of being
+          stranded past 20,000px of someone else's markdown. */}
+      <aside className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 xl:col-start-1">
+        {/* Pinned now that the rail no longer sits beneath it. Before, sticking
+            the record would have pushed the nav off-screen; with the column
+            holding one thing, the facts can stay in view for the whole read —
+            which is the point of a record you consult rather than one you scroll
+            past. */}
+        <div className="lg:sticky lg:top-20">
+          <BundleToggleButton
+            source={source}
+            skillId={skillId}
+            name={skill.name}
+          />
 
-        {/* Sticky starts here, not at the top of the column. The action and the
-            record are arrival reading — taken in once, then done — so pinning
-            them would spend the viewport on facts already read. The nav is the
-            opposite: it earns its keep during the scroll, and being last means
-            it pins with the whole column height available once the record has
-            gone past. */}
-        <SkillSectionNav items={navItems} className="mt-8" />
+          <SkillRecord
+            source={source}
+            skillId={skillId}
+            externalUrl={externalUrl}
+            externalIcon={externalIcon}
+            externalLabel={externalLabel}
+            curatedOwner={skill.curatedOwner}
+            insights={insights}
+            updatedKind={updatedKind}
+            updatedDate={updatedDate}
+            audits={audits}
+            stars={stars}
+            className="mt-4"
+          />
+        </div>
       </aside>
 
-      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
+      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2 xl:col-start-2">
         <SkillCopies aliases={copies.aliases} forks={copies.forks} />
 
           {/* Above Documentation, not below it. A SKILL.md runs to tens of KB,
@@ -541,8 +584,26 @@ export function SkillDetailPageSkeleton({
   installCommand: string;
 }) {
   return (
-    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-10 xl:grid-cols-[minmax(0,1fr)_18rem] xl:gap-x-12">
-      <div className="lg:col-start-1 lg:row-start-1">
+    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-10 xl:grid-cols-[var(--skill-card)_minmax(0,1fr)_var(--skill-rail)] xl:gap-x-[var(--skill-gap)]">
+      {/* The rail's label is REAL text, like the section headings below: it does
+          not depend on the data being loaded, so skeletoning it would withhold
+          the page's structure for no reason and then shift it in when the body
+          lands. What is genuinely unknown — the document's own headings — stays
+          a placeholder. */}
+      <div className="hidden xl:col-start-3 xl:row-start-1 xl:row-span-2 xl:block">
+        <div className="xl:sticky xl:top-20">
+          <p className="mb-4 text-xs font-medium text-muted-foreground">
+            On this page
+          </p>
+          <div className="space-y-3.5">
+            {[0, 1, 2, 3, 4, 5].map((item) => (
+              <Skeleton key={item} className="h-3 w-full max-w-32" />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="lg:col-start-1 lg:row-start-1 xl:col-start-2">
         <div className="max-w-[68ch] space-y-2.5">
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-4/5" />
@@ -558,60 +619,46 @@ export function SkillDetailPageSkeleton({
         </div>
       </div>
 
-      <div className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0">
-        <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
+      <div className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 xl:col-start-1">
+        <div className="lg:sticky lg:top-20">
+          <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
 
-        {/* The record card itself, with only its values pending. Drawing the
-            container rather than a plain block keeps the sidebar the same shape
-            and the same material before and after. */}
-        <div className="mt-4 divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
-          {/* Installs: label, total, its trailing-week delta, then the trend. */}
-          <div className="px-4 py-4">
-            <Skeleton className="h-3 w-14" />
-            <div className="mt-1.5 flex min-h-9 items-center">
-              <Skeleton className="h-6 w-20" />
+          {/* The record card itself, with only its values pending. Drawing the
+              container rather than a plain block keeps the sidebar the same
+              shape and the same material before and after. */}
+          <div className="mt-4 divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
+            {/* Installs: label, total, its trailing-week delta, then the trend. */}
+            <div className="px-4 py-4">
+              <Skeleton className="h-3 w-14" />
+              <div className="mt-1.5 flex min-h-9 items-center">
+                <Skeleton className="h-6 w-20" />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3 py-1">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3.5 w-12" />
+              </div>
+              <Skeleton className="mt-3 h-10 w-full" />
             </div>
-            <div className="mt-2 flex items-center justify-between gap-3 py-1">
+            {/* Repository: label, the repo link, and its star meta line. */}
+            <div className="px-4 py-3">
               <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-3.5 w-12" />
+              <Skeleton className="mt-2 h-4 w-full max-w-40" />
+              <div className="mt-2 flex items-center gap-1.5">
+                <Skeleton className="size-3.5 shrink-0 rounded-full" />
+                <Skeleton className="h-3 w-10" />
+              </div>
             </div>
-            <Skeleton className="mt-3 h-10 w-full" />
-          </div>
-          {/* Repository: label, the repo link, and its star count. */}
-          <div className="px-4 py-3">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="mt-2 h-4 w-full max-w-40" />
-            <div className="mt-2.5 flex items-center justify-between gap-3 py-1">
+            {/* Updated. Security only renders when a skill has audits, so it
+                is not reserved here. */}
+            <div className="px-4 py-3">
               <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-3.5 w-12" />
+              <Skeleton className="mt-2 h-4 w-full max-w-40" />
             </div>
-          </div>
-          {/* Updated. Security only renders when a skill has audits, so it is
-              not reserved here. */}
-          <div className="px-4 py-3">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="mt-2 h-4 w-full max-w-40" />
-          </div>
-        </div>
-
-        {/* The rail's label is REAL text, like the section headings below: it
-            does not depend on the data being loaded, so skeletoning it would
-            withhold the page's structure for no reason and then shift it in
-            when the body lands. What is genuinely unknown — the document's own
-            headings, the change list, the file — stays a placeholder. */}
-        <div className="mt-8 hidden lg:block">
-          <p className="mb-4 text-xs font-medium text-muted-foreground">
-            On this page
-          </p>
-          <div className="space-y-3.5">
-            {[0, 1, 2, 3, 4, 5].map((item) => (
-              <Skeleton key={item} className="h-3 w-full max-w-32" />
-            ))}
           </div>
         </div>
       </div>
 
-      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
+      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2 xl:col-start-2">
         <div>
           <div className="border-t border-border pt-4">
             <h2 className="text-base font-semibold tracking-tight text-foreground">
@@ -659,7 +706,15 @@ export function SkillDetailPageSkeleton({
 // ISR caches the page, repeat visits serve the finished HTML and never hit this.
 export function SkillDetailPageLoading() {
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    // `max-w-7xl` from `xl`, where the section rail appears. The app's default
+    // page width is `max-w-6xl` (DESIGN.md §4) and this is the one page that
+    // departs from it, deliberately: three columns inside 1152px would have
+    // taken 208px off the document to pay for a rail that is pure navigation.
+    // Widening the page instead means the rail costs the document ~80px rather
+    // than a quarter of its width. Below `xl` the page is exactly the app's
+    // default, so a reader moving between org, repo and skill pages sees no
+    // jump at the widths where those pages are actually compared.
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24 xl:max-w-[92rem]">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
