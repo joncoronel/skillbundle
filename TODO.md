@@ -841,11 +841,12 @@ the loader in components/skill-detail-page.tsx. Do not retry it before per-skill
 tags exist — the same global-gate arithmetic sinks any per-tag variant.
 
 Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) are the fuller fix
-and would let the content step ping only what it touched. Two caveats that do NOT
-change the sequence at the top, but do bound what step 1 buys: they do not help
+and would let the content step ping only what it touched. One caveat that does NOT
+change the sequence at the top, but does bound what step 1 buys: they do not help
 the daily `skill-sync` ping, because `syncSkills` walks the entire leaderboard and
 legitimately moves nearly every install count, so "only the skills that changed"
-is "all of them"; and `/api/revalidate` would need to accept a batch of tags.
+is "all of them". (Batch-tag support in `/api/revalidate` is step 1's own scope,
+not a bound on it — see the sequence above.)
 
 Fine meanwhile: invalidation only *marks* entries stale, so a page rebuilds when
 someone visits it. Cost is bounded by traffic, not by the catalog.
@@ -854,7 +855,7 @@ Context: this came out of fixing the content-publish ordering (Jul 2026). The co
 pipeline previously never pinged the tag itself; publishing relied on `reconcile`'s
 07:00 ping, which is gated on `refreshed > 0` and fires at a fixed hour rather than
 when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
-`internal.skills.revalidateSkillSyncTag` at their terminals.
+`internal.skills.publishSkillUpdate` at their terminals.
 
 ### Sign-in second factor: real MFA (future)
 
@@ -1110,6 +1111,30 @@ patches were wiped by the re-install, while the upstreamed `squash` variant came
 back.
 
 ## Parked decisions (context lives elsewhere)
+
+- **Baseline archive repairs — run and retired, Aug 2026.** The `isBaseline`
+  write path produced two kinds of wrong row, both fixed at the source
+  (`5f4d427` for baseline labels, `dcb61f5` for description claims), and both
+  repaired by hand with the one-shot `convex/skillVersionsRepair.ts`, since
+  deleted. Recorded here because the tooling that could re-answer these
+  questions is gone:
+
+  - `auditBaselineLabels`: 0 mislabeled of 13,247 baseline rows, `complete:
+    true` — that half had already been repaired by the earlier one-shot, so
+    `repairBaselineLabels` patched nothing.
+  - `auditBaselineDescriptionClaims`: 794 found of the same 13,247,
+    `scanComplete: true`, newest offending row 2026-08-12 21:52 UTC (i.e.
+    before the deploy — the pre-flight's "is this still happening" check
+    passed). `repairBaselineDescriptionClaims` cleared them.
+  - Verified against production AFTER the deletion, by an inline read-only
+    query over the same predicates: 13,247 baseline rows, 0 description claims,
+    0 mislabeled. That is the number to trust; the two above are what the
+    tooling reported at the time.
+
+  If either count is ever non-zero again, the write path has regressed —
+  `convex/skillVersions.ts` derives all three fields from one `isBaseline`
+  expression precisely so it cannot. Rebuild the audit from that expression
+  before assuming the data is at fault.
 
 - **Two refactors from PR #62's panel review (findings 32 and 14)** — both
   considered and declined, Aug 2026. Recorded so a re-run of the review does not

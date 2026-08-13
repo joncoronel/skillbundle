@@ -91,19 +91,27 @@ Tables (`schema.ts`), grouped by concern:
 
 - **Skills catalog:** `skills` (full ~25 KB rows), `skillSummaries` (slim ~200 B denormalized rows that lists/search/cards read), `skillEmbeddings` (vector search), `skillAudits` + `skillSnapshots` (security verdicts + install-count history), `syncStats`.
 - **Sync / dedup support:** `curatedOwnerSummaries`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`.
-- **Users & bundles:** `users`, `bundles`, `bundleStats`, `bundleStars`.
+- **Version archive:** `skillVersions` (one row per detected SKILL.md change, raw file in `_storage`; `isBaseline` marks a starting point rather than an edit).
+- **Users & bundles:** `users`, `bundles`. (`bundleStats` and `bundleStars` were removed — see the note at the end of `schema.ts`.)
 
 Modules, grouped by concern:
 
 - **Skill sync & lifecycle:** `skills.ts` (sync pipeline + catalog queries), `reconcile.ts`, `curated.ts` / `curatedRefresh.ts`, `duplicates.ts`, `audits.ts`, `crons.ts`, plus `lib/*` helpers (`detailRefresh`, `skillHealth`, `source`, `appDay`, `pagination`, `github`, `skillsApi`, `embeddings`). Documented in docs/skill-lifecycle.md.
 - **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
-- **Bundles & social:** `bundles.ts`, `bundleStars.ts`, `bundleEvents.ts`.
+- **Version archive & monitoring:** `skillVersions.ts` (read + write API over the change archive; `freshness.ts` decides which SKILL.mds to re-check).
+- **Bundles & social:** `bundles.ts`.
 - **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts` (+ `convex.config.ts` registers the `@convex-dev/polar` component).
 - **Admin / dev:** `devStats.ts` (the `/dev` dashboard stats), `devSeed.ts`,
   `githubOnly.ts` (admin add of skills that exist only on GitHub, not on
   skills.sh — see docs/skill-lifecycle.md "GitHub-only skills"),
   `githubOnlyAudit.ts` (read-only diagnostic: GitHub-only rows whose stored
-  slug disagrees with their SKILL.md's frontmatter name).
+  slug disagrees with their SKILL.md's frontmatter name), `bindAudit.ts`
+  (read-only diagnostic: is the RIGHT SKILL.md bound to each skill — a
+  different question from `githubOnlyAudit.ts`), `devSeedFeed.ts` (dev-only
+  seeding for the dashboard's change feed).
+
+This list is "at a glance", not exhaustive — but every module and table it
+NAMES should exist. It has twice pointed at files that had been deleted.
 
 ### Crons (`crons.ts`)
 
@@ -123,6 +131,15 @@ asked to add technology tagging, treat it as new work, not a refactor.
 - **Component variants:** Use `class-variance-authority` (cva)
 - **UI components config:** See `components.json` for shadcn/ui style ("new-york"), icon library, and path aliases
 - **Convex functions:** Use `v` validator from `convex/values` for all argument/return validation
+- **One-shot repairs and backfills** (hand-run once via `npx convex run`, then
+  dead) go in their own `convex/<name>Repair.ts`, with a DELETE-ON-COMPLETION
+  header naming the commands and the exit condition, and a `TODO.md` entry that
+  owns the deletion. Not inline in the module they repair. Reason, from Aug
+  2026: a one-shot documented only in its own header was cloned into a
+  near-duplicate the next day (`6e12f16` → `dcb61f5`) because nothing outside
+  the file recorded that it existed. `skills.ts` still carries two pre-dating
+  this rule (`backfillIsDelistedFalse`, `backfillArchiveBaselines`) — don't add
+  a third.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
