@@ -52,7 +52,6 @@ import type * as polar from "../polar.js";
 import type * as recommendations from "../recommendations.js";
 import type * as reconcile from "../reconcile.js";
 import type * as skillVersions from "../skillVersions.js";
-import type * as skillVersionsRepair from "../skillVersionsRepair.js";
 import type * as skills from "../skills.js";
 import type * as skillsAuth from "../skillsAuth.js";
 import type * as subscriptions from "../subscriptions.js";
@@ -111,7 +110,6 @@ declare const fullApi: ApiFromModules<{
   recommendations: typeof recommendations;
   reconcile: typeof reconcile;
   skillVersions: typeof skillVersions;
-  skillVersionsRepair: typeof skillVersionsRepair;
   skills: typeof skills;
   skillsAuth: typeof skillsAuth;
   subscriptions: typeof subscriptions;
