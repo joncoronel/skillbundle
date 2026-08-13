@@ -565,27 +565,33 @@ export function SkillDetailPageSkeleton({
             container rather than a plain block keeps the sidebar the same shape
             and the same material before and after. */}
         <div className="mt-4 divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
+          {/* Installs: label, total, its trailing-week delta, then the trend. */}
           <div className="px-4 py-4">
             <Skeleton className="h-3 w-14" />
             <div className="mt-1.5 flex min-h-9 items-center">
               <Skeleton className="h-6 w-20" />
             </div>
+            <div className="mt-2 flex items-center justify-between gap-3 py-1">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3.5 w-12" />
+            </div>
             <Skeleton className="mt-3 h-10 w-full" />
           </div>
-          <div className="space-y-3 px-4 py-4">
-            {[0, 1, 2].map((row) => (
-              <div key={row} className="flex items-center justify-between gap-3">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-3.5 w-12" />
-              </div>
-            ))}
-          </div>
-          {[0, 1].map((block) => (
-            <div key={block} className="px-4 py-3">
+          {/* Repository: label, the repo link, and its star count. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-4 w-full max-w-40" />
+            <div className="mt-2.5 flex items-center justify-between gap-3 py-1">
               <Skeleton className="h-3 w-20" />
-              <Skeleton className="mt-2 h-4 w-full max-w-40" />
+              <Skeleton className="h-3.5 w-12" />
             </div>
-          ))}
+          </div>
+          {/* Updated. Security only renders when a skill has audits, so it is
+              not reserved here. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-4 w-full max-w-40" />
+          </div>
         </div>
 
         {/* The rail's label is REAL text, like the section headings below: it

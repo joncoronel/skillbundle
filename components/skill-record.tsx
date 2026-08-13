@@ -66,6 +66,20 @@ import { cn, formatInstalls } from "@/lib/utils";
  * `surface-3` at `shadowLevel` 1, matching the Card default — a tonal lift and
  * a hairline ring, no drop shadow. Depth declared once (DESIGN.md §6), so do
  * not add a border back on top of it.
+ *
+ * Every block inside it names one subject and holds only facts about that
+ * subject: the install total owns its trailing-week delta and its trend line,
+ * the repository owns its star count. An earlier version had a fourth block
+ * with no subject at all — a bare list of three measurements between Installs
+ * and Repository — and it showed: the delta sat away from the number it was a
+ * delta OF, and the star count needed the caption "on the source repo" to say
+ * what it counted. A caption explaining what a row is doing there is the
+ * grouping asking to be fixed.
+ *
+ * Install rank is deliberately absent. It is still loaded (the install chart
+ * reads the same `insights` object) but it answers a leaderboard question
+ * rather than a "should I depend on this" one, and beside a raw install count
+ * it was the weaker of two numbers saying roughly the same thing.
  */
 export function SkillRecord({
   source,
@@ -146,6 +160,21 @@ export function SkillRecord({
           )}
         </div>
 
+        {/* The delta belongs to the number above it, not to a list of loose
+            measurements. It sits between the total and the chart so the two
+            figures read together and the sparkline below illustrates them
+            both. It stays put during a sparkline scrub, correctly: it is a
+            fixed trailing-window stat, not a value for the hovered day. */}
+        <dl className="mt-2">
+          <FactRow label="Past 7 days">
+            {gain != null ? (
+              <Value className="text-success-foreground">+{intFmt(gain)}</Value>
+            ) : (
+              <Value muted>No change</Value>
+            )}
+          </FactRow>
+        </dl>
+
         {hasChart ? (
           <Dialog>
             <div className="mt-3">
@@ -191,30 +220,6 @@ export function SkillRecord({
         )}
       </div>
 
-      {/* The short measurements. A missing one says what is missing rather
-          than showing a dash: "No change" is the same width as a number here
-          and carries the reason with it.
-
-          Install rank is deliberately not among them. It is still loaded (the
-          install chart reads the same `insights` object) but it answers a
-          leaderboard question, not a "should I depend on this" question, and
-          next to a raw install count it was the weaker of two numbers saying
-          roughly the same thing. */}
-      <dl className="px-4 py-3">
-        <FactRow label="Past 7 days">
-          {gain != null ? (
-            <Value className="text-success-foreground">+{intFmt(gain)}</Value>
-          ) : (
-            <Value muted>No change</Value>
-          )}
-        </FactRow>
-        {stars != null && (
-          <FactRow label="GitHub stars">
-            <Value>{formatInstalls(stars)}</Value>
-          </FactRow>
-        )}
-      </dl>
-
       <div className="px-4 py-3">
         <p className="text-xs font-medium text-muted-foreground">Repository</p>
         <a
@@ -238,6 +243,20 @@ export function SkillRecord({
             className="size-3 shrink-0 text-muted-foreground/70"
           />
         </a>
+
+        {/* Stars are a fact about the repo, not about the skill, so they live
+            under the repo that has them. In a list of their own they needed a
+            caption ("on the source repo") to explain what they were counting —
+            a caption that was only ever compensating for the wrong grouping.
+            A well-known source has no GitHub repo at all, and now simply has
+            no star row rather than a gap in an anonymous list. */}
+        {stars != null && (
+          <dl className="mt-2.5">
+            <FactRow label="GitHub stars">
+              <Value>{formatInstalls(stars)}</Value>
+            </FactRow>
+          </dl>
+        )}
       </div>
 
       {audits && audits.length > 0 && (
