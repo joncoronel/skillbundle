@@ -141,7 +141,12 @@ asked to add technology tagging, treat it as new work, not a refactor.
   pre-date this rule (`backfillIsDelistedFalse`, `backfillLastSeenInApi`,
   `backfillNeedsRepoResolution`, `backfillArchiveBaselines`) — don't add
   another. Their presence is the argument for the rule, not an exception to it:
-  none is called by anything, and only their own headers say so.
+  none is called by anything, and what records that each is finished is
+  scattered — a schema comment for two (`schema.ts`), a migration note for the
+  same two (`docs/skill-lifecycle.md`), a `TODO.md` entry plus `freshness.ts`
+  prose for `backfillArchiveBaselines`, and nothing at all outside its own file
+  for `backfillNeedsRepoResolution`. No single place says which are retirable,
+  which is exactly what the rule above fixes.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
