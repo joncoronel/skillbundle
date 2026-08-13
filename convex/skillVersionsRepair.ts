@@ -10,8 +10,15 @@
  *     npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod
  *     npx convex run skillVersionsRepair:repairBaselineDescriptionClaims --prod
  *
- * Once each has run to `scanComplete` on prod and reported nothing left to
- * patch, this whole file can go. It is split out of `skillVersions.ts` for that
+ * Once each has run to completion on prod and reported nothing left to patch,
+ * this whole file can go. Completion is `complete` on `auditBaselineLabels` and
+ * `scanComplete` on the other three — two names for one idea, because the label
+ * audit predates the shared driver and returns its own summary shape. Both mean
+ * the same thing and both matter for the same reason: the scan walks
+ * `by_isBaseline_changedAt` ASCENDING under a page budget, so a truncated run
+ * has seen only the oldest rows. Its counts are floors and its "newest" reading
+ * is stale — which reads as "not happening any more" from a scan that never
+ * reached the recent end. It is split out of `skillVersions.ts` for that
  * reason: that module is the archive's read and write API, and this is
  * archaeology about two specific past defects. Kept together it was a third of
  * the file, sitting between a reader and the thing they came for, with nothing
@@ -251,6 +258,18 @@ export const auditBaselineLabels = internalAction({
 const REPAIR_PATCH_BATCH = 100;
 
 /**
+ * Hard ceiling on a repair's `maxRows`, above which "re-run with a larger
+ * `maxRows`" stops being advice.
+ *
+ * Named rather than inlined so the abort message can print it: the clamp is
+ * silent, so past this a re-run aborts again with the identical message and the
+ * operator has no way to tell a too-small argument from a too-large population.
+ * A repair that legitimately matches more than this is a repair whose predicate
+ * should be re-examined before it rewrites that much of the archive by hand.
+ */
+const MAX_ROW_CAP = 20_000;
+
+/**
  * One page of a baseline scan. Shared by both repairs' scan queries so the
  * driver below can walk either of them — they differ ONLY in their predicate.
  *
@@ -399,7 +418,7 @@ async function runBaselineScan(
   // reach `maxPages × pageSize`, i.e. at most 500 × BASELINE_AUDIT_PAGE.
   const rowCap = opts.dryRun
     ? Number.POSITIVE_INFINITY
-    : Math.min(Math.max(opts.maxRows ?? 5_000, 1), 20_000);
+    : Math.min(Math.max(opts.maxRows ?? 5_000, 1), MAX_ROW_CAP);
 
   let cursor = opts.cursor;
   let pages = 0;
@@ -423,7 +442,8 @@ async function runBaselineScan(
     if (ids.length > rowCap) {
       const aborted =
         `match count ${ids.length} exceeded maxRows ${rowCap} — nothing patched.` +
-        ` Re-run from the START with a larger maxRows, not from nextCursor`;
+        ` Re-run from the START with a larger maxRows (ceiling ${MAX_ROW_CAP}),` +
+        ` not from nextCursor`;
       console.error(`${opts.label} aborted: ${aborted}`);
       return {
         found: ids.length,
@@ -653,7 +673,8 @@ export const clearBaselineDescriptionClaims = internalMutation({
  * way and the write-side fix is not live yet — repair now and the pipeline just
  * makes more. Then read `found`, and pass it with headroom as the repair's
  * `maxRows` so a legitimately large population doesn't trip the repair's abort
- * valve and read as a bad predicate.
+ * valve and read as a bad predicate — up to MAX_ROW_CAP, above which the arg
+ * clamps and the advice runs out (see its doc).
  *
  * TAKES NEITHER `cursor` NOR `maxRows`, and both omissions are the point:
  *

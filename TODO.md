@@ -772,22 +772,28 @@ on 2026-08-11, cloned in `dcb61f5` on 2026-08-12, which is what the split into
 this file was fixing. A day, not a slow drift: nothing about that is a reason to
 expect more warning next time.
 
-**Run steps 3-4 only once this branch is deployed.** Repairing before its
-write-side fix is live just leaves the pipeline making more, which is what each
-pre-flight's "is this still happening" reading is for — and the description-claim
-fix is the half that ships with this branch (`dcb61f5`). The label fix has been
-live since `5f4d427` (2026-08-09), so steps 1-2 are safe to run at any time;
-running all four after the deploy is simply the one order that is always correct.
+**Run all four only once this branch is deployed.** Two reasons, and they are
+different: `convex/skillVersionsRepair.ts` does not exist until this branch
+ships, so none of the commands below resolve before then; and repairing before
+its write-side fix is live just leaves the pipeline making more, which is what
+each pre-flight's "is this still happening" reading is for. Only the
+description-claim fix ships here (`dcb61f5`) — the label fix has been live since
+`5f4d427` (2026-08-09), so steps 1-2 carry no ordering hazard of their own.
 
 Order matters, and the pre-flights exist so the ordering is checkable:
 
-1. `npx convex run skillVersionsRepair:auditBaselineLabels --prod` — read
-   `newestMislabeledDay`. Recent means rows are still being written wrong.
+1. `npx convex run skillVersionsRepair:auditBaselineLabels --prod` — check
+   `complete` first (it is this audit's spelling of `scanComplete`), then read
+   `newestMislabeledDay`. Recent means rows are still being written wrong. The
+   completeness check is not optional on either audit: the scan is
+   oldest-first, so a truncated one reports stale "newest" readings, and stale
+   here reads as all-clear.
 2. `npx convex run skillVersionsRepair:repairBaselineLabels --prod`
 3. `npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod` —
    check `scanComplete` first; then `newestMatchAt`, then `found`.
 4. `npx convex run skillVersionsRepair:repairBaselineDescriptionClaims --prod`
-   with `maxRows` sized from step 3's `found`, plus headroom.
+   with `maxRows` sized from step 3's `found`, plus headroom — up to a ceiling
+   of 20,000, past which the arg clamps and the abort repeats.
 
 Re-running is a no-op rather than a race: each repair's predicate stops matching
 the rows it has patched. Delete the file (and its tests in
