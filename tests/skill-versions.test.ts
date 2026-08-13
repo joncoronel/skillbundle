@@ -203,6 +203,37 @@ test("first content write is recorded as a baseline", async () => {
   expect(versions[0].previousFrontmatterVersion).toBeUndefined();
 });
 
+test("a baseline reports no description change", async () => {
+  // The row a manual add leaves behind holds a name and an install count and
+  // nothing else, so when the content chain fills it in, the writers compare
+  // the file's description against `undefined` and report a change. That is our
+  // own two-step ingest showing through, not an upstream edit — and it reached
+  // the timeline as a "Description changed" badge over a before-value of None
+  // on the skill's very first row.
+  //
+  // The one-time baseline backfill never had the problem because it hardcodes
+  // `descriptionChanged: false`, which is why a skill it covered shows a bare
+  // "Earliest recorded version" and a skill added after it did not.
+  const t = makeTest();
+  const skillDocId = await seedSkill(t);
+
+  const outcome = await writeContent(
+    t,
+    skillDocId,
+    skillMd({ description: "Install and configure the thing", body: "Body" }),
+  );
+  // The writer still reports the change — suppression is the archive's call,
+  // and `needsEmbedding` downstream depends on this staying true.
+  expect(outcome.descriptionChanged).toBe(true);
+
+  const versions = await versionsFor(t, skillDocId);
+  expect(versions[0].isBaseline).toBe(true);
+  expect(versions[0].descriptionChanged).toBe(false);
+  expect(versions[0].descriptionBefore).toBeUndefined();
+  // Kept: it is what the file says now, not a claim that anything moved.
+  expect(versions[0].descriptionAfter).toBe("Install and configure the thing");
+});
+
 test("a first row is a real change when the skill already had content", async () => {
   // The well-known-source case, and the reason `isBaseline` is not simply
   // "no predecessor row". `backfillArchiveBaselines` only walks GitHub sources
@@ -420,6 +451,53 @@ async function insertVersion(
     });
   });
 }
+
+test("the description-claim repair clears artefacts and leaves real changes alone", async () => {
+  // Two rows that look alike and must be treated differently. Both are flagged
+  // baseline and both claim a description change; only the one with no
+  // `previousSyncHash` is an artefact of the row having been empty. The other is
+  // the mislabel the sibling repair exists for, and its change is genuine —
+  // erasing it would be worse than the badge this is cleaning up.
+  const t = makeTest();
+  await insertVersion(t, {
+    source: "example.com",
+    skillId: "artefact",
+    changedAt: 1,
+    isBaseline: true,
+    descriptionChanged: true,
+  });
+  await insertVersion(t, {
+    source: "example.com",
+    skillId: "real-change",
+    changedAt: 2,
+    isBaseline: true,
+    previousSyncHash: "an-earlier-copy-existed",
+    descriptionChanged: true,
+  });
+
+  const result = await t.action(
+    internal.skillVersions.repairBaselineDescriptionClaims,
+    {},
+  );
+  expect(result.patched).toBe(1);
+  expect(result.scanComplete).toBe(true);
+
+  const rows = await t.run(async (ctx) =>
+    ctx.db.query("skillVersions").collect(),
+  );
+  const artefact = rows.find((r) => r.skillId === "artefact")!;
+  const realChange = rows.find((r) => r.skillId === "real-change")!;
+  expect(artefact.descriptionChanged).toBe(false);
+  expect(artefact.descriptionBefore).toBeUndefined();
+  expect(realChange.descriptionChanged).toBe(true);
+
+  // Idempotent: the repaired row no longer matches.
+  const again = await t.action(
+    internal.skillVersions.repairBaselineDescriptionClaims,
+    {},
+  );
+  expect(again.patched).toBe(0);
+});
 
 test("the baseline audit counts only rows that are provably mislabeled", async () => {
   // Pre-flight for the repair. A row is mislabeled when it claims to be a

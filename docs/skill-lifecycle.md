@@ -20,6 +20,35 @@ A skill row enters our DB one of three ways:
    repo and inserts with `installs: 0`, `leaderboard: "github"`, and
    `isGitHubOnly: true`. See [GitHub-only skills](#github-only-skills).
 
+### An add is two steps, and the gap is visible
+
+Both add paths write a row holding little more than a name and an install count,
+then let the ordinary content chain fill in the SKILL.md later. That chain is
+catalog-wide and staggered, so it lands seconds to minutes afterwards — and
+`kickPostAddChain` busts the skill-page cache immediately (it has to: the path
+may hold a cached `notFound()` from before the add). A page rendered in that gap
+therefore publishes an empty skill and, on `loadSkill`'s `cacheLife("weeks")`,
+keeps serving it.
+
+Two things close that window, and both must stay:
+
+- **Seeding.** `addSkillManually` already has the whole SKILL.md — the detail
+  call it made to verify the skill returns `files[]` — so it writes the
+  description and body through `seedManualAddContent` before the cache bust.
+  Deliberately **no `syncHash`**: skills.sh's copy can lag GitHub's, and storing
+  its hash would make the next GitHub fetch look like an upstream change. Also
+  fill-only, so a relist can't overwrite real content with a stale copy.
+- **Immediate publish.** When the content chain writes a **user-added** row's
+  first content, it pings the cache tags then and there rather than at its own
+  terminal (`publishNow` on `contentWriteOutcome`). This covers the GitHub-only
+  add, which has nothing seedable at insert time. Gated on user-added rows
+  because each ping expires the content tag catalog-wide.
+
+One consequence worth knowing: a manually added row reaches its first archived
+version with **no previous hash**, so `recordSkillVersion` files it as a
+`isBaseline` row — a starting point, not an edit — and strips the description
+change it would otherwise infer from the row having been empty.
+
 `leaderboard` is an **origin tag set on insert only** (never overwritten) — it
 records how the row first appeared, nothing more. Values: `all-time` (leaderboard),
 `curated`, `manual`. Note: `reconcileUnseenSkills` passes `leaderboard: "reconcile"`

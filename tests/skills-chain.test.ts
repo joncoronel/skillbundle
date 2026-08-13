@@ -251,6 +251,163 @@ test("fetchSkillDetailBatch consumes the queue and populates content", async () 
   );
 });
 
+// ---------------------------------------------------------------------------
+// Manual-add seeding and the immediate publish
+//
+// Both exist for the same failure: an add writes a row, the content chain fills
+// it in seconds to minutes later, and anything rendered in between is a skill
+// page with an install count and no SKILL.md — cached on cacheLife("weeks").
+// ---------------------------------------------------------------------------
+
+/** A row in the state an add leaves it: name + installs, nothing else. */
+async function seedAddedRow(
+  t: ReturnType<typeof makeTest>,
+  opts: { leaderboard: string; skillId: string },
+): Promise<Id<"skills">> {
+  const now = Date.now();
+  return await t.run(async (ctx) => {
+    const id = await ctx.db.insert("skills", {
+      source: "example.com",
+      skillId: opts.skillId,
+      name: "Just Added",
+      installs: 7,
+      leaderboard: opts.leaderboard,
+      lastSynced: now,
+      lastSeenInApi: now,
+      isDelisted: false,
+      needsContentFetch: true,
+      needsDiscovery: false,
+    });
+    await ctx.db.insert("skillSummaries", {
+      source: "example.com",
+      skillId: opts.skillId,
+      name: "Just Added",
+      installs: 7,
+      skillDocId: id,
+      isDelisted: false,
+      lastSeenInApi: now,
+      needsContentFetch: true,
+      needsDiscovery: false,
+    });
+    return id;
+  });
+}
+
+test("seedManualAddContent fills an empty row and mirrors the description", async () => {
+  const t = makeTest();
+  const skillDocId = await seedAddedRow(t, {
+    leaderboard: "manual",
+    skillId: "just-added",
+  });
+
+  await t.mutation(internal.skills.seedManualAddContent, {
+    source: "example.com",
+    skillId: "just-added",
+    description: "Seeded description",
+    content: "Seeded body",
+  });
+
+  await t.run(async (ctx) => {
+    const skill = await ctx.db.get(skillDocId);
+    expect(skill!.description).toBe("Seeded description");
+    expect(skill!.content).toBe("Seeded body");
+    // The hash stays unset on purpose: skills.sh can be behind GitHub, so the
+    // next real fetch must take its changed-path and overwrite this rather than
+    // match a hash for a copy we may never have held.
+    expect(skill!.syncHash).toBeUndefined();
+    // Still queued. Seeding is a stopgap for the page, not a substitute for the
+    // pipeline that owns the content.
+    expect(skill!.needsContentFetch).toBe(true);
+
+    const summary = await ctx.db
+      .query("skillSummaries")
+      .withIndex("by_source_skillId", (q) =>
+        q.eq("source", "example.com").eq("skillId", "just-added"),
+      )
+      .unique();
+    // Cards, search results and catalog lists read the summary, not the skill.
+    expect(summary!.description).toBe("Seeded description");
+  });
+});
+
+test("seedManualAddContent never overwrites content the pipeline already wrote", async () => {
+  // Relist and adopt both route through the seed. Their rows can already carry
+  // content fetched from GitHub, and older-but-real content beats a sideways
+  // write from a second source that may be behind it.
+  const t = makeTest();
+  const skillDocId = await seedAddedRow(t, {
+    leaderboard: "manual",
+    skillId: "already-has-content",
+  });
+  await t.run(async (ctx) => {
+    await ctx.db.patch(skillDocId, {
+      description: "From GitHub",
+      content: "GitHub body",
+    });
+  });
+
+  await t.mutation(internal.skills.seedManualAddContent, {
+    source: "example.com",
+    skillId: "already-has-content",
+    description: "From skills.sh",
+    content: "skills.sh body",
+  });
+
+  await t.run(async (ctx) => {
+    const skill = await ctx.db.get(skillDocId);
+    expect(skill!.description).toBe("From GitHub");
+    expect(skill!.content).toBe("GitHub body");
+  });
+});
+
+test("a user-added row's first content asks to be published immediately", async () => {
+  // The daily pipeline publishes at the terminal of a catalog-wide drain, which
+  // is far too late for someone who just added a skill and is looking at it.
+  const t = makeTest();
+  const skillDocId = await seedAddedRow(t, {
+    leaderboard: "manual",
+    skillId: "user-added",
+  });
+
+  const first = await t.mutation(internal.skills.updateSkillFromDetail, {
+    skillId: skillDocId,
+    description: "Fetched description",
+    content: "Fetched body",
+    syncHash: "b".repeat(64),
+  });
+  expect(first.publishNow).toBe(true);
+
+  // Only the FIRST content qualifies. Later edits to the same row are ordinary
+  // pipeline work and ride the terminal ping like everything else.
+  const second = await t.mutation(internal.skills.updateSkillFromDetail, {
+    skillId: skillDocId,
+    description: "Edited description",
+    content: "Edited body",
+    syncHash: "c".repeat(64),
+  });
+  expect(second.publishNow).toBe(false);
+});
+
+test("a synced row's first content does not ask to be published", async () => {
+  // The gate that keeps the cost sane. Every publisher here expires the content
+  // tag catalog-wide, and syncSkills inserts new rows daily — without the
+  // user-added check this would fire tens of times each morning.
+  const t = makeTest();
+  const skillDocId = await seedAddedRow(t, {
+    leaderboard: "all-time",
+    skillId: "synced-row",
+  });
+
+  const outcome = await t.mutation(internal.skills.updateSkillFromDetail, {
+    skillId: skillDocId,
+    description: "Fetched description",
+    content: "Fetched body",
+    syncHash: "d".repeat(64),
+  });
+  expect(outcome.changed).toBe(true);
+  expect(outcome.publishNow).toBe(false);
+});
+
 test("updateSkillMdUrls: settles a mixed batch in one transaction", async () => {
   // The reason this mutation takes an array. One discovery invocation covers up
   // to 500 rows of a single source and previously spent one transaction each.

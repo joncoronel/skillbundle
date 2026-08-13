@@ -14,6 +14,22 @@
  *      brand-new row moves both, so unlike the daily jobs this path is not a
  *      candidate for pinging just one. Best-effort — revalidateSiteTag
  *      swallows errors and no-ops in dev.
+ *
+ *      This ping publishes whatever the row holds RIGHT NOW, and loadSkill
+ *      caches that on cacheLife("weeks"). Since step 1 only SCHEDULES the
+ *      content fetch, that used to mean publishing a row with no SKILL.md and
+ *      holding it until the content chain's terminal publishSkillUpdate landed
+ *      — the "page loaded, content empty, reload fixed it" report. Two things
+ *      close it, and both belong to the callers rather than here:
+ *
+ *        - The normal add seeds description + content from the v1 detail
+ *          response it already fetched, BEFORE calling this
+ *          (skills.seedManualAddContent), so there is real content to publish.
+ *        - When the content chain later writes a user-added row's first
+ *          content, it publishes then and there rather than waiting for its
+ *          own terminal (`publishNow` on contentWriteOutcome). That covers the
+ *          GitHub-only add, which has nothing to seed at this point, and the
+ *          case where skills.sh's copy was behind GitHub's.
  *   3. Index this one skill into Typesense now instead of waiting for the
  *      daily mark-and-sweep, so it's searchable within seconds. `description`
  *      is the SKILL.md description the caller already resolved, so the first

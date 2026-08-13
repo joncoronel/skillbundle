@@ -1140,6 +1140,177 @@ export const repairBaselineLabels = internalAction({
 });
 
 // ---------------------------------------------------------------------------
+// Baseline description-claim repair
+//
+// The sibling of the repair above, for the opposite half of the same row. A
+// baseline is a starting point, so it cannot carry a description CHANGE — but
+// until `recordSkillVersion` derived those fields from the flag, a first content
+// write reported one, because the writers compare the file against a skills row
+// that was still empty. Those rows render on the skill page as a
+// "Description changed" badge over a before-value of None, on the earliest entry
+// in the timeline, for a skill nothing had ever edited.
+//
+//     npx convex run skillVersions:repairBaselineDescriptionClaims --prod
+//
+// Write-side fixed first, then this — same ordering rule as above, for the same
+// reason: repair before the fix is live and the pipeline just makes more.
+//
+// Idempotent: a repaired row no longer matches the filter, so a second run finds
+// nothing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Baseline rows claiming a description change, WITHOUT writing (two passes, for
+ * the reason `listMislabeledBaselineIds` gives).
+ *
+ * `previousSyncHash === undefined` is required, not incidental. A row flagged
+ * baseline that HAS a previous hash is the other defect — a real change that was
+ * mislabeled — and its description change is genuine. Clearing that would erase
+ * a change instead of an artefact, so the two repairs must not overlap.
+ */
+export const listBaselineDescriptionClaimIds = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  returns: v.object({
+    ids: v.array(v.id("skillVersions")),
+    scanned: v.number(),
+    nextCursor: v.union(v.string(), v.null()),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, { cursor, pageSize }) => {
+    const numItems = Math.min(
+      Math.max(pageSize ?? BASELINE_AUDIT_PAGE, 1),
+      BASELINE_AUDIT_PAGE,
+    );
+    const result = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_isBaseline_changedAt", (q) => q.eq("isBaseline", true))
+      .paginate({ numItems, cursor: cursor ?? null });
+
+    return {
+      ids: result.page
+        .filter(
+          (row) =>
+            row.previousSyncHash === undefined &&
+            (row.descriptionChanged || row.descriptionBefore !== undefined),
+        )
+        .map((row) => row._id),
+      scanned: result.page.length,
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const clearBaselineDescriptionClaims = internalMutation({
+  args: { ids: v.array(v.id("skillVersions")) },
+  returns: v.number(),
+  handler: async (ctx, { ids }) => {
+    let patched = 0;
+    for (const id of ids) {
+      const row = await ctx.db.get(id);
+      // Re-checked rather than trusted from the scan, matching
+      // `clearBaselineFlags`: the ids were gathered in an earlier pass, and the
+      // one failure worse than the artefact is erasing a real change.
+      if (!row || !row.isBaseline || row.previousSyncHash !== undefined) {
+        continue;
+      }
+      if (!row.descriptionChanged && row.descriptionBefore === undefined) {
+        continue;
+      }
+      // `descriptionAfter` stays. It is what the file said when we first copied
+      // it, which is true and is what the timeline reads for the anchor row.
+      await ctx.db.patch(id, {
+        descriptionChanged: false,
+        descriptionBefore: undefined,
+      });
+      patched++;
+    }
+    return patched;
+  },
+});
+
+export const repairBaselineDescriptionClaims = internalAction({
+  args: { maxPages: v.optional(v.number()), maxRows: v.optional(v.number()) },
+  returns: v.object({
+    found: v.number(),
+    patched: v.number(),
+    baselineRowsScanned: v.number(),
+    pages: v.number(),
+    scanComplete: v.boolean(),
+    aborted: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, { maxPages, maxRows }) => {
+    const pageBudget = Math.min(Math.max(maxPages ?? 200, 1), 500);
+    // Same abort valve as `repairBaselineLabels`, and it matters more here
+    // because this one edits the CONTENT of a row rather than a flag. A match
+    // count near the cap means the predicate is wrong; stop rather than rewrite
+    // the archive on it.
+    const rowCap = Math.min(Math.max(maxRows ?? 5_000, 1), 20_000);
+
+    let cursor: string | undefined;
+    let pages = 0;
+    let baselineRowsScanned = 0;
+    let scanComplete = false;
+    let aborted: string | null = null;
+    const ids: Id<"skillVersions">[] = [];
+
+    while (pages < pageBudget) {
+      const page: {
+        ids: Id<"skillVersions">[];
+        scanned: number;
+        nextCursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(
+        internal.skillVersions.listBaselineDescriptionClaimIds,
+        { cursor },
+      );
+      pages++;
+      baselineRowsScanned += page.scanned;
+      ids.push(...page.ids);
+      if (ids.length > rowCap) {
+        aborted = `match count ${ids.length} exceeded maxRows ${rowCap} — nothing patched`;
+        console.error(`repairBaselineDescriptionClaims aborted: ${aborted}`);
+        return {
+          found: ids.length,
+          patched: 0,
+          baselineRowsScanned,
+          pages,
+          scanComplete: false,
+          aborted,
+        };
+      }
+      if (page.isDone) {
+        scanComplete = true;
+        break;
+      }
+      cursor = page.nextCursor ?? undefined;
+    }
+
+    let patched = 0;
+    for (let i = 0; i < ids.length; i += REPAIR_PATCH_BATCH) {
+      patched += await ctx.runMutation(
+        internal.skillVersions.clearBaselineDescriptionClaims,
+        { ids: ids.slice(i, i + REPAIR_PATCH_BATCH) },
+      );
+    }
+
+    console.log(
+      `repairBaselineDescriptionClaims: patched ${patched} of ${ids.length} matched` +
+        ` across ${baselineRowsScanned} baseline rows` +
+        `${scanComplete ? "" : " — SCAN INCOMPLETE, re-run to finish"}`,
+    );
+    return {
+      found: ids.length,
+      patched,
+      baselineRowsScanned,
+      pages,
+      scanComplete,
+      aborted,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
 // WRITE PATH
 //
 // Moved here from skills.ts, which is 4.2k lines of sync pipeline. Nothing in
@@ -1225,6 +1396,29 @@ export const recordSkillVersion = internalMutation({
       return null;
     }
 
+    // A baseline is a STARTING POINT, not an event, so it cannot carry a
+    // description CHANGE either — there is no earlier description for the
+    // description to have moved from.
+    //
+    // The two content writers infer `descriptionChanged` by comparing the file
+    // against the live skills row (`updateDescription`, `updateSkillFromDetail`).
+    // For a row whose first content is only now arriving that comparison is
+    // `undefined !== "..."`, which is true, so the archive got a first row
+    // badged "Description changed" with a before-value of None. That is our own
+    // two-step ingest showing through: the add writes the row, the content chain
+    // fills it in later. Nothing upstream changed.
+    //
+    // The one-time baseline backfill (skills.ts) already got this right by
+    // hardcoding `descriptionChanged: false` with no `descriptionBefore`, which
+    // is why a skill it covered shows a bare "Earliest recorded version" while a
+    // skill added after it showed the None-to-something block. Deriving both
+    // fields from the flag here is what stops those two paths from disagreeing.
+    //
+    // Only the two REAL baselines are affected. A first archived row that is a
+    // genuine detected change (every well-known source — see the flag comment
+    // below) has a `previousSyncHash`, so it keeps its description change.
+    const isBaseline = latest === null && args.previousSyncHash === undefined;
+
     await ctx.db.insert("skillVersions", {
       skillDocId: args.skillDocId,
       source: skill.source,
@@ -1239,9 +1433,9 @@ export const recordSkillVersion = internalMutation({
       // caller knows what the file says now, only the archive knows what it said
       // last time.
       previousFrontmatterVersion: latest?.frontmatterVersion,
-      descriptionBefore: args.descriptionBefore,
+      descriptionBefore: isBaseline ? undefined : args.descriptionBefore,
       descriptionAfter: args.descriptionAfter,
-      descriptionChanged: args.descriptionChanged,
+      descriptionChanged: isBaseline ? false : args.descriptionChanged,
       contentChanged: args.contentChanged,
       // A baseline is a STARTING POINT, not an event: the first copy we ever
       // took of a file we had no prior record of. Both halves of that matter.
@@ -1266,7 +1460,7 @@ export const recordSkillVersion = internalMutation({
       // comes off the live skills row rather than the archive, and the timeline
       // anchors on `isBaseline || !previous` (skill-history.tsx) rather than on
       // the flag alone.
-      isBaseline: latest === null && args.previousSyncHash === undefined,
+      isBaseline,
     });
 
     return null;
