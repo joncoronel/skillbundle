@@ -29,7 +29,8 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { ActionCtx, QueryCtx } from "./_generated/server";
+import type { FunctionReference } from "convex/server";
 import { internal } from "./_generated/api";
 import { appDay } from "./lib/appDay";
 import { isGitHubSource } from "./lib/source";
@@ -1005,6 +1006,189 @@ export const auditBaselineLabels = internalAction({
 const REPAIR_PATCH_BATCH = 100;
 
 /**
+ * One page of a baseline scan. Shared by both repairs' scan queries so the
+ * driver below can walk either of them — they differ ONLY in their predicate.
+ *
+ * `newestMatchAt` is what makes a dry run answer the question the ordering rule
+ * asks ("is the pipeline still producing these?"). Without it an operator can
+ * see a count but not whether the write-side fix is live yet.
+ */
+const baselineScanPage = v.object({
+  ids: v.array(v.id("skillVersions")),
+  scanned: v.number(),
+  newestMatchAt: v.union(v.number(), v.null()),
+  nextCursor: v.union(v.string(), v.null()),
+  isDone: v.boolean(),
+});
+
+type BaselineScanPage = {
+  ids: Id<"skillVersions">[];
+  scanned: number;
+  newestMatchAt: number | null;
+  nextCursor: string | null;
+  isDone: boolean;
+};
+
+const baselineScanResult = v.object({
+  found: v.number(),
+  patched: v.number(),
+  baselineRowsScanned: v.number(),
+  pages: v.number(),
+  scanComplete: v.boolean(),
+  aborted: v.union(v.string(), v.null()),
+  /**
+   * Where to resume when `scanComplete` is false. Pass it back as `cursor`.
+   *
+   * Not optional garnish: `clearBaselineDescriptionClaims` leaves `isBaseline`
+   * set, so its repaired rows keep their positions in the scanned index and a
+   * bare re-run would re-walk the identical first `maxPages × pageSize` rows
+   * forever. (`clearBaselineFlags` does drop rows out of the index, so the
+   * sibling was resumable by accident — this is what makes both of them
+   * resumable on purpose.)
+   */
+  nextCursor: v.union(v.string(), v.null()),
+  /** Newest `changedAt` among matches — see `baselineScanPage`. */
+  newestMatchAt: v.union(v.number(), v.null()),
+});
+
+/** Clamp a caller's page size into the scan's budget. */
+function scanPageSize(pageSize: number | undefined): number {
+  return Math.min(
+    Math.max(pageSize ?? BASELINE_AUDIT_PAGE, 1),
+    BASELINE_AUDIT_PAGE,
+  );
+}
+
+function newestChangedAt(rows: { changedAt: number }[]): number | null {
+  return rows.length ? Math.max(...rows.map((r) => r.changedAt)) : null;
+}
+
+/**
+ * The scan-then-patch driver both baseline repairs run on.
+ *
+ * Extracted after the second repair arrived as a near-verbatim copy of the
+ * first and quietly lost one of its load-bearing details in the process (the
+ * resumability note on `nextCursor` above). The two repairs differ in exactly
+ * three things — which rows they match, how they patch one, and what they are
+ * called — so those are the parameters and nothing else is.
+ *
+ * `dryRun` makes the pre-flight the same code as the repair rather than a third
+ * copy of the loop: it walks and counts, and patches nothing. That is what
+ * `audit*` should mean here — the same predicate the repair will use, not a
+ * second implementation of it that can disagree.
+ *
+ * Two passes (collect all ids, then patch) rather than patching per page: for
+ * the sibling, patching mid-pagination shifts the index under its own cursor
+ * and skips rows. Kept for both so one driver serves both predicates.
+ */
+type BaselineScanResult = {
+  found: number;
+  patched: number;
+  baselineRowsScanned: number;
+  pages: number;
+  scanComplete: boolean;
+  aborted: string | null;
+  nextCursor: string | null;
+  newestMatchAt: number | null;
+};
+
+async function runBaselineScan(
+  ctx: ActionCtx,
+  opts: {
+    label: string;
+    listRef: FunctionReference<
+      "query",
+      "internal",
+      { cursor?: string; pageSize?: number },
+      BaselineScanPage
+    >;
+    patchRef: FunctionReference<
+      "mutation",
+      "internal",
+      { ids: Id<"skillVersions">[] },
+      number
+    >;
+    dryRun: boolean;
+    cursor?: string;
+    maxPages?: number;
+    maxRows?: number;
+    pageSize?: number;
+  },
+): Promise<BaselineScanResult> {
+  const pageBudget = Math.min(Math.max(opts.maxPages ?? 200, 1), 500);
+  // The abort valve. A match count near the cap means the predicate is wrong,
+  // and stopping beats rewriting the archive on a bad one — which matters most
+  // for the description repair, the only one that edits row CONTENT rather than
+  // flipping a flag.
+  const rowCap = Math.min(Math.max(opts.maxRows ?? 5_000, 1), 20_000);
+
+  let cursor = opts.cursor;
+  let pages = 0;
+  let baselineRowsScanned = 0;
+  let scanComplete = false;
+  let newestMatchAt: number | null = null;
+  const ids: Id<"skillVersions">[] = [];
+
+  while (pages < pageBudget) {
+    const page: BaselineScanPage = await ctx.runQuery(opts.listRef, {
+      ...(cursor !== undefined && { cursor }),
+      ...(opts.pageSize !== undefined && { pageSize: opts.pageSize }),
+    });
+    pages++;
+    baselineRowsScanned += page.scanned;
+    ids.push(...page.ids);
+    if (page.newestMatchAt !== null) {
+      newestMatchAt = Math.max(newestMatchAt ?? 0, page.newestMatchAt);
+    }
+    cursor = page.nextCursor ?? undefined;
+    if (ids.length > rowCap) {
+      const aborted = `match count ${ids.length} exceeded maxRows ${rowCap} — nothing patched`;
+      console.error(`${opts.label} aborted: ${aborted}`);
+      return {
+        found: ids.length,
+        patched: 0,
+        baselineRowsScanned,
+        pages,
+        scanComplete: false,
+        aborted,
+        nextCursor: cursor ?? null,
+        newestMatchAt,
+      };
+    }
+    if (page.isDone) {
+      scanComplete = true;
+      cursor = undefined;
+      break;
+    }
+  }
+
+  let patched = 0;
+  if (!opts.dryRun) {
+    for (let i = 0; i < ids.length; i += REPAIR_PATCH_BATCH) {
+      patched += await ctx.runMutation(opts.patchRef, {
+        ids: ids.slice(i, i + REPAIR_PATCH_BATCH),
+      });
+    }
+  }
+
+  console.log(
+    `${opts.label}: ${opts.dryRun ? "would patch" : "patched"} ${opts.dryRun ? ids.length : patched}` +
+      ` of ${ids.length} matched across ${baselineRowsScanned} baseline rows` +
+      `${scanComplete ? "" : ` — SCAN INCOMPLETE, re-run with cursor: "${cursor}"`}`,
+  );
+  return {
+    found: ids.length,
+    patched,
+    baselineRowsScanned,
+    pages,
+    scanComplete,
+    aborted: null,
+    nextCursor: cursor ?? null,
+    newestMatchAt,
+  };
+}
+
+/**
  * Collect ids to repair, WITHOUT writing. Reading and writing are two passes on
  * purpose: patching a row clears the flag this scan filters on, so mutating
  * mid-pagination would shift the index under its own cursor and skip rows. The
@@ -1012,27 +1196,20 @@ const REPAIR_PATCH_BATCH = 100;
  */
 export const listMislabeledBaselineIds = internalQuery({
   args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
-  returns: v.object({
-    ids: v.array(v.id("skillVersions")),
-    scanned: v.number(),
-    nextCursor: v.union(v.string(), v.null()),
-    isDone: v.boolean(),
-  }),
+  returns: baselineScanPage,
   handler: async (ctx, { cursor, pageSize }) => {
-    const numItems = Math.min(
-      Math.max(pageSize ?? BASELINE_AUDIT_PAGE, 1),
-      BASELINE_AUDIT_PAGE,
-    );
     const result = await ctx.db
       .query("skillVersions")
       .withIndex("by_isBaseline_changedAt", (q) => q.eq("isBaseline", true))
-      .paginate({ numItems, cursor: cursor ?? null });
+      .paginate({ numItems: scanPageSize(pageSize), cursor: cursor ?? null });
 
+    const matches = result.page.filter(
+      (row) => row.previousSyncHash !== undefined,
+    );
     return {
-      ids: result.page
-        .filter((row) => row.previousSyncHash !== undefined)
-        .map((row) => row._id),
+      ids: matches.map((row) => row._id),
       scanned: result.page.length,
+      newestMatchAt: newestChangedAt(matches),
       nextCursor: result.continueCursor,
       isDone: result.isDone,
     };
@@ -1061,82 +1238,24 @@ export const clearBaselineFlags = internalMutation({
 });
 
 export const repairBaselineLabels = internalAction({
-  args: { maxPages: v.optional(v.number()), maxRows: v.optional(v.number()) },
-  returns: v.object({
-    found: v.number(),
-    patched: v.number(),
-    baselineRowsScanned: v.number(),
-    pages: v.number(),
-    scanComplete: v.boolean(),
-    aborted: v.union(v.string(), v.null()),
-  }),
-  handler: async (ctx, { maxPages, maxRows }) => {
-    const pageBudget = Math.min(Math.max(maxPages ?? 200, 1), 500);
-    // A ceiling on how much this is allowed to touch. The audit reported 605;
-    // anything near this cap means the match condition is wrong, and stopping
-    // beats patching the archive on a bad predicate.
-    const rowCap = Math.min(Math.max(maxRows ?? 5_000, 1), 20_000);
-
-    let cursor: string | undefined;
-    let pages = 0;
-    let baselineRowsScanned = 0;
-    let scanComplete = false;
-    let aborted: string | null = null;
-    const ids: Id<"skillVersions">[] = [];
-
-    while (pages < pageBudget) {
-      const page: {
-        ids: Id<"skillVersions">[];
-        scanned: number;
-        nextCursor: string | null;
-        isDone: boolean;
-      } = await ctx.runQuery(internal.skillVersions.listMislabeledBaselineIds, {
-        cursor,
-      });
-      pages++;
-      baselineRowsScanned += page.scanned;
-      ids.push(...page.ids);
-      if (ids.length > rowCap) {
-        aborted = `match count ${ids.length} exceeded maxRows ${rowCap} — nothing patched`;
-        console.error(`repairBaselineLabels aborted: ${aborted}`);
-        return {
-          found: ids.length,
-          patched: 0,
-          baselineRowsScanned,
-          pages,
-          scanComplete: false,
-          aborted,
-        };
-      }
-      if (page.isDone) {
-        scanComplete = true;
-        break;
-      }
-      cursor = page.nextCursor ?? undefined;
-    }
-
-    let patched = 0;
-    for (let i = 0; i < ids.length; i += REPAIR_PATCH_BATCH) {
-      patched += await ctx.runMutation(
-        internal.skillVersions.clearBaselineFlags,
-        { ids: ids.slice(i, i + REPAIR_PATCH_BATCH) },
-      );
-    }
-
-    console.log(
-      `repairBaselineLabels: patched ${patched} of ${ids.length} matched` +
-        ` across ${baselineRowsScanned} baseline rows` +
-        `${scanComplete ? "" : " — SCAN INCOMPLETE, re-run to finish"}`,
-    );
-    return {
-      found: ids.length,
-      patched,
-      baselineRowsScanned,
-      pages,
-      scanComplete,
-      aborted,
-    };
+  args: {
+    cursor: v.optional(v.string()),
+    maxPages: v.optional(v.number()),
+    maxRows: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
   },
+  returns: baselineScanResult,
+  // Explicit return type: the handler passes this file's own `internal.*`
+  // references to `runBaselineScan`, which is the inference cycle the same
+  // annotation breaks elsewhere in the codebase (see skills.ts addSkillManually).
+  handler: async (ctx, args): Promise<BaselineScanResult> =>
+    runBaselineScan(ctx, {
+      label: "repairBaselineLabels",
+      listRef: internal.skillVersions.listMislabeledBaselineIds,
+      patchRef: internal.skillVersions.clearBaselineFlags,
+      dryRun: false,
+      ...args,
+    }),
 });
 
 // ---------------------------------------------------------------------------
@@ -1150,13 +1269,19 @@ export const repairBaselineLabels = internalAction({
 // "Description changed" badge over a before-value of None, on the earliest entry
 // in the timeline, for a skill nothing had ever edited.
 //
+//     npx convex run skillVersions:auditBaselineDescriptionClaims --prod
 //     npx convex run skillVersions:repairBaselineDescriptionClaims --prod
 //
-// Write-side fixed first, then this — same ordering rule as above, for the same
-// reason: repair before the fix is live and the pipeline just makes more.
+// Write-side fixed first, then the audit, then this — same ordering rule as
+// above, for the same reason: repair before the fix is live and the pipeline
+// just makes more. `auditBaselineDescriptionClaims` is what makes that rule
+// checkable rather than merely stated; it runs the same predicate through the
+// same driver with `dryRun`, and reports `newestMatchAt` and `found`.
 //
-// Idempotent: a repaired row no longer matches the filter, so a second run finds
-// nothing.
+// Idempotent: a repaired row no longer matches the predicate, so a second run
+// patches nothing. Note it does NOT drop out of the scanned index (the flag
+// stays set, deliberately), so a run that stops short must be resumed with the
+// `nextCursor` it returns rather than re-run bare — see `baselineScanResult`.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1170,31 +1295,22 @@ export const repairBaselineLabels = internalAction({
  */
 export const listBaselineDescriptionClaimIds = internalQuery({
   args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
-  returns: v.object({
-    ids: v.array(v.id("skillVersions")),
-    scanned: v.number(),
-    nextCursor: v.union(v.string(), v.null()),
-    isDone: v.boolean(),
-  }),
+  returns: baselineScanPage,
   handler: async (ctx, { cursor, pageSize }) => {
-    const numItems = Math.min(
-      Math.max(pageSize ?? BASELINE_AUDIT_PAGE, 1),
-      BASELINE_AUDIT_PAGE,
-    );
     const result = await ctx.db
       .query("skillVersions")
       .withIndex("by_isBaseline_changedAt", (q) => q.eq("isBaseline", true))
-      .paginate({ numItems, cursor: cursor ?? null });
+      .paginate({ numItems: scanPageSize(pageSize), cursor: cursor ?? null });
 
+    const matches = result.page.filter(
+      (row) =>
+        row.previousSyncHash === undefined &&
+        (row.descriptionChanged || row.descriptionBefore !== undefined),
+    );
     return {
-      ids: result.page
-        .filter(
-          (row) =>
-            row.previousSyncHash === undefined &&
-            (row.descriptionChanged || row.descriptionBefore !== undefined),
-        )
-        .map((row) => row._id),
+      ids: matches.map((row) => row._id),
       scanned: result.page.length,
+      newestMatchAt: newestChangedAt(matches),
       nextCursor: result.continueCursor,
       isDone: result.isDone,
     };
@@ -1217,8 +1333,11 @@ export const clearBaselineDescriptionClaims = internalMutation({
       if (!row.descriptionChanged && row.descriptionBefore === undefined) {
         continue;
       }
-      // `descriptionAfter` stays. It is what the file said when we first copied
-      // it, which is true and is what the timeline reads for the anchor row.
+      // `descriptionAfter` stays: it is what the file said when we first copied
+      // it, which is true. No read path currently reaches it on a baseline —
+      // `DescriptionChange` early-returns unless `descriptionChanged`
+      // (components/skill-history-row.tsx) and the feed drops baselines — so it
+      // is kept as archival record, not because something renders it.
       await ctx.db.patch(id, {
         descriptionChanged: false,
         descriptionBefore: undefined,
@@ -1229,85 +1348,58 @@ export const clearBaselineDescriptionClaims = internalMutation({
   },
 });
 
-export const repairBaselineDescriptionClaims = internalAction({
-  args: { maxPages: v.optional(v.number()), maxRows: v.optional(v.number()) },
-  returns: v.object({
-    found: v.number(),
-    patched: v.number(),
-    baselineRowsScanned: v.number(),
-    pages: v.number(),
-    scanComplete: v.boolean(),
-    aborted: v.union(v.string(), v.null()),
-  }),
-  handler: async (ctx, { maxPages, maxRows }) => {
-    const pageBudget = Math.min(Math.max(maxPages ?? 200, 1), 500);
-    // Same abort valve as `repairBaselineLabels`, and it matters more here
-    // because this one edits the CONTENT of a row rather than a flag. A match
-    // count near the cap means the predicate is wrong; stop rather than rewrite
-    // the archive on it.
-    const rowCap = Math.min(Math.max(maxRows ?? 5_000, 1), 20_000);
-
-    let cursor: string | undefined;
-    let pages = 0;
-    let baselineRowsScanned = 0;
-    let scanComplete = false;
-    let aborted: string | null = null;
-    const ids: Id<"skillVersions">[] = [];
-
-    while (pages < pageBudget) {
-      const page: {
-        ids: Id<"skillVersions">[];
-        scanned: number;
-        nextCursor: string | null;
-        isDone: boolean;
-      } = await ctx.runQuery(
-        internal.skillVersions.listBaselineDescriptionClaimIds,
-        { cursor },
-      );
-      pages++;
-      baselineRowsScanned += page.scanned;
-      ids.push(...page.ids);
-      if (ids.length > rowCap) {
-        aborted = `match count ${ids.length} exceeded maxRows ${rowCap} — nothing patched`;
-        console.error(`repairBaselineDescriptionClaims aborted: ${aborted}`);
-        return {
-          found: ids.length,
-          patched: 0,
-          baselineRowsScanned,
-          pages,
-          scanComplete: false,
-          aborted,
-        };
-      }
-      if (page.isDone) {
-        scanComplete = true;
-        break;
-      }
-      cursor = page.nextCursor ?? undefined;
-    }
-
-    let patched = 0;
-    for (let i = 0; i < ids.length; i += REPAIR_PATCH_BATCH) {
-      patched += await ctx.runMutation(
-        internal.skillVersions.clearBaselineDescriptionClaims,
-        { ids: ids.slice(i, i + REPAIR_PATCH_BATCH) },
-      );
-    }
-
-    console.log(
-      `repairBaselineDescriptionClaims: patched ${patched} of ${ids.length} matched` +
-        ` across ${baselineRowsScanned} baseline rows` +
-        `${scanComplete ? "" : " — SCAN INCOMPLETE, re-run to finish"}`,
-    );
-    return {
-      found: ids.length,
-      patched,
-      baselineRowsScanned,
-      pages,
-      scanComplete,
-      aborted,
-    };
+/**
+ * Read-only pre-flight for the repair below. Same predicate, same driver,
+ * patches nothing.
+ *
+ *     npx convex run skillVersions:auditBaselineDescriptionClaims --prod
+ *
+ * Read `newestMatchAt` first: if it is recent, rows are STILL being written
+ * this way and the write-side fix is not live yet — repair now and the pipeline
+ * just makes more. Read `found` second, and pass it (with headroom) as the
+ * repair's `maxRows` so a legitimately large population doesn't trip the abort
+ * valve and read as a bad predicate.
+ */
+export const auditBaselineDescriptionClaims = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    maxPages: v.optional(v.number()),
+    maxRows: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
   },
+  returns: baselineScanResult,
+  // Explicit return type: the handler passes this file's own `internal.*`
+  // references to `runBaselineScan`, which is the inference cycle the same
+  // annotation breaks elsewhere in the codebase (see skills.ts addSkillManually).
+  handler: async (ctx, args): Promise<BaselineScanResult> =>
+    runBaselineScan(ctx, {
+      label: "auditBaselineDescriptionClaims",
+      listRef: internal.skillVersions.listBaselineDescriptionClaimIds,
+      patchRef: internal.skillVersions.clearBaselineDescriptionClaims,
+      dryRun: true,
+      ...args,
+    }),
+});
+
+export const repairBaselineDescriptionClaims = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    maxPages: v.optional(v.number()),
+    maxRows: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+  },
+  returns: baselineScanResult,
+  // Explicit return type: the handler passes this file's own `internal.*`
+  // references to `runBaselineScan`, which is the inference cycle the same
+  // annotation breaks elsewhere in the codebase (see skills.ts addSkillManually).
+  handler: async (ctx, args): Promise<BaselineScanResult> =>
+    runBaselineScan(ctx, {
+      label: "repairBaselineDescriptionClaims",
+      listRef: internal.skillVersions.listBaselineDescriptionClaimIds,
+      patchRef: internal.skillVersions.clearBaselineDescriptionClaims,
+      dryRun: false,
+      ...args,
+    }),
 });
 
 // ---------------------------------------------------------------------------

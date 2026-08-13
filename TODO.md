@@ -796,6 +796,18 @@ Note the sync path already does the gated thing where it can: `upsertSkillsBatch
 returns a `contentFieldChanges` count and `syncSkills` pings `skill-content` only when
 it's non-zero. The content chain is harder only because of the scheduling shape.
 
+**A second dependent, added Aug 2026.** The add path now publishes a user-added
+row's first content from inside the write's own transaction
+(`skills.publishFirstUserAddedContent`), so a dropped publish can no longer come
+from the action dying between the commit and the schedule. What it can still
+come from is the ping itself failing — `revalidateSiteTag` swallows errors and
+never retries. Today the ungated daily ping quietly covers that within 24h. Gate
+it and the recovery window becomes `loadSkill`'s `cacheLife("weeks")`, i.e. a
+freshly added skill can show an install count over an empty body for up to 7
+days with nothing recording that a publish was owed. So this entry now needs a
+per-row "publish owed" retry (or a per-skill tag to ping cheaply) BEFORE the
+gate, not merely alongside it.
+
 **Already tried and reverted (Aug 2026): a third `skill-audit` tag.** The idea
 was to move `loadAudits` off its 24h timer onto a weekly life plus a tag pinged
 by the audit chain. It banks nothing, for the reason above applied one level

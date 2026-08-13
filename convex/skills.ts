@@ -6,7 +6,7 @@ import {
   query,
 } from "./_generated/server";
 import type { MutationCtx, ActionCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -895,7 +895,7 @@ export function extractFrontmatterDescription(content: string): string | null {
   return null;
 }
 
-function extractBodyContent(raw: string): string | null {
+export function extractBodyContent(raw: string): string | null {
   // Strip YAML frontmatter (between --- markers), return remaining markdown body
   const match = raw.match(/^---\s*\n[\s\S]*?\n---\s*\n?([\s\S]*)/);
   if (match) {
@@ -1517,18 +1517,6 @@ export const fetchSkillContent = internalAction({
               contentChanged: outcome.contentChanged,
             });
           }
-
-          // A just-added skill's first content. Publish it rather than making
-          // the person who added it wait for the catalog-wide chain to finish;
-          // see `publishNow` on contentWriteOutcome. Scheduled, not awaited, so
-          // a slow ping can't hold up the rest of the batch.
-          if (outcome.publishNow) {
-            await ctx.scheduler.runAfter(
-              0,
-              internal.skills.publishSkillUpdate,
-              {},
-            );
-          }
         } else {
           await ctx.runMutation(internal.skills.markContentFetched, {
             skillId,
@@ -1706,40 +1694,70 @@ const contentWriteOutcome = v.object({
   previousDescription: v.optional(v.string()),
   descriptionChanged: v.boolean(),
   contentChanged: v.boolean(),
-  /**
-   * This write filled in a USER-ADDED row's content for the first time, so the
-   * caller should publish it now instead of leaving it to the content chain's
-   * terminal `publishSkillUpdate`.
-   *
-   * The terminal ping is the right publisher for the daily pipeline, but it
-   * lands only once the whole catalog-wide drain finishes. A skill someone just
-   * added through /add is being looked at RIGHT NOW, and `kickPostAddChain` has
-   * already pinged the tags at add time — so a page rendered in between caches
-   * whatever the row held then, on `cacheLife("weeks")`. That is how an add can
-   * leave a skill page showing an install count and no SKILL.md.
-   *
-   * Gated on both halves for cost. Every writer here is catalog-wide, so an
-   * unconditional ping per first-content write would expire every skill's
-   * content entry once per newly synced skill — tens of times each morning. The
-   * user-added gate holds the rate to human add volume, which is the same order
-   * as the pings the add itself already fires.
-   */
-  publishNow: v.boolean(),
 });
 
 const NO_CONTENT_CHANGE = {
   changed: false,
   descriptionChanged: false,
   contentChanged: false,
-  publishNow: false,
 } as const;
+
+/**
+ * Publish a first content write for a user-added row, from inside the
+ * transaction that wrote it.
+ *
+ * WHY THIS FIRES AT ALL. The content chain's terminal `publishSkillUpdate` is
+ * the right publisher for the daily pipeline, but it lands only once the whole
+ * catalog-wide drain finishes. A skill someone just added through /add is being
+ * looked at RIGHT NOW, and `kickPostAddChain` already pinged the tags at add
+ * time — so a page rendered in between caches whatever the row held then, on
+ * `cacheLife("weeks")`. That is how an add could leave a skill page showing an
+ * install count and no SKILL.md.
+ *
+ * WHY FROM THE MUTATION rather than from the calling action. Scheduling inside
+ * the transaction means the publish commits with the write or not at all. From
+ * the action it was a second, unprotected step: a rate limit, timeout or deploy
+ * between the two left `syncHash` set — so this condition could never be true
+ * again for that row — with no publish and nothing recording that one was owed.
+ * The only thing that would have re-published it is the daily catalog-wide ping,
+ * which TODO.md plans to gate. Losing a page for up to 7 days is not a failure
+ * mode worth keeping for the sake of batching identical pings.
+ *
+ * The cost of NOT batching is real but small: a batch containing K user-added
+ * rows enqueues K identical catalog-wide pings. K is bounded by human add
+ * volume (the gate below), which is the same order as the pings the add itself
+ * already fires — and in practice K is 1, because adds arrive one at a time.
+ *
+ * Both halves of the gate matter. Every writer here is catalog-wide, so an
+ * unconditional ping per first-content write would expire every skill's content
+ * entry once per newly synced skill — tens of times each morning.
+ */
+async function publishFirstUserAddedContent(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+): Promise<void> {
+  if (skill.syncHash !== undefined) return; // not the first content
+  if (!isUserAddedRow(skill)) return;
+  await ctx.scheduler.runAfter(0, internal.skills.publishSkillUpdate, {});
+}
+
+/**
+ * Origin tag for a row added by hand through /add or /dev/add-skill. Set on
+ * insert only, like every other `leaderboard` value. Its GitHub-only twin lives
+ * in lib/githubQuota.ts, where one module owns both the tag the insert writes
+ * and the tag the quota count filters on.
+ */
+const MANUAL_LEADERBOARD = "manual";
 
 /**
  * Was this row put here by a person, rather than by the sync pipeline?
  *
- * Both origin tags plus `addedBy`: an admin add lands as `"manual"`, a
- * GitHub-only add as `"github"`, and the public flows stamp `addedBy` on top.
- * Any one of them means somebody is waiting on the page.
+ * The two origin tags are what actually decide it: an admin or public normal add
+ * lands as `"manual"`, a GitHub-only add as `"github"`. `addedBy` is belt and
+ * braces — today it is only ever stamped alongside one of those two tags
+ * (`upsertSkillsBatch`'s insert branch), so it decides nothing on its own, and
+ * it is here so a future add path that forgets the origin tag still publishes
+ * rather than silently falling back to the daily terminal.
  */
 function isUserAddedRow(skill: {
   leaderboard: string;
@@ -1857,6 +1875,10 @@ export const updateDescription = internalMutation({
       ...gitHubOnlyHeartbeat(skill, now),
     });
 
+    // `skill` is the pre-patch snapshot, so this still sees the row as it was
+    // before the write — which is what makes "first content" answerable here.
+    await publishFirstUserAddedContent(ctx, skill);
+
     return {
       // Unconditionally true here: the only way to reach this point is past the
       // `hashUnchanged` early return above, which means the raw file differs.
@@ -1865,7 +1887,6 @@ export const updateDescription = internalMutation({
       previousDescription: skill.description,
       descriptionChanged,
       contentChanged,
-      publishNow: skill.syncHash === undefined && isUserAddedRow(skill),
     };
   },
 });
@@ -2283,6 +2304,10 @@ export const updateSkillFromDetail = internalMutation({
       isGitHubOnly: skill.isGitHubOnly,
     });
 
+    // See `updateDescription`: pre-patch snapshot, so "first content" is still
+    // answerable after the write.
+    await publishFirstUserAddedContent(ctx, skill);
+
     return {
       // Unconditionally true here: the only way to reach this point is past the
       // `hashUnchanged` early return above, which means the raw file differs.
@@ -2291,7 +2316,6 @@ export const updateSkillFromDetail = internalMutation({
       previousDescription: skill.description,
       descriptionChanged,
       contentChanged,
-      publishNow: skill.syncHash === undefined && isUserAddedRow(skill),
     };
   },
 });
@@ -2395,16 +2419,6 @@ export const fetchSkillDetailBatch = internalAction({
               descriptionChanged: outcome.descriptionChanged,
               contentChanged: outcome.contentChanged,
             });
-          }
-
-          // Same immediate publish as the GitHub-raw path — a well-known source
-          // added by hand goes through this batch instead of that one.
-          if (outcome.publishNow) {
-            await ctx.scheduler.runAfter(
-              0,
-              internal.skills.publishSkillUpdate,
-              {},
-            );
           }
         } catch (e) {
           if (e instanceof SkillsApiRateLimitError) {
@@ -4039,9 +4053,10 @@ export const getContent = query({
 // reconcileUnseenSkills (which refreshes ANY healthy skill the leaderboard sync
 // doesn't touch, regardless of origin tag) — there is no manual-specific cron.
 
-const MANUAL_LEADERBOARD = "manual";
-// The GitHub-only origin tag + quota machinery live in lib/githubQuota.ts —
-// one module owns the tag the insert writes AND the tag the count filters on.
+// `MANUAL_LEADERBOARD` is declared with `isUserAddedRow` near the top of this
+// file, beside the GITHUB_LEADERBOARD import: the pair is a statement about row
+// PROVENANCE that the content-write path reads, so keeping the two tags apart
+// left half the policy 2,300 lines from the other half.
 
 // parseSkillInput lives at lib/parse-skill-input.ts so the /dev/add-skill form
 // can import it and validate input client-side. Validating before calling the
@@ -4129,12 +4144,16 @@ export const promoteSkillToManual = internalMutation({
  * Seed a freshly added row with the SKILL.md the add already downloaded, so the
  * skill page is complete the first time anyone opens it.
  *
- * WHY THIS EXISTS. `manualAddCore` fetches the v1 detail endpoint to verify the
- * skill, and that response carries the whole SKILL.md — but the row it writes
- * holds only name + installs, because filling in content is the content chain's
- * job. That chain is catalog-wide and staggered, so it lands seconds to minutes
- * later. In between, the page renders with an install count and no content, and
- * `loadSkill` caches exactly that on `cacheLife("weeks")`.
+ * WHY THIS EXISTS. Both add paths verify a skill by DOWNLOADING its SKILL.md —
+ * `manualAddCore` from the skills.sh detail endpoint, `addGitHubCore` from the
+ * repo — and then write a row holding only name + installs, because filling in
+ * content is the content chain's job. That chain is catalog-wide and staggered,
+ * so it lands seconds to minutes later. In between, the page renders with an
+ * install count and no content, and `loadSkill` caches exactly that on
+ * `cacheLife("weeks")`.
+ *
+ * Called from `kickPostAddChain` rather than from either add, so it cannot be
+ * skipped by one of them and cannot land after the cache bust — see lib/postAdd.
  *
  * WHY NO `syncHash`. GitHub, not skills.sh, is the source of truth for content,
  * and skills.sh's copy can lag it. Storing the hash of a possibly-stale copy
@@ -4144,13 +4163,13 @@ export const promoteSkillToManual = internalMutation({
  * and archives the first version — as a baseline, since there is still no
  * previous hash, so `recordSkillVersion` files it as a starting point rather
  * than an edit. What we show in the gap may be slightly behind GitHub; it is
- * the same text skills.sh is serving on its own page for the skill.
+ * the same text the source we verified against is serving.
  *
  * FILL-ONLY, never overwrite. The relist and adopt paths run through here too,
  * and their rows can already hold content fetched from GitHub. Older-but-real
  * content beats a sideways write from a second source.
  */
-export const seedManualAddContent = internalMutation({
+export const seedAddedSkillContent = internalMutation({
   args: {
     source: v.string(),
     skillId: v.string(),
@@ -4177,12 +4196,18 @@ export const seedManualAddContent = internalMutation({
       ...(seedContent !== undefined && { content: seedContent }),
     });
 
-    // Mirror the description to the summary — that is the row cards, search
+    // Mirror the description to the summary — that is what cards, search
     // results and the catalog lists read. `content` is deliberately not
     // mirrored: summaries are the slim ~200 B rows, and no summary reader wants
     // the body. Patched directly rather than through `upsertSkillSummary`
     // because every other field on the summary is already correct from the
     // upsert that just ran; this is a one-field fill, not a re-sync.
+    //
+    // Conditioned on the SKILLS row having been empty, not on the summary's own
+    // emptiness. The two are mirrors, so gating them independently is how they
+    // would drift: a summary that somehow held a description while the skills
+    // row did not would end up showing one string in the catalog list and
+    // another on the detail page.
     if (seedDescription !== undefined) {
       const summary = await ctx.db
         .query("skillSummaries")
@@ -4190,7 +4215,7 @@ export const seedManualAddContent = internalMutation({
           q.eq("source", source).eq("skillId", skillId),
         )
         .unique();
-      if (summary && summary.description === undefined) {
+      if (summary) {
         await ctx.db.patch(summary._id, { description: seedDescription });
       }
     }
@@ -4338,7 +4363,7 @@ async function manualAddCore(
     : undefined;
   // Frontmatter-stripped, matching what the content pipeline stores in
   // `skills.content`. Seeded below so the page isn't blank until that pipeline
-  // gets to this row; see `seedManualAddContent`.
+  // gets to this row; see `seedAddedSkillContent`.
   const parsedBody = skillMd
     ? (extractBodyContent(skillMd.contents) ?? undefined)
     : undefined;
@@ -4371,26 +4396,15 @@ async function manualAddCore(
     });
   }
 
-  // Before the post-add chain, because that chain's cache bust publishes
-  // whatever the row holds at that moment — seeding after it would publish the
-  // empty version and then sit on it for weeks.
-  if (parsedDescription !== undefined || parsedBody !== undefined) {
-    await ctx.runMutation(internal.skills.seedManualAddContent, {
-      source: detail.source,
-      skillId: detail.slug,
-      ...(parsedDescription !== undefined && {
-        description: parsedDescription,
-      }),
-      ...(parsedBody !== undefined && { content: parsedBody }),
-    });
-  }
-
-  // Backfill chain + cache bust + immediate Typesense index — shared with the
-  // GitHub-only add; see lib/postAdd.ts for the why of each step.
+  // Seed + backfill chain + cache bust + immediate Typesense index — shared
+  // with the GitHub-only add; see lib/postAdd.ts for the why of each step. The
+  // SKILL.md parsed above goes in so the chain seeds the row BEFORE it
+  // publishes it.
   await kickPostAddChain(ctx, {
     source: detail.source,
     skillId: detail.slug,
     description: parsedDescription,
+    content: parsedBody,
   });
 
   return {

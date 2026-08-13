@@ -216,6 +216,14 @@ test("a baseline reports no description change", async () => {
   // "Earliest recorded version" and a skill added after it did not.
   const t = makeTest();
   const skillDocId = await seedSkill(t);
+  // The row carries a description but NO `syncHash` — exactly what an add
+  // leaves behind now that `kickPostAddChain` seeds one from the SKILL.md it
+  // downloaded. This is what makes the assertions below non-vacuous: without
+  // it `previousDescription` is undefined anyway and the suppression under test
+  // cannot be distinguished from doing nothing.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(skillDocId, { description: "Seeded at add time" });
+  });
 
   const outcome = await writeContent(
     t,
@@ -225,10 +233,16 @@ test("a baseline reports no description change", async () => {
   // The writer still reports the change — suppression is the archive's call,
   // and `needsEmbedding` downstream depends on this staying true.
   expect(outcome.descriptionChanged).toBe(true);
+  // Narrowed rather than asserted through: the unchanged-hash arm of
+  // `contentWriteOutcome` carries no `previousDescription`.
+  if (!outcome.changed) throw new Error("expected a content change");
+  expect(outcome.previousDescription).toBe("Seeded at add time");
 
   const versions = await versionsFor(t, skillDocId);
   expect(versions[0].isBaseline).toBe(true);
   expect(versions[0].descriptionChanged).toBe(false);
+  // Dropped, not merely absent: the caller passed "Seeded at add time" and the
+  // archive refused it, because a starting point has nothing to have moved from.
   expect(versions[0].descriptionBefore).toBeUndefined();
   // Kept: it is what the file says now, not a claim that anything moved.
   expect(versions[0].descriptionAfter).toBe("Install and configure the thing");
@@ -418,6 +432,7 @@ async function insertVersion(
     isBaseline: boolean;
     previousSyncHash?: string;
     descriptionChanged?: boolean;
+    descriptionBefore?: string;
   },
 ) {
   await t.run(async (ctx) => {
@@ -446,6 +461,7 @@ async function insertVersion(
       rawStorageId,
       rawBytes: 1,
       descriptionChanged: opts.descriptionChanged ?? false,
+      descriptionBefore: opts.descriptionBefore,
       contentChanged: true,
       isBaseline: opts.isBaseline,
     });
@@ -465,6 +481,7 @@ test("the description-claim repair clears artefacts and leaves real changes alon
     changedAt: 1,
     isBaseline: true,
     descriptionChanged: true,
+    descriptionBefore: "what the empty row held",
   });
   await insertVersion(t, {
     source: "example.com",
@@ -473,7 +490,23 @@ test("the description-claim repair clears artefacts and leaves real changes alon
     isBaseline: true,
     previousSyncHash: "an-earlier-copy-existed",
     descriptionChanged: true,
+    descriptionBefore: "a description that genuinely moved",
   });
+
+  // Pre-flight first, and it must report without touching anything — that
+  // ordering is the whole point of having one.
+  const audit = await t.action(
+    internal.skillVersions.auditBaselineDescriptionClaims,
+    {},
+  );
+  expect(audit.found).toBe(1);
+  expect(audit.patched).toBe(0);
+  expect(audit.newestMatchAt).toBe(1);
+  expect(
+    (await t.run(async (ctx) => ctx.db.query("skillVersions").collect())).every(
+      (r) => r.descriptionChanged,
+    ),
+  ).toBe(true);
 
   const result = await t.action(
     internal.skillVersions.repairBaselineDescriptionClaims,
@@ -490,6 +523,8 @@ test("the description-claim repair clears artefacts and leaves real changes alon
   expect(artefact.descriptionChanged).toBe(false);
   expect(artefact.descriptionBefore).toBeUndefined();
   expect(realChange.descriptionChanged).toBe(true);
+  // The half a too-broad predicate would destroy.
+  expect(realChange.descriptionBefore).toBe("a description that genuinely moved");
 
   // Idempotent: the repaired row no longer matches.
   const again = await t.action(

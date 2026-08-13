@@ -293,14 +293,14 @@ async function seedAddedRow(
   });
 }
 
-test("seedManualAddContent fills an empty row and mirrors the description", async () => {
+test("seedAddedSkillContent fills an empty row and mirrors the description", async () => {
   const t = makeTest();
   const skillDocId = await seedAddedRow(t, {
     leaderboard: "manual",
     skillId: "just-added",
   });
 
-  await t.mutation(internal.skills.seedManualAddContent, {
+  await t.mutation(internal.skills.seedAddedSkillContent, {
     source: "example.com",
     skillId: "just-added",
     description: "Seeded description",
@@ -330,7 +330,7 @@ test("seedManualAddContent fills an empty row and mirrors the description", asyn
   });
 });
 
-test("seedManualAddContent never overwrites content the pipeline already wrote", async () => {
+test("seedAddedSkillContent never overwrites content the pipeline already wrote", async () => {
   // Relist and adopt both route through the seed. Their rows can already carry
   // content fetched from GitHub, and older-but-real content beats a sideways
   // write from a second source that may be behind it.
@@ -346,7 +346,7 @@ test("seedManualAddContent never overwrites content the pipeline already wrote",
     });
   });
 
-  await t.mutation(internal.skills.seedManualAddContent, {
+  await t.mutation(internal.skills.seedAddedSkillContent, {
     source: "example.com",
     skillId: "already-has-content",
     description: "From skills.sh",
@@ -360,7 +360,22 @@ test("seedManualAddContent never overwrites content the pipeline already wrote",
   });
 });
 
-test("a user-added row's first content asks to be published immediately", async () => {
+/**
+ * How many `publishSkillUpdate` jobs the content writes have enqueued.
+ *
+ * Read off the scheduler rather than off a returned flag, because the point of
+ * the change these tests guard is WHERE the publish is scheduled from: inside
+ * the write's own transaction, so it cannot be lost between the commit and a
+ * follow-up step in the calling action.
+ */
+async function scheduledPublishes(t: ReturnType<typeof makeTest>) {
+  return await t.run(async (ctx) => {
+    const jobs = await ctx.db.system.query("_scheduled_functions").collect();
+    return jobs.filter((j) => j.name.includes("publishSkillUpdate")).length;
+  });
+}
+
+test("a user-added row's first content publishes from inside the write", async () => {
   // The daily pipeline publishes at the terminal of a catalog-wide drain, which
   // is far too late for someone who just added a skill and is looking at it.
   const t = makeTest();
@@ -369,26 +384,26 @@ test("a user-added row's first content asks to be published immediately", async 
     skillId: "user-added",
   });
 
-  const first = await t.mutation(internal.skills.updateSkillFromDetail, {
+  await t.mutation(internal.skills.updateSkillFromDetail, {
     skillId: skillDocId,
     description: "Fetched description",
     content: "Fetched body",
     syncHash: "b".repeat(64),
   });
-  expect(first.publishNow).toBe(true);
+  expect(await scheduledPublishes(t)).toBe(1);
 
   // Only the FIRST content qualifies. Later edits to the same row are ordinary
   // pipeline work and ride the terminal ping like everything else.
-  const second = await t.mutation(internal.skills.updateSkillFromDetail, {
+  await t.mutation(internal.skills.updateSkillFromDetail, {
     skillId: skillDocId,
     description: "Edited description",
     content: "Edited body",
     syncHash: "c".repeat(64),
   });
-  expect(second.publishNow).toBe(false);
+  expect(await scheduledPublishes(t)).toBe(1);
 });
 
-test("a synced row's first content does not ask to be published", async () => {
+test("a synced row's first content does not publish", async () => {
   // The gate that keeps the cost sane. Every publisher here expires the content
   // tag catalog-wide, and syncSkills inserts new rows daily — without the
   // user-added check this would fire tens of times each morning.
@@ -405,7 +420,7 @@ test("a synced row's first content does not ask to be published", async () => {
     syncHash: "d".repeat(64),
   });
   expect(outcome.changed).toBe(true);
-  expect(outcome.publishNow).toBe(false);
+  expect(await scheduledPublishes(t)).toBe(0);
 });
 
 test("updateSkillMdUrls: settles a mixed batch in one transaction", async () => {
