@@ -505,11 +505,13 @@ test("the description-claim repair clears artefacts and leaves real changes alon
   // Both numbers above are only meaningful once the scan reached the end, and
   // the docblock tells the operator to check this before reading them.
   expect(audit.scanComplete).toBe(true);
-  // No ceiling to trip: the driver lifts `rowCap` for any dry run, and this
-  // action accepts no `maxRows` for a caller to set one with. A cheap negative
-  // for the lift itself isn't available — the discriminating case needs a
-  // population above the 5,000 default — so the arg surface is what guarantees
-  // it, and that is what this pins.
+  // Weaker than it looks, and worth saying so. With one match this passes
+  // whether or not the driver lifts `rowCap` for a dry run, so it pins the
+  // audit's no-abort CONTRACT, not the lift that upholds it. Nothing pins the
+  // lift: the discriminating case needs 5,001 matching rows (the non-dry-run
+  // default), seeded one `t.run` at a time, which is not worth it for tooling
+  // that runs once. Deleting the `dryRun` branch in `runBaselineScan` would
+  // leave this green — so treat that branch as unguarded when changing it.
   expect(audit.aborted).toBeNull();
   expect(
     (await t.run(async (ctx) => ctx.db.query("skillVersions").collect())).every(

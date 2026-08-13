@@ -282,7 +282,8 @@ const baselineScanResult = v.object({
   scanComplete: v.boolean(),
   aborted: v.union(v.string(), v.null()),
   /**
-   * Where to resume when `scanComplete` is false. Pass it back as `cursor`.
+   * Where a REPAIR resumes when `scanComplete` is false. Pass it back as
+   * `cursor`.
    *
    * Not optional garnish: `clearBaselineDescriptionClaims` leaves `isBaseline`
    * set, so its repaired rows keep their positions in the scanned index and a
@@ -291,9 +292,15 @@ const baselineScanResult = v.object({
    * sibling was resumable by accident — this is what makes both of them
    * resumable on purpose.)
    *
-   * EXCEPT on an abort, where it is where the run STARTED: that branch patches
-   * nothing, so resuming from the scan position would skip everything it
-   * matched. Read `aborted` before using this.
+   * Two cases where it is NOT a resume point, both reported by fields beside it:
+   *
+   *   - On an abort (`aborted` non-null) it is where the run STARTED. That
+   *     branch patches nothing, so resuming from the scan position would skip
+   *     everything it matched.
+   *   - On a DRY RUN it is inert. The audit takes no `cursor` (its docblock
+   *     says why), so there is nothing to pass it back to; an incomplete dry
+   *     run re-runs from the start with a larger `maxPages`, which is what its
+   *     log line says.
    */
   nextCursor: v.union(v.string(), v.null()),
   /**
@@ -449,10 +456,16 @@ async function runBaselineScan(
     }
   }
 
+  // The incomplete-scan advice differs by mode, and must: a dry-run caller has
+  // no `cursor` arg to pass back (see `auditBaselineDescriptionClaims`), so
+  // telling it to resume would hand the operator a call that fails validation.
+  const resumeAdvice = opts.dryRun
+    ? " — SCAN INCOMPLETE, re-run from the start with a larger maxPages"
+    : ` — SCAN INCOMPLETE, re-run with cursor: "${cursor}"`;
   console.log(
     `${opts.label}: ${opts.dryRun ? "would patch" : "patched"} ${opts.dryRun ? ids.length : patched}` +
       ` of ${ids.length} matched across ${baselineRowsScanned} baseline rows` +
-      `${scanComplete ? "" : ` — SCAN INCOMPLETE, re-run with cursor: "${cursor}"`}`,
+      `${scanComplete ? "" : resumeAdvice}`,
   );
   return {
     found: ids.length,
@@ -633,16 +646,8 @@ export const clearBaselineDescriptionClaims = internalMutation({
  *     npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod
  *
  * Check `scanComplete` FIRST — neither number below means anything until the
- * scan reached the end (see `baselineScanResult`).
- *
- * If it is false, re-run **from the start** with a bigger `maxPages`. NOT from
- * `nextCursor`, even though the field is there: `found` counts what THIS
- * invocation matched, so a resumed run reports only the segment after the
- * cursor. Reading that partial number and passing it as the repair's `maxRows`
- * below would under-size the valve and trip an abort on a legitimate run — the
- * exact misreading this pre-flight exists to prevent. Resuming is for the
- * REPAIR, which keeps the rows it already patched; a dry run has nothing to
- * lose by starting over, and no `maxRows` ceiling to hit on the way (below).
+ * scan reached the end (see `baselineScanResult`). If it is false, re-run from
+ * the start with a bigger `maxPages`.
  *
  * Then read `newestMatchAt`: if it is recent, rows are STILL being written this
  * way and the write-side fix is not live yet — repair now and the pipeline just
@@ -650,13 +655,27 @@ export const clearBaselineDescriptionClaims = internalMutation({
  * `maxRows` so a legitimately large population doesn't trip the repair's abort
  * valve and read as a bad predicate.
  *
- * Takes no `maxRows` of its own, deliberately: `runBaselineScan` lifts the cap
- * for any dry run, so accepting the arg would only let an operator pass a
- * ceiling that is silently ignored.
+ * TAKES NEITHER `cursor` NOR `maxRows`, and both omissions are the point:
+ *
+ *   - `cursor`, because `found` counts what ONE invocation matched. A resumed
+ *     run reports only the segment past the cursor, and passing that partial
+ *     number as the repair's `maxRows` would under-size the valve and abort a
+ *     legitimate run — the exact misreading this pre-flight exists to prevent.
+ *     Resuming belongs to the REPAIR, which keeps the rows it already patched;
+ *     a dry run has nothing to lose by starting over. Not accepting the arg is
+ *     what makes that structural rather than a rule in a comment.
+ *   - `maxRows`, because `runBaselineScan` lifts the cap for any dry run, so
+ *     the arg could only ever be a ceiling that is silently ignored.
+ *
+ * The ceiling that leaves: `maxPages` clamps at 500 and the page at
+ * BASELINE_AUDIT_PAGE, so one run covers at most 200,000 baseline rows. Past
+ * that this cannot reach `scanComplete: true` and would need a resumable count
+ * (a running total threaded through `cursor`) rather than the `cursor` arg
+ * removed above. Far off — the table is ~13k rows — and `scanComplete: false`
+ * says so plainly rather than reporting a number that looks whole.
  */
 export const auditBaselineDescriptionClaims = internalAction({
   args: {
-    cursor: v.optional(v.string()),
     maxPages: v.optional(v.number()),
     pageSize: v.optional(v.number()),
   },

@@ -766,9 +766,18 @@ worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 The module is a one-shot: four hand-run functions correcting `isBaseline` rows
 the archive's write path used to produce wrongly. Nothing in the app calls any
 of them, and the file is deletable the moment they have run. It is here because
-the previous one-shot of the same kind (`repairBaselineLabels`, Aug 2026) was
-recorded only in its own header, sat in `skillVersions.ts` for a month, and grew
-a second copy — which is what the split into this file was fixing.
+the previous one-shot of the same kind (`repairBaselineLabels`) was recorded only
+in its own header and grew a second copy the very next day — landed in `6e12f16`
+on 2026-08-11, cloned in `dcb61f5` on 2026-08-12, which is what the split into
+this file was fixing. A day, not a slow drift: nothing about that is a reason to
+expect more warning next time.
+
+**Run steps 3-4 only once this branch is deployed.** Repairing before its
+write-side fix is live just leaves the pipeline making more, which is what each
+pre-flight's "is this still happening" reading is for — and the description-claim
+fix is the half that ships with this branch (`dcb61f5`). The label fix has been
+live since `5f4d427` (2026-08-09), so steps 1-2 are safe to run at any time;
+running all four after the deploy is simply the one order that is always correct.
 
 Order matters, and the pre-flights exist so the ordering is checkable:
 
@@ -780,10 +789,10 @@ Order matters, and the pre-flights exist so the ordering is checkable:
 4. `npx convex run skillVersionsRepair:repairBaselineDescriptionClaims --prod`
    with `maxRows` sized from step 3's `found`, plus headroom.
 
-Both write-side fixes are already live, so re-running is a no-op rather than a
-race: each repair's predicate stops matching the rows it has patched. Delete the
-file (and its tests in `tests/skill-versions.test.ts`, and the `AGENTS.md` line)
-once both repairs report `scanComplete: true` with `patched: 0` on a second run.
+Re-running is a no-op rather than a race: each repair's predicate stops matching
+the rows it has patched. Delete the file (and its tests in
+`tests/skill-versions.test.ts`, the `AGENTS.md` line, and this entry) once both
+repairs report `scanComplete: true` with `patched: 0` on a second run.
 
 ### Gate the content-chain ping (and, maybe, per-skill cache tags)
 
