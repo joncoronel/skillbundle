@@ -384,6 +384,12 @@ async function runBaselineScan(
   // "not happening any more" from a scan that never reached the recent end.
   // A large population is the premise of running the audit at all, so a valve
   // that trips on one is backwards.
+  //
+  // The dry-run callers accept no `maxRows` at all (see
+  // `auditBaselineDescriptionClaims`), so this branch is the only definition of
+  // a dry run's ceiling rather than an override of something the caller asked
+  // for. Unbounded here does not mean unbounded in memory: `ids` can still only
+  // reach `maxPages × pageSize`, i.e. at most 500 × BASELINE_AUDIT_PAGE.
   const rowCap = opts.dryRun
     ? Number.POSITIVE_INFINITY
     : Math.min(Math.max(opts.maxRows ?? 5_000, 1), 20_000);
@@ -627,21 +633,31 @@ export const clearBaselineDescriptionClaims = internalMutation({
  *     npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod
  *
  * Check `scanComplete` FIRST — neither number below means anything until the
- * scan reached the end (see `baselineScanResult`). If it is false, re-run from
- * `nextCursor` with a bigger `maxPages` until it is true.
+ * scan reached the end (see `baselineScanResult`).
+ *
+ * If it is false, re-run **from the start** with a bigger `maxPages`. NOT from
+ * `nextCursor`, even though the field is there: `found` counts what THIS
+ * invocation matched, so a resumed run reports only the segment after the
+ * cursor. Reading that partial number and passing it as the repair's `maxRows`
+ * below would under-size the valve and trip an abort on a legitimate run — the
+ * exact misreading this pre-flight exists to prevent. Resuming is for the
+ * REPAIR, which keeps the rows it already patched; a dry run has nothing to
+ * lose by starting over, and no `maxRows` ceiling to hit on the way (below).
  *
  * Then read `newestMatchAt`: if it is recent, rows are STILL being written this
  * way and the write-side fix is not live yet — repair now and the pipeline just
  * makes more. Then read `found`, and pass it with headroom as the repair's
  * `maxRows` so a legitimately large population doesn't trip the repair's abort
- * valve and read as a bad predicate. (This action has no such valve — a dry run
- * patches nothing, so counting the whole population is the point of it.)
+ * valve and read as a bad predicate.
+ *
+ * Takes no `maxRows` of its own, deliberately: `runBaselineScan` lifts the cap
+ * for any dry run, so accepting the arg would only let an operator pass a
+ * ceiling that is silently ignored.
  */
 export const auditBaselineDescriptionClaims = internalAction({
   args: {
     cursor: v.optional(v.string()),
     maxPages: v.optional(v.number()),
-    maxRows: v.optional(v.number()),
     pageSize: v.optional(v.number()),
   },
   returns: baselineScanResult,

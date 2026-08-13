@@ -502,6 +502,15 @@ test("the description-claim repair clears artefacts and leaves real changes alon
   expect(audit.found).toBe(1);
   expect(audit.patched).toBe(0);
   expect(audit.newestMatchAt).toBe(1);
+  // Both numbers above are only meaningful once the scan reached the end, and
+  // the docblock tells the operator to check this before reading them.
+  expect(audit.scanComplete).toBe(true);
+  // No ceiling to trip: the driver lifts `rowCap` for any dry run, and this
+  // action accepts no `maxRows` for a caller to set one with. A cheap negative
+  // for the lift itself isn't available — the discriminating case needs a
+  // population above the 5,000 default — so the arg surface is what guarantees
+  // it, and that is what this pins.
+  expect(audit.aborted).toBeNull();
   expect(
     (await t.run(async (ctx) => ctx.db.query("skillVersions").collect())).every(
       (r) => r.descriptionChanged,
@@ -690,6 +699,11 @@ test("the repair patches nothing when the match count blows its ceiling", async 
 
   expect(report.aborted).toContain("exceeded maxRows");
   expect(report.patched).toBe(0);
+  // Null, i.e. where this run STARTED, not where the scan reached. Nothing was
+  // patched, so a caller resuming from `nextCursor` — which is what that field
+  // means on every other branch — would skip every row the run matched and call
+  // a partial repair complete.
+  expect(report.nextCursor).toBeNull();
   const stillBaseline = await t.run(async (ctx) =>
     ctx.db.query("skillVersions").collect(),
   );

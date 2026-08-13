@@ -761,6 +761,30 @@ binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
+### Run and then DELETE `convex/skillVersionsRepair.ts` (Aug 2026)
+
+The module is a one-shot: four hand-run functions correcting `isBaseline` rows
+the archive's write path used to produce wrongly. Nothing in the app calls any
+of them, and the file is deletable the moment they have run. It is here because
+the previous one-shot of the same kind (`repairBaselineLabels`, Aug 2026) was
+recorded only in its own header, sat in `skillVersions.ts` for a month, and grew
+a second copy — which is what the split into this file was fixing.
+
+Order matters, and the pre-flights exist so the ordering is checkable:
+
+1. `npx convex run skillVersionsRepair:auditBaselineLabels --prod` — read
+   `newestMislabeledDay`. Recent means rows are still being written wrong.
+2. `npx convex run skillVersionsRepair:repairBaselineLabels --prod`
+3. `npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod` —
+   check `scanComplete` first; then `newestMatchAt`, then `found`.
+4. `npx convex run skillVersionsRepair:repairBaselineDescriptionClaims --prod`
+   with `maxRows` sized from step 3's `found`, plus headroom.
+
+Both write-side fixes are already live, so re-running is a no-op rather than a
+race: each repair's predicate stops matching the rows it has patched. Delete the
+file (and its tests in `tests/skill-versions.test.ts`, and the `AGENTS.md` line)
+once both repairs report `scanComplete: true` with `patched: 0` on a second run.
+
 ### Gate the content-chain ping (and, maybe, per-skill cache tags)
 
 Updated Aug 2026, after the cadence split (PR #65). The tags are now
