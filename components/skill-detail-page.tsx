@@ -491,7 +491,7 @@ async function SkillDetailBody({
             holding one thing, the facts can stay in view for the whole read —
             which is the point of a record you consult rather than one you scroll
             past. */}
-        <div className="lg:sticky lg:top-20">
+        <div className="lg:sticky lg:top-24">
           <BundleToggleButton
             source={source}
             skillId={skillId}
@@ -591,7 +591,7 @@ export function SkillDetailPageSkeleton({
           lands. What is genuinely unknown — the document's own headings — stays
           a placeholder. */}
       <div className="hidden xl:col-start-3 xl:row-start-1 xl:row-span-2 xl:block">
-        <div className="xl:sticky xl:top-20">
+        <div className="xl:sticky xl:top-24">
           <p className="mb-4 text-xs font-medium text-muted-foreground">
             On this page
           </p>
@@ -620,7 +620,7 @@ export function SkillDetailPageSkeleton({
       </div>
 
       <div className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 xl:col-start-1">
-        <div className="lg:sticky lg:top-20">
+        <div className="lg:sticky lg:top-24">
           <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
 
           {/* The record card itself, with only its values pending. Drawing the

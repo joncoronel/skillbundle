@@ -25,7 +25,7 @@ const useMounted = () =>
     () => false,
   );
 
-export function ThemeSwitcher() {
+export function ThemeSwitcher({ className }: { className?: string }) {
   const { setTheme, theme } = useTheme();
   const mounted = useMounted();
 
@@ -45,6 +45,7 @@ export function ThemeSwitcher() {
       aria-label={mounted ? LABELS[theme ?? "system"] : "Toggle theme"}
       variant="ghost"
       size="icon_sm"
+      className={className}
     >
       {/* Stack the three icons in a single grid cell so they overlap and
           crossfade. Owned here (not via the button's children wrapper, which

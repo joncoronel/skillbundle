@@ -32,13 +32,13 @@ export function UserMenu() {
   const { signOut } = useClerk();
   const [open, setOpen] = useState(false);
 
-  if (!isLoaded) return <Skeleton className="size-8 rounded-full" />;
+  if (!isLoaded) return <Skeleton className="size-8 rounded-lg" />;
 
   const initials = getInitials(user?.firstName, user?.lastName);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger className="cursor-pointer rounded-full outline-0 outline-offset-0 outline-transparent outline-solid transition-[outline-width,outline-offset,outline-color] duration-100 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50">
+      <DropdownMenuTrigger className="cursor-pointer rounded-lg outline-0 outline-offset-0 outline-transparent outline-solid transition-[outline-width,outline-offset,outline-color] duration-100 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50">
         <Avatar size="sm">
           <AvatarImage
             src={user?.imageUrl}

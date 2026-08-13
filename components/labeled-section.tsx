@@ -25,13 +25,14 @@ export function LabeledSection({
       id={id}
       // Only when this section is actually an anchor target.
       //
-      // `scroll-mt-20` clears the sticky app header (h-14 at top-0), which
+      // `scroll-mt-24` clears the floating header pill, whose bottom edge sits
+      // at 72px, and which
       // otherwise covers the section label the link just jumped to.
       // `tabIndex={-1}` makes the target focusable so the browser moves focus
       // with the jump — without it a keyboard user's tab position stays where
       // it was and a screen reader keeps reading from the link they left.
       {...(id ? { tabIndex: -1 } : {})}
-      className={cn(id && "scroll-mt-20 outline-none", className)}
+      className={cn(id && "scroll-mt-24 outline-none", className)}
     >
       {/* A real heading in the body face, not a mono uppercase eyebrow over a
           rule. The rule and the tracking were doing the work the heading's own

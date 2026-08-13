@@ -76,6 +76,13 @@ html {
   --radius-2xl: calc(var(--radius) + 4px);
   --radius-3xl: calc(var(--radius) + 6px);
   --radius-4xl: calc(var(--radius) + 8px);
+  /* 24px. Breaks the 2px cadence of the steps above it on purpose: the header
+     pill is the only element at this scale, and the step exists so that corner
+     stays derived from `--radius` like every other one. A hardcoded
+     `rounded-[24px]` on the component would have been the thing DESIGN.md §6
+     rules out — one variable drives the whole form language, and retuning it
+     has to move the header too. */
+  --radius-5xl: calc(var(--radius) + 12px);
   --ease-in-cubic: cubic-bezier(0.55, 0.055, 0.675, 0.19);
   --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
   --ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);

@@ -16,8 +16,8 @@ export type SectionNavItem = {
 
 /**
  * Distance from the top of the viewport at which a heading counts as "current".
- * The sticky app header is 56px; the rest is the margin that keeps the item
- * from flipping the instant a heading grazes the header's lower edge.
+ * The floating header pill ends at 72px; the rest is the margin that keeps
+ * the item from flipping the instant a heading grazes the pill's lower edge.
  */
 const ACTIVE_OFFSET = 96;
 
@@ -201,7 +201,7 @@ export function SkillSectionNav({
   // nothing ever appears to pin and the rail scrolls away like static content.
   return (
     <div className={cn("hidden xl:block", className)}>
-      <div className="xl:sticky xl:top-20">
+      <div className="xl:sticky xl:top-24">
           <p className="mb-4 text-xs font-medium text-muted-foreground">
             On this page
           </p>

@@ -448,7 +448,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   );
 
   return (
-    <div className="sticky top-14 z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
+    <div className="sticky top-[4.5rem] z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
       <Card variant="inset" className="p-1 pb-0">
         {/* Inner surface — the search instrument. The InputGroup owns
             the input behavior + focus ring; its chrome matches the

@@ -47,8 +47,8 @@ export function SkillSection({
       id={id}
       // `tabIndex={-1}` so the nav's programmatic focus lands here and a screen
       // reader continues from the section it jumped to rather than from the
-      // link it left. `scroll-mt-24` clears the sticky h-14 header plus the
-      // mobile contents bar that sits under it.
+      // link it left. `scroll-mt-24` clears the floating header pill, whose
+      // bottom edge sits at 72px.
       tabIndex={-1}
       className={cn("scroll-mt-24 outline-none", className)}
     >

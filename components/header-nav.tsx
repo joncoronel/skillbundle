@@ -3,15 +3,29 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button } from "@/components/ui/cubby-ui/button";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  DashboardSquare01Icon,
-  Tag01Icon,
-  CheckmarkCircle02Icon,
-  PlusSignCircleIcon,
-} from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
+
+/**
+ * One list, read by the horizontal nav here and by the expanding mobile menu in
+ * header-pill.tsx. They used to be two hand-maintained arrays and had already
+ * drifted: the drawer carried a Compare link the desktop header never showed.
+ *
+ * `menuOnly` preserves that difference rather than quietly resolving it, since
+ * which links belong in the header is a product call and not a styling one —
+ * but it now lives in one place where the asymmetry is visible and deliberate
+ * instead of being an accident of two lists nobody diffed.
+ */
+export const NAV_ITEMS = [
+  { href: "/official", label: "Official" },
+  { href: "/compare", label: "Compare", menuOnly: true },
+  { href: "/add", label: "Add skill" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/pricing", label: "Pricing" },
+] as const satisfies readonly {
+  href: string;
+  label: string;
+  menuOnly?: boolean;
+}[];
 
 // `usePathname()` suspends while the App Shell for a dynamic-param route is
 // generated (the pathname isn't known yet). Read it behind a <Suspense> so the
@@ -32,92 +46,51 @@ function ActiveNavLinks() {
 
 function NavLinks({ activeHref }: { activeHref: string | null }) {
   return (
-    <nav className="max-sm:hidden flex items-center gap-1">
-      <NavLink
-        href="/official"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon
-            icon={CheckmarkCircle02Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        }
-      >
-        Official
-      </NavLink>
-      <NavLink
-        href="/add"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon
-            icon={PlusSignCircleIcon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        }
-      >
-        Add skill
-      </NavLink>
-      <NavLink
-        href="/dashboard"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon
-            icon={DashboardSquare01Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        }
-      >
-        Dashboard
-      </NavLink>
-      <NavLink
-        href="/pricing"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon icon={Tag01Icon} strokeWidth={2} className="size-4" />
-        }
-      >
-        Pricing
-      </NavLink>
+    <nav aria-label="Main" className="flex items-center gap-0.5 max-sm:hidden">
+      {NAV_ITEMS.filter((item) => !("menuOnly" in item && item.menuOnly)).map(
+        (item) => (
+          <NavLink key={item.href} href={item.href} activeHref={activeHref}>
+            {item.label}
+          </NavLink>
+        ),
+      )}
     </nav>
   );
 }
 
+/**
+ * A plain anchor, not the `Button` component: ghost paints from the page's own
+ * tokens, which are dark-on-light and vanish against the pill.
+ *
+ * Hover changes the LABEL only — no fill. The fill is reserved for the current
+ * page, so the two states say different things: colour means "you can go
+ * here", a filled pill means "you are here". Giving hover a fill too made
+ * every pass of the cursor look like a selection change.
+ */
 function NavLink({
   href,
   children,
-  icon,
   activeHref,
 }: {
   href: string;
   children: React.ReactNode;
-  icon?: React.ReactNode;
   activeHref: string | null;
 }) {
   const isActive = activeHref === href;
 
   return (
-    <Button
-      nativeButton={false}
-      variant="ghost"
-      size="sm"
-      render={<Link href={href} aria-current={isActive ? "page" : undefined} />}
-      // The active fill goes through Button's own paint token, not a `bg-*`
-      // class. Button paints on a ::before pseudo above the root's background,
-      // so a `bg-*` here sits underneath and ghost's hover composites on top
-      // of it instead of replacing it — two overlays stacking to a darkness
-      // neither one names. On --btn-bg it shares a layer with the hover paint,
-      // so ghost's --btn-bg-hover overwrites it, which is how a plain
-      // `background-color` behaved before the paint moved to the pseudo.
+    <Link
+      href={href}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
-        "gap-1.5",
-        isActive && "text-foreground [--btn-bg:var(--surface-selected)]",
+        "rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 ease-out",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
+        isActive
+          ? "bg-[var(--pill-tint)] text-[var(--pill-ink)]"
+          : "text-[var(--pill-dim)] hover:text-[var(--pill-ink)]",
       )}
-      leadingIcon={icon}
     >
       {children}
-    </Button>
+    </Link>
   );
 }
