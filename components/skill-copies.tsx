@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import { LabeledSection } from "@/components/labeled-section";
+import { SkillSection } from "@/components/skill-section";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, formatInstalls } from "@/lib/utils";
 
@@ -34,12 +34,12 @@ export function SkillCopies({
   const sortedForks = forks.toSorted((a, b) => b.installs - a.installs);
 
   return (
-    <LabeledSection label="Also available at" className={className}>
-      <p className="-mt-1 mb-5 max-w-prose text-sm text-pretty text-muted-foreground">
-        The same skill content is published under more than one repo. The install
-        counts are split across them; any of these commands works.
-      </p>
-
+    <SkillSection
+      id="copies"
+      title="Also available at"
+      className={className}
+      description="The same skill content is published under more than one repo. The install counts are split across them; any of these commands works."
+    >
       <div className="space-y-7">
         {sortedAliases.length > 0 && (
           <CopyGroup title="Other names for this repo">
@@ -68,7 +68,7 @@ export function SkillCopies({
           </CopyGroup>
         )}
       </div>
-    </LabeledSection>
+    </SkillSection>
   );
 }
 

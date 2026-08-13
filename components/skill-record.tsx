@@ -1,0 +1,351 @@
+"use client";
+
+import { useState } from "react";
+import NumberFlow from "@number-flow/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import {
+  ArrowRight01Icon,
+  ArrowUpRight01Icon,
+} from "@hugeicons/core-free-icons";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogBody,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/cubby-ui/dialog";
+import { OfficialBadge } from "@/components/skill-badges";
+import {
+  AuditAccordion,
+  AuditBadge,
+  worstAuditStatus,
+  type SkillAuditEntry,
+} from "@/components/skill-audit-section";
+import { InstallChart } from "@/components/skill-install-chart";
+import {
+  InstallSparkline,
+  InstallSparklineGhost,
+} from "@/components/skill-install-sparkline";
+import {
+  MIN_POINTS,
+  intFmt,
+  weekGain,
+  weekWindow,
+  type SkillInsights,
+  type SparklineHoverState,
+} from "@/components/skill-chart-shared";
+import { cn, formatInstalls } from "@/lib/utils";
+
+/**
+ * Everything SkillBundle knows about a skill, as one panel in the sidebar.
+ *
+ * This started as a full-width strip under the title and was wrong there for a
+ * reason worth recording, because it is not obvious until you see it with real
+ * content: a skill description is a paragraph capped at a readable measure, so
+ * beside it roughly 45% of a 1152px page is empty — and a long description
+ * (`agent-browser` runs to 13 lines) turns that into a 500px column of nothing.
+ * Filling it with a four-cell stat strip made it worse, not better: at ~280px
+ * per cell, a skill with no rank and no weekly gain showed two big dashes and
+ * two explanatory notes, which reads as broken rather than as unknown.
+ *
+ * Narrow fixes both. The facts stack into label/value rows where a missing
+ * value is a short phrase ("Not ranked") instead of a dash marooned in a wide
+ * cell, and the panel occupies the space the lead was never going to use.
+ *
+ * Its material is deliberately not the Documentation sheet's. This panel is a
+ * hairline frame with no shadow; the sheet is a shadow with no border. One page,
+ * two containers, and they must not read as the same kind of object — the whole
+ * point of the layout is that the reader can tell our record from their file
+ * without being told.
+ */
+export function SkillRecord({
+  source,
+  skillId,
+  externalUrl,
+  externalIcon,
+  externalLabel,
+  curatedOwner,
+  insights,
+  updatedKind,
+  updatedDate,
+  audits,
+  stars,
+  className,
+}: {
+  source: string;
+  skillId: string;
+  externalUrl: string;
+  externalIcon: IconSvgElement;
+  externalLabel: string;
+  curatedOwner?: string;
+  insights: SkillInsights;
+  updatedKind: string;
+  updatedDate: string;
+  audits: SkillAuditEntry[] | null;
+  stars: number | null;
+  className?: string;
+}) {
+  const { snapshots, installs } = insights;
+  const hasChart = snapshots.length >= MIN_POINTS;
+  const gain = weekGain(snapshots);
+  // Same trailing-week window the "Past 7 days" row counts from, so the line's
+  // leftmost point is exactly that row's baseline and the two cannot drift.
+  const sparkPoints = weekWindow(snapshots);
+
+  // Hovering the sparkline scrubs the install total. The scrub stays inside the
+  // installs block — the value rolls and the label becomes the date — so no
+  // neighbouring row is left quietly describing a different day.
+  const [hover, setHover] = useState<SparklineHoverState>(null);
+
+  return (
+    <div
+      className={cn(
+        "divide-y divide-border rounded-2xl border border-border",
+        className,
+      )}
+    >
+      <div className="px-4 py-4">
+        <p
+          className={cn(
+            "text-xs font-medium text-muted-foreground",
+            hover && "tabular-nums",
+          )}
+        >
+          {hover ? formatDay(hover.day) : "Installs"}
+        </p>
+
+        {/* min-h reserves NumberFlow's animated height — the digit-roll mask
+            adds ~8px the first time it runs — so the sparkline never shifts. */}
+        <div className="mt-1.5 flex min-h-9 items-center">
+          {hover || installs != null ? (
+            <NumberFlow
+              value={hover ? hover.value : (installs as number)}
+              format={{ notation: "compact", maximumFractionDigits: 1 }}
+              className="text-2xl leading-none font-semibold text-foreground"
+              aria-label={`${hover ? hover.value : installs} installs`}
+            />
+          ) : (
+            // `installs` is null only for an orphaned row. A dash, never a zero:
+            // a wrong number reads as fact, in the accessible name as much as
+            // on screen.
+            <span
+              className="text-2xl leading-none font-semibold text-muted-foreground"
+              aria-label="Install count unavailable"
+            >
+              —
+            </span>
+          )}
+        </div>
+
+        {hasChart ? (
+          <Dialog>
+            <div className="mt-3">
+              <InstallSparkline points={sparkPoints} onHover={setHover} />
+            </div>
+            <DialogTrigger
+              render={
+                <button
+                  type="button"
+                  className="mt-1.5 inline-flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                />
+              }
+            >
+              View trend
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                strokeWidth={2}
+                className="size-3"
+              />
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Installs over time</DialogTitle>
+                <DialogDescription>
+                  Cumulative total and daily installs, recorded once a day.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogBody>
+                <InstallChart insights={insights} />
+              </DialogBody>
+            </DialogContent>
+          </Dialog>
+        ) : (
+          // Pre-chart state: a ghost line fading into the history not yet
+          // recorded, so it reads as a placeholder rather than a flat trend.
+          <div className="mt-3">
+            <InstallSparklineGhost />
+            <p className="mt-2 text-xs text-pretty text-muted-foreground">
+              Recording daily. The trend appears once there&apos;s enough
+              history.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* The short measurements. A missing one says what is missing rather
+          than showing a dash: "No change" is the same width as a number here
+          and carries the reason with it.
+
+          Install rank is deliberately not among them. It is still loaded (the
+          install chart reads the same `insights` object) but it answers a
+          leaderboard question, not a "should I depend on this" question, and
+          next to a raw install count it was the weaker of two numbers saying
+          roughly the same thing. */}
+      <dl className="px-4 py-3">
+        <FactRow label="Past 7 days">
+          {gain != null ? (
+            <Value className="text-success-foreground">+{intFmt(gain)}</Value>
+          ) : (
+            <Value muted>No change</Value>
+          )}
+        </FactRow>
+        {stars != null && (
+          <FactRow label="GitHub stars">
+            <Value>{formatInstalls(stars)}</Value>
+          </FactRow>
+        )}
+      </dl>
+
+      <div className="px-4 py-3">
+        <p className="text-xs font-medium text-muted-foreground">Repository</p>
+        <a
+          href={externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group mt-1.5 flex max-w-full min-w-0 items-center gap-1.5 text-sm text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+        >
+          <HugeiconsIcon
+            icon={externalIcon}
+            strokeWidth={2}
+            className="size-3.5 shrink-0 text-muted-foreground"
+          />
+          <span className="truncate group-hover:underline">
+            {externalLabel}
+          </span>
+          {curatedOwner && <OfficialBadge owner={curatedOwner} />}
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            strokeWidth={2}
+            className="size-3 shrink-0 text-muted-foreground/70"
+          />
+        </a>
+      </div>
+
+      {audits && audits.length > 0 && (
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-medium text-muted-foreground">Security</p>
+            <AuditBadge status={worstAuditStatus(audits)} />
+          </div>
+          <div className="mt-1.5 flex items-center justify-between gap-3">
+            <span className="text-sm text-foreground">
+              {audits.length === 1
+                ? audits[0].provider
+                : `${audits.length} providers`}
+            </span>
+            <Dialog>
+              <DialogTrigger
+                render={
+                  <button
+                    type="button"
+                    className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                  />
+                }
+              >
+                Verdicts
+                <HugeiconsIcon
+                  icon={ArrowRight01Icon}
+                  strokeWidth={2}
+                  className="size-3"
+                />
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Security audits</DialogTitle>
+                  <DialogDescription>
+                    Independent checks from skills.sh&apos;s audit partners.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <AuditAccordion
+                    source={source}
+                    skillId={skillId}
+                    audits={audits}
+                  />
+                </DialogBody>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 py-3">
+        <p className="text-xs font-medium text-muted-foreground">
+          {updatedKind}
+        </p>
+        <div className="mt-1.5 flex items-center justify-between gap-3">
+          <span className="text-sm text-foreground">{updatedDate}</span>
+          <a
+            href="#history"
+            className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+          >
+            History
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              strokeWidth={2}
+              className="size-3"
+            />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FactRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+function Value({
+  children,
+  muted,
+  className,
+}: {
+  children: React.ReactNode;
+  muted?: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "text-sm font-medium tabular-nums",
+        muted ? "text-muted-foreground" : "text-foreground",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** "2026-05-30" → "May 30, 2026" (UTC noon so the label never slips a day). */
+function formatDay(day: string) {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}

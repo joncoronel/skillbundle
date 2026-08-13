@@ -151,11 +151,19 @@ test.describe("initial load", () => {
         // be the param `generateStaticParams` picked, which is the live
         // top-popular GitHub skill and only falls back to this pinned one. It
         // would have gone red on a healthy route the day the catalog shifted.
+        //
+        // These are the page's own section headings, which `SkillDetailPage`
+        // renders as real text in the skeleton rather than as placeholder bars:
+        // neither depends on the skill's data, so both are known before the
+        // body resolves. They replaced "Install" and "Overview", which were
+        // section labels the redesign removed — the install command now sits in
+        // the action bar with no label of its own, and the description is the
+        // masthead's lead rather than a section.
         await expect(
-          page.locator("*:visible", { hasText: /^Install$/ }).first(),
+          page.locator("*:visible", { hasText: /^History$/ }).first(),
         ).toBeVisible();
         await expect(
-          page.locator("*:visible", { hasText: /^Overview$/ }).first(),
+          page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
         ).toBeVisible();
       },
       { baseURL },
@@ -314,8 +322,9 @@ test.describe("client navigation", () => {
   // rendering in a shared shell — which is why this route keeps its
   // `loading.tsx` and does NOT use the params-into-Suspense split the listing
   // routes do. `loading.tsx` is its shell, and this asserts that shell commits
-  // with real structure ("Install" / "Overview" section labels) rather than the
-  // navigation blocking.
+  // with real structure (the "History" / "Documentation" section headings,
+  // which the skeleton renders as text because neither depends on the skill’s
+  // data) rather than the navigation blocking.
   test("/[org]/[repo] -> skill detail commits its shell instantly", async ({
     page,
   }) => {
@@ -330,10 +339,10 @@ test.describe("client navigation", () => {
       await skill.click();
       await page.waitForURL((url) => url.pathname === href);
       await expect(
-        page.locator("*:visible", { hasText: /^Install$/ }).first(),
+        page.locator("*:visible", { hasText: /^History$/ }).first(),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
       await expect(
-        page.locator("*:visible", { hasText: /^Overview$/ }).first(),
+        page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
   });

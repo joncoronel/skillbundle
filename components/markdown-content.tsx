@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { isValidElement, useMemo } from "react";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { harden } from "rehype-harden";
 import type { BundledLanguage } from "shiki/langs";
 import {
@@ -15,6 +15,7 @@ import {
   codeKey,
   type PreHighlightedCode,
 } from "@/lib/highlight-markdown-code";
+import { docHeadingId } from "@/lib/markdown-outline";
 import { cn } from "@/lib/utils";
 
 type StreamdownComponents = NonNullable<
@@ -30,6 +31,24 @@ interface MarkdownContentProps {
    * rewrite to github.com/…/blob/… and image links keep pointing at raw content.
    */
   baseUrl?: string | null;
+  /**
+   * Give headings stable `doc-*` ids so the skill page's section nav can link
+   * into the document.
+   *
+   * Off by default, and it must stay off wherever more than one document can be
+   * on screen at once: /compare renders two or three SKILL.mds side by side, and
+   * two skills sharing a `## Usage` heading would then emit a duplicate id.
+   */
+  headingIds?: boolean;
+  /**
+   * Cap running text at a readable measure while code blocks, tables, and
+   * images keep the container's full width.
+   *
+   * Only useful in a wide container — the skill page's document sheet runs past
+   * 800px, where uncapped prose lands near 110ch. A no-op in a narrow column,
+   * but left opt-in so the intent is visible at the call site.
+   */
+  measured?: boolean;
   /**
    * The surface this content is painted on. `"field"` (default) is the page's
    * recessed background, where the code block's canonical two-layer frame (a
@@ -141,40 +160,78 @@ const BlockquoteOverride: StreamdownComponents["blockquote"] = ({
   </blockquote>
 );
 
-// Demote SKILL.md headings by one level so the source's leading H1 doesn't
-// compete with the page's title H1. h6 stays at h6 since that's the deepest
-// HTML heading level.
-const H1Demoted: StreamdownComponents["h1"] = ({ children, className, id }) => (
-  <h2 className={className} id={id}>
-    {children}
-  </h2>
-);
-const H2Demoted: StreamdownComponents["h2"] = ({ children, className, id }) => (
-  <h3 className={className} id={id}>
-    {children}
-  </h3>
-);
-const H3Demoted: StreamdownComponents["h3"] = ({ children, className, id }) => (
-  <h4 className={className} id={id}>
-    {children}
-  </h4>
-);
-const H4Demoted: StreamdownComponents["h4"] = ({ children, className, id }) => (
-  <h5 className={className} id={id}>
-    {children}
-  </h5>
-);
-const H5Demoted: StreamdownComponents["h5"] = ({ children, className, id }) => (
-  <h6 className={className} id={id}>
-    {children}
-  </h6>
-);
+/**
+ * Flatten a heading's rendered children to plain text, so its id can be derived
+ * from the same string a reader sees. Headings routinely carry inline code,
+ * emphasis, or a link, none of which reach us as a bare string.
+ */
+function childrenToText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(childrenToText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return childrenToText(node.props.children);
+  }
+  return "";
+}
+
+/**
+ * Demote SKILL.md headings by one level so the source's leading H1 doesn't
+ * compete with the page's title H1. h6 stays at h6, the deepest HTML level.
+ *
+ * When `withIds` is set the heading also gets the `doc-*` id the section nav
+ * links to, computed by the same pure slug rule that built the nav (see
+ * lib/markdown-outline.ts), plus `tabIndex={-1}` so a jump moves focus and the
+ * screen-reader cursor with it rather than leaving both at the link.
+ */
+function demotedHeadings(
+  withIds: boolean,
+): Pick<StreamdownComponents, "h1" | "h2" | "h3" | "h4" | "h5"> {
+  function make(
+    Tag: "h2" | "h3" | "h4" | "h5" | "h6",
+  ): StreamdownComponents["h1"] {
+    function DemotedHeading({
+      children,
+      className,
+      id,
+    }: {
+      children?: ReactNode;
+      className?: string;
+      id?: string;
+    }) {
+      const anchorId = withIds
+        ? (id ?? docHeadingId(childrenToText(children)))
+        : id;
+      return (
+        <Tag
+          className={className}
+          id={anchorId}
+          {...(withIds && anchorId ? { tabIndex: -1 } : {})}
+        >
+          {children}
+        </Tag>
+      );
+    }
+    DemotedHeading.displayName = `Demoted(${Tag})`;
+    return DemotedHeading;
+  }
+
+  return {
+    h1: make("h2"),
+    h2: make("h3"),
+    h3: make("h4"),
+    h4: make("h5"),
+    h5: make("h6"),
+  };
+}
 
 export function MarkdownContent({
   children,
   preHighlighted,
   baseUrl,
   surface = "field",
+  headingIds = false,
+  measured = false,
 }: MarkdownContentProps) {
   const rehypePlugins = useMemo<
     ComponentProps<typeof Streamdown>["rehypePlugins"]
@@ -293,13 +350,9 @@ export function MarkdownContent({
       thead: TableHeadOverride,
       th: TableThOverride,
       td: TableTdOverride,
-      h1: H1Demoted,
-      h2: H2Demoted,
-      h3: H3Demoted,
-      h4: H4Demoted,
-      h5: H5Demoted,
+      ...demotedHeadings(headingIds),
     };
-  }, [preHighlighted, surface]);
+  }, [preHighlighted, surface, headingIds]);
 
   return (
     <div
@@ -313,6 +366,18 @@ export function MarkdownContent({
         // the "Documentation" label.
         "prose-headings:font-semibold prose-headings:tracking-tight",
         "*:first:mt-0",
+        // Headings are anchor targets when `headingIds` is on: clear the sticky
+        // header on a jump, and stay silent about the programmatic focus (a
+        // heading is a landing point, not a control, so it takes no ring).
+        headingIds && "prose-headings:scroll-mt-24 prose-headings:outline-none",
+        // Running text holds a readable measure; code, tables, and images keep
+        // the container's full width, which is what they're for.
+        //
+        // `>*>` and not `>`: Streamdown renders its own wrapper div inside this
+        // one, so a direct-child selector here matches that wrapper and nothing
+        // else. The top-level blocks are its grandchildren.
+        measured &&
+          "[&>*>blockquote]:max-w-[68ch] [&>*>h2]:max-w-[68ch] [&>*>h3]:max-w-[68ch] [&>*>h4]:max-w-[68ch] [&>*>h5]:max-w-[68ch] [&>*>h6]:max-w-[68ch] [&>*>ol]:max-w-[68ch] [&>*>p]:max-w-[68ch] [&>*>ul]:max-w-[68ch]",
         // Links use the single signal accent, underlined for affordance.
         "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
         // Align prose colors with the app's semantic tokens instead of
