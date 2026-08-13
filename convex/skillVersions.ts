@@ -792,11 +792,6 @@ export const changeRateHealth = internalQuery({
   },
 });
 
-// The one-shot audits and repairs for `isBaseline` rows live in
-// `convex/skillVersionsRepair.ts`. Nothing in the app calls them — they are
-// hand-run against prod once and the file is then deletable — which is exactly
-// why they are not here.
-
 // ---------------------------------------------------------------------------
 // WRITE PATH
 //

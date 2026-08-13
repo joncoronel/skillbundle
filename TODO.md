@@ -761,46 +761,27 @@ binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
-### Run and then DELETE `convex/skillVersionsRepair.ts` (Aug 2026)
+### Per-skill cache tags, then gate the content-chain ping
 
-The module is a one-shot: four hand-run functions correcting `isBaseline` rows
-the archive's write path used to produce wrongly. Nothing in the app calls any
-of them, and the file is deletable the moment they have run. It is here because
-the previous one-shot of the same kind (`repairBaselineLabels`) was recorded only
-in its own header and grew a second copy the very next day — landed in `6e12f16`
-on 2026-08-11, cloned in `dcb61f5` on 2026-08-12, which is what the split into
-this file was fixing. A day, not a slow drift: nothing about that is a reason to
-expect more warning next time.
+**Sequence, decided Aug 2026 — read this before the argument below.**
 
-**Run all four only once this branch is deployed.** Two reasons, and they are
-different: `convex/skillVersionsRepair.ts` does not exist until this branch
-ships, so none of the commands below resolve before then; and repairing before
-its write-side fix is live just leaves the pipeline making more, which is what
-each pre-flight's "is this still happening" reading is for. Only the
-description-claim fix ships here (`dcb61f5`) — the label fix has been live since
-`5f4d427` (2026-08-09), so steps 1-2 carry no ordering hazard of their own.
+1. **Per-skill tags** (`cacheTag("skill:" + source + "/" + skillId)`), plus
+   batch-tag support in `/api/revalidate`.
+2. **A "publish owed" retry** for a ping that fails, or the confidence that a
+   per-skill ping is cheap enough to just retry. See "A second dependent".
+3. **The gate** — ping only when content actually changed.
 
-Order matters, and the pre-flights exist so the ordering is checkable:
+The gate is last because it banks nothing before step 1, for the reason set out
+under "Why the obvious gate isn't worth building": a catalog-wide gate only
+suppresses the ping on a day when NOT ONE skill in ~9.5k changed.
 
-1. `npx convex run skillVersionsRepair:auditBaselineLabels --prod` — check
-   `complete` first (it is this audit's spelling of `scanComplete`), then read
-   `newestMislabeledDay`. Recent means rows are still being written wrong. The
-   completeness check is not optional on either audit: the scan is
-   oldest-first, so a truncated one reports stale "newest" readings, and stale
-   here reads as all-clear.
-2. `npx convex run skillVersionsRepair:repairBaselineLabels --prod`
-3. `npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod` —
-   check `scanComplete` first; then `newestMatchAt`, then `found`.
-4. `npx convex run skillVersionsRepair:repairBaselineDescriptionClaims --prod`
-   with `maxRows` sized from step 3's `found`, plus headroom — up to a ceiling
-   of 20,000, past which the arg clamps and the abort repeats.
-
-Re-running is a no-op rather than a race: each repair's predicate stops matching
-the rows it has patched. Delete the file (and its tests in
-`tests/skill-versions.test.ts`, the `AGENTS.md` line, and this entry) once both
-repairs report `scanComplete: true` with `patched: 0` on a second run.
-
-### Gate the content-chain ping (and, maybe, per-skill cache tags)
+This ordering is recorded here because the entry used to state it twice and
+disagree with itself — "per-skill tags are the prerequisite … which is why they
+lead this entry now" against "sequence it after the gate, not before", both
+written in the same commit (`8faa192`, PR #65), so neither superseded the other.
+The prerequisite argument is the one the entry actually supports, so it wins and
+the title now matches it. If you come to disagree, change this block rather than
+adding a third opinion further down.
 
 Updated Aug 2026, after the cadence split (PR #65). The tags are now
 `skill-sync` (install counts, ranks, snapshots, versions, copies) and
@@ -828,8 +809,8 @@ The problem is that the tag is catalog-wide. A global gate suppresses the ping
 only on a day when NOT ONE skill in ~9.5k changed its SKILL.md — and this app's
 headline feature is a change feed of exactly those events, so such days are
 close to nonexistent. Building it would be ~20 lines that fire anyway. Per-skill
-tags are the prerequisite that makes any freshness check meaningful, which is
-why they lead this entry now.
+tags are the prerequisite that makes any freshness check meaningful — which is
+the whole reason for the sequence at the top.
 
 Note the sync path already does the gated thing where it can: `upsertSkillsBatch`
 returns a `contentFieldChanges` count and `syncSkills` pings `skill-content` only when
@@ -859,12 +840,12 @@ moved `expire` from 7 to 30 days on a security surface. The full reasoning is at
 the loader in components/skill-detail-page.tsx. Do not retry it before per-skill
 tags exist — the same global-gate arithmetic sinks any per-tag variant.
 
-Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) remain the fuller
-fix and would let the content step ping only what it touched, but note they do
-NOT help the daily `skill-sync` ping: `syncSkills` walks the entire leaderboard
-and legitimately moves nearly every install count, so "only the skills that
-changed" is "all of them". `/api/revalidate` would also need to accept a batch of
-tags. Sequence it after the gate, not before.
+Per-skill tags (`cacheTag("skill:" + source + "/" + skillId)`) are the fuller fix
+and would let the content step ping only what it touched. Two caveats that do NOT
+change the sequence at the top, but do bound what step 1 buys: they do not help
+the daily `skill-sync` ping, because `syncSkills` walks the entire leaderboard and
+legitimately moves nearly every install count, so "only the skills that changed"
+is "all of them"; and `/api/revalidate` would need to accept a batch of tags.
 
 Fine meanwhile: invalidation only *marks* entries stale, so a page rebuilds when
 someone visits it. Cost is bounded by traffic, not by the catalog.
