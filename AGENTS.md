@@ -137,9 +137,11 @@ asked to add technology tagging, treat it as new work, not a refactor.
   owns the deletion. Not inline in the module they repair. Reason, from Aug
   2026: a one-shot documented only in its own header was cloned into a
   near-duplicate the next day (`6e12f16` → `dcb61f5`) because nothing outside
-  the file recorded that it existed. `skills.ts` still carries two pre-dating
-  this rule (`backfillIsDelistedFalse`, `backfillArchiveBaselines`) — don't add
-  a third.
+  the file recorded that it existed. `skills.ts` still carries several that
+  pre-date this rule (`backfillIsDelistedFalse`, `backfillLastSeenInApi`,
+  `backfillNeedsRepoResolution`, `backfillArchiveBaselines`) — don't add
+  another. Their presence is the argument for the rule, not an exception to it:
+  none is called by anything, and only their own headers say so.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

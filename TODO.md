@@ -1115,17 +1115,22 @@ back.
 - **Baseline archive repairs — run and retired, Aug 2026.** The `isBaseline`
   write path produced two kinds of wrong row, both fixed at the source
   (`5f4d427` for baseline labels, `dcb61f5` for description claims), and both
-  repaired by hand with the one-shot `convex/skillVersionsRepair.ts`, since
-  deleted. Recorded here because the tooling that could re-answer these
-  questions is gone:
+  repaired by hand — the label half by an earlier inline one-shot (`6e12f16`),
+  the description half by `convex/skillVersionsRepair.ts`, since deleted.
+  Recorded here because the tooling that could re-answer these questions is
+  gone:
 
   - `auditBaselineLabels`: 0 mislabeled of 13,247 baseline rows, `complete:
     true` — that half had already been repaired by the earlier one-shot, so
     `repairBaselineLabels` patched nothing.
   - `auditBaselineDescriptionClaims`: 794 found of the same 13,247,
-    `scanComplete: true`, newest offending row 2026-08-12 21:52 UTC (i.e.
-    before the deploy — the pre-flight's "is this still happening" check
-    passed). `repairBaselineDescriptionClaims` cleared them.
+    `scanComplete: true`, newest offending row 2026-08-12 21:52 UTC.
+    The fix reached master with `b8ddb90` at 2026-08-13 03:32 UTC and was
+    deployed shortly after, so that row predates the fix by ~5h40m and the
+    pre-flight's "is this still happening" check passed. Note the margin is
+    thin and the window was quiet — the 06:00 UTC sync did not run inside it —
+    so read it as "nothing wrote one after the fix landed", not as a long clean
+    run. `repairBaselineDescriptionClaims` cleared them.
   - Verified against production AFTER the deletion, by an inline read-only
     query over the same predicates: 13,247 baseline rows, 0 description claims,
     0 mislabeled. That is the number to trust; the two above are what the
