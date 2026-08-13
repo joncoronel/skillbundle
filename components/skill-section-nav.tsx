@@ -201,7 +201,7 @@ export function SkillSectionNav({
   // nothing ever appears to pin and the rail scrolls away like static content.
   return (
     <div className={cn("hidden xl:block", className)}>
-      <div className="xl:sticky xl:top-24">
+      <div className="xl:sticky xl:top-24 xl:z-30">
           <p className="mb-4 text-xs font-medium text-muted-foreground">
             On this page
           </p>
