@@ -761,6 +761,45 @@ binds the wrong file and the content pipeline serves that body. Repairable
 (tighten, re-run discovery, the row rebinds) but a live, visible bug. So: still
 worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
+### Run and then DELETE `convex/skillVersionsRepair.ts` (Aug 2026)
+
+The module is a one-shot: four hand-run functions correcting `isBaseline` rows
+the archive's write path used to produce wrongly. Nothing in the app calls any
+of them, and the file is deletable the moment they have run. It is here because
+the previous one-shot of the same kind (`repairBaselineLabels`) was recorded only
+in its own header and grew a second copy the very next day — landed in `6e12f16`
+on 2026-08-11, cloned in `dcb61f5` on 2026-08-12, which is what the split into
+this file was fixing. A day, not a slow drift: nothing about that is a reason to
+expect more warning next time.
+
+**Run all four only once this branch is deployed.** Two reasons, and they are
+different: `convex/skillVersionsRepair.ts` does not exist until this branch
+ships, so none of the commands below resolve before then; and repairing before
+its write-side fix is live just leaves the pipeline making more, which is what
+each pre-flight's "is this still happening" reading is for. Only the
+description-claim fix ships here (`dcb61f5`) — the label fix has been live since
+`5f4d427` (2026-08-09), so steps 1-2 carry no ordering hazard of their own.
+
+Order matters, and the pre-flights exist so the ordering is checkable:
+
+1. `npx convex run skillVersionsRepair:auditBaselineLabels --prod` — check
+   `complete` first (it is this audit's spelling of `scanComplete`), then read
+   `newestMislabeledDay`. Recent means rows are still being written wrong. The
+   completeness check is not optional on either audit: the scan is
+   oldest-first, so a truncated one reports stale "newest" readings, and stale
+   here reads as all-clear.
+2. `npx convex run skillVersionsRepair:repairBaselineLabels --prod`
+3. `npx convex run skillVersionsRepair:auditBaselineDescriptionClaims --prod` —
+   check `scanComplete` first; then `newestMatchAt`, then `found`.
+4. `npx convex run skillVersionsRepair:repairBaselineDescriptionClaims --prod`
+   with `maxRows` sized from step 3's `found`, plus headroom — up to a ceiling
+   of 20,000, past which the arg clamps and the abort repeats.
+
+Re-running is a no-op rather than a race: each repair's predicate stops matching
+the rows it has patched. Delete the file (and its tests in
+`tests/skill-versions.test.ts`, the `AGENTS.md` line, and this entry) once both
+repairs report `scanComplete: true` with `patched: 0` on a second run.
+
 ### Gate the content-chain ping (and, maybe, per-skill cache tags)
 
 Updated Aug 2026, after the cadence split (PR #65). The tags are now
@@ -795,6 +834,18 @@ why they lead this entry now.
 Note the sync path already does the gated thing where it can: `upsertSkillsBatch`
 returns a `contentFieldChanges` count and `syncSkills` pings `skill-content` only when
 it's non-zero. The content chain is harder only because of the scheduling shape.
+
+**A second dependent, added Aug 2026.** The add path now publishes a user-added
+row's first content from inside the write's own transaction
+(`skills.publishFirstUserAddedContent`), so a dropped publish can no longer come
+from the action dying between the commit and the schedule. What it can still
+come from is the ping itself failing — `revalidateSiteTag` swallows errors and
+never retries. Today the ungated daily ping quietly covers that within 24h. Gate
+it and the recovery window becomes `loadSkill`'s `cacheLife("weeks")`, i.e. a
+freshly added skill can show an install count over an empty body for up to 7
+days with nothing recording that a publish was owed. So this entry now needs a
+per-row "publish owed" retry (or a per-skill tag to ping cheaply) BEFORE the
+gate, not merely alongside it.
 
 **Already tried and reverted (Aug 2026): a third `skill-audit` tag.** The idea
 was to move `loadAudits` off its 24h timer onto a weekly life plus a tag pinged

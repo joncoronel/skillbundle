@@ -203,6 +203,51 @@ test("first content write is recorded as a baseline", async () => {
   expect(versions[0].previousFrontmatterVersion).toBeUndefined();
 });
 
+test("a baseline reports no description change", async () => {
+  // The row a manual add leaves behind holds a name and an install count and
+  // nothing else, so when the content chain fills it in, the writers compare
+  // the file's description against `undefined` and report a change. That is our
+  // own two-step ingest showing through, not an upstream edit — and it reached
+  // the timeline as a "Description changed" badge over a before-value of None
+  // on the skill's very first row.
+  //
+  // The one-time baseline backfill never had the problem because it hardcodes
+  // `descriptionChanged: false`, which is why a skill it covered shows a bare
+  // "Earliest recorded version" and a skill added after it did not.
+  const t = makeTest();
+  const skillDocId = await seedSkill(t);
+  // The row carries a description but NO `syncHash` — exactly what an add
+  // leaves behind now that `kickPostAddChain` seeds one from the SKILL.md it
+  // downloaded. This is what makes the assertions below non-vacuous: without
+  // it `previousDescription` is undefined anyway and the suppression under test
+  // cannot be distinguished from doing nothing.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(skillDocId, { description: "Seeded at add time" });
+  });
+
+  const outcome = await writeContent(
+    t,
+    skillDocId,
+    skillMd({ description: "Install and configure the thing", body: "Body" }),
+  );
+  // The writer still reports the change — suppression is the archive's call,
+  // and `needsEmbedding` downstream depends on this staying true.
+  expect(outcome.descriptionChanged).toBe(true);
+  // Narrowed rather than asserted through: the unchanged-hash arm of
+  // `contentWriteOutcome` carries no `previousDescription`.
+  if (!outcome.changed) throw new Error("expected a content change");
+  expect(outcome.previousDescription).toBe("Seeded at add time");
+
+  const versions = await versionsFor(t, skillDocId);
+  expect(versions[0].isBaseline).toBe(true);
+  expect(versions[0].descriptionChanged).toBe(false);
+  // Dropped, not merely absent: the caller passed "Seeded at add time" and the
+  // archive refused it, because a starting point has nothing to have moved from.
+  expect(versions[0].descriptionBefore).toBeUndefined();
+  // Kept: it is what the file says now, not a claim that anything moved.
+  expect(versions[0].descriptionAfter).toBe("Install and configure the thing");
+});
+
 test("a first row is a real change when the skill already had content", async () => {
   // The well-known-source case, and the reason `isBaseline` is not simply
   // "no predecessor row". `backfillArchiveBaselines` only walks GitHub sources
@@ -387,6 +432,7 @@ async function insertVersion(
     isBaseline: boolean;
     previousSyncHash?: string;
     descriptionChanged?: boolean;
+    descriptionBefore?: string;
   },
 ) {
   await t.run(async (ctx) => {
@@ -415,11 +461,89 @@ async function insertVersion(
       rawStorageId,
       rawBytes: 1,
       descriptionChanged: opts.descriptionChanged ?? false,
+      descriptionBefore: opts.descriptionBefore,
       contentChanged: true,
       isBaseline: opts.isBaseline,
     });
   });
 }
+
+test("the description-claim repair clears artefacts and leaves real changes alone", async () => {
+  // Two rows that look alike and must be treated differently. Both are flagged
+  // baseline and both claim a description change; only the one with no
+  // `previousSyncHash` is an artefact of the row having been empty. The other is
+  // the mislabel the sibling repair exists for, and its change is genuine —
+  // erasing it would be worse than the badge this is cleaning up.
+  const t = makeTest();
+  await insertVersion(t, {
+    source: "example.com",
+    skillId: "artefact",
+    changedAt: 1,
+    isBaseline: true,
+    descriptionChanged: true,
+    descriptionBefore: "what the empty row held",
+  });
+  await insertVersion(t, {
+    source: "example.com",
+    skillId: "real-change",
+    changedAt: 2,
+    isBaseline: true,
+    previousSyncHash: "an-earlier-copy-existed",
+    descriptionChanged: true,
+    descriptionBefore: "a description that genuinely moved",
+  });
+
+  // Pre-flight first, and it must report without touching anything — that
+  // ordering is the whole point of having one.
+  const audit = await t.action(
+    internal.skillVersionsRepair.auditBaselineDescriptionClaims,
+    {},
+  );
+  expect(audit.found).toBe(1);
+  expect(audit.patched).toBe(0);
+  expect(audit.newestMatchAt).toBe(1);
+  // Both numbers above are only meaningful once the scan reached the end, and
+  // the docblock tells the operator to check this before reading them.
+  expect(audit.scanComplete).toBe(true);
+  // Weaker than it looks, and worth saying so. With one match this passes
+  // whether or not the driver lifts `rowCap` for a dry run, so it pins the
+  // audit's no-abort CONTRACT, not the lift that upholds it. Nothing pins the
+  // lift: the discriminating case needs 5,001 matching rows (the non-dry-run
+  // default), seeded one `t.run` at a time, which is not worth it for tooling
+  // that runs once. Deleting the `dryRun` branch in `runBaselineScan` would
+  // leave this green — so treat that branch as unguarded when changing it.
+  expect(audit.aborted).toBeNull();
+  expect(
+    (await t.run(async (ctx) => ctx.db.query("skillVersions").collect())).every(
+      (r) => r.descriptionChanged,
+    ),
+  ).toBe(true);
+
+  const result = await t.action(
+    internal.skillVersionsRepair.repairBaselineDescriptionClaims,
+    {},
+  );
+  expect(result.patched).toBe(1);
+  expect(result.scanComplete).toBe(true);
+
+  const rows = await t.run(async (ctx) =>
+    ctx.db.query("skillVersions").collect(),
+  );
+  const artefact = rows.find((r) => r.skillId === "artefact")!;
+  const realChange = rows.find((r) => r.skillId === "real-change")!;
+  expect(artefact.descriptionChanged).toBe(false);
+  expect(artefact.descriptionBefore).toBeUndefined();
+  expect(realChange.descriptionChanged).toBe(true);
+  // The half a too-broad predicate would destroy.
+  expect(realChange.descriptionBefore).toBe("a description that genuinely moved");
+
+  // Idempotent: the repaired row no longer matches.
+  const again = await t.action(
+    internal.skillVersionsRepair.repairBaselineDescriptionClaims,
+    {},
+  );
+  expect(again.patched).toBe(0);
+});
 
 test("the baseline audit counts only rows that are provably mislabeled", async () => {
   // Pre-flight for the repair. A row is mislabeled when it claims to be a
@@ -466,7 +590,7 @@ test("the baseline audit counts only rows that are provably mislabeled", async (
   });
 
   const report = await t.action(
-    internal.skillVersions.auditBaselineLabels,
+    internal.skillVersionsRepair.auditBaselineLabels,
     {},
   );
 
@@ -499,7 +623,7 @@ test("the baseline audit reports a truncated scan as incomplete", async () => {
     });
   }
 
-  const report = await t.action(internal.skillVersions.auditBaselineLabels, {
+  const report = await t.action(internal.skillVersionsRepair.auditBaselineLabels, {
     maxPages: 1,
     pageSize: 2,
   });
@@ -530,7 +654,7 @@ test("the repair clears only the mislabeled rows, and is idempotent", async () =
   });
 
   const first = await t.action(
-    internal.skillVersions.repairBaselineLabels,
+    internal.skillVersionsRepair.repairBaselineLabels,
     {},
   );
   expect(first.scanComplete).toBe(true);
@@ -549,7 +673,7 @@ test("the repair clears only the mislabeled rows, and is idempotent", async () =
 
   // Re-running finds nothing: a patched row leaves the isBaseline index.
   const second = await t.action(
-    internal.skillVersions.repairBaselineLabels,
+    internal.skillVersionsRepair.repairBaselineLabels,
     {},
   );
   expect(second.found).toBe(0);
@@ -571,12 +695,17 @@ test("the repair patches nothing when the match count blows its ceiling", async 
     });
   }
 
-  const report = await t.action(internal.skillVersions.repairBaselineLabels, {
+  const report = await t.action(internal.skillVersionsRepair.repairBaselineLabels, {
     maxRows: 2,
   });
 
   expect(report.aborted).toContain("exceeded maxRows");
   expect(report.patched).toBe(0);
+  // Null, i.e. where this run STARTED, not where the scan reached. Nothing was
+  // patched, so a caller resuming from `nextCursor` — which is what that field
+  // means on every other branch — would skip every row the run matched and call
+  // a partial repair complete.
+  expect(report.nextCursor).toBeNull();
   const stillBaseline = await t.run(async (ctx) =>
     ctx.db.query("skillVersions").collect(),
   );

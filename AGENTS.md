@@ -103,7 +103,10 @@ Modules, grouped by concern:
   `githubOnly.ts` (admin add of skills that exist only on GitHub, not on
   skills.sh — see docs/skill-lifecycle.md "GitHub-only skills"),
   `githubOnlyAudit.ts` (read-only diagnostic: GitHub-only rows whose stored
-  slug disagrees with their SKILL.md's frontmatter name).
+  slug disagrees with their SKILL.md's frontmatter name),
+  `skillVersionsRepair.ts` (**delete-on-completion**: hand-run audits and
+  repairs for two past `isBaseline` write defects, run once against prod via
+  `npx convex run`; nothing in the app calls them).
 
 ### Crons (`crons.ts`)
 

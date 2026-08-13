@@ -59,6 +59,7 @@ import {
 import { kickPostAddChain } from "./lib/postAdd";
 import { toPublicError } from "./lib/publicError";
 import {
+  extractBodyContent,
   extractFrontmatterDescription,
   extractSkillMdName,
   humanizeSlug,
@@ -133,6 +134,13 @@ type GitHubSkillResolution =
       // fire on a value that wasn't in the file.
       fmName?: string;
       description?: string;
+      // The SKILL.md body, frontmatter stripped — same shape as `skills.content`.
+      // Carried because the add is the only place this file is in memory before
+      // the content chain re-downloads it, and `kickPostAddChain` seeds the row
+      // with it so the skill page isn't blank on its first render. Stripped off
+      // before either preview action returns (see `stripSeedContent`): the
+      // client has no use for the body and it can be tens of KB.
+      body?: string;
       // How this file earned the match. `"dir"` means a folder named exactly
       // like the slug — i.e. the caller pointed at THIS skill. `"frontmatter"`
       // means the file's own `name` matched it, EXACTLY: since the resolver
@@ -235,6 +243,7 @@ async function resolveGitHubSkillMd(
       name: fmName ?? humanizeSlug(skillId),
       ...(fmName && { fmName }),
       description: extractFrontmatterDescription(contents) ?? undefined,
+      body: extractBodyContent(contents) ?? undefined,
       matchedBy,
       aliasBindsSameFile,
       treeListed: byDir !== null,
@@ -371,6 +380,12 @@ type GitHubPreview =
       path: string;
       name: string;
       description?: string;
+      // SERVER-ONLY. The SKILL.md body, for `addGitHubCore` to seed the row
+      // with; `stripSeedContent` removes it before either preview action
+      // returns, so it is absent from `previewOkFields` by design. Confirm
+      // re-runs `previewGitHubCore` server-side, so it always has this even
+      // though the client never sees it.
+      body?: string;
       // The row exists in the catalog but is delisted, so confirming performs
       // a RELIST — which stamps no `addedBy` and consumes no quota. The UI
       // uses this to keep the confirm available for at-limit users.
@@ -578,6 +593,7 @@ async function previewGitHubCore(
     path: resolved.path,
     name: resolved.name,
     description: resolved.description,
+    body: resolved.body,
     // Past terminalFor, a non-null precheck (for whichever slug we settled on)
     // can only be a delisted row.
     wasDelisted: add.precheck !== null,
@@ -599,6 +615,36 @@ type GitHubAddSuccess =
 
 /** Every preview arm except `ok` — what a REFUSAL is, from either step. */
 type GitHubPreviewFailure = Exclude<GitHubPreview, { status: "ok" }>;
+
+/**
+ * What a preview looks like once it has crossed the wire: the core's union with
+ * the server-only `body` removed.
+ *
+ * Named because BOTH preview actions return this shape and neither should
+ * advertise a field `stripSeedContent` guarantees is gone — a return type that
+ * promises `body` can only mislead the next caller, since `previewOkFields`
+ * doesn't declare it and Convex's return validation would reject it.
+ */
+type GitHubPreviewWire =
+  | GitHubPreviewFailure
+  | Omit<Extract<GitHubPreview, { status: "ok" }>, "body">;
+
+/**
+ * Drop the server-only SKILL.md body before a preview crosses the wire.
+ *
+ * `previewOkFields` deliberately doesn't declare `body`, so Convex's return
+ * validation would reject it — this is what keeps that from being a trap for
+ * whoever adds the next preview action. The body exists on the type for the
+ * confirm path, which re-runs the core server-side and seeds the row with it;
+ * the client only ever renders name/description, and the file can be tens of KB.
+ */
+function stripSeedContent<T extends { body?: string }>(
+  preview: T,
+): Omit<T, "body"> {
+  const rest = { ...preview };
+  delete rest.body;
+  return rest;
+}
 
 /**
  * What a confirm returns: a written row, or the re-check's refusal.
@@ -674,12 +720,15 @@ async function addGitHubCore(
     }),
   });
 
-  // Backfill chain + cache bust + immediate Typesense index — shared with the
-  // normal add; see lib/postAdd.ts for the why of each step.
+  // Seed + backfill chain + cache bust + immediate Typesense index — shared
+  // with the normal add; see lib/postAdd.ts for the why of each step. The
+  // SKILL.md the preview resolved goes in, so this path lands a complete page
+  // on first render rather than an install count over an empty body.
   await kickPostAddChain(ctx, {
     source: addSource,
     skillId: addSkillId,
     description: preview.description,
+    content: preview.body,
   });
 
   return {
@@ -736,9 +785,12 @@ const previewOkFields = {
 export const previewGitHubSkill = action({
   args: { input: v.string() },
   returns: v.union(...previewTerminalArms, v.object(previewOkFields)),
-  handler: async (ctx, { input }): Promise<GitHubPreview> => {
+  handler: async (ctx, { input }): Promise<GitHubPreviewWire> => {
     await assertAdmin(ctx);
-    return previewGitHubCore(ctx, input);
+    const preview = await previewGitHubCore(ctx, input);
+    // Narrowed rather than stripped wholesale: only the `ok` arm carries a
+    // body, and mapping over the whole union would collapse the discriminant.
+    return preview.status === "ok" ? stripSeedContent(preview) : preview;
   },
 });
 
@@ -793,9 +845,11 @@ const gitHubAddReturns = v.union(
  * mis-mark a skill that skills.sh actually lists.
  *
  * Discovery is left to the normal pipeline rather than seeding the URL resolved
- * here. Only `source` + `skillId` + name are stored; the file's location is
- * re-derived from the slug afterwards, which handles a repo that moved the file
- * between preview and confirm.
+ * here. The row stores `source` + `skillId` + name, plus the SKILL.md text the
+ * preview already read (via `kickPostAddChain`, so the page is complete on its
+ * first render) — but NOT the file's location, which is re-derived from the slug
+ * afterwards, so a repo that moved the file between preview and confirm is
+ * handled.
  *
  * The two no longer share a matcher — this path uses `matchesSkillIdExactly`
  * while discovery keeps the loose prefix rule — so "same code, same answer" is
@@ -919,7 +973,7 @@ const PUBLIC_ADD_FALLBACK_ERROR =
 
 type GitHubPreviewPublic =
   | GitHubPreviewFailure
-  | (Extract<GitHubPreview, { status: "ok" }> & {
+  | (Omit<Extract<GitHubPreview, { status: "ok" }>, "body"> & {
       quota: GitHubAddQuotaStatus;
     });
 
@@ -946,7 +1000,7 @@ export const previewGitHubSkillPublic = action({
       const preview = await previewGitHubCore(ctx, input);
       if (preview.status === "ok") {
         return {
-          ...preview,
+          ...stripSeedContent(preview),
           quota: {
             plan: quota.plan,
             used: quota.used,

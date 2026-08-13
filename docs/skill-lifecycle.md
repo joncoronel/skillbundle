@@ -20,6 +20,43 @@ A skill row enters our DB one of three ways:
    repo and inserts with `installs: 0`, `leaderboard: "github"`, and
    `isGitHubOnly: true`. See [GitHub-only skills](#github-only-skills).
 
+### An add is two steps, and the gap is visible
+
+Both add paths write a row holding little more than a name and an install count,
+then let the ordinary content chain fill in the SKILL.md later. That chain is
+catalog-wide and staggered, so it lands seconds to minutes afterwards — and
+`kickPostAddChain` busts the skill-page cache immediately (it has to: the path
+may hold a cached `notFound()` from before the add). A page rendered in that gap
+therefore publishes an empty skill and, on `loadSkill`'s `cacheLife("weeks")`,
+keeps serving it.
+
+Two things close that window, and both must stay:
+
+- **Seeding.** Both adds have already downloaded the whole SKILL.md by the time
+  they write the row — `addSkillManually` from the detail endpoint's `files[]`,
+  `addSkillFromGitHub` from the repo — so `kickPostAddChain` writes the
+  description and body through `seedAddedSkillContent` as its FIRST step, ahead
+  of the cache bust. It lives in the chain rather than in the two callers
+  because the ordering is the whole point and a caller can silently skip a step
+  it owns (one of them did).
+
+  Deliberately **no `syncHash`**: the seeded copy may lag GitHub's, and storing
+  its hash would make the next GitHub fetch look like an upstream change. Also
+  fill-only, so a relist can't overwrite real content with a stale copy.
+- **Immediate publish.** When the content chain later writes a **user-added**
+  row's first content, it pings the cache tags from inside that write's own
+  transaction (`publishFirstUserAddedContent`) rather than at the chain's
+  terminal. Scheduling it transactionally is what stops a publish being lost
+  between the commit and a follow-up step; it covers the case where the seeded
+  copy was behind GitHub's, and any add path with nothing to seed. Gated on
+  user-added rows because each ping expires the content tag catalog-wide.
+
+One consequence worth knowing: a manually added row reaches its first archived
+version with **no previous hash**, so `recordSkillVersion` files it as a
+`isBaseline` row — a starting point, not an edit — and strips the description
+change it would otherwise infer from comparing the file against a row that only
+the seed had filled in.
+
 `leaderboard` is an **origin tag set on insert only** (never overwritten) — it
 records how the row first appeared, nothing more. Values: `all-time` (leaderboard),
 `curated`, `manual`. Note: `reconcileUnseenSkills` passes `leaderboard: "reconcile"`
