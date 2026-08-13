@@ -617,6 +617,19 @@ type GitHubAddSuccess =
 type GitHubPreviewFailure = Exclude<GitHubPreview, { status: "ok" }>;
 
 /**
+ * What a preview looks like once it has crossed the wire: the core's union with
+ * the server-only `body` removed.
+ *
+ * Named because BOTH preview actions return this shape and neither should
+ * advertise a field `stripSeedContent` guarantees is gone — a return type that
+ * promises `body` can only mislead the next caller, since `previewOkFields`
+ * doesn't declare it and Convex's return validation would reject it.
+ */
+type GitHubPreviewWire =
+  | GitHubPreviewFailure
+  | Omit<Extract<GitHubPreview, { status: "ok" }>, "body">;
+
+/**
  * Drop the server-only SKILL.md body before a preview crosses the wire.
  *
  * `previewOkFields` deliberately doesn't declare `body`, so Convex's return
@@ -772,11 +785,11 @@ const previewOkFields = {
 export const previewGitHubSkill = action({
   args: { input: v.string() },
   returns: v.union(...previewTerminalArms, v.object(previewOkFields)),
-  handler: async (ctx, { input }): Promise<GitHubPreview> => {
+  handler: async (ctx, { input }): Promise<GitHubPreviewWire> => {
     await assertAdmin(ctx);
     const preview = await previewGitHubCore(ctx, input);
-    // Narrowed rather than stripped wholesale: `Omit` over a discriminated
-    // union collapses it, and only the `ok` arm carries a body anyway.
+    // Narrowed rather than stripped wholesale: only the `ok` arm carries a
+    // body, and mapping over the whole union would collapse the discriminant.
     return preview.status === "ok" ? stripSeedContent(preview) : preview;
   },
 });
@@ -960,8 +973,6 @@ const PUBLIC_ADD_FALLBACK_ERROR =
 
 type GitHubPreviewPublic =
   | GitHubPreviewFailure
-  // `body` omitted, not forgotten: it is server-only and `stripSeedContent`
-  // removes it on the way out. See its doc.
   | (Omit<Extract<GitHubPreview, { status: "ok" }>, "body"> & {
       quota: GitHubAddQuotaStatus;
     });

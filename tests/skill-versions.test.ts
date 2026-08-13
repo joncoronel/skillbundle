@@ -496,7 +496,7 @@ test("the description-claim repair clears artefacts and leaves real changes alon
   // Pre-flight first, and it must report without touching anything — that
   // ordering is the whole point of having one.
   const audit = await t.action(
-    internal.skillVersions.auditBaselineDescriptionClaims,
+    internal.skillVersionsRepair.auditBaselineDescriptionClaims,
     {},
   );
   expect(audit.found).toBe(1);
@@ -509,7 +509,7 @@ test("the description-claim repair clears artefacts and leaves real changes alon
   ).toBe(true);
 
   const result = await t.action(
-    internal.skillVersions.repairBaselineDescriptionClaims,
+    internal.skillVersionsRepair.repairBaselineDescriptionClaims,
     {},
   );
   expect(result.patched).toBe(1);
@@ -528,7 +528,7 @@ test("the description-claim repair clears artefacts and leaves real changes alon
 
   // Idempotent: the repaired row no longer matches.
   const again = await t.action(
-    internal.skillVersions.repairBaselineDescriptionClaims,
+    internal.skillVersionsRepair.repairBaselineDescriptionClaims,
     {},
   );
   expect(again.patched).toBe(0);
@@ -579,7 +579,7 @@ test("the baseline audit counts only rows that are provably mislabeled", async (
   });
 
   const report = await t.action(
-    internal.skillVersions.auditBaselineLabels,
+    internal.skillVersionsRepair.auditBaselineLabels,
     {},
   );
 
@@ -612,7 +612,7 @@ test("the baseline audit reports a truncated scan as incomplete", async () => {
     });
   }
 
-  const report = await t.action(internal.skillVersions.auditBaselineLabels, {
+  const report = await t.action(internal.skillVersionsRepair.auditBaselineLabels, {
     maxPages: 1,
     pageSize: 2,
   });
@@ -643,7 +643,7 @@ test("the repair clears only the mislabeled rows, and is idempotent", async () =
   });
 
   const first = await t.action(
-    internal.skillVersions.repairBaselineLabels,
+    internal.skillVersionsRepair.repairBaselineLabels,
     {},
   );
   expect(first.scanComplete).toBe(true);
@@ -662,7 +662,7 @@ test("the repair clears only the mislabeled rows, and is idempotent", async () =
 
   // Re-running finds nothing: a patched row leaves the isBaseline index.
   const second = await t.action(
-    internal.skillVersions.repairBaselineLabels,
+    internal.skillVersionsRepair.repairBaselineLabels,
     {},
   );
   expect(second.found).toBe(0);
@@ -684,7 +684,7 @@ test("the repair patches nothing when the match count blows its ceiling", async 
     });
   }
 
-  const report = await t.action(internal.skillVersions.repairBaselineLabels, {
+  const report = await t.action(internal.skillVersionsRepair.repairBaselineLabels, {
     maxRows: 2,
   });
 
