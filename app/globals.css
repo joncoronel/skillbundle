@@ -630,6 +630,30 @@ html {
     color: var(--color-foreground);
     position: relative;
   }
+
+  /* ── Line breaking ───────────────────────────────────────────────────────
+     Headings balance, body copy avoids orphans. This was 38 hand-applied
+     `text-balance` / `text-pretty` classes across the app, which meant every
+     new heading started without one until somebody remembered.
+
+     `:where()` keeps the specificity at zero, so any component that wants a
+     different answer still overrides with a plain utility class and no
+     `!important`.
+
+     Both degrade to nothing rather than to something wrong: a browser without
+     support ignores the declaration, and `balance` is capped by the engine at a
+     handful of lines (Chrome: 6), so a long heading silently falls back to
+     normal wrapping instead of being balanced into something strange.
+
+     `code` and `pre` are deliberately absent — they are `white-space: pre` and
+     do not wrap — as are table cells, where a balanced cell fights the column
+     widths the table has already computed. */
+  :where(h1, h2, h3, h4, h5, h6) {
+    text-wrap: balance;
+  }
+  :where(p, li, dd, blockquote, figcaption) {
+    text-wrap: pretty;
+  }
   .root {
     isolation: isolate;
   }

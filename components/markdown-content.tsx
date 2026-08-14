@@ -41,13 +41,22 @@ interface MarkdownContentProps {
    */
   headingIds?: boolean;
   /**
-   * Cap running text at a readable measure while code blocks, tables, and
-   * images keep the container's full width.
+   * Cap running text at a readable measure while code blocks and tables keep
+   * the container's full width.
    *
    * Only useful in a wide container — the skill page's document column is
-   * 896px, where uncapped prose measures 93ch against DESIGN.md §3's 65–75ch.
+   * 808px, where uncapped prose measures 93ch against DESIGN.md §3's 65–75ch.
    * A no-op in a narrow column, but left opt-in so the intent is visible at
    * the call site.
+   *
+   * The cap is 74ch, the TOP of that range rather than the middle, and the
+   * reason is the column it sits in. At 68ch the text ran 653px inside 808px,
+   * so on a skill with no code blocks or tables — common — the entire document
+   * was 155px narrower than the section rules above it and read as inset from
+   * its own headers. 74ch is 710px and closes most of that while staying inside
+   * the range. The skill page's description carries the same number for the
+   * same reason: it is 16px prose in the same column, so a different value
+   * would put two paragraphs on two right edges.
    */
   measured?: boolean;
   /**
@@ -146,6 +155,63 @@ const TableTdOverride: StreamdownComponents["td"] = ({ children, style }) => (
   >
     {children}
   </td>
+);
+
+/**
+ * Images, unwrapped.
+ *
+ * Streamdown's own renderer wraps every image in a `<div>` (its
+ * `data-streamdown="image-wrapper"`) to host a hover overlay and a download
+ * button. Markdown always puts an image inside a paragraph — `![a](b)` alone on
+ * a line IS a paragraph containing an image, and `[![a](b)](url)` nests it under
+ * a link as well — so that wrapper lands as a `<div>` inside a `<p>`, which is
+ * invalid HTML. The browser recovers by closing the `<p>` early, the server
+ * markup then disagrees with React's tree, and hydration fails: the whole
+ * document is thrown away and re-rendered on the client.
+ *
+ * A bare `img` element is phrasing content, legal exactly where markdown puts
+ * it. The cost is the download button, which on a read-only render of someone
+ * else's README is worth less than a document that hydrates — the image's own
+ * URL is a right-click away, and the section header links to the source file.
+ *
+ * Margins are explicit rather than inherited from prose, because prose's `img`
+ * rule and the old wrapper's `my-4` disagreed about the value. They do apply
+ * despite the element being inline: an image is a replaced element.
+ *
+ * A raw element and not `next/image`, which is what the lint disable below is
+ * for: these are remote images of unknown dimensions, from whatever domain a
+ * skill's author chose, and `next/image` needs configured hostnames. `loading`
+ * and `decoding` recover most of what it would have given us here, on a
+ * document that can carry dozens of screenshots.
+ */
+const ImageOverride: StreamdownComponents["img"] = ({
+  src,
+  // Defaulted to empty, which is the correct reading of `![](src)` — the author
+  // supplied no description, so the image is decorative and a screen reader
+  // should skip it. Omitting the attribute instead makes them fall back to
+  // announcing the URL.
+  alt = "",
+  title,
+  // Markdown cannot set these, but `rehype-raw` is on, so an author writing a
+  // literal <img> tag reaches this component too.
+  width,
+  height,
+  className,
+}) => (
+  // Named props rather than a spread, matching the overrides above: the props
+  // react-markdown passes include its own `node` (the hast element), which has
+  // no business on a DOM node.
+  // eslint-disable-next-line @next/next/no-img-element
+  <img
+    src={src}
+    alt={alt}
+    title={title}
+    width={width}
+    height={height}
+    loading="lazy"
+    decoding="async"
+    className={cn("my-4 max-w-full rounded-lg", className)}
+  />
 );
 
 // Render blockquotes as a neutral callout panel instead of prose's left-stripe
@@ -347,6 +413,7 @@ export function MarkdownContent({
       code: CodeOverride,
       pre: PreOverride,
       blockquote: BlockquoteOverride,
+      img: ImageOverride,
       table: TableOverride,
       thead: TableHeadOverride,
       th: TableThOverride,
@@ -371,19 +438,33 @@ export function MarkdownContent({
         // header on a jump, and stay silent about the programmatic focus (a
         // heading is a landing point, not a control, so it takes no ring).
         headingIds && "prose-headings:scroll-mt-24 prose-headings:outline-none",
-        // Running text holds a readable measure; code, tables, and images keep
-        // the container's full width, which is what they're for. Those are the
-        // only two widths in the document, and the split is by KIND: text is
-        // read line by line and needs the measure, while a framed object is
-        // scanned as a block and its frame is what says it is a different sort
-        // of thing.
+        // Two widths, and the split is by KIND: what you READ line by line takes
+        // the measure, what you SCAN as a block keeps the container's full
+        // width. Prose, lists and headings are the first; code blocks, tables,
+        // callouts and images are the second.
         //
-        // `hr` is measured with the text, not left full-bleed. An author's `---`
-        // running the column's full width drew a rule indistinguishable from the
-        // page's own section rules (SkillSection's `border-t`), so a break
-        // inside the document read as a break BETWEEN documents.
+        // The blockquote is the one worth stating, because its CONTENT is prose
+        // and the temptation is to measure it. It renders as a bordered, tinted
+        // callout — a framed object — and a framed object narrower than the code
+        // block above it reads as a mistake rather than as a measure. Its own
+        // frame is what tells the reader it is a different sort of thing, and
+        // that only works if the frame lands where the other frames do.
         //
-        // Every cap is the same custom property rather than a repeated `68ch`,
+        // Images are exempted through their PARAGRAPH, not through the image:
+        // markdown wraps every image in one (`![a](b)` alone on a line is a
+        // paragraph containing an image), so an image inherits the paragraph
+        // cap unless the paragraph opts out. `:has()` asks the real question —
+        // is this paragraph running text, or is it just an image? — and the
+        // second selector covers `[![a](b)](url)`, the linked form. Both
+        // out-specify the plain `p` rule, so order here does not matter.
+        //
+        // `hr` IS measured, against the rule above, and it is the one exception:
+        // an author's `---` running the column's full width drew a rule
+        // indistinguishable from the page's own section rules (SkillSection's
+        // `border-t`), so a break inside the document read as a break BETWEEN
+        // documents.
+        //
+        // Every cap is the same custom property rather than a repeated `74ch`,
         // because `ch` resolves per element — see the @property block in
         // globals.css for why that produced four different right edges.
         //
@@ -391,7 +472,7 @@ export function MarkdownContent({
         // one, so a direct-child selector here matches that wrapper and nothing
         // else. The top-level blocks are its grandchildren.
         measured &&
-          "[--doc-measure:68ch] [&>*>blockquote]:max-w-[var(--doc-measure)] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>ul]:max-w-[var(--doc-measure)]",
+          "[--doc-measure:74ch] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>ul]:max-w-[var(--doc-measure)] [&>*>p:has(>a>img)]:max-w-none [&>*>p:has(>img)]:max-w-none",
         // Links use the single signal accent, underlined for affordance.
         "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
         // Align prose colors with the app's semantic tokens instead of
@@ -418,7 +499,7 @@ export function MarkdownContent({
         controls={false}
         linkSafety={{ enabled: false }}
         urlTransform={transformUrl}
-        className="prose-code:before:content-none prose-code:after:content-none prose-headings:text-balance prose-p:text-pretty"
+        className="prose-code:before:content-none prose-code:after:content-none"
         components={components}
       >
         {children}

@@ -62,7 +62,7 @@ export function SkillSection({
       </div>
 
       {description && (
-        <p className="mt-2 max-w-[68ch] text-sm text-pretty text-muted-foreground">
+        <p className="mt-2 max-w-[68ch] text-sm text-muted-foreground">
           {description}
         </p>
       )}

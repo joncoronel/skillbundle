@@ -13,10 +13,10 @@ export default function AddSkillPage() {
   return (
     <main className="mx-auto max-w-4xl px-4 pt-12 pb-20">
       <header className="max-w-prose">
-        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero text-balance">
+        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero">
           Add a skill.
         </h1>
-        <p className="mt-3 text-sm text-muted-foreground text-pretty">
+        <p className="mt-3 text-sm text-muted-foreground">
           Missing a skill? Paste its skills.sh link or its GitHub repo and
           we&apos;ll add it to the catalog for everyone.
         </p>

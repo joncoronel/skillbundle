@@ -280,7 +280,7 @@ export function SkillDetailPage({
         <h1
           id="overview"
           tabIndex={-1}
-          className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
+          className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight outline-none sm:text-4xl"
         >
           {skillId}
         </h1>
@@ -409,7 +409,7 @@ async function SkillDetailBody({
           // reading as a pull quote: a skill description is frequently a dense
           // 200-word trigger list rather than a tagline, and set that large it
           // filled the viewport before the reader reached anything else.
-          <p className="max-w-[68ch] text-base leading-relaxed text-pretty text-foreground">
+          <p className="max-w-[74ch] text-base leading-relaxed text-foreground">
             {skill.description}
           </p>
         )}
@@ -602,7 +602,7 @@ export function SkillDetailPageSkeleton({
       style={LAYOUT_VARS}
     >
       <div className="lg:col-start-1 lg:row-start-1">
-        <div className="max-w-[68ch] space-y-2.5">
+        <div className="max-w-[74ch] space-y-2.5">
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-4/5" />
         </div>

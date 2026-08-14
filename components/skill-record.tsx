@@ -287,7 +287,7 @@ export function SkillRecord({
           // recorded, so it reads as a placeholder rather than a flat trend.
           <div className="mt-3">
             <InstallSparklineGhost />
-            <p className="mt-2 text-xs text-pretty text-muted-foreground">
+            <p className="mt-2 text-xs text-muted-foreground">
               Recording daily. The trend appears once there&apos;s enough
               history.
             </p>

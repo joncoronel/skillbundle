@@ -201,7 +201,7 @@ export function AuditAccordion({
 
             <AccordionContent>
               {detail && (
-                <p className="max-w-[68ch] text-pretty text-sm leading-relaxed text-foreground">
+                <p className="max-w-[68ch] text-sm leading-relaxed text-foreground">
                   {detail}
                 </p>
               )}
