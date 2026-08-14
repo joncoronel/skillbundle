@@ -237,19 +237,22 @@ export function SkillDetailPage({
         } as CSSProperties
       }
     >
-      {/* The masthead pads itself by exactly the sidebar column, so from `lg`
-          the Compare action lands on the content column's right edge rather
-          than over the card. The h1 needs no left padding now that the sidebar
-          is on the trailing side — it starts on the page margin, the same line
-          as the description and the document below it. Padding rather than a
-          grid cell because the h1 lives OUTSIDE the Suspense boundary (it is
-          URL data, available on first paint) while every grid child lives
-          inside it. */}
+      {/* The masthead pads itself by exactly the sidebar column so the title
+          cannot run under the card — skill ids reach 40 characters and the h1
+          is the one block here with no measure of its own. It carries no
+          action: Compare used to sit at this row's right edge, and once the
+          layout dropped to two columns that edge stopped being anywhere. It
+          landed 300px right of a short title with the card starting just past
+          it, anchored to nothing. It lives with the other action on this skill
+          now, in the record card.
+
+          Padding rather than a grid cell because the h1 lives OUTSIDE the
+          Suspense boundary (it is URL data, available on first paint) while
+          every grid child lives inside it. */}
       <div className="lg:pr-[calc(var(--skill-side)_+_var(--skill-gap))]">
         {breadcrumb}
 
-        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-          {/* Geist Sans, not the Geist Pixel display face. Skill ids are long,
+        {/* Geist Sans, not the Geist Pixel display face. Skill ids are long,
             lowercase, hyphenated machine identifiers, and the pixel face
             collapses into broken mono under ~40px (DESIGN.md §3, the Pixel
             Floor Rule) — which is exactly what it was doing here at 30px.
@@ -260,30 +263,13 @@ export function SkillDetailPage({
             `id`/`tabIndex` make the masthead the section nav's first target;
             it lives in the static shell so the anchor resolves on first paint,
             before the body streams in. */}
-          <h1
-            id="overview"
-            tabIndex={-1}
-            className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
-          >
-            {skillId}
-          </h1>
-          <Button
-            nativeButton={false}
-            variant="outline"
-            size="sm"
-            className="mt-1 shrink-0"
-            render={<Link href={compareHref([{ source, skillId }])} />}
-            leadingIcon={
-              <HugeiconsIcon
-                icon={GitCompareIcon}
-                strokeWidth={2}
-                className="size-3.5"
-              />
-            }
-          >
-            Compare
-          </Button>
-        </div>
+        <h1
+          id="overview"
+          tabIndex={-1}
+          className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight text-balance outline-none sm:text-4xl"
+        >
+          {skillId}
+        </h1>
       </div>
 
       {/* Boundary sits around the Suspense, not inside it, so it covers the
@@ -495,12 +481,36 @@ async function SkillDetailBody({
         stars={stars}
         // Passed in rather than imported by the card, so the card stays free of
         // bundle state and this server component keeps composing the sidebar.
+        //
+        // Both actions on this skill, ranked and adjacent — the same pairing
+        // the quick-look sheet already uses in its footer. Compare survives the
+        // card's fold with the primary, which is not a concession: "this is not
+        // what I wanted, show me the alternatives" is a thought you have while
+        // reading the file, not only before you start.
         action={
-          <BundleToggleButton
-            source={source}
-            skillId={skillId}
-            name={skill.name}
-          />
+          <div className="space-y-2">
+            <BundleToggleButton
+              source={source}
+              skillId={skillId}
+              name={skill.name}
+            />
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              className="w-full"
+              render={<Link href={compareHref([{ source, skillId }])} />}
+              leadingIcon={
+                <HugeiconsIcon
+                  icon={GitCompareIcon}
+                  strokeWidth={2}
+                  className="size-3.5"
+                />
+              }
+            >
+              Compare
+            </Button>
+          </div>
         }
       />
 
@@ -598,8 +608,10 @@ export function SkillDetailPageSkeleton({
               before anyone has scrolled into the document. */}
           <div className="divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
             {/* The action block. BundleToggleButton renders its own skeleton
-                until hydration, so this reserves the same box it will. */}
-            <div className="px-4 py-3">
+                until hydration, so the first of these reserves the same box it
+                will; the second is Compare, which resolves with the shell. */}
+            <div className="space-y-2 px-4 py-3">
+              <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
               <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
             </div>
             {/* Installs: label, total, its trailing-week delta, then the trend. */}
@@ -698,23 +710,16 @@ export function SkillDetailPageSkeleton({
 // ISR caches the page, repeat visits serve the finished HTML and never hit this.
 export function SkillDetailPageLoading() {
   return (
-    // `max-w-7xl` from `xl`, where the section rail appears. The app's default
-    // page width is `max-w-6xl` (DESIGN.md §4) and this is the one page that
-    // departs from it, deliberately: three columns inside 1152px would have
-    // taken 208px off the document to pay for a rail that is pure navigation.
-    // Widening the page instead means the rail costs the document ~80px rather
-    // than a quarter of its width. Below `xl` the page is exactly the app's
-    // default, so a reader moving between org, repo and skill pages sees no
-    // jump at the widths where those pages are actually compared.
+    // `max-w-6xl`, the app's default page width (DESIGN.md §4), matching the
+    // real page exactly — it has no special case to mirror any more.
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
 
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <Skeleton className="h-9 w-1/2 max-w-md sm:h-10" />
-        <Skeleton className="mt-1 h-8 w-28 shrink-0 rounded-lg" />
-      </div>
+      {/* The title alone. The masthead carries no action now — Compare moved
+          into the record card, which this skeleton draws in the sidebar. */}
+      <Skeleton className="h-9 w-1/2 max-w-md sm:h-10" />
 
       <SkillDetailPageSkeleton installCommand="npx skills add ..." />
     </div>
