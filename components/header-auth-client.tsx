@@ -11,16 +11,7 @@ import { cn } from "@/lib/utils";
 // every route under the shared layout as dynamic, which blocks the static/ISR
 // generation the skill and listing pages rely on. Clerk hydrates auth on the
 // client, so we render a placeholder until it's loaded.
-export function HeaderAuthClient({
-  /**
-   * Painted by the caller because this placeholder sits on the header pill,
-   * whose surface is the inverse of the page. Skeleton's default fill is tuned
-   * for the page and reads as a bright dot against a near-black pill.
-   */
-  skeletonClassName,
-}: {
-  skeletonClassName?: string;
-}) {
+export function HeaderAuthClient() {
   const { isSignedIn, isLoaded } = useAuth();
 
   // The margins sit on the two avatar-shaped branches and NOT on the signed-out
@@ -38,11 +29,11 @@ export function HeaderAuthClient({
   // and the menu button takes the other side, so the offset moves with it.
   const gutters = "ml-2 max-md:mr-2";
 
+  // Skeleton's stock fill is a pale page tone and vanishes on an inverse
+  // surface, so it takes the pill's own wash.
   if (!isLoaded)
     return (
-      <Skeleton
-        className={cn("size-8 rounded-lg", gutters, skeletonClassName)}
-      />
+      <Skeleton className={cn("size-8 rounded-lg bg-inverse-hover", gutters)} />
     );
 
   if (isSignedIn) return <UserMenu className={gutters} />;
@@ -55,7 +46,7 @@ export function HeaderAuthClient({
     <div className="flex items-center gap-1">
       <Link
         href="/sign-in"
-        className="rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-[var(--pill-dim)] transition-colors duration-100 ease-out hover:text-[var(--pill-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60"
+        className="rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-inverse-muted-foreground transition-colors duration-100 ease-out hover:text-inverse-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60"
       >
         Log in
       </Link>

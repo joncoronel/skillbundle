@@ -43,6 +43,11 @@ html {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-inverse: var(--inverse);
+  --color-inverse-foreground: var(--inverse-foreground);
+  --color-inverse-muted-foreground: var(--inverse-muted-foreground);
+  --color-inverse-hover: var(--inverse-hover);
+  --color-inverse-border: var(--inverse-border);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-elevated: var(--input-elevated);
@@ -215,7 +220,14 @@ html {
   --primary: oklch(0.6 0.2 250);
   --primary-foreground: oklch(1 0 0);
   --primary-soft-foreground: var(--primary);
-  --neutral: oklch(0.22 0 0);
+  /* The one dark fill in the light palette, so it follows the ink family
+     rather than the fill family. Every other light fill (`--surface-*`,
+     `--muted`, `--secondary`, `--accent`) is chroma 0, which costs nothing
+     at L 0.91–1.0 where 0.004 is invisible. Down here it is visible as an
+     absence: a perfectly neutral black beside `--foreground`'s faintly cool
+     one reads as two different blacks. `--neutral-foreground` already tracks
+     the same hue at `--neutral-chroma-low`. */
+  --neutral: oklch(0.2 var(--neutral-chroma) var(--neutral-hue));
   --neutral-foreground: oklch(
     0.98 var(--neutral-chroma-low) var(--neutral-hue)
   );
@@ -230,6 +242,51 @@ html {
     0.98 var(--neutral-chroma-low) var(--neutral-hue)
   );
   --destructive-soft-foreground: var(--destructive);
+
+  /* ── Inverse surface ─────────────────────────────────────────────────────
+     A container that reads as the opposite of the page rather than as a step
+     up the surface ladder. The header pill is the one that uses it today.
+
+     It exists as tokens, and not as three variables inside that component,
+     because the component had them and it went wrong the same way three times:
+     an inverted fill makes every page token incorrect inside it —
+     `text-muted-foreground` is dark ink on dark, `bg-muted` is a pale block —
+     so anything dropped in has to be repainted by hand, and both the Avatar's
+     fallback and the Skeleton shipped looking broken before anyone noticed.
+     Named tokens turn that into a vocabulary a component can just use.
+
+     In LIGHT it borrows `--neutral`, the app's existing solid-dark fill (the
+     Button's `neutral` variant), so the pill and that button are the same
+     black instead of two near-identical darks nobody chose to differ. Its own
+     `--neutral-foreground` comes with it. `--foreground` was the first
+     choice and sat at `oklch(0.18)`, which read heavier than anything else in
+     the app; `--neutral` is 0.22.
+
+     `--neutral` cannot carry BOTH modes, which is why this set exists at all:
+     it inverts completely, to a near-WHITE fill in dark. That is right for a
+     high-contrast button and wrong for a surface that has to stay a surface.
+
+     Only `--inverse` and `--inverse-foreground` are redefined in `.dark`; the
+     three below derive from them, so the whole set follows from two lines. The
+     washes are alpha over the fill rather than opaque values, so they stay
+     correct at any level the fill lands on. */
+  --inverse: var(--neutral);
+  --inverse-foreground: var(--neutral-foreground);
+  --inverse-muted-foreground: color-mix(
+    in oklab,
+    var(--inverse-foreground) 71%,
+    var(--inverse)
+  );
+  --inverse-hover: color-mix(
+    in oklab,
+    var(--inverse-foreground) 10%,
+    transparent
+  );
+  --inverse-border: color-mix(
+    in oklab,
+    var(--inverse-foreground) 12%,
+    transparent
+  );
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
   --neutral-hover: color-mix(in oklch, var(--neutral), white 10%);
   --destructive-hover: color-mix(in oklch, var(--destructive), black 5%);
@@ -375,6 +432,14 @@ html {
   --secondary-foreground: oklch(0.94 var(--neutral-chroma) var(--neutral-hue));
   --muted: oklch(0.24 var(--neutral-chroma) var(--neutral-hue));
   --muted-foreground: oklch(0.73 var(--neutral-chroma) var(--neutral-hue));
+
+  /* The inverse surface's two roots. "Opposite of the page" cannot be literal
+     here — `--foreground` is near-white in dark, so an inverted fill would be a
+     white bar. What the idea means in dark mode is a LIFTED surface, so the
+     fill is `surface-4` and the ink is the page's own. The three derived
+     tokens in `:root` follow from these without being restated. */
+  --inverse: var(--surface-4);
+  --inverse-foreground: var(--foreground);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);

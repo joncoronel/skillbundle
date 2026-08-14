@@ -25,8 +25,12 @@ import { HeaderPill } from "@/components/header-pill";
  * mode, a lifted surface in dark. That is why it reads as an object sitting on
  * the page rather than a band attached to the top of it, and it is why the
  * treatment survives both themes — "dark bar" cannot be literal in dark mode,
- * where a near-black pill would vanish into a near-black field. The tokens that
- * carry it live in header-pill.tsx.
+ * where a near-black pill would vanish into a near-black field.
+ *
+ * The tokens that carry it are the `--inverse*` set in globals.css, not
+ * variables in the component. Anything placed inside the pill styles from
+ * those, because a page token (`text-muted-foreground`, `bg-muted`) is wrong on
+ * an inverted fill and fails silently in exactly one theme.
  *
  * ── Two consequences worth knowing before editing ─────────────────────────
  *

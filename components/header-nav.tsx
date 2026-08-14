@@ -63,7 +63,8 @@ function NavLinks({ activeHref }: { activeHref: string | null }) {
  * tokens, which are dark-on-light and vanish against the pill.
  *
  * Nothing here fills. Both hover and the current page are carried by label
- * colour alone: the row rests at `--pill-dim` and lifts to `--pill-ink`. The
+ * colour alone: the row rests at `muted-foreground` and lifts to `foreground`.
+ * The
  * current page had a tinted fill and lost it deliberately — on a pill this
  * small a filled chip is a heavier mark than the state deserves, and the pill's
  * own surface is already the loudest object on the screen.
@@ -92,8 +93,8 @@ function NavLink({
         "rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 ease-out",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
         isActive
-          ? "text-[var(--pill-ink)]"
-          : "text-[var(--pill-dim)] hover:text-[var(--pill-ink)]",
+          ? "text-inverse-foreground"
+          : "text-inverse-muted-foreground hover:text-inverse-foreground",
       )}
     >
       {children}

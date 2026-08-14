@@ -33,7 +33,11 @@ export function UserMenu({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
 
   if (!isLoaded)
-    return <Skeleton className={cn("size-8 rounded-lg", className)} />;
+    return (
+      <Skeleton
+        className={cn("size-8 rounded-lg bg-inverse-hover", className)}
+      />
+    );
 
   const initials = getInitials(user?.firstName, user?.lastName);
 
@@ -51,19 +55,18 @@ export function UserMenu({ className }: { className?: string }) {
             curves concentric. Every other inner corner on the pill is set the
             same way, which is why they all read as one object.
 
-            The fallback needs both of its overrides for the same reason it
-            needs the radius: it is drawn for the page, not for the pill. Its
+            The fallback takes three overrides, all for the same reason: it is
+            drawn for the page and this sits on an inverse surface. Its
             `rounded-full` would put a disc inside the square root, and its
-            `bg-muted` is a light page surface, which on a near-black pill
-            renders as a glaring white block that reads as a broken image
-            rather than as an avatar. `--pill-tint` is the wash every other
-            fill on the pill already uses. */}
+            `bg-muted` is a pale page fill that lands as a glaring block on a
+            near-black pill. `--inverse-hover` is the wash every other fill on
+            the pill uses, so the chip belongs to the same surface. */}
         <Avatar size="sm" className="rounded-lg">
           <AvatarImage
             src={user?.imageUrl}
             alt={user?.fullName ?? "User avatar"}
           />
-          <AvatarFallback className="rounded-[inherit] bg-[var(--pill-tint)] text-[var(--pill-ink)]">
+          <AvatarFallback className="rounded-[inherit] bg-inverse-hover text-inverse-foreground">
             {initials}
           </AvatarFallback>
         </Avatar>

@@ -14,36 +14,31 @@ import { SURFACE_SHADOW_COMBINED } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 
 /**
- * `--pill-ink` is the pill's own foreground, and every control inside it reads
- * from these three rather than from the page's tokens — because the pill is the
- * inverse of the page, anything reaching for `text-muted-foreground` here is
- * styling for the page and goes invisible in light mode. `-dim` is the resting
- * state for anything secondary; `-tint` is the wash used for fills.
+ * Fill from the inverse-surface tokens, elevation from the surface ladder.
+ *
+ * The pill is the opposite of the page it floats over — near-black in light,
+ * a lifted `surface-4` in dark — and those two facts live in globals.css as
+ * `--inverse` / `--inverse-foreground` (plus three derived), NOT as variables
+ * declared here. That distinction is the whole point: the same three values
+ * used to be `--pill-ink` / `-dim` / `-tint` inside this file, which made an
+ * app-wide idea look like one component's private styling and left every
+ * control that entered the pill to be repainted by hand.
+ *
+ * The elevation is separate on purpose. `solidSurface(4)` would bring
+ * `bg-surface-4` with it and fight the inverse fill, so the pill takes the
+ * shadow half of that recipe — the identical drop and rim every other floating
+ * container in the app gets — and paints its own fill.
+ *
+ * Level 4's rim is a dark-mode device (`0 0 transparent` in light), which is
+ * the right behaviour here for a reason worth keeping: a near-black pill on a
+ * near-white page needs no edge, while in dark the fill sits only 9% above the
+ * page and the 2% highlight plus 4% ring is what stops it going mushy.
  */
-const PILL_SURFACE = [
-  // Fill inverts, elevation does not. `SURFACE_SHADOW_COMBINED[4]` is the
-  // app's level-4 recipe — the same drop and rim every floating surface uses —
-  // rather than the `shadow-surface-3` this carried before, which was a drop
-  // with no rim and a level that matched nothing.
-  //
-  // In light the rim tokens are `0 0 transparent`, so this reads purely as the
-  // drop: the rim is a dark-mode device, which is also why a near-black pill on
-  // a near-white page never needed one. In dark it is the whole difference —
-  // a 4% top highlight and a ring that give the pill a defined edge instead of
-  // letting `surface-4` fade into the page at 9% separation.
-  SURFACE_SHADOW_COMBINED[4],
-  "bg-foreground dark:bg-surface-4",
-  "[--pill-ink:var(--color-background)]",
-  "[--pill-dim:color-mix(in_oklab,var(--color-background)_68%,transparent)]",
-  "[--pill-tint:color-mix(in_oklab,var(--color-background)_12%,transparent)]",
-  "dark:[--pill-ink:var(--color-foreground)]",
-  "dark:[--pill-dim:color-mix(in_oklab,var(--color-foreground)_68%,transparent)]",
-  "dark:[--pill-tint:color-mix(in_oklab,var(--color-foreground)_12%,transparent)]",
-].join(" ");
+const PILL_SURFACE = cn("bg-inverse", SURFACE_SHADOW_COMBINED[4]);
 
 /** Shared by the icon-only controls on the pill (menu toggle, theme). */
 export const PILL_CONTROL =
-  "text-[var(--pill-dim)] hover:text-[var(--pill-ink)] [--btn-bg-hover:var(--pill-tint)] [--btn-bg-active:var(--pill-tint)]";
+  "text-inverse-muted-foreground hover:text-inverse-foreground [--btn-bg-hover:var(--color-inverse-hover)] [--btn-bg-active:var(--color-inverse-hover)]";
 
 /**
  * The header pill.
@@ -83,7 +78,7 @@ export const PILL_CONTROL =
  * where only 608px is available, so between 640 and 717px the pill hit
  * `max-w-full` and its shrink-0 children ran straight out through the rounded
  * corner: nothing clipped, nothing wrapped, the Sign-up button simply left the
- * dark surface. `md` is the first breakpoint the row actually fits in, with
+ * pill's surface. `md` is the first breakpoint the row actually fits in, with
  * ~50px to spare. Anything added to this row has to be checked against that
  * margin, because overflowing again fails silently in the same way.
  */
@@ -93,7 +88,7 @@ export function HeaderPill() {
   return (
     <div
       className={cn(
-        "mx-auto flex w-full flex-col rounded-5xl text-[var(--pill-ink)] md:w-fit md:max-w-full",
+        "mx-auto flex w-full flex-col rounded-5xl text-inverse-foreground md:w-fit md:max-w-full",
         PILL_SURFACE,
       )}
     >
@@ -131,7 +126,7 @@ export function HeaderPill() {
             </div>
           </Suspense>
 
-          <HeaderAuthClient skeletonClassName="bg-[var(--pill-tint)]" />
+          <HeaderAuthClient />
 
           {/* A plain button rather than `Button`: its icon-size rules cap the
               glyph at 16px, which was too small to read as a target on the
@@ -144,7 +139,7 @@ export function HeaderPill() {
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             className={cn(
               "flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-100 ease-out md:hidden",
-              "text-[var(--pill-dim)] hover:bg-[var(--pill-tint)] hover:text-[var(--pill-ink)]",
+              "text-inverse-muted-foreground hover:bg-inverse-hover hover:text-inverse-foreground",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
             )}
           >
@@ -224,8 +219,8 @@ function MenuLinks({
               // see the NavLink comment there for why the current-page fill
               // went away and what it costs.
               isActive
-                ? "text-[var(--pill-ink)]"
-                : "text-[var(--pill-dim)] hover:text-[var(--pill-ink)]",
+                ? "text-inverse-foreground"
+                : "text-inverse-muted-foreground hover:text-inverse-foreground",
             )}
           >
             {item.label}
@@ -233,8 +228,8 @@ function MenuLinks({
         );
       })}
 
-      <div className="mt-2 flex items-center justify-between border-t border-[var(--pill-tint)] px-3 pt-3">
-        <span className="text-sm font-medium text-[var(--pill-dim)]">
+      <div className="mt-2 flex items-center justify-between border-t border-inverse-border px-3 pt-3">
+        <span className="text-sm font-medium text-inverse-muted-foreground">
           Theme
         </span>
         <ThemeSwitcher className={PILL_CONTROL} />
@@ -248,10 +243,10 @@ function NavSkeleton() {
   // `w-${n}` template never makes it into the stylesheet.
   return (
     <nav className="flex items-center gap-1 max-md:hidden">
-      <Skeleton className="h-8 w-16 rounded-lg bg-[var(--pill-tint)]" />
-      <Skeleton className="h-8 w-20 rounded-lg bg-[var(--pill-tint)]" />
-      <Skeleton className="h-8 w-20 rounded-lg bg-[var(--pill-tint)]" />
-      <Skeleton className="h-8 w-16 rounded-lg bg-[var(--pill-tint)]" />
+      <Skeleton className="h-8 w-16 rounded-lg bg-inverse-hover" />
+      <Skeleton className="h-8 w-20 rounded-lg bg-inverse-hover" />
+      <Skeleton className="h-8 w-20 rounded-lg bg-inverse-hover" />
+      <Skeleton className="h-8 w-16 rounded-lg bg-inverse-hover" />
     </nav>
   );
 }
