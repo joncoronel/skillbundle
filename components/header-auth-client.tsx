@@ -23,10 +23,29 @@ export function HeaderAuthClient({
 }) {
   const { isSignedIn, isLoaded } = useAuth();
 
-  if (!isLoaded)
-    return <Skeleton className={cn("size-8 rounded-lg", skeletonClassName)} />;
+  // The margins sit on the two avatar-shaped branches and NOT on the signed-out
+  // pair below, because they compensate for missing padding rather than set a
+  // gap. Every other control on the pill pads its own ink — the theme toggle by
+  // 8px, a nav link by 12px, the menu button by 8px — so the 4px box gap
+  // between any two of them lands as 20-24px of visible space. The avatar is a
+  // flush 32px block that pads nothing, so the same 4px landed as 12px and read
+  // as a collision. This buys back the padding it doesn't have.
+  //
+  // Which side depends on the neighbour, which is why it is not `mx-2`: on
+  // desktop the avatar abuts the theme toggle on its left and the pill's own
+  // 12px inset on its right, and padding that inset out to 20px would break the
+  // concentric edge every other control sits on. Below `md` the toggle is gone
+  // and the menu button takes the other side, so the offset moves with it.
+  const gutters = "ml-2 max-md:mr-2";
 
-  if (isSignedIn) return <UserMenu />;
+  if (!isLoaded)
+    return (
+      <Skeleton
+        className={cn("size-8 rounded-lg", gutters, skeletonClassName)}
+      />
+    );
+
+  if (isSignedIn) return <UserMenu className={gutters} />;
 
   // Two actions, not one. A single "Sign in" made the returning user and the
   // new one share a control, and the new one is the whole point of a header

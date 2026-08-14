@@ -44,11 +44,36 @@ export const PILL_CONTROL =
  *
  * The pill's corner is 24px and its controls are 32px tall inside a 56px row,
  * so every edge inset is 12px and the inner corners are 24 − 12 = 12px
- * (`rounded-lg`). That is why the right padding is `pr-3` and not `pr-2`: at
+ * (`rounded-lg`). That is why the horizontal inset is `px-3` and not `px-2`: at
  * 8px the trailing gap read visibly tighter than the 12px above and below the
  * Sign-up button, which is the kind of asymmetry you notice without being able
- * to name. The logo uses `-mx-1 px-1` so it gets a hit area without pushing its
- * mark off that same 12px line.
+ * to name.
+ *
+ * ── Where that inset lives ────────────────────────────────────────────────
+ *
+ * On the top ROW, not on the pill. The pill is the scroll container for two
+ * things with different needs: a row of controls that wants a 12px margin, and
+ * a menu of full-bleed rows that wants none. Padding the shared parent serves
+ * the first and forces the second to cancel it back out — which is what the
+ * menu rows and the logo were both doing with negative margins, each one an
+ * invisible dependency on a number set two elements away. With the inset on
+ * the row, the menu is an unpadded track and its rows own their own `px-3`.
+ * The 12px line is then stated once per element that sits on it.
+ *
+ * The practical rule: nothing inside this pill should need a negative margin.
+ * If something does, the padding is on the wrong element again.
+ *
+ * ── Why the layout switches at `md` and not `sm` ──────────────────────────
+ *
+ * Laid out horizontally the row needs about 717px: 685px of content (brand,
+ * four nav links, theme, and the widest auth state — the signed-out "Log in /
+ * Sign up" pair) plus the page's own 16px gutters. It used to flip at `sm`,
+ * where only 608px is available, so between 640 and 717px the pill hit
+ * `max-w-full` and its shrink-0 children ran straight out through the rounded
+ * corner: nothing clipped, nothing wrapped, the Sign-up button simply left the
+ * dark surface. `md` is the first breakpoint the row actually fits in, with
+ * ~50px to spare. Anything added to this row has to be checked against that
+ * margin, because overflowing again fails silently in the same way.
  */
 export function HeaderPill() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,15 +81,26 @@ export function HeaderPill() {
   return (
     <div
       className={cn(
-        "mx-auto flex w-full flex-col rounded-5xl pr-3 pl-3 text-[var(--pill-ink)] shadow-surface-3 sm:w-fit sm:max-w-full",
+        "mx-auto flex w-full flex-col rounded-5xl text-[var(--pill-ink)] shadow-surface-3 md:w-fit md:max-w-full",
         PILL_SURFACE,
       )}
     >
-      <div className="flex h-14 w-full items-center gap-1">
+      <div className="flex h-14 w-full items-center gap-1 px-3">
         <Link
           href="/"
           onClick={() => setMenuOpen(false)}
-          className="-mx-1 flex shrink-0 items-center gap-2 rounded-lg px-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60"
+          // `md:mr-5` is the band break between the brand and the nav, and it
+          // is a fix rather than a preference. The nav's own items sit 26px
+          // apart (12px of link padding either side of a 2px gap) while the
+          // wordmark sat 16px from "Official" — the brand was bound TIGHTER to
+          // the nav than the nav was to itself, so "skillbundle" read as the
+          // first nav item. 20px of margin puts it at 40px, comfortably past
+          // the group's internal rhythm, and the eye splits them correctly.
+          //
+          // No horizontal padding of its own: the mark and the wordmark already
+          // make a 138×28 target, and the row's `px-3` puts the mark on the
+          // 12px line with nothing to cancel.
+          className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 md:mr-5"
         >
           <LogoMark />
           <span className="font-display text-lg font-medium tracking-tight">
@@ -76,9 +112,9 @@ export function HeaderPill() {
           <DesktopNav />
         </Suspense>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-3">
+        <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-3">
           <Suspense>
-            <div className="max-sm:hidden">
+            <div className="max-md:hidden">
               <ThemeSwitcher className={PILL_CONTROL} />
             </div>
           </Suspense>
@@ -95,7 +131,7 @@ export function HeaderPill() {
             aria-controls="header-mobile-menu"
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             className={cn(
-              "flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-100 ease-out sm:hidden",
+              "flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-100 ease-out md:hidden",
               "text-[var(--pill-dim)] hover:bg-[var(--pill-tint)] hover:text-[var(--pill-ink)]",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
             )}
@@ -123,7 +159,7 @@ export function HeaderPill() {
       <div
         id="header-mobile-menu"
         className={cn(
-          "grid overflow-hidden transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none sm:hidden",
+          "grid overflow-hidden transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none md:hidden",
           menuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >
@@ -156,12 +192,12 @@ function MenuLinks({
   onNavigate: () => void;
 }) {
   return (
-    // `-mx-3 px-3` on every row: the text then starts on the same vertical line
-    // as the logo above it, while the current-page fill still runs the pill's
-    // full inner width. With plain `px-3` the labels sat 12px inboard of the
-    // logo, which is exactly the sort of near-miss alignment that reads as
-    // sloppy without announcing itself.
-    <nav aria-label="Main" className="flex flex-col gap-0.5 pt-1 pb-3">
+    // `px-2` here insets the rows from the pill's rounded edge, so the divider
+    // and every focus ring stop clear of the corner. The rows keep their own
+    // `px-3` on top of it, which puts the labels at 20px — indented from the
+    // logo's 12px rather than aligned with it, and reading as a list nested
+    // under the header row.
+    <nav aria-label="Main" className="flex flex-col gap-0.5 px-2 pt-1 pb-3">
       {NAV_ITEMS.map((item) => {
         const isActive = activeHref === item.href;
         return (
@@ -171,9 +207,12 @@ function MenuLinks({
             aria-current={isActive ? "page" : undefined}
             onClick={onNavigate}
             className={cn(
-              " rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-100 ease-out",
+              "rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-100 ease-out",
+              // Colour only, same rule as the desktop nav in header-nav.tsx —
+              // see the NavLink comment there for why the current-page fill
+              // went away and what it costs.
               isActive
-                ? "bg-[var(--pill-tint)] text-[var(--pill-ink)]"
+                ? "text-[var(--pill-ink)]"
                 : "text-[var(--pill-dim)] hover:text-[var(--pill-ink)]",
             )}
           >
@@ -182,7 +221,7 @@ function MenuLinks({
         );
       })}
 
-      <div className="-mx-3 mt-2 flex items-center justify-between border-t border-[var(--pill-tint)] px-3 pt-3">
+      <div className="mt-2 flex items-center justify-between border-t border-[var(--pill-tint)] px-3 pt-3">
         <span className="text-sm font-medium text-[var(--pill-dim)]">
           Theme
         </span>
@@ -196,7 +235,7 @@ function NavSkeleton() {
   // Literal widths, not interpolated: Tailwind scans source text, so a
   // `w-${n}` template never makes it into the stylesheet.
   return (
-    <nav className="flex items-center gap-1 max-sm:hidden">
+    <nav className="flex items-center gap-1 max-md:hidden">
       <Skeleton className="h-8 w-16 rounded-lg bg-[var(--pill-tint)]" />
       <Skeleton className="h-8 w-20 rounded-lg bg-[var(--pill-tint)]" />
       <Skeleton className="h-8 w-20 rounded-lg bg-[var(--pill-tint)]" />

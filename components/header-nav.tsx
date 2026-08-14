@@ -46,7 +46,7 @@ function ActiveNavLinks() {
 
 function NavLinks({ activeHref }: { activeHref: string | null }) {
   return (
-    <nav aria-label="Main" className="flex items-center gap-0.5 max-sm:hidden">
+    <nav aria-label="Main" className="flex items-center gap-0.5 max-md:hidden">
       {NAV_ITEMS.filter((item) => !("menuOnly" in item && item.menuOnly)).map(
         (item) => (
           <NavLink key={item.href} href={item.href} activeHref={activeHref}>
@@ -62,10 +62,16 @@ function NavLinks({ activeHref }: { activeHref: string | null }) {
  * A plain anchor, not the `Button` component: ghost paints from the page's own
  * tokens, which are dark-on-light and vanish against the pill.
  *
- * Hover changes the LABEL only — no fill. The fill is reserved for the current
- * page, so the two states say different things: colour means "you can go
- * here", a filled pill means "you are here". Giving hover a fill too made
- * every pass of the cursor look like a selection change.
+ * Nothing here fills. Both hover and the current page are carried by label
+ * colour alone: the row rests at `--pill-dim` and lifts to `--pill-ink`. The
+ * current page had a tinted fill and lost it deliberately — on a pill this
+ * small a filled chip is a heavier mark than the state deserves, and the pill's
+ * own surface is already the loudest object on the screen.
+ *
+ * The cost is that hovering a link makes it look like the current one for as
+ * long as the cursor sits there. That is accepted, not overlooked: the pointer
+ * is on the link, so the ambiguity resolves itself, and `aria-current` still
+ * carries the fact for anything that isn't looking at colour.
  */
 function NavLink({
   href,
@@ -86,7 +92,7 @@ function NavLink({
         "rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 ease-out",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
         isActive
-          ? "bg-[var(--pill-tint)] text-[var(--pill-ink)]"
+          ? "text-[var(--pill-ink)]"
           : "text-[var(--pill-dim)] hover:text-[var(--pill-ink)]",
       )}
     >
