@@ -10,6 +10,7 @@ import { DesktopNav, NAV_ITEMS } from "@/components/header-nav";
 import { HeaderAuthClient } from "@/components/header-auth-client";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
+import { SURFACE_SHADOW_COMBINED } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,6 +21,17 @@ import { cn } from "@/lib/utils";
  * state for anything secondary; `-tint` is the wash used for fills.
  */
 const PILL_SURFACE = [
+  // Fill inverts, elevation does not. `SURFACE_SHADOW_COMBINED[4]` is the
+  // app's level-4 recipe — the same drop and rim every floating surface uses —
+  // rather than the `shadow-surface-3` this carried before, which was a drop
+  // with no rim and a level that matched nothing.
+  //
+  // In light the rim tokens are `0 0 transparent`, so this reads purely as the
+  // drop: the rim is a dark-mode device, which is also why a near-black pill on
+  // a near-white page never needed one. In dark it is the whole difference —
+  // a 4% top highlight and a ring that give the pill a defined edge instead of
+  // letting `surface-4` fade into the page at 9% separation.
+  SURFACE_SHADOW_COMBINED[4],
   "bg-foreground dark:bg-surface-4",
   "[--pill-ink:var(--color-background)]",
   "[--pill-dim:color-mix(in_oklab,var(--color-background)_68%,transparent)]",
@@ -81,7 +93,7 @@ export function HeaderPill() {
   return (
     <div
       className={cn(
-        "mx-auto flex w-full flex-col rounded-5xl text-[var(--pill-ink)] shadow-surface-3 md:w-fit md:max-w-full",
+        "mx-auto flex w-full flex-col rounded-5xl text-[var(--pill-ink)] md:w-fit md:max-w-full",
         PILL_SURFACE,
       )}
     >
