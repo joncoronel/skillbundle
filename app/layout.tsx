@@ -17,9 +17,31 @@ import "./globals.css";
 // robots and sitemap routes — those emit text and XML, so nothing resolves
 // relative URLs for them and they need the same value spelled out.
 
+// `adjustFontFallback: false` plus an explicit `fallback`, because Next has no
+// metrics for SN Pro. Left on the default (`true`) it tries to synthesise a
+// size-adjusted fallback face, fails to find the font in its metrics table, and
+// logs "Failed to find font override values" on every render.
+//
+// That warning was worth acting on rather than silencing: it also meant nothing
+// replaced the fallback. GeistSans gets a generated `"GeistSans Fallback"` face
+// with `size-adjust: 106.28%` over `local("Arial")`, while `body` resolved to
+// the bare family `"SN Pro"` — so a slow or failed load dropped straight to the
+// browser default with no metric matching at all. Naming the stack here gets
+// back a sane fallback; what stays lost is the size-adjust, which cannot be
+// computed for a font Next does not know.
 const snPro = SN_Pro({
   subsets: ["latin"],
   variable: "--font-sn-pro",
+  adjustFontFallback: false,
+  fallback: [
+    "system-ui",
+    "-apple-system",
+    "Segoe UI",
+    "Roboto",
+    "Helvetica Neue",
+    "Arial",
+    "sans-serif",
+  ],
 });
 
 export const metadata: Metadata = {
