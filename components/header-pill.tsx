@@ -51,10 +51,24 @@ export const PILL_CONTROL =
  *
  * The pill's corner is 24px and its controls are 32px tall inside a 56px row,
  * so every edge inset is 12px and the inner corners are 24 − 12 = 12px
- * (`rounded-lg`). That is why the horizontal inset is `px-3` and not `px-2`: at
- * 8px the trailing gap read visibly tighter than the 12px above and below the
- * Sign-up button, which is the kind of asymmetry you notice without being able
- * to name.
+ * (`rounded-lg`). That is why the trailing inset is `pr-3` and not `pr-2`: at
+ * 8px the gap read visibly tighter than the 12px above and below the Sign-up
+ * button, which is the kind of asymmetry you notice without being able to name.
+ *
+ * ── Why the leading inset is 16px and not 12px ────────────────────────────
+ *
+ * `pl-4` is an optical correction, and the two ends are genuinely different
+ * shapes rather than the same one measured twice. Every trailing control ends
+ * in a `rounded-lg` box, whose 12px corner radius pulls its visual mass about
+ * 3.5px inward from its bounding box. The logo is a glyph whose ink sits 0.41px
+ * inside its own box — effectively flush — so at a matched 12px it presented a
+ * hard curve tip where the other end presents a receding corner, and read
+ * tighter to the edge. 16px puts the two apparent edges on the same line.
+ *
+ * Measured, not guessed: the mark is 20px tall (36% of the row) against 32px
+ * for the trailing control (57%), so there is no shared geometry to fall back
+ * on here. Re-check this if the mark ever gains its own padding or the controls
+ * change radius.
  *
  * ── Where that inset lives ────────────────────────────────────────────────
  *
@@ -92,7 +106,7 @@ export function HeaderPill() {
         PILL_SURFACE,
       )}
     >
-      <div className="flex h-14 w-full items-center gap-1 px-3">
+      <div className="flex h-14 w-full items-center gap-1 pr-3 pl-4">
         <Link
           href="/"
           onClick={() => setMenuOpen(false)}
