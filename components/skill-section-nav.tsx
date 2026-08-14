@@ -175,6 +175,37 @@ export function SkillSectionNav({
   const reduceMotion = useReducedMotion();
   const branches = useMemo(() => toBranches(items), [items]);
 
+  /**
+   * Which branch is showing its deeper headings.
+   *
+   * The obvious rule — open the branch that owns the current heading — leaves a
+   * hole, and it is visible rather than theoretical: standing on the
+   * "Documentation" header, the reader is inside no document branch yet,
+   * because the file's first heading is still ~80px below. For that whole
+   * window the record card has already folded (it watches the same section) and
+   * the rail has not opened, so the sidebar shows four entries and a button and
+   * the space the fold released goes to nothing.
+   *
+   * A level-0 row is a page section and has no children of its own, so it hands
+   * off to the branch it introduces. Being at a section's header means you are
+   * about to read what is under it — which is precisely when its outline is
+   * worth showing, and it makes the fold and the expansion one gesture at one
+   * scroll position instead of two 80px apart.
+   */
+  const openBranchId = useMemo(() => {
+    const index = branches.findIndex(
+      (branch) =>
+        branch.item.id === activeId ||
+        branch.children.some((child) => child.id === activeId),
+    );
+    if (index === -1) return null;
+    const owner = branches[index];
+    if (owner.item.level === 0 && branches[index + 1]) {
+      return branches[index + 1].item.id;
+    }
+    return owner.item.id;
+  }, [branches, activeId]);
+
   const railRef = useRef<HTMLDivElement | null>(null);
   const activeItemRef = useRef<HTMLAnchorElement | null>(null);
 
@@ -254,9 +285,7 @@ export function SkillSectionNav({
         <nav aria-label="Sections of this page">
           <ul className="space-y-px">
             {branches.map((branch) => {
-              const open =
-                branch.item.id === activeId ||
-                branch.children.some((child) => child.id === activeId);
+              const open = branch.item.id === openBranchId;
               return (
                 <li key={branch.item.id}>
                   <NavEntry
