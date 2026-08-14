@@ -87,6 +87,26 @@ import { cn, formatInstalls } from "@/lib/utils";
  * already not a pure readout; View trend, Verdicts and History are all controls
  * within it.
  *
+ * ── Why everything below the action collapses ─────────────────────────────
+ *
+ * The page has two phases and they never overlap. Deciding — masthead through
+ * History — is when these facts are worth their space and navigation is worth
+ * nothing, because the reader has not entered the document. Reading is the
+ * reverse: the outline earns the column and an install count does not, since
+ * the decision it informs has already been made. Only the action spans both.
+ *
+ * So the card is the full record until the reader reaches the SKILL.md, then
+ * folds to just its action and hands the column to the rail. That is what lets
+ * ONE 272px column do the job two columns were doing: 435px of card plus 695px
+ * of rail does not fit in a 900px viewport, and 56px plus 695px does. The old
+ * layout bought that space by widening the whole page to 92rem, which only
+ * worked past ~1400px and cost the document 120px at the very breakpoint where
+ * the rail appeared.
+ *
+ * The trigger is a boundary, not a distance — `#documentation` crossing the
+ * same line the rail's scroll spy reads — so the fold lands at a moment the
+ * reader can feel rather than after some number of pixels.
+ *
  * Install rank is deliberately absent. It is still loaded (the install chart
  * reads the same `insights` object) but it answers a leaderboard question
  * rather than a "should I depend on this" one, and beside a raw install count
@@ -105,6 +125,7 @@ export function SkillRecord({
   audits,
   stars,
   action,
+  collapsed = false,
   className,
 }: {
   source: string;
@@ -120,6 +141,12 @@ export function SkillRecord({
   stars: number | null;
   /** The primary action, rendered as the card's first block. */
   action?: React.ReactNode;
+  /**
+   * Fold everything below the action away. The caller owns this because the
+   * card cannot know whether it is the sticky sidebar of a long document or a
+   * block in a stacked column — see the header comment for when it is true.
+   */
+  collapsed?: boolean;
   className?: string;
 }) {
   const { snapshots, installs } = insights;
@@ -137,7 +164,7 @@ export function SkillRecord({
   return (
     <div
       className={cn(
-        "divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]",
+        "rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]",
         className,
       )}
     >
@@ -147,7 +174,35 @@ export function SkillRecord({
           object. */}
       {action && <div className="px-4 py-3">{action}</div>}
 
-      <div className="px-4 py-4">
+      {/* `grid-template-rows` 0fr → 1fr, the same collapse the header's mobile
+          menu uses: no measured height, so the record can gain a Security block
+          or lose a sparkline without anything re-measuring, and the card's own
+          rounded box does the clipping. The curve is this app's easing for a
+          surface that opens.
+
+          `inert` and not just `overflow-hidden`: a clipped block is still in
+          the tab order, and tabbing into a zero-height container scrolls it
+          into view, which would drag a folded card open under a keyboard user
+          with no visible cause.
+
+          `divide-y` moved off the card root and onto this group, with the
+          matching `border-t` — on the root, the divider between the action and
+          a zero-height group rendered as a stray hairline pinned to the card's
+          bottom edge. */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+          collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden" inert={collapsed}>
+          <div
+            className={cn(
+              "divide-y divide-border",
+              action && "border-t border-border",
+            )}
+          >
+            <div className="px-4 py-4">
         <p
           className={cn(
             "text-xs font-medium text-muted-foreground",
@@ -356,6 +411,9 @@ export function SkillRecord({
               className="size-3"
             />
           </a>
+        </div>
+      </div>
+          </div>
         </div>
       </div>
     </div>

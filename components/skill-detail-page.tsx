@@ -14,12 +14,9 @@ import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
 import { formatDate } from "@/lib/utils";
 import { extractOutline, normalizeOutline } from "@/lib/markdown-outline";
-import { SkillRecord } from "@/components/skill-record";
+import { SkillSidebar, SkillSidebarShell } from "@/components/skill-sidebar";
 import { SkillSection } from "@/components/skill-section";
-import {
-  SkillSectionNav,
-  type SectionNavItem,
-} from "@/components/skill-section-nav";
+import type { SectionNavItem } from "@/components/skill-section-nav";
 import {
   SkillDocument,
   SkillDocumentMeta,
@@ -220,33 +217,35 @@ export function SkillDetailPage({
   breadcrumb,
 }: SkillDetailPageProps) {
   return (
-    // `max-w-7xl` from `xl`, where the section rail appears. The app's default
-    // page width is `max-w-6xl` (DESIGN.md §4) and this is the one page that
-    // departs from it, deliberately: three columns inside 1152px would have
-    // taken 208px off the document to pay for a rail that is pure navigation.
-    // Widening the page instead means the rail costs the document ~80px rather
-    // than a quarter of its width. Below `xl` the page is exactly the app's
-    // default, so a reader moving between org, repo and skill pages sees no
-    // jump at the widths where those pages are actually compared.
+    // `max-w-6xl`, the app's default page width (DESIGN.md §4), with no special
+    // case. This page used to widen to 92rem at `xl` to afford a THIRD column,
+    // and that was a bad trade twice over: the layout only worked past ~1400px,
+    // and at 1280px — the exact width where the rail appeared — the document
+    // NARROWED from 824px to 704px, so the page got wider and the reading
+    // column got smaller. Folding the record into the rail's column (see
+    // SkillSidebar) removed the reason for the third column, and with it the
+    // reason to depart from the app's width. The document is now 808px flat
+    // from 1152px up, and the rail arrives at `lg` instead of `xl` — every
+    // laptop under 1280px used to get no navigation at all through a 20,000px
+    // file.
     <div
-      className="mx-auto max-w-6xl px-4 pt-12 pb-24 xl:max-w-[92rem]"
+      className="mx-auto max-w-6xl px-4 pt-12 pb-24"
       style={
         {
-          "--skill-card": "17rem",
-          "--skill-rail": "12rem",
+          "--skill-side": "17rem",
           "--skill-gap": "2.5rem",
         } as CSSProperties
       }
     >
-      {/* The masthead pads itself by exactly the two side columns, so from `xl`
-          the h1 sits on the content column's left edge and its Compare action
-          on that column's right edge. Without this the title would hang above
-          the record card, 312px away from the description it introduces — and
-          the description is the h1's subtitle, so that gap reads as a mistake.
-          Padding rather than a grid cell because the h1 lives OUTSIDE the
-          Suspense boundary (it is URL data, available on first paint) while
-          every grid child lives inside it. */}
-      <div className="xl:pl-[calc(var(--skill-card)_+_var(--skill-gap))] xl:pr-[calc(var(--skill-rail)_+_var(--skill-gap))]">
+      {/* The masthead pads itself by exactly the sidebar column, so from `lg`
+          the Compare action lands on the content column's right edge rather
+          than over the card. The h1 needs no left padding now that the sidebar
+          is on the trailing side — it starts on the page margin, the same line
+          as the description and the document below it. Padding rather than a
+          grid cell because the h1 lives OUTSIDE the Suspense boundary (it is
+          URL data, available on first paint) while every grid child lives
+          inside it. */}
+      <div className="lg:pr-[calc(var(--skill-side)_+_var(--skill-gap))]">
         {breadcrumb}
 
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -381,19 +380,22 @@ async function SkillDetailBody({
     // capped at a readable measure leaves roughly 45% of a 1152px page empty,
     // and the facts had been laid across the full width underneath it instead
     // of into the hole beside it.
-    // Two columns from `lg`, three from `xl`, and the sides SWAP at `xl`: the
-    // record card moves left and the section rail takes the right.
     //
-    // The rail belongs on the trailing side because of which of its edges faces
-    // the document. Its entries indent rightward with heading depth, so on the
-    // left it turned a ragged column of line-ends toward the content and the
-    // gutter between them never resolved into a straight line. On the right the
-    // flush edge — every marker starting at the same x — is the one the reader
-    // sees against the text, and the depth indent runs away into the margin
-    // where raggedness costs nothing.
-    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-10 xl:grid-cols-[var(--skill-card)_minmax(0,1fr)_var(--skill-rail)] xl:gap-x-[var(--skill-gap)]">
+    // Two columns, one breakpoint, one sidebar — on the trailing side at every
+    // width it exists. It used to be two sidebars that swapped sides at `xl`,
+    // which meant the card jumped across the page on a resize and neither
+    // column was ever affordable.
+    //
+    // The sidebar belongs on the trailing side because of which of the rail's
+    // edges faces the document. Its entries indent rightward with heading
+    // depth, so on the left it turned a ragged column of line-ends toward the
+    // content and the gutter never resolved into a straight line. On the right
+    // the flush edge — every marker starting at the same x — is the one the
+    // reader sees against the text, and the depth indent runs away into the
+    // margin where raggedness costs nothing.
+    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
       {/* The lead, the warnings that qualify it, and the command. */}
-      <div className="lg:col-start-1 lg:row-start-1 xl:col-start-2">
+      <div className="lg:col-start-1 lg:row-start-1">
         {skill.description && (
           // The lead, at full contrast. PRODUCT.md is explicit that a skill's
           // description is what decides when an agent invokes it, which makes
@@ -471,54 +473,38 @@ async function SkillDetailBody({
         </div>
       </div>
 
-      {/* The section rail, in its own column from `xl`. It spans both content
-          rows so its sticky child has the whole page to travel through, and it
-          renders nothing below `xl` — see SkillSectionNav for why that costs
-          the reader nothing. */}
-      <SkillSectionNav
-        items={navItems}
-        className="xl:col-start-3 xl:row-start-1 xl:row-span-2"
-      />
-
-      {/* The record sidebar, also spanning both rows. It sits BETWEEN the two
-          content blocks in DOM order, which is the only thing deciding where it
-          lands once the grid is off: below `lg` the action and the record
-          follow the install command and precede the document, instead of being
-          stranded past 20,000px of someone else's markdown. */}
-      <aside className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 xl:col-start-1">
-        {/* Pinned now that the rail no longer sits beneath it. Before, sticking
-            the record would have pushed the nav off-screen; with the column
-            holding one thing, the facts can stay in view for the whole read —
-            which is the point of a record you consult rather than one you scroll
-            past. */}
-        <div className="lg:sticky lg:top-24 lg:z-30">
-          <SkillRecord
+      {/* The sidebar spans both content rows so its sticky child has the whole
+          page to travel through. It sits BETWEEN the two content blocks in DOM
+          order, which is the only thing deciding where it lands once the grid
+          is off: below `lg` the action and the record follow the install
+          command and precede the document, instead of being stranded past
+          20,000px of someone else's markdown. */}
+      <SkillSidebar
+        className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0"
+        navItems={navItems}
+        source={source}
+        skillId={skillId}
+        externalUrl={externalUrl}
+        externalIcon={externalIcon}
+        externalLabel={externalLabel}
+        curatedOwner={skill.curatedOwner}
+        insights={insights}
+        updatedKind={updatedKind}
+        updatedDate={updatedDate}
+        audits={audits}
+        stars={stars}
+        // Passed in rather than imported by the card, so the card stays free of
+        // bundle state and this server component keeps composing the sidebar.
+        action={
+          <BundleToggleButton
             source={source}
             skillId={skillId}
-            externalUrl={externalUrl}
-            externalIcon={externalIcon}
-            externalLabel={externalLabel}
-            curatedOwner={skill.curatedOwner}
-            insights={insights}
-            updatedKind={updatedKind}
-            updatedDate={updatedDate}
-            audits={audits}
-            stars={stars}
-            // Passed in rather than imported by the card, so the card stays
-            // free of bundle state and this server component keeps composing
-            // the sidebar.
-            action={
-              <BundleToggleButton
-                source={source}
-                skillId={skillId}
-                name={skill.name}
-              />
-            }
+            name={skill.name}
           />
-        </div>
-      </aside>
+        }
+      />
 
-      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2 xl:col-start-2">
+      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
         <SkillCopies aliases={copies.aliases} forks={copies.forks} />
 
           {/* Above Documentation, not below it. A SKILL.md runs to tens of KB,
@@ -587,26 +573,8 @@ export function SkillDetailPageSkeleton({
   installCommand: string;
 }) {
   return (
-    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-10 xl:grid-cols-[var(--skill-card)_minmax(0,1fr)_var(--skill-rail)] xl:gap-x-[var(--skill-gap)]">
-      {/* The rail's label is REAL text, like the section headings below: it does
-          not depend on the data being loaded, so skeletoning it would withhold
-          the page's structure for no reason and then shift it in when the body
-          lands. What is genuinely unknown — the document's own headings — stays
-          a placeholder. */}
-      <div className="hidden xl:col-start-3 xl:row-start-1 xl:row-span-2 xl:block">
-        <div className="xl:sticky xl:top-24 xl:z-30">
-          <p className="mb-4 text-xs font-medium text-muted-foreground">
-            On this page
-          </p>
-          <div className="space-y-3.5">
-            {[0, 1, 2, 3, 4, 5].map((item) => (
-              <Skeleton key={item} className="h-3 w-full max-w-32" />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="lg:col-start-1 lg:row-start-1 xl:col-start-2">
+    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
+      <div className="lg:col-start-1 lg:row-start-1">
         <div className="max-w-[68ch] space-y-2.5">
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-4/5" />
@@ -622,11 +590,12 @@ export function SkillDetailPageSkeleton({
         </div>
       </div>
 
-      <div className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 xl:col-start-1">
-        <div className="lg:sticky lg:top-24 lg:z-30">
+      <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0">
           {/* The record card itself, with only its values pending. Drawing the
               container rather than a plain block keeps the sidebar the same
-              shape and the same material before and after. */}
+              shape and the same material before and after. Always drawn
+              unfolded: the fold is a scroll state, and the body resolves long
+              before anyone has scrolled into the document. */}
           <div className="divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
             {/* The action block. BundleToggleButton renders its own skeleton
                 until hydration, so this reserves the same box it will. */}
@@ -661,10 +630,27 @@ export function SkillDetailPageSkeleton({
               <Skeleton className="mt-2 h-4 w-full max-w-40" />
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2 xl:col-start-2">
+          {/* The rail, under the card in the same column. Its label is REAL
+              text, like the section headings below: it does not depend on the
+              data being loaded, so skeletoning it would withhold the page's
+              structure for no reason and then shift it in when the body lands.
+              What is genuinely unknown — the document's own headings — stays a
+              placeholder. Six rows, which is roughly what progressive depth
+              shows before a branch opens. */}
+          <div className="mt-6 hidden lg:block">
+            <p className="mb-4 text-xs font-medium text-muted-foreground">
+              On this page
+            </p>
+            <div className="space-y-3.5">
+              {[0, 1, 2, 3, 4, 5].map((item) => (
+                <Skeleton key={item} className="h-3 w-full max-w-32" />
+              ))}
+            </div>
+          </div>
+      </SkillSidebarShell>
+
+      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
         <div>
           <div className="border-t border-border pt-4">
             <h2 className="text-base font-semibold tracking-tight text-foreground">
@@ -720,7 +706,7 @@ export function SkillDetailPageLoading() {
     // than a quarter of its width. Below `xl` the page is exactly the app's
     // default, so a reader moving between org, repo and skill pages sees no
     // jump at the widths where those pages are actually compared.
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24 xl:max-w-[92rem]">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>

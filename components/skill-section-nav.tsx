@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import { SECTION_OFFSET } from "@/hooks/use-entered-section";
 import { cn } from "@/lib/utils";
 
 export type SectionNavItem = {
@@ -15,11 +16,10 @@ export type SectionNavItem = {
 };
 
 /**
- * Distance from the top of the viewport at which a heading counts as "current".
- * The floating header pill ends at 72px; the rest is the margin that keeps
- * the item from flipping the instant a heading grazes the pill's lower edge.
+ * Where a heading counts as "current". Shared with the record card's fold so
+ * both read the page at the same line — see hooks/use-entered-section.ts.
  */
-const ACTIVE_OFFSET = 96;
+const ACTIVE_OFFSET = SECTION_OFFSET;
 
 /**
  * Marker geometry. Every marker starts at the same x inside a fixed 28px track
@@ -106,8 +106,30 @@ function useActiveSection(ids: string[]) {
 }
 
 /**
- * The skill page's wayfinding: a sticky line rail in the left margin, from
- * `xl` up and nowhere else.
+ * Group the flat outline into branches: every item at level 0 or 1 is a row,
+ * and anything deeper hangs off the nearest level-1 row above it.
+ *
+ * That split is the whole progressive-depth rule. Levels 0 and 1 are the page's
+ * shape — our sections, plus the file's own top-level headings — and they are
+ * always worth showing. Level 2 and below are the shape of ONE of those
+ * sections, and are worth showing only while the reader is inside it.
+ */
+type NavBranch = { item: SectionNavItem; children: SectionNavItem[] };
+
+function toBranches(items: SectionNavItem[]): NavBranch[] {
+  const branches: NavBranch[] = [];
+  for (const item of items) {
+    if (item.level <= 1 || branches.length === 0) {
+      branches.push({ item, children: [] });
+    } else {
+      branches[branches.length - 1].children.push(item);
+    }
+  }
+  return branches;
+}
+
+/**
+ * The skill page's wayfinding: a line rail in the sidebar column, from `lg` up.
  *
  * Its real job is not shortcuts — it's evidence. Seeing "Overview / History /
  * Documentation" with the file's own headings visibly nested one level under
@@ -115,15 +137,31 @@ function useActiveSection(ids: string[]) {
  * that only the last one is the file. The scroll spy then keeps answering
  * "where am I" as they read.
  *
- * It renders on wide screens only, and that is deliberate rather than a
- * shortfall. This rail is pure navigation: every destination in it is still
- * reachable by scrolling, and every fact it points at is still on the page, so
- * dropping it costs the reader nothing but convenience. Below `xl` that
- * convenience is worth less than the width it would take from the document,
- * which is a code-bearing file that would rather have the pixels. There used to
- * be a phone version — a sticky bar plus a drawer — and it was a second
- * navigation system, with its own scroll-spy readout and its own list, built to
- * serve the surface with the least room to spare.
+ * ── Progressive depth ─────────────────────────────────────────────────────
+ *
+ * Every heading at once was 695px of rail for a 17-heading skill — most of a
+ * viewport spent on a list, and long enough that the rail needed its own inner
+ * scrollbar to fit beside anything. Showing levels 0 and 1 always, and a
+ * branch's deeper headings only while the reader is inside that branch, holds
+ * a typical skill near 300px while never hiding a destination the reader is
+ * actually near. The cost is honest: a heading three levels down is one scroll
+ * or one parent-click away instead of always listed.
+ *
+ * ── Where it lives ────────────────────────────────────────────────────────
+ *
+ * NOT sticky itself, and it does not own a column. It is the lower half of the
+ * sidebar's one sticky container, under the record card, and it takes whatever
+ * height the card is not using — which is why the card's fold hands it real
+ * space rather than leaving a gap. See skill-detail-page.tsx for the flex
+ * arrangement that does that.
+ *
+ * It still renders on wide screens only. This rail is pure navigation: every
+ * destination is reachable by scrolling and every fact it points at is on the
+ * page, so dropping it costs convenience and nothing else. Below `lg` that
+ * convenience is worth less than the width it would take from a code-bearing
+ * document. There used to be a phone version — a sticky bar plus a drawer —
+ * and it was a second navigation system, with its own scroll-spy readout and
+ * its own list, built to serve the surface with the least room to spare.
  */
 export function SkillSectionNav({
   items,
@@ -135,6 +173,7 @@ export function SkillSectionNav({
   const ids = useMemo(() => items.map((item) => item.id), [items]);
   const activeId = useActiveSection(ids);
   const reduceMotion = useReducedMotion();
+  const branches = useMemo(() => toBranches(items), [items]);
 
   const railRef = useRef<HTMLDivElement | null>(null);
   const activeItemRef = useRef<HTMLAnchorElement | null>(null);
@@ -200,94 +239,144 @@ export function SkillSectionNav({
   // stretched outer element and its box already covers the whole page, so
   // nothing ever appears to pin and the rail scrolls away like static content.
   return (
-    <div className={cn("hidden xl:block", className)}>
-      <div className="xl:sticky xl:top-24 xl:z-30">
-          <p className="mb-4 text-xs font-medium text-muted-foreground">
-            On this page
-          </p>
-          <div
-            ref={railRef}
-            className="max-h-[calc(100dvh-11rem)] overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <nav aria-label="Sections of this page">
-              <ul className="space-y-px">
-                {items.map((item) => {
-                  const active = item.id === activeId;
-                  return (
-                    <li key={item.id}>
-                      <a
-                        ref={active ? activeItemRef : undefined}
-                        href={`#${item.id}`}
-                        aria-current={active ? "true" : undefined}
-                        onClick={(event) => goTo(event, item.id)}
-                        className="group flex items-start gap-3 rounded-sm py-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
-                      >
-                        {/* `items-start` + this offset put the marker on the
-                            first line's optical centre, so a title that wraps
-                            to two lines still reads as one entry rather than
-                            leaving the tick floating between them. */}
-                        <span
-                          aria-hidden="true"
-                          className="mt-[0.5625rem] flex shrink-0 justify-start"
-                          style={{ width: TRACK }}
-                        >
-                          {/* 2px and pill-capped rather than a hairline. At
-                              1px the marks read as rules — the same vocabulary
-                              as every divider on the page — and the shortest
-                              ones nearly vanished in dark mode. With rounded
-                              ends they read as marks in a scale instead, which
-                              is what they are. Their colour ramps in three
-                              steps (rest → hover → current) off `foreground`,
-                              so it inverts with the theme for free. */}
-                          <motion.span
-                            className={cn(
-                              "block h-0.5 rounded-full transition-colors duration-100 ease-out",
-                              active
-                                ? "bg-foreground"
-                                : "bg-foreground/25 group-hover:bg-foreground/60",
-                            )}
-                            initial={false}
-                            animate={{
-                              width: active ? TRACK : restWidth(item.level),
-                            }}
-                            transition={
-                              reduceMotion
-                                ? { duration: 0 }
-                                : {
-                                    type: "spring",
-                                    stiffness: 320,
-                                    damping: 28,
-                                  }
-                            }
-                          />
-                        </span>
-                        {/* Wraps to two lines rather than truncating. A table
-                            of contents whose entries end in an ellipsis is
-                            worse than one that takes an extra line: the reader
-                            has to click to find out where a link goes, which is
-                            the one thing the rail exists to prevent. */}
-                        <span
-                          className={cn(
-                            "line-clamp-2 text-sm leading-snug transition-colors duration-100 ease-out",
-                            LABEL_INDENT[
-                              Math.min(item.level, LABEL_INDENT.length - 1)
-                            ],
-                            item.level === 0 ? "font-medium" : "font-normal",
-                            active
-                              ? "text-foreground"
-                              : "text-muted-foreground group-hover:text-foreground",
-                          )}
-                        >
-                          {item.title}
-                        </span>
-                      </a>
-                    </li>
-                  );
-                })}
-              </ul>
-            </nav>
-          </div>
-        </div>
+    // `flex min-h-0` so the label stays put and the list below it is the part
+    // that scrolls. The height this gets is whatever the sticky container has
+    // left after the card, so a folded card is felt here as more rail rather
+    // than as empty space.
+    <div className={cn("hidden lg:flex lg:min-h-0 lg:flex-col", className)}>
+      <p className="mb-4 shrink-0 text-xs font-medium text-muted-foreground">
+        On this page
+      </p>
+      <div
+        ref={railRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <nav aria-label="Sections of this page">
+          <ul className="space-y-px">
+            {branches.map((branch) => {
+              const open =
+                branch.item.id === activeId ||
+                branch.children.some((child) => child.id === activeId);
+              return (
+                <li key={branch.item.id}>
+                  <NavEntry
+                    item={branch.item}
+                    active={branch.item.id === activeId}
+                    innerRef={
+                      branch.item.id === activeId ? activeItemRef : undefined
+                    }
+                    onNavigate={goTo}
+                    reduceMotion={!!reduceMotion}
+                  />
+                  {branch.children.length > 0 && (
+                    // The same 0fr → 1fr collapse the card and the header menu
+                    // use, so a branch opening reads as part of one vocabulary
+                    // rather than as a third kind of expand. `inert` while
+                    // closed keeps the clipped links out of the tab order.
+                    <div
+                      className={cn(
+                        "grid transition-[grid-template-rows] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+                        open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                      )}
+                    >
+                      <div className="min-h-0 overflow-hidden" inert={!open}>
+                        <ul className="space-y-px">
+                          {branch.children.map((child) => (
+                            <li key={child.id}>
+                              <NavEntry
+                                item={child}
+                                active={child.id === activeId}
+                                innerRef={
+                                  child.id === activeId
+                                    ? activeItemRef
+                                    : undefined
+                                }
+                                onNavigate={goTo}
+                                reduceMotion={!!reduceMotion}
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      </div>
     </div>
+  );
+}
+
+function NavEntry({
+  item,
+  active,
+  innerRef,
+  onNavigate,
+  reduceMotion,
+}: {
+  item: SectionNavItem;
+  active: boolean;
+  innerRef?: React.Ref<HTMLAnchorElement>;
+  onNavigate: (event: React.MouseEvent<HTMLAnchorElement>, id: string) => void;
+  reduceMotion: boolean;
+}) {
+  return (
+    <a
+      ref={innerRef}
+      href={`#${item.id}`}
+      aria-current={active ? "true" : undefined}
+      onClick={(event) => onNavigate(event, item.id)}
+      className="group flex items-start gap-3 rounded-sm py-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+    >
+      {/* `items-start` + this offset put the marker on the first line's optical
+          centre, so a title that wraps to two lines still reads as one entry
+          rather than leaving the tick floating between them. */}
+      <span
+        aria-hidden="true"
+        className="mt-[0.5625rem] flex shrink-0 justify-start"
+        style={{ width: TRACK }}
+      >
+        {/* 2px and pill-capped rather than a hairline. At 1px the marks read as
+            rules — the same vocabulary as every divider on the page — and the
+            shortest ones nearly vanished in dark mode. With rounded ends they
+            read as marks in a scale instead, which is what they are. Their
+            colour ramps in three steps (rest → hover → current) off
+            `foreground`, so it inverts with the theme for free. */}
+        <motion.span
+          className={cn(
+            "block h-0.5 rounded-full transition-colors duration-100 ease-out",
+            active
+              ? "bg-foreground"
+              : "bg-foreground/25 group-hover:bg-foreground/60",
+          )}
+          initial={false}
+          animate={{ width: active ? TRACK : restWidth(item.level) }}
+          transition={
+            reduceMotion
+              ? { duration: 0 }
+              : { type: "spring", stiffness: 320, damping: 28 }
+          }
+        />
+      </span>
+      {/* Wraps to two lines rather than truncating. A table of contents whose
+          entries end in an ellipsis is worse than one that takes an extra line:
+          the reader has to click to find out where a link goes, which is the
+          one thing the rail exists to prevent. */}
+      <span
+        className={cn(
+          "line-clamp-2 text-sm leading-snug transition-colors duration-100 ease-out",
+          LABEL_INDENT[Math.min(item.level, LABEL_INDENT.length - 1)],
+          item.level === 0 ? "font-medium" : "font-normal",
+          active
+            ? "text-foreground"
+            : "text-muted-foreground group-hover:text-foreground",
+        )}
+      >
+        {item.title}
+      </span>
+    </a>
   );
 }
