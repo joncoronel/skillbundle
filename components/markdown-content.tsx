@@ -44,9 +44,10 @@ interface MarkdownContentProps {
    * Cap running text at a readable measure while code blocks, tables, and
    * images keep the container's full width.
    *
-   * Only useful in a wide container — the skill page's document sheet runs past
-   * 800px, where uncapped prose lands near 110ch. A no-op in a narrow column,
-   * but left opt-in so the intent is visible at the call site.
+   * Only useful in a wide container — the skill page's document column is
+   * 896px, where uncapped prose measures 93ch against DESIGN.md §3's 65–75ch.
+   * A no-op in a narrow column, but left opt-in so the intent is visible at
+   * the call site.
    */
   measured?: boolean;
   /**
@@ -371,13 +372,26 @@ export function MarkdownContent({
         // heading is a landing point, not a control, so it takes no ring).
         headingIds && "prose-headings:scroll-mt-24 prose-headings:outline-none",
         // Running text holds a readable measure; code, tables, and images keep
-        // the container's full width, which is what they're for.
+        // the container's full width, which is what they're for. Those are the
+        // only two widths in the document, and the split is by KIND: text is
+        // read line by line and needs the measure, while a framed object is
+        // scanned as a block and its frame is what says it is a different sort
+        // of thing.
+        //
+        // `hr` is measured with the text, not left full-bleed. An author's `---`
+        // running the column's full width drew a rule indistinguishable from the
+        // page's own section rules (SkillSection's `border-t`), so a break
+        // inside the document read as a break BETWEEN documents.
+        //
+        // Every cap is the same custom property rather than a repeated `68ch`,
+        // because `ch` resolves per element — see the @property block in
+        // globals.css for why that produced four different right edges.
         //
         // `>*>` and not `>`: Streamdown renders its own wrapper div inside this
         // one, so a direct-child selector here matches that wrapper and nothing
         // else. The top-level blocks are its grandchildren.
         measured &&
-          "[&>*>blockquote]:max-w-[68ch] [&>*>h2]:max-w-[68ch] [&>*>h3]:max-w-[68ch] [&>*>h4]:max-w-[68ch] [&>*>h5]:max-w-[68ch] [&>*>h6]:max-w-[68ch] [&>*>ol]:max-w-[68ch] [&>*>p]:max-w-[68ch] [&>*>ul]:max-w-[68ch]",
+          "[--doc-measure:68ch] [&>*>blockquote]:max-w-[var(--doc-measure)] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>ul]:max-w-[var(--doc-measure)]",
         // Links use the single signal accent, underlined for affordance.
         "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
         // Align prose colors with the app's semantic tokens instead of

@@ -533,6 +533,27 @@ html {
   --surface-active: oklch(1 0 0 / 0.08);
 }
 
+/* The reading measure, registered so it resolves ONCE.
+ *
+ * DESIGN.md §3 caps prose at 65–75ch, and `ch` is the right unit to say that in
+ * — the rule is about characters per line, not pixels. But `ch` resolves
+ * against the font of whatever element uses it, so writing `max-w-[68ch]` on
+ * every block in a document gives each one a DIFFERENT pixel width: 68ch is
+ * 653px on a 16px paragraph and 816px on a 24px heading. A document set that
+ * way has as many right edges as it has type sizes.
+ *
+ * Registering the property with `syntax: "<length>"` makes the browser compute
+ * `68ch` at the element that declares it and inherit the result as a length, so
+ * one declaration on the document wrapper governs every block under it whatever
+ * its size. The large initial value is a no-op rather than a collapse, so a
+ * stray `var(--doc-measure)` outside a wrapper cannot silently zero an element.
+ */
+@property --doc-measure {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 9999px;
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

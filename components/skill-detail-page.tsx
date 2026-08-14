@@ -492,12 +492,6 @@ async function SkillDetailBody({
             which is the point of a record you consult rather than one you scroll
             past. */}
         <div className="lg:sticky lg:top-24 lg:z-30">
-          <BundleToggleButton
-            source={source}
-            skillId={skillId}
-            name={skill.name}
-          />
-
           <SkillRecord
             source={source}
             skillId={skillId}
@@ -510,7 +504,16 @@ async function SkillDetailBody({
             updatedDate={updatedDate}
             audits={audits}
             stars={stars}
-            className="mt-4"
+            // Passed in rather than imported by the card, so the card stays
+            // free of bundle state and this server component keeps composing
+            // the sidebar.
+            action={
+              <BundleToggleButton
+                source={source}
+                skillId={skillId}
+                name={skill.name}
+              />
+            }
           />
         </div>
       </aside>
@@ -621,12 +624,15 @@ export function SkillDetailPageSkeleton({
 
       <div className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 xl:col-start-1">
         <div className="lg:sticky lg:top-24 lg:z-30">
-          <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
-
           {/* The record card itself, with only its values pending. Drawing the
               container rather than a plain block keeps the sidebar the same
               shape and the same material before and after. */}
-          <div className="mt-4 divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
+          <div className="divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
+            {/* The action block. BundleToggleButton renders its own skeleton
+                until hydration, so this reserves the same box it will. */}
+            <div className="px-4 py-3">
+              <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
+            </div>
             {/* Installs: label, total, its trailing-week delta, then the trend. */}
             <div className="px-4 py-4">
               <Skeleton className="h-3 w-14" />

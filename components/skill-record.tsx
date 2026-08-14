@@ -77,6 +77,16 @@ import { cn, formatInstalls } from "@/lib/utils";
  * what it counted. A caption explaining what a row is doing there is the
  * grouping asking to be fixed.
  *
+ * `action` is the exception to that rule, and it earns it. The Add-to-bundle
+ * button used to sit above the card as a separate element of exactly the same
+ * width, which is the one arrangement that reads as a mistake: two objects that
+ * agree on every dimension but do not touch look like one object that came
+ * apart, not like two things. Inside, it is the card's first block, divided by
+ * the same hairline as every other, and the sidebar becomes a single object —
+ * this is the skill, take it, here is what we know about it. The card was
+ * already not a pure readout; View trend, Verdicts and History are all controls
+ * within it.
+ *
  * Install rank is deliberately absent. It is still loaded (the install chart
  * reads the same `insights` object) but it answers a leaderboard question
  * rather than a "should I depend on this" one, and beside a raw install count
@@ -94,6 +104,7 @@ export function SkillRecord({
   updatedDate,
   audits,
   stars,
+  action,
   className,
 }: {
   source: string;
@@ -107,6 +118,8 @@ export function SkillRecord({
   updatedDate: string;
   audits: SkillAuditEntry[] | null;
   stars: number | null;
+  /** The primary action, rendered as the card's first block. */
+  action?: React.ReactNode;
   className?: string;
 }) {
   const { snapshots, installs } = insights;
@@ -128,6 +141,12 @@ export function SkillRecord({
         className,
       )}
     >
+      {/* `px-4`, the same inset as every block below, so the button's edges sit
+          on the same two lines as the labels and values it caps. `p-3` was the
+          alternative and it looked like a lid rather than the top of the
+          object. */}
+      {action && <div className="px-4 py-3">{action}</div>}
+
       <div className="px-4 py-4">
         <p
           className={cn(
@@ -259,7 +278,12 @@ export function SkillRecord({
               strokeWidth={2}
               className="size-3.5 shrink-0"
             />
-            <span className="font-medium tabular-nums text-foreground">
+            {/* `text-box` trim: the digits' line box carries half-leading and
+                descender space the star icon does not, which dropped the number
+                ~0.5px below the glyph's optical centre. Trimming to the cap and
+                alphabetic edges lines the two up on what the eye actually
+                sees. */}
+            <span className="font-medium tabular-nums text-foreground [text-box:trim-both_cap_alphabetic]">
               {formatInstalls(stars)}
             </span>
             <span className="sr-only">GitHub stars</span>
