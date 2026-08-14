@@ -196,6 +196,28 @@ async function highlightSkillContent(content: string) {
   return highlightMarkdownCode(content);
 }
 
+/**
+ * The two-column geometry, as variables because the masthead's right padding
+ * and the grid's second column have to be the same number and are set on
+ * different elements.
+ *
+ * Applied to BOTH page containers and to the skeleton's own grid, which is the
+ * fix for a real bug rather than belt and braces: an undefined var inside
+ * `grid-cols-[minmax(0,1fr)_var(--skill-side)]` makes the whole declaration
+ * invalid at computed-value time, so `grid-template-columns` falls back to
+ * `none` and every child auto-places into one implicit column. The result is
+ * not a subtly wrong layout, it is the sidebar sitting on top of the document —
+ * and it only appeared in `loading.tsx`, whose container is a different element
+ * that never carried these.
+ *
+ * Keeping them on the skeleton's own root means it renders correctly wherever
+ * it is mounted, so the next component that reuses it cannot reintroduce this.
+ */
+const LAYOUT_VARS = {
+  "--skill-side": "17rem",
+  "--skill-gap": "2.5rem",
+} as CSSProperties;
+
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
@@ -228,15 +250,7 @@ export function SkillDetailPage({
     // from 1152px up, and the rail arrives at `lg` instead of `xl` — every
     // laptop under 1280px used to get no navigation at all through a 20,000px
     // file.
-    <div
-      className="mx-auto max-w-6xl px-4 pt-12 pb-24"
-      style={
-        {
-          "--skill-side": "17rem",
-          "--skill-gap": "2.5rem",
-        } as CSSProperties
-      }
-    >
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
       {/* The masthead pads itself by exactly the sidebar column so the title
           cannot run under the card — skill ids reach 40 characters and the h1
           is the one block here with no measure of its own. It carries no
@@ -583,7 +597,10 @@ export function SkillDetailPageSkeleton({
   installCommand: string;
 }) {
   return (
-    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
+    <div
+      className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]"
+      style={LAYOUT_VARS}
+    >
       <div className="lg:col-start-1 lg:row-start-1">
         <div className="max-w-[68ch] space-y-2.5">
           <Skeleton className="h-4 w-full" />
