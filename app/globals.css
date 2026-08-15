@@ -45,11 +45,12 @@ html {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  /* Only the fill gets a utility. The other five chrome tokens are reached
-     through `[data-surface="chrome"]` (see the rule near the end of this file),
-     which is deliberately the ONE way to paint on that surface — a
-     `bg-chrome-hover` utility sitting next to it would be a second idiom for
-     the same job, which is what the contract exists to remove. */
+  /* Only the fill gets a utility. Four of the rest reach controls through
+     `[data-surface="chrome"]` (the rule near the end of this file), which is
+     deliberately the ONE way to paint on that surface — a `bg-chrome-hover`
+     utility beside it would be a second idiom for the same job, which is what
+     the contract exists to remove. The two edge tokens aren't in that rule at
+     all; the pill consumes them directly in its `shadow-[…]`. */
   --color-chrome: var(--chrome);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -246,9 +247,10 @@ html {
      black — retuning it moves both. Don't swap in `--foreground`, which is
      darker than anything else in the app.
 
-     `--chrome`, `--chrome-foreground` and `--chrome-rim` are set per theme. The
-     three below are declared here only and still recompute, because `var()`
-     resolves on the element and `:root`/`.dark` are both `<html>`. */
+     Seven tokens. Four are set per theme — `--chrome`, `--chrome-foreground`,
+     and the two edge tokens below. The other three are declared here only and
+     still recompute, because `var()` resolves on the element and `:root`/`.dark`
+     are both `<html>`. */
   --chrome: var(--neutral);
   --chrome-foreground: var(--neutral-foreground);
   --chrome-muted-foreground: color-mix(
@@ -268,7 +270,7 @@ html {
   );
   /* The pill's outer hairline and inner top highlight. No-ops in light, where
      the 224-unit fill/page step is already the edge; see `.dark`. */
-  --chrome-ring: 0 0 transparent;
+  --chrome-hairline: 0 0 transparent;
   --chrome-rim: 0 0 transparent;
 
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
@@ -417,8 +419,8 @@ html {
   --muted: oklch(0.24 var(--neutral-chroma) var(--neutral-hue));
   --muted-foreground: oklch(0.73 var(--neutral-chroma) var(--neutral-hue));
 
-  /* One rung BELOW the page (rgb 22 → 13), the only direction dark leaves open:
-     up is where every card lives, so a lifted pill read as one more card. Light's
+  /* BELOW the page (rgb 22 → 12), the only direction dark leaves open: up is
+     where every card lives, so a lifted pill read as one more card. Light's
      value is unusable here — `--neutral` is rgb(21,22,24) and the dark page is
      rgb(22,23,25), the same colour — so this is where the themes stop sharing a
      chain. Only `--neutral`'s chroma and hue carry over; its lightness inverts
@@ -428,22 +430,29 @@ html {
   /* The whole edge, since the pill carries no drop shadow at all in dark
      (`--surface-shadow-1` is transparent here — see DESIGN.md §5).
 
+     `--chrome-rim` is the top-edge specular: the ladder's light source is above
+     (every rim is `inset 0 1px 0 0`), and a dark object lit from above catches
+     its top edge. Without it the pill reads as a hole punched in the page rather
+     than an object on it. `--chrome-hairline` is the outer boundary.
+
      Neither comes from the ladder, for one shared reason: `--surface-rim-*` and
      the ring baked into `--surface-shadow-*` both assume a fill LIGHTER than the
-     page, and this one is darker. Measured at page 22 / fill 12:
+     page, and this one is darker. Measured against `SURFACE_SHADOW_COMBINED[3]`,
+     which is what the pill used until it went flush, at page 22 / fill 12:
 
-       ladder   top 22 → 18 → 20 → 12   ring lighter than the fill it defines;
-                left 22 → 18 → 16 → 12  highlight under the page; light band
-                                        inside the dark ring on every edge
-       these    top 22 →  6 → 28 → 12
-                left 22 →  6 → 12
+       [3]     top 22 → 19 → 20 → 12   ring (19) lighter than the fill it
+               left 22 → 18 → 16 → 12  defines; highlight (20) under the page;
+                                       and a light 16 band inside the ring on
+                                       every non-top edge — the muddy double edge
+       these   top 22 →  6 → 28 → 12
+               left 22 →  6 → 12
 
-     Re-measure if `--chrome` moves — at rgb 13 the ladder's rim still cleared
-     the page, making it a sharpening rather than a repair. The ring stays FIRST
-     in the pill's shadow list so a deeper `--surface-shadow-N`, which bakes its
-     own ring in as an unre-pointable literal, could be swapped back in. */
+     Both numbers move with `--chrome`; re-measure at a NAMED level rather than
+     adjusting them by hand. The hairline stays FIRST in the pill's shadow list
+     so a deeper `--surface-shadow-N`, which bakes its own ring in as an
+     unre-pointable literal, could be swapped back in. */
   --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.065);
-  --chrome-ring: 0 0 0 1px oklch(0 0 0 / 0.7);
+  --chrome-hairline: 0 0 0 1px oklch(0 0 0 / 0.7);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);

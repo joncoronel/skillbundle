@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  */
 const PILL_SURFACE = cn(
   "bg-chrome",
-  "shadow-[var(--chrome-ring),var(--surface-shadow-1),var(--chrome-rim)]",
+  "shadow-[var(--chrome-hairline),var(--surface-shadow-1),var(--chrome-rim)]",
 );
 
 /**
