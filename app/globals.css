@@ -661,8 +661,11 @@ html {
  *   light   base 43 → 202 (default) | 75 (this)
  *   dark    base 35 →  68 (default) | 68 (this, unchanged)
  *
- * Unlayered, so it wins over the Tailwind utility without `!important`. */
-[data-surface="chrome"] [data-slot="skeleton"] {
+ * Unlayered, so it wins over the Tailwind utility without `!important`. Scoped
+ * to `.skeleton-shimmer` because that class is only applied when `animate` is
+ * on — without it, an `animate={false}` skeleton would get a static band where
+ * it normally has no background-image at all. */
+[data-surface="chrome"] [data-slot="skeleton"].skeleton-shimmer {
   background-image: linear-gradient(
     90deg,
     transparent 25%,

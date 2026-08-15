@@ -11,6 +11,8 @@ colors:
   surface-raised: "oklch(1 0 0)"
   secondary: "oklch(0.92 0 0)"
   border-hairline: "oklch(0 0 0 / 0.1)"
+  chrome: "oklch(0.2 0.004 270)"
+  chrome-foreground: "oklch(0.98 0.002 270)"
   destructive: "oklch(0.53 0.19 25)"
   success: "oklch(0.48 0.18 145)"
   warning: "oklch(0.58 0.14 85)"
@@ -58,6 +60,7 @@ rounded:
   lg: "12px"
   xl: "14px"
   2xl: "16px"
+  5xl: "24px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -141,7 +144,7 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 
 One container is deliberately **not** on the surface ladder: the header pill. Everything else in the app is a step up from the field; this is the object the field flows past. It is near-black in **both** themes — `--chrome` is `--neutral` in light, and a rung _below_ the page in dark (`oklch(0.16)`, since the dark page already sits at light's near-black).
 
-Six tokens, and only two are set per theme — `--chrome` and `--chrome-foreground`. `--chrome-muted-foreground`, `--chrome-hover` and `--chrome-border` are declared once and derive from those roots, so retuning the surface moves the whole family. `--chrome-rim` is the sixth; see §5.
+Six tokens, of which three are set per theme — `--chrome`, `--chrome-foreground` and `--chrome-rim` (§5). The other three — `--chrome-muted-foreground`, `--chrome-hover` and `--chrome-border` — are declared once and derive from those roots, so retuning the surface moves the whole family.
 
 **Do not paint on this surface by hand.** Put `data-surface="chrome"` on the container and use ordinary page classes inside it — `text-muted-foreground`, `bg-accent`, `Button variant="ghost"`. The rule in `app/globals.css` re-points `--foreground`, `--muted-foreground`, `--border`, `--muted`, `--accent`, `--surface-hover` and `--surface-active` for the whole subtree, so any control dropped in paints correctly with no per-control classes. `--primary` is deliberately left alone, so a primary button keeps its brand fill anywhere. Portalled content (dropdowns, dialogs) renders at the body and correctly does not inherit.
 
@@ -244,7 +247,9 @@ In light mode, lift comes mostly from shadow over a near-white surface. In dark 
 
 **The Material Depth Rule.** Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a `box-shadow`; use a `surface-N` level so light and dark stay coherent.
 
-One exception exists and it is deliberate, so do not "correct" it: the header pill composes `var(--surface-shadow-3)` with its own `--chrome-rim` instead of taking `SURFACE_SHADOW_COMBINED[3]` whole. The ladder's rims assume a fill **lighter** than the page, which the chrome surface (§2) is in neither theme, so the ladder's inset highlight lands at or below the page value and collapses into the outer shadow. `--chrome-rim` is transparent in light — the 224-unit fill/page step is the edge — and a top-edge specular in dark, where the fill sits below the page and the rim is the only thing drawing the boundary. It still uses a real `--surface-shadow-N` for the drops; only the rim half is replaced.
+One exception exists and it is deliberate, so do not "correct" it: the header pill composes `var(--surface-shadow-3)` with its own `--chrome-rim` instead of taking `SURFACE_SHADOW_COMBINED[3]` whole. Only the rim half is replaced — the drops are still a real `--surface-shadow-N`.
+
+In light there is nothing to replace: every `--surface-rim-N` is `0 0 transparent`, and the 224-unit fill/page step is the edge, so `--chrome-rim` is transparent too. In dark it is a top-edge specular, because the fill sits _below_ the page and the rim is the only thing drawing the boundary. At the current lightness this is a sharper edge rather than a repair — it doubles the gap between shadow and highlight (13 units against the ladder's 7). The ladder's rim does genuinely break a little below that lightness, since it assumes a fill lighter than the page; `app/globals.css` carries the scanline and the value at which it goes wrong, which is what to read before deepening `--chrome`.
 
 ## 6. Shapes
 

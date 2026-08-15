@@ -57,7 +57,7 @@ export function SkillSidebar({
   "action" | "collapsed" | "className"
 >) {
   // Gated on the breakpoint rather than left to a `max-lg:` class override,
-  // because the fold is not only paint: it sets `inert` and takes the record
+  // because the fold is not only paint: it hides the card and takes the record
   // out of the tab order. Below `lg` this column is a normal block in the flow
   // with the document under it, nothing is sticky, and a card that folded as
   // you scrolled past it would be hiding content for no reason at all.
