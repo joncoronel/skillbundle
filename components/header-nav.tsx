@@ -27,15 +27,22 @@ export const NAV_ITEMS = [
 }[];
 
 // `usePathname()` suspends while the App Shell for a dynamic-param route is
-// generated (the pathname isn't known yet). Read it behind a <Suspense> so the
-// nav still prerenders into the static shell; the fallback renders the same
-// links with no active state, which is correct for any route that isn't itself
-// a top-level nav target.
+// generated (the pathname isn't known yet). The <Suspense> that makes this safe
+// lives in header-pill.tsx, next to the fallback it needs.
 export function ActiveNavLinks() {
   return <NavLinks activeHref={usePathname()} />;
 }
 
-function NavLinks({ activeHref }: { activeHref: string | null }) {
+/**
+ * Also the fallback for that boundary, with `activeHref={null}`. That matters
+ * more than it looks: the routes whose shell suspends here are `/[org]`,
+ * `/[org]/[repo]` and `/site/[source]`, none of which is a top-level nav
+ * target, so "no active state" is not a degraded guess — it is the right
+ * answer. Rendering real links instead of placeholders means the prerendered
+ * HTML for the app's highest-traffic routes ships a working, prefetchable nav
+ * rather than boxes that only become links once React hydrates.
+ */
+export function NavLinks({ activeHref }: { activeHref: string | null }) {
   return (
     <nav aria-label="Main" className="flex items-center gap-0.5 max-md:hidden">
       {NAV_ITEMS.filter((item) => !("menuOnly" in item && item.menuOnly)).map(

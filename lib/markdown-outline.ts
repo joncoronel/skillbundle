@@ -22,6 +22,16 @@
  * collide with the page's own `#history` section.
  */
 
+// The renderer's own entity decoders, not a reimplementation of them. Both are
+// micromark internals that react-markdown already pulls in; promoting them to
+// direct dependencies costs nothing installed and makes "the extractor agrees
+// with the renderer" structural instead of a table someone has to maintain.
+// The hand-written six-entry map they replaced also missed everything a real
+// heading carries (`&mdash;`, `&hellip;`, `&rarr;`, `&copy;`) and lowercased
+// its lookup, so `&Auml;` decoded to the wrong letter.
+import { decodeNamedCharacterReference } from "decode-named-character-reference";
+import { decodeNumericCharacterReference } from "micromark-util-decode-numeric-character-reference";
+
 export type OutlineItem = {
   /** DOM id of the heading this points at. */
   id: string;
@@ -62,20 +72,6 @@ export function docHeadingId(text: string): string | undefined {
 }
 
 /**
- * The named HTML entities a markdown heading realistically carries. The
- * renderer decodes these before `childrenToText` ever sees them, so the
- * extractor has to decode them too or the two sides slug differently.
- */
-const HTML_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-};
-
-/**
  * Strip the inline markdown a heading can carry, so the extracted title matches
  * the text the renderer will produce.
  *
@@ -108,12 +104,17 @@ function stripInlineMarkdown(raw: string): string {
   // reach into them. Restored after, by which point no `<`/`>` is a tag.
   //
   // NUL-delimited rather than a bare index, which would collide with a heading
-  // like "Step 1 of 3" and splice a code span into it.
+  // like "Step 1 of 3" and splice a code span into it. Any NUL already in the
+  // source is folded to U+FFFD first, both because that is what micromark does
+  // with one (so the two sides stay in agreement) and because it is what makes
+  // the delimiter unforgeable — `&#0;` in a heading used to reach this point.
   const codeSpans: string[] = [];
-  const withoutCode = raw.replace(/`+([^`]*)`+/g, (_match, inner: string) => {
-    codeSpans.push(inner);
-    return `\u0000${codeSpans.length - 1}\u0000`;
-  });
+  const withoutCode = raw
+    .replace(/\u0000/g, "\uFFFD")
+    .replace(/`+([^`]*)`+/g, (_match, inner: string) => {
+      codeSpans.push(inner);
+      return `\u0000${codeSpans.length - 1}\u0000`;
+    });
 
   return withoutCode
     .replace(/\{#[\w-]+\}\s*$/, "") // explicit-id syntax some generators emit
@@ -123,17 +124,16 @@ function stripInlineMarkdown(raw: string): string {
     .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1") // reference links, same
     .replace(/<[^>]+>/g, "") // stray inline HTML
     .replace(/[*~]/g, "")
-    .replace(/&(#\d+|#[xX][0-9a-fA-F]+|\w+);/g, (match, body: string) =>
-      body.startsWith("#")
-        ? String.fromCodePoint(
-            Number(
-              body[1] === "x" || body[1] === "X"
-                ? `0x${body.slice(2)}`
-                : body.slice(1),
-            ),
-          )
-        : (HTML_ENTITIES[body.toLowerCase()] ?? match),
-    )
+    .replace(/&(#\d+|#[xX][0-9a-fA-F]+|\w+);/g, (match, body: string) => {
+      if (!body.startsWith("#")) {
+        return decodeNamedCharacterReference(body) || match;
+      }
+      const hex = body[1] === "x" || body[1] === "X";
+      return decodeNumericCharacterReference(
+        body.slice(hex ? 2 : 1),
+        hex ? 16 : 10,
+      );
+    })
     .replace(/\u0000(\d+)\u0000/g, (_m, i: string) => codeSpans[Number(i)])
     .replace(/\s+/g, " ")
     .trim();

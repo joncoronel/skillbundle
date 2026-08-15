@@ -329,17 +329,22 @@ export function SkillSectionNav({
                     reduceMotion={!!reduceMotion}
                   />
                   {branch.children.length > 0 && (
-                    // The same 0fr → 1fr collapse the card and the header menu
-                    // use, so a branch opening reads as part of one vocabulary
-                    // rather than as a third kind of expand. `inert` while
-                    // closed keeps the clipped links out of the tab order.
+                    // The same 0fr → 1fr geometry, curve and `visibility` swap
+                    // as the record card and the header menu, so a branch
+                    // opening reads as part of one vocabulary rather than a
+                    // third kind of expand. `visibility: hidden` keeps the
+                    // clipped links out of the tab order and the accessibility
+                    // tree; header-pill.tsx carries the measurements for why it
+                    // is that and not `display: none` or `inert`.
                     <div
                       className={cn(
-                        "grid transition-[grid-template-rows] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
-                        open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                        "grid transition-[grid-template-rows,visibility] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+                        open
+                          ? "visible grid-rows-[1fr]"
+                          : "invisible grid-rows-[0fr]",
                       )}
                     >
-                      <div className="min-h-0 overflow-hidden" inert={!open}>
+                      <div className="min-h-0 overflow-hidden">
                         <ul className="space-y-px">
                           {branch.children.map((child) => (
                             <li key={child.id}>

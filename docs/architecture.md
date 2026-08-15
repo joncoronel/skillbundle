@@ -513,7 +513,9 @@ Bridges Clerk to Convex and wires TanStack Query through `@convex-dev/react-quer
 
 ## 6. App Header
 
-`AppHeader` is a server component, but only just: it renders a fixed-height band, a scrim, and one client component (`HeaderPill`) that owns the whole pill. The pill is client-side because its mobile menu expands the pill itself rather than opening a drawer, so the toggle and the panel share one piece of state. The Suspense boundary that keeps `usePathname()` out of the static shell now lives inside it. Auth UI is **fully client-side** (`HeaderAuthClient`): reading the auth cookie on the server would make every route `◐` and add a per-request function to stream the header's auth state, pulling load onto Vercel functions — against the §1.3 keep-load-off-functions rule — so it resolves on the client (over the already-open Convex/Clerk connection) instead. (An earlier Cache Components iteration used a server-component nav; client-side is the better fit for a mostly-signed-out public directory.) Signed-out users see the Log in / Sign up pair after hydration (below `md`, Log in moves into the expanding menu and only Sign up stays in the row); signed-in users get the user menu via Clerk's `useUser()`.
+`AppHeader` is a server component, but only just: it renders a fixed-height band, a scrim, and one client component (`HeaderPill`) that owns the whole pill. The pill is client-side because its mobile menu expands the pill itself rather than opening a drawer, so the toggle and the panel share one piece of state. The Suspense boundary that keeps `usePathname()` out of the static shell now lives inside it. Auth UI is **fully client-side** (`HeaderAuthClient`): reading the auth cookie on the server would make every route `◐` and add a per-request function to stream the header's auth state, pulling load onto Vercel functions — against the §1.3 keep-load-off-functions rule — so it resolves on the client (over the already-open Convex/Clerk connection) instead. (An earlier Cache Components iteration used a server-component nav; client-side is the better fit for a mostly-signed-out public directory.) Signed-out users see the Log in / Sign up pair after hydration — both stay in the row at every width, which is what the `max-md:hidden` on the "skillbundle" wordmark buys: dropping the wordmark below `md` frees the ~99px the pair needs to fit a 320px viewport. Signed-in users get the user menu via Clerk's `useUser()`.
+
+The boundary's fallback is `NavLinks activeHref={null}` — the real links, not a skeleton. `usePathname()` suspends only while the App Shell for a dynamic-param route is generated (`/[org]`, `/[org]/[repo]`, `/site/[source]`), and none of those is a top-level nav target, so "no link is current" is the correct answer rather than a placeholder for one. Swapping in a skeleton would strip working, prefetchable links out of the prerendered HTML for the app's highest-traffic routes.
 
 ---
 
@@ -935,7 +937,8 @@ components/
   skill-detail-page.tsx     # loadAudits/loadSkillSyncData/loadStars ('use cache' + cacheTag loaders)
   skill-history.tsx         # server: History timeline, data passed in as a prop
   skill-history-row.tsx     # client: per-row open/compare state + lazy diff
-  header-nav.tsx            # DesktopNav — usePathname read behind <Suspense>
+  header-pill.tsx           # client: pill + mobile menu; owns the nav's <Suspense>
+  header-nav.tsx            # NAV_ITEMS + ActiveNavLinks (usePathname) / NavLinks (its fallback)
 
 lib/
   skill-cache.ts            # SKILL_SYNC_TAG/SKILL_CONTENT_TAG + shared loadSkill (page + metadata + OG)

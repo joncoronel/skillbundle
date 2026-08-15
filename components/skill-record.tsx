@@ -177,16 +177,23 @@ export function SkillRecord({
           object. */}
       {action && <div className="px-4 py-3">{action}</div>}
 
-      {/* `grid-template-rows` 0fr → 1fr, the same collapse the header's mobile
-          menu uses: no measured height, so the record can gain a Security block
-          or lose a sparkline without anything re-measuring, and the card's own
-          rounded box does the clipping. The curve is this app's easing for a
-          surface that opens.
+      {/* `grid-template-rows` 0fr → 1fr: no measured height, so the record can
+          gain a Security block or lose a sparkline without anything
+          re-measuring, and the card's own rounded box does the clipping. The
+          curve is this app's easing for a surface that opens.
 
-          `inert` and not just `overflow-hidden`: a clipped block is still in
-          the tab order, and tabbing into a zero-height container scrolls it
-          into view, which would drag a folded card open under a keyboard user
-          with no visible cause.
+          The header's mobile menu and the section rail collapse on the same
+          geometry, the same curve and the same `visibility` swap, so all three
+          read as one gesture and share one mechanism. header-pill.tsx carries
+          the measurements behind that choice; the short version is that
+          `display: none` cannot animate its close in Firefox and `inert` does
+          not remove the subtree from the accessibility tree.
+
+          `visibility: hidden` and not just `overflow-hidden`: a clipped block
+          is still in the tab order, and tabbing into a zero-height container
+          scrolls it into view, which would drag a folded card open under a
+          keyboard user with no visible cause. This card collapses on SCROLL, so
+          that would fire unprompted while somebody reads.
 
           `divide-y` moved off the card root and onto this group, with the
           matching `border-t` — on the root, the divider between the action and
@@ -194,11 +201,11 @@ export function SkillRecord({
           bottom edge. */}
       <div
         className={cn(
-          "grid transition-[grid-template-rows] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
-          collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+          "grid transition-[grid-template-rows,visibility] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+          collapsed ? "invisible grid-rows-[0fr]" : "visible grid-rows-[1fr]",
         )}
       >
-        <div className="min-h-0 overflow-hidden" inert={collapsed}>
+        <div className="min-h-0 overflow-hidden">
           <div
             className={cn(
               "divide-y divide-border",

@@ -16,11 +16,12 @@ html {
   /* Fonts */
   --font-sans: var(--font-sn-pro);
   --font-mono: var(--font-geist-mono);
-  /* The pixel shape is an axis, not a file: 20 is Circle (1 Square, 40 Grid,
-     60 Triangle, 80 Line). Paired with --font-display so every `font-display`
-     utility carries the shape. */
-  --font-display: var(--font-geist-pixel);
-  --font-display--font-variation-settings: "ELSH" 20;
+  /* Circle, one of Geist Pixel's five shapes. It is a separate static face in
+     the `geist` package, so the shape is picked by which variable is named
+     here — there is no axis to set. (Google ships the same family as one
+     variable font on an `ELSH` axis instead; see the note in app/layout.tsx
+     for why this project is not on that loader.) */
+  --font-display: var(--font-geist-pixel-circle);
 
   /* Typography — the one step below text-xs, for pills and dense chips.
      Sentence case in the body face; there is no uppercase label role. */

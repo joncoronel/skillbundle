@@ -6,10 +6,9 @@ import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, Menu01Icon } from "@hugeicons/core-free-icons";
 import { LogoMark } from "@/components/brand-mark";
-import { ActiveNavLinks, NAV_ITEMS } from "@/components/header-nav";
+import { ActiveNavLinks, NAV_ITEMS, NavLinks } from "@/components/header-nav";
 import { HeaderAuthClient } from "@/components/header-auth-client";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SURFACE_SHADOW_COMBINED } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 
@@ -169,10 +168,14 @@ export function HeaderPill() {
         </Link>
 
         {/* One boundary, owned here. `DesktopNav` used to wrap its own, so this
-            fallback could never render — `NavSkeleton` was dead code that still
-            got maintained, and a caller could neither replace the fallback nor
-            tell that its own boundary was inert. */}
-        <Suspense fallback={<NavSkeleton />}>
+            fallback could never render — a caller could neither replace it nor
+            tell that its own boundary was inert.
+
+            The fallback is the real links, not a skeleton: see NavLinks. A
+            skeleton here would be strictly worse than what the nested boundary
+            already rendered, since the only thing unknown at this point is
+            which link is current. */}
+        <Suspense fallback={<NavLinks activeHref={null} />}>
           <ActiveNavLinks />
         </Suspense>
 
@@ -223,58 +226,60 @@ export function HeaderPill() {
           `duration-400`; this runs at 300ms, which is the one thing here that
           does not match them.
 
-          ── Why the closed state is `display: none` ──────────────────────────
+          ── Why the closed state is `visibility: hidden` ─────────────────────
 
           A clipped block is still in the tab order. Collapsed to `0fr` with
-          `overflow-hidden`, the five links and the second theme control stayed
-          focusable while the toggle reported `aria-expanded="false"`, and the
-          browser would scroll the zero-height box to reveal whichever one took
-          focus. `display: none` is the browser's own answer: it removes the
-          subtree from the tab order, the accessibility tree and find-in-page at
-          once, with no attribute to keep in sync with `menuOpen`. (`inert` did
-          the job too, and was what this carried first — but it is a second
-          source of truth for the same state.)
+          `overflow-hidden` alone, the five links and the second theme control
+          stayed focusable while the toggle reported `aria-expanded="false"`,
+          and the browser would scroll the zero-height box to reveal whichever
+          one took focus.
 
-          `display` is a discrete property, so animating out of it takes two
-          extra pieces, both already used elsewhere in this app:
+          `visibility: hidden` removes the subtree from the tab order AND the
+          accessibility tree, driven by the same class that drives the height —
+          so there is no second piece of state to keep in sync with `menuOpen`.
 
-            transition-discrete  `transition-behavior: allow-discrete`, which
-                                 defers the flip TO `none` until the transition
-                                 ends, and applies the flip FROM `none`
-                                 immediately so there is something to animate.
-            starting:grid-rows-[0fr]
-                                 `@starting-style`. An element arriving from
-                                 `display: none` has no previous computed style
-                                 to transition from, so without this the row
-                                 would appear at its open height instead of
-                                 growing into it.
+          Two other mechanisms were tried here first. Both are worse, and the
+          measurements are why (Firefox 153 / Chromium, sampling rendered height
+          every frame):
 
-          The two mechanisms are orthogonal: the height still animates exactly
-          as before. Where `@starting-style` is unsupported the menu opens and
-          closes with no animation, which is a fine failure — and the closed
-          state is still `display: none`, so the focus fix does not depend on
-          any of this. */}
+            inert            Animates fine, but it is a second source of truth,
+                             and it does NOT remove the links from the
+                             accessibility tree — they showed up in an aria
+                             snapshot in both engines while closed.
+            display: none    Correct on both counts, but `display` is a discrete
+                             property, so it needs `transition-behavior:
+                             allow-discrete` plus `@starting-style` to animate
+                             at all — and Firefox implements that property
+                             WITHOUT applying it to `display`
+                             (mdn/browser-compat-data#26155). Measured: the
+                             close snapped, height and fade together, in Firefox
+                             only. There is no feature query to gate it on
+                             either — `CSS.supports("transition-behavior",
+                             "allow-discrete")` returns true in Firefox.
+
+          `visibility` has neither problem: it is transitionable everywhere, and
+          it holds `visible` for the whole duration when going to hidden, which
+          is exactly the deferral `allow-discrete` was there to provide. The
+          record card and the section rail collapse the same way for the same
+          reason. */}
       <div
         id="header-mobile-menu"
         className={cn(
-          "grid overflow-hidden transition-[grid-template-rows,display] transition-discrete duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none md:hidden",
-          menuOpen
-            ? "grid-rows-[1fr] starting:grid-rows-[0fr]"
-            : "hidden grid-rows-[0fr]",
+          "grid overflow-hidden transition-[grid-template-rows,visibility] duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none md:hidden",
+          menuOpen ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]",
         )}
       >
-        {/* The content fades on top of the height, and it needs BOTH halves for
-            the same reason the row does: `starting:opacity-0` supplies the
-            entry value the element cannot have while its parent is
-            `display: none`, and the state-driven `opacity-0` drives the exit,
-            which `@starting-style` has no say over.
+        {/* The content fades on top of the height. Same duration and curve, so
+            it reads as one gesture rather than two things moving at once.
 
-            Same duration and curve as the height, so it reads as one gesture
-            rather than two things moving at once. */}
+            No `@starting-style` here any more: that was only needed because the
+            element used to arrive from `display: none` with no previous
+            computed style to transition from. It is always rendered now, so the
+            plain class swap transitions on its own, in both directions. */}
         <div
           className={cn(
             "min-h-0 transition-opacity duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
-            menuOpen ? "opacity-100 starting:opacity-0" : "opacity-0",
+            menuOpen ? "opacity-100" : "opacity-0",
           )}
         >
           <Suspense
@@ -359,19 +364,6 @@ function MenuLinks({
         </span>
         <ThemeSwitcher className={PILL_CONTROL} />
       </div>
-    </nav>
-  );
-}
-
-function NavSkeleton() {
-  // Literal widths, not interpolated: Tailwind scans source text, so a
-  // `w-${n}` template never makes it into the stylesheet.
-  return (
-    <nav className="flex items-center gap-1 max-md:hidden">
-      <Skeleton className="h-8 w-16 rounded-lg bg-inverse-hover" />
-      <Skeleton className="h-8 w-20 rounded-lg bg-inverse-hover" />
-      <Skeleton className="h-8 w-20 rounded-lg bg-inverse-hover" />
-      <Skeleton className="h-8 w-16 rounded-lg bg-inverse-hover" />
     </nav>
   );
 }

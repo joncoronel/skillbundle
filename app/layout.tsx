@@ -2,12 +2,27 @@ import type { Metadata } from "next";
 
 // next/font preloads what it finds in the MODULE GRAPH, not what the CSS uses,
 // so an unused import costs a real font download on every route. `GeistSans`
-// and `geist/font/pixel` were both dropped for that (the latter declares five
-// faces in one module). `geist/font/mono` declares one, so it stays.
+// was dropped for exactly that.
+//
+// `geist/font/pixel` has the same problem in a worse shape — it declares all
+// five pixel faces at module scope, so importing Circle downloads ~129 KB to
+// use ~27 KB — and is imported anyway, deliberately. The alternative is
+// `next/font/google`'s `Geist_Pixel`, which ships the five shapes as one
+// variable family on an `ELSH` axis and is the far smaller download, but has no
+// entry in Next's font-metrics table: every build and every dev request logs
+// "Failed to find font override values for font `Geist Pixel`". That warning
+// cannot be turned off on the Google loader, because `adjustFontFallback` only
+// picks a different row from the same table the font is missing from. The
+// package reaches next/font/local, where the flag means something, and sets
+// `adjustFontFallback: false` on each face itself.
+//
+// So this trades ~100 KB of unused font for a clean console. TODO.md carries
+// the fix that costs neither (vendor the one Circle face), rather than leaving
+// the 100 KB as a cost nothing outside this comment records.
 import { GeistMono } from "geist/font/mono";
+import { GeistPixelCircle } from "geist/font/pixel";
 
 import localFont from "next/font/local";
-import { Geist_Pixel } from "next/font/google";
 
 import { OpenPanelComponent } from "@openpanel/nextjs";
 
@@ -19,22 +34,6 @@ import "./globals.css";
 // crawlers). The origin itself lives in lib/site-url.ts, shared with the
 // robots and sitemap routes — those emit text and XML, so nothing resolves
 // relative URLs for them and they need the same value spelled out.
-
-// Google, not `geist/font/pixel`: the package ships the five shapes as five
-// files and one import pulls all of them (129 KB downloaded, 27 KB used).
-// Google ships them as ONE variable family on an `ELSH` axis, so `axes` is
-// load-bearing — drop it and the axis flattens to its default, Square. The shape
-// itself is pinned in globals.css. Build logs a harmless "Failed to find font
-// override values": Geist Pixel has no metrics entry, so no fallback face can be
-// built. `adjustFontFallback` does not help — it only selects from that same
-// table. (It IS meaningful in the `geist` package, which uses next/font/local
-// where it defaults to Arial. Different loader; do not carry the flag across.)
-const geistPixel = Geist_Pixel({
-  subsets: ["latin"],
-  axes: ["ELSH"],
-  variable: "--font-geist-pixel",
-  display: "swap",
-});
 
 // Vendored rather than fetched, because SN Pro has no entry in Next's metrics
 // table and `next/font/google` builds its size-adjusted fallback face from that
@@ -85,7 +84,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${GeistMono.variable} ${geistPixel.variable} ${snPro.variable} font-sans antialiased`}
+        className={`${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
       >
         <div className="root">
           <Providers>{children}</Providers>

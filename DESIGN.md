@@ -145,8 +145,8 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 
 ## 3. Typography
 
-**Display Font:** Geist Pixel Circle (with `ui-monospace` fallback)
-**Body Font:** SN Pro, as `--font-sans` (fallback `system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif`). Next has no metrics for SN Pro, so `adjustFontFallback` is off in `app/layout.tsx` and the fallback stack is named there explicitly — see the note in that file before changing either.
+**Display Font:** Geist Pixel Circle, from the `geist` package (with `ui-monospace` fallback)
+**Body Font:** SN Pro, as `--font-sans` (fallback `system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif`). Neither face has an entry in Next's font-metrics table, and `app/layout.tsx` resolves that the same way for both: load through `next/font/local`, which measures the file rather than looking it up. SN Pro is vendored to `app/fonts/` for it; Geist Pixel arrives through the package, which already uses that loader. Read the note in that file before moving either to `next/font/google` — the metrics table is why they are not there.
 **Code Font:** Geist Mono (with `ui-monospace, monospace` fallback)
 
 **Character:** A geometric, technical sans carries the entire interface. The pixel-grid display face marks hero moments, and the monospace is reserved for machine strings. The contrast is structural (sans vs. pixel vs. mono), not three competing sans-serifs.

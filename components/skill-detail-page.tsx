@@ -723,9 +723,13 @@ export function SkillDetailPageSkeleton({
 // ISR caches the page, repeat visits serve the finished HTML and never hit this.
 export function SkillDetailPageLoading() {
   return (
-    // `max-w-6xl`, the app's default page width (DESIGN.md §4), matching the
-    // real page exactly — it has no special case to mirror any more.
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    // `<main>` and `max-w-6xl` both match the real page exactly: the app's
+    // default page width (DESIGN.md §4), and the landmark the page itself
+    // renders. A `<div>` here would leave the document with no `main` for as
+    // long as this shell is up, then grow one — the header's `banner` and the
+    // rail's `navigation` are present the whole time, so the gap is visible to
+    // a screen reader rather than theoretical.
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
@@ -735,6 +739,6 @@ export function SkillDetailPageLoading() {
       <Skeleton className="h-9 w-1/2 max-w-md sm:h-10" />
 
       <SkillDetailPageSkeleton installCommand="npx skills add ..." />
-    </div>
+    </main>
   );
 }

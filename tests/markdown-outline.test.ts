@@ -181,3 +181,45 @@ describe("nav id matches the rendered heading id", () => {
     expect(item.id).toBe(docHeadingId(renderedText));
   });
 });
+
+/**
+ * A SKILL.md is third-party text and these routes PRERENDER, so a heading that
+ * throws here fails the build, not one request. `String.fromCodePoint` used to
+ * be called on whatever the entity regex captured: `&#99999999;` threw
+ * `RangeError` and took the page down, and `&#0;` decoded to the NUL that
+ * delimits the inline-code placeholders, which spliced `undefined` into the
+ * title. Both now go through micromark's own decoder, which the renderer also
+ * uses, so the disallowed ranges land on U+FFFD exactly as the rendered heading
+ * does.
+ */
+describe("hostile numeric character references", () => {
+  const hostile = [
+    "## boom &#99999999; here", // above U+10FFFF
+    "## hex &#xFFFFFFF; here", // same, hex
+    "## nul &#0; here", // the placeholder delimiter
+    "## surrogate &#xD800; here", // lone high surrogate
+    "## noncharacter &#xFFFE; here",
+  ];
+
+  it.each(hostile)("%s does not throw", (markdown) => {
+    expect(() => extractOutline(markdown)).not.toThrow();
+  });
+
+  it("agrees with the renderer's U+FFFD substitution", () => {
+    const [item] = extractOutline("## nul &#0; here");
+    expect(item.title).toBe("nul � here");
+    expect(item.id).toBe(docHeadingId("nul � here"));
+  });
+
+  it("still decodes references that are in range", () => {
+    expect(extractOutline("## 100&#37; and &#x2014; dash")[0].title).toBe(
+      "100% and — dash",
+    );
+  });
+
+  it("decodes named references the old six-entry table missed", () => {
+    expect(extractOutline("## Costs &mdash; &copy; 2026")[0].title).toBe(
+      "Costs — © 2026",
+    );
+  });
+});
