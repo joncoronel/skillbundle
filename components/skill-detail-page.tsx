@@ -12,15 +12,13 @@ import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { extractOutline, normalizeOutline } from "@/lib/markdown-outline";
+import { RECORD_SURFACE } from "@/components/skill-record";
 import { SkillSidebar, SkillSidebarShell } from "@/components/skill-sidebar";
 import { SkillSection } from "@/components/skill-section";
 import type { SectionNavItem } from "@/components/skill-section-nav";
-import {
-  SkillDocument,
-  SkillDocumentMeta,
-} from "@/components/skill-document";
+import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
 import { SkillHistory } from "@/components/skill-history";
@@ -250,7 +248,11 @@ export function SkillDetailPage({
     // from 1152px up, and the rail arrives at `lg` instead of `xl` — every
     // laptop under 1280px used to get no navigation at all through a 20,000px
     // file.
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
+    // `<main>`, not a div: this branch wrapped the sidebar in `<aside>` and
+    // the rail in `<nav>`, so a screen-reader user got banner / navigation /
+    // navigation / complementary around a 20,000px document that sat in no
+    // landmark at all. Every other route in this app already uses `<main>`.
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
       {/* The masthead pads itself by exactly the sidebar column so the title
           cannot run under the card — skill ids reach 40 characters and the h1
           is the one block here with no measure of its own. It carries no
@@ -266,7 +268,7 @@ export function SkillDetailPage({
       <div className="lg:pr-[calc(var(--skill-side)_+_var(--skill-gap))]">
         {breadcrumb}
 
-        {/* Geist Sans, not the Geist Pixel display face. Skill ids are long,
+        {/* The body sans, not the Geist Pixel display face. Skill ids are long,
             lowercase, hyphenated machine identifiers, and the pixel face
             collapses into broken mono under ~40px (DESIGN.md §3, the Pixel
             Floor Rule) — which is exactly what it was doing here at 30px.
@@ -303,7 +305,7 @@ export function SkillDetailPage({
           />
         </Suspense>
       </DataErrorBoundary>
-    </div>
+    </main>
   );
 }
 
@@ -415,26 +417,26 @@ async function SkillDetailBody({
         )}
 
         <div className="mt-6 space-y-3">
-        {skill.isDelisted && (
-          <div className="rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
-            This skill is no longer listed on skills.sh
-          </div>
-        )}
+          {skill.isDelisted && (
+            <div className="rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
+              This skill is no longer listed on skills.sh
+            </div>
+          )}
 
-        {skill.hasContentFetchError && !skill.isDelisted && (
-          <div className="rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
-            This skill&apos;s source file could not be loaded. The install
-            command may not work.
-          </div>
-        )}
+          {skill.hasContentFetchError && !skill.isDelisted && (
+            <div className="rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
+              This skill&apos;s source file could not be loaded. The install
+              command may not work.
+            </div>
+          )}
 
-        {skill.isGitHubOnly && !skill.isDelisted && (
-          <div className="rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
-            This skill is available only on GitHub, not through the skills.sh
-            API. Install counts and security audits stay unavailable until
-            it&apos;s listed on skills.sh.
-          </div>
-        )}
+          {skill.isGitHubOnly && !skill.isDelisted && (
+            <div className="rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
+              This skill is available only on GitHub, not through the skills.sh
+              API. Install counts and security audits stay unavailable until
+              it&apos;s listed on skills.sh.
+            </div>
+          )}
 
           {copies.renamedTo && (
             <div className="rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
@@ -480,7 +482,7 @@ async function SkillDetailBody({
           command and precede the document, instead of being stranded past
           20,000px of someone else's markdown. */}
       <SkillSidebar
-        className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0"
+        className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0"
         navItems={navItems}
         source={source}
         skillId={skillId}
@@ -531,48 +533,48 @@ async function SkillDetailBody({
       <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
         <SkillCopies aliases={copies.aliases} forks={copies.forks} />
 
-          {/* Above Documentation, not below it. A SKILL.md runs to tens of KB,
+        {/* Above Documentation, not below it. A SKILL.md runs to tens of KB,
               so anything after it is effectively unreachable without deliberate
               scrolling — and "has this changed recently?" is a question people
               have BEFORE committing to reading the docs, not after. The nav now
               makes the doc one click away from anywhere, so nothing is lost by
               keeping the short section first, and the page reads as three
               beats: what we know, what changed, what they wrote. */}
-          <SkillHistory versions={versions} />
+        <SkillHistory versions={versions} />
 
-          {skill.content && (
-            <SkillSection
-              id="documentation"
-              title="Documentation"
-              // The file's name and a link to it ride on the heading's
-              // baseline. That is what lets the document below need no header,
-              // no frame, and no rule of its own — and, with `SKILL.md` and a
-              // link to the source sitting right there, no sentence explaining
-              // that the file belongs to its author either. The label is the
-              // explanation.
-              meta={<SkillDocumentMeta sourceUrl={skill.skillMdUrl ?? null} />}
-            >
-              <SkillDocument
-                content={skill.content}
-                preHighlighted={preHighlighted}
-                sourceUrl={skill.skillMdUrl ?? null}
-                // Extra air on top of the section's own `mt-6`. This is the
-                // one place on the page where the voice changes, and with no
-                // frame drawn around the file the gap is what marks the
-                // handoff — the largest space inside any section, so the
-                // author's first heading reads as a beginning rather than as
-                // the next paragraph of ours.
-                className="mt-4"
-              />
-            </SkillSection>
-          )}
+        {skill.content && (
+          <SkillSection
+            id="documentation"
+            title="Documentation"
+            // The file's name and a link to it ride on the heading's
+            // baseline. That is what lets the document below need no header,
+            // no frame, and no rule of its own — and, with `SKILL.md` and a
+            // link to the source sitting right there, no sentence explaining
+            // that the file belongs to its author either. The label is the
+            // explanation.
+            meta={<SkillDocumentMeta sourceUrl={skill.skillMdUrl ?? null} />}
+          >
+            <SkillDocument
+              content={skill.content}
+              preHighlighted={preHighlighted}
+              sourceUrl={skill.skillMdUrl ?? null}
+              // Extra air on top of the section's own `mt-6`. This is the
+              // one place on the page where the voice changes, and with no
+              // frame drawn around the file the gap is what marks the
+              // handoff — the largest space inside any section, so the
+              // author's first heading reads as a beginning rather than as
+              // the next paragraph of ours.
+              className="mt-4"
+            />
+          </SkillSection>
+        )}
 
-          {!skill.content && (
-            <SkillSection id="documentation" title="Documentation">
-              <p className="text-sm text-muted-foreground">
-                This skill publishes no SKILL.md content that SkillBundle can
-                read.
-              </p>
+        {!skill.content && (
+          <SkillSection id="documentation" title="Documentation">
+            <p className="text-sm text-muted-foreground">
+              This skill publishes no SKILL.md content that SkillBundle can
+              read.
+            </p>
           </SkillSection>
         )}
       </div>
@@ -617,94 +619,88 @@ export function SkillDetailPageSkeleton({
         </div>
       </div>
 
-      <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0">
-          {/* The record card itself, with only its values pending. Drawing the
+      <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
+        {/* The record card itself, with only its values pending. Drawing the
               container rather than a plain block keeps the sidebar the same
               shape and the same material before and after. Always drawn
               unfolded: the fold is a scroll state, and the body resolves long
               before anyone has scrolled into the document. */}
-          <div className="divide-y divide-border rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
-            {/* The action block. BundleToggleButton renders its own skeleton
+        <div className={cn("divide-y divide-border", RECORD_SURFACE)}>
+          {/* The action block. BundleToggleButton renders its own skeleton
                 until hydration, so the first of these reserves the same box it
                 will; the second is Compare, which resolves with the shell. */}
-            <div className="space-y-2 px-4 py-3">
-              <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
-              <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
+          <div className="space-y-2 px-4 py-3">
+            <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
+            <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
+          </div>
+          {/* Installs: label, total, its trailing-week delta, then the trend. */}
+          <div className="px-4 py-4">
+            <Skeleton className="h-3 w-14" />
+            <div className="mt-1.5 flex min-h-9 items-center">
+              <Skeleton className="h-6 w-20" />
             </div>
-            {/* Installs: label, total, its trailing-week delta, then the trend. */}
-            <div className="px-4 py-4">
-              <Skeleton className="h-3 w-14" />
-              <div className="mt-1.5 flex min-h-9 items-center">
-                <Skeleton className="h-6 w-20" />
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-3 py-1">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-3.5 w-12" />
-              </div>
-              <Skeleton className="mt-3 h-10 w-full" />
-            </div>
-            {/* Repository: label, the repo link, and its star meta line. */}
-            <div className="px-4 py-3">
+            <div className="mt-2 flex items-center justify-between gap-3 py-1">
               <Skeleton className="h-3 w-20" />
-              <Skeleton className="mt-2 h-4 w-full max-w-40" />
-              <div className="mt-2 flex items-center gap-1.5">
-                <Skeleton className="size-3.5 shrink-0 rounded-full" />
-                <Skeleton className="h-3 w-10" />
-              </div>
+              <Skeleton className="h-3.5 w-12" />
             </div>
-            {/* Updated. Security only renders when a skill has audits, so it
-                is not reserved here. */}
-            <div className="px-4 py-3">
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="mt-2 h-4 w-full max-w-40" />
+            <Skeleton className="mt-3 h-10 w-full" />
+          </div>
+          {/* Repository: label, the repo link, and its star meta line. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-4 w-full max-w-40" />
+            <div className="mt-2 flex items-center gap-1.5">
+              <Skeleton className="size-3.5 shrink-0 rounded-full" />
+              <Skeleton className="h-3 w-10" />
             </div>
           </div>
+          {/* Updated. Security only renders when a skill has audits, so it
+                is not reserved here. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-4 w-full max-w-40" />
+          </div>
+        </div>
 
-          {/* The rail, under the card in the same column. Its label is REAL
+        {/* The rail, under the card in the same column. Its label is REAL
               text, like the section headings below: it does not depend on the
               data being loaded, so skeletoning it would withhold the page's
               structure for no reason and then shift it in when the body lands.
               What is genuinely unknown — the document's own headings — stays a
               placeholder. Six rows, which is roughly what progressive depth
               shows before a branch opens. */}
-          <div className="mt-6 hidden lg:block">
-            <p className="mb-4 text-xs font-medium text-muted-foreground">
-              On this page
-            </p>
-            <div className="space-y-3.5">
-              {[0, 1, 2, 3, 4, 5].map((item) => (
-                <Skeleton key={item} className="h-3 w-full max-w-32" />
-              ))}
-            </div>
+        <div className="mt-6 hidden lg:block">
+          <p className="mb-4 text-xs font-medium text-muted-foreground">
+            On this page
+          </p>
+          <div className="space-y-3.5">
+            {[0, 1, 2, 3, 4, 5].map((item) => (
+              <Skeleton key={item} className="h-3 w-full max-w-32" />
+            ))}
           </div>
+        </div>
       </SkillSidebarShell>
 
       <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
-        <div>
-          <div className="border-t border-border pt-4">
-            <h2 className="text-base font-semibold tracking-tight text-foreground">
-              History
-            </h2>
-          </div>
-          <Skeleton className="mt-2 h-5 w-full max-w-lg" />
+        {/* Drawn THROUGH the real section component, not by re-typing its
+            header markup. Both headers are real text either way — neither the
+            word "History" nor "SKILL.md" depends on the data being loaded — and
+            rendering them through `SkillSection` is what stops the skeleton's
+            border, spacing and heading scale from drifting from the page's. */}
+        <SkillSection id="history" title="History">
+          <Skeleton className="-mt-4 h-5 w-full max-w-lg" />
           <div className="mt-6 space-y-3">
             <Skeleton className="h-4 w-full max-w-md" />
             <Skeleton className="h-4 w-full max-w-sm" />
           </div>
-        </div>
+        </SkillSection>
 
-        <div>
-          {/* The section header, real: heading, and the filename on its
-              baseline. Neither depends on the skill's data — every skill's
-              file is called SKILL.md — so only the link to it and the file's
-              contents are placeholders. */}
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border pt-4">
-            <h2 className="text-base font-semibold tracking-tight text-foreground">
-              Documentation
-            </h2>
-            <span className="font-mono text-xs text-foreground">SKILL.md</span>
-          </div>
-          <div className="mt-10 space-y-3">
+        <SkillSection
+          id="documentation"
+          title="Documentation"
+          meta={<span className="font-mono text-foreground">SKILL.md</span>}
+        >
+          <div className="mt-4 space-y-3">
             <Skeleton className="h-6 w-64" />
             <div className="space-y-2 pt-2">
               <Skeleton className="h-4 w-full max-w-2xl" />
@@ -716,7 +712,7 @@ export function SkillDetailPageSkeleton({
               <Skeleton className="h-4 w-5/6 max-w-2xl" />
             </div>
           </div>
-        </div>
+        </SkillSection>
       </div>
     </div>
   );

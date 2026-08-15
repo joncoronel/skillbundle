@@ -2,6 +2,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import { MarkdownContent } from "@/components/markdown-content";
 import type { PreHighlightedCode } from "@/lib/highlight-markdown-code";
+import { rawToBlobUrl } from "@/lib/github-urls";
 import { cn } from "@/lib/utils";
 
 /**
@@ -95,14 +96,4 @@ export function SkillDocumentMeta({
       )}
     </span>
   );
-}
-
-// Handles both raw URL shapes GitHub serves. Mirrors the rewrite in
-// markdown-content.tsx; a non-GitHub URL passes through untouched, which is
-// correct for well-known sources.
-const RAW_GITHUB_URL_RE =
-  /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/(?:refs\/(?:heads|tags)\/)?([^/]+)\//;
-
-function rawToBlobUrl(raw: string): string {
-  return raw.replace(RAW_GITHUB_URL_RE, "https://github.com/$1/$2/blob/$3/");
 }

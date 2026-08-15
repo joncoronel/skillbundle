@@ -40,6 +40,14 @@ import {
 import { cn, formatInstalls } from "@/lib/utils";
 
 /**
+ * The card's own chrome, exported because the page's loading skeleton draws the
+ * same container and used to hand-copy this string 500 lines away in another
+ * file. Retune the surface here and the skeleton follows.
+ */
+export const RECORD_SURFACE =
+  "rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]";
+
+/**
  * Everything SkillBundle knows about a skill, as one panel in the sidebar.
  *
  * This started as a full-width strip under the title and was wrong there for a
@@ -162,12 +170,7 @@ export function SkillRecord({
   const [hover, setHover] = useState<SparklineHoverState>(null);
 
   return (
-    <div
-      className={cn(
-        "rounded-2xl bg-surface-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]",
-        className,
-      )}
-    >
+    <div className={cn(RECORD_SURFACE, className)}>
       {/* `px-4`, the same inset as every block below, so the button's edges sit
           on the same two lines as the labels and values it caps. `p-3` was the
           alternative and it looked like a lid rather than the top of the
@@ -203,216 +206,224 @@ export function SkillRecord({
             )}
           >
             <div className="px-4 py-4">
-        <p
-          className={cn(
-            "text-xs font-medium text-muted-foreground",
-            hover && "tabular-nums",
-          )}
-        >
-          {hover ? formatDay(hover.day) : "Installs"}
-        </p>
+              <p
+                className={cn(
+                  "text-xs font-medium text-muted-foreground",
+                  hover && "tabular-nums",
+                )}
+              >
+                {hover ? formatDay(hover.day) : "Installs"}
+              </p>
 
-        {/* min-h reserves NumberFlow's animated height — the digit-roll mask
+              {/* min-h reserves NumberFlow's animated height — the digit-roll mask
             adds ~8px the first time it runs — so the sparkline never shifts. */}
-        <div className="mt-1.5 flex min-h-9 items-center">
-          {hover || installs != null ? (
-            <NumberFlow
-              value={hover ? hover.value : (installs as number)}
-              format={{ notation: "compact", maximumFractionDigits: 1 }}
-              className="text-2xl leading-none font-semibold text-foreground"
-              aria-label={`${hover ? hover.value : installs} installs`}
-            />
-          ) : (
-            // `installs` is null only for an orphaned row. A dash, never a zero:
-            // a wrong number reads as fact, in the accessible name as much as
-            // on screen.
-            <span
-              className="text-2xl leading-none font-semibold text-muted-foreground"
-              aria-label="Install count unavailable"
-            >
-              —
-            </span>
-          )}
-        </div>
+              <div className="mt-1.5 flex min-h-9 items-center">
+                {hover || installs != null ? (
+                  <NumberFlow
+                    value={hover ? hover.value : (installs as number)}
+                    format={{ notation: "compact", maximumFractionDigits: 1 }}
+                    className="text-2xl leading-none font-semibold text-foreground"
+                    aria-label={`${hover ? hover.value : installs} installs`}
+                  />
+                ) : (
+                  // `installs` is null only for an orphaned row. A dash, never a zero:
+                  // a wrong number reads as fact, in the accessible name as much as
+                  // on screen.
+                  <span
+                    className="text-2xl leading-none font-semibold text-muted-foreground"
+                    aria-label="Install count unavailable"
+                  >
+                    —
+                  </span>
+                )}
+              </div>
 
-        {/* The delta belongs to the number above it, not to a list of loose
+              {/* The delta belongs to the number above it, not to a list of loose
             measurements. It sits between the total and the chart so the two
             figures read together and the sparkline below illustrates them
             both. It stays put during a sparkline scrub, correctly: it is a
             fixed trailing-window stat, not a value for the hovered day. */}
-        <dl className="mt-2">
-          <FactRow label="Past 7 days">
-            {gain != null ? (
-              <Value className="text-success-foreground">+{intFmt(gain)}</Value>
-            ) : (
-              <Value muted>No change</Value>
-            )}
-          </FactRow>
-        </dl>
+              <dl className="mt-2">
+                <FactRow label="Past 7 days">
+                  {gain != null ? (
+                    <Value className="text-success-foreground">
+                      +{intFmt(gain)}
+                    </Value>
+                  ) : (
+                    <Value muted>No change</Value>
+                  )}
+                </FactRow>
+              </dl>
 
-        {hasChart ? (
-          <Dialog>
-            <div className="mt-3">
-              <InstallSparkline points={sparkPoints} onHover={setHover} />
+              {hasChart ? (
+                <Dialog>
+                  <div className="mt-3">
+                    <InstallSparkline points={sparkPoints} onHover={setHover} />
+                  </div>
+                  <DialogTrigger
+                    render={
+                      <button
+                        type="button"
+                        className="mt-1.5 inline-flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                      />
+                    }
+                  >
+                    View trend
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      strokeWidth={2}
+                      className="size-3"
+                    />
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Installs over time</DialogTitle>
+                      <DialogDescription>
+                        Cumulative total and daily installs, recorded once a
+                        day.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogBody>
+                      <InstallChart insights={insights} />
+                    </DialogBody>
+                  </DialogContent>
+                </Dialog>
+              ) : (
+                // Pre-chart state: a ghost line fading into the history not yet
+                // recorded, so it reads as a placeholder rather than a flat trend.
+                <div className="mt-3">
+                  <InstallSparklineGhost />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Recording daily. The trend appears once there&apos;s enough
+                    history.
+                  </p>
+                </div>
+              )}
             </div>
-            <DialogTrigger
-              render={
-                <button
-                  type="button"
-                  className="mt-1.5 inline-flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+
+            <div className="px-4 py-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Repository
+              </p>
+              <a
+                href={externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group mt-1.5 flex max-w-full min-w-0 items-center gap-1.5 text-sm text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+              >
+                <HugeiconsIcon
+                  icon={externalIcon}
+                  strokeWidth={2}
+                  className="size-3.5 shrink-0 text-muted-foreground"
                 />
-              }
-            >
-              View trend
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                strokeWidth={2}
-                className="size-3"
-              />
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Installs over time</DialogTitle>
-                <DialogDescription>
-                  Cumulative total and daily installs, recorded once a day.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogBody>
-                <InstallChart insights={insights} />
-              </DialogBody>
-            </DialogContent>
-          </Dialog>
-        ) : (
-          // Pre-chart state: a ghost line fading into the history not yet
-          // recorded, so it reads as a placeholder rather than a flat trend.
-          <div className="mt-3">
-            <InstallSparklineGhost />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Recording daily. The trend appears once there&apos;s enough
-              history.
-            </p>
-          </div>
-        )}
-      </div>
+                <span className="truncate group-hover:underline">
+                  {externalLabel}
+                </span>
+                {curatedOwner && <OfficialBadge owner={curatedOwner} />}
+                <HugeiconsIcon
+                  icon={ArrowUpRight01Icon}
+                  strokeWidth={2}
+                  className="size-3 shrink-0 text-muted-foreground/70"
+                />
+              </a>
 
-      <div className="px-4 py-3">
-        <p className="text-xs font-medium text-muted-foreground">Repository</p>
-        <a
-          href={externalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group mt-1.5 flex max-w-full min-w-0 items-center gap-1.5 text-sm text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
-        >
-          <HugeiconsIcon
-            icon={externalIcon}
-            strokeWidth={2}
-            className="size-3.5 shrink-0 text-muted-foreground"
-          />
-          <span className="truncate group-hover:underline">
-            {externalLabel}
-          </span>
-          {curatedOwner && <OfficialBadge owner={curatedOwner} />}
-          <HugeiconsIcon
-            icon={ArrowUpRight01Icon}
-            strokeWidth={2}
-            className="size-3 shrink-0 text-muted-foreground/70"
-          />
-        </a>
-
-        {/* Stars as a meta line under the repo, the way a repo is captioned
+              {/* Stars as a meta line under the repo, the way a repo is captioned
             everywhere a developer already reads one — glyph, then count, no
             label. A labelled `GitHub stars … 40.5k` row said "GitHub" twice
             (the repo link above it carries the mark) and set a secondary fact
             in the same weight as the primary ones. The star does the naming,
             which is what an icon this well known is for; the accessible name
             still spells it out, because a glyph is not a word. */}
-        {stars != null && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <HugeiconsIcon
-              icon={StarIcon}
-              strokeWidth={2}
-              className="size-3.5 shrink-0"
-            />
-            {/* `text-box` trim: the digits' line box carries half-leading and
+              {stars != null && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <HugeiconsIcon
+                    icon={StarIcon}
+                    strokeWidth={2}
+                    className="size-3.5 shrink-0"
+                  />
+                  {/* `text-box` trim: the digits' line box carries half-leading and
                 descender space the star icon does not, which dropped the number
                 ~0.5px below the glyph's optical centre. Trimming to the cap and
                 alphabetic edges lines the two up on what the eye actually
                 sees. */}
-            <span className="font-medium tabular-nums text-foreground [text-box:trim-both_cap_alphabetic]">
-              {formatInstalls(stars)}
-            </span>
-            <span className="sr-only">GitHub stars</span>
-          </p>
-        )}
-      </div>
+                  <span className="font-medium text-foreground tabular-nums [text-box:trim-both_cap_alphabetic]">
+                    {formatInstalls(stars)}
+                  </span>
+                  <span className="sr-only">GitHub stars</span>
+                </p>
+              )}
+            </div>
 
-      {audits && audits.length > 0 && (
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-medium text-muted-foreground">Security</p>
-            <AuditBadge status={worstAuditStatus(audits)} />
-          </div>
-          <div className="mt-1.5 flex items-center justify-between gap-3">
-            <span className="text-sm text-foreground">
-              {audits.length === 1
-                ? audits[0].provider
-                : `${audits.length} providers`}
-            </span>
-            <Dialog>
-              <DialogTrigger
-                render={
-                  <button
-                    type="button"
-                    className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
-                  />
-                }
-              >
-                Verdicts
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  strokeWidth={2}
-                  className="size-3"
-                />
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>Security audits</DialogTitle>
-                  <DialogDescription>
-                    Independent checks from skills.sh&apos;s audit partners.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogBody>
-                  <AuditAccordion
-                    source={source}
-                    skillId={skillId}
-                    audits={audits}
-                  />
-                </DialogBody>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-      )}
+            {audits && audits.length > 0 && (
+              <div className="px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Security
+                  </p>
+                  <AuditBadge status={worstAuditStatus(audits)} />
+                </div>
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <span className="text-sm text-foreground">
+                    {audits.length === 1
+                      ? audits[0].provider
+                      : `${audits.length} providers`}
+                  </span>
+                  <Dialog>
+                    <DialogTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                        />
+                      }
+                    >
+                      Verdicts
+                      <HugeiconsIcon
+                        icon={ArrowRight01Icon}
+                        strokeWidth={2}
+                        className="size-3"
+                      />
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Security audits</DialogTitle>
+                        <DialogDescription>
+                          Independent checks from skills.sh&apos;s audit
+                          partners.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogBody>
+                        <AuditAccordion
+                          source={source}
+                          skillId={skillId}
+                          audits={audits}
+                        />
+                      </DialogBody>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+            )}
 
-      <div className="px-4 py-3">
-        <p className="text-xs font-medium text-muted-foreground">
-          {updatedKind}
-        </p>
-        <div className="mt-1.5 flex items-center justify-between gap-3">
-          <span className="text-sm text-foreground">{updatedDate}</span>
-          <a
-            href="#history"
-            className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
-          >
-            History
-            <HugeiconsIcon
-              icon={ArrowRight01Icon}
-              strokeWidth={2}
-              className="size-3"
-            />
-          </a>
-        </div>
-      </div>
+            <div className="px-4 py-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                {updatedKind}
+              </p>
+              <div className="mt-1.5 flex items-center justify-between gap-3">
+                <span className="text-sm text-foreground">{updatedDate}</span>
+                <a
+                  href="#history"
+                  className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                >
+                  History
+                  <HugeiconsIcon
+                    icon={ArrowRight01Icon}
+                    strokeWidth={2}
+                    className="size-3"
+                  />
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </div>

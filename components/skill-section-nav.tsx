@@ -55,12 +55,19 @@ function restWidth(level: number) {
  * the header answers the right question directly, and it's cheap — the loop
  * short-circuits at the first heading below the fold, and only runs inside a
  * rAF the scroll handler schedules.
+ *
+ * `enabled` is what keeps "cheap" true below `lg`, where the rail is
+ * `display: none` and nothing it computes can be seen. Without it every scroll
+ * frame on a phone ran a layout-read loop over up to 52 ids and re-rendered as
+ * many `motion.span`s into a hidden subtree — the highest-traffic route paying
+ * its largest scroll cost on the weakest devices, for nothing. The sibling
+ * `useEnteredSection` took the same argument for the same reason.
  */
-function useActiveSection(ids: string[]) {
+function useActiveSection(ids: string[], enabled: boolean) {
   const [activeId, setActiveId] = useState<string | null>(ids[0] ?? null);
 
   useEffect(() => {
-    if (ids.length === 0) return;
+    if (!enabled || ids.length === 0) return;
 
     let frame = 0;
 
@@ -100,7 +107,7 @@ function useActiveSection(ids: string[]) {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [ids]);
+  }, [ids, enabled]);
 
   return activeId;
 }
@@ -119,10 +126,22 @@ type NavBranch = { item: SectionNavItem; children: SectionNavItem[] };
 function toBranches(items: SectionNavItem[]): NavBranch[] {
   const branches: NavBranch[] = [];
   for (const item of items) {
-    if (item.level <= 1 || branches.length === 0) {
+    const owner = branches[branches.length - 1];
+    // A level-0 row is one of OUR page sections and never owns children: it has
+    // no deeper headings of its own, and the handoff below opens the branch it
+    // introduces rather than a branch of its own.
+    //
+    // Without that guard a deeper-first outline broke silently. `normalizeOutline`
+    // rebases so the shallowest heading is level 1, so a SKILL.md that opens
+    // `## Setup` and only later reaches `# Reference` produces an outline whose
+    // FIRST items are level 2. Those attached themselves to the `documentation`
+    // level-0 row, and the handoff then opened the next branch instead — leaving
+    // the reader scrolling through sections with nothing lit in the rail and the
+    // active link inside an `inert`, zero-height container.
+    if (item.level <= 1 || !owner || owner.item.level < 1) {
       branches.push({ item, children: [] });
     } else {
-      branches[branches.length - 1].children.push(item);
+      owner.children.push(item);
     }
   }
   return branches;
@@ -152,7 +171,7 @@ function toBranches(items: SectionNavItem[]): NavBranch[] {
  * NOT sticky itself, and it does not own a column. It is the lower half of the
  * sidebar's one sticky container, under the record card, and it takes whatever
  * height the card is not using — which is why the card's fold hands it real
- * space rather than leaving a gap. See skill-detail-page.tsx for the flex
+ * space rather than leaving a gap. See skill-sidebar.tsx for the flex
  * arrangement that does that.
  *
  * It still renders on wide screens only. This rail is pure navigation: every
@@ -165,13 +184,20 @@ function toBranches(items: SectionNavItem[]): NavBranch[] {
  */
 export function SkillSectionNav({
   items,
+  active,
   className,
 }: {
   items: SectionNavItem[];
+  /**
+   * Whether this rail is the visible one. The DOM stays server-rendered at
+   * every width (see the header comment) — this only gates the scroll spy, so
+   * a phone does not pay for a readout it cannot see.
+   */
+  active: boolean;
   className?: string;
 }) {
   const ids = useMemo(() => items.map((item) => item.id), [items]);
-  const activeId = useActiveSection(ids);
+  const activeId = useActiveSection(ids, active);
   const reduceMotion = useReducedMotion();
   const branches = useMemo(() => toBranches(items), [items]);
 
@@ -191,6 +217,11 @@ export function SkillSectionNav({
    * about to read what is under it — which is precisely when its outline is
    * worth showing, and it makes the fold and the expansion one gesture at one
    * scroll position instead of two 80px apart.
+   *
+   * "Has no children of its own" is guaranteed by `toBranches`, not assumed
+   * here: it refuses to attach a child to a level-0 row. If that ever changes,
+   * this handoff needs a matching guard, because a level-0 row that owned
+   * children would open the NEXT branch while the reader was inside its own.
    */
   const openBranchId = useMemo(() => {
     const index = branches.findIndex(
@@ -291,7 +322,7 @@ export function SkillSectionNav({
                   <NavEntry
                     item={branch.item}
                     active={branch.item.id === activeId}
-                    innerRef={
+                    ref={
                       branch.item.id === activeId ? activeItemRef : undefined
                     }
                     onNavigate={goTo}
@@ -315,7 +346,7 @@ export function SkillSectionNav({
                               <NavEntry
                                 item={child}
                                 active={child.id === activeId}
-                                innerRef={
+                                ref={
                                   child.id === activeId
                                     ? activeItemRef
                                     : undefined
@@ -342,19 +373,19 @@ export function SkillSectionNav({
 function NavEntry({
   item,
   active,
-  innerRef,
+  ref,
   onNavigate,
   reduceMotion,
 }: {
   item: SectionNavItem;
   active: boolean;
-  innerRef?: React.Ref<HTMLAnchorElement>;
+  ref?: React.Ref<HTMLAnchorElement>;
   onNavigate: (event: React.MouseEvent<HTMLAnchorElement>, id: string) => void;
   reduceMotion: boolean;
 }) {
   return (
     <a
-      ref={innerRef}
+      ref={ref}
       href={`#${item.id}`}
       aria-current={active ? "true" : undefined}
       onClick={(event) => onNavigate(event, item.id)}

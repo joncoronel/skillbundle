@@ -258,9 +258,13 @@ html {
      In LIGHT it borrows `--neutral`, the app's existing solid-dark fill (the
      Button's `neutral` variant), so the pill and that button are the same
      black instead of two near-identical darks nobody chose to differ. Its own
-     `--neutral-foreground` comes with it. `--foreground` was the first
-     choice and sat at `oklch(0.18)`, which read heavier than anything else in
-     the app; `--neutral` is 0.22.
+     `--neutral-foreground` comes with it. `--foreground` was the first choice
+     and sat at `oklch(0.18)`, which read heavier than anything else in the app.
+
+     `--neutral` was retuned to 0.20 for this — see its own note above — which
+     also darkened the one `Button variant="neutral"` in the app
+     (`components/ui/cubby-ui/filters/filters.tsx`). That was the intent of
+     changing the token rather than the pill: one black, tuned once.
 
      `--neutral` cannot carry BOTH modes, which is why this set exists at all:
      it inverts completely, to a near-WHITE fill in dark. That is right for a
@@ -287,6 +291,7 @@ html {
     var(--inverse-foreground) 12%,
     transparent
   );
+
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
   --neutral-hover: color-mix(in oklch, var(--neutral), white 10%);
   --destructive-hover: color-mix(in oklch, var(--destructive), black 5%);

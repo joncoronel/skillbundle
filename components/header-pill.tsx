@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, Menu01Icon } from "@hugeicons/core-free-icons";
 import { LogoMark } from "@/components/brand-mark";
-import { DesktopNav, NAV_ITEMS } from "@/components/header-nav";
+import { ActiveNavLinks, NAV_ITEMS } from "@/components/header-nav";
 import { HeaderAuthClient } from "@/components/header-auth-client";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
@@ -36,8 +36,11 @@ import { cn } from "@/lib/utils";
  */
 const PILL_SURFACE = cn("bg-inverse", SURFACE_SHADOW_COMBINED[4]);
 
-/** Shared by the icon-only controls on the pill (menu toggle, theme). */
-export const PILL_CONTROL =
+/**
+ * Shared by the icon-only controls on the pill (menu toggle, theme). Not
+ * exported — both consumers are in this file.
+ */
+const PILL_CONTROL =
   "text-inverse-muted-foreground hover:text-inverse-foreground [--btn-bg-hover:var(--color-inverse-hover)] [--btn-bg-active:var(--color-inverse-hover)]";
 
 /**
@@ -119,26 +122,41 @@ export function HeaderPill() {
           // the group's internal rhythm, and the eye splits them correctly.
           //
           // No horizontal padding of its own: the mark and the wordmark already
-          // make a 138×28 target, and the row's `px-3` puts the mark on the
-          // 12px line with nothing to cancel.
+          // make a 138×28 target, and the row's leading inset places the mark
+          // with nothing to cancel — see "Why the leading inset is 16px and not
+          // 12px" above for why that side is `pl-4` and the trailing one
+          // `pr-3`.
           className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 md:mr-5"
         >
           <LogoMark />
-          <span className="font-display text-lg font-medium tracking-tight">
+          {/* The mark alone below `md`. Everything in this row is `shrink-0`,
+              so the row could not give way: at a 320px viewport it measured
+              329px against 288px available and ran straight out through the
+              pill's rounded corner — nothing clipped and nothing wrapped, the
+              same silent failure the `sm`→`md` note above describes. The
+              wordmark is ~99px of that (90px of letters plus the 8px gap) and
+              it is the one part a phone can lose: the mark still identifies
+              the app, and it is still a link home. */}
+          <span className="font-display text-lg font-medium tracking-tight max-md:hidden">
             skillbundle
           </span>
         </Link>
 
+        {/* One boundary, owned here. `DesktopNav` used to wrap its own, so this
+            fallback could never render — `NavSkeleton` was dead code that still
+            got maintained, and a caller could neither replace the fallback nor
+            tell that its own boundary was inert. */}
         <Suspense fallback={<NavSkeleton />}>
-          <DesktopNav />
+          <ActiveNavLinks />
         </Suspense>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 md:ml-3">
-          <Suspense>
-            <div className="max-md:hidden">
-              <ThemeSwitcher className={PILL_CONTROL} />
-            </div>
-          </Suspense>
+          {/* No boundary: ThemeSwitcher reads `useTheme` and
+              `useSyncExternalStore` and never suspends, so the empty `Suspense`
+              that used to wrap this caught nothing. */}
+          <div className="max-md:hidden">
+            <ThemeSwitcher className={PILL_CONTROL} />
+          </div>
 
           <HeaderAuthClient />
 
@@ -184,7 +202,15 @@ export function HeaderPill() {
           menuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >
-        <div className="min-h-0">
+        {/* `inert` and not just `overflow-hidden`: a clipped block is still in
+            the tab order, so a keyboard user tabbing past the toggle landed on
+            five invisible links and a second theme control while the toggle
+            reported `aria-expanded="false"` — and the browser then scrolled the
+            zero-height box to reveal whichever one it focused. The drawer this
+            replaced never had the problem, because it unmounted its portal when
+            closed. The record card and the section rail set this for the same
+            reason; the header was the one collapse that missed it. */}
+        <div className="min-h-0" inert={!menuOpen}>
           <Suspense
             fallback={
               <MenuLinks

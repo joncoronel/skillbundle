@@ -15,6 +15,7 @@ import {
   codeKey,
   type PreHighlightedCode,
 } from "@/lib/highlight-markdown-code";
+import { rawToBlobUrl } from "@/lib/github-urls";
 import { docHeadingId } from "@/lib/markdown-outline";
 import { cn } from "@/lib/utils";
 
@@ -72,18 +73,8 @@ interface MarkdownContentProps {
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif)(?:\?|#|$)/i;
 
-// Handles both raw URL shapes GitHub serves:
-//   raw.githubusercontent.com/{owner}/{repo}/refs/heads/{ref}/{path}
-//   raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}
-const RAW_GITHUB_URL_RE =
-  /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/(?:refs\/(?:heads|tags)\/)?([^/]+)\//;
-
 const DANGEROUS_PROTOCOL_RE = /^\s*(?:javascript|vbscript|file):/i;
 const DATA_IMAGE_RE = /^\s*data:image\//i;
-
-function rawToBlobUrl(raw: string): string {
-  return raw.replace(RAW_GITHUB_URL_RE, "https://github.com/$1/$2/blob/$3/");
-}
 
 // Belt-and-suspenders: defaultRehypePlugins.sanitize is also load-bearing for
 // HTML-level XSS, but linkSafety is disabled and harden's allowedProtocols is
@@ -141,7 +132,7 @@ const TableHeadOverride: StreamdownComponents["thead"] = ({ children }) => (
 
 const TableThOverride: StreamdownComponents["th"] = ({ children, style }) => (
   <th
-    className="px-4 py-2.5 align-middle font-semibold text-foreground whitespace-nowrap"
+    className="px-4 py-2.5 align-middle font-semibold whitespace-nowrap text-foreground"
     style={style}
   >
     {children}
@@ -150,7 +141,7 @@ const TableThOverride: StreamdownComponents["th"] = ({ children, style }) => (
 
 const TableTdOverride: StreamdownComponents["td"] = ({ children, style }) => (
   <td
-    className="px-4 py-3 align-top text-foreground wrap-break-word"
+    className="px-4 py-3 align-top wrap-break-word text-foreground"
     style={style}
   >
     {children}
@@ -266,8 +257,15 @@ function demotedHeadings(
       className?: string;
       id?: string;
     }) {
+      // The derived id WINS over an author-supplied one when `withIds` is set.
+      // `rehype-raw` is on and `id` survives sanitize, so a SKILL.md writing
+      // <h1 id="history"> used to supply it directly and skip `docHeadingId`
+      // entirely — breaking the "every doc heading carries the doc- prefix"
+      // invariant the nav is built on. Not a collision risk (sanitize rewrites
+      // author ids to `user-content-*`), but it did leave the rail pointing at
+      // an id no element had.
       const anchorId = withIds
-        ? (id ?? docHeadingId(childrenToText(children)))
+        ? (docHeadingId(childrenToText(children)) ?? id)
         : id;
       return (
         <Tag
@@ -428,7 +426,7 @@ export function MarkdownContent({
         // Base (16px / 1.75) rather than prose-sm: this is a long-form reading
         // surface, so it earns a larger measure than the app's dense 14px UI.
         // Section headings land at 24/20px for a clear, scannable hierarchy.
-        "prose dark:prose-invert max-w-none",
+        "prose max-w-none dark:prose-invert",
         // Headings: 600 weight + tight tracking (per the display/headline
         // spec), and drop the first block's top margin so it sits flush under
         // the "Documentation" label.
@@ -472,7 +470,7 @@ export function MarkdownContent({
         // one, so a direct-child selector here matches that wrapper and nothing
         // else. The top-level blocks are its grandchildren.
         measured &&
-          "[--doc-measure:74ch] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>ul]:max-w-[var(--doc-measure)] [&>*>p:has(>a>img)]:max-w-none [&>*>p:has(>img)]:max-w-none",
+          "[--doc-measure:74ch] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>p:has(>a>img)]:max-w-none [&>*>p:has(>img)]:max-w-none [&>*>ul]:max-w-[var(--doc-measure)]",
         // Links use the single signal accent, underlined for affordance.
         "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
         // Align prose colors with the app's semantic tokens instead of

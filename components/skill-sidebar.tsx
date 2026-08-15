@@ -1,17 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
-import type { IconSvgElement } from "@hugeicons/react";
+import type { ComponentProps, ReactNode } from "react";
 import { SkillRecord } from "@/components/skill-record";
 import {
   SkillSectionNav,
   type SectionNavItem,
 } from "@/components/skill-section-nav";
-import type { SkillAuditEntry } from "@/components/skill-audit-section";
-import type { SkillInsights } from "@/components/skill-chart-shared";
 import { useEnteredSection } from "@/hooks/use-entered-section";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { cn } from "@/lib/utils";
 
 /** Tailwind's `lg`, where this column becomes a sticky sidebar. */
 const DESKTOP = "(min-width: 64rem)";
@@ -47,18 +43,19 @@ export function SkillSidebar({
   navItems: SectionNavItem[];
   action: ReactNode;
   className?: string;
-  source: string;
-  skillId: string;
-  externalUrl: string;
-  externalIcon: IconSvgElement;
-  externalLabel: string;
-  curatedOwner?: string;
-  insights: SkillInsights;
-  updatedKind: string;
-  updatedDate: string;
-  audits: SkillAuditEntry[] | null;
-  stars: number | null;
-}) {
+} & /**
+ * Everything else goes straight to the card, so it is DERIVED from the card's
+ * own props rather than re-declared. The eleven were spelled out here once, and
+ * nothing enforced that the two lists agreed: adding an optional prop to
+ * `SkillRecord` would have type-checked while silently never being forwarded.
+ *
+ * `collapsed` and `className` are excluded because this component owns them —
+ * the fold is computed here, and `className` above positions the column, not
+ * the card.
+ */ Omit<
+  ComponentProps<typeof SkillRecord>,
+  "action" | "collapsed" | "className"
+>) {
   // Gated on the breakpoint rather than left to a `max-lg:` class override,
   // because the fold is not only paint: it sets `inert` and takes the record
   // out of the tab order. Below `lg` this column is a normal block in the flow
@@ -73,19 +70,29 @@ export function SkillSidebar({
   const collapsed = useEnteredSection("documentation", isDesktop);
 
   return (
-    <aside className={className}>
-      <div className="lg:sticky lg:top-24 lg:z-30 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:flex-col">
-        <SkillRecord {...record} action={action} collapsed={collapsed} />
-        <SkillSectionNav items={navItems} className="mt-6" />
-      </div>
-    </aside>
+    <SkillSidebarShell className={className}>
+      <SkillRecord {...record} action={action} collapsed={collapsed} />
+      <SkillSectionNav items={navItems} active={isDesktop} className="mt-6" />
+    </SkillSidebarShell>
   );
 }
 
 /**
- * The sidebar's shape while the body loads. Kept beside the real thing so the
- * two cannot drift — the page's skeleton draws the card, this draws the column
- * it sits in.
+ * The sidebar column itself: the `<aside>`, the sticky box, and the height
+ * budget the card and the rail share.
+ *
+ * Rendered by BOTH the real sidebar above and the page's loading skeleton,
+ * which is the point — it shipped as a shell the skeleton alone used, and it
+ * had already drifted from the container it was written to mirror, in the same
+ * commit that documented it as the thing that could not drift. It was missing
+ * `flex` and `max-h`, so the skeleton's column was unbounded and ran past the
+ * fold on a short viewport, then snapped to a constrained one when the body
+ * landed — a skeleton replaced by a different skeleton, which is exactly the
+ * failure AGENTS.md warns about and nothing tests.
+ *
+ * `max-h` + `flex` is also what makes the card's fold free: the rail is the
+ * flex child with `min-h-0`, so it simply takes whatever height the card is not
+ * using, and nothing measures anything.
  */
 export function SkillSidebarShell({
   children,
@@ -95,8 +102,10 @@ export function SkillSidebarShell({
   className?: string;
 }) {
   return (
-    <div className={cn(className)}>
-      <div className="lg:sticky lg:top-24 lg:z-30">{children}</div>
-    </div>
+    <aside className={className}>
+      <div className="lg:sticky lg:top-24 lg:z-30 lg:flex lg:max-h-[calc(100dvh-7rem)] lg:flex-col">
+        {children}
+      </div>
+    </aside>
   );
 }

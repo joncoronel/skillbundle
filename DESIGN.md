@@ -23,33 +23,33 @@ typography:
     lineHeight: 0.95
     letterSpacing: "normal"
   headline:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.875rem"
     fontWeight: 600
     lineHeight: 1.1
     letterSpacing: "-0.02em"
   title:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 600
     lineHeight: 1.3
   body:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.6
   section:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 600
     letterSpacing: "normal"
   label:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     letterSpacing: "normal"
   micro:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 500
     letterSpacing: "normal"
@@ -146,19 +146,19 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 ## 3. Typography
 
 **Display Font:** Geist Pixel Circle (with `ui-monospace` fallback)
-**Body Font:** Geist Sans (with `system-ui, sans-serif` fallback)
+**Body Font:** SN Pro, as `--font-sans` (fallback `system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif`). Next has no metrics for SN Pro, so `adjustFontFallback` is off in `app/layout.tsx` and the fallback stack is named there explicitly — see the note in that file before changing either.
 **Code Font:** Geist Mono (with `ui-monospace, monospace` fallback)
 
 **Character:** A geometric, technical sans carries the entire interface. The pixel-grid display face marks hero moments, and the monospace is reserved for machine strings. The contrast is structural (sans vs. pixel vs. mono), not three competing sans-serifs.
 
 ### Hierarchy
 - **Display** (Geist Pixel Circle, `clamp(3.5rem, 6vw, 5rem)`, line-height 0.95): Hero headlines and large brand moments only.
-- **Headline** (Geist Sans 600, 1.875rem, -0.02em): Page and section headings.
-- **Title** (Geist Sans 600, 1.125rem): Card titles, panel headers.
-- **Section** (Geist Sans 600, 0.875rem, `text-foreground`): Named blocks inside a page — the `LabeledSection` heading, sidebar sections, comparison groups. A real heading element, sentence case.
-- **Body** (Geist Sans 400, 0.875rem, line-height 1.6): Default UI and prose; cap prose at 65–75ch.
-- **Field label** (Geist Sans 500, 0.75rem, `text-muted-foreground`): What names a column, a `dt`, or a value — table headers, stat cells, metadata. Sentence case, normal tracking.
-- **Micro** (Geist Sans 500, `text-micro` / 0.6875rem): Pills and dense chips only. The floor; nothing smaller.
+- **Headline** (SN Pro 600, 1.875rem, -0.02em): Page and section headings.
+- **Title** (SN Pro 600, 1.125rem): Card titles, panel headers.
+- **Section** (SN Pro 600, 0.875rem, `text-foreground`): Named blocks inside a page — the `LabeledSection` heading, sidebar sections, comparison groups. A real heading element, sentence case.
+- **Body** (SN Pro 400, 0.875rem, line-height 1.6): Default UI and prose; cap prose at 65–75ch.
+- **Field label** (SN Pro 500, 0.75rem, `text-muted-foreground`): What names a column, a `dt`, or a value — table headers, stat cells, metadata. Sentence case, normal tracking.
+- **Micro** (SN Pro 500, `text-micro` / 0.6875rem): Pills and dense chips only. The floor; nothing smaller.
 
 ### Named Rules
 **The Pixel Floor Rule.** Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; at small sizes it stops reading as pixel-grid and just looks like a broken mono. Display is for hero scale only.
@@ -207,7 +207,7 @@ Tailwind's defaults, unmodified: `sm` 640px, `md` 768px, `lg` 1024px, `xl`
 
 ### Anchors
 
-A section that is a link target takes `scroll-mt-20` so the sticky `h-14` header
+A section that is a link target takes `scroll-mt-24` so the floating header pill (which ends at 72px)
 does not cover the heading the link just jumped to, plus `tabIndex={-1}` so
 focus moves with the jump. `LabeledSection` does both when given an `id`.
 

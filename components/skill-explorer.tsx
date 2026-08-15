@@ -145,7 +145,7 @@ export function SkillExplorerView({
     <SkillDetailHandleProvider handle={skillDetailHandle}>
     <CatalogFacetsProvider facets={facets}>
       {/* Discovery column: hero + search composer + list region. */}
-      <div className="relative pb-20 sm:min-h-[calc(100dvh-3.5rem)] sm:px-8 lg:px-10">
+      <div className="relative pb-20 sm:min-h-[calc(100dvh-4.5rem)] sm:px-8 lg:px-10">
         {/* Hero — constant, scrolls away (never collapses). */}
         <section className="pt-10 pb-6 sm:pt-12">
           <h1 className="font-display text-3xl font-medium tracking-tight sm:text-4xl">

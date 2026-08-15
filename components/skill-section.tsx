@@ -20,9 +20,11 @@ import { cn } from "@/lib/utils";
  *   3. An optional right-aligned `meta` slot on the same baseline — a count, a
  *      date, an action — which reads as a panel header rather than as prose.
  *
- * The heavier lifting is done by the Documentation section's container (see
- * skill-document.tsx): once the file sits inside its own framed sheet, the page
- * heading above it no longer has to out-shout it.
+ * What keeps this label from having to out-shout the SKILL.md below it is NOT a
+ * container around the file — skill-document.tsx records that two were built
+ * and both were wrong, and the document now has none. It is the naming: with
+ * `SKILL.md` and a link to the source sitting on this heading's own baseline,
+ * the label explains the shift in voice by itself.
  */
 export function SkillSection({
   id,
@@ -56,9 +58,7 @@ export function SkillSection({
         <h2 className="text-base font-semibold tracking-tight text-foreground">
           {title}
         </h2>
-        {meta && (
-          <div className="text-xs text-muted-foreground">{meta}</div>
-        )}
+        {meta && <div className="text-xs text-muted-foreground">{meta}</div>}
       </div>
 
       {description && (

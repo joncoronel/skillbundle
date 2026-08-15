@@ -513,7 +513,7 @@ Bridges Clerk to Convex and wires TanStack Query through `@convex-dev/react-quer
 
 ## 6. App Header
 
-`AppHeader` is a server component rendering a static shell; the interactive pieces are client components behind small Suspense boundaries with skeleton fallbacks (`DesktopNav`, `ThemeSwitcher`). Auth UI is **fully client-side** (`HeaderAuthClient`): reading the auth cookie on the server would make every route `◐` and add a per-request function to stream the header's auth state, pulling load onto Vercel functions — against the §1.3 keep-load-off-functions rule — so it resolves on the client (over the already-open Convex/Clerk connection) instead. (An earlier Cache Components iteration used a server-component nav; client-side is the better fit for a mostly-signed-out public directory.) Signed-out users see the Sign in button after hydration; signed-in users get the user menu via Clerk's `useUser()`.
+`AppHeader` is a server component, but only just: it renders a fixed-height band, a scrim, and one client component (`HeaderPill`) that owns the whole pill. The pill is client-side because its mobile menu expands the pill itself rather than opening a drawer, so the toggle and the panel share one piece of state. The Suspense boundary that keeps `usePathname()` out of the static shell now lives inside it. Auth UI is **fully client-side** (`HeaderAuthClient`): reading the auth cookie on the server would make every route `◐` and add a per-request function to stream the header's auth state, pulling load onto Vercel functions — against the §1.3 keep-load-off-functions rule — so it resolves on the client (over the already-open Convex/Clerk connection) instead. (An earlier Cache Components iteration used a server-component nav; client-side is the better fit for a mostly-signed-out public directory.) Signed-out users see the Log in / Sign up pair after hydration (below `md`, Log in moves into the expanding menu and only Sign up stays in the row); signed-in users get the user menu via Clerk's `useUser()`.
 
 ---
 
@@ -926,7 +926,8 @@ app/
                             #    IS the shell (all content is params-derived). §1
 
 components/
-  app-header.tsx            # server shell; client islands in Suspense
+  app-header.tsx            # server band + scrim; the pill itself is client
+  header-pill.tsx           # the pill: nav, auth slot, expanding mobile menu
   header-auth-client.tsx    # fully client auth UI (keeps routes static)
   global-bundle-bar.tsx     # layout-mounted, pathname reserved-segment BLOCK-list, <Suspense fallback={null}>
   bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style

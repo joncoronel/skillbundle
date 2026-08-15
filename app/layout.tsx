@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 
-import { GeistSans } from "geist/font/sans";
+// GeistSans is deliberately NOT imported. `--font-sans` is SN Pro and nothing
+// reads `--font-geist-sans`, but next/font decides preloading from the module
+// graph rather than from CSS usage — so merely importing it made every route
+// emit a highest-priority `<link rel="preload" as="font">` for a face no
+// element uses, competing with SN Pro's own preload before first paint.
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
 
@@ -23,12 +27,23 @@ import "./globals.css";
 // logs "Failed to find font override values" on every render.
 //
 // That warning was worth acting on rather than silencing: it also meant nothing
-// replaced the fallback. GeistSans gets a generated `"GeistSans Fallback"` face
-// with `size-adjust: 106.28%` over `local("Arial")`, while `body` resolved to
-// the bare family `"SN Pro"` — so a slow or failed load dropped straight to the
-// browser default with no metric matching at all. Naming the stack here gets
-// back a sane fallback; what stays lost is the size-adjust, which cannot be
-// computed for a font Next does not know.
+// replaced the fallback. `body` resolved to the bare family `"SN Pro"`, so a
+// slow or failed load dropped straight to the browser default. Naming the stack
+// here gets a sane fallback back.
+//
+// KNOWN COST, not yet paid off: the size-adjust is still missing. The previous
+// body face got a generated `"GeistSans Fallback"` — `size-adjust: 106.28%`,
+// `ascent-override: 94.56%` over `local("Arial")` — because Next has metrics
+// for it, so the swap at `display: swap` did not move the page. SN Pro is not
+// in `next/dist/server/capsize-font-metrics.json`, and `next/font/google`
+// cannot compute metrics for a family it has no entry for, so every route now
+// reflows its body text when the woff2 lands.
+//
+// The fix is `next/font/local` with a vendored woff2: that loader measures the
+// file with fontkit instead of reading the table, so it generates the adjusted
+// face this one structurally cannot — and it drops the build-time dependency on
+// Google's CDN. It needs the font binary committed, which is a call for the
+// repo owner; TODO.md carries it.
 const snPro = SN_Pro({
   subsets: ["latin"],
   variable: "--font-sn-pro",
@@ -64,7 +79,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
+        className={`${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
       >
         <div className="root">
           <Providers>{children}</Providers>

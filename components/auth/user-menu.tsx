@@ -45,7 +45,7 @@ export function UserMenu({ className }: { className?: string }) {
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         className={cn(
-          "cursor-pointer rounded-lg outline-0 outline-offset-0 outline-transparent outline-solid transition-[outline-width,outline-offset,outline-color] duration-100 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50",
+          "cursor-pointer rounded-lg outline-0 outline-offset-0 outline-transparent transition-[outline-width,outline-offset,outline-color] duration-100 ease-out outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50",
           className,
         )}
       >
@@ -74,7 +74,7 @@ export function UserMenu({ className }: { className?: string }) {
       <DropdownMenuContent align="end" sideOffset={8}>
         <DropdownMenuLabel className="flex flex-col">
           <span className="text-sm font-medium">{user?.fullName}</span>
-          <span className="text-muted-foreground text-xs font-normal">
+          <span className="text-xs font-normal text-muted-foreground">
             {user?.primaryEmailAddress?.emailAddress ?? ""}
           </span>
         </DropdownMenuLabel>

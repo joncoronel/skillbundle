@@ -18,15 +18,3 @@ export function LogoMark({ className }: { className?: string }) {
     </svg>
   );
 }
-
-/** The full brand signature: logo mark + lowercase wordmark. */
-export function BrandMark({ className }: { className?: string }) {
-  return (
-    <span className={cn("inline-flex items-center gap-2", className)}>
-      <LogoMark />
-      <span className="font-display text-lg font-medium tracking-tight">
-        skillbundle
-      </span>
-    </span>
-  );
-}

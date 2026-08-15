@@ -1,6 +1,5 @@
 "use client";
 
-import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -32,15 +31,7 @@ export const NAV_ITEMS = [
 // nav still prerenders into the static shell; the fallback renders the same
 // links with no active state, which is correct for any route that isn't itself
 // a top-level nav target.
-export function DesktopNav() {
-  return (
-    <Suspense fallback={<NavLinks activeHref={null} />}>
-      <ActiveNavLinks />
-    </Suspense>
-  );
-}
-
-function ActiveNavLinks() {
+export function ActiveNavLinks() {
   return <NavLinks activeHref={usePathname()} />;
 }
 

@@ -71,7 +71,9 @@ describe("extractOutline", () => {
   });
 
   it("drops a repeated heading rather than inventing a second id", () => {
-    const outline = extractOutline(["## Usage", "## Other", "## Usage"].join("\n"));
+    const outline = extractOutline(
+      ["## Usage", "## Other", "## Usage"].join("\n"),
+    );
 
     expect(outline.map((item) => item.id)).toEqual(["doc-usage", "doc-other"]);
   });
@@ -150,5 +152,32 @@ describe("normalizeOutline", () => {
 
   it("returns nothing for an empty outline", () => {
     expect(normalizeOutline([])).toEqual([]);
+  });
+});
+
+/**
+ * The nav id and the rendered heading id come from two different code paths —
+ * `extractOutline` reads the raw markdown, `childrenToText` in
+ * markdown-content.tsx reads the rendered React tree — and they have to agree
+ * or the rail links to an id no element has. Each case below is a shape that
+ * used to disagree; the second element is what `childrenToText` produces for
+ * that heading (elements with no children, e.g. `<img>`, contribute nothing;
+ * `<code>` contributes its text; entities arrive already decoded).
+ */
+describe("nav id matches the rendered heading id", () => {
+  const cases: Array<[string, string]> = [
+    ["## Using `<Suspense>` boundaries", "Using <Suspense> boundaries"],
+    ["## The `<a>` element", "The <a> element"],
+    ["## ![logo](x.png) Setup", " Setup"],
+    ["## Q &amp; A", "Q & A"],
+    ["## 100&#37; coverage", "100% coverage"],
+    ["## [Docs](https://x.dev) and more", "Docs and more"],
+    ["## Step 1 of 3 — `init`", "Step 1 of 3 — init"],
+    ["## Plain heading", "Plain heading"],
+  ];
+
+  it.each(cases)("%s", (markdown, renderedText) => {
+    const [item] = extractOutline(markdown);
+    expect(item.id).toBe(docHeadingId(renderedText));
   });
 });

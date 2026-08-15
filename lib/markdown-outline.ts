@@ -62,6 +62,20 @@ export function docHeadingId(text: string): string | undefined {
 }
 
 /**
+ * The named HTML entities a markdown heading realistically carries. The
+ * renderer decodes these before `childrenToText` ever sees them, so the
+ * extractor has to decode them too or the two sides slug differently.
+ */
+const HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+
+/**
  * Strip the inline markdown a heading can carry, so the extracted title matches
  * the text the renderer will produce.
  *
@@ -69,14 +83,58 @@ export function docHeadingId(text: string): string | undefined {
  * are removed unconditionally — an asterisk or backtick that survives into a
  * rendered heading is vanishingly rare next to emphasis and inline code, which
  * are common.
+ *
+ * ── Order is load-bearing ─────────────────────────────────────────────────
+ *
+ * Three of these steps used to disagree with the renderer, and every
+ * disagreement broke a nav entry silently: the rail showed a mangled label,
+ * the anchor pointed at an id no element had, and the scroll spy skipped that
+ * heading forever. `tests/markdown-outline.test.ts` now pins one case per
+ * shape.
+ *
+ * 1. Inline code is protected BEFORE the HTML strip. ``## Using `<Suspense>`
+ *    boundaries`` renders with the tag as literal text; stripping
+ *    `<[^>]+>` first deleted it, so the extractor produced "Using boundaries"
+ *    against the renderer's "Using <Suspense> boundaries". A heading naming a
+ *    tag or a generic in backticks is ordinary in agent-skill docs.
+ * 2. An image contributes NOTHING to the rendered text — `childrenToText`
+ *    walks children and an `<img>` has none — so its alt text is dropped here
+ *    rather than kept. Links keep their text, because an `<a>` does have
+ *    children.
+ * 3. Entities are decoded, because the renderer receives them already decoded.
  */
 function stripInlineMarkdown(raw: string): string {
-  return raw
+  // Inline code spans, unwrapped and held aside so the HTML strip below cannot
+  // reach into them. Restored after, by which point no `<`/`>` is a tag.
+  //
+  // NUL-delimited rather than a bare index, which would collide with a heading
+  // like "Step 1 of 3" and splice a code span into it.
+  const codeSpans: string[] = [];
+  const withoutCode = raw.replace(/`+([^`]*)`+/g, (_match, inner: string) => {
+    codeSpans.push(inner);
+    return `\u0000${codeSpans.length - 1}\u0000`;
+  });
+
+  return withoutCode
     .replace(/\{#[\w-]+\}\s*$/, "") // explicit-id syntax some generators emit
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1") // inline links and images
-    .replace(/!?\[([^\]]*)\]\[[^\]]*\]/g, "$1") // reference links
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // images render as no text at all
+    .replace(/!\[[^\]]*\]\[[^\]]*\]/g, "") // reference images, same
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // inline links keep their text
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1") // reference links, same
     .replace(/<[^>]+>/g, "") // stray inline HTML
-    .replace(/[`*~]/g, "")
+    .replace(/[*~]/g, "")
+    .replace(/&(#\d+|#[xX][0-9a-fA-F]+|\w+);/g, (match, body: string) =>
+      body.startsWith("#")
+        ? String.fromCodePoint(
+            Number(
+              body[1] === "x" || body[1] === "X"
+                ? `0x${body.slice(2)}`
+                : body.slice(1),
+            ),
+          )
+        : (HTML_ENTITIES[body.toLowerCase()] ?? match),
+    )
+    .replace(/\u0000(\d+)\u0000/g, (_m, i: string) => codeSpans[Number(i)])
     .replace(/\s+/g, " ")
     .trim();
 }
