@@ -131,7 +131,9 @@ async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
 
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get("Retry-After") ?? "60", 10);
-    throw new SkillsApiRateLimitError(Number.isFinite(retryAfter) ? retryAfter : 60);
+    throw new SkillsApiRateLimitError(
+      Number.isFinite(retryAfter) ? retryAfter : 60,
+    );
   }
   if (res.status === 404) {
     throw new SkillsApiNotFoundError(`skills.sh API 404: ${path}`);
@@ -145,7 +147,9 @@ async function request<T>(path: string, auth: SkillsAuth): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`skills.sh API ${res.status} on ${path}: ${body.slice(0, 200)}`);
+    throw new Error(
+      `skills.sh API ${res.status} on ${path}: ${body.slice(0, 200)}`,
+    );
   }
   return (await res.json()) as T;
 }
@@ -187,10 +191,10 @@ export async function withTransientRetry<T>(
 
 /** Common skill object shape returned by listing/search/curated endpoints. */
 export interface V1Skill {
-  id: string;            // "{source}/{slug}"
+  id: string; // "{source}/{slug}"
   slug: string;
   name: string;
-  source: string;        // "owner/repo" or "domain.com"
+  source: string; // "owner/repo" or "domain.com"
   installs: number;
   sourceType: "github" | "well-known";
   installUrl: string | null;

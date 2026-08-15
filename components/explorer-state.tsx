@@ -226,9 +226,7 @@ export function CatalogFacetsProvider({
   facets: Record<string, FacetCount[]>;
   children: React.ReactNode;
 }) {
-  return (
-    <CatalogFacetsContext value={facets}>{children}</CatalogFacetsContext>
-  );
+  return <CatalogFacetsContext value={facets}>{children}</CatalogFacetsContext>;
 }
 
 /** Facet counts for the current result set ({} when idle/static). */

@@ -32,7 +32,6 @@ function generateUrlId(length = 10): string {
   return randomId(length);
 }
 
-
 async function ensureUniqueUrlId(ctx: QueryCtx): Promise<string> {
   const id = generateUrlId();
   const existing = await ctx.db
@@ -581,68 +580,67 @@ export const getByUrlId = query({
 
     // Layer 2: every remaining read is independent given (bundle, currentUser).
     // Parallelize: skills, creator, forked-from chain.
-    const [skillsWithData, creator, forkedFromInfo] =
-      await Promise.all([
-        Promise.all(
-          bundle.skills.map(async (s) => {
-            const skill = await ctx.db
-              .query("skills")
-              .withIndex("by_source_skillId", (q) =>
-                q.eq("source", s.source).eq("skillId", s.skillId),
-              )
-              .unique();
+    const [skillsWithData, creator, forkedFromInfo] = await Promise.all([
+      Promise.all(
+        bundle.skills.map(async (s) => {
+          const skill = await ctx.db
+            .query("skills")
+            .withIndex("by_source_skillId", (q) =>
+              q.eq("source", s.source).eq("skillId", s.skillId),
+            )
+            .unique();
 
-            const addedAt = s.addedAt;
+          const addedAt = s.addedAt;
 
-            // No `updatedSinceAdded` / `changedSinceViewed` here any more. Both
-            // were computed per skill and read by nothing: the register renders
-            // neither, and their only former consumer (skill-card) no longer
-            // renders on this page. Worse, they derived from the FAT skills row
-            // while `resolveSkillChange` reads the `skillSummaries` mirror, so
-            // the two sources could hold different histories — a third,
-            // divergent definition of "changed" sitting in a shipped validator.
+          // No `updatedSinceAdded` / `changedSinceViewed` here any more. Both
+          // were computed per skill and read by nothing: the register renders
+          // neither, and their only former consumer (skill-card) no longer
+          // renders on this page. Worse, they derived from the FAT skills row
+          // while `resolveSkillChange` reads the `skillSummaries` mirror, so
+          // the two sources could hold different histories — a third,
+          // divergent definition of "changed" sitting in a shipped validator.
+          return {
+            source: s.source,
+            skillId: s.skillId,
+            // Returned, not just used locally above: the register shows when
+            // each skill joined, and omitting it left that column reading
+            // "—" for every row of every bundle, forever.
+            addedAt,
+            name: skill?.name ?? s.skillId,
+            description: skill?.description,
+            installs: skill?.installs ?? 0,
+            contentUpdatedAt: skill?.contentUpdatedAt,
+            createdAt: skill?._creationTime,
+            isDelisted: skill?.isDelisted ?? false,
+            hasContentFetchError: skill?.hasContentFetchError ?? false,
+            // Drives the inline verified-publisher mark on bundle cards.
+            curatedOwner: skill?.curatedOwner,
+            // Drives the audit-status text in the bundle card's footer
+            // ("Review · MEDIUM" / "Risk · CRITICAL") for skills whose
+            // audit verdict came back warn or fail.
+            worstAuditStatus: skill?.worstAuditStatus,
+            worstAuditRiskLevel: skill?.worstAuditRiskLevel,
+          };
+        }),
+      ),
+      ctx.db.get(bundle.userId),
+      // Fork lineage chain stays internally serial (parent → parent's
+      // creator) but runs in parallel with everything else. Forking itself is
+      // gone, but rows created before the teardown still carry `forkedFrom`,
+      // and dropping the attribution would misrepresent whose work it was.
+      bundle.forkedFrom
+        ? (async () => {
+            const parent = await ctx.db.get(bundle.forkedFrom!);
+            if (!parent) return undefined;
+            const parentCreator = await ctx.db.get(parent.userId);
             return {
-              source: s.source,
-              skillId: s.skillId,
-              // Returned, not just used locally above: the register shows when
-              // each skill joined, and omitting it left that column reading
-              // "—" for every row of every bundle, forever.
-              addedAt,
-              name: skill?.name ?? s.skillId,
-              description: skill?.description,
-              installs: skill?.installs ?? 0,
-              contentUpdatedAt: skill?.contentUpdatedAt,
-              createdAt: skill?._creationTime,
-              isDelisted: skill?.isDelisted ?? false,
-              hasContentFetchError: skill?.hasContentFetchError ?? false,
-              // Drives the inline verified-publisher mark on bundle cards.
-              curatedOwner: skill?.curatedOwner,
-              // Drives the audit-status text in the bundle card's footer
-              // ("Review · MEDIUM" / "Risk · CRITICAL") for skills whose
-              // audit verdict came back warn or fail.
-              worstAuditStatus: skill?.worstAuditStatus,
-              worstAuditRiskLevel: skill?.worstAuditRiskLevel,
+              urlId: parent.urlId,
+              name: parent.name,
+              creatorName: parentCreator?.name ?? "Anonymous",
             };
-          }),
-        ),
-        ctx.db.get(bundle.userId),
-        // Fork lineage chain stays internally serial (parent → parent's
-        // creator) but runs in parallel with everything else. Forking itself is
-        // gone, but rows created before the teardown still carry `forkedFrom`,
-        // and dropping the attribution would misrepresent whose work it was.
-        bundle.forkedFrom
-          ? (async () => {
-              const parent = await ctx.db.get(bundle.forkedFrom!);
-              if (!parent) return undefined;
-              const parentCreator = await ctx.db.get(parent.userId);
-              return {
-                urlId: parent.urlId,
-                name: parent.name,
-                creatorName: parentCreator?.name ?? "Anonymous",
-              };
-            })()
-          : Promise.resolve(undefined),
-      ]);
+          })()
+        : Promise.resolve(undefined),
+    ]);
 
     return {
       _id: bundle._id,

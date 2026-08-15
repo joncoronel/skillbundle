@@ -81,7 +81,11 @@ async function scanAndCollectFlagged(t: TestHandle) {
 describe("GitHub sources — 30-day backstop", () => {
   test("does not re-flag a skill fetched 10 days ago", async () => {
     const t = makeTest();
-    await seed(t, { source: "owner/repo", skillId: "recent", fetchedAgo: 10 * DAY });
+    await seed(t, {
+      source: "owner/repo",
+      skillId: "recent",
+      fetchedAgo: 10 * DAY,
+    });
 
     // Under the old 7-day constant this WOULD have been flagged. Not flagging
     // it is the saving: the daily sweep already covers this skill, so a weekly
@@ -91,7 +95,11 @@ describe("GitHub sources — 30-day backstop", () => {
 
   test("re-flags a skill fetched 40 days ago", async () => {
     const t = makeTest();
-    await seed(t, { source: "owner/repo", skillId: "ancient", fetchedAgo: 40 * DAY });
+    await seed(t, {
+      source: "owner/repo",
+      skillId: "ancient",
+      fetchedAgo: 40 * DAY,
+    });
 
     // Past the backstop. This is the safety net for the cases the sweep can't
     // see — chiefly a repo whose tree fetch keeps failing.
@@ -100,7 +108,11 @@ describe("GitHub sources — 30-day backstop", () => {
 
   test("does not re-flag right at 29 days", async () => {
     const t = makeTest();
-    await seed(t, { source: "owner/repo", skillId: "edge", fetchedAgo: 29 * DAY });
+    await seed(t, {
+      source: "owner/repo",
+      skillId: "edge",
+      fetchedAgo: 29 * DAY,
+    });
     expect(await scanAndCollectFlagged(t)).toEqual([]);
   });
 });
@@ -108,7 +120,11 @@ describe("GitHub sources — 30-day backstop", () => {
 describe("Well-known sources — daily", () => {
   test("re-flags a skill fetched 2 days ago", async () => {
     const t = makeTest();
-    await seed(t, { source: "mintlify.com", skillId: "daily", fetchedAgo: 2 * DAY });
+    await seed(t, {
+      source: "mintlify.com",
+      skillId: "daily",
+      fetchedAgo: 2 * DAY,
+    });
 
     // No tree exists for these, so the sweep never touches them and this timer
     // is the only thing keeping them current.
@@ -117,7 +133,11 @@ describe("Well-known sources — daily", () => {
 
   test("does not re-flag a skill fetched 12 hours ago", async () => {
     const t = makeTest();
-    await seed(t, { source: "mintlify.com", skillId: "fresh", fetchedAgo: 12 * HOUR });
+    await seed(t, {
+      source: "mintlify.com",
+      skillId: "fresh",
+      fetchedAgo: 12 * HOUR,
+    });
     expect(await scanAndCollectFlagged(t)).toEqual([]);
   });
 });

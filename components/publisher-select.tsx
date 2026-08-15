@@ -148,7 +148,7 @@ export function PublisherSelect({
             className={cn(
               // No active-state border — the label ("2 publishers") is the
               // indicator, matching the other filter pills (which don't tint).
-              "justify-between gap-2 ",
+              "justify-between gap-2",
               // Match the Select triggers' surface: ghost in the composer chin,
               // translucent-elevated in the mobile sheet.
               //
@@ -159,7 +159,7 @@ export function PublisherSelect({
               // tailwind-merge can't catch it either: it has no way to know
               // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
               inSheet
-                ? "[--btn-bg:var(--input-elevated)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg-active:var(--surface-active)] hover:text-foreground"
+                ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
                 : // -ms pulls the ghost trigger's TEXT onto the chin's 12px
                   // optical line (its invisible box overhangs the gutter).
                   // Ghost already supplies the hover fill and text colour.

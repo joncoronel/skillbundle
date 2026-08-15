@@ -209,7 +209,7 @@ function StatsCards({
             <Tooltip>
               <TooltipTrigger
                 render={<p />}
-                className="text-xs text-muted-foreground cursor-help decoration-dashed decoration-muted-foreground/40 underline underline-offset-2"
+                className="cursor-help text-xs text-muted-foreground underline decoration-muted-foreground/40 decoration-dashed underline-offset-2"
               >
                 {card.label}
               </TooltipTrigger>
@@ -220,7 +220,7 @@ function StatsCards({
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {loading ? "..." : card.value.toLocaleString()}
               {card.warn && (
-                <Badge variant="warning" className="ml-2 text-xs align-middle">
+                <Badge variant="warning" className="ml-2 align-middle text-xs">
                   !
                 </Badge>
               )}
@@ -252,7 +252,10 @@ function ErrorSkillsList({
     delisted: number;
   };
 }) {
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 50,
+  });
 
   const { data: result } = useQuery(
     convexQuery(api.devStats.listSkillsWithErrors, {
@@ -347,7 +350,7 @@ function ErrorSkillsList({
       accessorKey: "installs",
       header: "Installs",
       cell: ({ row }) => (
-        <span className="tabular-nums text-muted-foreground">
+        <span className="text-muted-foreground tabular-nums">
           {formatInstalls(row.original.installs)}
         </span>
       ),
@@ -463,7 +466,10 @@ function ErrorSkillsList({
               <DataTableToolbarSeparator />
               <DataTableSearch placeholder="Search skills..." />
             </DataTableToolbar>
-            <DataTableContent hoverable className="max-h-[600px] overflow-y-auto md:max-w-none">
+            <DataTableContent
+              hoverable
+              className="max-h-[600px] overflow-y-auto md:max-w-none"
+            >
               <DataTableHeader enableSorting />
               <DataTableBody emptyState="No skills in this category." />
             </DataTableContent>
@@ -548,14 +554,14 @@ function SkillActions({
         filter === "noUrlRetrying" ||
         filter === "noUrlExhausted") &&
         !hasUrl && (
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => onRetryDiscovery(skill._id)}
-        >
-          Re-discover
-        </Button>
-      )}
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => onRetryDiscovery(skill._id)}
+          >
+            Re-discover
+          </Button>
+        )}
       {filter === "contentFetchError" && hasUrl && (
         <Button
           variant="ghost"
@@ -589,12 +595,12 @@ function EmbeddingSkillRow({
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2 text-sm">
-      <span className="font-medium truncate">{skill.name}</span>
-      <span className="text-muted-foreground truncate">{skill.source}</span>
-      <span className="ml-auto text-xs tabular-nums text-muted-foreground shrink-0">
+      <span className="truncate font-medium">{skill.name}</span>
+      <span className="truncate text-muted-foreground">{skill.source}</span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
         {formatInstalls(skill.installs)}
       </span>
-      <Badge variant={badge.variant} className="text-micro shrink-0">
+      <Badge variant={badge.variant} className="shrink-0 text-micro">
         {badge.label}
       </Badge>
     </div>
@@ -630,7 +636,7 @@ function EmbeddingSkillList({
       <Tooltip>
         <TooltipTrigger
           render={<p />}
-          className="mb-2 inline-block text-xs font-medium text-muted-foreground cursor-help decoration-dashed decoration-muted-foreground/40 underline underline-offset-2"
+          className="mb-2 inline-block cursor-help text-xs font-medium text-muted-foreground underline decoration-muted-foreground/40 decoration-dashed underline-offset-2"
         >
           {title} ({skills.length})
         </TooltipTrigger>
@@ -640,7 +646,7 @@ function EmbeddingSkillList({
       {skills.length === 0 ? (
         <p className="text-xs text-muted-foreground">All clear.</p>
       ) : (
-        <div className="rounded-lg border divide-y">
+        <div className="divide-y rounded-lg border">
           {skills.slice(0, 20).map((s) => (
             <EmbeddingSkillRow
               key={`${s.source}/${s.skillId}`}
@@ -740,12 +746,7 @@ function DelistedAnalysis() {
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            onClick={run}
-          >
+          <Button variant="outline" size="sm" disabled={loading} onClick={run}>
             {loading ? "Analyzing..." : "Analyze"}
           </Button>
           <p className="text-xs text-muted-foreground">
@@ -757,8 +758,7 @@ function DelistedAnalysis() {
         {result && (
           <div className="mt-4 space-y-3 text-sm">
             <div>
-              Total delisted:{" "}
-              <strong>{result.total.toLocaleString()}</strong>
+              Total delisted: <strong>{result.total.toLocaleString()}</strong>
             </div>
             <div>
               <div className="mb-1 text-xs font-medium text-muted-foreground">

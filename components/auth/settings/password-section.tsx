@@ -68,11 +68,7 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
     <Crossfade active={editing}>
       {/* Button */}
       <div className="flex items-center gap-3">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setEditing(true)}
-        >
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
           {hasPassword ? "Change password" : "Set password"}
         </Button>
         {success && (
@@ -83,10 +79,7 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
       </div>
 
       {/* Form */}
-      <form
-        onSubmit={handleSubmit}
-        className="flex flex-col gap-4 max-w-sm"
-      >
+      <form onSubmit={handleSubmit} className="flex max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-2">
           <Label htmlFor="newPassword">New password</Label>
           <Input
@@ -110,9 +103,7 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
         <label className="flex items-start gap-3">
           <Checkbox
             checked={signOutOthers}
-            onCheckedChange={(checked) =>
-              setSignOutOthers(checked === true)
-            }
+            onCheckedChange={(checked) => setSignOutOthers(checked === true)}
             className="mt-0.5"
           />
           <div className="flex flex-col">
@@ -120,8 +111,8 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
               Sign out of all other devices
             </span>
             <span className="text-xs text-muted-foreground">
-              It is recommended to sign out of all other devices which may
-              have used your old password.
+              It is recommended to sign out of all other devices which may have
+              used your old password.
             </span>
           </div>
         </label>
@@ -130,12 +121,7 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
           <Button type="submit" size="sm" disabled={saving}>
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={resetForm}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
             Cancel
           </Button>
         </div>

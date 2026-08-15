@@ -117,7 +117,13 @@ export function SessionsTab({
                 variant="outline"
                 size="sm"
                 onClick={() => handleRevoke(session.id)}
-                leadingIcon={<HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />}
+                leadingIcon={
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                }
               >
                 Revoke
               </Button>

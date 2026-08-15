@@ -2,11 +2,7 @@
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import {
-  usePreloadedQuery,
-  useMutation,
-  type Preloaded,
-} from "convex/react";
+import { usePreloadedQuery, useMutation, type Preloaded } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
@@ -192,7 +188,10 @@ export function BundleView({
   // own `buildRegister` from a fresh array literal and invalidated every memo
   // inside `useBundleEdit` — a second 100-element sort plus three filter passes
   // on every render, for output that was discarded while not editing.
-  const skills = useMemo(() => bundle?.skills ?? EMPTY_SKILLS, [bundle?.skills]);
+  const skills = useMemo(
+    () => bundle?.skills ?? EMPTY_SKILLS,
+    [bundle?.skills],
+  );
   const register = useMemo(
     // `changes` streams in after the preloaded bundle — the register renders
     // immediately with every row Steady and settles as the archive answers,
@@ -229,65 +228,65 @@ export function BundleView({
       <div className="space-y-12">
         <header>
           <div>
-              <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-                <span>by {bundle.creatorName}</span>
-              </div>
-              <h1 className="mt-2 font-display text-4xl font-medium tracking-tight leading-hero wrap-break-word md:text-5xl">
-                {bundle.name}
-              </h1>
+            <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+              <span>by {bundle.creatorName}</span>
+            </div>
+            <h1 className="mt-2 font-display text-4xl leading-hero font-medium tracking-tight wrap-break-word md:text-5xl">
+              {bundle.name}
+            </h1>
 
-              <BundleDescription
-                description={bundle.description}
-                isOwner={bundle.isOwner}
-              />
+            <BundleDescription
+              description={bundle.description}
+              isOwner={bundle.isOwner}
+            />
 
-              <p className="mt-4 text-sm text-muted-foreground tabular-nums">
-                <MetadataItems createdAt={bundle.createdAt} />
+            <p className="mt-4 text-sm text-muted-foreground tabular-nums">
+              <MetadataItems createdAt={bundle.createdAt} />
+            </p>
+
+            {bundle.forkedFrom && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Forked from{" "}
+                <Link
+                  href={`/bundle/${bundle.forkedFrom.urlId}`}
+                  className="text-foreground underline-offset-2 hover:underline"
+                >
+                  {bundle.forkedFrom.name}
+                </Link>{" "}
+                by {bundle.forkedFrom.creatorName}
               </p>
+            )}
 
-              {bundle.forkedFrom && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Forked from{" "}
-                  <Link
-                    href={`/bundle/${bundle.forkedFrom.urlId}`}
-                    className="text-foreground underline-offset-2 hover:underline"
-                  >
-                    {bundle.forkedFrom.name}
-                  </Link>{" "}
-                  by {bundle.forkedFrom.creatorName}
-                </p>
-              )}
-
-              <div className="mt-6 flex flex-wrap items-center gap-2 empty:hidden">
-                {bundle.isOwner ? (
-                  <>
-                    <DialogTrigger
-                      handle={renameBundleDialogHandle}
-                      render={
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          leadingIcon={
-                            <HugeiconsIcon
-                              icon={Edit01Icon}
-                              strokeWidth={2}
-                              className="size-3.5"
-                            />
-                          }
-                        >
-                          Rename
-                        </Button>
-                      }
-                    />
-                    <ShareControl
-                      bundleId={bundle._id}
-                      urlId={bundle.urlId}
-                      isPublic={bundle.isPublic}
-                      updateVisibility={updateVisibility}
-                    />
-                  </>
-                ) : null}
-              </div>
+            <div className="mt-6 flex flex-wrap items-center gap-2 empty:hidden">
+              {bundle.isOwner ? (
+                <>
+                  <DialogTrigger
+                    handle={renameBundleDialogHandle}
+                    render={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        leadingIcon={
+                          <HugeiconsIcon
+                            icon={Edit01Icon}
+                            strokeWidth={2}
+                            className="size-3.5"
+                          />
+                        }
+                      >
+                        Rename
+                      </Button>
+                    }
+                  />
+                  <ShareControl
+                    bundleId={bundle._id}
+                    urlId={bundle.urlId}
+                    isPublic={bundle.isPublic}
+                    updateVisibility={updateVisibility}
+                  />
+                </>
+              ) : null}
+            </div>
           </div>
         </header>
 
@@ -481,7 +480,6 @@ function MetadataItems({ createdAt }: { createdAt: number }) {
   );
 }
 
-
 function SectionHeader({
   count,
   title,
@@ -622,7 +620,7 @@ function ShareControl({
               !isPublic && "opacity-50",
             )}
           >
-            <span className="min-w-0 flex-1 overflow-x-auto text-nowrap text-xs text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <span className="min-w-0 flex-1 overflow-x-auto text-xs text-nowrap text-muted-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {shareUrl}
             </span>
             <CopyButton content={shareUrl} disabled={!isPublic} />
@@ -704,7 +702,7 @@ function RenameBundleDialog({
             event.preventDefault();
             handleSubmit();
           }}
-          className="flex flex-1 min-h-0 flex-col"
+          className="flex min-h-0 flex-1 flex-col"
         >
           <DialogBody>
             <Input
@@ -747,7 +745,7 @@ function BundleDescription({
         render={
           <button
             type="button"
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <HugeiconsIcon
               icon={Edit02Icon}
@@ -762,8 +760,8 @@ function BundleDescription({
   }
 
   return (
-    <div className="mt-3 group/desc relative max-w-2xl">
-      <p className="text-sm text-foreground/85 wrap-break-word whitespace-pre-wrap">
+    <div className="group/desc relative mt-3 max-w-2xl">
+      <p className="text-sm wrap-break-word whitespace-pre-wrap text-foreground/85">
         {description}
       </p>
       {isOwner ? (
@@ -773,7 +771,7 @@ function BundleDescription({
             <button
               type="button"
               aria-label="Edit description"
-              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <HugeiconsIcon
                 icon={Edit02Icon}
@@ -864,7 +862,7 @@ function DescriptionDialog({
             event.preventDefault();
             handleSubmit();
           }}
-          className="flex flex-1 min-h-0 flex-col"
+          className="flex min-h-0 flex-1 flex-col"
         >
           <DialogBody>
             <Textarea
@@ -880,7 +878,7 @@ function DescriptionDialog({
               <span>Optional</span>
               <span
                 className={
-                  overLimit ? "text-destructive font-medium" : undefined
+                  overLimit ? "font-medium text-destructive" : undefined
                 }
               >
                 {value.trim().length} / {MAX_BUNDLE_DESCRIPTION_LENGTH}

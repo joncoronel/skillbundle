@@ -104,7 +104,11 @@ export const COMPARISON: ComparisonGroup[] = [
         note: "Never held back by plan. Nobody should pay to hear this.",
       },
       { label: "Full version history and diffs", free: true, pro: true },
-      { label: "Lists to organise them into", free: "Unlimited", pro: "Unlimited" },
+      {
+        label: "Lists to organise them into",
+        free: "Unlimited",
+        pro: "Unlimited",
+      },
     ],
   },
   {
@@ -123,7 +127,11 @@ export const COMPARISON: ComparisonGroup[] = [
     title: "Contributing",
     rows: [
       { label: "Add skills that are on skills.sh", free: true, pro: true },
-      { label: "Add skills that only exist on GitHub", free: "Up to 3", pro: "Unlimited" },
+      {
+        label: "Add skills that only exist on GitHub",
+        free: "Up to 3",
+        pro: "Unlimited",
+      },
     ],
   },
 ];

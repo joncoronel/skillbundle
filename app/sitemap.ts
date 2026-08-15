@@ -6,7 +6,10 @@ import { api } from "@/convex/_generated/api";
 import { CATALOG_MAX_ROWS, maxIterForRows } from "@/convex/lib/pagination";
 import { SKILL_CONTENT_TAG } from "@/lib/cache-tags";
 import { SITE_URL } from "@/lib/site-url";
-import { buildSitemapEntries, type SitemapSkillRow } from "@/lib/sitemap-entries";
+import {
+  buildSitemapEntries,
+  type SitemapSkillRow,
+} from "@/lib/sitemap-entries";
 
 /**
  * The catalog sitemap: every indexable skill page plus the directory pages

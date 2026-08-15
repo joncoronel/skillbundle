@@ -26,7 +26,7 @@ Success looks like a developer knowing the state of every skill they rely on wit
 
 The differentiator rests on one fact about the ecosystem and one fact about who can act on it:
 
-1. **Skills are dependencies that nobody versions.** Once installed, a skill's file is decoupled from its source: it carries no repo, no install command, and often no version. It changes upstream silently. Worst of all, its *description* can change, and the description is what decides when an agent invokes the skill, so an edit by a stranger changes your agent's behavior without touching your code. Nothing in the ecosystem tracks this. SkillBundle does.
+1. **Skills are dependencies that nobody versions.** Once installed, a skill's file is decoupled from its source: it carries no repo, no install command, and often no version. It changes upstream silently. Worst of all, its _description_ can change, and the description is what decides when an agent invokes the skill, so an edit by a stranger changes your agent's behavior without touching your code. Nothing in the ecosystem tracks this. SkillBundle does.
 
 2. **The registry cannot credibly do it.** A registry's metric is installs going up. It has no incentive to tell you a skill got worse, went stale, overlaps something you already have, or should be removed. Independent monitoring is trustworthy precisely because it is not the vendor, the same way dependency auditing has never lived inside the package registry.
 

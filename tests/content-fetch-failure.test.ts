@@ -18,8 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const SKILL_MD_URL =
-  "https://raw.githubusercontent.com/x/y/main/SKILL.md";
+const SKILL_MD_URL = "https://raw.githubusercontent.com/x/y/main/SKILL.md";
 
 async function seedSkill(t: ReturnType<typeof makeTest>) {
   const now = Date.now();

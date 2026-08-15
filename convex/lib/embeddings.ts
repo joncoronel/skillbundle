@@ -149,10 +149,10 @@ export async function embedTexts(
     // misclassified as a too-long error.
     if (res.status === 400) {
       const indexMatch =
-        body.match(/Invalid 'input\[(\d+)\]'/) ??
-        body.match(/input\[(\d+)\]/);
-      const looksLikeLength =
-        /too long|exceeds?|maximum|length|token/i.test(body);
+        body.match(/Invalid 'input\[(\d+)\]'/) ?? body.match(/input\[(\d+)\]/);
+      const looksLikeLength = /too long|exceeds?|maximum|length|token/i.test(
+        body,
+      );
       if (indexMatch && looksLikeLength) {
         throw new EmbeddingInputTooLongError(parseInt(indexMatch[1], 10));
       }

@@ -119,12 +119,16 @@ test.describe("initial load", () => {
     );
   });
 
-  test("/pricing serves its header and plans in the shell", async ({ page }) => {
+  test("/pricing serves its header and plans in the shell", async ({
+    page,
+  }) => {
     await instant(
       page,
       async () => {
         await page.goto("/pricing");
-        await expect(page.locator("h1")).toContainText("Two plans. One product.");
+        await expect(page.locator("h1")).toContainText(
+          "Two plans. One product.",
+        );
         await expect(
           page.getByText("Both watch the skills you depend on"),
         ).toBeVisible();
@@ -133,7 +137,9 @@ test.describe("initial load", () => {
     );
   });
 
-  test("skill detail serves title and actions in the shell", async ({ page }) => {
+  test("skill detail serves title and actions in the shell", async ({
+    page,
+  }) => {
     await instant(
       page,
       async () => {
@@ -186,7 +192,9 @@ test.describe("initial load", () => {
     await expect(page.getByText("Loading history")).toHaveCount(0);
   });
 
-  test("org listing serves its column headers in the shell", async ({ page }) => {
+  test("org listing serves its column headers in the shell", async ({
+    page,
+  }) => {
     await instant(
       page,
       async () => {
@@ -347,11 +355,15 @@ test.describe("client navigation", () => {
     });
   });
 
-  test("/[org] -> /[org]/[repo] commits its shell instantly", async ({ page }) => {
+  test("/[org] -> /[org]/[repo] commits its shell instantly", async ({
+    page,
+  }) => {
     await page.goto(GITHUB_ORG_PATH);
 
     const repo = page
-      .locator(`main a[href^="${GITHUB_ORG_PATH}/"], a[href^="${GITHUB_ORG_PATH}/"]`)
+      .locator(
+        `main a[href^="${GITHUB_ORG_PATH}/"], a[href^="${GITHUB_ORG_PATH}/"]`,
+      )
       .first();
     await expect(repo).toBeVisible();
     const href = await repo.getAttribute("href");

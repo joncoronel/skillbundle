@@ -20,7 +20,14 @@ test("accepts normal owner/repo names", () => {
 });
 
 test("rejects path-traversal segments", () => {
-  for (const bad of ["owner/..", "../repo", "owner/.", "./repo", "..", "owner/../x"]) {
+  for (const bad of [
+    "owner/..",
+    "../repo",
+    "owner/.",
+    "./repo",
+    "..",
+    "owner/../x",
+  ]) {
     expect(isSafeRepoPath(bad)).toBe(false);
   }
 });

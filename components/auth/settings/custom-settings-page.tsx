@@ -2,7 +2,11 @@
 
 import { useQueryState } from "nuqs";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { UserIcon, SecurityLockIcon, Tag01Icon } from "@hugeicons/core-free-icons";
+import {
+  UserIcon,
+  SecurityLockIcon,
+  Tag01Icon,
+} from "@hugeicons/core-free-icons";
 import {
   Tabs,
   TabsList,
@@ -10,10 +14,7 @@ import {
   TabsPanels,
   TabsContent,
 } from "@/components/ui/cubby-ui/tabs";
-import {
-  settingsTabParser,
-  type SettingsTabValue,
-} from "@/lib/search-params";
+import { settingsTabParser, type SettingsTabValue } from "@/lib/search-params";
 import { ReverificationProvider } from "@/components/auth/reverification-provider";
 import { ProfileTab } from "./profile-tab";
 import { SecurityTab, type BackendSession } from "./security-tab";
@@ -30,7 +31,10 @@ export function CustomSettingsPage() {
   }
 
   return (
-    <CustomSettingsPageView activeTab={activeTab} onTabChange={handleTabChange} />
+    <CustomSettingsPageView
+      activeTab={activeTab}
+      onTabChange={handleTabChange}
+    />
   );
 }
 

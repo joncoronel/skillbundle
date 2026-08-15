@@ -272,7 +272,6 @@ describe("createBundle", () => {
     expect(bundleId).toBeTruthy();
   });
 
-
   test("rejects when unauthenticated", async () => {
     const t = makeTest();
     await expect(
@@ -304,7 +303,7 @@ describe("updateBundleSkills", () => {
       const now = Date.now();
       return await ctx.db.insert("bundles", {
         userId,
-          isPublic: false,
+        isPublic: false,
         name: "Existing",
         urlId: `seed-${Math.random().toString(36).slice(2, 8)}`,
         skills,
@@ -439,7 +438,7 @@ describe("updateBundleDescription", () => {
       const now = Date.now();
       return await ctx.db.insert("bundles", {
         userId,
-          isPublic: false,
+        isPublic: false,
         name: "Existing",
         urlId: `desc-${Math.random().toString(36).slice(2, 8)}`,
         description,
@@ -483,7 +482,7 @@ describe("updateBundleDescription", () => {
       // unambiguous regardless of test scheduler timing.
       return await ctx.db.insert("bundles", {
         userId,
-          isPublic: false,
+        isPublic: false,
         name: "Old",
         urlId: "old-stamp",
         skills: [],
@@ -632,7 +631,6 @@ describe("createBundle visibility", () => {
   });
 });
 
-
 describe("createBundle urlId", () => {
   test("produces a 10-char base62 urlId", async () => {
     const { t, asUser } = await setup();
@@ -670,7 +668,10 @@ test("validation errors are ConvexError with the message on .data", async () => 
         expect(err).toBeInstanceOf(ConvexError);
         expect(typeof (err as ConvexError<string>).data).toBe("string");
         expect((err as ConvexError<string>).data).toMatch(
-          new RegExp(`Description must be ${MAX_BUNDLE_DESCRIPTION_LENGTH}`, "i"),
+          new RegExp(
+            `Description must be ${MAX_BUNDLE_DESCRIPTION_LENGTH}`,
+            "i",
+          ),
         );
       },
     );

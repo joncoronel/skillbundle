@@ -113,7 +113,10 @@ test("aliases: groups same repo id + slug under different sources, flags the liv
     skillId: "do-thing",
     isLive: true,
   });
-  expect(fromDead.renamedTo).toEqual({ source: "owner/new", skillId: "do-thing" });
+  expect(fromDead.renamedTo).toEqual({
+    source: "owner/new",
+    skillId: "do-thing",
+  });
   expect(fromDead.forks).toEqual([]);
 
   // Viewed from the live row: the dead alias is its alias, and it is NOT a
@@ -123,7 +126,10 @@ test("aliases: groups same repo id + slug under different sources, flags the liv
     skillId: "do-thing",
   });
   expect(fromLive.aliases).toHaveLength(1);
-  expect(fromLive.aliases[0]).toMatchObject({ source: "owner/old", isLive: false });
+  expect(fromLive.aliases[0]).toMatchObject({
+    source: "owner/old",
+    isLive: false,
+  });
   expect(fromLive.renamedTo).toBeNull();
 });
 
@@ -211,7 +217,10 @@ test("forks: groups same content hash across different repo ids", async () => {
     skillId: "shared",
   });
   expect(copies.forks).toHaveLength(1);
-  expect(copies.forks[0]).toMatchObject({ source: "bob/skills", skillId: "shared" });
+  expect(copies.forks[0]).toMatchObject({
+    source: "bob/skills",
+    skillId: "shared",
+  });
   expect(copies.aliases).toEqual([]); // different repo ids, so not aliases
   expect(copies.renamedTo).toBeNull();
 });
@@ -249,7 +258,10 @@ test("re-resolution: a repo renamed after stamping flips its old name to a dead 
   // asserted directly below.
   vi.useFakeTimers();
   try {
-    const res = await t.action(internal.duplicates.reresolveStaleRepoIdentities, {});
+    const res = await t.action(
+      internal.duplicates.reresolveStaleRepoIdentities,
+      {},
+    );
     expect(res.changed).toBe(1);
   } finally {
     vi.useRealTimers();
@@ -303,7 +315,10 @@ test("re-resolution: an unchanged repo bumps resolvedAt without re-stamping", as
 
   vi.useFakeTimers();
   try {
-    const res = await t.action(internal.duplicates.reresolveStaleRepoIdentities, {});
+    const res = await t.action(
+      internal.duplicates.reresolveStaleRepoIdentities,
+      {},
+    );
     expect(res.changed).toBe(0);
   } finally {
     vi.useRealTimers();
@@ -355,7 +370,13 @@ test("delist clears needsRepoResolution; relist re-sets it for a GitHub row", as
   // Relist (reappears in a feed) → rejoins the work-set, or it'd stay unresolved.
   await t.mutation(internal.skills.upsertSkillsBatch, {
     skills: [
-      { source: "owner/repo", skillId: "s", name: "s", installs: 100, isDuplicate: false },
+      {
+        source: "owner/repo",
+        skillId: "s",
+        name: "s",
+        installs: 100,
+        isDuplicate: false,
+      },
     ],
     leaderboard: "all-time",
   });

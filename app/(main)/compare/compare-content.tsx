@@ -208,7 +208,7 @@ function EmptyState({ onOpenPicker }: { onOpenPicker: () => void }) {
     <div className="relative overflow-hidden rounded-xl bg-muted/40">
       <DotMatrix />
       <div className="relative px-6 py-16 md:px-12 md:py-24">
-        <h2 className="font-display text-4xl font-medium tracking-tight leading-hero md:text-5xl">
+        <h2 className="font-display text-4xl leading-hero font-medium tracking-tight md:text-5xl">
           Nothing to compare yet.
         </h2>
         <p className="mt-4 max-w-md text-sm text-muted-foreground">
@@ -280,7 +280,7 @@ function CompareTrendSection({
   loading: boolean;
 }) {
   return (
-    <section className="mb-4 rounded-2xl border bg-card p-5 dark:border-border/50 md:mb-6">
+    <section className="mb-4 rounded-2xl border bg-card p-5 md:mb-6 dark:border-border/50">
       <h2 className="mb-4 text-sm font-semibold text-foreground">
         Installs over time
       </h2>
@@ -382,7 +382,7 @@ function ColumnShell({
               type="button"
               onClick={onRemove}
               aria-label={removeLabel}
-              className="mt-0.5 shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+              className="mt-0.5 shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
             >
               <HugeiconsIcon
                 icon={Cancel01Icon}
@@ -593,7 +593,10 @@ function CompareColumn({
           )}
           {skill.content && (
             <LabeledSection label="Documentation" as="h3">
-              <MarkdownContent baseUrl={skill.skillMdUrl ?? null} surface="card">
+              <MarkdownContent
+                baseUrl={skill.skillMdUrl ?? null}
+                surface="card"
+              >
                 {skill.content}
               </MarkdownContent>
             </LabeledSection>

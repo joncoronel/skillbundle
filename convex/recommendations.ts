@@ -333,7 +333,8 @@ export const analyzeRepo = action({
 
     // The user's GitHub token, fetched from Clerk at most once per request
     // (the shortcut and the retry below can otherwise both pay the call).
-    let tokenResult: Awaited<ReturnType<typeof getGithubOauthToken>> | undefined;
+    let tokenResult:
+      Awaited<ReturnType<typeof getGithubOauthToken>> | undefined;
     const getToken = async () =>
       identity
         ? (tokenResult ??= await getGithubOauthToken(identity.subject))
@@ -683,9 +684,7 @@ async function runAnalysis(
     limit: SEARCH_LIMIT,
     filter: (q) => q.eq("isDelisted", false),
   });
-  debugLog(
-    `[analyzeRepo] Vector search returned ${results.length} candidates`,
-  );
+  debugLog(`[analyzeRepo] Vector search returned ${results.length} candidates`);
   mark("Vector search");
 
   if (results.length === 0) {
@@ -774,8 +773,7 @@ async function runAnalysis(
     for (const pkg of packageSet) {
       if (pkg.length >= 4 && haystack.includes(pkg)) matchedPackages.push(pkg);
     }
-    const packageMultiplier =
-      1 + 0.03 * Math.log2(matchedPackages.length + 1);
+    const packageMultiplier = 1 + 0.03 * Math.log2(matchedPackages.length + 1);
     const popMultiplier = 1 + 0.05 * Math.log10(summary.installs + 1);
     return {
       score: vectorScore * packageMultiplier * popMultiplier,

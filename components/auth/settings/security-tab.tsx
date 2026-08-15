@@ -8,7 +8,11 @@ import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SettingsSection } from "./settings-section";
 import { PasswordSection } from "./password-section";
-import { SessionsTab, SessionsSkeleton, type BackendSession } from "./sessions-tab";
+import {
+  SessionsTab,
+  SessionsSkeleton,
+  type BackendSession,
+} from "./sessions-tab";
 import { DangerZone } from "./danger-zone";
 
 export type { BackendSession };

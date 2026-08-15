@@ -104,112 +104,118 @@ export function AddSkillFlow({
   // Every terminal point of the protocol, rendered as this surface's inline
   // aria-live notice / success card. The sequencing that produces these lives
   // in the hook; only the presentation is here.
-  const report = useCallback((
-    outcome: AddSkillOutcome<PreviewOk>,
-    { patchCandidate }: ReportHelpers<PreviewOk>,
-  ) => {
-    switch (outcome.kind) {
-      case "submitting":
-        setNotice(null);
-        setAdded(null);
-        return;
-      case "added":
-        setNotice(null);
-        setAdded({
-          kind: "skillssh",
-          source: outcome.result.source,
-          skillId: outcome.result.skillId,
-          name: outcome.result.name,
-          note: outcome.viaAlias
-            ? aliasRetryNote(outcome.viaAlias.skillId)
-            : undefined,
-        });
-        // The step-3 alias re-add reached from a CONFIRM unmounts the card the
-        // user was standing in. Conditional for the same reason
-        // `already_exists` is: on the plain-submit path no card existed and the
-        // submit button is still mounted.
-        if (outcome.candidateDismissed) focusInput();
-        return;
-      case "github_added":
-        setNotice(null);
-        setAdded({
-          kind: "github",
-          source: outcome.result.source,
-          skillId: outcome.result.skillId,
-          name: outcome.result.name,
-        });
-        // Same hazard the Cancel handler below already guards, on the other exit
-        // from the same card: the focused Confirm button unmounts with it.
-        // Unconditional, unlike `already_exists`, because this outcome can only
-        // come from `confirmGitHub` — which returns early without a candidate, so
-        // a card was always mounted. The input stays mounted above the success
-        // card, so it is the right place to land.
-        focusInput();
-        return;
-      case "already_exists":
-        // Names the slug it lives under, which on the alias path is NOT the one
-        // that was typed. Shared with the admin surface so the two can't drift.
-        setNotice({
-          tone: "info",
-          text: alreadyInCatalogCopy(outcome),
-          link: { source: outcome.source, skillId: outcome.skillId },
-        });
-        // Same reason as the Cancel handler below: when this outcome drops the
-        // confirm card, the button the user just pressed unmounts with it. Only
-        // when it actually dropped one — otherwise this would yank focus off a
-        // submit button that is still sitting there.
-        if (outcome.candidateDismissed) focusInput();
-        return;
-      case "candidate":
-        // The card mounts as a sibling OUTSIDE the live region, so without a
-        // notice a screen-reader user hears the pending label stop and then
-        // silence — with no signal that a confirmation step now gates the flow.
-        setNotice({
-          tone: "info",
-          text: `Found ${outcome.preview.path} in the repo. Review and confirm below.`,
-        });
-        return;
-      case "preview_failed":
-        setNotice({ tone: "error", text: previewFailureCopy(outcome.preview) });
-        return;
-      // This surface doesn't distinguish a GitHub-side failure from any other:
-      // both reach the same notice with the same friendly text. The admin form
-      // does, which is why the hook reports them separately.
-      case "preview_threw":
-      case "failed": {
-        const err = outcome.error;
-        if (isQuotaError(err)) {
-          // Race backstop: the server enforces the quota atomically inside the
-          // insert. When it rejects a stale confirm, flip the candidate's own
-          // snapshot too so the card swaps to its upgrade state instead of
-          // leaving an enabled button that keeps failing. wasDelisted flips
-          // with it: relists never hit the gate, so a quota error PROVES the
-          // insert was genuine and any relist marker from preview time is stale.
-          patchCandidate((c) => ({
-            ...c,
-            wasDelisted: false,
-            quota: { ...c.quota, atLimit: true },
-          }));
-          setNotice({ tone: "error", text: quotaErrorText(err) });
-          // `atLimit` flips `blocked`, which replaces the whole button row with
-          // the upgrade banner — so the Confirm the user just pressed unmounts
-          // and focus would fall to <body>. The sibling refusal path
-          // (`preview_failed`) needs no such call: it leaves the card mounted, so
-          // `focusableWhenDisabled` on Confirm holds focus where it already is.
+  const report = useCallback(
+    (
+      outcome: AddSkillOutcome<PreviewOk>,
+      { patchCandidate }: ReportHelpers<PreviewOk>,
+    ) => {
+      switch (outcome.kind) {
+        case "submitting":
+          setNotice(null);
+          setAdded(null);
+          return;
+        case "added":
+          setNotice(null);
+          setAdded({
+            kind: "skillssh",
+            source: outcome.result.source,
+            skillId: outcome.result.skillId,
+            name: outcome.result.name,
+            note: outcome.viaAlias
+              ? aliasRetryNote(outcome.viaAlias.skillId)
+              : undefined,
+          });
+          // The step-3 alias re-add reached from a CONFIRM unmounts the card the
+          // user was standing in. Conditional for the same reason
+          // `already_exists` is: on the plain-submit path no card existed and the
+          // submit button is still mounted.
+          if (outcome.candidateDismissed) focusInput();
+          return;
+        case "github_added":
+          setNotice(null);
+          setAdded({
+            kind: "github",
+            source: outcome.result.source,
+            skillId: outcome.result.skillId,
+            name: outcome.result.name,
+          });
+          // Same hazard the Cancel handler below already guards, on the other exit
+          // from the same card: the focused Confirm button unmounts with it.
+          // Unconditional, unlike `already_exists`, because this outcome can only
+          // come from `confirmGitHub` — which returns early without a candidate, so
+          // a card was always mounted. The input stays mounted above the success
+          // card, so it is the right place to land.
           focusInput();
           return;
+        case "already_exists":
+          // Names the slug it lives under, which on the alias path is NOT the one
+          // that was typed. Shared with the admin surface so the two can't drift.
+          setNotice({
+            tone: "info",
+            text: alreadyInCatalogCopy(outcome),
+            link: { source: outcome.source, skillId: outcome.skillId },
+          });
+          // Same reason as the Cancel handler below: when this outcome drops the
+          // confirm card, the button the user just pressed unmounts with it. Only
+          // when it actually dropped one — otherwise this would yank focus off a
+          // submit button that is still sitting there.
+          if (outcome.candidateDismissed) focusInput();
+          return;
+        case "candidate":
+          // The card mounts as a sibling OUTSIDE the live region, so without a
+          // notice a screen-reader user hears the pending label stop and then
+          // silence — with no signal that a confirmation step now gates the flow.
+          setNotice({
+            tone: "info",
+            text: `Found ${outcome.preview.path} in the repo. Review and confirm below.`,
+          });
+          return;
+        case "preview_failed":
+          setNotice({
+            tone: "error",
+            text: previewFailureCopy(outcome.preview),
+          });
+          return;
+        // This surface doesn't distinguish a GitHub-side failure from any other:
+        // both reach the same notice with the same friendly text. The admin form
+        // does, which is why the hook reports them separately.
+        case "preview_threw":
+        case "failed": {
+          const err = outcome.error;
+          if (isQuotaError(err)) {
+            // Race backstop: the server enforces the quota atomically inside the
+            // insert. When it rejects a stale confirm, flip the candidate's own
+            // snapshot too so the card swaps to its upgrade state instead of
+            // leaving an enabled button that keeps failing. wasDelisted flips
+            // with it: relists never hit the gate, so a quota error PROVES the
+            // insert was genuine and any relist marker from preview time is stale.
+            patchCandidate((c) => ({
+              ...c,
+              wasDelisted: false,
+              quota: { ...c.quota, atLimit: true },
+            }));
+            setNotice({ tone: "error", text: quotaErrorText(err) });
+            // `atLimit` flips `blocked`, which replaces the whole button row with
+            // the upgrade banner — so the Confirm the user just pressed unmounts
+            // and focus would fall to <body>. The sibling refusal path
+            // (`preview_failed`) needs no such call: it leaves the card mounted, so
+            // `focusableWhenDisabled` on Confirm holds focus where it already is.
+            focusInput();
+            return;
+          }
+          setNotice({ tone: "error", text: addSkillErrorText(err) });
+          return;
         }
-        setNotice({ tone: "error", text: addSkillErrorText(err) });
-        return;
+        default:
+          // TS checks a switch for exhaustiveness only against a declared type;
+          // a void-returning function with bare `return`s gets no check at all.
+          // This line is what makes a new AddSkillOutcome arm a compile error
+          // here instead of a terminal point that silently renders nothing.
+          outcome satisfies never;
       }
-      default:
-        // TS checks a switch for exhaustiveness only against a declared type;
-        // a void-returning function with bare `return`s gets no check at all.
-        // This line is what makes a new AddSkillOutcome arm a compile error
-        // here instead of a terminal point that silently renders nothing.
-        outcome satisfies never;
-    }
-  }, [focusInput]);
+    },
+    [focusInput],
+  );
 
   const {
     input,
@@ -322,19 +328,14 @@ export function AddSkillFlow({
               type="button"
               className="shrink-0"
               onClick={() => {
-                const path =
-                  window.location.pathname + window.location.search;
+                const path = window.location.pathname + window.location.search;
                 router.push(signInUrl(path));
               }}
             >
               Sign in to add
             </Button>
           ) : (
-            <Button
-              type="submit"
-              {...submitProps}
-              className="shrink-0"
-            >
+            <Button type="submit" {...submitProps} className="shrink-0">
               {label ?? "Add skill"}
             </Button>
           )}
@@ -569,4 +570,3 @@ function quotaErrorText(err: unknown): string {
     "You've used all your free GitHub-only adds. Upgrade to Pro for unlimited."
   );
 }
-

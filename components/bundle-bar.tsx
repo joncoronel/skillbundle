@@ -153,7 +153,7 @@ export function BundleBar() {
             // sm+: lift into a centered, rounded floating pill with the
             // all-around solidSurface shadow (4-edge rim). The sm:dark: shadow
             // override is needed to outrank the flush variant's dark: shadow.
-            "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:bottom-4 sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:data-ending-style:translate-y-[calc(100%+1rem)]",
+            "sm:inset-x-auto sm:right-auto sm:bottom-4 sm:left-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-ending-style:translate-y-[calc(100%+1rem)] sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)]",
             // @starting-style mirror of the enter transforms: Base UI's
             // data-starting-style only animates opens it orchestrates between
             // painted frames — when the bar mounts already-open (selection
@@ -184,7 +184,7 @@ export function BundleBar() {
                       type="button"
                       onClick={() => removeSkill(skill.source, skill.skillId)}
                       aria-label={`Remove ${skill.name} from stack`}
-                      className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+                      className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
                     >
                       <HugeiconsIcon
                         icon={Cancel01Icon}
@@ -254,7 +254,7 @@ export function BundleBar() {
               onClick={() => setExpanded((v) => !v)}
               aria-expanded={isOpen}
               aria-controls="bundle-tray"
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 pr-2 pl-1 text-left transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-ring/50 focus-visible:outline-offset-2"
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 pr-2 pl-1 text-left transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/12 text-primary">
                 <HugeiconsIcon
@@ -287,7 +287,7 @@ export function BundleBar() {
                       size="icon_sm"
                       onClick={handleClearAll}
                       aria-label="Clear all selected skills"
-                      className="max-sm:hidden text-muted-foreground"
+                      className="text-muted-foreground max-sm:hidden"
                     />
                   }
                 >

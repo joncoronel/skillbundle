@@ -1,9 +1,9 @@
-import { clsx, type ClassValue } from "cnfast"
-import { isClerkAPIResponseError } from "@clerk/nextjs/errors"
-import { twMerge } from "cnfast"
+import { clsx, type ClassValue } from "cnfast";
+import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
+import { twMerge } from "cnfast";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 export function getInitials(

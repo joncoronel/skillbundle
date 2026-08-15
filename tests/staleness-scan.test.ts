@@ -53,9 +53,17 @@ test("listUnseenSummaries returns only non-delisted rows older than the cutoff",
 
   await t.run(async (ctx) => {
     // Fresh: seen now -> not stale -> excluded.
-    await seedSummary(ctx, { source: "a/fresh", skillId: "s", lastSeenInApi: now });
+    await seedSummary(ctx, {
+      source: "a/fresh",
+      skillId: "s",
+      lastSeenInApi: now,
+    });
     // Stale: seen 2 days ago -> included.
-    await seedSummary(ctx, { source: "a/stale", skillId: "s", lastSeenInApi: now - 2 * DAY });
+    await seedSummary(ctx, {
+      source: "a/stale",
+      skillId: "s",
+      lastSeenInApi: now - 2 * DAY,
+    });
     // Stale but delisted -> excluded by the isDelisted=false range.
     await seedSummary(ctx, {
       source: "a/delisted",
@@ -68,7 +76,9 @@ test("listUnseenSummaries returns only non-delisted rows older than the cutoff",
   const page = await t.query(internal.reconcile.listUnseenSummaries, {
     cutoff: now - DAY,
   });
-  expect(page.entries.map((e: { source: string }) => e.source)).toEqual(["a/stale"]);
+  expect(page.entries.map((e: { source: string }) => e.source)).toEqual([
+    "a/stale",
+  ]);
   expect(page.isDone).toBe(true);
 });
 
@@ -77,8 +87,16 @@ test("listStaleSummaries returns only non-delisted rows older than the cutoff", 
   const now = Date.now();
 
   await t.run(async (ctx) => {
-    await seedSummary(ctx, { source: "b/fresh", skillId: "s", lastSeenInApi: now });
-    await seedSummary(ctx, { source: "b/stale", skillId: "s", lastSeenInApi: now - 40 * DAY });
+    await seedSummary(ctx, {
+      source: "b/fresh",
+      skillId: "s",
+      lastSeenInApi: now,
+    });
+    await seedSummary(ctx, {
+      source: "b/stale",
+      skillId: "s",
+      lastSeenInApi: now - 40 * DAY,
+    });
     await seedSummary(ctx, {
       source: "b/delisted",
       skillId: "s",
@@ -90,6 +108,8 @@ test("listStaleSummaries returns only non-delisted rows older than the cutoff", 
   const page = await t.query(internal.skills.listStaleSummaries, {
     cutoff: now - 30 * DAY,
   });
-  expect(page.entries.map((e: { source: string }) => e.source)).toEqual(["b/stale"]);
+  expect(page.entries.map((e: { source: string }) => e.source)).toEqual([
+    "b/stale",
+  ]);
   expect(page.isDone).toBe(true);
 });

@@ -476,7 +476,13 @@ async function checkAliasSlug(
   const precheck = unwrap(precheckR);
   return {
     precheck,
-    terminal: terminalFor(source, alias, precheck, () => unwrap(listingR), true),
+    terminal: terminalFor(
+      source,
+      alias,
+      precheck,
+      () => unwrap(listingR),
+      true,
+    ),
   };
 }
 
@@ -626,8 +632,7 @@ type GitHubPreviewFailure = Exclude<GitHubPreview, { status: "ok" }>;
  * doesn't declare it and Convex's return validation would reject it.
  */
 type GitHubPreviewWire =
-  | GitHubPreviewFailure
-  | Omit<Extract<GitHubPreview, { status: "ok" }>, "body">;
+  GitHubPreviewFailure | Omit<Extract<GitHubPreview, { status: "ok" }>, "body">;
 
 /**
  * Drop the server-only SKILL.md body before a preview crosses the wire.
@@ -869,10 +874,7 @@ const gitHubAddReturns = v.union(
 export const addSkillFromGitHub = action({
   args: { input: v.string() },
   returns: gitHubAddReturns,
-  handler: async (
-    ctx,
-    { input },
-  ): Promise<GitHubAddResult> => {
+  handler: async (ctx, { input }): Promise<GitHubAddResult> => {
     await assertAdmin(ctx);
     return addGitHubCore(ctx, input);
   },
@@ -1027,10 +1029,7 @@ export const previewGitHubSkillPublic = action({
 export const addSkillFromGitHubPublic = action({
   args: { input: v.string() },
   returns: gitHubAddReturns,
-  handler: async (
-    ctx,
-    { input },
-  ): Promise<GitHubAddResult> => {
+  handler: async (ctx, { input }): Promise<GitHubAddResult> => {
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
     await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
       userId: quota.userId,

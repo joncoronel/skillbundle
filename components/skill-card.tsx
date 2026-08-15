@@ -3,10 +3,7 @@
 import { memo, useCallback, useId } from "react";
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Copy01Icon,
-  Download04Icon,
-} from "@hugeicons/core-free-icons";
+import { Copy01Icon, Download04Icon } from "@hugeicons/core-free-icons";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { SheetTrigger } from "@/components/ui/cubby-ui/sheet";
@@ -103,7 +100,7 @@ function SkillName({
       <SheetTrigger
         handle={sheetHandle}
         payload={skill}
-        className={cn("hover:underline text-left", className)}
+        className={cn("text-left hover:underline", className)}
       >
         {nameContent}
       </SheetTrigger>
@@ -112,7 +109,7 @@ function SkillName({
   return (
     <Link
       href={skillHref(skill.source, skill.skillId)}
-      className={cn("hover:underline text-left", className)}
+      className={cn("text-left hover:underline", className)}
     >
       {nameContent}
     </Link>
@@ -175,11 +172,11 @@ function SkillMeta({
         })}
       />
       {skill.copyCount ? <CopiesBadge count={skill.copyCount} /> : null}
-      {metric === "hot" && skill.hotChange !== undefined && skill.hotChange !== 0 && (
-        <HotMomentumChip change={skill.hotChange} />
-      )}
+      {metric === "hot" &&
+        skill.hotChange !== undefined &&
+        skill.hotChange !== 0 && <HotMomentumChip change={skill.hotChange} />}
       <span
-        className="inline-flex items-center gap-1 text-xs tabular-nums text-muted-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums"
         title={windowed !== undefined ? display?.title : undefined}
       >
         <HugeiconsIcon
@@ -227,9 +224,9 @@ function SelectableWrapper({
       htmlFor={checkboxId}
       data-variant="default"
       className={cn(
-        "text-card-foreground flex flex-col bg-card rounded-2xl border dark:border-border/50",
+        "flex flex-col rounded-2xl border bg-card text-card-foreground dark:border-border/50",
         "cursor-pointer transition-colors",
-        "has-data-checked:border-primary/30 dark:has-data-checked:border-primary/30 has-data-checked:bg-primary/8",
+        "has-data-checked:border-primary/30 has-data-checked:bg-primary/8 dark:has-data-checked:border-primary/30",
         className,
       )}
     >
@@ -289,7 +286,6 @@ interface SkillViewProps {
   hideSource?: boolean;
 }
 
-
 // ---------------------------------------------------------------------------
 // Row variants
 // ---------------------------------------------------------------------------
@@ -319,8 +315,8 @@ const SkillRowContent = memo(function SkillRowContent({
       {selectable && checkboxId ? (
         <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
       ) : null}
-      <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
-        <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-sm font-semibold">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+        <span className="inline-flex max-w-full min-w-0 items-center gap-1 text-sm font-semibold">
           <SkillName skill={skill} className="min-w-0 truncate" />
           {skill.curatedOwner && (
             <OfficialBadge
@@ -333,7 +329,7 @@ const SkillRowContent = memo(function SkillRowContent({
           )}
         </span>
         {!hideSource && (
-          <span className="min-w-0 max-w-full truncate text-sm text-muted-foreground">
+          <span className="max-w-full min-w-0 truncate text-sm text-muted-foreground">
             {skill.source}
           </span>
         )}

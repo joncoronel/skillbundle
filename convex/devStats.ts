@@ -17,7 +17,6 @@ import { isDeadRenamedAlias } from "./lib/source";
 // and stops being retried automatically.
 export const MAX_DISCOVERY_FAILURES = 3;
 
-
 // ---------------------------------------------------------------------------
 // Admin guard — checks caller's email against ADMIN_EMAILS env var
 // ---------------------------------------------------------------------------
@@ -463,9 +462,7 @@ export const listSkillsWithErrors = query({
       case "pendingDiscovery": {
         const results = await ctx.db
           .query("skillSummaries")
-          .withIndex("by_needsDiscovery", (q) =>
-            q.eq("needsDiscovery", true),
-          )
+          .withIndex("by_needsDiscovery", (q) => q.eq("needsDiscovery", true))
           .take(LIST_CAP);
         skills = results.filter((s) => s.skillDocId).map(mapSummary);
         break;
@@ -627,9 +624,10 @@ export const retryBatch = internalMutation({
               .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
           )
           .take(200)
-      // GitHub-only rows aren't stuck (cap-exempt, still retrying) — nothing
-      // to reset, and resetting would just add churn.
-      ).filter((s) => !s.isGitHubOnly);
+      )
+        // GitHub-only rows aren't stuck (cap-exempt, still retrying) — nothing
+        // to reset, and resetting would just add churn.
+        .filter((s) => !s.isGitHubOnly);
 
       for (const summary of exhausted) {
         if (summary.skillDocId) {
@@ -713,11 +711,7 @@ export const triggerBackfill = action({
         );
         break;
       case "embeddings":
-        await ctx.scheduler.runAfter(
-          0,
-          internal.skills.backfillEmbeddings,
-          {},
-        );
+        await ctx.scheduler.runAfter(0, internal.skills.backfillEmbeddings, {});
         break;
     }
     return { scheduled: true, type };

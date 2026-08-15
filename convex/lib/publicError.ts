@@ -10,7 +10,10 @@
 
 import { ConvexError } from "convex/values";
 
-export function toPublicError(err: unknown, fallback: string): ConvexError<string> {
+export function toPublicError(
+  err: unknown,
+  fallback: string,
+): ConvexError<string> {
   if (err instanceof ConvexError) return err as ConvexError<string>;
   console.error("public action failure (redacted to friendly message):", err);
   return new ConvexError(fallback);

@@ -126,7 +126,6 @@ interface TypesenseField {
   token_separators?: string[];
 }
 
-
 /**
  * The `skills` collection schema. Mirrors the queryable subset of
  * `skillSummaries`. Field roles:
@@ -174,7 +173,12 @@ export function skillsCollectionSchema(name: string) {
     { name: "isDuplicate", type: "bool", facet: true },
     { name: "hasContentFetchError", type: "bool", facet: true },
     { name: "worstAuditStatus", type: "string", facet: true, optional: true },
-    { name: "worstAuditRiskLevel", type: "string", facet: true, optional: true },
+    {
+      name: "worstAuditRiskLevel",
+      type: "string",
+      facet: true,
+      optional: true,
+    },
     { name: "copyCount", type: "int32", index: false, optional: true },
     // Forward-declared sorts, populated in a later sync pass.
     { name: "momentum7d", type: "int32", optional: true },
@@ -284,8 +288,7 @@ export function assertSchemaMirror(): void {
   // them → Typesense rejects the import page.
   const optionalityDrift = docFields.filter(
     (f) =>
-      schemaRequired.has(f) &&
-      validatorFields[f]?.isOptional === "optional",
+      schemaRequired.has(f) && validatorFields[f]?.isOptional === "optional",
   );
 
   if (
@@ -347,7 +350,9 @@ export async function getCollectionInfo(): Promise<{
   numDocuments: number;
 }> {
   const { collection } = getTypesenseConfig();
-  const { json } = await tsRequest(`/collections/${encodeURIComponent(collection)}`);
+  const { json } = await tsRequest(
+    `/collections/${encodeURIComponent(collection)}`,
+  );
   const info = json<{ name: string; num_documents: number }>();
   return { name: info.name, numDocuments: info.num_documents };
 }
@@ -368,7 +373,8 @@ export async function ensureCollection(): Promise<{
   name: string;
 }> {
   const { collection } = getTypesenseConfig();
-  if (await collectionExists(collection)) return { created: false, name: collection };
+  if (await collectionExists(collection))
+    return { created: false, name: collection };
   await tsRequest("/collections", {
     method: "POST",
     json: skillsCollectionSchema(collection),
@@ -394,15 +400,24 @@ export async function dropCollection(): Promise<void> {
  * failed rows plus their error lines (Typesense reports per-document success in
  * the JSONL response; a 200 overall can still contain individual failures).
  */
-export async function importDocuments(
-  docs: TypesenseSkillDoc[],
-): Promise<{ imported: number; failed: number; errors: string[]; failedIds: string[] }> {
-  if (docs.length === 0) return { imported: 0, failed: 0, errors: [], failedIds: [] };
+export async function importDocuments(docs: TypesenseSkillDoc[]): Promise<{
+  imported: number;
+  failed: number;
+  errors: string[];
+  failedIds: string[];
+}> {
+  if (docs.length === 0)
+    return { imported: 0, failed: 0, errors: [], failedIds: [] };
   const { collection } = getTypesenseConfig();
   const jsonl = docs.map((d) => JSON.stringify(d)).join("\n");
   const { text } = await tsRequest(
     `/collections/${encodeURIComponent(collection)}/documents/import`,
-    { method: "POST", body: jsonl, contentType: "text/plain", query: "action=upsert" },
+    {
+      method: "POST",
+      body: jsonl,
+      contentType: "text/plain",
+      query: "action=upsert",
+    },
   );
   // The /import response is JSONL with one result line PER INPUT DOC, in input
   // order — so line i corresponds to docs[i]. That lets us recover the id of

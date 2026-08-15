@@ -65,9 +65,9 @@ describe("extractRepoSlug — accepts", () => {
   });
 
   test("query param stripped", () => {
-    expect(
-      extractRepoSlug("https://github.com/owner/repo?tab=readme"),
-    ).toEqual({ owner: "owner", repo: "repo" });
+    expect(extractRepoSlug("https://github.com/owner/repo?tab=readme")).toEqual(
+      { owner: "owner", repo: "repo" },
+    );
   });
 });
 

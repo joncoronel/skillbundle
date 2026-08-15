@@ -9,7 +9,9 @@ import { parseSkillInput } from "../lib/parse-skill-input";
 
 describe("parseSkillInput — accepts", () => {
   test("plain GitHub-style source/slug (3 segments)", () => {
-    expect(parseSkillInput("vercel-labs/agent-skills/next-js-development")).toEqual({
+    expect(
+      parseSkillInput("vercel-labs/agent-skills/next-js-development"),
+    ).toEqual({
       source: "vercel-labs/agent-skills",
       skillId: "next-js-development",
     });
@@ -78,7 +80,10 @@ describe("parseSkillInput — accepts", () => {
     // named like "A/B Test Analysis".
     expect(
       parseSkillInput("vercel-labs/agent-skills/a/b-test-analysis"),
-    ).toEqual({ source: "vercel-labs/agent-skills", skillId: "a/b-test-analysis" });
+    ).toEqual({
+      source: "vercel-labs/agent-skills",
+      skillId: "a/b-test-analysis",
+    });
   });
 
   test("input with surrounding whitespace", () => {
@@ -247,7 +252,9 @@ describe("parseSkillInput — rejects", () => {
     // Single-segment input containing a dot — common admin typo of pasting
     // a domain without the protocol. We surface a hint rather than the
     // generic "Invalid skill input" message.
-    expect(() => parseSkillInput("mintlify.com")).toThrow(/looks like a domain/i);
+    expect(() => parseSkillInput("mintlify.com")).toThrow(
+      /looks like a domain/i,
+    );
     expect(() => parseSkillInput("google.com")).toThrow(/looks like a domain/i);
   });
 
@@ -258,10 +265,14 @@ describe("parseSkillInput — rejects", () => {
   });
 
   test("single segment with no dot", () => {
-    expect(() => parseSkillInput("just-a-word")).toThrow(/source\/slug|Invalid/i);
+    expect(() => parseSkillInput("just-a-word")).toThrow(
+      /source\/slug|Invalid/i,
+    );
   });
 
   test("skills.sh URL with no path", () => {
-    expect(() => parseSkillInput("https://skills.sh/")).toThrow(/empty|Invalid/i);
+    expect(() => parseSkillInput("https://skills.sh/")).toThrow(
+      /empty|Invalid/i,
+    );
   });
 });

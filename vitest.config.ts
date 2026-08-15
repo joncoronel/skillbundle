@@ -23,7 +23,9 @@ export default defineConfig({
       // when a Client Component imports server code. Under vitest there is no
       // client graph to protect, and the package's main export throws on
       // import, so route-handler tests need it stubbed out.
-      "server-only": fileURLToPath(new URL("tests/stubs/empty.ts", import.meta.url)),
+      "server-only": fileURLToPath(
+        new URL("tests/stubs/empty.ts", import.meta.url),
+      ),
     },
   },
 });

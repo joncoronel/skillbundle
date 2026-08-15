@@ -26,7 +26,7 @@ const FILE_LANGUAGE_MAP: Record<string, string> = {
   "pyproject.toml": "python",
   "Cargo.toml": "rust",
   "go.mod": "go",
-  "Dockerfile": "docker",
+  Dockerfile: "docker",
 };
 
 /** Config file paths whose presence in the repo tree is a fingerprint signal. */
@@ -263,7 +263,11 @@ export function scanTree(entries: TreeEntry[]): TreeScanResult {
       depFiles.push(entry.path);
     }
     // First matching README at root
-    if (!readmePath && !entry.path.includes("/") && README_CANDIDATES.has(entry.path)) {
+    if (
+      !readmePath &&
+      !entry.path.includes("/") &&
+      README_CANDIDATES.has(entry.path)
+    ) {
       readmePath = entry.path;
     }
   }

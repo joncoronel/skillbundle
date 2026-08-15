@@ -105,15 +105,24 @@ describe("canonicalSlug — refuses (would write an unroutable row)", () => {
 
 describe("matchesSkillId — unchanged by the canonicalSlug split", () => {
   test("exact name, exact kebab, and the documented loose prefix", () => {
-    expect(matchesSkillId("vercel-react-view-transitions", "vercel-react-view-transitions")).toBe(true);
-    expect(matchesSkillId("Next JS Development", "next-js-development")).toBe(true);
+    expect(
+      matchesSkillId(
+        "vercel-react-view-transitions",
+        "vercel-react-view-transitions",
+      ),
+    ).toBe(true);
+    expect(matchesSkillId("Next JS Development", "next-js-development")).toBe(
+      true,
+    );
     // Known looseness, parked in TODO.md — asserted so a change to it is
     // deliberate rather than incidental.
     expect(matchesSkillId("Next JS Development", "next")).toBe(true);
   });
 
   test("an unrelated name still misses", () => {
-    expect(matchesSkillId("Deploy To Vercel", "react-best-practices")).toBe(false);
+    expect(matchesSkillId("Deploy To Vercel", "react-best-practices")).toBe(
+      false,
+    );
   });
 });
 
@@ -128,7 +137,9 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
   });
 
   test("accepts a spaced name whose kebab form is the slug", () => {
-    expect(matchesSkillIdExactly("Next JS Development", "next-js-development")).toBe(true);
+    expect(
+      matchesSkillIdExactly("Next JS Development", "next-js-development"),
+    ).toBe(true);
   });
 
   test("REFUSES a shortened name — the mis-slug this exists to prevent", () => {
@@ -163,7 +174,9 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
   });
 
   test("an unrelated name still misses", () => {
-    expect(matchesSkillIdExactly("Deploy To Vercel", "react-best-practices")).toBe(false);
+    expect(
+      matchesSkillIdExactly("Deploy To Vercel", "react-best-practices"),
+    ).toBe(false);
   });
 
   test("folds BOTH sides — the regression that shipped when only one was folded", () => {
@@ -172,7 +185,9 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
     // "agent_skills" and refused a file whose name is exactly what was typed.
     expect(matchesSkillIdExactly("agent_skills", "agent_skills")).toBe(true);
     // The case the fold exists for still works.
-    expect(matchesSkillIdExactly("http_mcp_headers", "http-mcp-headers")).toBe(true);
+    expect(matchesSkillIdExactly("http_mcp_headers", "http-mcp-headers")).toBe(
+      true,
+    );
     // And mixed case, which previously failed all three arms of both matchers.
     expect(matchesSkillIdExactly("Foo_Bar", "foo_bar")).toBe(true);
     // Still strict where it matters: a partial name is not a match.
@@ -212,4 +227,3 @@ describe("matchesSkillIdExactly — the GitHub-only add's rule", () => {
     }
   });
 });
-

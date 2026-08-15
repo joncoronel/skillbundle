@@ -12,11 +12,7 @@
  * out of the curated set.
  */
 
-import {
-  internalAction,
-  internalMutation,
-  query,
-} from "./_generated/server";
+import { internalAction, internalMutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getCurated } from "./lib/skillsApi";
@@ -148,10 +144,10 @@ export const syncCurated = internalAction({
         nextCursor: string;
         isDone: boolean;
         cleared: number;
-      } = await ctx.runMutation(
-        internal.curated.clearStaleCuratedOwnersBatch,
-        { wantedKeys, cursor },
-      );
+      } = await ctx.runMutation(internal.curated.clearStaleCuratedOwnersBatch, {
+        wantedKeys,
+        cursor,
+      });
       totalCleared += result.cleared;
       cursor = result.nextCursor;
       isDone = result.isDone;

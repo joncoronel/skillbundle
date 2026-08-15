@@ -497,7 +497,10 @@ test("updateSkillMdUrls: settles a mixed batch in one transaction", async () => 
     expect(summaries).toHaveLength(3);
     expect(summaries.every((x) => x.needsDiscovery === false)).toBe(true);
     expect(
-      summaries.filter((x) => x.hasSkillMdUrl === true).map((x) => x.skillId).sort(),
+      summaries
+        .filter((x) => x.hasSkillMdUrl === true)
+        .map((x) => x.skillId)
+        .sort(),
     ).toEqual(["found-one", "found-two"]);
   });
 });

@@ -39,7 +39,7 @@ export function GitHubAddQuota({ className }: { className?: string }) {
     >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium">GitHub-only adds</span>
-        <span className="text-xs tabular-nums text-muted-foreground">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {used} of {limit} used
         </span>
       </div>

@@ -41,21 +41,18 @@ export function InstallCommands({ skills }: InstallCommandsProps) {
     <div className="space-y-3">
       {commands.map((cmd) => (
         <div key={cmd.source}>
-          <p className="text-xs text-muted-foreground mb-1">
+          <p className="mb-1 text-xs text-muted-foreground">
             {cmd.source}
             <span className="ml-1">
               ({cmd.skills.length} skill{cmd.skills.length !== 1 ? "s" : ""})
             </span>
           </p>
-          <div className="group relative rounded-xl bg-muted w-fit max-w-full">
-            <pre className="overflow-x-auto px-4 py-3 text-sm font-mono pr-16">
+          <div className="group relative w-fit max-w-full rounded-xl bg-muted">
+            <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
               {cmd.command}
             </pre>
             <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
-              <CopyButton
-                content={cmd.command}
-                className="backdrop-blur-sm"
-              />
+              <CopyButton content={cmd.command} className="backdrop-blur-sm" />
             </div>
           </div>
           {cmd.hasWarning && (

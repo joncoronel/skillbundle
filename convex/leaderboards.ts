@@ -11,11 +11,7 @@
  * are no longer in the leaderboard, clear the field.
  */
 
-import {
-  internalAction,
-  internalMutation,
-  query,
-} from "./_generated/server";
+import { internalAction, internalMutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";

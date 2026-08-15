@@ -51,7 +51,9 @@ export const setupCollection = internalAction({
     const { host, collection } = getTypesenseConfig();
     const reachable = await ping();
     if (!reachable) {
-      throw new Error(`Typesense at ${host} is not reachable (/health failed).`);
+      throw new Error(
+        `Typesense at ${host} is not reachable (/health failed).`,
+      );
     }
     const { created } = await ensureCollection();
     return {
@@ -455,19 +457,25 @@ export const syncCatalog = internalAction({
     // next invocation. So the lock is released in exactly two places — a
     // terminal outcome (done/cap), and the catch (throw) — never on reschedule.
     const release = () =>
-      ctx.runMutation(internal.typesense.releaseSyncLock, { startedAt: syncedAt });
+      ctx.runMutation(internal.typesense.releaseSyncLock, {
+        startedAt: syncedAt,
+      });
     try {
       for (let i = 0; i < SYNC_MAX_PAGES_PER_RUN; i++) {
-        const page = await ctx.runQuery(internal.typesense.pageSummariesForSync, {
-          cursor,
-          numItems: SYNC_PAGE_SIZE,
-          syncedAt,
-        });
+        const page = await ctx.runQuery(
+          internal.typesense.pageSummariesForSync,
+          {
+            cursor,
+            numItems: SYNC_PAGE_SIZE,
+            syncedAt,
+          },
+        );
         if (page.docs.length > 0) {
           const res = await importDocuments(page.docs);
           imported += res.imported;
           failed += res.failed;
-          for (const e of res.errors) if (sampleErrors.length < 5) sampleErrors.push(e);
+          for (const e of res.errors)
+            if (sampleErrors.length < 5) sampleErrors.push(e);
           for (const id of res.failedIds)
             if (failedIds.length < SWEEP_EXCLUDE_CAP) failedIds.push(id);
         }
@@ -505,7 +513,15 @@ export const syncCatalog = internalAction({
             );
           }
           await release();
-          return { done: true as const, imported, failed, swept, sweepSkipped, pagesDone, sampleErrors };
+          return {
+            done: true as const,
+            imported,
+            failed,
+            swept,
+            sweepSkipped,
+            pagesDone,
+            sampleErrors,
+          };
         }
       }
 
@@ -517,7 +533,15 @@ export const syncCatalog = internalAction({
             `without draining — cursor bug or catalog exceeds CATALOG_MAX_ROWS. Sweep skipped.`,
         );
         await release();
-        return { done: true as const, imported, failed, swept: 0, sweepSkipped: true, pagesDone, sampleErrors };
+        return {
+          done: true as const,
+          imported,
+          failed,
+          swept: 0,
+          sweepSkipped: true,
+          pagesDone,
+          sampleErrors,
+        };
       }
 
       // More to go — continue in a fresh action so we never hit the time limit.
@@ -531,7 +555,14 @@ export const syncCatalog = internalAction({
         sampleErrors,
         failedIds,
       });
-      return { done: false as const, scheduledMore: true as const, imported, failed, pagesDone, sampleErrors };
+      return {
+        done: false as const,
+        scheduledMore: true as const,
+        imported,
+        failed,
+        pagesDone,
+        sampleErrors,
+      };
     } catch (e) {
       // Release the lock on any throw so it isn't stranded for the TTL. (The
       // release is a no-op if a newer run already stole the lock.)

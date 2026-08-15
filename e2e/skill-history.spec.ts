@@ -87,17 +87,24 @@ test.describe("skill history diff panel", () => {
     // 3. The panel holds a real diff, and no second loading phase follows the
     //    open. "Loading diff" appearing here is the exact regression that made
     //    the row reveal an empty box and fill it in afterwards.
-    const panel = page.locator(`#${await trigger.getAttribute("aria-controls")}`);
+    const panel = page.locator(
+      `#${await trigger.getAttribute("aria-controls")}`,
+    );
     await expect(panel).toBeVisible();
     await expect(page.getByText("Loading diff")).toHaveCount(0);
     await expect
       .poll(
         async () =>
           panel.evaluate((el) => {
-            const host = [...el.querySelectorAll("*")].find((n) => n.shadowRoot);
+            const host = [...el.querySelectorAll("*")].find(
+              (n) => n.shadowRoot,
+            );
             return host?.shadowRoot?.textContent?.trim().length ?? 0;
           }),
-        { message: "the diff renderer should paint content into its shadow root" },
+        {
+          message:
+            "the diff renderer should paint content into its shadow root",
+        },
       )
       .toBeGreaterThan(0);
   });
@@ -162,7 +169,9 @@ test.describe("skill history diff panel", () => {
     );
   });
 
-  test("changing the comparison range keeps the panel open", async ({ page }) => {
+  test("changing the comparison range keeps the panel open", async ({
+    page,
+  }) => {
     await page.goto(HISTORY_SKILL_PATH, { waitUntil: "networkidle" });
 
     const trigger = page.locator("#history button[aria-expanded]").first();

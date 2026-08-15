@@ -53,11 +53,7 @@ export function BundleEditBar({
       onClick={onAddSkills}
       disabled={atCap}
       leadingIcon={
-        <HugeiconsIcon
-          icon={Add01Icon}
-          strokeWidth={2}
-          className="size-3.5"
-        />
+        <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-3.5" />
       }
     >
       Add skills
@@ -78,7 +74,7 @@ export function BundleEditBar({
           // sm+: lift into a centered, rounded floating pill with the
           // all-around solidSurface shadow (4-edge rim). The sm:dark: shadow
           // override is needed to outrank the flush variant's dark: shadow.
-          "sm:inset-x-auto sm:left-1/2 sm:right-auto sm:bottom-4 sm:-translate-x-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:data-ending-style:translate-y-[calc(100%+1rem)]",
+          "sm:inset-x-auto sm:right-auto sm:bottom-4 sm:left-1/2 sm:w-auto sm:max-w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:rounded-2xl sm:shadow-[var(--surface-shadow-5),var(--surface-rim-5)] sm:after:shadow-none sm:data-ending-style:translate-y-[calc(100%+1rem)] sm:data-starting-style:translate-y-[calc(100%+1rem)] sm:dark:shadow-[var(--surface-shadow-5),var(--surface-rim-5)]",
         )}
       >
         <div className="flex items-center gap-2 px-3 py-2 sm:gap-4 sm:px-4 sm:py-2.5">
@@ -136,12 +132,7 @@ export function BundleEditBar({
             ) : (
               addButton
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onCancel}
-            >
+            <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
               Cancel
             </Button>
             <Button

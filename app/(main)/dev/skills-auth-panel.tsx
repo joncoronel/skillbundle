@@ -126,8 +126,7 @@ function AuthDetail({ auth }: { auth: AuthStatus }) {
 
       {rejectedSinceRefresh && (
         <p className="text-xs font-medium text-danger-foreground">
-          skills.sh rejected the OIDC token{" "}
-          {timeAgo(auth.lastOidcRejectedAt!)}
+          skills.sh rejected the OIDC token {timeAgo(auth.lastOidcRejectedAt!)}
           {auth.lastOidcRejectedStatus
             ? ` with a ${auth.lastOidcRejectedStatus}`
             : ""}
@@ -153,7 +152,9 @@ function AuthDetail({ auth }: { auth: AuthStatus }) {
       {auth.lastRefreshError && (
         <p className="text-xs font-medium break-words text-danger-foreground">
           Last refresh failed
-          {auth.lastRefreshErrorAt ? ` ${timeAgo(auth.lastRefreshErrorAt)}` : ""}
+          {auth.lastRefreshErrorAt
+            ? ` ${timeAgo(auth.lastRefreshErrorAt)}`
+            : ""}
           : {auth.lastRefreshError}
         </p>
       )}

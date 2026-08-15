@@ -27,12 +27,7 @@
  * see `isFault`.
  */
 export type Condition =
-  | "audit"
-  | "delisted"
-  | "fetch-error"
-  | "description"
-  | "content"
-  | "steady";
+  "audit" | "delisted" | "fetch-error" | "description" | "content" | "steady";
 
 export const CONDITION_RANK: Record<Condition, number> = {
   audit: 5,

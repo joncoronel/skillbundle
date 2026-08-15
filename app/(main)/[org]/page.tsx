@@ -140,7 +140,9 @@ async function OrgHeader({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className={cn(LISTING_TITLE_SCALE, "font-medium tracking-tight mb-6")}>
+      <h1
+        className={cn(LISTING_TITLE_SCALE, "mb-6 font-medium tracking-tight")}
+      >
         {org}
       </h1>
     </>
@@ -187,8 +189,8 @@ async function OrgListContent({ params }: { params: Params }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
-        <div className="flex items-center gap-3 text-sm tabular-nums text-muted-foreground">
+      <div className="mb-12 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground tabular-nums">
           <span>
             {repos.length} repositor{repos.length === 1 ? "y" : "ies"}
           </span>
@@ -224,7 +226,7 @@ async function OrgListContent({ params }: { params: Params }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
+      <div className="mb-2 flex items-center justify-between px-4 text-xs font-medium text-muted-foreground">
         <span>Source</span>
         <span>Installs</span>
       </div>
@@ -235,24 +237,24 @@ async function OrgListContent({ params }: { params: Params }) {
             <div
               key={repo.source}
               className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3",
+                "rounded-2xl border bg-card py-3 dark:border-border/50",
                 rowPositionClassName(i, repos.length),
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                <div className="flex flex-wrap items-baseline gap-x-2 min-w-0">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <Link
                     href={`/${repo.source}`}
-                    className="text-sm font-semibold hover:underline inline-flex items-center gap-1.5"
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold hover:underline"
                   >
                     <span>{repo.repo}</span>
                     <LinkPending />
                   </Link>
-                  <span className="text-xs tabular-nums text-muted-foreground">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {repo.skillCount} skill{repo.skillCount === 1 ? "" : "s"}
                   </span>
                 </div>
-                <div className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                <div className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
                   {formatInstalls(repo.totalInstalls)}
                 </div>
               </div>
@@ -267,7 +269,7 @@ async function OrgListContent({ params }: { params: Params }) {
 function OrgListSkeleton() {
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
+      <div className="mb-12 flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-3 text-sm">
           <Skeleton className="h-4 w-28" />
           <span aria-hidden="true" className="text-muted-foreground">
@@ -284,7 +286,7 @@ function OrgListSkeleton() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
+      <div className="mb-2 flex items-center justify-between px-4 text-xs font-medium text-muted-foreground">
         <span>Source</span>
         <span>Installs</span>
       </div>
@@ -295,12 +297,12 @@ function OrgListSkeleton() {
             <div
               key={i}
               className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3",
+                "rounded-2xl border bg-card py-3 dark:border-border/50",
                 rowPositionClassName(i, 6),
               )}
             >
               <div className="flex items-center gap-3 px-4">
-                <div className="flex items-baseline gap-x-2 min-w-0">
+                <div className="flex min-w-0 items-baseline gap-x-2">
                   <Skeleton className="h-4 w-24" />
                   <Skeleton className="h-3 w-12" />
                 </div>

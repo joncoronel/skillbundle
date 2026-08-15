@@ -1,5 +1,8 @@
 import type { MetadataRoute } from "next";
-import { isSafeCommandSkillId, isSafeCommandSource } from "@/lib/install-commands";
+import {
+  isSafeCommandSkillId,
+  isSafeCommandSource,
+} from "@/lib/install-commands";
 import {
   isGitHubSource,
   ownerHref,
@@ -241,7 +244,9 @@ export function buildSitemapEntries(
     ...CATALOG_ROOT_PATHS.map((path) => entry(path, catalogLastModified)),
     ...STATIC_PATHS.map((path) => entry(path, undefined)),
     ...[...orgPaths].map(([path, lastModified]) => entry(path, lastModified)),
-    ...[...sourcePaths].map(([path, lastModified]) => entry(path, lastModified)),
+    ...[...sourcePaths].map(([path, lastModified]) =>
+      entry(path, lastModified),
+    ),
     ...skillEntries,
   ];
 }

@@ -36,8 +36,9 @@ import { embedTexts, EMBEDDING_DIMENSIONS } from "../convex/lib/embeddings";
 // Build a deterministic 512-dim vector. The actual values don't matter for
 // what we're testing — only that the right shape lands in the DB.
 function fakeVector(seed: number): number[] {
-  return Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) =>
-    Math.sin(seed * 0.1 + i) * 0.01,
+  return Array.from(
+    { length: EMBEDDING_DIMENSIONS },
+    (_, i) => Math.sin(seed * 0.1 + i) * 0.01,
   );
 }
 

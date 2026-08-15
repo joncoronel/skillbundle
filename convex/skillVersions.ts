@@ -21,11 +21,7 @@
  * server-side, which is why none is stored — see the schema comment on
  * `skillVersions`.
  */
-import {
-  internalMutation,
-  internalQuery,
-  query,
-} from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -224,9 +220,9 @@ export const getVersions = query({
     const ids = versionIds.slice(0, MAX_VERSION_LIMIT);
     const rows = await Promise.all(ids.map((id) => ctx.db.get(id)));
     return await Promise.all(
-      rows.filter((r): r is Doc<"skillVersions"> => r !== null).map((r) =>
-        toEntry(ctx, r),
-      ),
+      rows
+        .filter((r): r is Doc<"skillVersions"> => r !== null)
+        .map((r) => toEntry(ctx, r)),
     );
   },
 });
@@ -404,7 +400,12 @@ export const listRecentChangesForUser = query({
     // bundles is reported against the one it has been unread in longest.
     const candidates = new Map<
       string,
-      { bundle: Doc<"bundles">; source: string; skillId: string; baseline: number }
+      {
+        bundle: Doc<"bundles">;
+        source: string;
+        skillId: string;
+        baseline: number;
+      }
     >();
 
     for (const bundle of bundles) {
@@ -707,9 +708,7 @@ export const listChangesForBundle = query({
           kind: change.kind,
           changedAt: change.changedAt,
           audit: change.audit,
-          version: change.version
-            ? await toEntry(ctx, change.version)
-            : null,
+          version: change.version ? await toEntry(ctx, change.version) : null,
         };
       }),
     );

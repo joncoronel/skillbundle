@@ -99,7 +99,8 @@ export const seedFeedBundle = internalMutation({
     }
 
     const label = skills.map((s) => `${s.source}/${s.skillId}`);
-    if (clear) return { bundle: FEED_BUNDLE_NAME, skills: label, cleared: true };
+    if (clear)
+      return { bundle: FEED_BUNDLE_NAME, skills: label, cleared: true };
 
     const now = Date.now();
     await ctx.db.insert("bundles", {

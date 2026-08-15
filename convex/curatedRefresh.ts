@@ -106,11 +106,15 @@ export const refreshCuratedSkills = internalAction({
     }
 
     if (!page.isDone && iteration < CURATED_MAX_ITER) {
-      await ctx.scheduler.runAfter(0, internal.curatedRefresh.refreshCuratedSkills, {
-        cursor: page.nextCursor,
-        iteration: iteration + 1,
-        day,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.curatedRefresh.refreshCuratedSkills,
+        {
+          cursor: page.nextCursor,
+          iteration: iteration + 1,
+          day,
+        },
+      );
       return { refreshed, gone, done: false };
     }
 

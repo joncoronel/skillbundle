@@ -446,7 +446,7 @@ export function HistoryRow({
             container's `px-4` (16px) on the right. */}
         <CollapsibleContent
           id={panelId}
-          className="px-1 -mx-1 pt-2 -mt-2 duration-0"
+          className="-mx-1 -mt-2 px-1 pt-2 duration-0"
         >
           {/* No `open &&` guard here, deliberately. CollapsibleContent animates
               its exit with `data-[ending-style]:h-0`, which needs Base UI to
@@ -678,9 +678,7 @@ function DescriptionChange({
         <dt className="mb-1 text-xs font-medium text-muted-foreground">
           Description after
         </dt>
-        <dd className="text-sm">
-          {version.descriptionAfter || <em>None</em>}
-        </dd>
+        <dd className="text-sm">{version.descriptionAfter || <em>None</em>}</dd>
       </div>
     </dl>
   );

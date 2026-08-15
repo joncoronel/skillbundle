@@ -127,7 +127,7 @@ export function SkillRowGrid({
             // skips layout/paint for off-screen rows. The intrinsic-size
             // `auto` keyword remembers each row's real height once rendered
             // — 76px is only the pre-render estimate for scrollbar math.
-            "[content-visibility:auto] [contain-intrinsic-size:auto_76px]",
+            "[contain-intrinsic-size:auto_76px] [content-visibility:auto]",
             rowPositionClassName(i, skills.length),
           )}
         />
@@ -155,7 +155,7 @@ export function EmptyState({
 /** Infinite-scroll "loading more" footer, shared by the paginated lists. */
 export function LoadingMoreFooter({ noun }: { noun: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
+    <div className="mt-4 flex items-center justify-center gap-2 text-muted-foreground">
       <DotMatrixComet size="xs" ariaLabel={`Loading more ${noun}`} />
       <span className="text-xs">Loading more {noun}…</span>
     </div>

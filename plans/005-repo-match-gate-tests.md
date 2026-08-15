@@ -38,7 +38,7 @@ call.
 
 - `lib/repo-match.ts` — pure, shared by client and Convex backend. Key
   exports: `extractRepoSlug(input)` (THE canonical GitHub URL/slug parser —
-  its comments document the tricky cases: strip query/fragment *before*
+  its comments document the tricky cases: strip query/fragment _before_
   `.git`, reject `github.com`-looking non-matches rather than salvaging
   them, reject `.`/`..` segments), `matchesDemoRepo(owner, repo)`
   (case-insensitive check against `DEMO_REPO_SLUGS`, currently just
@@ -72,7 +72,7 @@ export const analyzeRepo = action({
 - Plan resolution: `convex/lib/plans.ts` `getUserPlan` returns `"free"` when
   there is no authed user, and — important for tests — its
   `polar.getCurrentSubscription` call is wrapped in `try/catch { return "free" }`.
-  Under `convex-test` the Polar *component* is not registered, so the call
+  Under `convex-test` the Polar _component_ is not registered, so the call
   throws and every authed user resolves as `"free"`. Consequence: **the Pro
   pass-through cannot be exercised end-to-end in convex-test**; it is
   covered at the predicate level instead (`isRepoMatchAllowed` with
@@ -90,19 +90,21 @@ export const analyzeRepo = action({
 
 ## Commands you will need
 
-| Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
-| Typecheck | `npx tsc --noEmit` | exit 0              |
-| Tests     | `pnpm test`        | all pass            |
-| New files | `pnpm test tests/repo-match.test.ts tests/recommendations-gate.test.ts` | pass |
+| Purpose   | Command                                                                 | Expected on success |
+| --------- | ----------------------------------------------------------------------- | ------------------- |
+| Typecheck | `npx tsc --noEmit`                                                      | exit 0              |
+| Tests     | `pnpm test`                                                             | all pass            |
+| New files | `pnpm test tests/repo-match.test.ts tests/recommendations-gate.test.ts` | pass                |
 
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `tests/repo-match.test.ts` (create)
 - `tests/recommendations-gate.test.ts` (create)
 
 **Out of scope** (do NOT touch):
+
 - `convex/recommendations.ts`, `lib/repo-match.ts`, `convex/lib/plans.ts` —
   this plan adds tests ONLY. If a test reveals a real bug, STOP and report;
   do not fix source.

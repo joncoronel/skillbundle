@@ -70,7 +70,9 @@ export function SignalChip({
           aria-hidden="true"
         />
       </TooltipTrigger>
-      <TooltipContent className="max-w-56 leading-snug">{tooltip}</TooltipContent>
+      <TooltipContent className="max-w-56 leading-snug">
+        {tooltip}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -149,8 +151,8 @@ export function HotMomentumChip({
       className={cn(
         "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-micro font-medium tabular-nums",
         rising
-          ? "bg-success/10 text-success-foreground border-success/20"
-          : "bg-destructive/10 text-destructive border-destructive/20",
+          ? "border-success/20 bg-success/10 text-success-foreground"
+          : "border-destructive/20 bg-destructive/10 text-destructive",
         className,
       )}
       title={`${sign}${Math.abs(change).toLocaleString()} installs vs same hour yesterday`}

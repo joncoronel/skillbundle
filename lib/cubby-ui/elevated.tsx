@@ -190,12 +190,7 @@ export interface ElevatedProps extends React.ComponentProps<"div"> {
   shadowLevel?: SurfaceLevel;
 }
 
-function Elevated({
-  level,
-  shadowLevel,
-  className,
-  ...props
-}: ElevatedProps) {
+function Elevated({ level, shadowLevel, className, ...props }: ElevatedProps) {
   return (
     <div
       data-slot="elevated"

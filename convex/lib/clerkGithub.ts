@@ -15,7 +15,8 @@ export type GithubTokenResult =
 export const GITHUB_REPO_SCOPE = "repo";
 
 function normalizeScopes(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.filter((s): s is string => typeof s === "string");
+  if (Array.isArray(raw))
+    return raw.filter((s): s is string => typeof s === "string");
   if (typeof raw === "string") return raw.split(/[\s,]+/).filter(Boolean);
   return [];
 }

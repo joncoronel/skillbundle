@@ -114,7 +114,8 @@ function RepoPickerInner() {
   // owns that email.
   if (failedAccount) {
     const claimed =
-      failedAccount.verification?.error?.code === "oauth_identification_claimed";
+      failedAccount.verification?.error?.code ===
+      "oauth_identification_claimed";
     return (
       <ConnectPrompt
         label="Try a different GitHub account"

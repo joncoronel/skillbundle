@@ -240,13 +240,13 @@ export function EmailSection() {
                   required
                 />
                 {process.env.NODE_ENV === "development" && (
-                  <p className="text-muted-foreground text-xs">
+                  <p className="text-xs text-muted-foreground">
                     Dev mode: use{" "}
-                    <code className="bg-muted rounded px-1 py-0.5">
+                    <code className="rounded bg-muted px-1 py-0.5">
                       +clerk_test
                     </code>{" "}
                     emails (e.g. name+clerk_test@example.com). Code:{" "}
-                    <code className="bg-muted rounded px-1 py-0.5">424242</code>
+                    <code className="rounded bg-muted px-1 py-0.5">424242</code>
                   </p>
                 )}
               </div>
@@ -264,10 +264,10 @@ export function EmailSection() {
               <button
                 type="button"
                 className={cn(
-                  "text-muted-foreground text-sm",
+                  "text-sm text-muted-foreground",
                   resendCountdown > 0
                     ? "cursor-default"
-                    : "hover:text-foreground cursor-pointer underline underline-offset-2",
+                    : "cursor-pointer underline underline-offset-2 hover:text-foreground",
                 )}
                 onClick={handleResendEmail}
                 disabled={resendCountdown > 0}
@@ -277,9 +277,9 @@ export function EmailSection() {
                   : "Didn\u2019t receive a code? Resend"}
               </button>
               {process.env.NODE_ENV === "development" && (
-                <p className="text-muted-foreground text-xs">
+                <p className="text-xs text-muted-foreground">
                   Dev mode: code is{" "}
-                  <code className="bg-muted rounded px-1 py-0.5">424242</code>
+                  <code className="rounded bg-muted px-1 py-0.5">424242</code>
                 </p>
               )}
               {error && <p className="text-sm text-destructive">{error}</p>}

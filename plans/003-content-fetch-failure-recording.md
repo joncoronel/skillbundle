@@ -25,7 +25,7 @@
 
 `fetchSkillContent` records a failure in the database when the SKILL.md URL
 returns an HTTP error (`!res.ok` → `markContentFetchFailed`), but when
-`fetch` *throws* (DNS failure, connection refused, TLS error, timeout) it
+`fetch` _throws_ (DNS failure, connection refused, TLS error, timeout) it
 retries 3 times, logs to console, and writes **nothing**. The skill's
 `needsContentFetch` stays `true` forever, so a permanently unreachable host
 is re-fetched every daily sync cycle; the user-facing "install may fail"
@@ -57,9 +57,7 @@ export const fetchSkillContent = internalAction({
       try {
         const res = await fetch(skillMdUrl);
         if (!res.ok) {
-          console.error(
-            `Failed to fetch content for ${label}: ${res.status}`,
-          );
+          console.error(`Failed to fetch content for ${label}: ${res.status}`);
           await ctx.runMutation(internal.skills.markContentFetchFailed, {
             skillId,
           });
@@ -98,21 +96,23 @@ mirrors both fields onto the `skillSummaries` row.
 
 ## Commands you will need
 
-| Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
-| Typecheck | `npx tsc --noEmit` | exit 0              |
-| Tests     | `pnpm test`        | all pass            |
-| One file  | `pnpm test tests/content-fetch-failure.test.ts` | passes |
-| Lint      | `pnpm lint`        | exit 0              |
+| Purpose   | Command                                         | Expected on success |
+| --------- | ----------------------------------------------- | ------------------- |
+| Typecheck | `npx tsc --noEmit`                              | exit 0              |
+| Tests     | `pnpm test`                                     | all pass            |
+| One file  | `pnpm test tests/content-fetch-failure.test.ts` | passes              |
+| Lint      | `pnpm lint`                                     | exit 0              |
 
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `convex/skills.ts` — ONLY the `fetchSkillContent` handler's final catch
   branch.
 - `tests/content-fetch-failure.test.ts` (create)
 
 **Out of scope** (do NOT touch):
+
 - `markContentFetchFailed` / `markContentFetched` / `updateDescription` —
   their semantics are load-bearing for the whole pipeline.
 - The retry count, backoff timing, or the `!res.ok` early-return behavior.
@@ -214,13 +214,13 @@ Stop and report back (do not improvise) if:
 
 ## Maintenance notes
 
-- This makes transient *network* blips count toward the 2-failure
+- This makes transient _network_ blips count toward the 2-failure
   rediscovery threshold, same as transient 5xx responses already do. That is
   the intended symmetry; rediscovery is cheap and self-healing. If flapping
   ever becomes visible (skills bouncing between fetch and rediscovery),
   the fix is a transient/permanent distinction in BOTH branches, not a
   revert of this one.
-- Related but separate (deliberately not in this plan): the *discovery*
+- Related but separate (deliberately not in this plan): the _discovery_
   path has an analogous transient-failure conflation
   (`convex/skills.ts:784-826` marking `skillMdUrl: ""` when the GitHub tree
   fetch itself failed). See the audit finding table — larger change, own

@@ -53,13 +53,13 @@ export function SkillBundlePanel() {
               "linear-gradient(to bottom, transparent 0, black 96px, black calc(100% - 96px), transparent 100%)",
           }}
         >
-          <ul className="flex flex-col animate-scroll-stack motion-reduce:animate-none group-hover:[animation-play-state:paused] will-change-transform">
+          <ul className="flex animate-scroll-stack flex-col will-change-transform group-hover:[animation-play-state:paused] motion-reduce:animate-none">
             {LOOP.map((skill, i) => (
               <li
                 key={`${skill.name}-${i}`}
                 className="flex items-baseline gap-6 px-10 py-3 font-mono text-sm text-foreground/80"
               >
-                <span className="w-6 text-micro tabular-nums text-muted-foreground">
+                <span className="w-6 text-micro text-muted-foreground tabular-nums">
                   {((i % SKILLS.length) + 1).toString().padStart(2, "0")}
                 </span>
                 <span className="flex-1 truncate">{skill.name}</span>

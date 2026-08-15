@@ -75,7 +75,10 @@ export function generateInstallCommands(
       hasWarning: false,
       excludedSkills: [],
     };
-    if (!isSafeCommandSource(skill.source) || !isSafeCommandSkillId(skill.skillId)) {
+    if (
+      !isSafeCommandSource(skill.source) ||
+      !isSafeCommandSkillId(skill.skillId)
+    ) {
       existing.excludedSkills.push(skill.skillId);
       existing.hasWarning = true;
     } else {

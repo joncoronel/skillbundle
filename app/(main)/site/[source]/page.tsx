@@ -110,7 +110,9 @@ async function SourceHeader({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className={cn(LISTING_TITLE_SCALE, "font-medium tracking-tight mb-6")}>
+      <h1
+        className={cn(LISTING_TITLE_SCALE, "mb-6 font-medium tracking-tight")}
+      >
         {source}
       </h1>
     </>
@@ -152,8 +154,8 @@ async function SourceListContent({ params }: { params: Params }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
-        <div className="flex items-center gap-3 text-sm tabular-nums text-muted-foreground">
+      <div className="mb-12 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground tabular-nums">
           <span>
             {skills.length} skill{skills.length === 1 ? "" : "s"}
           </span>
@@ -193,7 +195,7 @@ async function SourceListContent({ params }: { params: Params }) {
 function SourceListSkeleton() {
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-12">
+      <div className="mb-12 flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-3 text-sm">
           <Skeleton className="h-4 w-20" />
           <span aria-hidden="true" className="text-muted-foreground">
@@ -202,7 +204,7 @@ function SourceListSkeleton() {
           <Skeleton className="h-4 w-24" />
         </div>
         <div className="ml-auto">
-          <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
+          <Skeleton className="h-9 w-32 rounded-lg sm:h-8" />
         </div>
       </div>
 
@@ -214,10 +216,10 @@ function SourceListSkeleton() {
           fallback the only loading surface, which put it on the common one. */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Skeleton className="h-4 w-48 max-w-[60%]" />
-        <Skeleton className="h-9 sm:h-8 w-32 rounded-lg" />
+        <Skeleton className="h-9 w-32 rounded-lg sm:h-8" />
       </div>
 
-      <div className="flex items-center justify-between px-4 mb-2 text-xs font-medium text-muted-foreground">
+      <div className="mb-2 flex items-center justify-between px-4 text-xs font-medium text-muted-foreground">
         <span>Skill</span>
         <span>Installs</span>
       </div>
@@ -228,7 +230,7 @@ function SourceListSkeleton() {
             <div
               key={i}
               className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3",
+                "rounded-2xl border bg-card py-3 dark:border-border/50",
                 rowPositionClassName(i, 4),
               )}
             >

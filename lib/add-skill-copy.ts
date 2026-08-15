@@ -164,7 +164,8 @@ function convexErrorText(err: unknown): string {
   if (err instanceof ConvexError) {
     return typeof err.data === "string"
       ? err.data
-      : ((err.data as { message?: string })?.message ?? "Something went wrong.");
+      : ((err.data as { message?: string })?.message ??
+          "Something went wrong.");
   }
   return err instanceof Error ? err.message : String(err);
 }

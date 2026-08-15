@@ -111,7 +111,7 @@ function CopyRow({
           {tag === "live" && <CopyTag variant="live">Live</CopyTag>}
           {tag === "renamed" && <CopyTag variant="renamed">Renamed</CopyTag>}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
           {formatInstalls(installs)} installs
           <HugeiconsIcon
             icon={ArrowRight01Icon}

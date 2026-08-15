@@ -125,7 +125,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
               <div>
                 <label
                   htmlFor="bundle-name"
-                  className="text-sm font-medium mb-1.5 block"
+                  className="mb-1.5 block text-sm font-medium"
                 >
                   Bundle name
                 </label>
@@ -143,7 +143,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
               <div>
                 <label
                   htmlFor="bundle-description"
-                  className="text-sm font-medium mb-1.5 block"
+                  className="mb-1.5 block text-sm font-medium"
                 >
                   Description
                   <span className="ml-1.5 text-xs font-normal text-muted-foreground">
@@ -163,7 +163,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                   <span
                     className={
                       descriptionOverLimit
-                        ? "text-destructive font-medium"
+                        ? "font-medium text-destructive"
                         : undefined
                     }
                   >

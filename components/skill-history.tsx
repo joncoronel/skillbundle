@@ -80,8 +80,8 @@ export function SkillHistory({
 function EmptyHistory() {
   return (
     <p className="max-w-prose text-sm text-muted-foreground">
-      No changes recorded yet. SkillBundle began tracking edits to skill files in
-      August 2026, so a skill that hasn&apos;t changed since then has nothing
+      No changes recorded yet. SkillBundle began tracking edits to skill files
+      in August 2026, so a skill that hasn&apos;t changed since then has nothing
       here.
     </p>
   );

@@ -43,6 +43,7 @@ Two things close that window, and both must stay:
   Deliberately **no `syncHash`**: the seeded copy may lag GitHub's, and storing
   its hash would make the next GitHub fetch look like an upstream change. Also
   fill-only, so a relist can't overwrite real content with a stale copy.
+
 - **Immediate publish.** When the content chain later writes a **user-added**
   row's first content, it pings the cache tags from inside that write's own
   transaction (`publishFirstUserAddedContent`) rather than at the chain's
@@ -67,17 +68,17 @@ stale set is existing summaries), and the tag is set-on-insert only — so
 
 ## The jobs (production crons gated by `CRONS_ENABLED`)
 
-| Job | Cadence (UTC) | What it does |
-|---|---|---|
-| `syncSkills` | daily 06:00 | Walk the full leaderboard; upsert installs + rank + daily snapshot; stamp `lastSeenInApi`. Owns leaderboard installs. |
-| `syncCurated` | daily 06:30 | Ensure curated skills exist; stamp `curatedOwner`; clear stale `curatedOwner`. **Does not write installs** (`ownsInstalls:false`). |
-| `reconcileUnseenSkills` | daily 07:00 | Keep alive + refresh **healthy off-board** skills via the detail endpoint (installs + snapshot + stamp). Skips broke + dead aliases. **Chains `typesense.syncCatalog` on its terminal exit** (see below). |
-| `syncCatalog` (Typesense) | chained off reconcile + daily 09:00 backstop | Mirror the non-delisted catalog into the Typesense search index (mark-and-sweep). See below. |
-| `markDelistedSkills` | (chained off syncSkills) | Delist skills unseen for 30 days. |
-| `markStaleContent` | (chained off syncSkills) | Re-flag content >7 days old for re-fetch; drives the discovery/content/audit pipeline. |
-| `resolveRepoIdentities` | weekly Sun 08:00 | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto **never-resolved** summaries, cached per repo. |
-| `refreshCuratedSkills` | weekly Sun 09:00 | Detail-refresh **curated-only** skills (never on the leaderboard) so their count + chart aren't frozen. |
-| `reresolveStaleRepoIdentities` | weekly Sun 10:00 | Re-check **already-resolved** repos past their TTL against GitHub; re-stamp summaries when a repo renamed after it was first stamped. |
+| Job                            | Cadence (UTC)                                | What it does                                                                                                                                                                                              |
+| ------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `syncSkills`                   | daily 06:00                                  | Walk the full leaderboard; upsert installs + rank + daily snapshot; stamp `lastSeenInApi`. Owns leaderboard installs.                                                                                     |
+| `syncCurated`                  | daily 06:30                                  | Ensure curated skills exist; stamp `curatedOwner`; clear stale `curatedOwner`. **Does not write installs** (`ownsInstalls:false`).                                                                        |
+| `reconcileUnseenSkills`        | daily 07:00                                  | Keep alive + refresh **healthy off-board** skills via the detail endpoint (installs + snapshot + stamp). Skips broke + dead aliases. **Chains `typesense.syncCatalog` on its terminal exit** (see below). |
+| `syncCatalog` (Typesense)      | chained off reconcile + daily 09:00 backstop | Mirror the non-delisted catalog into the Typesense search index (mark-and-sweep). See below.                                                                                                              |
+| `markDelistedSkills`           | (chained off syncSkills)                     | Delist skills unseen for 30 days.                                                                                                                                                                         |
+| `markStaleContent`             | (chained off syncSkills)                     | Re-flag content >7 days old for re-fetch; drives the discovery/content/audit pipeline.                                                                                                                    |
+| `resolveRepoIdentities`        | weekly Sun 08:00                             | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto **never-resolved** summaries, cached per repo.                                                                                              |
+| `refreshCuratedSkills`         | weekly Sun 09:00                             | Detail-refresh **curated-only** skills (never on the leaderboard) so their count + chart aren't frozen.                                                                                                   |
+| `reresolveStaleRepoIdentities` | weekly Sun 10:00                             | Re-check **already-resolved** repos past their TTL against GitHub; re-stamp summaries when a repo renamed after it was first stamped.                                                                     |
 
 ## "Seen" and delisting
 
@@ -90,9 +91,10 @@ pipeline itself (see [GitHub-only skills](#github-only-skills)).
   `lastSeenInApi` is older than **30 days** (`DELIST_THRESHOLD_MS`).
 - So **delisted = "no sync kept it alive for 30 days."** Note: a skill off the
   leaderboard but kept fresh by `reconcile`/`refreshCuratedSkills` (i.e. healthy)
-  never delists. The detail endpoint *is* one of the "seen" signals via reconcile.
+  never delists. The detail endpoint _is_ one of the "seen" signals via reconcile.
 
 **What delisting does** (soft-delete, not a DB delete):
+
 - `isDelisted = true`; hidden from all listing/search/recommendation queries (they
   filter `isDelisted = false`).
 - Embedding row deleted (drops it from vector search); leaderboard denorm fields
@@ -104,7 +106,7 @@ pipeline itself (see [GitHub-only skills](#github-only-skills)).
 ## GitHub-only skills
 
 A skill can be wanted in the catalog while being **absent from skills.sh
-entirely** — not on the leaderboard feed *and* 404 on the detail endpoint. The
+entirely** — not on the leaderboard feed _and_ 404 on the detail endpoint. The
 `/dev/add-skill` form offers this path only as a fallback: it tries
 `addSkillManually` first, and on a detail 404 calls `previewGitHubSkill`, which
 resolves the SKILL.md in the repo and shows the admin the exact file path +
@@ -206,7 +208,7 @@ Note the asymmetry with discovery this closes: discovery's own no-tree fallback
 probes `skills/<skillId>/SKILL.md` from the STORED slug, so adopting an alias
 without a verified folder list would leave discovery probing a path that doesn't
 exist and stamping `skillMdUrl: ""` — a contentless row. Keeping the typed slug
-is genuinely the only thing that *works* there, which is why the gate refuses
+is genuinely the only thing that _works_ there, which is why the gate refuses
 rather than picking the other slug.
 
 **Finding the ones that slipped through.** `githubOnlyAudit.auditGitHubOnlySlugs` (a
@@ -360,7 +362,7 @@ them). To quantify on demand, run `devStats.countDeadButInstallable`.
 
 - A **consecutive-confirmed-404 counter at ~7 days** — NOT lowering `DELIST_THRESHOLD_MS`.
   The counter acts on positive evidence (skills.sh actually returned 404 N times); a
-  shorter blanket timer would also fire when *our* pipeline (reconcile) merely stalls.
+  shorter blanket timer would also fire when _our_ pipeline (reconcile) merely stalls.
 - **Exempt `leaderboard: "manual"` skills** — they're deliberate admin curation, the one
   place a fast auto-delete is most likely to be wrong.
 
@@ -380,12 +382,12 @@ The install count has exactly one trustworthy owner per skill state:
 Why not just use the **curated endpoint's** install number daily (cheap)? Because
 the curated feed is a **periodic snapshot**, not a live count. Its `generatedAt`
 lags weeks (measured **26 days stale** on 2026-06-23). The numbers are the right
-*magnitude* — never inflated — but frozen in the past, so they read low by however
+_magnitude_ — never inflated — but frozen in the past, so they read low by however
 much a skill grew since the snapshot (sampled ratios **0.83-0.99** vs the live
 detail count, worst ~15% low for fast-growers like `nuxt/ui`). Two consequences:
 (1) writing them over `syncSkills`'s live leaderboard count would drag accurate
 counts backward and sawtooth the chart — hence `ownsInstalls:false`; (2) reading
-them *daily* buys nothing, since the snapshot only changes ~monthly (you'd get the
+them _daily_ buys nothing, since the snapshot only changes ~monthly (you'd get the
 same frozen number for weeks, then a step). The **detail** endpoint is live and
 exact, so curated-only counts come from there, weekly, to bound per-skill cost.
 Re-check `generatedAt` periodically: if skills.sh starts regenerating curated
@@ -416,7 +418,7 @@ conventional paths with a HEAD and binds the first that answers.
 
 **A verification step in pass 1 was tried and reverted (Jul 2026), and the
 measurement is worth keeping.** It opened each folder-matched file and refused the
-bind when the file's own `name` was a *different* known skill's slug, to catch a
+bind when the file's own `name` was a _different_ known skill's slug, to catch a
 folder holding the wrong skill's file. `bindAudit.ts` then asked the same question
 across production: of **13,080 judged rows, ZERO** had a confirmable wrong bind,
 and **12** would have had a healthy bind refused.
@@ -480,7 +482,7 @@ repo had been reasoning from inference about rules that are written down.
 
 ```ts
 function normalizeSkillName(name: string): string {
-  return name.toLowerCase().replace(/[\s_]+/g, '-');
+  return name.toLowerCase().replace(/[\s_]+/g, "-");
 }
 ```
 
@@ -513,14 +515,14 @@ identity check on existing rows.
 
 ## Content states (independent of delisting)
 
-| State | Meaning | In app? | Content |
-|---|---|---|---|
-| Healthy | working SKILL.md URL, no fetch error, discovery not exhausted | yes | loads |
-| Content-error | 1st content-fetch failure (transient) | yes, "install may fail" badge | last-good |
-| Exhausted | discovery failed `MAX_DISCOVERY_FAILURES` (3) times → stop retrying | yes (degraded) | stale/none |
+| State         | Meaning                                                             | In app?                       | Content    |
+| ------------- | ------------------------------------------------------------------- | ----------------------------- | ---------- |
+| Healthy       | working SKILL.md URL, no fetch error, discovery not exhausted       | yes                           | loads      |
+| Content-error | 1st content-fetch failure (transient)                               | yes, "install may fail" badge | last-good  |
+| Exhausted     | discovery failed `MAX_DISCOVERY_FAILURES` (3) times → stop retrying | yes (degraded)                | stale/none |
 
 These do **not** delist a skill — an exhausted skill stays listed, just degraded.
-It only delists if it *also* goes 30 days unseen. Active installs reset
+It only delists if it _also_ goes 30 days unseen. Active installs reset
 `discoveryFailCount` (a live repo signal), unsticking a previously-exhausted skill.
 
 ## Snapshots (the install chart)
@@ -535,6 +537,7 @@ into one consistent bucket.
 ## Reconcile = keep-alive for off-board skills
 
 `reconcileUnseenSkills` (daily 07:00):
+
 1. Scan stale rows via the `by_isDelisted_lastSeenInApi` index range
    (`eq("isDelisted", false).lt("lastSeenInApi", cutoff)`, cutoff =
    **`RECONCILE_FRESHNESS_MS` (23h)** pinned once per run) — reads only the stale
@@ -542,7 +545,7 @@ into one consistent bucket.
    scan. Both `isDelisted` and `lastSeenInApi` are **required** fields, so the
    range has no `undefined` edge case (see Migration notes).
 2. Keep only **healthy** (`hasSkillMdUrl && !hasContentFetchError &&
-   discoveryFailCount < 3`), **not a dead alias** (`repoLiveName === source`),
+discoveryFailCount < 3`), **not a dead alias** (`repoLiveName === source`),
    and **not `isGitHubOnly`** (detail can only 404 for those — see
    [GitHub-only skills](#github-only-skills)).
 3. Detail-refresh each (installs + snapshot + stamp), batched (`RECONCILE_BATCH`),
@@ -550,9 +553,9 @@ into one consistent bucket.
 4. Safety cap: if the stale set exceeds `MAX_RECONCILE` (3000), bail (a sign
    `syncSkills` itself failed) rather than mass-hit the API.
 
-**Why 23h (must be < 24h):** the reconcile both refreshes its skills *and* runs
+**Why 23h (must be < 24h):** the reconcile both refreshes its skills _and_ runs
 every 24h. If the freshness window were ≥ 24h, a skill it stamped yesterday would
-read as "fresh" the next day and get skipped — refreshing only every *other* day
+read as "fresh" the next day and get skipped — refreshing only every _other_ day
 and leaving chart gaps. 23h leaves buffer for cron jitter while staying under 24h.
 
 ## Typesense search mirror (`syncCatalog`)
@@ -587,10 +590,11 @@ lifecycle:
 ## Duplicate / rename detection (Phase 2)
 
 **Two unrelated notions of "duplicate" — don't conflate them:**
-- **`isDuplicate`** is skills.sh's *own upstream fork flag*, mirrored onto the row.
+
+- **`isDuplicate`** is skills.sh's _own upstream fork flag_, mirrored onto the row.
   It only default-filters a row out of list/search/recommendations. We don't
   compute it.
-- **Phase 2 (`copyCount` / `getSkillCopies`)** is *our* content/rename detection
+- **Phase 2 (`copyCount` / `getSkillCopies`)** is _our_ content/rename detection
   below. It powers the "N copies" chip and the detail-page "Also available at".
 
 They're independent: a row can be `isDuplicate: false` yet have `copyCount > 0`
@@ -609,7 +613,7 @@ have the most installs):
   index — the same work-set pattern as `needsDiscovery`/`needsContentFetch`/etc.,
   so it reads only unresolved rows instead of scanning the catalog. It stamps each
   **once**; `reresolveStaleRepoIdentities` re-checks aged repos (TTL
-  `RERESOLVE_TTL_MS`) to catch a repo that renames *after* it was first stamped
+  `RERESOLVE_TTL_MS`) to catch a repo that renames _after_ it was first stamped
   (see edge cases).
 - **Forks** (different repos, same content): same `syncHash` across different
   `githubRepoId`.
@@ -622,6 +626,7 @@ maintenance edge case below.
 request time via two indexed lookups (`by_repo_skill`, `by_syncHash`).
 
 **UI** (`skill-detail-page.tsx`, `skill-copies.tsx`, `skill-card.tsx`):
+
 - Renamed alias → info banner linking to the live skill.
 - "Also available at" section: "Other names for this repo" (aliases) + "Different
   repos, same content" (forks).
@@ -644,7 +649,7 @@ the live repo; off-board ones simply delist.
   new installs is never retried (`markStaleContent` only re-flags on activity).
   Rare; not currently fixed. A fix would be a periodic forced retry of exhausted
   skills.
-- **`addSkillManually` seeds from detail** → manually adding a *renamed alias*
+- **`addSkillManually` seeds from detail** → manually adding a _renamed alias_
   would seed an inflated count. Admin-only + you'd add the live skill, so treated
   as a non-scenario (unfixed).
 - **Weekly resolution lag**: a newly renamed/forked relationship isn't grouped
@@ -655,7 +660,7 @@ the live repo; off-board ones simply delist.
   so the reconcile dead-alias skip doesn't fire yet and reconcile can re-fetch
   its inflated detail count for up to a week (exactly the qu-skills inflation the
   skip prevents). Self-corrects at the next resolve; mitigated because an old
-  name still *on* the leaderboard is owned by `syncSkills` (never stale), so the
+  name still _on_ the leaderboard is owned by `syncSkills` (never stale), so the
   window only applies to already-off-board renames.
 - **`copyCount` maintenance**: `copyCount` is a denormalized counter maintained by
   a single mechanism — `resolveRepoIdentities` chains a full `computeCopyCounts`
@@ -664,7 +669,7 @@ the live repo; off-board ones simply delist.
   a peer's group, a syncHash change on content re-fetch, etc. (There is no
   incremental delist decrement — it was removed in favor of this one recompute.)
   `reresolveStaleRepoIdentities` chains the recompute only on an actual repo-id
-  *transition* (a plain rename doesn't move group membership), so a normal
+  _transition_ (a plain rename doesn't move group membership), so a normal
   re-resolve adds **no second full scan**. The full pass covers up to
   `FULL_SCAN_MAX_ROWS`; it `console.warn`s (never logs "done") if the catalog
   outgrows that, so truncation is never silent. The detail page is independent of
@@ -672,7 +677,7 @@ the live repo; off-board ones simply delist.
   always correct; only the cached list chip relies on `copyCount`, and it can read
   one high for up to a week after a delist until the recompute heals it.
 - **Rename after stamping** (handled by `reresolveStaleRepoIdentities`): a repo
-  renamed *after* we first resolved it would otherwise keep a stale
+  renamed _after_ we first resolved it would otherwise keep a stale
   `repoLiveName == source` forever — never recognized as a dead alias, so its
   off-board old-name row would never delist (reconcile keeps it alive) and could
   be re-inflated from the detail endpoint. The weekly re-resolution re-checks
@@ -683,17 +688,17 @@ the live repo; off-board ones simply delist.
 
 ## Tuning constants
 
-| Constant | Value | Where |
-|---|---|---|
-| install floor | **removed** (was `MIN_INSTALLS = 50`) | `syncSkills` ingests the full leaderboard |
-| `RECONCILE_FRESHNESS_MS` | 23h (must be < 24h cron interval) | `reconcile.ts` |
-| `MAX_RECONCILE` | 3000 (bail = likely broken sync) | `reconcile.ts` |
-| `RECONCILE_BATCH` | 150 | `reconcile.ts` |
-| `DELIST_THRESHOLD_MS` | 30 days | `skills.ts` |
-| `MAX_DISCOVERY_FAILURES` | 3 | `devStats.ts` |
-| `RERESOLVE_TTL_MS` | 14 days (re-check a resolved repo's identity at most this often) | `duplicates.ts` |
-| `RESTAMP_CAP` | 200 (max summaries re-stamped per repo) | `duplicates.ts` |
-| `FULL_SCAN_MAX_ROWS` | 60000 (catalog headroom; sizes the computeCopyCounts continuation cap; warns if exceeded) | `duplicates.ts` |
+| Constant                 | Value                                                                                     | Where                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------- | ----------------------------------------- |
+| install floor            | **removed** (was `MIN_INSTALLS = 50`)                                                     | `syncSkills` ingests the full leaderboard |
+| `RECONCILE_FRESHNESS_MS` | 23h (must be < 24h cron interval)                                                         | `reconcile.ts`                            |
+| `MAX_RECONCILE`          | 3000 (bail = likely broken sync)                                                          | `reconcile.ts`                            |
+| `RECONCILE_BATCH`        | 150                                                                                       | `reconcile.ts`                            |
+| `DELIST_THRESHOLD_MS`    | 30 days                                                                                   | `skills.ts`                               |
+| `MAX_DISCOVERY_FAILURES` | 3                                                                                         | `devStats.ts`                             |
+| `RERESOLVE_TTL_MS`       | 14 days (re-check a resolved repo's identity at most this often)                          | `duplicates.ts`                           |
+| `RESTAMP_CAP`            | 200 (max summaries re-stamped per repo)                                                   | `duplicates.ts`                           |
+| `FULL_SCAN_MAX_ROWS`     | 60000 (catalog headroom; sizes the computeCopyCounts continuation cap; warns if exceeded) | `duplicates.ts`                           |
 
 ## Migration notes
 
@@ -706,6 +711,7 @@ otherwise be missed by `eq(false)` or wrongly swept in by an open `lt`).
 
 Tightening an optional field to required is a **two-phase** migration, because
 Convex validates the whole dataset on the deploy that tightens the schema:
+
 1. **Backfill first** (schema still optional): `backfillLastSeenInApi` and the
    pre-existing `backfillIsDelistedFalse` (which covers both skills and summaries).
    Idempotent; both reported 0 on prod — every row already had a value, since the
@@ -719,6 +725,7 @@ Convex validates the whole dataset on the deploy that tightens the schema:
 When adding the next required field, follow the same backfill-then-tighten order.
 
 <a id="removed-min_installs"></a>
+
 ### Removed: MIN_INSTALLS
 
 `syncSkills` used to drop leaderboard rows under 50 installs. Removed because (a)
