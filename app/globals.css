@@ -45,11 +45,12 @@ html {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  /* Only the fill gets a utility. The other five chrome tokens are reached
+     through `[data-surface="chrome"]` (see the rule near the end of this file),
+     which is deliberately the ONE way to paint on that surface — a
+     `bg-chrome-hover` utility sitting next to it would be a second idiom for
+     the same job, which is what the contract exists to remove. */
   --color-chrome: var(--chrome);
-  --color-chrome-foreground: var(--chrome-foreground);
-  --color-chrome-muted-foreground: var(--chrome-muted-foreground);
-  --color-chrome-hover: var(--chrome-hover);
-  --color-chrome-border: var(--chrome-border);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-elevated: var(--input-elevated);
@@ -624,11 +625,12 @@ html {
 /* Hands the chrome palette to everything inside, so controls keep using
  * ordinary page classes instead of being repainted one at a time.
  *
- * Works because no cubby-ui recipe names a colour — Button's ghost variant is
- * `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]` — and
- * `@theme inline` compiles those to the raw token, so re-pointing here reaches
- * every descendant by inheritance. That's why this is a cascade rule and not
- * `chrome` variants added to the vendored recipes: nothing local to clobber.
+ * Works for everything that paints from a TOKEN — Button's ghost variant is
+ * `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]`, Avatar's
+ * fallback is `bg-muted`, Skeleton's fill is `bg-accent` — because `@theme
+ * inline` compiles those to the raw token, so re-pointing here reaches every
+ * descendant by inheritance. That's why this is a cascade rule and not `chrome`
+ * variants added to the vendored recipes: nothing local to clobber.
  *
  * `--primary` stays put (Sign up keeps its brand colour). Portalled menus
  * render at the body and correctly don't inherit. */
@@ -643,6 +645,30 @@ html {
   --accent: var(--chrome-hover);
   --surface-hover: var(--chrome-hover);
   --surface-active: var(--chrome-hover);
+}
+
+/* The one paint the rule above cannot reach: Skeleton's shimmer is a literal
+ * inside an arbitrary `bg-[linear-gradient(...)]`, not a token lookup.
+ *
+ * Its light-mode default sweeps 75% white, which is tuned for a pale page and
+ * peaks at rgb 202 on this near-black fill — a white flash on the auth
+ * placeholder every page load. `inverted` is not the fix: measured on the pill
+ * it peaks at 36 in light (a 7-unit move, invisible) and 8 in dark (a dark pulse
+ * where the default already reads correctly). A boolean can't express what this
+ * surface needs, because the pill is a DARK substrate in BOTH themes — so it
+ * wants dark's value in both, restated once here:
+ *
+ *   light   base 43 → 202 (default) | 75 (this)
+ *   dark    base 35 →  68 (default) | 68 (this, unchanged)
+ *
+ * Unlayered, so it wins over the Tailwind utility without `!important`. */
+[data-surface="chrome"] [data-slot="skeleton"] {
+  background-image: linear-gradient(
+    90deg,
+    transparent 25%,
+    oklch(1 0 0 / 15%) 50%,
+    transparent 60%
+  );
 }
 
 @layer base {

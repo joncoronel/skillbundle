@@ -102,9 +102,8 @@ export function HeaderPill() {
           //
           // No horizontal padding of its own: the mark and the wordmark already
           // make a 138×28 target, and the row's leading inset places the mark
-          // with nothing to cancel — see "Why the leading inset is 16px and not
-          // 12px" above for why that side is `pl-4` and the trailing one
-          // `pr-3`.
+          // with nothing to cancel — see the leading-inset paragraph above for
+          // why that side is `pl-4` and the trailing one `pr-3`.
           className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 md:mr-5"
         >
           <LogoMark />

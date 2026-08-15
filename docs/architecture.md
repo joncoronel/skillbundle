@@ -4,14 +4,14 @@ Patterns used in this app: Next.js 16 (App Router) on Vercel, Convex as the back
 
 ## Stack
 
-| Layer | Tech | Role |
-| --- | --- | --- |
-| Frontend | Next.js 16.3 (App Router), React 19 | Cache Components: static shells + server-streamed dynamic holes, Partial Prefetching |
-| Backend + DB | Convex | Real-time queries, mutations, actions, storage |
-| Auth | Clerk (Core 3) + `convex/react-clerk` | Auth via Clerk, bridged to Convex via JWT |
-| Billing | Polar + `@convex-dev/polar` | Subscription billing via Polar MoR, synced to Convex |
-| Data Layer | TanStack Query + `@convex-dev/react-query` | Client-side query integration |
-| URL State | nuqs | Type-safe URL search param state management |
+| Layer        | Tech                                       | Role                                                                                 |
+| ------------ | ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Frontend     | Next.js 16.3 (App Router), React 19        | Cache Components: static shells + server-streamed dynamic holes, Partial Prefetching |
+| Backend + DB | Convex                                     | Real-time queries, mutations, actions, storage                                       |
+| Auth         | Clerk (Core 3) + `convex/react-clerk`      | Auth via Clerk, bridged to Convex via JWT                                            |
+| Billing      | Polar + `@convex-dev/polar`                | Subscription billing via Polar MoR, synced to Convex                                 |
+| Data Layer   | TanStack Query + `@convex-dev/react-query` | Client-side query integration                                                        |
+| URL State    | nuqs                                       | Type-safe URL search param state management                                          |
 
 ### Key dependencies
 
@@ -41,19 +41,19 @@ svix
 
 ### Route inventory
 
-| Route | Type | Data strategy |
-| ----- | ---- | ------------- |
-| `/` (home) | `○` Static (1h cacheLife) | Leaderboards server-cached via `'use cache'` + `cacheTag`, revalidated on-demand by Convex crons; search is client-side. Popular list renders its first page statically for SSR, then activates infinite scroll on the client |
-| `/compare` | `○` Static | Skills in `?skills=` param (nuqs), one client Convex query per column |
-| `/settings` | `○` Static | Clerk hooks client-side; sessions via server action, fetched on demand |
-| `/dashboard` | `○` Static | `listByUser` + `currentPlan` client-fetched over the authed websocket |
-| `/add` | `○` Static | Public add-skill flow; auth resolves client-side (`useConvexAuth`), quota via `myGitHubAddQuota` over the websocket, adds via Convex actions |
-| `/official`, `/pricing` | `○` Static | official: `'use cache'` curated owners loader, `cacheTag('skill-sync')`. Its `cacheLife("days")` means the publisher list is cached content with `stale ≥ 5min`, so the **whole list is in the App Shell**, not just the header |
-| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...` | `◐` Partial Prerender | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` loaders split across two tags — `cacheTag('skill-sync')` for install/version data, `cacheTag('skill-content')` for the skill row (`lib/skill-cache.ts`). **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
-| `/bundle/[id]`, `/dev`, `/dev/add-skill` | `◐` Partial Prerender | bundle: `loading.tsx` shell + `preloadQuery` authed content streams in, with `await io()` declaring the request-time boundary; dev: `verifyAdmin()` streams behind a Suspense gate |
-| `/opengraph-image` plus the compare / official / pricing OG images | `○` Static | Param-free OG routes prerender. (Only the *param-dependent* OG routes are `ƒ`.) |
-| `/robots.txt`, `/sitemap.xml` | `○` Static | Crawler-facing metadata routes. robots is a pure function of the route list; the sitemap enumerates the whole catalog behind a `'use cache'` loader (`cacheLife("days")`, tagged `skill-content` only — every event that moves a URL or a `lastmod` pings it, while `skill-sync` would add just the install-refresh churn), so a crawler hit is a CDN read of ~2 MB of XML rather than a ~10-query catalog walk. Both need an absolute origin (`lib/site-url.ts`) because nothing resolves relative URLs in text or XML |
-| `/[org]/**/opengraph-image`, `/site/**/opengraph-image`, `/bundle/[id]/og/[v]`, `/api/revalidate`, `/api/skills-token` | `ƒ` Dynamic | OG images (data via `'use cache'`, rendered PNG CDN-cached via `Cache-Control`); revalidate webhook (secret-gated, called by Convex crons); skills-token relay (secret-gated, POST-only, mints a Vercel OIDC token for the Convex sync — see below) |
+| Route                                                                                                                  | Type                      | Data strategy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/` (home)                                                                                                             | `○` Static (1h cacheLife) | Leaderboards server-cached via `'use cache'` + `cacheTag`, revalidated on-demand by Convex crons; search is client-side. Popular list renders its first page statically for SSR, then activates infinite scroll on the client                                                                                                                                                                                                                                                                                                                                                        |
+| `/compare`                                                                                                             | `○` Static                | Skills in `?skills=` param (nuqs), one client Convex query per column                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `/settings`                                                                                                            | `○` Static                | Clerk hooks client-side; sessions via server action, fetched on demand                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/dashboard`                                                                                                           | `○` Static                | `listByUser` + `currentPlan` client-fetched over the authed websocket                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `/add`                                                                                                                 | `○` Static                | Public add-skill flow; auth resolves client-side (`useConvexAuth`), quota via `myGitHubAddQuota` over the websocket, adds via Convex actions                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `/official`, `/pricing`                                                                                                | `○` Static                | official: `'use cache'` curated owners loader, `cacheTag('skill-sync')`. Its `cacheLife("days")` means the publisher list is cached content with `stale ≥ 5min`, so the **whole list is in the App Shell**, not just the header                                                                                                                                                                                                                                                                                                                                                      |
+| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/...`                                                      | `◐` Partial Prerender     | `generateStaticParams` returns one representative param (App Shell prerenders); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` loaders split across two tags — `cacheTag('skill-sync')` for install/version data, `cacheTag('skill-content')` for the skill row (`lib/skill-cache.ts`). **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below |
+| `/bundle/[id]`, `/dev`, `/dev/add-skill`                                                                               | `◐` Partial Prerender     | bundle: `loading.tsx` shell + `preloadQuery` authed content streams in, with `await io()` declaring the request-time boundary; dev: `verifyAdmin()` streams behind a Suspense gate                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `/opengraph-image` plus the compare / official / pricing OG images                                                     | `○` Static                | Param-free OG routes prerender. (Only the _param-dependent_ OG routes are `ƒ`.)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `/robots.txt`, `/sitemap.xml`                                                                                          | `○` Static                | Crawler-facing metadata routes. robots is a pure function of the route list; the sitemap enumerates the whole catalog behind a `'use cache'` loader (`cacheLife("days")`, tagged `skill-content` only — every event that moves a URL or a `lastmod` pings it, while `skill-sync` would add just the install-refresh churn), so a crawler hit is a CDN read of ~2 MB of XML rather than a ~10-query catalog walk. Both need an absolute origin (`lib/site-url.ts`) because nothing resolves relative URLs in text or XML                                                              |
+| `/[org]/**/opengraph-image`, `/site/**/opengraph-image`, `/bundle/[id]/og/[v]`, `/api/revalidate`, `/api/skills-token` | `ƒ` Dynamic               | OG images (data via `'use cache'`, rendered PNG CDN-cached via `Cache-Control`); revalidate webhook (secret-gated, called by Convex crons); skills-token relay (secret-gated, POST-only, mints a Vercel OIDC token for the Convex sync — see below)                                                                                                                                                                                                                                                                                                                                  |
 
 **The two secret-gated API routes.** `/api/revalidate` and `/api/skills-token`
 are the app's only unauthenticated write/credential surfaces. Both sit outside
@@ -77,7 +77,7 @@ Under Partial Prefetching, Next builds **one App Shell per route** and reuses it
 for every link to that route, so the shell is rendered with **no URL data**. A
 page that does `const { org } = await params` at its top level puts everything
 below that await — including its own `<Suspense>` fallbacks — behind an unknown
-value, so the shared shell comes out empty and every *client navigation* into
+value, so the shared shell comes out empty and every _client navigation_ into
 the route blocks.
 
 Direct page loads look fine either way, because there the URL is known. That
@@ -138,7 +138,7 @@ The symptom to watch for: a cached `x-vercel-cache: HIT` that is materially
 smaller than the on-demand `PRERENDER` of the same URL. Compare the two and look
 for content that is present in one and absent in the other.
 
-Use `formatDate` for anything that can land in a *prerenderable* route's output.
+Use `formatDate` for anything that can land in a _prerenderable_ route's output.
 If such a surface genuinely needs relative time, swap to it on the client after
 hydration — it cannot come from the server.
 
@@ -161,7 +161,7 @@ before you move code between them:
 - **`/dev` never prerenders**, because it sits behind an admin check inside
   `<Suspense>`.
 
-Adding a clock read to a route that *is* prerenderable re-opens the hazard.
+Adding a clock read to a route that _is_ prerenderable re-opens the hazard.
 
 ### Why each type
 
@@ -200,9 +200,9 @@ Convex, and **both are required — removing either brings the insight back.**
 Without them, Next aborts the prerender for a misleading reason: Convex's
 `preloadQuery` constructs a `ConvexHttpClient` whose default logger calls
 `Math.random()`, and the resulting `blocking-prerender-random` insight points
-into `node_modules` rather than at the real cause. The route *is* genuinely
+into `node_modules` rather than at the real cause. The route _is_ genuinely
 per-request (it reads an auth cookie), so `io()` states that intent up front.
-`<Suspense>` cannot substitute here: for *unstable values* the framework's own
+`<Suspense>` cannot substitute here: for _unstable values_ the framework's own
 remedy list offers only `[dynamic]`, `[cache]` and `[client]`, notably not
 `[stream]`.
 
@@ -281,8 +281,8 @@ POST the next request re-rendered before re-caching. That last check is the one
 worth repeating if this code is ever touched — the deprecated one-argument
 `revalidateTag(tag)` and `updateTag` (which throws outside a Server Action) would
 both fail silently here, with a 200 and no invalidation.
->
-> **OG image caching is separate from the data cache.** The OG routes are dynamic (`ƒ`) because they read `params`, so the `'use cache'` loaders only cache the *Convex data*. The rendered *PNG* for the data-backed OG routes (skill / org / repo / source / bundle) is cached at the CDN via an opt-in `Cache-Control: s-maxage=86400, stale-while-revalidate` header — `renderOg(node, { cache: true })` in `lib/og/templates.tsx` — restoring the daily route cache the old `export const revalidate` provided before Cache Components disallowed it. **That header is what keeps images from regenerating on every link**, independent of the data loaders. The static section cards (`/compare`, `/official`, `/pricing`, root) are `○` and keep Next's build-time static optimization (no header). The brand fonts are read once at module load (`lib/og/fonts.ts`), never inside a render: under Cache Components a render-time `readFile` counts as an async filesystem operation and would flip these otherwise-static routes to `ƒ` (it did, non-deterministically, before the read was hoisted to module scope).
+
+> **OG image caching is separate from the data cache.** The OG routes are dynamic (`ƒ`) because they read `params`, so the `'use cache'` loaders only cache the _Convex data_. The rendered _PNG_ for the data-backed OG routes (skill / org / repo / source / bundle) is cached at the CDN via an opt-in `Cache-Control: s-maxage=86400, stale-while-revalidate` header — `renderOg(node, { cache: true })` in `lib/og/templates.tsx` — restoring the daily route cache the old `export const revalidate` provided before Cache Components disallowed it. **That header is what keeps images from regenerating on every link**, independent of the data loaders. The static section cards (`/compare`, `/official`, `/pricing`, root) are `○` and keep Next's build-time static optimization (no header). The brand fonts are read once at module load (`lib/og/fonts.ts`), never inside a render: under Cache Components a render-time `readFile` counts as an async filesystem operation and would flip these otherwise-static routes to `ƒ` (it did, non-deterministically, before the read was hoisted to module scope).
 
 ---
 
@@ -292,7 +292,7 @@ This is the load-bearing pattern that keeps routes static while using nuqs/`useS
 
 ### The problem
 
-Any client component calling `useSearchParams()` — which includes every nuqs `useQueryState` consumer, since the `next/app` adapter wraps it — **suspends during static prerendering** (the params aren't knowable at build). Without a `<Suspense>` boundary the production build fails (`Missing Suspense boundary with useSearchParams`). With a boundary, whatever the boundary's *fallback* renders is what lands in the prerendered HTML.
+Any client component calling `useSearchParams()` — which includes every nuqs `useQueryState` consumer, since the `next/app` adapter wraps it — **suspends during static prerendering** (the params aren't knowable at build). Without a `<Suspense>` boundary the production build fails (`Missing Suspense boundary with useSearchParams`). With a boundary, whatever the boundary's _fallback_ renders is what lands in the prerendered HTML.
 
 So the fallback is not a loading state — **it is the page's static shell.** A bare/empty fallback means a blank page until hydration.
 
@@ -330,7 +330,7 @@ its `loading.tsx` was left describing the version before that — a Fork/Star
 action row that no longer existed, a tall install block that had become a
 collapsed disclosure, and a three-column card grid where the page now rendered a
 table, with the sections in the old order. Every visitor got a shell that
-resolved into a visibly *different* layout, which reads as the skeleton being
+resolved into a visibly _different_ layout, which reads as the skeleton being
 replaced by a second, different skeleton rather than as a stale fallback.
 
 Two habits that make a fallback survive the next redesign:
@@ -344,8 +344,8 @@ Two habits that make a fallback survive the next redesign:
   shared link — so drawing buttons there guaranteed a shift for exactly the
   visitor the route exists for. Same for optional fields like a description.
 
-The e2e guards in `e2e/instant-navigation.spec.ts` assert that a shell *commits
-instantly*, not that it *resembles the page*. They cannot catch this; a look at
+The e2e guards in `e2e/instant-navigation.spec.ts` assert that a shell _commits
+instantly_, not that it _resembles the page_. They cannot catch this; a look at
 the route after restructuring it can.
 
 ---
@@ -448,17 +448,17 @@ const isPrivateRoute = createRouteMatcher([
 ]);
 ```
 
-This inversion matters anywhere route lists exist in this app: because the catch-all org routes shadow everything, enumerate the finite, knowable side rather than trusting exclusion. For auth that means **allow-list the private routes, never exclude-list** — a missed exclusion would silently make a route public. `GlobalBundleBar` (§5) is the deliberate inverse: it *block*-lists a few reserved non-browse segments, which is safe only because an over-broad match there is cosmetic (the bar self-hides on an empty selection), not a security hole.
+This inversion matters anywhere route lists exist in this app: because the catch-all org routes shadow everything, enumerate the finite, knowable side rather than trusting exclusion. For auth that means **allow-list the private routes, never exclude-list** — a missed exclusion would silently make a route public. `GlobalBundleBar` (§5) is the deliberate inverse: it _block_-lists a few reserved non-browse segments, which is safe only because an over-broad match there is cosmetic (the bar self-hides on an empty selection), not a security hole.
 
 ---
 
 ## 4. Auth Protection Layers
 
-| Layer              | Where                       | How                                              | Protects                 |
-| ------------------ | --------------------------- | ------------------------------------------------ | ------------------------ |
-| Route protection   | `proxy.ts` (middleware)     | `auth.protect()` on private routes               | Page access (redirect)   |
-| Data protection    | Convex functions            | `getCurrentUserOrThrow(ctx)` + ownership checks  | The actual data          |
-| Action protection  | Server actions              | `verifySession()` at the top                     | Server-side operations   |
+| Layer             | Where                   | How                                             | Protects               |
+| ----------------- | ----------------------- | ----------------------------------------------- | ---------------------- |
+| Route protection  | `proxy.ts` (middleware) | `auth.protect()` on private routes              | Page access (redirect) |
+| Data protection   | Convex functions        | `getCurrentUserOrThrow(ctx)` + ownership checks | The actual data        |
+| Action protection | Server actions          | `verifySession()` at the top                    | Server-side operations |
 
 Static auth-gated pages (`/dashboard`, `/settings`) intentionally have **no page-level auth check** — there's nothing to protect in the shell (no user data), the middleware gates access, and every Convex query/mutation/action checks auth itself. The shells being publicly cacheable is by design. Pages that fetch user data server-side (`/bundle/[id]`, server actions like `getSessions`) keep their explicit server-side auth.
 
@@ -468,7 +468,8 @@ export const listByUser = query({
   handler: async (ctx) => {
     const user = await getCurrentUser(ctx);
     if (!user) return [];
-    return ctx.db.query("bundles")
+    return ctx.db
+      .query("bundles")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
   },
@@ -523,10 +524,10 @@ The boundary's fallback is `NavLinks activeHref={null}` — the real links, not 
 
 Use Convex's auth hooks — not Clerk's — for UI that depends on auth state, so the JWT has been fetched **and validated by Convex** before authenticated content renders.
 
-| Hook | From | Returns | Use when |
-| --- | --- | --- | --- |
-| `useConvexAuth()` | `convex/react` | `{ isAuthenticated, isLoading }` | Checking auth state in components |
-| `useAuth()` | `@clerk/nextjs` | `{ isSignedIn, userId, ... }` | **Only** as a prop to `ConvexProviderWithClerk` |
+| Hook              | From            | Returns                          | Use when                                        |
+| ----------------- | --------------- | -------------------------------- | ----------------------------------------------- |
+| `useConvexAuth()` | `convex/react`  | `{ isAuthenticated, isLoading }` | Checking auth state in components               |
+| `useAuth()`       | `@clerk/nextjs` | `{ isSignedIn, userId, ... }`    | **Only** as a prop to `ConvexProviderWithClerk` |
 
 Skip queries for unauthenticated users (`"skip"` = no subscription, no round-trip), and check `isLoading` to avoid flashing wrong defaults during auth hydration:
 
@@ -534,7 +535,11 @@ Skip queries for unauthenticated users (`"skip"` = no subscription, no round-tri
 // hooks/use-user-plan.ts
 export function useUserPlan() {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-  const { data: result, isPending, isError } = useQuery({
+  const {
+    data: result,
+    isPending,
+    isError,
+  } = useQuery({
     ...convexQuery(api.plans.currentPlan, isAuthenticated ? {} : "skip"),
     enabled: isAuthenticated,
   });
@@ -576,9 +581,10 @@ Per-user or interactive data on static routes. `undefined` covers both "auth han
 
 ```tsx
 // app/(main)/dashboard/dashboard-content.tsx
-const bundles = useQuery(api.bundles.listByUser);   // convex/react
+const bundles = useQuery(api.bundles.listByUser); // convex/react
 const planData = useQuery(api.plans.currentPlan);
-if (bundles === undefined || planData === undefined) return <DashboardSkeleton />;
+if (bundles === undefined || planData === undefined)
+  return <DashboardSkeleton />;
 return <DashboardLoaded bundles={bundles} planData={planData} />;
 ```
 
@@ -601,7 +607,7 @@ export async function loadSkill(source: string, skillId: string) {
 
 The cache key is derived from the args (plus the build ID), so the entry is shared across `generateMetadata`, the page body, and the OG route — that sharing is why it lives in `lib/` rather than beside the page's other loaders. Cross-user: one Convex call per skill per `cacheLife` window, total. The cached result lands in the route's static shell.
 
-Note the two tags. `skill-content` covers the skill row and is pinged only by jobs that mutate it, which is what makes the long `cacheLife("weeks")` safe; `skill-sync` covers install counts and churns catalog-wide every morning. Never put a daily-cadence field behind `skill-content` — `lib/skill-cache.ts` is the canonical writeup, including what the split does *not* yet buy.
+Note the two tags. `skill-content` covers the skill row and is pinged only by jobs that mutate it, which is what makes the long `cacheLife("weeks")` safe; `skill-sync` covers install counts and churns catalog-wide every morning. Never put a daily-cadence field behind `skill-content` — `lib/skill-cache.ts` is the canonical writeup, including what the split does _not_ yet buy.
 
 > A considered-and-rejected extension: exposing `loadSkill` to the client via a GET route handler so compare/detail-sheet fetches share this cache. Rejected on plan economics (it trades Convex Pro calls for capped Vercel Hobby invocations) — see the note in `app/(main)/compare/compare-content.tsx`.
 
@@ -624,14 +630,18 @@ return <BundleView preloadedBundle={preloadedBundle} ... />;
 ### Pattern: mutations with optimistic updates
 
 ```tsx
-const deleteBundle = useMutation(api.bundles.deleteBundle)
-  .withOptimisticUpdate((localStore, { bundleId }) => {
+const deleteBundle = useMutation(api.bundles.deleteBundle).withOptimisticUpdate(
+  (localStore, { bundleId }) => {
     const current = localStore.getQuery(api.bundles.listByUser, {});
     if (current !== undefined) {
-      localStore.setQuery(api.bundles.listByUser, {},
-        current.filter((b) => b._id !== bundleId));
+      localStore.setQuery(
+        api.bundles.listByUser,
+        {},
+        current.filter((b) => b._id !== bundleId),
+      );
     }
-  });
+  },
+);
 ```
 
 ### Pattern: Convex full-text search
@@ -644,8 +654,8 @@ Search index in the schema, `withSearchIndex` in queries; search reads go agains
 
 The static shell can never contain client-only state (localStorage, theme, etc.). Three rules keep that from causing bugs:
 
-1. **Reads of client-only state must report the server-knowable value during the hydration render.** `hooks/use-hydrated.ts` (`useSyncExternalStore`, false during SSR/hydration, true after) gates `useIsSkillSelected` / `useIsSelectionAtCap` in `lib/bundle-selection.ts`. Without this, any early subscriber (e.g. the layout-mounted `BundleBar`) can load the stored value *before* React lazily hydrates the skill-list island — the rows then hydrate as "checked" against unchecked server HTML → hydration mismatch → full client re-render. The jotai atom itself uses `atomWithStorage(..., { getOnInit: false })` for the same reason.
-2. **State arriving post-hydration should animate, not pop.** Because the flip happens between two painted frames on persistent DOM, CSS transitions fire naturally (row selection highlights). For elements that *mount* with the state (BundleBar's sheet), entrance animation needs either `@starting-style` (Tailwind `starting:` — animates insertion itself) or a deferred open. BundleBar uses both: `starting:` classes plus a two-rAF `enterReady` delay, the latter because next-themes' transition kill-switch (§5) eats any transition in the first frames after hydration.
+1. **Reads of client-only state must report the server-knowable value during the hydration render.** `hooks/use-hydrated.ts` (`useSyncExternalStore`, false during SSR/hydration, true after) gates `useIsSkillSelected` / `useIsSelectionAtCap` in `lib/bundle-selection.ts`. Without this, any early subscriber (e.g. the layout-mounted `BundleBar`) can load the stored value _before_ React lazily hydrates the skill-list island — the rows then hydrate as "checked" against unchecked server HTML → hydration mismatch → full client re-render. The jotai atom itself uses `atomWithStorage(..., { getOnInit: false })` for the same reason.
+2. **State arriving post-hydration should animate, not pop.** Because the flip happens between two painted frames on persistent DOM, CSS transitions fire naturally (row selection highlights). For elements that _mount_ with the state (BundleBar's sheet), entrance animation needs either `@starting-style` (Tailwind `starting:` — animates insertion itself) or a deferred open. BundleBar uses both: `starting:` classes plus a two-rAF `enterReady` delay, the latter because next-themes' transition kill-switch (§5) eats any transition in the first frames after hydration.
 3. **Expected pop-in is accepted, not hidden.** Selections appearing a beat after the static shell paints is the honest cost of static + localStorage; the old architecture only looked "instant" because the page was blank until JS ran.
 
 ---
@@ -660,7 +670,7 @@ Params are read **client-side only** (no server loaders — the routes are stati
 
 ```tsx
 const [refs, setRefs] = useQueryState("skills", compareSkillsParser);
-setRefs(next.length > 0 ? next : null);  // null removes the param entirely
+setRefs(next.length > 0 ? next : null); // null removes the param entirely
 ```
 
 Updates are shallow History API writes — no navigation, no server render. This is what makes compare's add/remove-column instant with the picker sheet staying open.
@@ -739,7 +749,7 @@ Clerk (user signs up / updates profile / deletes account)
        └─ user.deleted → deleteFromClerk
 ```
 
-`ctx.auth.getUserIdentity().subject` === Clerk `userId` === `users.externalId`. The `users` table holds a denormalized `name`/`email`/`image` copy so Convex queries resolve display info without Clerk API calls. For profile *mutations*, use Clerk's `useUser()` (live `UserResource`).
+`ctx.auth.getUserIdentity().subject` === Clerk `userId` === `users.externalId`. The `users` table holds a denormalized `name`/`email`/`image` copy so Convex queries resolve display info without Clerk API calls. For profile _mutations_, use Clerk's `useUser()` (live `UserResource`).
 
 ---
 
@@ -749,12 +759,12 @@ Three layers, outermost first. Add to the innermost one that fits — don't
 reach for a `try/catch` inside a Server Component, which swallows the error and
 loses `retry()`.
 
-| Layer | File | Catches | Keeps visible |
-| --- | --- | --- | --- |
-| Global | `app/global-error.tsx` | failures in the root layout itself | nothing — it replaces the document |
-| Segment | `app/(main)/error.tsx` | anything thrown by a page in `(main)` | `AppHeader`, `GlobalBundleBar` |
-| Segment | `app/(auth)/error.tsx` | a throw during sign-in / sign-up or an SSO callback | whatever `(auth)/layout.tsx` renders |
-| Region | `components/data-error-boundary.tsx` | one data region's Suspense subtree | the whole page around it |
+| Layer   | File                                 | Catches                                             | Keeps visible                        |
+| ------- | ------------------------------------ | --------------------------------------------------- | ------------------------------------ |
+| Global  | `app/global-error.tsx`               | failures in the root layout itself                  | nothing — it replaces the document   |
+| Segment | `app/(main)/error.tsx`               | anything thrown by a page in `(main)`               | `AppHeader`, `GlobalBundleBar`       |
+| Segment | `app/(auth)/error.tsx`               | a throw during sign-in / sign-up or an SSO callback | whatever `(auth)/layout.tsx` renders |
+| Region  | `components/data-error-boundary.tsx` | one data region's Suspense subtree                  | the whole page around it             |
 
 **There are two segment boundaries because `error.js` only wraps its own
 segment.** Without the `(auth)` one, a Clerk render failure escaped all the way
@@ -766,7 +776,7 @@ into showing a user two different products for the same condition.
 Four things worth knowing:
 
 - **`retry()`, not `reset()`.** `reset()` only clears client state and
-  re-renders; it cannot recover from a failed *Server Component* render, which
+  re-renders; it cannot recover from a failed _Server Component_ render, which
   is this app's realistic failure (a Convex read throwing). `retry()` re-fetches
   and re-runs the server render.
 - **`global-error.tsx` does not get the app's stylesheet** (it renders its own
@@ -782,7 +792,7 @@ Four things worth knowing:
   `app/(main)/not-found.tsx`.
 
 `app/(main)/page.tsx` deliberately has **no** region boundary: its three cached
-loaders run in a `Promise.all` *above* the Suspense, so a boundary there would
+loaders run in a `Promise.all` _above_ the Suspense, so a boundary there would
 never see their failure, and restructuring the home page's static-shell pattern
 is exactly the risk the history note at the top of this doc warns about. The
 segment boundary covers it.
@@ -816,11 +826,11 @@ pnpm e2e:ui       # Playwright UI
 
 Three Playwright projects:
 
-| Project | Runs | Signed in? |
-| --- | --- | --- |
-| `chromium` | `e2e/*.spec.ts` — the instant-navigation guards | no |
-| `setup` | `e2e/auth.setup.ts` — signs in once, saves storage state | — |
-| `chromium-authed` | `e2e/authenticated/*.spec.ts` | yes |
+| Project           | Runs                                                     | Signed in? |
+| ----------------- | -------------------------------------------------------- | ---------- |
+| `chromium`        | `e2e/*.spec.ts` — the instant-navigation guards          | no         |
+| `setup`           | `e2e/auth.setup.ts` — signs in once, saves storage state | —          |
+| `chromium-authed` | `e2e/authenticated/*.spec.ts`                            | yes        |
 
 The last two only register when `CLERK_SECRET_KEY` is an `sk_test_*` key
 (see `playwright.config.ts`), so a checkout without Clerk dev keys just runs the
@@ -846,7 +856,7 @@ Non-obvious things that will bite you:
   sets `webServer` to `pnpm build && pnpm start` on port 3100. Next does no
   prefetching in dev, so there'd be no shell to pause at. `E2E=1` turns on
   `experimental.exposeTestingApiInProductionBuild`, and it must be set for the
-  *build*, not just the server.
+  _build_, not just the server.
 - **Scope assertions to `:visible` after a client navigation.** Cache Components
   keeps the previous route mounted-but-hidden via `<Activity>` instead of
   unmounting it, so an unscoped locator happily matches the outgoing page and
@@ -929,7 +939,7 @@ app/
 
 components/
   app-header.tsx            # server band + scrim; the pill itself is client
-  header-pill.tsx           # the pill: nav, auth slot, expanding mobile menu
+  header-pill.tsx           # client: pill, auth slot, expanding mobile menu; owns the nav's <Suspense>
   header-auth-client.tsx    # fully client auth UI (keeps routes static)
   global-bundle-bar.tsx     # layout-mounted, pathname reserved-segment BLOCK-list, <Suspense fallback={null}>
   bundle-bar.tsx            # deferred entrance (rAF×2) + @starting-style
@@ -937,7 +947,6 @@ components/
   skill-detail-page.tsx     # loadAudits/loadSkillSyncData/loadStars ('use cache' + cacheTag loaders)
   skill-history.tsx         # server: History timeline, data passed in as a prop
   skill-history-row.tsx     # client: per-row open/compare state + lazy diff
-  header-pill.tsx           # client: pill + mobile menu; owns the nav's <Suspense>
   header-nav.tsx            # NAV_ITEMS + ActiveNavLinks (usePathname) / NavLinks (its fallback)
 
 lib/

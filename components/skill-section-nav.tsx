@@ -137,7 +137,7 @@ function toBranches(items: SectionNavItem[]): NavBranch[] {
     // FIRST items are level 2. Those attached themselves to the `documentation`
     // level-0 row, and the handoff then opened the next branch instead — leaving
     // the reader scrolling through sections with nothing lit in the rail and the
-    // active link inside an `inert`, zero-height container.
+    // active link inside a hidden, zero-height container.
     if (item.level <= 1 || !owner || owner.item.level < 1) {
       branches.push({ item, children: [] });
     } else {
