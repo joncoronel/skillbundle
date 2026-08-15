@@ -19,32 +19,20 @@ import { HeaderPill } from "@/components/header-pill";
  * inside the scrim's height without claiming a layer, and got a translucent
  * wash over their top edge for it.
  *
- * ── The one rule the pill runs on ─────────────────────────────────────────
- *
- * It is always the OPPOSITE of the page it floats over: near-black in light
- * mode, a lifted surface in dark. That is why it reads as an object sitting on
- * the page rather than a band attached to the top of it, and it is why the
- * treatment survives both themes — "dark bar" cannot be literal in dark mode,
- * where a near-black pill would vanish into a near-black field.
- *
- * The tokens that carry it are the `--inverse*` set in globals.css, not
- * variables in the component. Anything placed inside the pill styles from
- * those, because a page token (`text-muted-foreground`, `bg-muted`) is wrong on
- * an inverted fill and fails silently in exactly one theme.
- *
  * ── Two consequences worth knowing before editing ─────────────────────────
  *
  * The pill is opaque and does NOT span the viewport above `sm`, so content
- * scrolls past on both sides of it. That is the point of the pattern, but it
- * means the strip ABOVE the pill would show text sliding through a 16px slit,
- * which reads as a rendering fault rather than as depth. The scrim is what
- * stops that; it is functional, not decoration, and removing it will look
- * broken at any scroll position other than the top.
+ * scrolls past on both sides. That means the strip ABOVE it would show text
+ * sliding through a 16px slit, which reads as a rendering fault. The scrim is
+ * what stops that — functional, not decoration, and removing it looks broken at
+ * any scroll position but the top.
  *
- * Height: the old bar ended at 56px, this one ends at 72px. Sticky offsets
- * elsewhere (the skill page's rail and record card, `scroll-mt` on anchor
- * targets) are set clear of that, so changing the pill's top padding means
- * checking them again.
+ * Height: this ends at 72px (the old bar was 56px). Sticky offsets elsewhere
+ * (the skill page's rail and record card, `scroll-mt` on anchor targets) are set
+ * clear of that, so changing the pill's top padding means re-checking them.
+ *
+ * The pill's own colour rules live in globals.css (`--chrome*`) and
+ * header-pill.tsx, not here.
  */
 export function AppHeader() {
   return (

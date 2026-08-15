@@ -1,24 +1,13 @@
 import type { Metadata } from "next";
 
-// next/font preloads what it finds in the MODULE GRAPH, not what the CSS uses,
-// so an unused import costs a real font download on every route. `GeistSans`
-// was dropped for exactly that.
-//
-// `geist/font/pixel` has the same problem in a worse shape — it declares all
-// five pixel faces at module scope, so importing Circle downloads ~129 KB to
-// use ~27 KB — and is imported anyway, deliberately. The alternative is
-// `next/font/google`'s `Geist_Pixel`, which ships the five shapes as one
-// variable family on an `ELSH` axis and is the far smaller download, but has no
-// entry in Next's font-metrics table: every build and every dev request logs
-// "Failed to find font override values for font `Geist Pixel`". That warning
-// cannot be turned off on the Google loader, because `adjustFontFallback` only
-// picks a different row from the same table the font is missing from. The
-// package reaches next/font/local, where the flag means something, and sets
-// `adjustFontFallback: false` on each face itself.
-//
-// So this trades ~100 KB of unused font for a clean console. TODO.md carries
-// the fix that costs neither (vendor the one Circle face), rather than leaving
-// the 100 KB as a cost nothing outside this comment records.
+// next/font preloads from the MODULE GRAPH, not from what the CSS uses, so an
+// unused import costs a real download on every route (`GeistSans` was dropped
+// for that). `geist/font/pixel` declares all five faces at module scope, so
+// importing Circle pulls ~129 KB to use ~27 KB — accepted deliberately, because
+// `next/font/google`'s smaller `Geist_Pixel` has no entry in Next's metrics
+// table and logs "Failed to find font override values" on every build and dev
+// request, unsilenceable (`adjustFontFallback` only picks another row from the
+// table it's missing from). TODO.md has the fix that costs neither.
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
 
@@ -35,17 +24,14 @@ import "./globals.css";
 // robots and sitemap routes — those emit text and XML, so nothing resolves
 // relative URLs for them and they need the same value spelled out.
 
-// Vendored rather than fetched, because SN Pro has no entry in Next's metrics
-// table and `next/font/google` builds its size-adjusted fallback face from that
-// table — so every route reflowed its body text when the woff2 landed.
-// `next/font/local` measures the file instead, which works for any font.
+// Vendored, not fetched: SN Pro has no entry in Next's metrics table, so
+// `next/font/google` couldn't build a size-adjusted fallback and every route
+// reflowed when the woff2 landed. `next/font/local` measures the file instead.
 //
-// The file is the upright variable font subsetted to `latin`, matching what
-// Google served (47.9 KB vs 46.1 KB). Do not swap in the raw TTF from the Google
-// Fonts zip: 335 KB. No italic — none was requested before either, so emphasis
-// has always been synthesised.
-//
-// OFL 1.1 requires the licence to travel with the font: `app/fonts/OFL-sn-pro.txt`.
+// The file is the upright variable font subsetted to `latin` (47.9 KB). Don't
+// swap in the raw TTF from the Google Fonts zip: 335 KB. No italic, so emphasis
+// is synthesised — as it always was. OFL 1.1 requires the licence to travel
+// with it: `app/fonts/OFL-sn-pro.txt`.
 const snPro = localFont({
   src: "./fonts/sn-pro-latin.woff2",
   variable: "--font-sn-pro",

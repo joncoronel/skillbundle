@@ -177,23 +177,14 @@ export function SkillRecord({
           object. */}
       {action && <div className="px-4 py-3">{action}</div>}
 
-      {/* `grid-template-rows` 0fr → 1fr: no measured height, so the record can
-          gain a Security block or lose a sparkline without anything
-          re-measuring, and the card's own rounded box does the clipping. The
-          curve is this app's easing for a surface that opens.
+      {/* Same collapse as the header menu and the section rail — 0fr → 1fr, one
+          curve, `visibility` for the closed state. header-pill.tsx has the
+          measurements for why it's `visibility` and not `display: none`/`inert`.
 
-          The header's mobile menu and the section rail collapse on the same
-          geometry, the same curve and the same `visibility` swap, so all three
-          read as one gesture and share one mechanism. header-pill.tsx carries
-          the measurements behind that choice; the short version is that
-          `display: none` cannot animate its close in Firefox and `inert` does
-          not remove the subtree from the accessibility tree.
-
-          `visibility: hidden` and not just `overflow-hidden`: a clipped block
-          is still in the tab order, and tabbing into a zero-height container
-          scrolls it into view, which would drag a folded card open under a
-          keyboard user with no visible cause. This card collapses on SCROLL, so
-          that would fire unprompted while somebody reads.
+          `visibility` matters more here than there: a clipped block stays in the
+          tab order, and tabbing into a zero-height container scrolls it into
+          view. This card collapses on SCROLL, so that would drag it open
+          unprompted while somebody reads.
 
           `divide-y` moved off the card root and onto this group, with the
           matching `border-t` — on the root, the divider between the action and

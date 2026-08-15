@@ -329,13 +329,9 @@ export function SkillSectionNav({
                     reduceMotion={!!reduceMotion}
                   />
                   {branch.children.length > 0 && (
-                    // The same 0fr → 1fr geometry, curve and `visibility` swap
-                    // as the record card and the header menu, so a branch
-                    // opening reads as part of one vocabulary rather than a
-                    // third kind of expand. `visibility: hidden` keeps the
-                    // clipped links out of the tab order and the accessibility
-                    // tree; header-pill.tsx carries the measurements for why it
-                    // is that and not `display: none` or `inert`.
+                    // Same collapse as the record card and header menu, so a
+                    // branch opening isn't a third kind of expand. See
+                    // header-pill.tsx for why `visibility`.
                     <div
                       className={cn(
                         "grid transition-[grid-template-rows,visibility] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",

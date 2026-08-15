@@ -687,16 +687,16 @@ where you most need to find focus. `data-disabled:focus-visible:outline-ring` (n
 from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1, under the 3:1 non-text
 threshold, app-wide. That is the part this entry is about.
 
-**Add the header pill's `--inverse` surface to that table when the branch runs
+**Add the header pill's `--chrome` surface to that table when the branch runs
 (Aug 2026).** The table above measures `--surface-1`…`-5`; the pill introduced a
 sixth backdrop that none of those numbers cover. Measured on it: `outline-ring/60`
 is **2.2:1 light / 1.9:1 dark** — the same shortfall, on the one surface where the
 ring sits against a near-black fill instead of the page. A pill-scoped fix was
-built and measured at **17.07:1 light / 11.73:1 dark** (`--inverse-ring:
-var(--inverse-foreground)`, i.e. a near-white ring) and then reverted on the user's
+built and measured at **17.07:1 light / 11.73:1 dark** (`--chrome-ring:
+var(--chrome-foreground)`, i.e. a near-white ring) and then reverted on the user's
 call, because a ring that only looks right inside the pill is a worse end state
 than one wrong ring everywhere. Those two numbers are the point of this note: the
-app-wide fix has to work on an inverse surface too, and the near-white value is
+app-wide fix has to work on the chrome surface too, and the near-white value is
 known to clear it.
 
 ### Switch: unchecked track is ~1.2:1 in light mode (design decision)

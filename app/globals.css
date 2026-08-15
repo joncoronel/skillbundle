@@ -16,11 +16,8 @@ html {
   /* Fonts */
   --font-sans: var(--font-sn-pro);
   --font-mono: var(--font-geist-mono);
-  /* Circle, one of Geist Pixel's five shapes. It is a separate static face in
-     the `geist` package, so the shape is picked by which variable is named
-     here — there is no axis to set. (Google ships the same family as one
-     variable font on an `ELSH` axis instead; see the note in app/layout.tsx
-     for why this project is not on that loader.) */
+  /* Circle is a separate static face in the `geist` package, so the shape is
+     picked by the variable name — no axis to set. See app/layout.tsx. */
   --font-display: var(--font-geist-pixel-circle);
 
   /* Typography — the one step below text-xs, for pills and dense chips.
@@ -48,11 +45,11 @@ html {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-inverse: var(--inverse);
-  --color-inverse-foreground: var(--inverse-foreground);
-  --color-inverse-muted-foreground: var(--inverse-muted-foreground);
-  --color-inverse-hover: var(--inverse-hover);
-  --color-inverse-border: var(--inverse-border);
+  --color-chrome: var(--chrome);
+  --color-chrome-foreground: var(--chrome-foreground);
+  --color-chrome-muted-foreground: var(--chrome-muted-foreground);
+  --color-chrome-hover: var(--chrome-hover);
+  --color-chrome-border: var(--chrome-border);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-elevated: var(--input-elevated);
@@ -86,12 +83,8 @@ html {
   --radius-2xl: calc(var(--radius) + 4px);
   --radius-3xl: calc(var(--radius) + 6px);
   --radius-4xl: calc(var(--radius) + 8px);
-  /* 24px. Breaks the 2px cadence of the steps above it on purpose: the header
-     pill is the only element at this scale, and the step exists so that corner
-     stays derived from `--radius` like every other one. A hardcoded
-     `rounded-[24px]` on the component would have been the thing DESIGN.md §6
-     rules out — one variable drives the whole form language, and retuning it
-     has to move the header too. */
+  /* 24px, off the 2px cadence — exists only so the header's corner stays
+     derived from `--radius` instead of hardcoded (DESIGN.md §6). */
   --radius-5xl: calc(var(--radius) + 12px);
   --ease-in-cubic: cubic-bezier(0.55, 0.055, 0.675, 0.19);
   --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
@@ -225,13 +218,8 @@ html {
   --primary: oklch(0.6 0.2 250);
   --primary-foreground: oklch(1 0 0);
   --primary-soft-foreground: var(--primary);
-  /* The one dark fill in the light palette, so it follows the ink family
-     rather than the fill family. Every other light fill (`--surface-*`,
-     `--muted`, `--secondary`, `--accent`) is chroma 0, which costs nothing
-     at L 0.91–1.0 where 0.004 is invisible. Down here it is visible as an
-     absence: a perfectly neutral black beside `--foreground`'s faintly cool
-     one reads as two different blacks. `--neutral-foreground` already tracks
-     the same hue at `--neutral-chroma-low`. */
+  /* Carries chroma unlike the other light fills: at L 0.2 a pure-neutral
+     black beside `--foreground`'s faintly cool one reads as two blacks. */
   --neutral: oklch(0.2 var(--neutral-chroma) var(--neutral-hue));
   --neutral-foreground: oklch(
     0.98 var(--neutral-chroma-low) var(--neutral-hue)
@@ -248,52 +236,34 @@ html {
   );
   --destructive-soft-foreground: var(--destructive);
 
-  /* ── Inverse surface ─────────────────────────────────────────────────────
-     A container that reads as the opposite of the page rather than as a step
-     up the surface ladder. The header pill is the one that uses it today.
+  /* ── Chrome surface ──────────────────────────────────────────────────────
+     The one container NOT on the page's surface ladder. Used by the header pill.
 
-     It exists as tokens, and not as three variables inside that component,
-     because the component had them and it went wrong the same way three times:
-     an inverted fill makes every page token incorrect inside it —
-     `text-muted-foreground` is dark ink on dark, `bg-muted` is a pale block —
-     so anything dropped in has to be repainted by hand, and both the Avatar's
-     fallback and the Skeleton shipped looking broken before anyone noticed.
-     Named tokens turn that into a vocabulary a component can just use.
+     Light borrows `--neutral` (the Button's solid-dark variant) so the two are
+     the same black; retuning `--neutral` deliberately moves both. Don't swap it
+     for `--foreground` — that's darker than anything else in the app.
 
-     In LIGHT it borrows `--neutral`, the app's existing solid-dark fill (the
-     Button's `neutral` variant), so the pill and that button are the same
-     black instead of two near-identical darks nobody chose to differ. Its own
-     `--neutral-foreground` comes with it. `--foreground` was the first choice
-     and sat at `oklch(0.18)`, which read heavier than anything else in the app.
+     NOT "inverse", and dark is NOT a white pill: the idea is standing apart from
+     the ladder, and dark's ladder already runs upward, so it takes the top
+     (`surface-4`) rather than leaving. White was built and measured — legible
+     (7.18:1) but 97x the page's luminance in chrome you can't scroll away.
 
-     `--neutral` was retuned to 0.20 for this — see its own note above — which
-     also darkened the one `Button variant="neutral"` in the app
-     (`components/ui/cubby-ui/filters/filters.tsx`). That was the intent of
-     changing the token rather than the pill: one black, tuned once.
-
-     `--neutral` cannot carry BOTH modes, which is why this set exists at all:
-     it inverts completely, to a near-WHITE fill in dark. That is right for a
-     high-contrast button and wrong for a surface that has to stay a surface.
-
-     Only `--inverse` and `--inverse-foreground` are redefined in `.dark`; the
-     three below derive from them, so the whole set follows from two lines. The
-     washes are alpha over the fill rather than opaque values, so they stay
-     correct at any level the fill lands on. */
-  --inverse: var(--neutral);
-  --inverse-foreground: var(--neutral-foreground);
-  --inverse-muted-foreground: color-mix(
+     Only the two roots are redefined in `.dark`; the three below derive. */
+  --chrome: var(--neutral);
+  --chrome-foreground: var(--neutral-foreground);
+  --chrome-muted-foreground: color-mix(
     in oklab,
-    var(--inverse-foreground) 71%,
-    var(--inverse)
+    var(--chrome-foreground) 71%,
+    var(--chrome)
   );
-  --inverse-hover: color-mix(
+  --chrome-hover: color-mix(
     in oklab,
-    var(--inverse-foreground) 10%,
+    var(--chrome-foreground) 10%,
     transparent
   );
-  --inverse-border: color-mix(
+  --chrome-border: color-mix(
     in oklab,
-    var(--inverse-foreground) 12%,
+    var(--chrome-foreground) 12%,
     transparent
   );
 
@@ -443,13 +413,9 @@ html {
   --muted: oklch(0.24 var(--neutral-chroma) var(--neutral-hue));
   --muted-foreground: oklch(0.73 var(--neutral-chroma) var(--neutral-hue));
 
-  /* The inverse surface's two roots. "Opposite of the page" cannot be literal
-     here — `--foreground` is near-white in dark, so an inverted fill would be a
-     white bar. What the idea means in dark mode is a LIFTED surface, so the
-     fill is `surface-4` and the ink is the page's own. The three derived
-     tokens in `:root` follow from these without being restated. */
-  --inverse: var(--surface-4);
-  --inverse-foreground: var(--foreground);
+  /* Top of the ladder, not a white pill — see the `:root` set. */
+  --chrome: var(--surface-4);
+  --chrome-foreground: var(--foreground);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);
@@ -608,62 +574,41 @@ html {
   --surface-active: oklch(1 0 0 / 0.08);
 }
 
-/* The reading measure, registered so it resolves ONCE.
+/* The reading measure (DESIGN.md §3), registered so it resolves ONCE.
  *
- * DESIGN.md §3 caps prose at 65–75ch, and `ch` is the right unit to say that in
- * — the rule is about characters per line, not pixels. But `ch` resolves
- * against the font of whatever element uses it, so writing `max-w-[68ch]` on
- * every block in a document gives each one a DIFFERENT pixel width: 68ch is
- * 653px on a 16px paragraph and 816px on a 24px heading. A document set that
- * way has as many right edges as it has type sizes.
- *
- * Registering the property with `syntax: "<length>"` makes the browser compute
- * `68ch` at the element that declares it and inherit the result as a length, so
- * one declaration on the document wrapper governs every block under it whatever
- * its size. The large initial value is a no-op rather than a collapse, so a
- * stray `var(--doc-measure)` outside a wrapper cannot silently zero an element.
- */
+ * `ch` resolves against each element's own font, so `max-w-[74ch]` per block
+ * gives a document as many right edges as it has type sizes. `syntax: "<length>"`
+ * makes the browser compute it at the declaring element and inherit the result,
+ * so one declaration on the wrapper governs every block. The big initial value
+ * is a no-op, so a stray `var()` outside a wrapper can't zero an element. */
 @property --doc-measure {
   syntax: "<length>";
   inherits: true;
   initial-value: 9999px;
 }
 
-/* The inverse surface, as a contract rather than a set of per-control overrides.
+/* Hands the chrome palette to everything inside, so controls keep using
+ * ordinary page classes instead of being repainted one at a time.
  *
- * The header pill is near-black in light mode, so any control that looks right
- * on the page looks wrong inside it. That used to be fixed one control at a
- * time — a `PILL_CONTROL` class string, a hardcoded `bg-inverse-hover` on the
- * avatar, another on the auth skeleton — which meant the FOURTH control added to
- * the pill needed a fourth correction, and nothing said so until it looked wrong.
+ * Works because no cubby-ui recipe names a colour — Button's ghost variant is
+ * `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]` — and
+ * `@theme inline` compiles those to the raw token, so re-pointing here reaches
+ * every descendant by inheritance. That's why this is a cascade rule and not
+ * `chrome` variants added to the vendored recipes: nothing local to clobber.
  *
- * This works because no cubby-ui recipe names a colour: Button's ghost variant
- * is literally `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]`,
- * and `@theme inline` compiles `text-muted-foreground` to
- * `color: var(--muted-foreground)` — the raw token, not a `--color-*` indirection.
- * So re-pointing the tokens on an ancestor reaches every descendant through
- * ordinary inheritance.
- *
- * Which is the point: this needs NO edit to `components/ui/cubby-ui/**`. Adding
- * `inverse` variants to those recipes would do the same job and be clobbered by
- * the next `shadcn add` — see the divergence list in TODO.md. A cascade rule
- * cannot be clobbered, because there is nothing local to overwrite.
- *
- * Deliberately NOT re-pointed: `--primary` and friends. The Sign-up button is
- * meant to stay the brand colour on any surface. Portalled content (dropdowns,
- * dialogs) renders at the body and never inherits this, which is also correct —
- * a menu opened from the pill floats over the PAGE. */
-[data-surface="inverse"] {
-  --foreground: var(--inverse-foreground);
-  --muted-foreground: var(--inverse-muted-foreground);
-  --border: var(--inverse-border);
+ * `--primary` stays put (Sign up keeps its brand colour). Portalled menus
+ * render at the body and correctly don't inherit. */
+[data-surface="chrome"] {
+  --foreground: var(--chrome-foreground);
+  --muted-foreground: var(--chrome-muted-foreground);
+  --border: var(--chrome-border);
 
   /* Every wash on this surface is the same 10% of the foreground: there is no
      separate hover/active/fill step on an object this small. */
-  --muted: var(--inverse-hover);
-  --accent: var(--inverse-hover);
-  --surface-hover: var(--inverse-hover);
-  --surface-active: var(--inverse-hover);
+  --muted: var(--chrome-hover);
+  --accent: var(--chrome-hover);
+  --surface-hover: var(--chrome-hover);
+  --surface-active: var(--chrome-hover);
 }
 
 @layer base {
@@ -678,26 +623,10 @@ html {
     position: relative;
   }
 
-  /* ── Line breaking ───────────────────────────────────────────────────────
-     Headings balance, body copy avoids orphans. This was 37 hand-applied
-     `text-balance` / `text-pretty` classes across the app, which meant every
-     new heading started without one until somebody remembered. Eight remain,
-     all in vendored `components/ui/cubby-ui/**` dialog and sheet titles — now
-     redundant with this rule, and left alone because a `shadcn add` would
-     restore them anyway.
-
-     `:where()` keeps the specificity at zero, so any component that wants a
-     different answer still overrides with a plain utility class and no
-     `!important`.
-
-     Both degrade to nothing rather than to something wrong: a browser without
-     support ignores the declaration, and `balance` is capped by the engine at a
-     handful of lines (Chrome: 6), so a long heading silently falls back to
-     normal wrapping instead of being balanced into something strange.
-
-     `code` and `pre` are deliberately absent — they are `white-space: pre` and
-     do not wrap — as are table cells, where a balanced cell fights the column
-     widths the table has already computed. */
+  /* Replaces 37 hand-applied `text-balance`/`text-pretty` classes, which new
+     headings kept being written without. `:where()` keeps specificity at zero so
+     a utility class still overrides. `code`/`pre` and table cells are excluded
+     on purpose — the first don't wrap, the second fight computed column widths. */
   :where(h1, h2, h3, h4, h5, h6) {
     text-wrap: balance;
   }

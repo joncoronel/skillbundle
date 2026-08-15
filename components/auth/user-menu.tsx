@@ -45,17 +45,11 @@ export function UserMenu({ className }: { className?: string }) {
           className,
         )}
       >
-        {/* A rounded square, not the primitive's circle. This avatar's only
-            home is the header pill, and it sits 12px inside a 24px corner —
-            so 24 − 12 = 12px (`rounded-lg`) is the radius that keeps the two
-            curves concentric. Every other inner corner on the pill is set the
-            same way, which is why they all read as one object.
-
-            The fallback overrides only its radius: `rounded-full` would put
-            a disc inside the square root. Its `bg-muted` needs no correction
-            even though this sits on a near-black pill — the pill declares
-            `data-surface="inverse"`, which re-points `--muted` for everything
-            inside it (see the block in globals.css). */}
+        {/* A rounded square, not the primitive's circle: this sits 12px inside
+            the pill's 24px corner, so 24 − 12 = 12px keeps the two concentric.
+            The fallback overrides only its radius — its `bg-muted` needs no
+            correction on a near-black pill, because `data-surface="chrome"`
+            re-points that token (globals.css). */}
         <Avatar size="sm" className="rounded-lg">
           <AvatarImage
             src={user?.imageUrl}

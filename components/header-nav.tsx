@@ -34,13 +34,10 @@ export function ActiveNavLinks() {
 }
 
 /**
- * Also the fallback for that boundary, with `activeHref={null}`. That matters
- * more than it looks: the routes whose shell suspends here are `/[org]`,
- * `/[org]/[repo]` and `/site/[source]`, none of which is a top-level nav
- * target, so "no active state" is not a degraded guess — it is the right
- * answer. Rendering real links instead of placeholders means the prerendered
- * HTML for the app's highest-traffic routes ships a working, prefetchable nav
- * rather than boxes that only become links once React hydrates.
+ * Also that boundary's fallback, with `activeHref={null}`. The routes that
+ * suspend are `/[org]`, `/[org]/[repo]` and `/site/[source]` — none a nav target
+ * — so "nothing active" is the right answer, not a degraded guess, and the
+ * prerendered HTML ships prefetchable links instead of placeholder boxes.
  */
 export function NavLinks({ activeHref }: { activeHref: string | null }) {
   return (
@@ -57,20 +54,14 @@ export function NavLinks({ activeHref }: { activeHref: string | null }) {
 }
 
 /**
- * A plain anchor, not the `Button` component: ghost paints from the page's own
- * tokens, which are dark-on-light and vanish against the pill.
+ * Nothing here fills. Hover and the current page are both carried by label
+ * colour alone — resting at `muted-foreground`, lifting to `foreground`. The
+ * current page had a tinted fill and lost it deliberately: on a pill this small
+ * a filled chip is heavier than the state deserves.
  *
- * Nothing here fills. Both hover and the current page are carried by label
- * colour alone: the row rests at `muted-foreground` and lifts to `foreground`.
- * The
- * current page had a tinted fill and lost it deliberately — on a pill this
- * small a filled chip is a heavier mark than the state deserves, and the pill's
- * own surface is already the loudest object on the screen.
- *
- * The cost is that hovering a link makes it look like the current one for as
- * long as the cursor sits there. That is accepted, not overlooked: the pointer
- * is on the link, so the ambiguity resolves itself, and `aria-current` still
- * carries the fact for anything that isn't looking at colour.
+ * The cost is that a hovered link looks like the current one while the cursor
+ * sits there. Accepted, not overlooked: the pointer resolves the ambiguity, and
+ * `aria-current` carries the fact for anything not looking at colour.
  */
 function NavLink({
   href,
