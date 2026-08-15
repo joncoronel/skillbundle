@@ -85,10 +85,7 @@ export function PricingPlate() {
       */}
       <div className="flex justify-center">
         <fieldset
-          className={cn(
-            "inline-flex gap-1 rounded-lg p-1",
-            solidSurface(2),
-          )}
+          className={cn("inline-flex gap-1 rounded-lg p-1", solidSurface(2))}
         >
           <legend className="sr-only">Billing cycle</legend>
           {(["monthly", "yearly"] as const).map((value) => (
@@ -181,7 +178,7 @@ function PlanHead({ plan, cycle }: { plan: "free" | "pro"; cycle: Cycle }) {
       <div>
         <p className="text-sm font-semibold text-foreground">{info.name}</p>
         <p className="mt-1 flex items-baseline gap-1">
-          <span className="font-display text-3xl font-medium tabular-nums tracking-tight">
+          <span className="font-display text-3xl font-medium tracking-tight tabular-nums">
             ${amount}
           </span>
           <span className="text-xs text-muted-foreground">
@@ -348,7 +345,9 @@ function PlateCell({
     <dd
       className={cn(
         "mt-1 flex items-center gap-1.5 text-sm sm:mt-0",
-        marked && isPro ? "font-medium text-foreground" : "text-muted-foreground",
+        marked && isPro
+          ? "font-medium text-foreground"
+          : "text-muted-foreground",
       )}
     >
       {/* The arrow is the plate's pointer: it sits on the free side of a

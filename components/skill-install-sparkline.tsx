@@ -113,7 +113,7 @@ export function InstallSparklineGhost() {
       viewBox="0 0 120 32"
       preserveAspectRatio="none"
       aria-hidden="true"
-      className="h-10 w-full text-muted-foreground/45 mask-[linear-gradient(to_right,#000,#000_30%,transparent)]"
+      className="h-10 w-full mask-[linear-gradient(to_right,#000,#000_30%,transparent)] text-muted-foreground/45"
     >
       <path
         d="M0 25 C 18 23 30 18 46 17 C 62 16 78 11 96 8 C 108 5 114 5 120 4"

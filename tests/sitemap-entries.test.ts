@@ -74,9 +74,21 @@ describe("unroutable rows are dropped, not escaped", () => {
   // these slugs 404 whether they arrive raw or percent-encoded. Real catalog
   // shapes: 126 rows as of Aug 2026.
   test.each([
-    ["a colon in the skill id", "google-labs-code/stitch-skills", "react:components"],
-    ["an ampersand in the skill id", "claude-office-skills/skills", "pdf-merge-&-split"],
-    ["a slash in the skill id (4-segment path)", "claude-office-skills/skills", "facebook/meta-ads"],
+    [
+      "a colon in the skill id",
+      "google-labs-code/stitch-skills",
+      "react:components",
+    ],
+    [
+      "an ampersand in the skill id",
+      "claude-office-skills/skills",
+      "pdf-merge-&-split",
+    ],
+    [
+      "a slash in the skill id (4-segment path)",
+      "claude-office-skills/skills",
+      "facebook/meta-ads",
+    ],
     ["a colon in the source", "owner/re:po", "fine-slug"],
   ])("drops %s", (_label, source, skillId) => {
     const result = urls([{ source, skillId }]);
@@ -270,11 +282,13 @@ describe("agreement with robots.txt", () => {
     const list = Array.isArray(rules) ? rules : [rules];
     const wildcard = list.find((r) => r.userAgent === "*");
     const disallow = wildcard?.disallow ?? [];
-    return (Array.isArray(disallow) ? disallow : [disallow])
-      // `/compare?` bans the query form, not the page; the sitemap never emits
-      // a query string, asserted separately below.
-      .filter((p) => !p.includes("?"))
-      .map((p) => p.replace(/\$$/, ""));
+    return (
+      (Array.isArray(disallow) ? disallow : [disallow])
+        // `/compare?` bans the query form, not the page; the sitemap never emits
+        // a query string, asserted separately below.
+        .filter((p) => !p.includes("?"))
+        .map((p) => p.replace(/\$$/, ""))
+    );
   })();
 
   test("every disallowed root segment is one the sitemap refuses to emit", () => {

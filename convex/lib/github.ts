@@ -67,10 +67,9 @@ export async function fetchRepoMetadata(
   // returns them by default now. Belt-and-suspenders.
   headers.Accept = "application/vnd.github.mercy-preview+json";
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}`,
-      { headers },
-    );
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers,
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       default_branch: string;
@@ -115,7 +114,8 @@ export async function resolveRepoIdentity(
       headers: githubHeaders(),
     });
     if (res.status === 404) return { status: "not_found" };
-    if (res.status === 403 || res.status === 429) return { status: "rate_limited" };
+    if (res.status === 403 || res.status === 429)
+      return { status: "rate_limited" };
     if (!res.ok) return { status: "error" };
     const data = (await res.json()) as { id?: unknown; full_name?: unknown };
     if (typeof data.id !== "number" || typeof data.full_name !== "string") {
@@ -224,9 +224,7 @@ export async function fetchRepoTree(
       }
       if (res.status === 404) continue;
       if (res.status === 409) {
-        console.log(
-          `Tree API 409 (too large) for ${owner}/${repo}/${branch}`,
-        );
+        console.log(`Tree API 409 (too large) for ${owner}/${repo}/${branch}`);
         return null;
       }
       // Rate limited — log details and bail. Distinct from null: the caller
@@ -242,14 +240,9 @@ export async function fetchRepoTree(
         );
         return RATE_LIMITED;
       }
-      console.error(
-        `Tree API ${res.status} for ${owner}/${repo}/${branch}`,
-      );
+      console.error(`Tree API ${res.status} for ${owner}/${repo}/${branch}`);
     } catch (e) {
-      console.error(
-        `Tree API fetch error for ${owner}/${repo}/${branch}:`,
-        e,
-      );
+      console.error(`Tree API fetch error for ${owner}/${repo}/${branch}:`, e);
       continue;
     }
   }
@@ -342,4 +335,3 @@ export function indexSkillMds(
   }
   return { candidates, byDir, shaByPath };
 }
-

@@ -34,7 +34,11 @@
  * it to "save" the duplicate work would trade a bounded cost for an unbounded
  * correctness hole.
  */
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -171,7 +175,10 @@ export const listSummariesForSweep = internalQuery({
       const parsed = pathFromRawUrl(s.skillMdUrl);
       if (!parsed) continue;
 
-      const group = bySource.get(s.source) ?? { branch: parsed.branch, skills: [] };
+      const group = bySource.get(s.source) ?? {
+        branch: parsed.branch,
+        skills: [],
+      };
       group.skills.push({
         skillDocId: s.skillDocId,
         skillId: s.skillId,
@@ -350,7 +357,8 @@ export const applySweepResult = internalMutation({
       }
     };
 
-    for (const b of baselined) await write(b.skillDocId, b.githubBlobSha, false);
+    for (const b of baselined)
+      await write(b.skillDocId, b.githubBlobSha, false);
     for (const c of changed) await write(c.skillDocId, c.githubBlobSha, true);
 
     const existing = await ctx.db
@@ -529,8 +537,10 @@ export const sweepRepoFreshness = internalAction({
 
       const { shaByPath } = indexSkillMds(tree.entries);
 
-      const changed: Array<{ skillDocId: Id<"skills">; githubBlobSha: string }> =
-        [];
+      const changed: Array<{
+        skillDocId: Id<"skills">;
+        githubBlobSha: string;
+      }> = [];
       const baselined: Array<{
         skillDocId: Id<"skills">;
         githubBlobSha: string;
@@ -621,7 +631,11 @@ export const sweepRepoFreshness = internalAction({
     // Drain whatever the sweep queued. Safe when nothing was flagged —
     // backfillFetchContent no-ops on an empty work set.
     if (flagged > 0) {
-      await ctx.scheduler.runAfter(5_000, internal.skills.backfillFetchContent, {});
+      await ctx.scheduler.runAfter(
+        5_000,
+        internal.skills.backfillFetchContent,
+        {},
+      );
     }
     return null;
   },
@@ -785,7 +799,8 @@ export const sweepHealth = internalQuery({
       lastRunOutcome: lastRun?.outcome ?? null,
       lastRunReposSwept: lastRun?.reposSwept ?? null,
       reposTracked: repos.length,
-      reposSweptInLast25h: repos.filter((r) => r.sweptAt >= recentCutoff).length,
+      reposSweptInLast25h: repos.filter((r) => r.sweptAt >= recentCutoff)
+        .length,
       oldestSweepHoursAgo:
         oldest === null ? null : Math.round((now - oldest) / 3_600_000),
       skillsFlagged: flagged.length,

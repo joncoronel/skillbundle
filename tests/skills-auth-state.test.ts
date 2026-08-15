@@ -57,7 +57,10 @@ test("an OIDC rejection is recorded without disturbing the cached token", async 
   const t = makeTest();
   const expiresAt = Date.now() + 2 * HOUR;
 
-  await t.mutation(internal.skillsAuth.storeToken, { token: "tok-1", expiresAt });
+  await t.mutation(internal.skillsAuth.storeToken, {
+    token: "tok-1",
+    expiresAt,
+  });
   await t.mutation(internal.skillsAuth.recordOidcRejected, { status: 401 });
 
   await t.run(async (ctx) => {
@@ -96,7 +99,10 @@ test("getToken hands back only a real credential", async () => {
   expect(await t.query(internal.skillsAuth.getToken, {})).toBeNull();
 
   const expiresAt = Date.now() + 2 * HOUR;
-  await t.mutation(internal.skillsAuth.storeToken, { token: "tok-1", expiresAt });
+  await t.mutation(internal.skillsAuth.storeToken, {
+    token: "tok-1",
+    expiresAt,
+  });
 
   expect(await t.query(internal.skillsAuth.getToken, {})).toEqual({
     token: "tok-1",

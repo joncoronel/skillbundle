@@ -28,7 +28,8 @@ export const STORAGE_STATE = path.join(
 
 // Deliberately not a real mailbox. The `+clerk_test` marker is what makes Clerk
 // accept the fixed verification code instead of sending mail.
-const TEST_EMAIL = process.env.E2E_CLERK_TEST_EMAIL ?? "e2e+clerk_test@skillbundle.dev";
+const TEST_EMAIL =
+  process.env.E2E_CLERK_TEST_EMAIL ?? "e2e+clerk_test@skillbundle.dev";
 
 setup("authenticate", async ({ page }) => {
   const secretKey = process.env.CLERK_SECRET_KEY;

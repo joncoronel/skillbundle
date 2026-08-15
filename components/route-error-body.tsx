@@ -42,21 +42,25 @@ export function RouteErrorBody({
       tabIndex={-1}
       className="mx-auto max-w-2xl px-4 pt-24 pb-24 outline-none"
     >
-      <p className="font-mono text-xs text-muted-foreground mb-8 tabular-nums">
+      <p className="mb-8 font-mono text-xs text-muted-foreground tabular-nums">
         500 INTERNAL_ERROR
       </p>
 
-      <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] font-medium tracking-tight leading-hero mb-6">
+      <h1 className="mb-6 font-display text-[clamp(2.5rem,6vw,4rem)] leading-hero font-medium tracking-tight">
         Something went wrong.
       </h1>
 
-      <p className="text-base text-muted-foreground leading-relaxed mb-10 max-w-md">
+      <p className="mb-10 max-w-md text-base leading-relaxed text-muted-foreground">
         {description}
       </p>
 
       <div className="flex flex-wrap gap-3">
         <Button onClick={() => retry()}>Try again</Button>
-        <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href="/" />}
+        >
           Back home
         </Button>
       </div>
@@ -65,7 +69,7 @@ export function RouteErrorBody({
           asked to quote in a bug report, so it should not be the least legible
           thing on the page. */}
       {error.digest ? (
-        <p className="font-mono text-xs text-muted-foreground mt-10 tabular-nums">
+        <p className="mt-10 font-mono text-xs text-muted-foreground tabular-nums">
           Error ID: {error.digest}
         </p>
       ) : null}

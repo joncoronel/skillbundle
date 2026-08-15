@@ -48,7 +48,7 @@ behavior.
 ## Commands you will need
 
 | Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
+| --------- | ------------------ | ------------------- |
 | Install   | `pnpm install`     | exit 0              |
 | Typecheck | `npx tsc --noEmit` | exit 0              |
 | Tests     | `pnpm test`        | all pass            |
@@ -57,10 +57,12 @@ behavior.
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `package.json`
 - `pnpm-lock.yaml` (via pnpm commands only — never hand-edit)
 
 **Out of scope** (do NOT touch):
+
 - The `next` version itself — preview pin is deliberate.
 - Any other dependency (visx alpha pins, `convex-test` 0.0.x are known,
   accepted risks — see the plans index).
@@ -78,7 +80,7 @@ behavior.
 
 Run:
 `grep -rn "fuse" --include="*.ts" --include="*.tsx" app components lib hooks convex proxy.ts next.config.ts`
-and confirm no *import* of the package exists (English words in comments
+and confirm no _import_ of the package exists (English words in comments
 are fine). Also check for dynamic imports:
 `grep -rn "import(\"fuse" --include="*.ts" --include="*.tsx" app components lib hooks`
 

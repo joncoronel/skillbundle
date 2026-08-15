@@ -23,10 +23,10 @@ Steps to switch from Polar sandbox to production and go live with billing.
 
 Create 2 products in the Polar dashboard:
 
-| Product Name             | Type               | Price     |
-| ------------------------ | ------------------ | --------- |
-| SkillBundle Pro Monthly  | Recurring (Monthly)| $8/month  |
-| SkillBundle Pro Yearly   | Recurring (Yearly) | $72/year  |
+| Product Name            | Type                | Price    |
+| ----------------------- | ------------------- | -------- |
+| SkillBundle Pro Monthly | Recurring (Monthly) | $8/month |
+| SkillBundle Pro Yearly  | Recurring (Yearly)  | $72/year |
 
 Copy each **Product ID** after creating them.
 
@@ -56,12 +56,12 @@ own — nothing to edit in code. `convex/polar.ts` reads `POLAR_PRO_MONTHLY_PROD
 
 Set them in **four** places:
 
-| Location | Vars | Values |
-| --- | --- | --- |
-| Convex **dev** (`npx convex env set …`) | `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID` | sandbox IDs |
-| Convex **prod** (`npx convex env set --prod …`) | same two | production IDs |
-| `.env.local` | `NEXT_PUBLIC_POLAR_PRO_MONTHLY_PRODUCT_ID`, `NEXT_PUBLIC_POLAR_PRO_YEARLY_PRODUCT_ID` | sandbox IDs |
-| Vercel (Production scope) | same two `NEXT_PUBLIC_…` | production IDs |
+| Location                                        | Vars                                                                                  | Values         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------- | -------------- |
+| Convex **dev** (`npx convex env set …`)         | `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID`                         | sandbox IDs    |
+| Convex **prod** (`npx convex env set --prod …`) | same two                                                                              | production IDs |
+| `.env.local`                                    | `NEXT_PUBLIC_POLAR_PRO_MONTHLY_PRODUCT_ID`, `NEXT_PUBLIC_POLAR_PRO_YEARLY_PRODUCT_ID` | sandbox IDs    |
+| Vercel (Production scope)                       | same two `NEXT_PUBLIC_…`                                                              | production IDs |
 
 > Set the prod-side vars (Convex prod **and** Vercel) **before deploying** — otherwise
 > production checkout resolves `undefined` product IDs. The `NEXT_PUBLIC_` vars are inlined

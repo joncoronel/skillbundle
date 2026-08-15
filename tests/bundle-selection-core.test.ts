@@ -8,10 +8,7 @@
  * tests stay small instead of building 100-element fixtures.
  */
 import { test, expect, describe } from "vitest";
-import {
-  planBulkAdd,
-  type SelectedSkill,
-} from "../lib/bundle-selection-core";
+import { planBulkAdd, type SelectedSkill } from "../lib/bundle-selection-core";
 
 /** Compact skill factory: `s("a")` → owner/repo:a, `s("a", "x/y")` → x/y:a. */
 function s(skillId: string, source = "owner/repo"): SelectedSkill {

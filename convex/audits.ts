@@ -79,7 +79,6 @@ function reduceWorst(audits: V1AuditEntry[]): {
   return { worstStatus, worstRiskLevel: worstRisk };
 }
 
-
 // ---------------------------------------------------------------------------
 // Audit-fetch queue (per-skill, drained by the daily chain)
 // ---------------------------------------------------------------------------
@@ -259,7 +258,10 @@ export const writeAuditResult = internalMutation({
 export const fetchAuditBatch = internalAction({
   // `denormChanges` accumulates across the self-chaining recursion so the
   // terminal knows whether any audit verdict actually moved this run.
-  args: { cursor: v.optional(v.string()), denormChanges: v.optional(v.number()) },
+  args: {
+    cursor: v.optional(v.string()),
+    denormChanges: v.optional(v.number()),
+  },
   handler: async (ctx, { cursor, denormChanges = 0 }): Promise<void> => {
     let denormChangeCount = denormChanges;
     const result: {

@@ -36,7 +36,9 @@ export const repoUrlParser = parseAsString.withDefault("");
 // never point at a list they don't control.)
 const leaderboardViewValues = ["hot", "trending"] as const;
 export type LeaderboardViewValue = (typeof leaderboardViewValues)[number];
-export const leaderboardViewParser = parseAsStringLiteral(leaderboardViewValues);
+export const leaderboardViewParser = parseAsStringLiteral(
+  leaderboardViewValues,
+);
 
 // Catalog sort. Deliberately NO .withDefault(): null means "auto" — the UI
 // resolves it to "relevance" when a query is present, "installs" otherwise,

@@ -610,8 +610,12 @@ describe("listRecentChangesForUser", () => {
   test("orders newest first among events of equal consequence", async () => {
     const { t, asUser, a, b } = await setupFeed();
     const now = Date.now();
-    await makeBundle(t, asUser, "One", ["skill-a"], { lastViewedAt: now - 20 * HOUR });
-    await makeBundle(t, asUser, "Two", ["skill-b"], { lastViewedAt: now - 20 * HOUR });
+    await makeBundle(t, asUser, "One", ["skill-a"], {
+      lastViewedAt: now - 20 * HOUR,
+    });
+    await makeBundle(t, asUser, "Two", ["skill-b"], {
+      lastViewedAt: now - 20 * HOUR,
+    });
     await setContentUpdatedAt(t, "skill-a", now - 6 * HOUR);
     await setContentUpdatedAt(t, "skill-b", now - 2 * HOUR);
     await addVersion(t, a, "skill-a", { changedAt: now - 6 * HOUR });

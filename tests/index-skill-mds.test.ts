@@ -30,10 +30,7 @@ const tree = [
 test("collects a sha for every SKILL.md candidate", () => {
   const { candidates, shaByPath } = indexSkillMds(tree);
 
-  expect(candidates).toEqual([
-    "skills/alpha/SKILL.md",
-    "skills/beta/SKILL.md",
-  ]);
+  expect(candidates).toEqual(["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]);
   expect(shaByPath.get("skills/alpha/SKILL.md")).toBe("aaa111");
   expect(shaByPath.get("skills/beta/SKILL.md")).toBe("bbb222");
 });

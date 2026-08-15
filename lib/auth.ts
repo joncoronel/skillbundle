@@ -15,7 +15,9 @@ export const getAuth = cache(() => auth());
 
 export async function getAuthToken() {
   try {
-    return (await (await getAuth()).getToken({ template: "convex" })) ?? undefined;
+    return (
+      (await (await getAuth()).getToken({ template: "convex" })) ?? undefined
+    );
   } catch (error) {
     if (error instanceof ClerkOfflineError) return undefined;
     throw error;

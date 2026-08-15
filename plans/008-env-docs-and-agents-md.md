@@ -82,9 +82,9 @@ Two-tier: `convex/skills.ts` `tagSkill()` auto-tags during sync;
 `lib/technologies.ts` defines the frontend display technologies with IDs and names.
 ```
 
-  Verified at plan time: `grep -rn "tagSkill" convex lib` → no matches;
-  `lib/technologies.ts` does not exist. The only tech-related surface is an
-  optional `technologies?: string[]` prop on `components/skill-card.tsx:91`.
+Verified at plan time: `grep -rn "tagSkill" convex lib` → no matches;
+`lib/technologies.ts` does not exist. The only tech-related surface is an
+optional `technologies?: string[]` prop on `components/skill-card.tsx:91`.
 
 - `.gitignore` contains `.env*` — `.env.example` must therefore be
   force-added OR the ignore pattern adjusted. Prefer adding a negation line
@@ -93,20 +93,22 @@ Two-tier: `convex/skills.ts` `tagSkill()` auto-tags during sync;
 
 ## Commands you will need
 
-| Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
-| Lint      | `pnpm lint`        | exit 0              |
-| Tracked?  | `git check-ignore .env.example` | exit 1 (NOT ignored) after the .gitignore edit |
+| Purpose  | Command                         | Expected on success                            |
+| -------- | ------------------------------- | ---------------------------------------------- |
+| Lint     | `pnpm lint`                     | exit 0                                         |
+| Tracked? | `git check-ignore .env.example` | exit 1 (NOT ignored) after the .gitignore edit |
 
 ## Scope
 
 **In scope** (the only files you should modify/create):
+
 - `.env.example` (create)
 - `.gitignore` (one negation line)
 - `README.md` (Environment Variables section only)
 - `AGENTS.md` (Technology tagging section only)
 
 **Out of scope** (do NOT touch):
+
 - `.env.local` or any real environment store — never open it (see the
   security rule above).
 - `docs/architecture.md`, `docs/search-overhaul.md` — reference them, don't

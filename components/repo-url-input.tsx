@@ -77,7 +77,6 @@ function groupIsOfficial(group: GroupedRecommendation) {
   return group.variants.some((v) => v.curatedOwner);
 }
 
-
 /**
  * Fetches repo analysis results via TanStack Query, keyed on the repo URL
  * param. The URL is only set when the user clicks Analyze, so typing in the
@@ -146,8 +145,7 @@ export function RepoAnalysisResults() {
   // behind it. The server is the authoritative gate (it throws PRO_REQUIRED),
   // so firing before the client plan resolves is safe. Never fires for an
   // unparseable input.
-  const canFetch =
-    !!parsed && (isExample || (!isAuthLoading && !knownLocked));
+  const canFetch = !!parsed && (isExample || (!isAuthLoading && !knownLocked));
 
   const { data, isPending, error } = useQuery<AnalyzeRepoResult>({
     queryKey: ["repo", "analyze", trimmedUrl],
@@ -204,8 +202,9 @@ export function RepoAnalysisResults() {
     : invalidUrl
       ? "Invalid GitHub URL"
       : error
-        ? error.message || "Something went wrong analyzing this repository. Please try again."
-        : data?.error ?? null;
+        ? error.message ||
+          "Something went wrong analyzing this repository. Please try again."
+        : (data?.error ?? null);
 
   if (loading) {
     const rowCount = 6;
@@ -229,12 +228,9 @@ export function RepoAnalysisResults() {
     // free user's assistive tech never hears a claim they won't get.
     return (
       <div className="mt-4" aria-busy="true">
-        <p
-          role="status"
-          className="mb-4 min-h-4 text-xs text-muted-foreground"
-        >
+        <p role="status" className="mb-4 min-h-4 text-xs text-muted-foreground">
           {analyzing && (
-            <span className="starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+            <span className="transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0">
               Analyzing repository…
             </span>
           )}
@@ -253,10 +249,16 @@ export function RepoAnalysisResults() {
               <Skeleton className="size-4 shrink-0 rounded-sm" />
               <div className="flex items-baseline gap-x-2">
                 <Skeleton
-                  className={cn("h-5 rounded-sm", i % 2 === 0 ? "w-32" : "w-24")}
+                  className={cn(
+                    "h-5 rounded-sm",
+                    i % 2 === 0 ? "w-32" : "w-24",
+                  )}
                 />
                 <Skeleton
-                  className={cn("h-4 rounded-sm", i % 3 === 0 ? "w-24" : "w-16")}
+                  className={cn(
+                    "h-4 rounded-sm",
+                    i % 3 === 0 ? "w-24" : "w-16",
+                  )}
                 />
               </div>
               <Skeleton className="ml-auto h-4 w-12 shrink-0 rounded-sm" />
@@ -496,7 +498,7 @@ function RepoMatchEmptyState({
           jumps. Space isn't reserved — the picker is an upgrade to the card,
           not a hole in it. */}
       {showPicker && (
-        <div className="starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+        <div className="transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0">
           <RepoPicker />
         </div>
       )}
@@ -530,11 +532,7 @@ function RepoMatchEmptyState({
  * routed to sign in first (Pro needs an account), a signed-in free user goes
  * straight to pricing. The demo stays one click away so the wall never dead-ends.
  */
-function RepoMatchPaywall({
-  onTryExample,
-}: {
-  onTryExample: () => void;
-}) {
+function RepoMatchPaywall({ onTryExample }: { onTryExample: () => void }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
   // While auth resolves, assume signed-in so a returning user never flashes the
   // "sign in" CTA. Pro users never reach this branch, so the fallback is safe.
@@ -598,7 +596,7 @@ function SkillGroupRow({ group, className }: SkillGroupRowProps) {
   return (
     <Collapsible
       className={cn(
-        "text-card-foreground flex flex-col bg-card rounded-2xl border dark:border-border/50",
+        "flex flex-col rounded-2xl border bg-card text-card-foreground dark:border-border/50",
         // overflow-hidden lets the outer rounded-2xl clip the inner muted
         // section's square corners, so we don't need to round each child.
         "overflow-hidden",
@@ -622,11 +620,11 @@ function SkillGroupRow({ group, className }: SkillGroupRowProps) {
       <CollapsibleTrigger
         className={cn(
           "border-none bg-transparent shadow-none ring-0 hover:bg-transparent hover:opacity-80",
-          "py-3 px-4 w-full",
+          "w-full px-4 py-3",
         )}
       >
-        <div className="flex items-center gap-3 w-full">
-          <span className="min-w-0 truncate text-sm font-semibold text-left">
+        <div className="flex w-full items-center gap-3">
+          <span className="min-w-0 truncate text-left text-sm font-semibold">
             {group.name}
           </span>
           <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">

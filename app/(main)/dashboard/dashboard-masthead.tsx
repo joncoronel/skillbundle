@@ -11,7 +11,7 @@ export function DashboardMasthead() {
           {/* Names the page's job, not its contents. The status panel leads
               now, so "Your bundles." described the section that comes second —
               and the wording stays true when bundles become watchlists. */}
-          <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero">
+          <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
             Your setup.
           </h1>
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">
@@ -24,7 +24,11 @@ export function DashboardMasthead() {
           nativeButton={false}
           render={<Link href="/" />}
           leadingIcon={
-            <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2.25} className="size-3.5" />
+            <HugeiconsIcon
+              icon={PlusSignIcon}
+              strokeWidth={2.25}
+              className="size-3.5"
+            />
           }
           className="shrink-0"
         >

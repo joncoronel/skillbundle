@@ -159,11 +159,11 @@ function DashboardLoaded({
             sortBy={sortBy}
             onSortChange={setSortBy}
           />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 motion-reduce:animate-none">
+          <div className="grid gap-3 motion-reduce:animate-none sm:grid-cols-2 lg:grid-cols-3">
             {sortedBundles.map((bundle, i) => (
               <div
                 key={bundle._id}
-                className="animate-in fade-in slide-in-from-bottom-2 fill-mode-[both] motion-reduce:animate-none"
+                className="animate-in fill-mode-[both] fade-in slide-in-from-bottom-2 motion-reduce:animate-none"
                 style={{
                   animationDelay: `${i * 30}ms`,
                   animationDuration: "150ms",

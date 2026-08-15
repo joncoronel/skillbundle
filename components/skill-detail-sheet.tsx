@@ -30,10 +30,7 @@ import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
-import {
-  useBundleActions,
-  useIsSkillSelected,
-} from "@/lib/bundle-selection";
+import { useBundleActions, useIsSkillSelected } from "@/lib/bundle-selection";
 import { generateInstallCommands } from "@/lib/install-commands";
 import { compareHref } from "@/lib/compare";
 import { formatInstalls } from "@/lib/utils";
@@ -146,7 +143,7 @@ function SkillDetailSheetContent({
   return (
     <>
       <SheetHeader>
-        <SheetTitle className="font-display font-medium flex items-center gap-1.5">
+        <SheetTitle className="flex items-center gap-1.5 font-display font-medium">
           {skill.name}
           {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
         </SheetTitle>

@@ -22,7 +22,9 @@ test("dashboard is reachable when signed in", async ({ page }) => {
   await expect(page.locator("h1")).toContainText("Your setup.");
 });
 
-test("dashboard shell commits before the websocket resolves", async ({ page }) => {
+test("dashboard shell commits before the websocket resolves", async ({
+  page,
+}) => {
   await instant(
     page,
     async () => {
@@ -34,7 +36,9 @@ test("dashboard shell commits before the websocket resolves", async ({ page }) =
   );
 });
 
-test("dashboard resolves its Convex data without erroring", async ({ page }) => {
+test("dashboard resolves its Convex data without erroring", async ({
+  page,
+}) => {
   await page.goto("/dashboard");
   await expect(page.locator("h1")).toContainText("Your setup.");
   // The change feed renders once the authenticated websocket answers. Either
@@ -44,7 +48,9 @@ test("dashboard resolves its Convex data without erroring", async ({ page }) => 
   await expect(page.getByRole("heading", { level: 2 }).first()).toBeVisible();
 });
 
-test("settings is reachable and defaults to the profile tab", async ({ page }) => {
+test("settings is reachable and defaults to the profile tab", async ({
+  page,
+}) => {
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.locator("h1")).toContainText("Account Settings");

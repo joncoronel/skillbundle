@@ -223,16 +223,9 @@ export type AddSkillOutcome<TOk extends PreviewOkBase> =
  * slowest path in the flow.
  */
 type AddSkillPhase =
-  | "idle"
-  | "adding"
-  | "previewing"
-  | "retrying"
-  | "confirming";
+  "idle" | "adding" | "previewing" | "retrying" | "confirming";
 
-const ADD_SKILL_PHASE_LABEL: Record<
-  Exclude<AddSkillPhase, "idle">,
-  string
-> = {
+const ADD_SKILL_PHASE_LABEL: Record<Exclude<AddSkillPhase, "idle">, string> = {
   // "Checking…", not "Adding…": this first step is a skills.sh lookup that is
   // often about to 404 into the GitHub branch. Nothing is being added yet.
   adding: "Checking…",
@@ -252,10 +245,7 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
   addManually: (args: { input: string }) => Promise<ManualAddResult>;
   previewGitHub: (args: { input: string }) => Promise<PreviewFailure | TOk>;
   addFromGitHub: (args: { input: string }) => Promise<GitHubAddResult>;
-  report: (
-    outcome: AddSkillOutcome<TOk>,
-    helpers: ReportHelpers<TOk>,
-  ) => void;
+  report: (outcome: AddSkillOutcome<TOk>, helpers: ReportHelpers<TOk>) => void;
 }) {
   const [input, setInput] = useState(initialInput);
   const [phase, setPhase] = useState<AddSkillPhase>("idle");
@@ -529,9 +519,7 @@ export function useAddSkillFlow<TOk extends PreviewOkBase>({
    */
   const changeInput = useCallback((value: string) => {
     setInput(value);
-    setCandidate((prev) =>
-      prev && value.trim() !== prev.input ? null : prev,
-    );
+    setCandidate((prev) => (prev && value.trim() !== prev.input ? null : prev));
   }, []);
 
   // Named, not inlined into the returned object literal: a `useCallback` in

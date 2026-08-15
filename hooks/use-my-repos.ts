@@ -59,7 +59,8 @@ export function useMyRepos() {
     // gate, so waiting for the plan here would serialize a full round trip
     // in front of the repo fetch on every cold load. Only a resolved-free
     // plan disables it (their PRO_REQUIRED rejection is filtered below).
-    enabled: isAuthenticated && !!user && !!account && hasRepoScope && !knownFree,
+    enabled:
+      isAuthenticated && !!user && !!account && hasRepoScope && !knownFree,
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
     retry: false,

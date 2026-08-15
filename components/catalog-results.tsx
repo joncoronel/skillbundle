@@ -129,7 +129,8 @@ export function ActiveCatalogResults({
           {query && (
             <>
               <span className="mt-3 block text-xs text-muted-foreground">
-                Know a skill we&apos;re missing? Add it from skills.sh or GitHub.
+                Know a skill we&apos;re missing? Add it from skills.sh or
+                GitHub.
               </span>
               <AddSkillDialog
                 initialInput={/\/|github\.com/i.test(query) ? query : undefined}
@@ -145,7 +146,7 @@ export function ActiveCatalogResults({
           <p
             role="status"
             aria-live="polite"
-            className="text-xs text-muted-foreground mb-3 tabular-nums"
+            className="mb-3 text-xs text-muted-foreground tabular-nums"
           >
             {found.toLocaleString()} result{found !== 1 && "s"}
           </p>

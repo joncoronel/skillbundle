@@ -31,7 +31,7 @@ bundle's number with a loop, and can force row creation for private bundles
 (write amplification + a metrics-integrity hole). Full rate limiting needs
 infrastructure this repo doesn't have; the right-sized fix now is to stop
 counting copies for private bundles (their count is not a public signal) and
-keep the mutation otherwise unchanged. Signed-out copying of *public*
+keep the mutation otherwise unchanged. Signed-out copying of _public_
 bundles must keep working — it's core free UX.
 
 ## Current state
@@ -88,19 +88,21 @@ export const recordCopy = mutation({
 
 ## Commands you will need
 
-| Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
-| Typecheck | `npx tsc --noEmit` | exit 0              |
-| Tests     | `pnpm test`        | all pass            |
-| New file  | `pnpm test tests/bundle-events.test.ts` | passes |
+| Purpose   | Command                                 | Expected on success |
+| --------- | --------------------------------------- | ------------------- |
+| Typecheck | `npx tsc --noEmit`                      | exit 0              |
+| Tests     | `pnpm test`                             | all pass            |
+| New file  | `pnpm test tests/bundle-events.test.ts` | passes              |
 
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `convex/bundleEvents.ts`
 - `tests/bundle-events.test.ts` (create)
 
 **Out of scope** (do NOT touch):
+
 - `components/install-commands.tsx` — client stays fire-and-forget.
 - `convex/bundleStars.ts` / `forkBundle` — same counters, different
   endpoints; their auth posture is separate.
@@ -119,12 +121,12 @@ export const recordCopy = mutation({
 In `recordCopy`, immediately after the `if (!bundle) return;` line, add:
 
 ```ts
-    // Copy count is a public trust signal, and this mutation is deliberately
-    // callable signed-out (copying a public bundle is core free UX). Private
-    // bundles' counts are not publicly displayed, so don't count — this also
-    // stops unauthenticated callers from minting stats rows for bundles they
-    // can't view.
-    if (!bundle.isPublic) return;
+// Copy count is a public trust signal, and this mutation is deliberately
+// callable signed-out (copying a public bundle is core free UX). Private
+// bundles' counts are not publicly displayed, so don't count — this also
+// stops unauthenticated callers from minting stats rows for bundles they
+// can't view.
+if (!bundle.isPublic) return;
 ```
 
 No other behavior changes. The insert branch's `isPublic: bundle.isPublic`
@@ -177,7 +179,7 @@ Machine-checkable. ALL must hold:
 Stop and report back (do not improvise) if:
 
 - `convex/bundleEvents.ts` no longer matches the excerpt (drifted).
-- You find UI that displays a *private* bundle's copy count to its owner
+- You find UI that displays a _private_ bundle's copy count to its owner
   (search `copyCount` in `app/` and `components/`) — the product trade-off
   in "Why this matters" would need the operator's sign-off; report what you
   found.

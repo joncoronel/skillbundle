@@ -17,7 +17,9 @@ const SECRET = "test-secret-value";
 /** Build a JWT-shaped string whose payload carries `exp` (seconds). */
 function jwtWithExp(expSeconds: number | undefined): string {
   const payload = Buffer.from(
-    JSON.stringify(expSeconds === undefined ? { sub: "x" } : { exp: expSeconds }),
+    JSON.stringify(
+      expSeconds === undefined ? { sub: "x" } : { exp: expSeconds },
+    ),
   ).toString("base64url");
   return `header.${payload}.signature`;
 }

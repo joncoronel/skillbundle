@@ -23,7 +23,7 @@
 
 ## Why this matters
 
-The share token is the *only* access gate for a private bundle: anyone holding
+The share token is the _only_ access gate for a private bundle: anyone holding
 a valid `?share=` token can read the full contents of a private bundle without
 authentication. Today that token is built from `Math.random()`, a
 non-cryptographic PRNG whose internal state is recoverable from observed
@@ -42,8 +42,9 @@ closes this with a few lines and zero schema changes.
 function generateUrlId(length = 10): string {
   const chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length }, () =>
-    chars[Math.floor(Math.random() * chars.length)],
+  return Array.from(
+    { length },
+    () => chars[Math.floor(Math.random() * chars.length)],
   ).join("");
 }
 ```
@@ -52,25 +53,25 @@ function generateUrlId(length = 10): string {
 the auth check above it is correct and must not change):
 
 ```ts
-    const token = Array.from({ length: 4 }, () =>
-      Math.random().toString(36).slice(2),
-    ).join("");
+const token = Array.from({ length: 4 }, () =>
+  Math.random().toString(36).slice(2),
+).join("");
 
-    await ctx.db.patch(bundleId, { shareToken: token });
-    return token;
+await ctx.db.patch(bundleId, { shareToken: token });
+return token;
 ```
 
 `convex/bundles.ts:427-433` — where the token gates access inside `getByUrlId`:
 
 ```ts
-    if (!bundle.isPublic) {
-      const hasValidToken =
-        shareToken !== undefined &&
-        bundle.shareToken !== undefined &&
-        shareToken === bundle.shareToken;
+if (!bundle.isPublic) {
+  const hasValidToken =
+    shareToken !== undefined &&
+    bundle.shareToken !== undefined &&
+    shareToken === bundle.shareToken;
 
-      if (!isOwner && !hasValidToken) return null;
-    }
+  if (!isOwner && !hasValidToken) return null;
+}
 ```
 
 - Repo conventions: Convex functions validate args with `v` from
@@ -86,7 +87,7 @@ the auth check above it is correct and must not change):
 ## Commands you will need
 
 | Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
+| --------- | ------------------ | ------------------- |
 | Install   | `pnpm install`     | exit 0              |
 | Typecheck | `npx tsc --noEmit` | exit 0, no output   |
 | Tests     | `pnpm test`        | all pass            |
@@ -95,10 +96,12 @@ the auth check above it is correct and must not change):
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `convex/bundles.ts`
 - `tests/bundles.test.ts`
 
 **Out of scope** (do NOT touch, even though they look related):
+
 - `convex/schema.ts` — `shareToken`/`urlId` stay `v.string()`; no schema change.
 - Any UI component that displays or copies share links.
 - Existing stored tokens/urlIds — they keep working; do not write a migration.

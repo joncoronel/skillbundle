@@ -232,7 +232,7 @@ export function BundleRegister<S extends RegisterSkill>({
     // so the page scrolls instead and the labels leave with it. Viewport-
     // relative rather than a fixed pixel height so a short bundle gets no inner
     // scrollbar at all.
-    <Table className="table-fixed max-h-[70vh] md:max-w-none">
+    <Table className="max-h-[70vh] table-fixed md:max-w-none">
       <TableHeader>
         {/* Small sans, sentence case — the column-label role from DESIGN.md §3.
             Only the size is overridden; TableHead's default is body-size, which
@@ -247,8 +247,8 @@ export function BundleRegister<S extends RegisterSkill>({
               deltas into truncation. */}
           <TableHead className="w-auto sm:w-[26%]">Skill</TableHead>
           <TableHead className="hidden sm:table-cell">Condition</TableHead>
-          <TableHead className="hidden md:table-cell w-28">Audit</TableHead>
-          <TableHead className="hidden sm:table-cell w-24 text-right">
+          <TableHead className="hidden w-28 md:table-cell">Audit</TableHead>
+          <TableHead className="hidden w-24 text-right sm:table-cell">
             Added
           </TableHead>
           {editing ? (
@@ -352,7 +352,7 @@ function RegisterGroup<S extends RegisterSkill>({
       <span id={labelId} className="text-sm font-medium text-foreground">
         {GROUP_LABEL[group]}
       </span>
-      <span className="text-sm tabular-nums text-muted-foreground">
+      <span className="text-sm text-muted-foreground tabular-nums">
         {rows.length}
       </span>
     </span>
@@ -538,7 +538,7 @@ function RegisterRowView<S extends RegisterSkill>({
         </div>
       </TableCell>
 
-      <TableCell className="hidden sm:table-cell align-top whitespace-normal">
+      <TableCell className="hidden align-top whitespace-normal sm:table-cell">
         <ConditionDetail
           condition={condition}
           label={meta.label}
@@ -547,14 +547,14 @@ function RegisterRowView<S extends RegisterSkill>({
         />
       </TableCell>
 
-      <TableCell className="hidden md:table-cell align-top">
+      <TableCell className="hidden align-top md:table-cell">
         <AuditCell
           status={skill.worstAuditStatus}
           riskLevel={skill.worstAuditRiskLevel}
         />
       </TableCell>
 
-      <TableCell className="hidden sm:table-cell align-top text-right text-xs tabular-nums text-muted-foreground">
+      <TableCell className="hidden text-right align-top text-xs text-muted-foreground tabular-nums sm:table-cell">
         {isAdded ? (
           <span className="text-success-foreground">New</span>
         ) : skill.addedAt ? (
@@ -773,9 +773,7 @@ export function RegisterTally({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {visible ? (
-        <StatusLight
-          tone={suppressed ? "hold" : TONE_OF_GROUP.steady}
-        />
+        <StatusLight tone={suppressed ? "hold" : TONE_OF_GROUP.steady} />
       ) : null}
 
       {/*
@@ -790,39 +788,39 @@ export function RegisterTally({
       */}
       <p aria-live="polite" className="flex-1 text-sm">
         <>
-            {/* The verdict. Visible only when it says something the sections
+          {/* The verdict. Visible only when it says something the sections
                 cannot; otherwise `sr-only`, so the live region stays mounted
                 and actually fires. */}
-            {tone === "clear" && !suppressed ? (
-              <>
-                <span className="font-medium">All steady.</span>{" "}
-                <span className="text-muted-foreground tabular-nums">
-                  {total} skill{total === 1 ? "" : "s"}, nothing changed since
-                  you added them.
-                </span>
-              </>
-            ) : (
-              <span className="sr-only">
-                {[
-                  faults > 0 ? `${faults} need attention` : null,
-                  changed > 0 ? `${changed} changed` : null,
-                ]
-                  .filter(Boolean)
-                  .join(", ") || "All steady"}
-                .
+          {tone === "clear" && !suppressed ? (
+            <>
+              <span className="font-medium">All steady.</span>{" "}
+              <span className="text-muted-foreground tabular-nums">
+                {total} skill{total === 1 ? "" : "s"}, nothing changed since you
+                added them.
               </span>
-            )}
+            </>
+          ) : (
+            <span className="sr-only">
+              {[
+                faults > 0 ? `${faults} need attention` : null,
+                changed > 0 ? `${changed} changed` : null,
+              ]
+                .filter(Boolean)
+                .join(", ") || "All steady"}
+              .
+            </span>
+          )}
 
-            {/* Additive, not an alternative. Renders whatever else is true —
+          {/* Additive, not an alternative. Renders whatever else is true —
                 including alongside a fault, which is the case that used to
                 lose it entirely. */}
-            {suppressed ? (
-              <span className="text-muted-foreground">
-                A large share of the catalog changed at once, which usually
-                means we reprocessed content rather than authors editing it.
-                Read these rows with that in mind.
-              </span>
-            ) : null}
+          {suppressed ? (
+            <span className="text-muted-foreground">
+              A large share of the catalog changed at once, which usually means
+              we reprocessed content rather than authors editing it. Read these
+              rows with that in mind.
+            </span>
+          ) : null}
         </>
       </p>
     </div>

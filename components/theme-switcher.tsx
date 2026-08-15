@@ -55,21 +55,21 @@ export function ThemeSwitcher({ className }: { className?: string }) {
         <HugeiconsIcon
           icon={Sun02Icon}
           data-visible={active === "light" || undefined}
-          className="motion-safe:transition-all! motion-safe:duration-200 motion-safe:rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
+          className="opacity-0 data-visible:scale-100 data-visible:rotate-0 data-visible:opacity-100 data-visible:blur-none motion-safe:scale-60 motion-safe:rotate-90 motion-safe:blur-xs motion-safe:transition-all! motion-safe:duration-200"
           strokeWidth={2}
         />
         {/* Dark mode: moon */}
         <HugeiconsIcon
           icon={Moon02Icon}
           data-visible={active === "dark" || undefined}
-          className="motion-safe:transition-all! motion-safe:duration-200 motion-safe:-rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
+          className="opacity-0 data-visible:scale-100 data-visible:rotate-0 data-visible:opacity-100 data-visible:blur-none motion-safe:scale-60 motion-safe:-rotate-90 motion-safe:blur-xs motion-safe:transition-all! motion-safe:duration-200"
           strokeWidth={2}
         />
         {/* System mode: computer */}
         <HugeiconsIcon
           icon={ComputerIcon}
           data-visible={active === "system" || undefined}
-          className="motion-safe:transition-all! motion-safe:duration-200 motion-safe:rotate-90 motion-safe:scale-60 motion-safe:blur-xs opacity-0 data-visible:rotate-0 data-visible:scale-100 data-visible:blur-none data-visible:opacity-100"
+          className="opacity-0 data-visible:scale-100 data-visible:rotate-0 data-visible:opacity-100 data-visible:blur-none motion-safe:scale-60 motion-safe:rotate-90 motion-safe:blur-xs motion-safe:transition-all! motion-safe:duration-200"
           strokeWidth={2}
         />
       </span>

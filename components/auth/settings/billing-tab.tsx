@@ -117,7 +117,9 @@ export function BillingTab() {
 
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <span className="text-sm text-muted-foreground">
-                  {subscription.cancelAtPeriodEnd ? "Access until" : "Renews on"}
+                  {subscription.cancelAtPeriodEnd
+                    ? "Access until"
+                    : "Renews on"}
                 </span>
                 <span className="text-sm font-medium">
                   {subscription.cancelAtPeriodEnd ? (

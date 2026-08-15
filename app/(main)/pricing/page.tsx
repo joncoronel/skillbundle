@@ -12,7 +12,7 @@ export default function PricingPage() {
   return (
     <main className="mx-auto max-w-4xl px-4 pt-16 pb-24">
       <header className="mx-auto max-w-2xl text-center">
-        <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] font-medium leading-hero tracking-tight">
+        <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] leading-hero font-medium tracking-tight">
           Two plans. One product.
         </h1>
         <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">

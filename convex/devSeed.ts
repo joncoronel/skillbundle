@@ -19,7 +19,11 @@ import { v } from "convex/values";
 import { assertNotProduction } from "./lib/devOnly";
 
 export const seedInsights = internalMutation({
-  args: { source: v.string(), skillId: v.string(), days: v.optional(v.number()) },
+  args: {
+    source: v.string(),
+    skillId: v.string(),
+    days: v.optional(v.number()),
+  },
   handler: async (ctx, { source, skillId, days = 45 }) => {
     assertNotProduction("devSeed:seedInsights");
     const summary = await ctx.db
@@ -311,7 +315,9 @@ export const seedVersions = internalAction({
         descriptionBefore: step.descriptionChanged
           ? previousDescription
           : undefined,
-        descriptionAfter: step.descriptionChanged ? step.description : undefined,
+        descriptionAfter: step.descriptionChanged
+          ? step.description
+          : undefined,
         descriptionChanged: step.descriptionChanged,
         isBaseline: step.isBaseline,
         stampContentUpdatedAt: i === SEED_STEPS.length - 1,
@@ -357,7 +363,11 @@ export const seedFault = internalMutation({
       v.literal("clear"),
     ),
   },
-  returns: v.object({ source: v.string(), skillId: v.string(), kind: v.string() }),
+  returns: v.object({
+    source: v.string(),
+    skillId: v.string(),
+    kind: v.string(),
+  }),
   handler: async (ctx, { source, skillId, kind }) => {
     assertNotProduction("devSeed:seedFault");
 

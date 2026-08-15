@@ -143,78 +143,78 @@ export function SkillExplorerView({
     // sheet, filter controls read the current facet counts — neither is
     // couriered through the components in between.
     <SkillDetailHandleProvider handle={skillDetailHandle}>
-    <CatalogFacetsProvider facets={facets}>
-      {/* Discovery column: hero + search composer + list region. */}
-      <div className="relative pb-20 sm:min-h-[calc(100dvh-4.5rem)] sm:px-8 lg:px-10">
-        {/* Hero — constant, scrolls away (never collapses). */}
-        <section className="pt-10 pb-6 sm:pt-12">
-          <h1 className="font-display text-3xl font-medium tracking-tight sm:text-4xl">
-            Pick skills.{" "}
-            <span className="text-primary">Ship one install command.</span>
-          </h1>
-          <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-            Search and compare skills for Cursor, Claude Code, and other coding
-            agents. Bundle the ones you want and share the whole set with a
-            link.
-          </p>
-        </section>
+      <CatalogFacetsProvider facets={facets}>
+        {/* Discovery column: hero + search composer + list region. */}
+        <div className="relative pb-20 sm:min-h-[calc(100dvh-4.5rem)] sm:px-8 lg:px-10">
+          {/* Hero — constant, scrolls away (never collapses). */}
+          <section className="pt-10 pb-6 sm:pt-12">
+            <h1 className="font-display text-3xl font-medium tracking-tight sm:text-4xl">
+              Pick skills.{" "}
+              <span className="text-primary">Ship one install command.</span>
+            </h1>
+            <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
+              Search and compare skills for Cursor, Claude Code, and other
+              coding agents. Bundle the ones you want and share the whole set
+              with a link.
+            </p>
+          </section>
 
-        <SkillComposer showInputSpinner={showInputSpinner} />
+          <SkillComposer showInputSpinner={showInputSpinner} />
 
-        {isRepo ? (
-          /* Repo mode's region: match results (or the paste-a-repo empty
+          {isRepo ? (
+            /* Repo mode's region: match results (or the paste-a-repo empty
              state). starting: fades it in on the mode morph — it only mounts
              on entry, so the static shell never sees the fade. */
-          <div className="pt-4 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
-            <RepoAnalysisResults />
-          </div>
-        ) : (
-          /* List region — the ONLY thing that changes on interaction. */
-          <div className="pt-4">
-            {/* Popular list stays mounted (preserves scroll + pagination).
+            <div className="pt-4 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0">
+              <RepoAnalysisResults />
+            </div>
+          ) : (
+            /* List region — the ONLY thing that changes on interaction. */
+            <div className="pt-4">
+              {/* Popular list stays mounted (preserves scroll + pagination).
                 While a search is settling it dims as filler; once results are
                 ready, <Activity mode="hidden"> takes it out of the document
                 AND out of React's urgent render path — with a bare CSS
                 `hidden`, the hidden subtree still re-rendered at full
                 priority on every keystroke. */}
-            <Activity mode={searchActive && settled ? "hidden" : "visible"}>
-              <div
-                className={cn(
-                  "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
-                  searchActive && !settled && "opacity-55",
-                )}
-              >
-                <CatalogNote>
-                  The full catalog, sorted by all-time installs from{" "}
-                  <SkillsShLink />
-                </CatalogNote>
-                <PopularList initialPage={initialPopularSkills} />
-              </div>
-            </Activity>
-            {resultsActive && (
-              <ActiveCatalogResults
-                query={effectiveQuery}
-                stale={trimmedQuery !== effectiveQuery}
-                sort={effectiveSort}
-                filters={filters}
-                searchDescriptions={searchDescriptions}
-                hasNarrowing={hasNarrowing}
-              />
-            )}
-          </div>
-        )}
-      </div>
+              <Activity mode={searchActive && settled ? "hidden" : "visible"}>
+                <div
+                  className={cn(
+                    "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
+                    searchActive && !settled && "opacity-55",
+                  )}
+                >
+                  <CatalogNote>
+                    The full catalog, sorted by all-time installs from{" "}
+                    <SkillsShLink />
+                  </CatalogNote>
+                  <PopularList initialPage={initialPopularSkills} />
+                </div>
+              </Activity>
+              {resultsActive && (
+                <ActiveCatalogResults
+                  query={effectiveQuery}
+                  stale={trimmedQuery !== effectiveQuery}
+                  sort={effectiveSort}
+                  filters={filters}
+                  searchDescriptions={searchDescriptions}
+                  hasNarrowing={hasNarrowing}
+                />
+              )}
+            </div>
+          )}
+        </div>
 
-      {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
+        {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
           state persists across navigation to /compare. */}
-      <SkillDetailSheet handle={skillDetailHandle} />
-      <LeaderboardSheet
-        view={view}
-        onViewChange={(v) => setParams({ view: v })}
-        hotSkills={hotSkills}
-        trendingSkills={trendingSkills}
-      />
-    </CatalogFacetsProvider>
+        <SkillDetailSheet handle={skillDetailHandle} />
+        <LeaderboardSheet
+          view={view}
+          onViewChange={(v) => setParams({ view: v })}
+          hotSkills={hotSkills}
+          trendingSkills={trendingSkills}
+        />
+      </CatalogFacetsProvider>
     </SkillDetailHandleProvider>
   );
 }
@@ -230,7 +230,7 @@ function SkillsShLink() {
       href="https://skills.sh"
       target="_blank"
       rel="noopener noreferrer"
-      className="underline hover:text-foreground transition-colors"
+      className="underline transition-colors hover:text-foreground"
     >
       skills.sh
     </a>

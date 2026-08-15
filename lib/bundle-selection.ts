@@ -101,9 +101,12 @@ const removeManyAtom = atom(
 // Wholesale replacement — used by Clear all's undo toast to restore the
 // snapshot taken before clearing. Capped as defense-in-depth, same as
 // toggleSkillAtom.
-const replaceSelectionAtom = atom(null, (_get, set, skills: SelectedSkill[]) => {
-  set(selectedSkillsAtom, skills.slice(0, MAX_BUNDLE_SKILLS));
-});
+const replaceSelectionAtom = atom(
+  null,
+  (_get, set, skills: SelectedSkill[]) => {
+    set(selectedSkillsAtom, skills.slice(0, MAX_BUNDLE_SKILLS));
+  },
+);
 
 // Subscribes only to a single skill's membership. selectAtom's default
 // Object.is equality means this re-renders only when this specific skill's
@@ -145,7 +148,14 @@ export function useBundleActions() {
       addMany,
       removeMany,
     }),
-    [toggleSkill, removeSkillRaw, clearAll, replaceSelection, addMany, removeMany],
+    [
+      toggleSkill,
+      removeSkillRaw,
+      clearAll,
+      replaceSelection,
+      addMany,
+      removeMany,
+    ],
   );
 }
 

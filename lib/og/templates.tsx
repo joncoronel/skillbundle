@@ -208,7 +208,13 @@ export function Frame({
 
 /** A large dot-matrix word — the pixel font as hero (section names, wordmark).
  *  Use only for short, fixed strings; it's unreadable for long/variable text. */
-export function PixelHero({ text, size = 104 }: { text: string; size?: number }) {
+export function PixelHero({
+  text,
+  size = 104,
+}: {
+  text: string;
+  size?: number;
+}) {
   return (
     <div
       style={{

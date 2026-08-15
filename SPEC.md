@@ -13,7 +13,7 @@ It is a mostly-signed-out public directory: browsing, searching, and viewing
 shared bundles need no account. Auth is only required to save and manage your own
 bundles.
 
-> This is the product spec. For the *how*, the two authoritative engineering
+> This is the product spec. For the _how_, the two authoritative engineering
 > guides are [docs/architecture.md](docs/architecture.md) (frontend, rendering,
 > caching, auth, billing) and [docs/skill-lifecycle.md](docs/skill-lifecycle.md)
 > (the sync/reconcile/audit/embedding pipeline). See also [AGENTS.md](AGENTS.md)
@@ -185,29 +185,31 @@ Authoritative schema: [`convex/schema.ts`](convex/schema.ts). Key tables:
 Full route inventory with rendering strategy in
 [docs/architecture.md §1](docs/architecture.md). At a glance:
 
-| Route | Purpose |
-| --- | --- |
-| `/` | Home: leaderboards + search + repo analysis |
-| `/explore` | Community bundles |
-| `/compare` | Side-by-side skill comparison |
-| `/official` | Curated/official directory |
-| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/[source]/...` | Catalog browse + skill detail |
-| `/bundle/[id]` | Public/shared bundle view |
-| `/dashboard` | User's saved bundles (auth) |
-| `/settings` | Profile + sessions (auth) |
-| `/pricing` | Plans |
-| `/dev`, `/dev/add-skill` | Admin (auth + admin) |
-| `/(auth)/sign-in`, `/sign-up` | Clerk auth |
+| Route                                                                      | Purpose                                     |
+| -------------------------------------------------------------------------- | ------------------------------------------- |
+| `/`                                                                        | Home: leaderboards + search + repo analysis |
+| `/explore`                                                                 | Community bundles                           |
+| `/compare`                                                                 | Side-by-side skill comparison               |
+| `/official`                                                                | Curated/official directory                  |
+| `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]`, `/site/[source]/...` | Catalog browse + skill detail               |
+| `/bundle/[id]`                                                             | Public/shared bundle view                   |
+| `/dashboard`                                                               | User's saved bundles (auth)                 |
+| `/settings`                                                                | Profile + sessions (auth)                   |
+| `/pricing`                                                                 | Plans                                       |
+| `/dev`, `/dev/add-skill`                                                   | Admin (auth + admin)                        |
+| `/(auth)/sign-in`, `/sign-up`                                              | Clerk auth                                  |
 
 ## Pricing tiers
 
 **Free:**
+
 - Browse all skills, leaderboards, and catalog
 - Text search
 - Up to 3 saved bundles, public only
 - Basic install commands
 
 **Pro ($8/month, $72/year):**
+
 - GitHub repo auto-detection (repo analysis)
 - Unlimited saved bundles
 - Private bundles
@@ -219,6 +221,7 @@ until there's traction.
 ## Install command format
 
 **skills.sh CLI:**
+
 ```bash
 # One skill
 npx skills add owner/repo --skill skill-name

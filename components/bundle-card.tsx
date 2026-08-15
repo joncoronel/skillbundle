@@ -65,11 +65,11 @@ export function BundleCard({
         <CardAction>
           <div className="flex items-center gap-1.5">
             {!isPublic ? (
-              <Badge variant="outline" className="text-micro px-1.5 py-0.5">
+              <Badge variant="outline" className="px-1.5 py-0.5 text-micro">
                 Private
               </Badge>
             ) : null}
-            <span className="text-xs tabular-nums text-muted-foreground">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {skillCount} skill{skillCount !== 1 ? "s" : ""}
             </span>
           </div>
@@ -87,7 +87,7 @@ export function BundleCard({
             by {creatorName} &middot; {timeAgo(createdAt)}
           </span>
         </CardDescription>
-        <p className="mt-2 min-h-[2lh] text-xs text-muted-foreground line-clamp-2 wrap-break-word">
+        <p className="mt-2 line-clamp-2 min-h-[2lh] text-xs wrap-break-word text-muted-foreground">
           {description}
         </p>
       </CardHeader>
@@ -118,9 +118,7 @@ export function BundleCardSkeleton({
           <Skeleton className="h-lh w-3/4 rounded" />
         </CardTitle>
         <CardAction>
-          <span className="text-xs tabular-nums invisible">
-            0 skills
-          </span>
+          <span className="invisible text-xs tabular-nums">0 skills</span>
         </CardAction>
         <CardDescription className="flex items-center gap-1.5 text-xs">
           <Skeleton className="size-4 shrink-0 rounded-full" />

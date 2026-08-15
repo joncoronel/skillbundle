@@ -53,5 +53,4 @@ export const BUNDLE_ID = process.env.E2E_BUNDLE_ID;
  * a thin deployment degrades instead of going red.
  */
 export const HISTORY_SKILL_PATH =
-  process.env.E2E_HISTORY_PATH ??
-  "/makieali/claude-code-engineer/architect";
+  process.env.E2E_HISTORY_PATH ?? "/makieali/claude-code-engineer/architect";

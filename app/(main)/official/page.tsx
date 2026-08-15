@@ -35,7 +35,7 @@ export default async function OfficialPage() {
   return (
     <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <header>
-        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero">
+        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
           Official.
         </h1>
         <p className="mt-3 max-w-prose text-sm text-muted-foreground">
@@ -45,7 +45,7 @@ export default async function OfficialPage() {
             href="https://skills.sh/official"
             target="_blank"
             rel="noopener noreferrer"
-            className="underline hover:text-foreground transition-colors"
+            className="underline transition-colors hover:text-foreground"
           >
             skills.sh
           </a>
@@ -80,7 +80,7 @@ async function OfficialContent() {
 
   return (
     <>
-      <div className="flex items-center gap-3 text-sm tabular-nums text-muted-foreground mb-6 px-4">
+      <div className="mb-6 flex items-center gap-3 px-4 text-sm text-muted-foreground tabular-nums">
         <span>
           {owners.length} publisher{owners.length === 1 ? "" : "s"}
         </span>
@@ -100,8 +100,8 @@ async function OfficialContent() {
               key={owner.owner}
               href={ownerHref(owner.owner)}
               className={cn(
-                "relative block bg-card rounded-2xl border dark:border-border/50 py-3 px-4",
-                "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0  hover:after:opacity-100",
+                "relative block rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
+                "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0 hover:after:opacity-100",
                 isSolo
                   ? undefined
                   : isFirst
@@ -111,14 +111,14 @@ async function OfficialContent() {
                       : "rounded-none border-t-0",
               )}
             >
-              <div className="flex items-baseline gap-3 min-w-0">
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-sm font-semibold truncate">
+              <div className="flex min-w-0 items-baseline gap-3">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-sm font-semibold">
                     {owner.owner}
                   </span>
                   <LinkPending />
                 </span>
-                <span className="ml-auto flex items-baseline gap-3 text-xs tabular-nums text-muted-foreground shrink-0">
+                <span className="ml-auto flex shrink-0 items-baseline gap-3 text-xs text-muted-foreground tabular-nums">
                   <span>
                     {owner.repoCount} repo{owner.repoCount === 1 ? "" : "s"}
                   </span>
@@ -140,7 +140,7 @@ async function OfficialContent() {
 function OfficialPageSkeleton() {
   return (
     <>
-      <div className="flex items-center gap-3 text-sm mb-6 px-4">
+      <div className="mb-6 flex items-center gap-3 px-4 text-sm">
         <Skeleton className="h-4 w-20" />
         <span aria-hidden="true" className="text-muted-foreground">
           ·
@@ -156,7 +156,7 @@ function OfficialPageSkeleton() {
             <div
               key={i}
               className={cn(
-                "bg-card rounded-2xl border dark:border-border/50 py-3 px-4",
+                "rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
                 isFirst
                   ? "rounded-b-none"
                   : isLast

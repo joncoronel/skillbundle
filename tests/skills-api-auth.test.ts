@@ -38,7 +38,11 @@ function auth(
   };
 }
 
-function jsonResponse(status: number, body: unknown = {}, headers: HeadersInit = {}) {
+function jsonResponse(
+  status: number,
+  body: unknown = {},
+  headers: HeadersInit = {},
+) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
@@ -146,9 +150,7 @@ describe("skills.sh client auth", () => {
   it("does not retry a rate limit with the key", async () => {
     // The limit is per (team, project). Spending a second credential on it
     // would not get us a different answer, it would just spend both.
-    fetchMock.mockResolvedValue(
-      jsonResponse(429, {}, { "Retry-After": "30" }),
-    );
+    fetchMock.mockResolvedValue(jsonResponse(429, {}, { "Retry-After": "30" }));
 
     await expect(getCurated(auth(OIDC))).rejects.toBeInstanceOf(
       SkillsApiRateLimitError,

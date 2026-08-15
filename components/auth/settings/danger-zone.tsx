@@ -73,7 +73,21 @@ export function DangerZone() {
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger render={<Button variant="destructive-soft" disabled={deleting} leadingIcon={<HugeiconsIcon icon={DangerIcon} strokeWidth={2} className="size-4" />} />}>
+      <AlertDialogTrigger
+        render={
+          <Button
+            variant="destructive-soft"
+            disabled={deleting}
+            leadingIcon={
+              <HugeiconsIcon
+                icon={DangerIcon}
+                strokeWidth={2}
+                className="size-4"
+              />
+            }
+          />
+        }
+      >
         {deleting ? "Deleting..." : "Delete account"}
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -82,8 +96,8 @@ export function DangerZone() {
             Are you sure you want to delete your account?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. All your data, bundles, and
-            settings will be permanently removed.
+            This action cannot be undone. All your data, bundles, and settings
+            will be permanently removed.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

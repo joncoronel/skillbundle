@@ -9,16 +9,18 @@
 const fs = require("fs");
 const path = require("path");
 // sharp ships as a transitive (pnpm) dependency, so resolve it from the store.
-const sharp = require("sharp@0.34.5/node_modules/sharp".replace(
-  "sharp@0.34.5",
-  require("path").join(
-    __dirname,
-    "..",
-    "node_modules",
-    ".pnpm",
+const sharp = require(
+  "sharp@0.34.5/node_modules/sharp".replace(
     "sharp@0.34.5",
+    require("path").join(
+      __dirname,
+      "..",
+      "node_modules",
+      ".pnpm",
+      "sharp@0.34.5",
+    ),
   ),
-));
+);
 
 const ROOT = path.join(__dirname, "..");
 const TILE_BG = "#0a0b0d";

@@ -67,24 +67,32 @@ export interface InstallCommand {
 export function generateInstallCommands(
   skills: BundleSkill[],
 ): InstallCommand[] {
-  const grouped = new Map<string, { skillIds: string[]; hasWarning: boolean }>();
+  const grouped = new Map<
+    string,
+    { skillIds: string[]; hasWarning: boolean }
+  >();
 
   for (const skill of skills) {
-    const existing = grouped.get(skill.source) ?? { skillIds: [], hasWarning: false };
+    const existing = grouped.get(skill.source) ?? {
+      skillIds: [],
+      hasWarning: false,
+    };
     existing.skillIds.push(skill.skillId);
     if (skill.hasContentFetchError) existing.hasWarning = true;
     grouped.set(skill.source, existing);
   }
 
-  return Array.from(grouped.entries()).map(([source, { skillIds, hasWarning }]) => {
-    const skillFlags = skillIds.map((id) => `--skill ${id}`).join(" ");
-    return {
-      source,
-      skills: skillIds,
-      command: `npx skills add ${source} ${skillFlags}`,
-      hasWarning,
-    };
-  });
+  return Array.from(grouped.entries()).map(
+    ([source, { skillIds, hasWarning }]) => {
+      const skillFlags = skillIds.map((id) => `--skill ${id}`).join(" ");
+      return {
+        source,
+        skills: skillIds,
+        command: `npx skills add ${source} ${skillFlags}`,
+        hasWarning,
+      };
+    },
+  );
 }
 
 export function generateAllCommandsText(skills: BundleSkill[]): string {
@@ -98,25 +106,25 @@ export function generateAllCommandsText(skills: BundleSkill[]): string {
   page:
 
 ```tsx
-  const { org, repo, skillId } = await params;
-  const source = `${org}/${repo}`;
-  const installCommand = `npx skills add ${source} --skill ${skillId}`;
+const { org, repo, skillId } = await params;
+const source = `${org}/${repo}`;
+const installCommand = `npx skills add ${source} --skill ${skillId}`;
 ```
 
 - `app/(main)/site/[source]/[skillId]/page.tsx:55-57` — well-known-source
   detail page:
 
 ```tsx
-  const { source, skillId } = await params;
-  const installCommand = `npx skills add ${source}/${skillId}`;
+const { source, skillId } = await params;
+const installCommand = `npx skills add ${source}/${skillId}`;
 ```
 
-  Both pages pass `installCommand` to `<SkillDetailPage>`
-  (`components/skill-detail-page.tsx`), which renders it in a `<pre>` with a
-  `CopyButton content={installCommand}` (lines 247/251) AND passes it to the
-  Suspense fallback skeleton (line 162) — so it paints before data resolves.
-  `SkillDetailBody` calls `notFound()` when the skill lookup fails (line
-  200-202), but only after the skeleton has shown the command.
+Both pages pass `installCommand` to `<SkillDetailPage>`
+(`components/skill-detail-page.tsx`), which renders it in a `<pre>` with a
+`CopyButton content={installCommand}` (lines 247/251) AND passes it to the
+Suspense fallback skeleton (line 162) — so it paints before data resolves.
+`SkillDetailBody` calls `notFound()` when the skill lookup fails (line
+200-202), but only after the skeleton has shown the command.
 
 - `lib/og/images.tsx:168-170` — OG image renderer (display-only, but same
   string assembly); note it already imports `isGitHubSource` from
@@ -124,9 +132,9 @@ export function generateAllCommandsText(skills: BundleSkill[]): string {
   (`sectionOgImage({ word: "404", ... })` at ~line 160):
 
 ```tsx
-  const command = isGitHubSource(source)
-    ? `npx skills add ${source} --skill ${skillId}`
-    : `npx skills add ${source}/${skillId}`;
+const command = isGitHubSource(source)
+  ? `npx skills add ${source} --skill ${skillId}`
+  : `npx skills add ${source}/${skillId}`;
 ```
 
 - `convex/lib/source.ts:11-14` — `isGitHubSource(source)`: exactly two
@@ -145,16 +153,17 @@ export function generateAllCommandsText(skills: BundleSkill[]): string {
 
 ## Commands you will need
 
-| Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
-| Typecheck | `npx tsc --noEmit` | exit 0              |
-| Tests     | `pnpm test`        | all pass            |
-| One file  | `pnpm test tests/install-commands.test.ts` | passes |
-| Lint      | `pnpm lint`        | exit 0              |
+| Purpose   | Command                                    | Expected on success |
+| --------- | ------------------------------------------ | ------------------- |
+| Typecheck | `npx tsc --noEmit`                         | exit 0              |
+| Tests     | `pnpm test`                                | all pass            |
+| One file  | `pnpm test tests/install-commands.test.ts` | passes              |
+| Lint      | `pnpm lint`                                | exit 0              |
 
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `lib/install-commands.ts`
 - `app/(main)/[org]/[repo]/[skillId]/page.tsx`
 - `app/(main)/site/[source]/[skillId]/page.tsx`
@@ -162,6 +171,7 @@ export function generateAllCommandsText(skills: BundleSkill[]): string {
 - `tests/install-commands.test.ts` (create)
 
 **Out of scope** (do NOT touch, even though they look related):
+
 - `components/skill-detail-page.tsx` — its `installCommand: string` prop
   stays required; the pages now guarantee safety before passing it.
 - `convex/skills.ts` ingestion path / `convex/lib/source.ts` —
@@ -247,8 +257,8 @@ In BOTH `app/(main)/[org]/[repo]/[skillId]/page.tsx` and
 string with:
 
 ```tsx
-  const installCommand = buildSkillInstallCommand(source, skillId);
-  if (installCommand === null) notFound();
+const installCommand = buildSkillInstallCommand(source, skillId);
+if (installCommand === null) notFound();
 ```
 
 (`notFound` from `next/navigation`; check whether each page already imports

@@ -55,7 +55,7 @@ export function BundleToggleButton({
         // so `hover:bg-destructive/10` here would be hidden under outline's
         // opaque hover fill. --btn-bg-active is set too, else pressing snaps
         // back to outline's card darken mid-gesture.
-        className="text-muted-foreground [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_10%,transparent)] [--btn-bg-active:color-mix(in_oklab,var(--destructive)_15%,transparent)] hover:text-destructive"
+        className="text-muted-foreground [--btn-bg-active:color-mix(in_oklab,var(--destructive)_15%,transparent)] [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_10%,transparent)] hover:text-destructive"
       >
         <HugeiconsIcon
           icon={Cancel01Icon}

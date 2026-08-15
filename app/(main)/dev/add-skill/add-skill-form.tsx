@@ -47,8 +47,7 @@ import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
 // corrected-slug retry, which lands a differently-named skill than the link.
 type ManualAdd = FunctionReturnType<typeof api.skills.addSkillManually>;
 type AddResult = (
-  | SettledAddResult
-  | (ManualAdd & { status: "already_exists" })
+  SettledAddResult | (ManualAdd & { status: "already_exists" })
 ) & { note?: string };
 
 // Derived from the action's return type rather than hand-declared, so a new
@@ -342,10 +341,9 @@ export function AddSkillForm() {
             />
             <div className="flex items-center justify-between gap-3">
               <p id="admin-add-help" className="text-xs text-muted-foreground">
-                Paste a skills.sh URL, a GitHub link to the skill&apos;s
-                folder, or the <code>source/slug</code> form. If the skill
-                isn&apos;t on skills.sh, we&apos;ll look for it in the GitHub
-                repo instead.
+                Paste a skills.sh URL, a GitHub link to the skill&apos;s folder,
+                or the <code>source/slug</code> form. If the skill isn&apos;t on
+                skills.sh, we&apos;ll look for it in the GitHub repo instead.
               </p>
               <Button type="submit" {...submitProps}>
                 {label ?? "Add to catalog"}
@@ -510,9 +508,7 @@ function SlugAuditCard() {
             be announced alongside this region. Duplication beats silence.
             Results and errors land in here too, so completion isn't silent. */}
         <div role="status" aria-live="polite" className="space-y-4">
-          {running && (
-            <p className="sr-only">Checking GitHub-only slugs…</p>
-          )}
+          {running && <p className="sr-only">Checking GitHub-only slugs…</p>}
 
           {error && (
             <p className="text-destructive">
@@ -575,9 +571,7 @@ function SlugAuditCard() {
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Its SKILL.md is named{" "}
-                          <code className="font-mono">
-                            {m.expectedSkillId}
-                          </code>
+                          <code className="font-mono">{m.expectedSkillId}</code>
                           , so skills.sh would list it as{" "}
                           <code className="font-mono">
                             {m.source}/{m.expectedSkillId}
@@ -742,8 +736,5 @@ function LastAddedCard({ result }: { result: AddResult }) {
 function skillDetailHref(source: string, skillId: string): string {
   const parts = source.split("/");
   const isGitHub = parts.length === 2 && !parts[0].includes(".");
-  return isGitHub
-    ? `/${source}/${skillId}`
-    : `/site/${source}/${skillId}`;
+  return isGitHub ? `/${source}/${skillId}` : `/site/${source}/${skillId}`;
 }
-

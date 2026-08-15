@@ -28,14 +28,11 @@ export function BundleSectionHeader({
 }: BundleSectionHeaderProps) {
   return (
     <div className="flex items-center justify-between">
-      <h2 className="text-sm font-semibold tabular-nums text-foreground">
+      <h2 className="text-sm font-semibold text-foreground tabular-nums">
         {count} {count === 1 ? "bundle" : "bundles"}
       </h2>
       <div className="flex items-center gap-2">
-        <label
-          htmlFor="bundle-sort"
-          className="text-sm text-muted-foreground"
-        >
+        <label htmlFor="bundle-sort" className="text-sm text-muted-foreground">
           Sort
         </label>
         <Select

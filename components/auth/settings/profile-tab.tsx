@@ -66,9 +66,13 @@ export function ProfileTab() {
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [saving, setSaving] = React.useState(false);
-  const [pendingAvatarFile, setPendingAvatarFile] = React.useState<File | null>(null);
+  const [pendingAvatarFile, setPendingAvatarFile] = React.useState<File | null>(
+    null,
+  );
   const [pendingAvatarRemove, setPendingAvatarRemove] = React.useState(false);
-  const [pendingAvatarPreview, setPendingAvatarPreview] = React.useState<string | null>(null);
+  const [pendingAvatarPreview, setPendingAvatarPreview] = React.useState<
+    string | null
+  >(null);
   const [avatarError, setAvatarError] = React.useState("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -183,7 +187,13 @@ export function ProfileTab() {
                     variant="outline"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
-                    leadingIcon={<HugeiconsIcon icon={Upload01Icon} strokeWidth={2} className="size-3.5" />}
+                    leadingIcon={
+                      <HugeiconsIcon
+                        icon={Upload01Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
+                      />
+                    }
                   >
                     Upload
                   </Button>
@@ -192,7 +202,13 @@ export function ProfileTab() {
                     size="sm"
                     className="text-destructive"
                     onClick={handleAvatarRemove}
-                    leadingIcon={<HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />}
+                    leadingIcon={
+                      <HugeiconsIcon
+                        icon={Cancel01Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
+                      />
+                    }
                   >
                     Remove
                   </Button>
@@ -208,7 +224,9 @@ export function ProfileTab() {
                   Recommended size 1:1, up to 10MB.
                 </span>
                 {avatarError && (
-                  <span className="text-xs text-destructive">{avatarError}</span>
+                  <span className="text-xs text-destructive">
+                    {avatarError}
+                  </span>
                 )}
               </div>
             </div>
@@ -235,7 +253,10 @@ export function ProfileTab() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { resetPendingAvatar(); setEditing(false); }}
+                onClick={() => {
+                  resetPendingAvatar();
+                  setEditing(false);
+                }}
               >
                 Cancel
               </Button>

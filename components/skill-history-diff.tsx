@@ -158,7 +158,13 @@ function useDiffOptions() {
  *
  * `from` is always the OLDER side. See the `pair` comment in HistoryRow.
  */
-export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry }) {
+export function VersionDiff({
+  from,
+  to,
+}: {
+  from: VersionEntry;
+  to: VersionEntry;
+}) {
   // Before the early returns below — hooks cannot be conditional.
   const diffOptions = useDiffOptions();
   // Options live in skill-history-diff-query.ts so the row can prefetch with
@@ -272,17 +278,16 @@ export function VersionDiff({ from, to }: { from: VersionEntry; to: VersionEntry
           content past the cap with nothing to scroll. That still holds; it just
           does not require the surface to ride along. */}
       <div
-        className={cn("relative overflow-hidden rounded-lg", elevatedSurface(3))}
+        className={cn(
+          "relative overflow-hidden rounded-lg",
+          elevatedSurface(3),
+        )}
       >
         <div className="max-h-96 overflow-y-auto">
           {/* `items` is memoised alongside the diff — see above. A fresh array
               literal here re-entered the highlight pipeline on every render even
               when the diff itself was unchanged. */}
-          <CodeView
-            items={items}
-            options={diffOptions}
-            disableWorkerPool
-          />
+          <CodeView items={items} options={diffOptions} disableWorkerPool />
         </div>
       </div>
     </div>

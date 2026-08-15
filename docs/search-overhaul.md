@@ -3,8 +3,9 @@
 Living checklist for reworking search onto a faceted engine (Typesense). Tracks
 **what we could add**, grounded in (a) the fields we actually have on
 `skillSummaries` and (b) what Typesense supports. Not a committed roadmap — a menu
-+ running decisions. Check items off as they ship; move settled questions out of
-"Open decisions."
+
+- running decisions. Check items off as they ship; move settled questions out of
+  "Open decisions."
 
 Related: [TODO.md](../TODO.md) (the original "Search & discovery overhaul" note),
 [SPEC.md](../SPEC.md) ("Under consideration"), [docs/architecture.md](architecture.md)
@@ -43,9 +44,9 @@ Prioritized after a Typesense v29 feature review (Context7). Tiers by value/effo
 **Tier 1 — building now**
 
 1. **`_eval` trust tie-breaker** (ranking quality, zero backfill). Append a
-   weighted `_eval` to the *query* sort chain so equally-relevant matches order
+   weighted `_eval` to the _query_ sort chain so equally-relevant matches order
    by trust: `sort_by = _text_match:desc,
-   _eval([(isOfficial:true):2,(worstAuditStatus:pass):1]):desc, installs:desc`.
+_eval([(isOfficial:true):2,(worstAuditStatus:pass):1]):desc, installs:desc`.
    Non-destructive (only breaks ties that were already arbitrary), encodes the
    product's trust story, no UI. Query path only (browse `installs:desc` rarely
    ties). · TS: `_eval` weighted sort
@@ -73,7 +74,7 @@ the daily cron), then the sort options light up:**
 
 6. **Hybrid / semantic search** via a **built-in embedding model**
    (`ts/all-MiniLM-L12-v2`, auto-embed from `name,description`), so the query is
-   embedded *inside* Typesense and search stays browser-direct (no Convex
+   embedded _inside_ Typesense and search stays browser-direct (no Convex
    round-trip). Chosen over reusing our 512-dim `skillEmbeddings`, which would
    force a server call to embed the query text. · TS: rank fusion (`query_by`
    incl. embedding)
@@ -96,14 +97,14 @@ filter set goes broad (publisher + tech tags + buckets + date ranges).
 
 Two **different kinds** of surface — don't conflate them:
 
-1. **Zeitgeist rails — Trending / Hot.** Time-windowed *subsets* (only ~60 / ~30
+1. **Zeitgeist rails — Trending / Hot.** Time-windowed _subsets_ (only ~60 / ~30
    skills carry `trendingRank` / `hotRank`; everyone else is `undefined`). These
    are **browse-only discovery lenses**, not sorts. They do **not** compose with
    search or filters — "search 'tailwind' sorted by trending" is near-empty by
    construction. Keep them as their own rails.
 2. **The searchable catalog.** The full list that **search + filters + sorting**
-   operate on. Every sort/filter here must be a per-skill *value that exists on
-   every row* (like `installs`), so it survives search + filtering.
+   operate on. Every sort/filter here must be a per-skill _value that exists on
+   every row_ (like `installs`), so it survives search + filtering.
 
 **Decision (leaning):** filters + sorting apply to the **whole catalog**, always —
 not only while searching. Search is just a text query that narrows the catalog and
@@ -125,10 +126,10 @@ app already does the needed move. Today, `getInitialPopularSkills()` (`'use cach
 adds infinite scroll, and the moment a user types, the `Crossfade` swaps to a live
 client-side `searchSkills` query. Filters + sort just extend that same swap:
 
-| State | Data path |
-| --- | --- |
-| Default (no query, no filters, sort = Popular) | Cached SSR first page + infinite scroll — **as today** |
-| Any active filter / non-default sort / query | Live paginated query (cache doesn't apply, doesn't need to) |
+| State                                          | Data path                                                   |
+| ---------------------------------------------- | ----------------------------------------------------------- |
+| Default (no query, no filters, sort = Popular) | Cached SSR first page + infinite scroll — **as today**      |
+| Any active filter / non-default sort / query   | Live paginated query (cache doesn't apply, doesn't need to) |
 
 The cached first page only ever serves the one default landing view (the view most
 visitors see first, and the only one that's cacheable — every filter/sort/query
@@ -160,11 +161,11 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 - [x] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS default (`num_typos`);
       verified: "postgress" → 117 results
 - [x] **Honest fallback under filters** — Typesense escalates to typo matching
-      when the *filtered* exact set is empty, so a real word whose matches are
+      when the _filtered_ exact set is empty, so a real word whose matches are
       all filtered out got silently swapped for edit-distance neighbors
       ("hero" + Official → "zero" skills, a broken filter contract). Page-1
       narrowed query searches now ride two count-only exact probes (`num_typos:
-      0`, `per_page: 0` — one narrowed, one baseline) in the same request via
+0`, `per_page: 0` — one narrowed, one baseline) in the same request via
       `multi_search`; "exacts exist baseline, zero narrowed" ⇒ a
       `hiddenByFilters` verdict, and the UI renders a filtered-to-empty state
       with a one-click un-narrow instead of the fabricated hits. A set verdict
@@ -206,10 +207,10 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
       default sort, so a hard threshold is secondary. Presets (not a slider —
       unusable over a 0–1.5M exponential range).
 - [~] **Hide forks / copies** — kept as a hardcoded default (`isDuplicate:false`)
-      but the **user toggle was removed**: `isDuplicate` is `false` on 100% of
-      the catalog (skills.sh doesn't set it), so a control did nothing. A real
-      "hide duplicates" would wire to our own `copyCount`/repo-identity detection
-      (the signal that's actually populated) — deferred.
+  but the **user toggle was removed**: `isDuplicate` is `false` on 100% of
+  the catalog (skills.sh doesn't set it), so a control did nothing. A real
+  "hide duplicates" would wire to our own `copyCount`/repo-identity detection
+  (the signal that's actually populated) — deferred.
 - [x] **Exclude broken installs** — "Hide broken installs" under More
       (`?broken=true` → `hasContentFetchError:false`)
 - [x] **Clear (n)** — one-tap reset of all filters to their broad defaults
@@ -232,7 +233,7 @@ closed) and over a full row of selects (too many, mostly reading "Any X").
 - [x] **Most installed** (all-time — today's "Popular"; default with no query). ·
       field: `installs` · TS: `sort_by: installs:desc`
 - [ ] **Recently updated** · field: `contentUpdatedAt` (on `skills`; mirror to summary if needed) · TS: `sort_by`
-- [ ] **Rising / momentum** — install *gain* over 7/30 days, computed from
+- [ ] **Rising / momentum** — install _gain_ over 7/30 days, computed from
       `skillSnapshots`. A real whole-catalog sort (every skill has it), so it
       composes with search where Trending/Hot can't. Absolute gain = safe default;
       percentage growth (with an install floor) = a spicier "breakout" variant. ·
@@ -260,16 +261,16 @@ closed) and over a full row of selects (too many, mostly reading "Any X").
       query. · TS: global curation rules (`pinned_hits`)
 - [ ] **Diversify results (MMR)** — avoid five near-identical skills dominating the
       top. · TS: `facet_sample` / MMR diversify (v30.2)
-- [ ] **Federated / multi-search** — one query box returning skills *and* bundles,
+- [ ] **Federated / multi-search** — one query box returning skills _and_ bundles,
       ranked together. · field: separate `bundles` collection · TS: `multi_search` / JOINs
 - [~] **Scoped search keys** — a plain **search-only** key is live
-      (browser-direct, off Vercel functions). Not yet *scoped* with an embedded
-      `filter_by` — delisted rows are excluded by the sync instead (never
-      indexed), so nothing sensitive is exposed. · TS: scoped API keys
+  (browser-direct, off Vercel functions). Not yet _scoped_ with an embedded
+  `filter_by` — delisted rows are excluded by the sync instead (never
+  indexed), so nothing sensitive is exposed. · TS: scoped API keys
 
 ---
 
-## What Convex can do *now* (no new infra) vs. what forces Typesense
+## What Convex can do _now_ (no new infra) vs. what forces Typesense
 
 **Do on Convex today (cheap wins, worth doing regardless of the engine decision):**
 

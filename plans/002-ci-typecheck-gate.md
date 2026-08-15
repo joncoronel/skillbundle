@@ -52,14 +52,14 @@ real risk.
   pnpm / node setup):
 
 ```yaml
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+- name: Install dependencies
+  run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
+- name: Lint
+  run: pnpm lint
 
-      - name: Test
-        run: pnpm test
+- name: Test
+  run: pnpm test
 ```
 
 - `tsconfig.json` exists at repo root and `npx tsc --noEmit` exits 0 as of
@@ -70,20 +70,22 @@ real risk.
 
 ## Commands you will need
 
-| Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
-| Install   | `pnpm install`     | exit 0              |
-| Typecheck | `pnpm typecheck`   | exit 0 (after Step 1) |
-| Tests     | `pnpm test`        | all pass            |
-| Lint      | `pnpm lint`        | exit 0              |
+| Purpose   | Command          | Expected on success   |
+| --------- | ---------------- | --------------------- |
+| Install   | `pnpm install`   | exit 0                |
+| Typecheck | `pnpm typecheck` | exit 0 (after Step 1) |
+| Tests     | `pnpm test`      | all pass              |
+| Lint      | `pnpm lint`      | exit 0                |
 
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `package.json` (scripts block only)
 - `.github/workflows/test.yml`
 
 **Out of scope** (do NOT touch):
+
 - `tsconfig.json` / `convex/tsconfig.json` — no compiler-option changes.
 - Any source file. If typecheck fails, that is a STOP condition, not an
   invitation to fix types.
@@ -110,8 +112,8 @@ In `.github/workflows/test.yml`, insert between the Lint and Test steps
 (matching the file's existing two-space indentation):
 
 ```yaml
-      - name: Typecheck
-        run: pnpm typecheck
+- name: Typecheck
+  run: pnpm typecheck
 ```
 
 **Verify**: a YAML sanity check — `node -e "console.log('ok')"` is not

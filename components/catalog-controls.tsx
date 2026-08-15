@@ -273,7 +273,7 @@ export function CatalogControlsBar() {
   } = useExplorerState();
   const moreCount = filterCount.more;
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+    <div className="flex flex-wrap items-center gap-1.5">
       <PublisherSelect
         value={publisher}
         onChange={(v) => setParams({ publisher: v })}
@@ -498,7 +498,7 @@ function SwitchRow({
   onCheckedChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 cursor-pointer">
+    <label className="flex cursor-pointer items-center justify-between gap-3">
       <span className="flex flex-col">
         <span className="text-sm">{label}</span>
         <span className="text-xs text-muted-foreground">{hint}</span>

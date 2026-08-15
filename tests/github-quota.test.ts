@@ -86,7 +86,9 @@ test("quota gate: 3 genuine GitHub-only inserts pass, the 4th throws quota_excee
     const overflow = await ctx.db
       .query("skills")
       .withIndex("by_source_skillId", (q) =>
-        q.eq("source", `acme/repo-${LIMIT + 1}`).eq("skillId", `skill-${LIMIT + 1}`),
+        q
+          .eq("source", `acme/repo-${LIMIT + 1}`)
+          .eq("skillId", `skill-${LIMIT + 1}`),
       )
       .unique();
     expect(overflow).toBeNull();

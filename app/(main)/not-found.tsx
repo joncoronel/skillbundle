@@ -9,17 +9,17 @@ export default function NotFound() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 pt-24 pb-24">
-      <p className="font-mono text-xs text-muted-foreground mb-8 tabular-nums truncate">
+      <p className="mb-8 truncate font-mono text-xs text-muted-foreground tabular-nums">
         <span>GET </span>
         <span className="text-foreground">{pathname}</span>
         <span> 404 NOT_FOUND</span>
       </p>
 
-      <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] font-medium tracking-tight leading-hero mb-6">
+      <h1 className="mb-6 font-display text-[clamp(2.5rem,6vw,4rem)] leading-hero font-medium tracking-tight">
         Not in the index.
       </h1>
 
-      <p className="text-base text-muted-foreground leading-relaxed mb-10 max-w-md">
+      <p className="mb-10 max-w-md text-base leading-relaxed text-muted-foreground">
         This page isn&apos;t part of our index. Could be a typo, a stale link,
         or content we haven&apos;t picked up.
       </p>

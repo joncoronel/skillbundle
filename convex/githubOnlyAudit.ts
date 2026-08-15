@@ -276,10 +276,8 @@ export const auditGitHubOnlySlugs = action({
 
     const mismatches: SlugAuditResult["mismatches"] = [];
     const unknown: SlugAuditResult["unknown"] = [];
-    const skip = (
-      row: { source: string; skillId: string },
-      reason: string,
-    ) => unknown.push({ source: row.source, skillId: row.skillId, reason });
+    const skip = (row: { source: string; skillId: string }, reason: string) =>
+      unknown.push({ source: row.source, skillId: row.skillId, reason });
 
     // Narrowed on the way in, so the fetch loop needs no cast for the URL.
     const fetchable: Array<GitHubOnlyRow & { skillMdUrl: string }> = [];

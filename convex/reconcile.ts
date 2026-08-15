@@ -320,11 +320,19 @@ export const reconcileUnseenSkills = internalAction({
     // is coverage-neutral: when real rows are present they refresh (refreshed > 0)
     // and we continue exactly as before.
     let rescheduled = false;
-    if (refreshed > 0 && healthyRows.length > batch.length && iteration < MAX_ITER) {
-      await ctx.scheduler.runAfter(0, internal.reconcile.reconcileUnseenSkills, {
-        day,
-        iteration: iteration + 1,
-      });
+    if (
+      refreshed > 0 &&
+      healthyRows.length > batch.length &&
+      iteration < MAX_ITER
+    ) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.reconcile.reconcileUnseenSkills,
+        {
+          day,
+          iteration: iteration + 1,
+        },
+      );
       rescheduled = true;
     }
 

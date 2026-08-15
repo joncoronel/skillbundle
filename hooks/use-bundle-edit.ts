@@ -76,10 +76,7 @@ export function useBundleEdit<T extends EditSkill>(
 
   const skills = stagedOverride ?? initial;
 
-  const initialKeys = useMemo(
-    () => new Set(initial.map(skillKey)),
-    [initial],
-  );
+  const initialKeys = useMemo(() => new Set(initial.map(skillKey)), [initial]);
 
   const stagedKeys = useMemo(() => new Set(skills.map(skillKey)), [skills]);
 

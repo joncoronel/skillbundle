@@ -124,7 +124,9 @@ describe("decideSlug — refuse rather than store a knowingly-wrong slug", () =>
   });
 
   test("keeps the typed slug when there is no alias", () => {
-    expect(decideSlug({ ...base, alias: null })).toEqual({ kind: "keep_typed" });
+    expect(decideSlug({ ...base, alias: null })).toEqual({
+      kind: "keep_typed",
+    });
   });
 
   test("refuses when we never got the folder list, cause 'unlisted'", () => {
@@ -185,14 +187,62 @@ describe("decideSlug — the full matrix has no surprises", () => {
     treeListed: boolean;
     expected: string;
   }> = [
-    { alias: null, typedRowExists: false, aliasBindsSameFile: true, treeListed: true, expected: "keep_typed" },
-    { alias: null, typedRowExists: true, aliasBindsSameFile: false, treeListed: false, expected: "keep_typed" },
-    { alias: { slug: "a", payload: null }, typedRowExists: true, aliasBindsSameFile: true, treeListed: true, expected: "keep_typed" },
-    { alias: { slug: "a", payload: null }, typedRowExists: true, aliasBindsSameFile: false, treeListed: true, expected: "keep_typed" },
-    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: true, treeListed: true, expected: "adopt_alias" },
-    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: true, treeListed: false, expected: "adopt_alias" },
-    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: false, treeListed: true, expected: "refuse" },
-    { alias: { slug: "a", payload: null }, typedRowExists: false, aliasBindsSameFile: false, treeListed: false, expected: "refuse" },
+    {
+      alias: null,
+      typedRowExists: false,
+      aliasBindsSameFile: true,
+      treeListed: true,
+      expected: "keep_typed",
+    },
+    {
+      alias: null,
+      typedRowExists: true,
+      aliasBindsSameFile: false,
+      treeListed: false,
+      expected: "keep_typed",
+    },
+    {
+      alias: { slug: "a", payload: null },
+      typedRowExists: true,
+      aliasBindsSameFile: true,
+      treeListed: true,
+      expected: "keep_typed",
+    },
+    {
+      alias: { slug: "a", payload: null },
+      typedRowExists: true,
+      aliasBindsSameFile: false,
+      treeListed: true,
+      expected: "keep_typed",
+    },
+    {
+      alias: { slug: "a", payload: null },
+      typedRowExists: false,
+      aliasBindsSameFile: true,
+      treeListed: true,
+      expected: "adopt_alias",
+    },
+    {
+      alias: { slug: "a", payload: null },
+      typedRowExists: false,
+      aliasBindsSameFile: true,
+      treeListed: false,
+      expected: "adopt_alias",
+    },
+    {
+      alias: { slug: "a", payload: null },
+      typedRowExists: false,
+      aliasBindsSameFile: false,
+      treeListed: true,
+      expected: "refuse",
+    },
+    {
+      alias: { slug: "a", payload: null },
+      typedRowExists: false,
+      aliasBindsSameFile: false,
+      treeListed: false,
+      expected: "refuse",
+    },
   ];
 
   test.each(cases)(

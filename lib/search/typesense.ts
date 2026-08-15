@@ -30,7 +30,11 @@ const COLLECTION =
   process.env.NEXT_PUBLIC_TYPESENSE_COLLECTION ??
   (process.env.NODE_ENV === "production" ? "skills" : undefined);
 
-function requireConfig(): { host: string; searchKey: string; collection: string } {
+function requireConfig(): {
+  host: string;
+  searchKey: string;
+  collection: string;
+} {
   if (!HOST || !SEARCH_KEY || !COLLECTION) {
     throw new Error(
       "Typesense is not configured (NEXT_PUBLIC_TYPESENSE_HOST / _SEARCH_KEY " +
@@ -191,17 +195,19 @@ const FACET_FIELDS = [
 function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   const clauses: string[] = [];
   if (filters.officialOnly) clauses.push(`${field("isOfficial")}:true`);
-  if (filters.audit === "pass") clauses.push(`${field("worstAuditStatus")}:=pass`);
-  if (filters.audit === "nofail") clauses.push(`${field("worstAuditStatus")}:!=fail`);
+  if (filters.audit === "pass")
+    clauses.push(`${field("worstAuditStatus")}:=pass`);
+  if (filters.audit === "nofail")
+    clauses.push(`${field("worstAuditStatus")}:!=fail`);
   if (filters.hideForks) clauses.push(`${field("isDuplicate")}:false`);
   // Typesense SKIPS docs missing a filtered field, so this clause only
   // behaves once the collection schema carries isGitHubOnly and docs are
   // synced (see the deploy note on skillsCollectionSchema in
   // convex/lib/typesense.ts). Default off adds no clause, so the baseline
   // view never depends on it.
-  if (filters.hideGitHubOnly)
-    clauses.push(`${field("isGitHubOnly")}:false`);
-  if (filters.excludeBroken) clauses.push(`${field("hasContentFetchError")}:false`);
+  if (filters.hideGitHubOnly) clauses.push(`${field("isGitHubOnly")}:false`);
+  if (filters.excludeBroken)
+    clauses.push(`${field("hasContentFetchError")}:false`);
   if (filters.minInstalls !== undefined)
     clauses.push(`${field("installs")}:>=${filters.minInstalls}`);
   // Backtick-quote string values. These come from the URL (?pub=, source), so
@@ -210,7 +216,8 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
   // full "Search is unavailable" error card. Owners/sources are slugs, so a
   // backtick is never a legitimate character to drop.
   const quote = (v: string) => `\`${v.replace(/`/g, "")}\``;
-  if (filters.source) clauses.push(`${field("source")}:=${quote(filters.source)}`);
+  if (filters.source)
+    clauses.push(`${field("source")}:=${quote(filters.source)}`);
   if (filters.owners && filters.owners.length > 0) {
     // Any-of: owner:=[`a`,`b`].
     clauses.push(`${field("owner")}:=[${filters.owners.map(quote).join(",")}]`);
@@ -228,7 +235,9 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
  * explorer-state.tsx), so it belongs on BOTH sides of the hidden-by-filters
  * comparison rather than triggering probes by itself.
  */
-function activeNarrowingKeys(filters: SkillFilters = {}): (keyof SkillFilters)[] {
+function activeNarrowingKeys(
+  filters: SkillFilters = {},
+): (keyof SkillFilters)[] {
   const keys: (keyof SkillFilters)[] = [];
   if (filters.officialOnly) keys.push("officialOnly");
   if (filters.audit) keys.push("audit");
@@ -388,7 +397,9 @@ async function tsMultiSearch(
  * Run a catalog search / browse against Typesense. Throws if the engine isn't
  * configured or the request fails — callers (a React Query queryFn) surface it.
  */
-export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchResult> {
+export async function searchSkills(
+  args: SkillSearchArgs,
+): Promise<SkillSearchResult> {
   const query = args.query?.trim() ?? "";
   const hasQuery = query.length > 0;
   const page = args.page ?? 1;
@@ -526,11 +537,13 @@ export async function searchSkills(args: SkillSearchArgs): Promise<SkillSearchRe
  * owner is reachable by typing, not just the top slice. `signal` lets the caller
  * cancel a stale in-flight lookup.
  */
-export async function listOwners(opts: {
-  query?: string;
-  limit?: number;
-  signal?: AbortSignal;
-} = {}): Promise<OwnerCount[]> {
+export async function listOwners(
+  opts: {
+    query?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  } = {},
+): Promise<OwnerCount[]> {
   const query = opts.query?.trim();
   const params: TsParams = {
     q: "*",

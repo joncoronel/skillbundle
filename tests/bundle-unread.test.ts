@@ -79,7 +79,10 @@ async function setup() {
   await t.run(async (ctx) => {
     const bundle = await ctx.db.get(bundleId);
     await ctx.db.patch(bundleId, {
-      skills: bundle!.skills.map((s) => ({ ...s, addedAt: Date.now() - 24 * HOUR })),
+      skills: bundle!.skills.map((s) => ({
+        ...s,
+        addedAt: Date.now() - 24 * HOUR,
+      })),
     });
   });
 

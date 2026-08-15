@@ -190,7 +190,9 @@ export const syncSkills = internalAction({
     // covering here: they ARE inserted with needsContentFetch/needsDiscovery,
     // so they publish via the content chain's own publishSkillUpdate.
     if (totalContentFieldChanges > 0) {
-      console.log(`${totalContentFieldChanges} skill row field(s) changed — publishing`);
+      console.log(
+        `${totalContentFieldChanges} skill row field(s) changed — publishing`,
+      );
       await revalidateSiteTag("skill-content");
     }
 
@@ -419,7 +421,6 @@ async function upsertSkillSummary(
   }
 }
 
-
 // Append (or refresh) today's install count for a skill. Idempotent on
 // (skillDocId, day): the daily sync runs once, but rate-limit reschedules and
 // manual re-runs can replay it — so we patch an existing same-day row rather
@@ -640,8 +641,14 @@ export const upsertSkillsBatch = internalMutation({
               needsEmbedding: true as const,
               needsAudit: true as const,
               ...(isGitHub
-                ? { needsDiscovery: true as const, needsContentFetch: false as const }
-                : { needsContentFetch: true as const, needsDiscovery: false as const }),
+                ? {
+                    needsDiscovery: true as const,
+                    needsContentFetch: false as const,
+                  }
+                : {
+                    needsContentFetch: true as const,
+                    needsDiscovery: false as const,
+                  }),
             }
           : {};
         const relistPatchSummary = wasRelisted
@@ -658,8 +665,14 @@ export const upsertSkillsBatch = internalMutation({
               // reresolveStaleRepoIdentities' TTL pass, not here.
               needsRepoResolution: isGitHub,
               ...(isGitHub
-                ? { needsDiscovery: true as const, needsContentFetch: false as const }
-                : { needsContentFetch: true as const, needsDiscovery: false as const }),
+                ? {
+                    needsDiscovery: true as const,
+                    needsContentFetch: false as const,
+                  }
+                : {
+                    needsContentFetch: true as const,
+                    needsDiscovery: false as const,
+                  }),
             }
           : {};
 
@@ -689,7 +702,12 @@ export const upsertSkillsBatch = internalMutation({
           ...relistPatchSummary,
         });
         if (ownsInstalls) {
-          await recordDailySnapshot(ctx, summary.skillDocId, skill.installs, day);
+          await recordDailySnapshot(
+            ctx,
+            summary.skillDocId,
+            skill.installs,
+            day,
+          );
         }
         continue;
       }
@@ -800,7 +818,9 @@ export const upsertSkillsBatch = internalMutation({
         installs:
           ownsInstalls || !existing ? skill.installs : existing.installs,
         installRank: skill.rank,
-        ...(existing?.syncHash !== undefined && { syncHash: existing.syncHash }),
+        ...(existing?.syncHash !== undefined && {
+          syncHash: existing.syncHash,
+        }),
         lastSeenInApi: now,
         isDuplicate: skill.isDuplicate,
         ...(isGitHubOnly && { isGitHubOnly: true }),
@@ -911,7 +931,6 @@ export function extractBodyContent(raw: string): string | null {
 // convex/skillVersions.ts — the archive owns both halves now. See the note
 // at the top of that file. `archiveSkillVersion` below stays here: it is the
 // action-side helper the sync pipeline calls, and it needs pipeline context.
-
 
 // ---------------------------------------------------------------------------
 // Phase 1 — URL Discovery (GitHub Tree API)
@@ -1474,9 +1493,7 @@ export const fetchSkillContent = internalAction({
       try {
         const res = await fetch(skillMdUrl);
         if (!res.ok) {
-          console.error(
-            `Failed to fetch content for ${label}: ${res.status}`,
-          );
+          console.error(`Failed to fetch content for ${label}: ${res.status}`);
           await ctx.runMutation(internal.skills.markContentFetchFailed, {
             skillId,
           });
@@ -1779,7 +1796,10 @@ export const updateDescription = internalMutation({
     syncHash: v.string(),
   },
   returns: contentWriteOutcome,
-  handler: async (ctx, { skillId, description, content, skillMdUrl, syncHash }) => {
+  handler: async (
+    ctx,
+    { skillId, description, content, skillMdUrl, syncHash },
+  ) => {
     const skill = await ctx.db.get(skillId);
     if (!skill) return NO_CONTENT_CHANGE;
 
@@ -1816,10 +1836,8 @@ export const updateDescription = internalMutation({
     }
 
     // Clear broken legacy descriptions ("|" or ">") when no valid one parsed.
-    const isBrokenDesc =
-      skill.description === "|" || skill.description === ">";
-    const effectiveDescription =
-      description ?? (isBrokenDesc ? "" : undefined);
+    const isBrokenDesc = skill.description === "|" || skill.description === ">";
+    const effectiveDescription = description ?? (isBrokenDesc ? "" : undefined);
 
     const newDescription = effectiveDescription ?? skill.description;
     const descriptionChanged =
@@ -1890,7 +1908,6 @@ export const updateDescription = internalMutation({
     };
   },
 });
-
 
 /**
  * Store a fetched SKILL.md verbatim and record the version row that points at
@@ -2390,8 +2407,7 @@ export const fetchSkillDetailBatch = internalAction({
           }
           const description = extractFrontmatterDescription(skillMdContents);
           const body = extractBodyContent(skillMdContents);
-          const frontmatterVersion =
-            extractFrontmatterVersion(skillMdContents);
+          const frontmatterVersion = extractFrontmatterVersion(skillMdContents);
           const outcome = await ctx.runMutation(
             internal.skills.updateSkillFromDetail,
             {
@@ -2451,9 +2467,7 @@ export const fetchSkillDetailBatch = internalAction({
       if (rateLimited) {
         const retryAfter = (rateLimited as SkillsApiRateLimitError)
           .retryAfterSeconds;
-        console.warn(
-          `Detail fetch rate limited; resuming in ${retryAfter}s`,
-        );
+        console.warn(`Detail fetch rate limited; resuming in ${retryAfter}s`);
         await ctx.scheduler.runAfter(
           retryAfter * 1000,
           internal.skills.fetchSkillDetailBatch,
@@ -2526,7 +2540,6 @@ export const listStaleSummaries = internalQuery({
     };
   },
 });
-
 
 export const delistSkillsBatch = internalMutation({
   args: {
@@ -2903,10 +2916,9 @@ export const backfillIsDelistedFalse = internalAction({
     let total = 0;
     while (!isDone) {
       const result: { nextCursor: string; isDone: boolean; patched: number } =
-        await ctx.runMutation(
-          internal.skills.backfillIsDelistedFalseBatch,
-          { cursor },
-        );
+        await ctx.runMutation(internal.skills.backfillIsDelistedFalseBatch, {
+          cursor,
+        });
       total += result.patched;
       cursor = result.nextCursor;
       isDone = result.isDone;
@@ -3461,9 +3473,7 @@ const PRUNE_BATCH_SIZE = 500;
 export const pruneSnapshots = internalAction({
   args: {},
   handler: async (ctx) => {
-    const cutoffDay = appDay(
-      Date.now() - SNAPSHOT_RETENTION_DAYS * 86_400_000,
-    );
+    const cutoffDay = appDay(Date.now() - SNAPSHOT_RETENTION_DAYS * 86_400_000);
     let total = 0;
     while (true) {
       const deleted: number = await ctx.runMutation(
@@ -3473,9 +3483,7 @@ export const pruneSnapshots = internalAction({
       total += deleted;
       if (deleted === 0) break;
     }
-    console.log(
-      `Pruned ${total} skillSnapshots rows older than ${cutoffDay}`,
-    );
+    console.log(`Pruned ${total} skillSnapshots rows older than ${cutoffDay}`);
   },
 });
 
@@ -3659,8 +3667,7 @@ export const listRepoAggregatesByOrg = query({
       totalInstalls += skill.installs;
 
       const slash = skill.source.indexOf("/");
-      const repo =
-        slash === -1 ? skill.source : skill.source.slice(slash + 1);
+      const repo = slash === -1 ? skill.source : skill.source.slice(slash + 1);
       const existing = map.get(skill.source);
       if (existing) {
         existing.skillCount += 1;
@@ -3709,9 +3716,7 @@ export const getSummariesByIds = internalQuery({
         return summary ? { skillDocId: id, summary } : null;
       }),
     );
-    return summaries.filter(
-      (s): s is NonNullable<typeof s> => s !== null,
-    );
+    return summaries.filter((s): s is NonNullable<typeof s> => s !== null);
   },
 });
 
@@ -3731,16 +3736,12 @@ export const getSummariesByEmbeddingIds = internalQuery({
       ids.map(async (id) => {
         const summary = await ctx.db
           .query("skillSummaries")
-          .withIndex("by_skillEmbeddingId", (q) =>
-            q.eq("skillEmbeddingId", id),
-          )
+          .withIndex("by_skillEmbeddingId", (q) => q.eq("skillEmbeddingId", id))
           .unique();
         return summary ? { skillEmbeddingId: id, summary } : null;
       }),
     );
-    return summaries.filter(
-      (s): s is NonNullable<typeof s> => s !== null,
-    );
+    return summaries.filter((s): s is NonNullable<typeof s> => s !== null);
   },
 });
 
@@ -3981,7 +3982,9 @@ export const backfillNeedsRepoResolutionBatch = internalMutation({
   handler: async (ctx, { cursor }) => {
     const result = await ctx.db
       .query("skillSummaries")
-      .paginate(cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null });
+      .paginate(
+        cursor ? { numItems: 200, cursor } : { numItems: 200, cursor: null },
+      );
     let patched = 0;
     for (const s of result.page) {
       const needs = s.githubRepoId === undefined && isGitHubSource(s.source);
@@ -3990,7 +3993,11 @@ export const backfillNeedsRepoResolutionBatch = internalMutation({
         patched++;
       }
     }
-    return { nextCursor: result.continueCursor, isDone: result.isDone, patched };
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      patched,
+    };
   },
 });
 
@@ -4002,9 +4009,12 @@ export const backfillNeedsRepoResolution = internalAction({
     let total = 0;
     while (!isDone) {
       const result: { nextCursor: string; isDone: boolean; patched: number } =
-        await ctx.runMutation(internal.skills.backfillNeedsRepoResolutionBatch, {
-          cursor,
-        });
+        await ctx.runMutation(
+          internal.skills.backfillNeedsRepoResolutionBatch,
+          {
+            cursor,
+          },
+        );
       total += result.patched;
       cursor = result.nextCursor;
       isDone = result.isDone;
@@ -4226,11 +4236,7 @@ export const seedAddedSkillContent = internalMutation({
 
 type ManualAddResult = {
   status:
-    | "inserted"
-    | "relisted"
-    | "already_exists"
-    | "adopted"
-    | "not_on_skills_sh";
+    "inserted" | "relisted" | "already_exists" | "adopted" | "not_on_skills_sh";
   source: string;
   skillId: string;
   name: string;

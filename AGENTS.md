@@ -30,8 +30,8 @@ Both `pnpm dev` and `npx convex dev` must be running during local development.
 **`pnpm build` needs a reachable Convex deployment.** Every `generateStaticParams`
 calls `fetchQuery` (via `lib/representative-params.ts`), and prerendering those
 paths runs the `'use cache'` loaders. A fresh clone without `.env.local` cannot
-build. The hardcoded fallbacks in `representative-params.ts` harden *param
-selection*, not the render.
+build. The hardcoded fallbacks in `representative-params.ts` harden _param
+selection_, not the render.
 
 **Two test suites, deliberately non-overlapping.** `pnpm test` is vitest over
 `tests/**/*.test.ts`; `pnpm e2e` is Playwright over `e2e/**/*.spec.ts`, against a
@@ -55,8 +55,8 @@ lint + typecheck + unit tests only; e2e is separate because it builds the app.
 This is a high-level map. The detailed, authoritative guides are:
 
 - **[docs/architecture.md](docs/architecture.md)** — frontend & platform: Next.js 16 static-first rendering + caching, the route inventory (static / ISR / dynamic), the Suspense-default-state pattern, Clerk auth wiring, the provider tree, data-fetching patterns, nuqs URL state, and Polar billing. **Read this before any frontend / rendering / caching / auth work.**
-Two rules from that guide that are easy to break without noticing, because
-**direct page loads keep working either way**:
+  Two rules from that guide that are easy to break without noticing, because
+  **direct page loads keep working either way**:
 
 - Catalog pages (`/[org]`, `/[org]/[repo]`, `/site/[source]`) must **not**
   `await params` above their `<Suspense>` boundaries. Doing so empties the

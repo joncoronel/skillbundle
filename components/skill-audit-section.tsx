@@ -68,7 +68,7 @@ export function AuditBadge({
     <span
       className={cn(
         "inline-flex items-center rounded border px-2 py-0.5 text-micro font-medium",
-        STATUS_PILL[status] ?? "bg-muted text-muted-foreground border-border",
+        STATUS_PILL[status] ?? "border-border bg-muted text-muted-foreground",
         className,
       )}
     >
@@ -194,7 +194,7 @@ export function AuditAccordion({
                 STATUS_LABEL[audit.status] ?? audit.status
               }`}
               icon={<AuditBadge status={audit.status} />}
-              className="hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
+              className="hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
             >
               {audit.provider}
             </AccordionTrigger>

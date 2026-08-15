@@ -69,10 +69,7 @@ export function DotMatrixSweep({
         } as CSSProperties
       }
     >
-      <span
-        className="dmxs-grid"
-        style={{ width: px, height: px, gap }}
-      >
+      <span className="dmxs-grid" style={{ width: px, height: px, gap }}>
         {CELLS.map((cell, i) => {
           if (cell.kind === "corner") {
             return (

@@ -173,9 +173,14 @@ export const listSummariesToResolve = internalQuery({
         q.eq("needsRepoResolution", true),
       )
       .paginate(
-        cursor ? { numItems: RESOLVE_PAGE, cursor } : { numItems: RESOLVE_PAGE, cursor: null },
+        cursor
+          ? { numItems: RESOLVE_PAGE, cursor }
+          : { numItems: RESOLVE_PAGE, cursor: null },
       );
-    const items = result.page.map((s) => ({ summaryId: s._id, source: s.source }));
+    const items = result.page.map((s) => ({
+      summaryId: s._id,
+      source: s.source,
+    }));
     return { items, nextCursor: result.continueCursor, isDone: result.isDone };
   },
 });
@@ -230,7 +235,10 @@ async function upsertResolutionRow(
       resolvedAt: Date.now(),
     });
   } else {
-    await ctx.db.insert("githubRepoResolution", { ...row, resolvedAt: Date.now() });
+    await ctx.db.insert("githubRepoResolution", {
+      ...row,
+      resolvedAt: Date.now(),
+    });
   }
 }
 
@@ -244,26 +252,44 @@ export const resolveRepoIdentities = internalAction({
   ): Promise<{ stamped: number; resolvedRepos: number; done: boolean }> => {
     const iteration = args.iteration ?? 0;
 
-    const page = await ctx.runQuery(internal.duplicates.listSummariesToResolve, {
-      cursor: args.cursor,
-    });
+    const page = await ctx.runQuery(
+      internal.duplicates.listSummariesToResolve,
+      {
+        cursor: args.cursor,
+      },
+    );
 
     // Per-invocation in-memory cache, keyed by "owner/repo". Seed it with only
     // THIS page's distinct repos (not the whole resolution table): a repo
     // resolved on an earlier page is persisted, so its lookup here hits and we
     // skip a redundant GitHub call. Repos resolved within this page are added as
     // we go. Keeps the per-iteration cache read O(page), not O(table).
-    const cache = new Map<string, { repoId: number | null; liveName: string | null }>();
+    const cache = new Map<
+      string,
+      { repoId: number | null; liveName: string | null }
+    >();
     const distinctRepos = [...new Set(page.items.map((i) => i.source))];
     if (distinctRepos.length > 0) {
-      const persisted = await ctx.runQuery(internal.duplicates.getResolutionsForRepos, {
-        repos: distinctRepos,
-      });
-      for (const r of persisted) cache.set(r.repo, { repoId: r.repoId, liveName: r.liveName });
+      const persisted = await ctx.runQuery(
+        internal.duplicates.getResolutionsForRepos,
+        {
+          repos: distinctRepos,
+        },
+      );
+      for (const r of persisted)
+        cache.set(r.repo, { repoId: r.repoId, liveName: r.liveName });
     }
 
-    const cacheRows: { repo: string; repoId: number | null; liveName: string | null }[] = [];
-    const stamps: { summaryId: typeof page.items[number]["summaryId"]; githubRepoId: number; repoLiveName: string }[] = [];
+    const cacheRows: {
+      repo: string;
+      repoId: number | null;
+      liveName: string | null;
+    }[] = [];
+    const stamps: {
+      summaryId: (typeof page.items)[number]["summaryId"];
+      githubRepoId: number;
+      repoLiveName: string;
+    }[] = [];
     let resolvedRepos = 0;
 
     for (const item of page.items) {
@@ -275,21 +301,29 @@ export const resolveRepoIdentities = internalAction({
         if (r.status === "rate_limited") {
           // Pace against GitHub's limit: flush what we have, resume in 60s.
           if (cacheRows.length > 0 || stamps.length > 0) {
-            await ctx.runMutation(internal.duplicates.applyResolutions, { cacheRows, stamps });
+            await ctx.runMutation(internal.duplicates.applyResolutions, {
+              cacheRows,
+              stamps,
+            });
           }
-          await ctx.scheduler.runAfter(60_000, internal.duplicates.resolveRepoIdentities, {
-            cursor: args.cursor,
-            iteration: iteration + 1,
-          });
+          await ctx.scheduler.runAfter(
+            60_000,
+            internal.duplicates.resolveRepoIdentities,
+            {
+              cursor: args.cursor,
+              iteration: iteration + 1,
+            },
+          );
           return { stamped: stamps.length, resolvedRepos, done: false };
         }
         if (r.status === "error") {
           // Transient — don't cache, leave unstamped, retry on the next run.
           continue;
         }
-        resolved = r.status === "ok"
-          ? { repoId: r.repoId, liveName: r.liveName }
-          : { repoId: null, liveName: null }; // not_found
+        resolved =
+          r.status === "ok"
+            ? { repoId: r.repoId, liveName: r.liveName }
+            : { repoId: null, liveName: null }; // not_found
         cache.set(repo, resolved);
         cacheRows.push({ repo, ...resolved });
         resolvedRepos++;
@@ -298,21 +332,36 @@ export const resolveRepoIdentities = internalAction({
       // Stamp the summary. Resolved repo → its id + live name; unresolvable
       // (404) → the sentinel so it's excluded from future scans.
       if (resolved.repoId !== null && resolved.liveName !== null) {
-        stamps.push({ summaryId: item.summaryId, githubRepoId: resolved.repoId, repoLiveName: resolved.liveName });
+        stamps.push({
+          summaryId: item.summaryId,
+          githubRepoId: resolved.repoId,
+          repoLiveName: resolved.liveName,
+        });
       } else {
-        stamps.push({ summaryId: item.summaryId, githubRepoId: REPO_ID_NONE, repoLiveName: "" });
+        stamps.push({
+          summaryId: item.summaryId,
+          githubRepoId: REPO_ID_NONE,
+          repoLiveName: "",
+        });
       }
     }
 
     if (cacheRows.length > 0 || stamps.length > 0) {
-      await ctx.runMutation(internal.duplicates.applyResolutions, { cacheRows, stamps });
+      await ctx.runMutation(internal.duplicates.applyResolutions, {
+        cacheRows,
+        stamps,
+      });
     }
 
     if (!page.isDone && iteration < RESOLVE_MAX_ITER) {
-      await ctx.scheduler.runAfter(0, internal.duplicates.resolveRepoIdentities, {
-        cursor: page.nextCursor,
-        iteration: iteration + 1,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.duplicates.resolveRepoIdentities,
+        {
+          cursor: page.nextCursor,
+          iteration: iteration + 1,
+        },
+      );
       return { stamped: stamps.length, resolvedRepos, done: false };
     }
 
@@ -359,7 +408,9 @@ export const computeCopyCountBatch = internalMutation({
       .query("skillSummaries")
       .withIndex("by_isDelisted", (q) => q.eq("isDelisted", false))
       .paginate(
-        cursor ? { numItems: COPYCOUNT_PAGE, cursor } : { numItems: COPYCOUNT_PAGE, cursor: null },
+        cursor
+          ? { numItems: COPYCOUNT_PAGE, cursor }
+          : { numItems: COPYCOUNT_PAGE, cursor: null },
       );
 
     let updated = 0;
@@ -376,7 +427,11 @@ export const computeCopyCountBatch = internalMutation({
       }
     }
 
-    return { nextCursor: result.continueCursor, isDone: result.isDone, updated };
+    return {
+      nextCursor: result.continueCursor,
+      isDone: result.isDone,
+      updated,
+    };
   },
 });
 
@@ -387,9 +442,12 @@ export const computeCopyCounts = internalAction({
     args,
   ): Promise<{ done: boolean; updatedThisBatch: number }> => {
     const iteration = args.iteration ?? 0;
-    const res = await ctx.runMutation(internal.duplicates.computeCopyCountBatch, {
-      cursor: args.cursor,
-    });
+    const res = await ctx.runMutation(
+      internal.duplicates.computeCopyCountBatch,
+      {
+        cursor: args.cursor,
+      },
+    );
     if (!res.isDone && iteration < COPYCOUNT_MAX_ITER) {
       await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {
         cursor: res.nextCursor,
@@ -537,15 +595,21 @@ export const reresolveStaleRepoIdentities = internalAction({
       const r = await resolveRepoIdentity(row.repo);
       if (r.status === "rate_limited") {
         if (updates.length > 0) {
-          await ctx.runMutation(internal.duplicates.applyReresolutions, { updates });
+          await ctx.runMutation(internal.duplicates.applyReresolutions, {
+            updates,
+          });
         }
         // Resume the SAME page in 60s: rows we just stamped have resolvedAt=now
         // and fall out of the stale filter, so they aren't re-processed.
-        await ctx.scheduler.runAfter(60_000, internal.duplicates.reresolveStaleRepoIdentities, {
-          cursor: args.cursor,
-          iteration: iteration + 1,
-          idChangedAny: (args.idChangedAny ?? false) || idChanged > 0,
-        });
+        await ctx.scheduler.runAfter(
+          60_000,
+          internal.duplicates.reresolveStaleRepoIdentities,
+          {
+            cursor: args.cursor,
+            iteration: iteration + 1,
+            idChangedAny: (args.idChangedAny ?? false) || idChanged > 0,
+          },
+        );
         return { reresolved: updates.length, changed, done: false };
       }
       if (r.status === "error") {
@@ -558,21 +622,32 @@ export const reresolveStaleRepoIdentities = internalAction({
       const didChange = idTransition || newLiveName !== row.liveName;
       if (didChange) changed++;
       if (idTransition) idChanged++;
-      updates.push({ repo: row.repo, repoId: newRepoId, liveName: newLiveName, changed: didChange });
+      updates.push({
+        repo: row.repo,
+        repoId: newRepoId,
+        liveName: newLiveName,
+        changed: didChange,
+      });
     }
 
     if (updates.length > 0) {
-      await ctx.runMutation(internal.duplicates.applyReresolutions, { updates });
+      await ctx.runMutation(internal.duplicates.applyReresolutions, {
+        updates,
+      });
     }
 
     const idChangedAny = (args.idChangedAny ?? false) || idChanged > 0;
 
     if (!page.isDone && iteration < RERESOLVE_MAX_ITER) {
-      await ctx.scheduler.runAfter(0, internal.duplicates.reresolveStaleRepoIdentities, {
-        cursor: page.nextCursor,
-        iteration: iteration + 1,
-        idChangedAny,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.duplicates.reresolveStaleRepoIdentities,
+        {
+          cursor: page.nextCursor,
+          iteration: iteration + 1,
+          idChangedAny,
+        },
+      );
       return { reresolved: updates.length, changed, done: false };
     }
 
@@ -580,7 +655,11 @@ export const reresolveStaleRepoIdentities = internalAction({
     // plain renames don't. So recompute copyCount only when an id actually moved
     // — otherwise this weekly pass adds no second full scan.
     if (idChangedAny) {
-      await ctx.scheduler.runAfter(0, internal.duplicates.computeCopyCounts, {});
+      await ctx.scheduler.runAfter(
+        0,
+        internal.duplicates.computeCopyCounts,
+        {},
+      );
     }
     console.log(
       `reresolveStaleRepoIdentities: done (iteration ${iteration}, reresolved ${updates.length}, changed ${changed}, idChanged ${idChangedAny})`,

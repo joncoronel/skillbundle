@@ -142,9 +142,7 @@ test("fetchAuditBatch records 404 as worstStatus=unknown", async () => {
   // The 404 path is wrapped in an error class our retry helper treats as
   // "real answer, not transient". The action should record an empty audit
   // list with worstStatus=unknown rather than retrying.
-  const { SkillsApiNotFoundError } = await import(
-    "../convex/lib/skillsApi"
-  );
+  const { SkillsApiNotFoundError } = await import("../convex/lib/skillsApi");
   vi.mocked(getSkillAudits).mockRejectedValue(
     new SkillsApiNotFoundError("not audited yet"),
   );
@@ -179,9 +177,7 @@ test("fetchAuditBatch records 404 as worstStatus=unknown", async () => {
     const auditRow = await ctx.db
       .query("skillAudits")
       .withIndex("by_source_skillId", (q) =>
-        q
-          .eq("source", "test-org/test-repo")
-          .eq("skillId", "unaudited-skill"),
+        q.eq("source", "test-org/test-repo").eq("skillId", "unaudited-skill"),
       )
       .unique();
     expect(auditRow).not.toBeNull();

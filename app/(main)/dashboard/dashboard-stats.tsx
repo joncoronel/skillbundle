@@ -69,7 +69,7 @@ export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
 function Metric({ value, label }: { value: string; label: string }) {
   return (
     <span className="inline-flex items-baseline gap-1.5">
-      <span className="font-semibold tabular-nums tracking-tight text-foreground">
+      <span className="font-semibold tracking-tight text-foreground tabular-nums">
         {value}
       </span>
       <span className="text-muted-foreground">{label}</span>

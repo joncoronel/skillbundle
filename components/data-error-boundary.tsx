@@ -39,10 +39,10 @@ function DataErrorFallback(
     // all and cannot distinguish this from a fallback that never resolved.
     <div
       role="alert"
-      className="rounded-2xl border border-dashed dark:border-border/50 px-4 py-10 text-center"
+      className="rounded-2xl border border-dashed px-4 py-10 text-center dark:border-border/50"
     >
-      <p className="text-sm font-medium mb-1">Couldn&apos;t load {label}.</p>
-      <p className="text-sm text-muted-foreground mb-5">
+      <p className="mb-1 text-sm font-medium">Couldn&apos;t load {label}.</p>
+      <p className="mb-5 text-sm text-muted-foreground">
         This is usually temporary.
       </p>
       <Button variant="outline" size="sm" onClick={() => retry()}>
@@ -53,7 +53,7 @@ function DataErrorFallback(
           transcribe into a bug report, so it should not be the least legible
           thing on it — and an unlabelled hash reads as debug leakage. */}
       {digest ? (
-        <p className="font-mono text-xs text-muted-foreground mt-5 tabular-nums">
+        <p className="mt-5 font-mono text-xs text-muted-foreground tabular-nums">
           Error ID: {digest}
         </p>
       ) : null}

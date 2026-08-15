@@ -18,7 +18,9 @@ import { SITE_TAGS } from "../lib/cache-tags";
 const SECRET = "test-secret-value";
 
 function post(body: unknown, secret?: string, rawBody?: string) {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
   if (secret !== undefined) headers["x-revalidate-secret"] = secret;
   return new Request("http://localhost/api/revalidate", {
     method: "POST",

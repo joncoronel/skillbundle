@@ -103,11 +103,7 @@ if (process.env.CRONS_ENABLED === "true") {
   // in 24h, and this cron was 48 of them, the single largest contributor. So
   // the old cadence cost a function invocation plus a hard invalidation of the
   // home rail every half hour to publish a number that had not changed.
-  crons.hourly(
-    "sync hot",
-    { minuteUTC: 45 },
-    internal.leaderboards.syncHot,
-  );
+  crons.hourly("sync hot", { minuteUTC: 45 }, internal.leaderboards.syncHot);
 
   // Daily at 05:00 UTC: housekeeping for the GitHub tree cache shared by the
   // skill sync (discoverSkillMdUrls) and the repo-recommendation flow.

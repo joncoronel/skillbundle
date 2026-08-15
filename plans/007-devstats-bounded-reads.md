@@ -27,7 +27,7 @@ Several admin `/dev` dashboard queries `.collect()` entire index ranges of
 `skillSummaries` with no bound. The delisted population is intentionally
 retained forever and only grows; the no-URL set can reach thousands. Convex
 hard-fails a query that reads too many documents (8k+ rows / 16 MB), so as
-these sets grow the dashboard panels stop degrading and start *erroring*.
+these sets grow the dashboard panels stop degrading and start _erroring_.
 The module's own `TODO` comment at `convex/devStats.ts:540` flags exactly
 this. The repo already has the right pattern in the same file —
 `countDeadButInstallable` uses `.take(COUNT_SCAN_CAP)` plus a `truncated`
@@ -53,23 +53,23 @@ compound index the TODO asks for.
       }
 ```
 
-  The `noUrlRetrying` / `noUrlExhausted` branches additionally post-filter
-  on `(s.discoveryFailCount ?? 0) < / >= MAX_DISCOVERY_FAILURES` after
-  collecting the whole `by_hasSkillMdUrl = false` range.
+The `noUrlRetrying` / `noUrlExhausted` branches additionally post-filter
+on `(s.discoveryFailCount ?? 0) < / >= MAX_DISCOVERY_FAILURES` after
+collecting the whole `by_hasSkillMdUrl = false` range.
 
 - `convex/devStats.ts:538-549` — `retryBatch`'s `noUrlExhausted` branch,
   with the self-diagnosing TODO:
 
 ```ts
-      // TODO: .collect() is unbounded — risks Convex's 16k doc limit if the no-URL set
-      // grows large. Consider an index on (hasSkillMdUrl, discoveryFailCount) or paginating.
-      const summaries = await ctx.db
-        .query("skillSummaries")
-        .withIndex("by_hasSkillMdUrl", (q) => q.eq("hasSkillMdUrl", false))
-        .collect();
-      const exhausted = summaries
-        .filter((s) => (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES)
-        .slice(0, 200);
+// TODO: .collect() is unbounded — risks Convex's 16k doc limit if the no-URL set
+// grows large. Consider an index on (hasSkillMdUrl, discoveryFailCount) or paginating.
+const summaries = await ctx.db
+  .query("skillSummaries")
+  .withIndex("by_hasSkillMdUrl", (q) => q.eq("hasSkillMdUrl", false))
+  .collect();
+const exhausted = summaries
+  .filter((s) => (s.discoveryFailCount ?? 0) >= MAX_DISCOVERY_FAILURES)
+  .slice(0, 200);
 ```
 
 - The in-file exemplar pattern (`convex/devStats.ts:300-325`,
@@ -94,7 +94,7 @@ compound index the TODO asks for.
 ## Commands you will need
 
 | Purpose   | Command            | Expected on success |
-|-----------|--------------------|---------------------|
+| --------- | ------------------ | ------------------- |
 | Typecheck | `npx tsc --noEmit` | exit 0              |
 | Tests     | `pnpm test`        | all pass            |
 | Lint      | `pnpm lint`        | exit 0              |
@@ -102,11 +102,13 @@ compound index the TODO asks for.
 ## Scope
 
 **In scope** (the only files you should modify):
+
 - `convex/devStats.ts`
 - `convex/schema.ts` (one added index on `skillSummaries` only)
 - `tests/devstats-bounds.test.ts` (create)
 
 **Out of scope** (do NOT touch):
+
 - `convex/skills.ts` — `listUnembeddable`'s full-table filter scan is a
   related but separate issue (see Maintenance notes).
 - `app/(main)/dev/**` — UI unchanged.
@@ -169,12 +171,14 @@ Only `noUrlExhausted` moves to the compound index.)
 Replace the collect-then-filter-then-slice with the compound index:
 
 ```ts
-      const exhausted = await ctx.db
-        .query("skillSummaries")
-        .withIndex("by_hasSkillMdUrl_discoveryFailCount", (q) =>
-          q.eq("hasSkillMdUrl", false).gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
-        )
-        .take(200);
+const exhausted = await ctx.db
+  .query("skillSummaries")
+  .withIndex("by_hasSkillMdUrl_discoveryFailCount", (q) =>
+    q
+      .eq("hasSkillMdUrl", false)
+      .gte("discoveryFailCount", MAX_DISCOVERY_FAILURES),
+  )
+  .take(200);
 ```
 
 Delete the now-obsolete TODO comment. Keep the per-row patch loop unchanged.

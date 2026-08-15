@@ -23,7 +23,11 @@ const PICKER_RESULTS = 50;
 export function skillPickerSearchOptions(query: string) {
   return {
     queryKey: ["skill-picker-search", query] as const,
-    queryFn: ({ signal }: { signal: AbortSignal }): Promise<SkillSearchResult> =>
+    queryFn: ({
+      signal,
+    }: {
+      signal: AbortSignal;
+    }): Promise<SkillSearchResult> =>
       searchSkills({
         query,
         filters: { hideForks: true },

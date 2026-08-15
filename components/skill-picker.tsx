@@ -143,7 +143,9 @@ function usePicker(): PickerContextValue {
 export function PickerSearchResults({ query }: { query: string }) {
   // Same query (key + fn) as useSkillPickerSearch in the parent sheet, so the
   // spinner and this list share one cache entry and one network request.
-  const { data, isPending, isError } = useQuery(skillPickerSearchOptions(query));
+  const { data, isPending, isError } = useQuery(
+    skillPickerSearchOptions(query),
+  );
 
   if (isPending) {
     return <PickerListSkeleton />;
@@ -151,7 +153,7 @@ export function PickerSearchResults({ query }: { query: string }) {
 
   if (isError) {
     return (
-      <p className="text-sm text-muted-foreground py-8 text-center">
+      <p className="py-8 text-center text-sm text-muted-foreground">
         Search is unavailable right now. Try again in a moment.
       </p>
     );
@@ -160,7 +162,7 @@ export function PickerSearchResults({ query }: { query: string }) {
   const results = data?.hits ?? [];
   if (results.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-8 text-center">
+      <p className="py-8 text-center text-sm text-muted-foreground">
         No skills found for &ldquo;{query}&rdquo;
       </p>
     );
@@ -193,7 +195,7 @@ export function PickerPopularResults() {
   const results = data?.page ?? [];
   if (results.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-8 text-center">
+      <p className="py-8 text-center text-sm text-muted-foreground">
         No skills to show.
       </p>
     );
@@ -256,7 +258,7 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
   return (
     <div className="flex items-start gap-3 px-3 py-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2 flex-wrap">
+        <div className="flex flex-wrap items-baseline gap-2">
           {added ? (
             // Small inline state indicator so the list is scannable
             // ("which of these are already added?") without making the
@@ -268,7 +270,7 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
               aria-label={copy.added}
             />
           ) : null}
-          <span className="text-sm font-semibold leading-tight">
+          <span className="text-sm leading-tight font-semibold">
             {skill.nameHighlight
               ? renderHighlight(skill.nameHighlight)
               : skill.name}
@@ -276,11 +278,11 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
           <span className="text-xs text-muted-foreground">{skill.source}</span>
         </div>
         {skill.description ? (
-          <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {skill.description}
           </p>
         ) : null}
-        <p className="mt-1 text-micro tabular-nums text-muted-foreground/80">
+        <p className="mt-1 text-micro text-muted-foreground/80 tabular-nums">
           {formatInstalls(skill.installs)} installs
         </p>
       </div>
@@ -300,7 +302,7 @@ export function PickerRow({ skill }: { skill: PickerSkill }) {
           // outline's opaque hover fill and `hover:border-*` would colour a
           // root that carries no border width. --btn-bg-active is set too,
           // else pressing snaps back to outline's card darken mid-gesture.
-          className="shrink-0 text-destructive transition-colors [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_10%,transparent)] [--btn-bg-active:color-mix(in_oklab,var(--destructive)_15%,transparent)] hover:[--btn-border:color-mix(in_oklab,var(--destructive)_30%,transparent)] hover:text-destructive"
+          className="shrink-0 text-destructive transition-colors [--btn-bg-active:color-mix(in_oklab,var(--destructive)_15%,transparent)] [--btn-bg-hover:color-mix(in_oklab,var(--destructive)_10%,transparent)] hover:text-destructive hover:[--btn-border:color-mix(in_oklab,var(--destructive)_30%,transparent)]"
           leadingIcon={
             <HugeiconsIcon
               icon={Cancel01Icon}

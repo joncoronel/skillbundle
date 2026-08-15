@@ -25,7 +25,9 @@ import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
 
-type Feed = FunctionReturnType<typeof api.skillVersions.listRecentChangesForUser>;
+type Feed = FunctionReturnType<
+  typeof api.skillVersions.listRecentChangesForUser
+>;
 type FeedItem = Feed["items"][number];
 
 /**
@@ -93,8 +95,7 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
   const changes = feed.items.filter((i) => !isFault(i.condition));
   const faults = feed.items.filter((i) => isFault(i.condition));
   // Suppression hides CHANGES behind a disclosure; faults are never held back.
-  const shownItems =
-    !feed.suppressed || revealSuppressed ? feed.items : faults;
+  const shownItems = !feed.suppressed || revealSuppressed ? feed.items : faults;
 
   function handleMarkAllRead() {
     // Which heading survives depends on whether anything is left. Faults do not
@@ -179,7 +180,7 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
                 <Button
                   variant="ghost"
                   size="xs"
-                  className="-ml-2 mt-2"
+                  className="mt-2 -ml-2"
                   onClick={() => setRevealSuppressed(true)}
                 >
                   Show them anyway
@@ -191,7 +192,10 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
           {shownItems.length > 0 ? (
             <ul className="divide-y divide-border border-t border-border">
               {shownItems.map((item) => (
-                <ChangeRow key={`${item.source}::${item.skillId}`} item={item} />
+                <ChangeRow
+                  key={`${item.source}::${item.skillId}`}
+                  item={item}
+                />
               ))}
             </ul>
           ) : null}
@@ -235,7 +239,8 @@ function ChangeFeedPending() {
 
 function headline(faults: number, changes: number): string {
   const parts: string[] = [];
-  if (faults > 0) parts.push(`${faults} need${faults === 1 ? "s" : ""} attention`);
+  if (faults > 0)
+    parts.push(`${faults} need${faults === 1 ? "s" : ""} attention`);
   if (changes > 0)
     parts.push(`${changes} skill${changes === 1 ? "" : "s"} changed`);
   return parts.join(", ");
@@ -302,7 +307,9 @@ function AllClear({
               : `Watching ${watchedSkillCount} skill${
                   watchedSkillCount === 1 ? "" : "s"
                 }, all as you last left them.`}
-          {partial ? <CoverageNote checked={checkedCount} total={watchedSkillCount} /> : null}
+          {partial ? (
+            <CoverageNote checked={checkedCount} total={watchedSkillCount} />
+          ) : null}
         </p>
       </div>
     </div>
@@ -355,7 +362,7 @@ function ChangeRow({ item }: { item: FeedItem }) {
       <Link
         href={href}
         className={cn(
-          "group flex gap-3 px-5 py-3.5 outline-none transition-colors duration-100 sm:px-6",
+          "group flex gap-3 px-5 py-3.5 transition-colors duration-100 outline-none sm:px-6",
           "hover:bg-surface-hover focus-visible:bg-surface-hover",
           "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:-outline-offset-2",
         )}
@@ -403,7 +410,7 @@ function ChangeRow({ item }: { item: FeedItem }) {
             long void between the text and the chevron, and so times read down
             a column. Faults carry no time — see the module header. */}
         {item.changedAt !== null ? (
-          <span className="shrink-0 pt-px text-xs tabular-nums text-muted-foreground">
+          <span className="shrink-0 pt-px text-xs text-muted-foreground tabular-nums">
             {timeAgo(item.changedAt)}
           </span>
         ) : null}

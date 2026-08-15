@@ -126,9 +126,9 @@ describe("planProbePlacements — the tree-unavailable fallback", () => {
 
   test("a row that hits nothing gets no placement rather than a guess", async () => {
     const { probe, asked } = fakeProbe([]);
-    expect(await planProbePlacements({ skills: [ref("ghost")], probe })).toEqual(
-      [],
-    );
+    expect(
+      await planProbePlacements({ skills: [ref("ghost")], probe }),
+    ).toEqual([]);
     expect(asked).toHaveLength(3);
   });
 
@@ -172,7 +172,9 @@ describe("planDirPlacements — pass 1, folder name equals slug", () => {
       ["beta", ".claude/skills/beta/SKILL.md"],
     ]);
     expect(
-      pairs(planDirPlacements([ref("alpha"), ref("gamma"), ref("beta")], byDir)),
+      pairs(
+        planDirPlacements([ref("alpha"), ref("gamma"), ref("beta")], byDir),
+      ),
     ).toEqual([
       "alpha -> skills/alpha/SKILL.md",
       "beta -> .claude/skills/beta/SKILL.md",
@@ -294,7 +296,14 @@ describe("planNamePlacements — pass 2, frontmatter name against slug", () => {
     // `len === waveSize + 1` are the boundaries that arithmetic fell over on.
     const paths = Array.from({ length: 4 }, (_, i) => `p${i}/SKILL.md`);
     for (const [len, waveSize, want] of [
-      [4, 2, [["p0", "p1"], ["p2", "p3"]]],
+      [
+        4,
+        2,
+        [
+          ["p0", "p1"],
+          ["p2", "p3"],
+        ],
+      ],
       [3, 2, [["p0", "p1"], ["p2"]]],
       [2, 2, [["p0", "p1"]]],
     ] as const) {

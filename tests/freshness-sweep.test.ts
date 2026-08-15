@@ -98,14 +98,16 @@ describe("pathFromRawUrl", () => {
     // A non-match must not become a bogus path: it would miss in shaByPath and
     // be silently treated as a deleted file forever.
     expect(pathFromRawUrl("https://example.com/a/b/c/SKILL.md")).toBeNull();
-    expect(pathFromRawUrl("https://github.com/owner/repo/blob/main/SKILL.md"))
-      .toBeNull();
+    expect(
+      pathFromRawUrl("https://github.com/owner/repo/blob/main/SKILL.md"),
+    ).toBeNull();
     expect(pathFromRawUrl("")).toBeNull();
   });
 
   test("returns null when there is no path after the branch", () => {
-    expect(pathFromRawUrl("https://raw.githubusercontent.com/o/r/main/"))
-      .toBeNull();
+    expect(
+      pathFromRawUrl("https://raw.githubusercontent.com/o/r/main/"),
+    ).toBeNull();
   });
 });
 
@@ -316,7 +318,7 @@ describe("applySweepResult", () => {
       branch: "main",
       etag: 'W/"abc"',
       changed: [{ skillDocId, githubBlobSha: "new" }],
-        baselined: [],
+      baselined: [],
     });
 
     const { skill, summary } = await t.run(async (ctx) => ({
@@ -342,7 +344,7 @@ describe("applySweepResult", () => {
       branch: "main",
       etag: 'W/"abc"',
       changed: [],
-        baselined: [],
+      baselined: [],
     });
 
     const state = await t.run(async (ctx) =>
@@ -389,7 +391,7 @@ describe("applySweepResult", () => {
       branch: "main",
       etag: 'W/"abc"',
       changed: [],
-        baselined: [],
+      baselined: [],
     });
 
     // The common case by a wide margin. Touching rows here would make the sweep

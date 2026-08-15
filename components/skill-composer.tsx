@@ -297,7 +297,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
             // months because of this trap). 44px is the hero scale on purpose
             // — the 32px trailing controls sit inside the field's height
             // instead of inflating the row.
-            className={cn("pl-2 h-11 sm:h-11")}
+            className={cn("h-11 pl-2 sm:h-11")}
           />
         }
       />
@@ -340,7 +340,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                 // a bare utility. One radius step under the 32px rounded-lg
                 // controls beside it, proportional to its one size step under
                 // them.
-                className="max-sm:hidden rounded-md!"
+                className="rounded-md! max-sm:hidden"
                 aria-hidden="true"
               >
                 /
@@ -429,7 +429,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           <InputGroupButton
             variant="primary"
             size="sm"
-            className="shrink-0 starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+            className="shrink-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0"
             onClick={handleRepoSubmit}
             disabled={!repoDraft.trim()}
             leadingIcon={
@@ -556,7 +556,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         {/* flex-wrap here (and nowhere inside): at tight widths the whole
             right pair drops to its own row instead of the filters wrapping
             internally while the right pair floats between their lines. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 px-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-1">
           {isRepo ? (
             <RepoChin repoInputInvalid={repoInputInvalid} />
           ) : (
@@ -586,7 +586,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
           Enter a GitHub repo URL, like github.com/vercel/next.js
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground max-sm:hidden starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none">
+        <p className="text-xs text-muted-foreground transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none max-sm:hidden starting:opacity-0">
           Reads languages and packages from public repos
         </p>
       )}
@@ -596,7 +596,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
       <Button
         variant="ghost"
         size="sm"
-        className="ms-auto -me-2 shrink-0 text-muted-foreground starting:opacity-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none"
+        className="ms-auto -me-2 shrink-0 text-muted-foreground transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0"
         onClick={() => setParams({ mode: "text" })}
         leadingIcon={
           <HugeiconsIcon
@@ -634,7 +634,7 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground -ms-2"
+                className="-ms-2 text-muted-foreground"
                 leadingIcon={
                   <HugeiconsIcon
                     icon={FilterHorizontalIcon}
@@ -703,7 +703,7 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
         <SortSelect className="max-sm:hidden" />
         <Separator
           orientation="vertical"
-          className="h-4! mx-1 max-[860px]:hidden"
+          className="mx-1 h-4! max-[860px]:hidden"
         />
         {/* Below 860px (mobile AND the 640-860px band where the
             labels don't fit next to the filters) each action
@@ -716,14 +716,14 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className="shrink-0 text-muted-foreground max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
+          className="shrink-0 text-muted-foreground max-[860px]:w-9 max-[860px]:justify-center max-[860px]:px-0 sm:max-[860px]:w-8"
           onClick={() => setParams({ view: "hot" })}
           aria-label="Hot/Trending leaderboards"
           leadingIcon={
             <HugeiconsIcon
               icon={FireIcon}
               strokeWidth={2}
-              className="size-3.5 max-[860px]:size-4 text-warning-foreground"
+              className="size-3.5 text-warning-foreground max-[860px]:size-4"
             />
           }
         >
@@ -732,7 +732,7 @@ function SearchChin({ onEnterRepoMode }: { onEnterRepoMode: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className="shrink-0 text-muted-foreground -me-2 max-[860px]:-me-2.5 max-[860px]:w-9 sm:max-[860px]:w-8 max-[860px]:px-0 max-[860px]:justify-center"
+          className="-me-2 shrink-0 text-muted-foreground max-[860px]:-me-2.5 max-[860px]:w-9 max-[860px]:justify-center max-[860px]:px-0 sm:max-[860px]:w-8"
           onClick={onEnterRepoMode}
           aria-label="Match repo"
           leadingIcon={

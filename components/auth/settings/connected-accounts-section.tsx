@@ -71,9 +71,7 @@ export function ConnectedAccountsSection() {
   return (
     <div className="flex flex-col gap-4">
       {connectedAccounts.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No connected accounts.
-        </p>
+        <p className="text-sm text-muted-foreground">No connected accounts.</p>
       )}
 
       {connectedAccounts.map((account) => (

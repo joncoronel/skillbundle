@@ -212,10 +212,10 @@ function ReverificationDialog({
           <button
             type="button"
             className={cn(
-              "text-muted-foreground text-sm",
+              "text-sm text-muted-foreground",
               countdown > 0 || !ready
                 ? "cursor-default"
-                : "hover:text-foreground cursor-pointer underline underline-offset-2",
+                : "cursor-pointer underline underline-offset-2 hover:text-foreground",
             )}
             onClick={handleResend}
             disabled={countdown > 0 || !ready}
@@ -227,11 +227,11 @@ function ReverificationDialog({
                 : "Didn\u2019t receive a code? Resend"}
           </button>
           {process.env.NODE_ENV === "development" && (
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               Dev mode: use{" "}
-              <code className="bg-muted rounded px-1 py-0.5">+clerk_test</code>{" "}
+              <code className="rounded bg-muted px-1 py-0.5">+clerk_test</code>{" "}
               emails. Code:{" "}
-              <code className="bg-muted rounded px-1 py-0.5">424242</code>
+              <code className="rounded bg-muted px-1 py-0.5">424242</code>
             </p>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
