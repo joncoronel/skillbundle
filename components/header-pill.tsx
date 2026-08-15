@@ -12,14 +12,11 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { cn } from "@/lib/utils";
 
 /**
- * Level 3's drop shadows, wrapped in the pill's own edge tokens.
- *
- * `solidSurface(3)` would also bring `bg-surface-3` and fight the chrome fill,
- * so only the shadow half is taken. Both edge tokens exist because the ladder's
- * ring and rim are tuned for a fill LIGHTER than the page, which this one isn't
- * in either theme — globals.css has the scanlines. Order matters: `--chrome-ring`
- * is FIRST so it paints over the ladder's own ring; `--chrome-rim` is last so it
- * sits under nothing.
+ * A FLUSH surface — no drop shadow in either theme. `--surface-shadow-1` is the
+ * ladder's hairline-ring-no-drop level, so the pill's own edge tokens carry the
+ * rest; globals.css has the scanlines for why they aren't the ladder's.
+ * `solidSurface(1)` is not used because it would bring `bg-surface-1` along and
+ * fight the chrome fill.
  */
 const PILL_SURFACE = cn(
   "bg-chrome",
@@ -163,27 +160,21 @@ export function HeaderPill() {
         </div>
       </div>
 
-      {/* Height the pill grows into, not a drawer over the page.
-          `grid-template-rows` 0fr → 1fr needs no measured height, so the panel
-          can change size without anything re-measuring.
+      {/* Height the pill grows into, not a drawer over the page. `0fr → 1fr`
+          needs no measured height, so the panel can resize freely.
 
           ── Why the closed state is `visibility: hidden` ─────────────────────
           `overflow-hidden` alone leaves the clipped links focusable, and the
           browser scrolls the zero-height box to reveal whichever takes focus.
-          `visibility` fixes that from the same class that drives the height, so
-          there's no second piece of state to keep in sync.
+          `visibility` fixes that from the same class that drives the height —
+          no second piece of state — and is transitionable everywhere.
 
-          The two alternatives, measured in Firefox 153 and Chromium:
-          `inert` animates fine but is a second source of truth AND leaves the
-          links in the aria snapshot in both engines. `display: none` needs
-          `allow-discrete` + `@starting-style` to animate, and Firefox ships that
-          property without applying it to `display`
-          (mdn/browser-compat-data#26155) — the close snapped, Firefox only, with
-          no feature query to gate on (`CSS.supports` returns true there).
-
-          `visibility` is transitionable everywhere and holds `visible` for the
-          full duration when hiding, which is the deferral `allow-discrete` was
-          for. The record card and section rail collapse the same way. */}
+          Both alternatives were measured in Firefox 153 and Chromium and are
+          worse: `inert` is a second source of truth and still leaves the links
+          in the aria snapshot, and `display: none` needs `allow-discrete`, which
+          Firefox ships WITHOUT applying it to `display`
+          (mdn/browser-compat-data#26155) — so the close snapped there, with no
+          feature query to gate on. The record card and section rail match. */}
       <div
         id="header-mobile-menu"
         className={cn(

@@ -238,24 +238,17 @@ html {
   --destructive-soft-foreground: var(--destructive);
 
   /* ── Chrome surface ──────────────────────────────────────────────────────
-     The one container NOT on the page's surface ladder. Used by the header pill.
+     The one container NOT on the page's surface ladder (the header pill), and
+     near-black in both themes. NOT "inverse": a white pill in dark was built and
+     measured at 97x the page's luminance, in chrome you can't scroll away.
 
-     Light borrows `--neutral` (the Button's solid-dark variant) so the two are
-     the same black; retuning `--neutral` deliberately moves both. Don't swap it
-     for `--foreground` — that's darker than anything else in the app.
+     Light borrows `--neutral` so the pill and the solid-dark Button are one
+     black — retuning it moves both. Don't swap in `--foreground`, which is
+     darker than anything else in the app.
 
-     NOT "inverse" — the idea is standing OFF the ladder, and near-black does
-     that in both themes. Dark can't reuse this exact value (the dark page is
-     already at it) so it goes further down; see `.dark`. A white pill was built
-     and measured: legible, but 97x the page's luminance in chrome you can't
-     scroll away, and it outranked every piece of content on screen.
-
-     Three are set per theme — `--chrome`, `--chrome-foreground`, `--chrome-rim`.
-     The other three are declared here ONLY and never in `.dark`: `var()` inside
-     a custom property resolves on the element it lands on, and `:root`/`.dark`
-     are both `<html>`, so they recompute from whichever roots won. Verified:
-     `--chrome-muted-foreground` is rgb(174,175,177) light, rgb(161,162,165)
-     dark, from one declaration. */
+     `--chrome`, `--chrome-foreground` and `--chrome-rim` are set per theme. The
+     three below are declared here only and still recompute, because `var()`
+     resolves on the element and `:root`/`.dark` are both `<html>`. */
   --chrome: var(--neutral);
   --chrome-foreground: var(--neutral-foreground);
   --chrome-muted-foreground: color-mix(
@@ -273,13 +266,8 @@ html {
     var(--chrome-foreground) 12%,
     transparent
   );
-  /* The two halves of the pill's edge, both no-ops in light because the
-     224-unit fill/page step is the edge there (and every `--surface-rim-*` is
-     transparent in light anyway). The dark values are where they earn their
-     keep — see `.dark`.
-
-       --chrome-ring  the outer hairline, outside the border box
-       --chrome-rim   the inner top-edge highlight */
+  /* The pill's outer hairline and inner top highlight. No-ops in light, where
+     the 224-unit fill/page step is already the edge; see `.dark`. */
   --chrome-ring: 0 0 transparent;
   --chrome-rim: 0 0 transparent;
 
@@ -429,50 +417,32 @@ html {
   --muted: oklch(0.24 var(--neutral-chroma) var(--neutral-hue));
   --muted-foreground: oklch(0.73 var(--neutral-chroma) var(--neutral-hue));
 
-  /* One rung BELOW the page, on the ladder's own ~7-unit interval (surface-1 is
-     rgb 22, this is rgb 13). Off the ladder in the only direction dark leaves
-     open — up is where every card already lives, so a lifted pill read as one
-     more card rather than as chrome. Can't reuse light's value: `--neutral` is
-     rgb(21,22,24) and the dark page is rgb(22,23,25), the same colour. Note this
-     is where the two themes stop sharing a chain — light's `--chrome` tracks
-     `--neutral`, but dark's `--neutral` is near-WHITE (it fills the neutral
-     Button, which inverts), so only its chroma and hue carry over. */
+  /* One rung BELOW the page (rgb 22 → 13), the only direction dark leaves open:
+     up is where every card lives, so a lifted pill read as one more card. Light's
+     value is unusable here — `--neutral` is rgb(21,22,24) and the dark page is
+     rgb(22,23,25), the same colour — so this is where the themes stop sharing a
+     chain. Only `--neutral`'s chroma and hue carry over; its lightness inverts
+     to near-white for the Button. */
   --chrome: oklch(0.159 var(--neutral-chroma) var(--neutral-hue));
   --chrome-foreground: var(--foreground);
-  /* A specular top edge. The system's light source is above (every rim is
-     `inset 0 1px 0 0`) and a dark object lit from above catches its top edge;
-     without one the pill reads as a hole punched in the page rather than an
-     object on it. Scanned down through the rendered top edge:
+  /* The whole edge, since the pill carries no drop shadow at all in dark
+     (`--surface-shadow-1` is transparent here — see DESIGN.md §5).
 
-       --surface-rim-4   22 → 19 → 26 → 13
-       this              22 → 19 → 32 → 13
+     Neither comes from the ladder, for one shared reason: `--surface-rim-*` and
+     the ring baked into `--surface-shadow-*` both assume a fill LIGHTER than the
+     page, and this one is darker. Measured at page 22 / fill 12:
 
-     Both are the right shape here, so this is a sharper edge rather than a fix
-     for a broken one — 13 units between shadow and highlight instead of 7. The
-     ladder's rim DOES break on a darker fill, just below this lightness: it
-     assumes the surface is lighter than the page, so at rgb 7 its highlight
-     landed on rgb 20 against a page of 22 — darker than what it sat on, and 2
-     units from the shadow, collapsing the bevel into one muddy band. Worth
-     knowing before anyone deepens `--chrome` again. */
+       ladder   top 22 → 18 → 20 → 12   ring lighter than the fill it defines;
+                left 22 → 18 → 16 → 12  highlight under the page; light band
+                                        inside the dark ring on every edge
+       these    top 22 →  6 → 28 → 12
+                left 22 →  6 → 12
+
+     Re-measure if `--chrome` moves — at rgb 13 the ladder's rim still cleared
+     the page, making it a sharpening rather than a repair. The ring stays FIRST
+     in the pill's shadow list so a deeper `--surface-shadow-N`, which bakes its
+     own ring in as an unre-pointable literal, could be swapped back in. */
   --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.065);
-  /* The outer hairline. The ladder's own ring is baked into `--surface-shadow-N`
-     as a literal, so it can't be re-pointed — this is PREPENDED to the shadow
-     list instead, and the first box-shadow layer paints on top, so it covers the
-     ladder's at the same `0 0 0 1px` while its drop layers stay untouched.
-     (That's the whole reason it's a separate token rather than a hand-rolled
-     shadow: the drops still come from the system. See DESIGN.md §5.)
-
-     Needed because the ladder's ring is tuned to darken a page BELOW a lighter
-     card. Here the pill is already darker than the page, so at 12% it landed on
-     rgb 18 — LIGHTER than the fill it was meant to define — and the edge read as
-     a soft blend. Scanned across the left edge:
-
-       ladder 12%   22 → 18 → 13    ring lighter than the fill
-       this   60%   22 →  7 → 13    ring one rung below it
-
-     60% is not a taste number: it puts the ring ~7 below the fill, the same
-     ~7-unit interval by which the fill sits below the page. Page, fill, ring —
-     one rung apart each. */
   --chrome-ring: 0 0 0 1px oklch(0 0 0 / 0.7);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
@@ -645,18 +615,14 @@ html {
   initial-value: 9999px;
 }
 
-/* Hands the chrome palette to everything inside, so controls keep using
- * ordinary page classes instead of being repainted one at a time.
+/* Hands the chrome palette to everything inside, so controls keep using ordinary
+ * page classes instead of being repainted one at a time. Reaches anything that
+ * paints from a TOKEN, because `@theme inline` compiles those to the raw name —
+ * which is why this is a cascade rule rather than `chrome` variants added to the
+ * vendored recipes: nothing local for a `shadcn add` to clobber.
  *
- * Works for everything that paints from a TOKEN — Button's ghost variant is
- * `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]`, Avatar's
- * fallback is `bg-muted`, Skeleton's fill is `bg-accent` — because `@theme
- * inline` compiles those to the raw token, so re-pointing here reaches every
- * descendant by inheritance. That's why this is a cascade rule and not `chrome`
- * variants added to the vendored recipes: nothing local to clobber.
- *
- * `--primary` stays put (Sign up keeps its brand colour). Portalled menus
- * render at the body and correctly don't inherit. */
+ * `--primary` stays put (Sign up keeps its brand colour). Portalled menus render
+ * at the body and correctly don't inherit. */
 [data-surface="chrome"] {
   --foreground: var(--chrome-foreground);
   --muted-foreground: var(--chrome-muted-foreground);
@@ -670,24 +636,15 @@ html {
   --surface-active: var(--chrome-hover);
 }
 
-/* The one paint the rule above cannot reach: Skeleton's shimmer is a literal
- * inside an arbitrary `bg-[linear-gradient(...)]`, not a token lookup.
+/* The one paint the rule above cannot reach: Skeleton's shimmer is a literal in
+ * an arbitrary `bg-[linear-gradient(...)]`, not a token lookup. Its light default
+ * is tuned for a pale page and peaks at rgb 202 on this near-black fill — a white
+ * flash on the auth placeholder every page load. The `inverted` prop is not the
+ * fix (36 in light, invisible; 8 in dark, a dark pulse): the pill is a dark
+ * substrate in BOTH themes, so it wants dark's 15% in both. Lands at 75 / 68.
  *
- * Its light-mode default sweeps 75% white, which is tuned for a pale page and
- * peaks at rgb 202 on this near-black fill — a white flash on the auth
- * placeholder every page load. `inverted` is not the fix: measured on the pill
- * it peaks at 36 in light (a 7-unit move, invisible) and 8 in dark (a dark pulse
- * where the default already reads correctly). A boolean can't express what this
- * surface needs, because the pill is a DARK substrate in BOTH themes — so it
- * wants dark's value in both, restated once here:
- *
- *   light   base 43 → 202 (default) | 75 (this)
- *   dark    base 35 →  68 (default) | 68 (this, unchanged)
- *
- * Unlayered, so it wins over the Tailwind utility without `!important`. Scoped
- * to `.skeleton-shimmer` because that class is only applied when `animate` is
- * on — without it, an `animate={false}` skeleton would get a static band where
- * it normally has no background-image at all. */
+ * Unlayered so it beats the utility without `!important`, and scoped to
+ * `.skeleton-shimmer` so an `animate={false}` skeleton keeps no background. */
 [data-surface="chrome"] [data-slot="skeleton"].skeleton-shimmer {
   background-image: linear-gradient(
     90deg,

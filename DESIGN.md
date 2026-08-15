@@ -142,13 +142,11 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 
 ### Chrome (the off-ladder surface)
 
-One container is deliberately **not** on the surface ladder: the header pill. Everything else in the app is a step up from the field; this is the object the field flows past. It is near-black in **both** themes — `--chrome` is `--neutral` in light, and a rung _below_ the page in dark (`oklch(0.16)`, since the dark page already sits at light's near-black).
+One container is deliberately **not** on the surface ladder: the header pill. Everything else is a step up from the field; this is the object the field flows past. It is near-black in **both** themes — light borrows `--neutral`, and dark goes a rung _below_ the page, since the dark page already sits at light's near-black.
 
-Six tokens, of which three are set per theme — `--chrome`, `--chrome-foreground` and `--chrome-rim` (§5). The other three — `--chrome-muted-foreground`, `--chrome-hover` and `--chrome-border` — are declared once and derive from those roots, so retuning the surface moves the whole family.
+Six tokens. Three are set per theme (`--chrome`, `--chrome-foreground`, `--chrome-rim` — §5); the rest derive from those roots, so retuning the surface moves the whole family.
 
-**Do not paint on this surface by hand.** Put `data-surface="chrome"` on the container and use ordinary page classes inside it — `text-muted-foreground`, `bg-accent`, `Button variant="ghost"`. The rule in `app/globals.css` re-points `--foreground`, `--muted-foreground`, `--border`, `--muted`, `--accent`, `--surface-hover` and `--surface-active` for the whole subtree, so any control dropped in paints correctly with no per-control classes. `--primary` is deliberately left alone, so a primary button keeps its brand fill anywhere. Portalled content (dropdowns, dialogs) renders at the body and correctly does not inherit.
-
-Only `bg-chrome` exists as a utility, for the fill itself. There is intentionally no `bg-chrome-hover` / `text-chrome-foreground` — a second idiom for the same job is what the contract exists to remove. The one paint the contract cannot reach is `Skeleton`'s shimmer, whose colours are literals rather than tokens; `globals.css` restates it for this surface.
+**Do not paint on this surface by hand.** Put `data-surface="chrome"` on the container and use ordinary page classes inside — `text-muted-foreground`, `bg-accent`, `Button variant="ghost"`. A rule in `app/globals.css` re-points the page tokens for the whole subtree, so anything dropped in paints correctly with no per-control classes. `--primary` is left alone so a primary button keeps its brand fill anywhere, and portalled content (dropdowns, dialogs) renders at the body and correctly does not inherit. `bg-chrome` is the only chrome utility, for the fill itself; there is deliberately no `bg-chrome-hover`, because a second idiom for the same job is what the contract exists to remove. The one paint it cannot reach is `Skeleton`'s shimmer, whose colours are literals rather than tokens.
 
 ### Tertiary (semantic states)
 
@@ -247,9 +245,9 @@ In light mode, lift comes mostly from shadow over a near-white surface. In dark 
 
 **The Material Depth Rule.** Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a `box-shadow`; use a `surface-N` level so light and dark stay coherent.
 
-One exception exists and it is deliberate, so do not "correct" it: the header pill composes `var(--surface-shadow-3)` with its own `--chrome-rim` instead of taking `SURFACE_SHADOW_COMBINED[3]` whole. Only the rim half is replaced — the drops are still a real `--surface-shadow-N`.
+One exception exists and it is deliberate, so do not "correct" it: the header pill is **flush**, not raised. It takes `--surface-shadow-1` — the ladder's hairline-ring-no-drop level — and supplies its own edge tokens, `--chrome-ring` outside and `--chrome-rim` on the top inside, rather than pairing a surface level with its matching `SURFACE_SHADOW_COMBINED[N]`. In light both are no-ops and the pill is just that hairline ring; in dark they carry the edge alone, because `--surface-shadow-1` is transparent there.
 
-In light there is nothing to replace: every `--surface-rim-N` is `0 0 transparent`, and the 224-unit fill/page step is the edge, so `--chrome-rim` is transparent too. In dark it is a top-edge specular, because the fill sits _below_ the page and the rim is the only thing drawing the boundary. At the current lightness this is a sharper edge rather than a repair — it doubles the gap between shadow and highlight (13 units against the ladder's 7). The ladder's rim does genuinely break a little below that lightness, since it assumes a fill lighter than the page; `app/globals.css` carries the scanline and the value at which it goes wrong, which is what to read before deepening `--chrome`.
+Both exist for one reason: the ladder's ring and rim assume a fill **lighter** than the page, and the chrome surface (§2) is darker than it, so each lands on the wrong side of what it is meant to define. `app/globals.css` carries the scanlines — read them before retuning `--chrome`, because whether each is a repair or merely sharper depends on the fill's exact lightness.
 
 ## 6. Shapes
 
