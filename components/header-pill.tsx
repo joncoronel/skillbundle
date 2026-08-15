@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -101,6 +101,32 @@ const PILL_CONTROL =
  */
 export function HeaderPill() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+
+  // Stable, because `ActiveMenuLinks` uses it as an effect dependency — an
+  // inline arrow would be a new function every render and re-run that effect.
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  // Escape, while open. This menu is a disclosure rather than a dialog, so ARIA
+  // does not require it, but the panel covers the page and a keyboard user will
+  // try it.
+  //
+  // Focus goes back to the toggle, which is the disclosure pattern's own rule
+  // and the reason for the ref. Without it, closing while focus sits on a menu
+  // link drops focus to `<body>` — the panel becomes `display: none` under it —
+  // and the next Tab restarts from the top of the document, which undoes the
+  // point of supporting Escape at all. The ref is ONLY for this; there is no
+  // outside-press handler.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   return (
     <div
@@ -112,7 +138,7 @@ export function HeaderPill() {
       <div className="flex h-14 w-full items-center gap-1 pr-3 pl-4">
         <Link
           href="/"
-          onClick={() => setMenuOpen(false)}
+          onClick={closeMenu}
           // `md:mr-5` is the band break between the brand and the nav, and it
           // is a fix rather than a preference. The nav's own items sit 26px
           // apart (12px of link padding either side of a 2px gap) while the
@@ -164,6 +190,7 @@ export function HeaderPill() {
               glyph at 16px, which was too small to read as a target on the
               pill. 20px in a 36px box instead. */}
           <button
+            ref={toggleRef}
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
             aria-expanded={menuOpen}
@@ -251,14 +278,9 @@ export function HeaderPill() {
           )}
         >
           <Suspense
-            fallback={
-              <MenuLinks
-                activeHref={null}
-                onNavigate={() => setMenuOpen(false)}
-              />
-            }
+            fallback={<MenuLinks activeHref={null} onNavigate={closeMenu} />}
           >
-            <ActiveMenuLinks onNavigate={() => setMenuOpen(false)} />
+            <ActiveMenuLinks onNavigate={closeMenu} />
           </Suspense>
         </div>
       </div>
@@ -266,8 +288,32 @@ export function HeaderPill() {
   );
 }
 
+/**
+ * Reads the pathname AND closes the menu when it changes.
+ *
+ * The per-link `onClick` handlers below are not enough on their own: they only
+ * fire for clicks on the menu's own links, so a browser back/forward, or a link
+ * on the page the open panel is covering, left the menu open over a route it no
+ * longer describes — still showing `aria-current` for the page you just left.
+ * Verified before the fix: after `goBack()` the panel was still displayed.
+ *
+ * It lives HERE and not in `HeaderPill` because `usePathname()` suspends while
+ * the App Shell for a dynamic-param route is generated. This component is
+ * already inside the Suspense boundary that exists for exactly that reason;
+ * calling the hook one level up would pull the whole pill out of the static
+ * shell.
+ *
+ * The per-link handlers stay, and are not redundant: clicking the link for the
+ * page you are already on changes no pathname, so this effect never fires.
+ */
 function ActiveMenuLinks({ onNavigate }: { onNavigate: () => void }) {
-  return <MenuLinks activeHref={usePathname()} onNavigate={onNavigate} />;
+  const pathname = usePathname();
+
+  useEffect(() => {
+    onNavigate();
+  }, [pathname, onNavigate]);
+
+  return <MenuLinks activeHref={pathname} onNavigate={onNavigate} />;
 }
 
 function MenuLinks({
