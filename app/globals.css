@@ -243,12 +243,18 @@ html {
      the same black; retuning `--neutral` deliberately moves both. Don't swap it
      for `--foreground` — that's darker than anything else in the app.
 
-     NOT "inverse", and dark is NOT a white pill: the idea is standing apart from
-     the ladder, and dark's ladder already runs upward, so it takes the top
-     (`surface-4`) rather than leaving. White was built and measured — legible
-     (7.18:1) but 97x the page's luminance in chrome you can't scroll away.
+     NOT "inverse" — the idea is standing OFF the ladder, and near-black does
+     that in both themes. Dark can't reuse this exact value (the dark page is
+     already at it) so it goes further down; see `.dark`. A white pill was built
+     and measured: legible, but 97x the page's luminance in chrome you can't
+     scroll away, and it outranked every piece of content on screen.
 
-     Only the two roots are redefined in `.dark`; the three below derive. */
+     Three are set per theme — `--chrome`, `--chrome-foreground`, `--chrome-rim`.
+     The other three are declared here ONLY and never in `.dark`: `var()` inside
+     a custom property resolves on the element it lands on, and `:root`/`.dark`
+     are both `<html>`, so they recompute from whichever roots won. Verified:
+     `--chrome-muted-foreground` is rgb(174,175,177) light, rgb(161,162,165)
+     dark, from one declaration. */
   --chrome: var(--neutral);
   --chrome-foreground: var(--neutral-foreground);
   --chrome-muted-foreground: color-mix(
@@ -266,6 +272,11 @@ html {
     var(--chrome-foreground) 12%,
     transparent
   );
+  /* The pill's top-edge highlight, replacing `--surface-rim-*` (tuned for fills
+     LIGHTER than the page, which this is in neither theme). Light needs none —
+     every surface rim is transparent here anyway, and the 224-unit fill/page
+     step is the edge. The dark value is where this earns its keep. */
+  --chrome-rim: 0 0 transparent;
 
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
   --neutral-hover: color-mix(in oklch, var(--neutral), white 10%);
@@ -413,9 +424,32 @@ html {
   --muted: oklch(0.24 var(--neutral-chroma) var(--neutral-hue));
   --muted-foreground: oklch(0.73 var(--neutral-chroma) var(--neutral-hue));
 
-  /* Top of the ladder, not a white pill — see the `:root` set. */
-  --chrome: var(--surface-4);
+  /* One rung BELOW the page, on the ladder's own ~7-unit interval (surface-1 is
+     rgb 22, this is rgb 13). Off the ladder in the only direction dark leaves
+     open — up is where every card already lives, so a lifted pill read as one
+     more card rather than as chrome. Can't reuse light's value: `--neutral` is
+     rgb(21,22,24) and the dark page is rgb(22,23,25), the same colour. Note this
+     is where the two themes stop sharing a chain — light's `--chrome` tracks
+     `--neutral`, but dark's `--neutral` is near-WHITE (it fills the neutral
+     Button, which inverts), so only its chroma and hue carry over. */
+  --chrome: oklch(0.16 var(--neutral-chroma) var(--neutral-hue));
   --chrome-foreground: var(--foreground);
+  /* A specular top edge. The system's light source is above (every rim is
+     `inset 0 1px 0 0`) and a dark object lit from above catches its top edge;
+     without one the pill reads as a hole punched in the page rather than an
+     object on it. Scanned down through the rendered top edge:
+
+       --surface-rim-4   22 → 19 → 26 → 13
+       this              22 → 19 → 32 → 13
+
+     Both are the right shape here, so this is a sharper edge rather than a fix
+     for a broken one — 13 units between shadow and highlight instead of 7. The
+     ladder's rim DOES break on a darker fill, just below this lightness: it
+     assumes the surface is lighter than the page, so at rgb 7 its highlight
+     landed on rgb 20 against a page of 22 — darker than what it sat on, and 2
+     units from the shadow, collapsing the bevel into one muddy band. Worth
+     knowing before anyone deepens `--chrome` again. */
+  --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);

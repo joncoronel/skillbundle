@@ -9,20 +9,20 @@ import { LogoMark } from "@/components/brand-mark";
 import { ActiveNavLinks, NAV_ITEMS, NavLinks } from "@/components/header-nav";
 import { HeaderAuthClient } from "@/components/header-auth-client";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { SURFACE_SHADOW_COMBINED } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 
 /**
- * Fill from the chrome tokens (globals.css), elevation from the surface ladder.
+ * Level 3's drop shadows, with `--chrome-rim` in place of `--surface-rim-3`.
  *
- * Split on purpose: `solidSurface(4)` would bring `bg-surface-4` along and fight
- * the chrome fill, so this takes only the shadow half — the same drop and rim
- * every floating container gets. Level 4's rim is a dark-mode device
- * (transparent in light), which is right here: a near-black pill on a near-white
- * page needs no edge, but in dark the fill sits 9% above the page and the rim is
- * what stops it going mushy.
+ * `solidSurface(3)` would also bring `bg-surface-3` and fight the chrome fill,
+ * so only the shadow half is taken. The rim is swapped because the ladder's rims
+ * are tuned for a fill LIGHTER than the page, which this one isn't in either
+ * theme — globals.css has the scanline.
  */
-const PILL_SURFACE = cn("bg-chrome", SURFACE_SHADOW_COMBINED[4]);
+const PILL_SURFACE = cn(
+  "bg-chrome",
+  "shadow-[var(--surface-shadow-3),var(--chrome-rim)]",
+);
 
 /**
  * The header pill.
