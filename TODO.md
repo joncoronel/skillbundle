@@ -34,7 +34,7 @@ make expanding a history row instant instead of a load.
 The 420 KB is currently code-split and only downloads when someone expands a
 row (`loadDiffModule` in `components/skill-history-row.tsx`). Measured against a
 production build, it is absent from the skill page's initial load — so this is
-about making the *interaction* free, not fixing a regression.
+about making the _interaction_ free, not fixing a regression.
 
 **Why it's a project, not a tweak.** Three things have to move together:
 
@@ -74,7 +74,7 @@ is a deliberate workaround, not an oversight — the animation cannot be made
 correct while `CodeView` behaves the way it does.
 
 **What happens.** `@pierre/diffs`' `CodeView` populates its shadow root
-*asynchronously after mount*. Measured on a real ~11 KB SKILL.md:
+_asynchronously after mount_. Measured on a real ~11 KB SKILL.md:
 
 ```text
 +  0ms  rows=0    ← panel opens; Base UI measures here, writes var=352
@@ -139,7 +139,7 @@ up the native `tsc` automatically. Do **not** work around it with
 `useTypeScriptCli: false` — with TS7 installed that makes `next build` exit.
 
 **Enable the /dev admin e2e.** `e2e/authenticated/dev.spec.ts` covers the
-admin *gate* today (a signed-in non-admin gets notFound, not a redirect or an
+admin _gate_ today (a signed-in non-admin gets notFound, not a redirect or an
 empty dashboard) and that runs on every CI job. The admin-view half is behind
 `E2E_ADMIN=1` because it needs the e2e user in Convex's `ADMIN_EMAILS`, which is
 a deployment config change rather than a code one. To turn it on:
@@ -164,12 +164,12 @@ believing it or filing anything.
 build-gating level without that counting as breaking.
 
 **Not adopted, with reasons** (so they don't get re-proposed): `supportsImmutableAssets`
-(an opt-*out* for adapters that already enabled it; the docs warn setting it
+(an opt-_out_ for adapters that already enabled it; the docs warn setting it
 against an unsupporting adapter breaks deployments — it's Vercel's call, not
 ours), `'use cache: private'` for the bundle auth read (owner-vs-viewer state
 going up to 5 minutes stale on a page with a visibility toggle is a correctness
 hazard), `next/root-params` (N/A — every dynamic segment lives under `(main)`, a
-route *group*; nothing exists above the root layout), and the Rust React
+route _group_; nothing exists above the root layout), and the Rust React
 Compiler (declined for now). `typedRoutes` would type-check the hand-built
 `skillHref`/`ownerHref`/`compareHref` strings and is worth a look later.
 
@@ -228,7 +228,7 @@ PRODUCT.md, which was rewritten for this.
 - Unread state: `lastViewedAt` and `markBundleViewed`. (`listUnreadCounts` and
   `changedSinceViewed` were also built and have since been DELETED — nothing
   read them, and they defined "changed" as a bare `contentUpdatedAt >
-  baseline`, which ignores audit regressions and delisting. That is a different
+baseline`, which ignores audit regressions and delisting. That is a different
   answer from `resolveSkillChange`, which drives both surfaces users see.)
 - Read API in `convex/skillVersions.ts`: `listForSkill`, `getVersions`,
   `getAuditChange`, `listRecentChangesForUser`.
@@ -402,11 +402,12 @@ That ambiguity is exactly how the loop bug survived being watched.
   **The open question resolves itself on the next few 04:00 UTC runs** (9pm
   Pacific). Completing means 2026-08-09 was a one-off. Dying again means
   candidate 2, and the row will say where it stopped.
+
 - ~~`skillVersions.suppressed` is declared and nothing sets it.~~ Dropped
   Aug 2026. The mass-change breaker got built at READ time instead
   (`isCatalogWideChangeEvent` in `skillVersions.ts`), because at write time you
   cannot know you are the 3rd of 3,000, so the per-row flag never had a writer.
-  Worth noting for the two-deploy rule below: this one came out in a *single*
+  Worth noting for the two-deploy rule below: this one came out in a _single_
   deploy, because no row ever carried it. The dance is only needed when the
   field has been written.
 - ~~The dashboard feed hides a change whose only archived version is a
@@ -425,6 +426,7 @@ That ambiguity is exactly how the loop bug survived being watched.
   300 of the tail sample covered, verified with `sweepHealth`. Every skill now
   has a comparison point, so the NEXT change to any skill is reportable. An
   empty feed can be read as an empty feed.
+
 - **Dropping a Convex field takes two deploys.** Worth remembering next time:
   the schema is validated against existing documents, so a field cannot leave
   `schema.ts` while any row still carries it. Declare it deprecated-optional,
@@ -678,12 +680,24 @@ The measurements behind that, recorded here because the comment carrying them li
 above a cva that a registry refresh replaced, and `button.tsx` is vendored so the next
 one would take it again: CSS `opacity` dims the outline too, so a disabled+focused
 button rendered its `/50` ring at 0.5 × 0.6 ≈ 0.3 alpha — 1.53:1 on light, 1.35:1 on
-dark. Full alpha under the same dimming gives 2.44:1 and 2.16:1, i.e. slightly *more*
+dark. Full alpha under the same dimming gives 2.44:1 and 2.16:1, i.e. slightly _more_
 visible than an ordinary focus ring, which is the right way round for the one state
 where you most need to find focus. `data-disabled:focus-visible:outline-ring` (no
 `/50`) is therefore deliberate, not a typo — do not "normalise" it. Residual and not
 from this: the ordinary `/50` ring is itself 2.08:1 / 1.83:1, under the 3:1 non-text
 threshold, app-wide. That is the part this entry is about.
+
+**Add the header pill's `--chrome` surface to that table when the branch runs
+(Aug 2026).** The table above measures `--surface-1`…`-5`; the pill introduced a
+sixth backdrop that none of those numbers cover. Measured on it: `outline-ring/60`
+is **2.2:1 light / 1.9:1 dark** — the same shortfall, on the one surface where the
+ring sits against a near-black fill instead of the page. A pill-scoped fix was
+built and measured at **17.07:1 light / 11.73:1 dark** (`--chrome-ring:
+var(--chrome-foreground)`, i.e. a near-white ring) and then reverted on the user's
+call, because a ring that only looks right inside the pill is a worse end state
+than one wrong ring everywhere. Those two numbers are the point of this note: the
+app-wide fix has to work on the chrome surface too, and the near-white value is
+known to clear it.
 
 ### Switch: unchecked track is ~1.2:1 in light mode (design decision)
 
@@ -710,6 +724,53 @@ The fix is raising light `--switch-track` toward `oklch(0 0 0 / 22%)` (≈3:1
 against white), or giving the track a 1px border to carry the boundary. Deferred
 because it repaints every switch in the app in light mode — a visual-identity
 call, like the focus rings, not a side effect of a component update.
+
+### Parked from the skill-page-redesign review (Aug 2026)
+
+Three calls made deliberately during that branch's review rounds, each declined
+for a reason that is about scope rather than merit. Recorded here because the
+review file itself is under `reviews/`, which is git-ignored — the reasoning
+disappears at merge otherwise, and the next reviewer re-proposes all three.
+
+- **A skip link in `app/(main)/layout.tsx`. Pre-existing, not from this branch.**
+  The app has never had one: `app/(main)/layout.tsx` renders header → children →
+  bundle bar, with no "Skip to content" affordance, and this branch does not
+  touch that file at all. A keyboard user therefore tabs through the whole
+  header on every page.
+
+  Two separate things got conflated when this was first written, so to be clear
+  about which half is done: the `<main>` landmark is per-page in this app, and
+  the skill detail page was the one route missing it. That IS fixed here
+  (`SkillDetailPage` and `SkillDetailPageLoading` both render `<main>` now). The
+  skip link is the part that remains, it is app-wide, and it predates the
+  branch. It became more worth doing because skill pages can run 20,000px with
+  three landmarks above the content, not because anything here caused it.
+
+- **Wire `format:check` into `pnpm check`.** Prettier landed on this branch but
+  only the touched files were formatted; `npx prettier --check` still fails
+  repo-wide (`components/skill-explorer.tsx`, `DESIGN.md`, `docs/architecture.md`
+  among them). The sequence is: merge, then one repo-wide `pnpm format` commit on
+  master, add its SHA to `.git-blame-ignore-revs`, and only then add the gate —
+  in that order, or the gate fails on arrival and the blame history for every
+  file lands on the reformat.
+
+- **Geist Pixel ships all five shapes on every route, ~100 KB of it unused.**
+  Nothing to do with the header — the font is loaded in the ROOT layout
+  (`app/layout.tsx`) and backs `--font-display`, which about 20 files use, mostly
+  page `h1`s. The pill's wordmark is one of them, and it is hidden below `md`
+  anyway.
+
+  `geist/font/pixel` declares all five pixel faces at module scope, and next/font
+  preloads from the module graph rather than from what the CSS uses, so importing
+  Circle pulls ~129 KB to use ~27 KB. `next/font/google`'s `Geist_Pixel` is the
+  same family as one variable font on an `ELSH` axis and avoids that, but has no
+  entry in Next's font-metrics table, so it logs "Failed to find font override
+  values" on every build and dev request with no way to silence it —
+  `adjustFontFallback` only picks a different row from the table the font is
+  missing from. The package is the current choice for that reason (user's call,
+  Aug 2026). The fix that costs neither is vendoring the single Circle woff2 to
+  `app/fonts/` with `adjustFontFallback: false`, exactly as SN Pro is handled —
+  same loader, same reason, and the OFL notice travels with it the same way.
 
 ### Public add-skill: moderation / report queue
 
@@ -848,7 +909,7 @@ legitimately moves nearly every install count, so "only the skills that changed"
 is "all of them". (Batch-tag support in `/api/revalidate` is step 1's own scope,
 not a bound on it — see the sequence above.)
 
-Fine meanwhile: invalidation only *marks* entries stale, so a page rebuilds when
+Fine meanwhile: invalidation only _marks_ entries stale, so a page rebuilds when
 someone visits it. Cost is bounded by traffic, not by the catalog.
 
 Context: this came out of fixing the content-publish ordering (Jul 2026). The content
@@ -946,7 +1007,7 @@ personal, not just the canned demo. Then upgrade-gate beyond that.
 
 Why deferred, not built now: it's the expensive part (needs a per-user
 usage-tracking table + reset logic, and every fresh repo costs a GitHub tree
-fetch + Voyage embedding), and it only pays off if the free demo *isn't*
+fetch + Voyage embedding), and it only pays off if the free demo _isn't_
 converting. Ship phase 1, watch whether demo → sign-up / upgrade happens, and
 only build the quota if the canned demo under-converts. Enforce the quota
 inside `isRepoMatchAllowed()` in `lib/repo-match.ts` — the one predicate both
@@ -1066,7 +1127,7 @@ why it is easy to ship without noticing.
 replaces `leadingIcon` when there is one (no width change), otherwise sits after
 the label and the button grows by the indicator's width — the honest trade for
 keeping the label. Two details the implementation here already handles:
-`iconLeft`/`iconRight` must be computed from the *resolved* slots so the optical
+`iconLeft`/`iconRight` must be computed from the _resolved_ slots so the optical
 padding follows the indicator, and icon-only sizes have no label to keep, so
 there `inline` lets the indicator stand in for the children.
 
@@ -1087,7 +1148,7 @@ same `keepMounted`, same four props, same comment.
 
 They had already drifted once: `dropdown-menu.tsx` carried
 `[--switch-press-squash:0px]` and the other two did not. That is now fixed
-upstream and fixed *well* — `squash` is a real variant on `switchVariants`, and
+upstream and fixed _well_ — `squash` is a real variant on `switchVariants`, and
 `SwitchVisual` defaults it to `false`, which is correct for every host where the
 row owns the press. So the specific bug is gone; the duplication that produced it
 is not.
@@ -1121,7 +1182,7 @@ back.
   gone:
 
   - `auditBaselineLabels`: 0 mislabeled of 13,247 baseline rows, `complete:
-    true` — that half had already been repaired by the earlier one-shot, so
+true` — that half had already been repaired by the earlier one-shot, so
     `repairBaselineLabels` patched nothing.
   - `auditBaselineDescriptionClaims`: 794 found of the same 13,247,
     `scanComplete: true`, newest offending row 2026-08-12 21:52 UTC.
@@ -1145,8 +1206,8 @@ back.
   considered and declined, Aug 2026. Recorded so a re-run of the review does not
   re-propose them.
 
-  *Collapse `openWithDiff` and `changeRange` in `components/skill-history-row.tsx`
-  into one helper.* Fair when written, stale by the time it was weighed. The
+  _Collapse `openWithDiff` and `changeRange` in `components/skill-history-row.tsx`
+  into one helper._ Fair when written, stale by the time it was weighed. The
   review saw two busy booleans, a cached fast path with its own rules, `warm`,
   `warmSoon`, a debounce timer, and a stale-guard token on only one of the two
   paths. Replacing hover prefetching with a click-time busy floor deleted most of
@@ -1163,8 +1224,8 @@ back.
   The behaviour is covered either way — `e2e/skill-history.spec.ts`, mutation-
   tested — so this is a taste call with a net under it, not a risk being carried.
 
-  *Extract a shared listing shell across `/[org]`, `/[org]/[repo]` and
-  `/site/[source]`.* The two things that could drift silently are already fixed:
+  _Extract a shared listing shell across `/[org]`, `/[org]/[repo]` and
+  `/site/[source]`._ The two things that could drift silently are already fixed:
   all four copies of the row-corner logic call `rowPositionClassName`, and the
   title scale lives in `lib/listing-styles.ts` so a skeleton cannot fall out of
   step with the `<h1>` it stands in for. What is left is duplication with no known

@@ -128,7 +128,7 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
       <div>
         <CompareLegend series={series} />
         <CompareTrendGhost />
-        <p className="mt-3 text-xs text-pretty text-muted-foreground">
+        <p className="mt-3 text-xs text-muted-foreground">
           Not enough history yet. Installs are recorded daily, and the
           comparison fills in as the trend builds.
         </p>

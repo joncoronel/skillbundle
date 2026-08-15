@@ -670,7 +670,7 @@ function DescriptionChange({
         <dt className="mb-1 text-xs font-medium text-muted-foreground">
           Description before
         </dt>
-        <dd className="text-sm text-pretty text-muted-foreground">
+        <dd className="text-sm text-muted-foreground">
           {version.descriptionBefore || <em>None</em>}
         </dd>
       </div>
@@ -678,7 +678,7 @@ function DescriptionChange({
         <dt className="mb-1 text-xs font-medium text-muted-foreground">
           Description after
         </dt>
-        <dd className="text-sm text-pretty">
+        <dd className="text-sm">
           {version.descriptionAfter || <em>None</em>}
         </dd>
       </div>

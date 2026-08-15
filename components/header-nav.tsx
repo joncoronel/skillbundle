@@ -1,123 +1,92 @@
 "use client";
 
-import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button } from "@/components/ui/cubby-ui/button";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  DashboardSquare01Icon,
-  Tag01Icon,
-  CheckmarkCircle02Icon,
-  PlusSignCircleIcon,
-} from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 
-// `usePathname()` suspends while the App Shell for a dynamic-param route is
-// generated (the pathname isn't known yet). Read it behind a <Suspense> so the
-// nav still prerenders into the static shell; the fallback renders the same
-// links with no active state, which is correct for any route that isn't itself
-// a top-level nav target.
-export function DesktopNav() {
-  return (
-    <Suspense fallback={<NavLinks activeHref={null} />}>
-      <ActiveNavLinks />
-    </Suspense>
-  );
-}
+/**
+ * One list, read by the horizontal nav here and by the expanding mobile menu in
+ * header-pill.tsx. They used to be two hand-maintained arrays and had already
+ * drifted: the drawer carried a Compare link the desktop header never showed.
+ *
+ * `menuOnly` preserves that difference rather than quietly resolving it, since
+ * which links belong in the header is a product call and not a styling one —
+ * but it now lives in one place where the asymmetry is visible and deliberate
+ * instead of being an accident of two lists nobody diffed.
+ */
+export const NAV_ITEMS = [
+  { href: "/official", label: "Official" },
+  { href: "/compare", label: "Compare", menuOnly: true },
+  { href: "/add", label: "Add skill" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/pricing", label: "Pricing" },
+] as const satisfies readonly {
+  href: string;
+  label: string;
+  menuOnly?: boolean;
+}[];
 
-function ActiveNavLinks() {
+// `usePathname()` suspends while the App Shell for a dynamic-param route is
+// generated (the pathname isn't known yet). The <Suspense> that makes this safe
+// lives in header-pill.tsx, next to the fallback it needs.
+export function ActiveNavLinks() {
   return <NavLinks activeHref={usePathname()} />;
 }
 
-function NavLinks({ activeHref }: { activeHref: string | null }) {
+/**
+ * Also that boundary's fallback, with `activeHref={null}`. The routes that
+ * suspend are `/[org]`, `/[org]/[repo]` and `/site/[source]` — none a nav target
+ * — so "nothing active" is the right answer, not a degraded guess, and the
+ * prerendered HTML ships prefetchable links instead of placeholder boxes.
+ */
+export function NavLinks({ activeHref }: { activeHref: string | null }) {
   return (
-    <nav className="max-sm:hidden flex items-center gap-1">
-      <NavLink
-        href="/official"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon
-            icon={CheckmarkCircle02Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        }
-      >
-        Official
-      </NavLink>
-      <NavLink
-        href="/add"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon
-            icon={PlusSignCircleIcon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        }
-      >
-        Add skill
-      </NavLink>
-      <NavLink
-        href="/dashboard"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon
-            icon={DashboardSquare01Icon}
-            strokeWidth={2}
-            className="size-4"
-          />
-        }
-      >
-        Dashboard
-      </NavLink>
-      <NavLink
-        href="/pricing"
-        activeHref={activeHref}
-        icon={
-          <HugeiconsIcon icon={Tag01Icon} strokeWidth={2} className="size-4" />
-        }
-      >
-        Pricing
-      </NavLink>
+    <nav aria-label="Main" className="flex items-center gap-0.5 max-md:hidden">
+      {NAV_ITEMS.filter((item) => !("menuOnly" in item && item.menuOnly)).map(
+        (item) => (
+          <NavLink key={item.href} href={item.href} activeHref={activeHref}>
+            {item.label}
+          </NavLink>
+        ),
+      )}
     </nav>
   );
 }
 
+/**
+ * Nothing here fills. Hover and the current page are both carried by label
+ * colour alone — resting at `muted-foreground`, lifting to `foreground`. The
+ * current page had a tinted fill and lost it deliberately: on a pill this small
+ * a filled chip is heavier than the state deserves.
+ *
+ * The cost is that a hovered link looks like the current one while the cursor
+ * sits there. Accepted, not overlooked: the pointer resolves the ambiguity, and
+ * `aria-current` carries the fact for anything not looking at colour.
+ */
 function NavLink({
   href,
   children,
-  icon,
   activeHref,
 }: {
   href: string;
   children: React.ReactNode;
-  icon?: React.ReactNode;
   activeHref: string | null;
 }) {
   const isActive = activeHref === href;
 
   return (
-    <Button
-      nativeButton={false}
-      variant="ghost"
-      size="sm"
-      render={<Link href={href} aria-current={isActive ? "page" : undefined} />}
-      // The active fill goes through Button's own paint token, not a `bg-*`
-      // class. Button paints on a ::before pseudo above the root's background,
-      // so a `bg-*` here sits underneath and ghost's hover composites on top
-      // of it instead of replacing it — two overlays stacking to a darkness
-      // neither one names. On --btn-bg it shares a layer with the hover paint,
-      // so ghost's --btn-bg-hover overwrites it, which is how a plain
-      // `background-color` behaved before the paint moved to the pseudo.
+    <Link
+      href={href}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
-        "gap-1.5",
-        isActive && "text-foreground [--btn-bg:var(--surface-selected)]",
+        "rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 ease-out",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
+        isActive
+          ? "text-foreground"
+          : "text-muted-foreground hover:text-foreground",
       )}
-      leadingIcon={icon}
     >
       {children}
-    </Button>
+    </Link>
   );
 }

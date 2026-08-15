@@ -208,7 +208,7 @@ function EmptyState({ onOpenPicker }: { onOpenPicker: () => void }) {
     <div className="relative overflow-hidden rounded-xl bg-muted/40">
       <DotMatrix />
       <div className="relative px-6 py-16 md:px-12 md:py-24">
-        <h2 className="font-display text-4xl font-medium tracking-tight leading-hero text-balance md:text-5xl">
+        <h2 className="font-display text-4xl font-medium tracking-tight leading-hero md:text-5xl">
           Nothing to compare yet.
         </h2>
         <p className="mt-4 max-w-md text-sm text-muted-foreground">
@@ -586,7 +586,7 @@ function CompareColumn({
           {/* h3: the column's own skill name is the h2 above these. */}
           {skill.description && (
             <LabeledSection label="Overview" as="h3">
-              <p className="text-sm leading-relaxed text-pretty text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {skill.description}
               </p>
             </LabeledSection>

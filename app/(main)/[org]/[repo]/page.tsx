@@ -116,7 +116,7 @@ async function RepoHeader({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1 className={cn(LISTING_TITLE_SCALE, "font-medium tracking-tight text-balance mb-6")}>
+      <h1 className={cn(LISTING_TITLE_SCALE, "font-medium tracking-tight mb-6")}>
         <span className="text-muted-foreground/70">{org}/</span>
         <wbr />
         <span>{repo}</span>

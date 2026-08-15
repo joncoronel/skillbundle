@@ -7,7 +7,7 @@ export function DashboardEmpty() {
     <div className="relative overflow-hidden rounded-xl bg-muted/40">
       <DotMatrix />
       <div className="relative px-6 py-16 md:px-12 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight text-balance">
+        <h2 className="text-2xl font-semibold tracking-tight">
           Start with a stack.
         </h2>
         <p className="mt-4 max-w-md text-sm text-muted-foreground">

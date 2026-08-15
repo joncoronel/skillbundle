@@ -14,8 +14,10 @@ html {
 
 @theme inline {
   /* Fonts */
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-sn-pro);
   --font-mono: var(--font-geist-mono);
+  /* Circle is a separate static face in the `geist` package, so the shape is
+     picked by the variable name — no axis to set. See app/layout.tsx. */
   --font-display: var(--font-geist-pixel-circle);
 
   /* Typography — the one step below text-xs, for pills and dense chips.
@@ -43,6 +45,13 @@ html {
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  /* Only the fill gets a utility. Four of the rest reach controls through
+     `[data-surface="chrome"]` (the rule near the end of this file), which is
+     deliberately the ONE way to paint on that surface — a `bg-chrome-hover`
+     utility beside it would be a second idiom for the same job, which is what
+     the contract exists to remove. The two edge tokens aren't in that rule at
+     all; the pill consumes them directly in its `shadow-[…]`. */
+  --color-chrome: var(--chrome);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-input-elevated: var(--input-elevated);
@@ -76,6 +85,9 @@ html {
   --radius-2xl: calc(var(--radius) + 4px);
   --radius-3xl: calc(var(--radius) + 6px);
   --radius-4xl: calc(var(--radius) + 8px);
+  /* 24px, off the 2px cadence — exists only so the header's corner stays
+     derived from `--radius` instead of hardcoded (DESIGN.md §6). */
+  --radius-5xl: calc(var(--radius) + 12px);
   --ease-in-cubic: cubic-bezier(0.55, 0.055, 0.675, 0.19);
   --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
   --ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
@@ -208,7 +220,9 @@ html {
   --primary: oklch(0.6 0.2 250);
   --primary-foreground: oklch(1 0 0);
   --primary-soft-foreground: var(--primary);
-  --neutral: oklch(0.22 0 0);
+  /* Carries chroma unlike the other light fills: at L 0.2 a pure-neutral
+     black beside `--foreground`'s faintly cool one reads as two blacks. */
+  --neutral: oklch(0.2 var(--neutral-chroma) var(--neutral-hue));
   --neutral-foreground: oklch(
     0.98 var(--neutral-chroma-low) var(--neutral-hue)
   );
@@ -223,6 +237,46 @@ html {
     0.98 var(--neutral-chroma-low) var(--neutral-hue)
   );
   --destructive-soft-foreground: var(--destructive);
+
+  /* ── Chrome surface ──────────────────────────────────────────────────────
+     The one container NOT on the page's surface ladder (the header pill), and
+     near-black in both themes. NOT "inverse": a white pill in dark was built and
+     measured at 97x the page's luminance, in chrome you can't scroll away.
+
+     Light borrows `--neutral` so the pill and the solid-dark Button are one
+     black — retuning it moves both. Don't swap in `--foreground`, which is
+     darker than anything else in the app.
+
+     Seven tokens. Four are set per theme — `--chrome`, `--chrome-foreground`,
+     and the two edge tokens below. The other three are declared here only and
+     still recompute, because `var()` resolves on the element and `:root`/`.dark`
+     are both `<html>`. */
+  --chrome: var(--neutral);
+  --chrome-foreground: var(--neutral-foreground);
+  --chrome-muted-foreground: color-mix(
+    in oklab,
+    var(--chrome-foreground) 71%,
+    var(--chrome)
+  );
+  --chrome-hover: color-mix(
+    in oklab,
+    var(--chrome-foreground) 10%,
+    transparent
+  );
+  --chrome-border: color-mix(
+    in oklab,
+    var(--chrome-foreground) 12%,
+    transparent
+  );
+  /* The pill's outer hairline and inner top highlight. BOX-SHADOW values, not
+     colours — unlike every other `--chrome-*` token, and unlike
+     `--chrome-border` four lines up. Writing a bare colour into either one
+     silently voids the pill's whole `box-shadow`, in both themes, because an
+     invalid layer invalidates the entire declaration. No-ops in light, where the
+     224-unit fill/page step is already the edge; see `.dark`. */
+  --chrome-hairline: 0 0 transparent;
+  --chrome-rim: 0 0 transparent;
+
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
   --neutral-hover: color-mix(in oklch, var(--neutral), white 10%);
   --destructive-hover: color-mix(in oklch, var(--destructive), black 5%);
@@ -368,6 +422,45 @@ html {
   --secondary-foreground: oklch(0.94 var(--neutral-chroma) var(--neutral-hue));
   --muted: oklch(0.24 var(--neutral-chroma) var(--neutral-hue));
   --muted-foreground: oklch(0.73 var(--neutral-chroma) var(--neutral-hue));
+
+  /* BELOW the page (rgb 22 → 12), the only direction dark leaves open: up is
+     where every card lives, so a lifted pill read as one more card. Light's
+     value is unusable here — `--neutral` is rgb(21,22,24) and the dark page is
+     rgb(22,23,25), the same colour — so this is where the themes stop sharing a
+     chain. Only `--neutral`'s chroma and hue carry over; its lightness inverts
+     to near-white for the Button. */
+  --chrome: oklch(0.159 var(--neutral-chroma) var(--neutral-hue));
+  --chrome-foreground: var(--foreground);
+  /* The whole edge, since the pill carries no drop shadow at all in dark
+     (`--surface-shadow-1` is transparent here — see DESIGN.md §5).
+
+     `--chrome-rim` is the top-edge specular: the ladder's light source is above
+     (every rim is `inset 0 1px 0 0`), and a dark object lit from above catches
+     its top edge. Without it the pill reads as a hole punched in the page rather
+     than an object on it. `--chrome-hairline` is the outer boundary.
+
+     Neither comes from the ladder, for one shared reason: `--surface-rim-*` and
+     the ring baked into `--surface-shadow-*` both assume a fill LIGHTER than the
+     page. This fill is darker, so the ladder's ring lands lighter than the very
+     fill it is meant to define and the boundary blurs instead of sharpening.
+
+     What these produce instead, at page 22 / fill 12:
+
+       top  22 → 6 → 28 → 12     left 22 → 6 → 12
+
+     That row is measurable from the running app and is the only one kept here.
+     A comparison row against a ladder level was tried three times and drifted
+     three times — it depends on the fill, the level AND what is behind the pill
+     (the drop layers composite over the header scrim, so a standalone box gives
+     different numbers), which is more environment than a comment can pin.
+     Re-derive it in a browser if you need it; don't record it.
+
+     The hairline stays FIRST in the pill's shadow list
+     so a deeper `--surface-shadow-N`, which bakes its own ring in as an
+     so a deeper `--surface-shadow-N`, which bakes its own ring in as an
+     unre-pointable literal, could be swapped back in. */
+  --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.065);
+  --chrome-hairline: 0 0 0 1px oklch(0 0 0 / 0.7);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);
@@ -526,6 +619,58 @@ html {
   --surface-active: oklch(1 0 0 / 0.08);
 }
 
+/* The reading measure (DESIGN.md §3), registered so it resolves ONCE.
+ *
+ * `ch` resolves against each element's own font, so `max-w-[74ch]` per block
+ * gives a document as many right edges as it has type sizes. `syntax: "<length>"`
+ * makes the browser compute it at the declaring element and inherit the result,
+ * so one declaration on the wrapper governs every block. The big initial value
+ * is a no-op, so a stray `var()` outside a wrapper can't zero an element. */
+@property --doc-measure {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 9999px;
+}
+
+/* Hands the chrome palette to everything inside, so controls keep using ordinary
+ * page classes instead of being repainted one at a time. Reaches anything that
+ * paints from a TOKEN, because `@theme inline` compiles those to the raw name —
+ * which is why this is a cascade rule rather than `chrome` variants added to the
+ * vendored recipes: nothing local for a `shadcn add` to clobber.
+ *
+ * `--primary` stays put (Sign up keeps its brand colour). Portalled menus render
+ * at the body and correctly don't inherit. */
+[data-surface="chrome"] {
+  --foreground: var(--chrome-foreground);
+  --muted-foreground: var(--chrome-muted-foreground);
+  --border: var(--chrome-border);
+
+  /* Every wash on this surface is the same 10% of the foreground: there is no
+     separate hover/active/fill step on an object this small. */
+  --muted: var(--chrome-hover);
+  --accent: var(--chrome-hover);
+  --surface-hover: var(--chrome-hover);
+  --surface-active: var(--chrome-hover);
+}
+
+/* The one paint the rule above cannot reach: Skeleton's shimmer is a literal in
+ * an arbitrary `bg-[linear-gradient(...)]`, not a token lookup. Its light default
+ * is tuned for a pale page and peaks at rgb 202 on this near-black fill — a white
+ * flash on the auth placeholder every page load. The `inverted` prop is not the
+ * fix (36 in light, invisible; 8 in dark, a dark pulse): the pill is a dark
+ * substrate in BOTH themes, so it wants dark's 15% in both. Lands at 75 / 68.
+ *
+ * Unlayered so it beats the utility without `!important`, and scoped to
+ * `.skeleton-shimmer` so an `animate={false}` skeleton keeps no background. */
+[data-surface="chrome"] [data-slot="skeleton"].skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 25%,
+    oklch(1 0 0 / 15%) 50%,
+    transparent 60%
+  );
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
@@ -536,6 +681,17 @@ html {
     background-color: var(--color-background);
     color: var(--color-foreground);
     position: relative;
+  }
+
+  /* Replaces 37 hand-applied `text-balance`/`text-pretty` classes, which new
+     headings kept being written without. `:where()` keeps specificity at zero so
+     a utility class still overrides. `code`/`pre` and table cells are excluded
+     on purpose — the first don't wrap, the second fight computed column widths. */
+  :where(h1, h2, h3, h4, h5, h6) {
+    text-wrap: balance;
+  }
+  :where(p, li, dd, blockquote, figcaption) {
+    text-wrap: pretty;
   }
   .root {
     isolation: isolate;

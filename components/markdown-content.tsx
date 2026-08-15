@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { isValidElement, useMemo } from "react";
 import { Streamdown, defaultRehypePlugins } from "streamdown";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { harden } from "rehype-harden";
 import type { BundledLanguage } from "shiki/langs";
 import {
@@ -15,6 +15,8 @@ import {
   codeKey,
   type PreHighlightedCode,
 } from "@/lib/highlight-markdown-code";
+import { rawToBlobUrl } from "@/lib/github-urls";
+import { docHeadingId } from "@/lib/markdown-outline";
 import { cn } from "@/lib/utils";
 
 type StreamdownComponents = NonNullable<
@@ -31,6 +33,34 @@ interface MarkdownContentProps {
    */
   baseUrl?: string | null;
   /**
+   * Give headings stable `doc-*` ids so the skill page's section nav can link
+   * into the document.
+   *
+   * Off by default, and it must stay off wherever more than one document can be
+   * on screen at once: /compare renders two or three SKILL.mds side by side, and
+   * two skills sharing a `## Usage` heading would then emit a duplicate id.
+   */
+  headingIds?: boolean;
+  /**
+   * Cap running text at a readable measure while code blocks and tables keep
+   * the container's full width.
+   *
+   * Only useful in a wide container — the skill page's document column is
+   * 808px, where uncapped prose measures 93ch against DESIGN.md §3's 65–75ch.
+   * A no-op in a narrow column, but left opt-in so the intent is visible at
+   * the call site.
+   *
+   * The cap is 74ch, the TOP of that range rather than the middle, and the
+   * reason is the column it sits in. At 68ch the text ran 653px inside 808px,
+   * so on a skill with no code blocks or tables — common — the entire document
+   * was 155px narrower than the section rules above it and read as inset from
+   * its own headers. 74ch is 710px and closes most of that while staying inside
+   * the range. The skill page's description carries the same number for the
+   * same reason: it is 16px prose in the same column, so a different value
+   * would put two paragraphs on two right edges.
+   */
+  measured?: boolean;
+  /**
    * The surface this content is painted on. `"field"` (default) is the page's
    * recessed background, where the code block's canonical two-layer frame (a
    * white card lifted off a gray tray) reads correctly. `"card"` is a raised
@@ -43,18 +73,8 @@ interface MarkdownContentProps {
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|avif)(?:\?|#|$)/i;
 
-// Handles both raw URL shapes GitHub serves:
-//   raw.githubusercontent.com/{owner}/{repo}/refs/heads/{ref}/{path}
-//   raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}
-const RAW_GITHUB_URL_RE =
-  /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/(?:refs\/(?:heads|tags)\/)?([^/]+)\//;
-
 const DANGEROUS_PROTOCOL_RE = /^\s*(?:javascript|vbscript|file):/i;
 const DATA_IMAGE_RE = /^\s*data:image\//i;
-
-function rawToBlobUrl(raw: string): string {
-  return raw.replace(RAW_GITHUB_URL_RE, "https://github.com/$1/$2/blob/$3/");
-}
 
 // Belt-and-suspenders: defaultRehypePlugins.sanitize is also load-bearing for
 // HTML-level XSS, but linkSafety is disabled and harden's allowedProtocols is
@@ -112,7 +132,7 @@ const TableHeadOverride: StreamdownComponents["thead"] = ({ children }) => (
 
 const TableThOverride: StreamdownComponents["th"] = ({ children, style }) => (
   <th
-    className="px-4 py-2.5 align-middle font-semibold text-foreground whitespace-nowrap"
+    className="px-4 py-2.5 align-middle font-semibold whitespace-nowrap text-foreground"
     style={style}
   >
     {children}
@@ -121,11 +141,68 @@ const TableThOverride: StreamdownComponents["th"] = ({ children, style }) => (
 
 const TableTdOverride: StreamdownComponents["td"] = ({ children, style }) => (
   <td
-    className="px-4 py-3 align-top text-foreground wrap-break-word"
+    className="px-4 py-3 align-top wrap-break-word text-foreground"
     style={style}
   >
     {children}
   </td>
+);
+
+/**
+ * Images, unwrapped.
+ *
+ * Streamdown's own renderer wraps every image in a `<div>` (its
+ * `data-streamdown="image-wrapper"`) to host a hover overlay and a download
+ * button. Markdown always puts an image inside a paragraph — `![a](b)` alone on
+ * a line IS a paragraph containing an image, and `[![a](b)](url)` nests it under
+ * a link as well — so that wrapper lands as a `<div>` inside a `<p>`, which is
+ * invalid HTML. The browser recovers by closing the `<p>` early, the server
+ * markup then disagrees with React's tree, and hydration fails: the whole
+ * document is thrown away and re-rendered on the client.
+ *
+ * A bare `img` element is phrasing content, legal exactly where markdown puts
+ * it. The cost is the download button, which on a read-only render of someone
+ * else's README is worth less than a document that hydrates — the image's own
+ * URL is a right-click away, and the section header links to the source file.
+ *
+ * Margins are explicit rather than inherited from prose, because prose's `img`
+ * rule and the old wrapper's `my-4` disagreed about the value. They do apply
+ * despite the element being inline: an image is a replaced element.
+ *
+ * A raw element and not `next/image`, which is what the lint disable below is
+ * for: these are remote images of unknown dimensions, from whatever domain a
+ * skill's author chose, and `next/image` needs configured hostnames. `loading`
+ * and `decoding` recover most of what it would have given us here, on a
+ * document that can carry dozens of screenshots.
+ */
+const ImageOverride: StreamdownComponents["img"] = ({
+  src,
+  // Defaulted to empty, which is the correct reading of `![](src)` — the author
+  // supplied no description, so the image is decorative and a screen reader
+  // should skip it. Omitting the attribute instead makes them fall back to
+  // announcing the URL.
+  alt = "",
+  title,
+  // Markdown cannot set these, but `rehype-raw` is on, so an author writing a
+  // literal <img> tag reaches this component too.
+  width,
+  height,
+  className,
+}) => (
+  // Named props rather than a spread, matching the overrides above: the props
+  // react-markdown passes include its own `node` (the hast element), which has
+  // no business on a DOM node.
+  // eslint-disable-next-line @next/next/no-img-element
+  <img
+    src={src}
+    alt={alt}
+    title={title}
+    width={width}
+    height={height}
+    loading="lazy"
+    decoding="async"
+    className={cn("my-4 max-w-full rounded-lg", className)}
+  />
 );
 
 // Render blockquotes as a neutral callout panel instead of prose's left-stripe
@@ -141,40 +218,85 @@ const BlockquoteOverride: StreamdownComponents["blockquote"] = ({
   </blockquote>
 );
 
-// Demote SKILL.md headings by one level so the source's leading H1 doesn't
-// compete with the page's title H1. h6 stays at h6 since that's the deepest
-// HTML heading level.
-const H1Demoted: StreamdownComponents["h1"] = ({ children, className, id }) => (
-  <h2 className={className} id={id}>
-    {children}
-  </h2>
-);
-const H2Demoted: StreamdownComponents["h2"] = ({ children, className, id }) => (
-  <h3 className={className} id={id}>
-    {children}
-  </h3>
-);
-const H3Demoted: StreamdownComponents["h3"] = ({ children, className, id }) => (
-  <h4 className={className} id={id}>
-    {children}
-  </h4>
-);
-const H4Demoted: StreamdownComponents["h4"] = ({ children, className, id }) => (
-  <h5 className={className} id={id}>
-    {children}
-  </h5>
-);
-const H5Demoted: StreamdownComponents["h5"] = ({ children, className, id }) => (
-  <h6 className={className} id={id}>
-    {children}
-  </h6>
-);
+/**
+ * Flatten a heading's rendered children to plain text, so its id can be derived
+ * from the same string a reader sees. Headings routinely carry inline code,
+ * emphasis, or a link, none of which reach us as a bare string.
+ */
+function childrenToText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(childrenToText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return childrenToText(node.props.children);
+  }
+  return "";
+}
+
+/**
+ * Demote SKILL.md headings by one level so the source's leading H1 doesn't
+ * compete with the page's title H1. h6 stays at h6, the deepest HTML level.
+ *
+ * When `withIds` is set the heading also gets the `doc-*` id the section nav
+ * links to, computed by the same pure slug rule that built the nav (see
+ * lib/markdown-outline.ts), plus `tabIndex={-1}` so a jump moves focus and the
+ * screen-reader cursor with it rather than leaving both at the link.
+ */
+function demotedHeadings(
+  withIds: boolean,
+): Pick<StreamdownComponents, "h1" | "h2" | "h3" | "h4" | "h5"> {
+  function make(
+    Tag: "h2" | "h3" | "h4" | "h5" | "h6",
+  ): StreamdownComponents["h1"] {
+    function DemotedHeading({
+      children,
+      className,
+      id,
+    }: {
+      children?: ReactNode;
+      className?: string;
+      id?: string;
+    }) {
+      // The derived id WINS over an author-supplied one when `withIds` is set.
+      // `rehype-raw` is on and `id` survives sanitize, so a SKILL.md writing
+      // <h1 id="history"> used to supply it directly and skip `docHeadingId`
+      // entirely — breaking the "every doc heading carries the doc- prefix"
+      // invariant the nav is built on. Not a collision risk (sanitize rewrites
+      // author ids to `user-content-*`), but it did leave the rail pointing at
+      // an id no element had.
+      const anchorId = withIds
+        ? (docHeadingId(childrenToText(children)) ?? id)
+        : id;
+      return (
+        <Tag
+          className={className}
+          id={anchorId}
+          {...(withIds && anchorId ? { tabIndex: -1 } : {})}
+        >
+          {children}
+        </Tag>
+      );
+    }
+    DemotedHeading.displayName = `Demoted(${Tag})`;
+    return DemotedHeading;
+  }
+
+  return {
+    h1: make("h2"),
+    h2: make("h3"),
+    h3: make("h4"),
+    h4: make("h5"),
+    h5: make("h6"),
+  };
+}
 
 export function MarkdownContent({
   children,
   preHighlighted,
   baseUrl,
   surface = "field",
+  headingIds = false,
+  measured = false,
 }: MarkdownContentProps) {
   const rehypePlugins = useMemo<
     ComponentProps<typeof Streamdown>["rehypePlugins"]
@@ -289,17 +411,14 @@ export function MarkdownContent({
       code: CodeOverride,
       pre: PreOverride,
       blockquote: BlockquoteOverride,
+      img: ImageOverride,
       table: TableOverride,
       thead: TableHeadOverride,
       th: TableThOverride,
       td: TableTdOverride,
-      h1: H1Demoted,
-      h2: H2Demoted,
-      h3: H3Demoted,
-      h4: H4Demoted,
-      h5: H5Demoted,
+      ...demotedHeadings(headingIds),
     };
-  }, [preHighlighted, surface]);
+  }, [preHighlighted, surface, headingIds]);
 
   return (
     <div
@@ -307,12 +426,51 @@ export function MarkdownContent({
         // Base (16px / 1.75) rather than prose-sm: this is a long-form reading
         // surface, so it earns a larger measure than the app's dense 14px UI.
         // Section headings land at 24/20px for a clear, scannable hierarchy.
-        "prose dark:prose-invert max-w-none",
+        "prose max-w-none dark:prose-invert",
         // Headings: 600 weight + tight tracking (per the display/headline
         // spec), and drop the first block's top margin so it sits flush under
         // the "Documentation" label.
         "prose-headings:font-semibold prose-headings:tracking-tight",
         "*:first:mt-0",
+        // Headings are anchor targets when `headingIds` is on: clear the sticky
+        // header on a jump, and stay silent about the programmatic focus (a
+        // heading is a landing point, not a control, so it takes no ring).
+        headingIds && "prose-headings:scroll-mt-24 prose-headings:outline-none",
+        // Two widths, and the split is by KIND: what you READ line by line takes
+        // the measure, what you SCAN as a block keeps the container's full
+        // width. Prose, lists and headings are the first; code blocks, tables,
+        // callouts and images are the second.
+        //
+        // The blockquote is the one worth stating, because its CONTENT is prose
+        // and the temptation is to measure it. It renders as a bordered, tinted
+        // callout — a framed object — and a framed object narrower than the code
+        // block above it reads as a mistake rather than as a measure. Its own
+        // frame is what tells the reader it is a different sort of thing, and
+        // that only works if the frame lands where the other frames do.
+        //
+        // Images are exempted through their PARAGRAPH, not through the image:
+        // markdown wraps every image in one (`![a](b)` alone on a line is a
+        // paragraph containing an image), so an image inherits the paragraph
+        // cap unless the paragraph opts out. `:has()` asks the real question —
+        // is this paragraph running text, or is it just an image? — and the
+        // second selector covers `[![a](b)](url)`, the linked form. Both
+        // out-specify the plain `p` rule, so order here does not matter.
+        //
+        // `hr` IS measured, against the rule above, and it is the one exception:
+        // an author's `---` running the column's full width drew a rule
+        // indistinguishable from the page's own section rules (SkillSection's
+        // `border-t`), so a break inside the document read as a break BETWEEN
+        // documents.
+        //
+        // Every cap is the same custom property rather than a repeated `74ch`,
+        // because `ch` resolves per element — see the @property block in
+        // globals.css for why that produced four different right edges.
+        //
+        // `>*>` and not `>`: Streamdown renders its own wrapper div inside this
+        // one, so a direct-child selector here matches that wrapper and nothing
+        // else. The top-level blocks are its grandchildren.
+        measured &&
+          "[--doc-measure:74ch] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>p:has(>a>img)]:max-w-none [&>*>p:has(>img)]:max-w-none [&>*>ul]:max-w-[var(--doc-measure)]",
         // Links use the single signal accent, underlined for affordance.
         "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
         // Align prose colors with the app's semantic tokens instead of
@@ -339,7 +497,7 @@ export function MarkdownContent({
         controls={false}
         linkSafety={{ enabled: false }}
         urlTransform={transformUrl}
-        className="prose-code:before:content-none prose-code:after:content-none prose-headings:text-balance prose-p:text-pretty"
+        className="prose-code:before:content-none prose-code:after:content-none"
         components={components}
       >
         {children}

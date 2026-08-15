@@ -1,4 +1,4 @@
-import { LabeledSection } from "@/components/labeled-section";
+import { SkillSection } from "@/components/skill-section";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
 
 /**
@@ -35,7 +35,20 @@ export function SkillHistory({
   className?: string;
 }) {
   return (
-    <LabeledSection label="History" className={className} id="history">
+    <SkillSection
+      id="history"
+      title="History"
+      className={className}
+      // Says out loud whose record this is. A reader landing mid-page had no
+      // way to tell this timeline apart from something the skill's author
+      // wrote — it is the one section on the page that exists only because
+      // SkillBundle watches the file.
+      description="Edits SkillBundle has recorded to this file since it entered the catalog. Not written by the skill's author."
+      meta={
+        versions.length > 0 &&
+        `${versions.length} ${versions.length === 1 ? "change" : "changes"}`
+      }
+    >
       {versions.length === 0 ? (
         <EmptyHistory />
       ) : (
@@ -60,13 +73,13 @@ export function SkillHistory({
           ))}
         </ol>
       )}
-    </LabeledSection>
+    </SkillSection>
   );
 }
 
 function EmptyHistory() {
   return (
-    <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+    <p className="max-w-prose text-sm text-muted-foreground">
       No changes recorded yet. SkillBundle began tracking edits to skill files in
       August 2026, so a skill that hasn&apos;t changed since then has nothing
       here.

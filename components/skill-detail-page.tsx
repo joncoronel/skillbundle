@@ -1,21 +1,24 @@
 import "server-only";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense, type ReactNode } from "react";
+import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { GitCompareIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
-import { LabeledSection } from "@/components/labeled-section";
-import { MarkdownContent } from "@/components/markdown-content";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
-import { formatDate } from "@/lib/utils";
-import { SkillSidebar } from "@/components/skill-sidebar";
+import { cn, formatDate } from "@/lib/utils";
+import { extractOutline, normalizeOutline } from "@/lib/markdown-outline";
+import { RECORD_SURFACE } from "@/components/skill-record";
+import { SkillSidebar, SkillSidebarShell } from "@/components/skill-sidebar";
+import { SkillSection } from "@/components/skill-section";
+import type { SectionNavItem } from "@/components/skill-section-nav";
+import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
 import { SkillHistory } from "@/components/skill-history";
@@ -191,6 +194,28 @@ async function highlightSkillContent(content: string) {
   return highlightMarkdownCode(content);
 }
 
+/**
+ * The two-column geometry, as variables because the masthead's right padding
+ * and the grid's second column have to be the same number and are set on
+ * different elements.
+ *
+ * Applied to BOTH page containers and to the skeleton's own grid, which is the
+ * fix for a real bug rather than belt and braces: an undefined var inside
+ * `grid-cols-[minmax(0,1fr)_var(--skill-side)]` makes the whole declaration
+ * invalid at computed-value time, so `grid-template-columns` falls back to
+ * `none` and every child auto-places into one implicit column. The result is
+ * not a subtly wrong layout, it is the sidebar sitting on top of the document —
+ * and it only appeared in `loading.tsx`, whose container is a different element
+ * that never carried these.
+ *
+ * Keeping them on the skeleton's own root means it renders correctly wherever
+ * it is mounted, so the next component that reuses it cannot reintroduce this.
+ */
+const LAYOUT_VARS = {
+  "--skill-side": "17rem",
+  "--skill-gap": "2.5rem",
+} as CSSProperties;
+
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
@@ -212,29 +237,55 @@ export function SkillDetailPage({
   breadcrumb,
 }: SkillDetailPageProps) {
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
-      {breadcrumb}
+    // `max-w-6xl`, the app's default page width (DESIGN.md §4), with no special
+    // case. This page used to widen to 92rem at `xl` to afford a THIRD column,
+    // and that was a bad trade twice over: the layout only worked past ~1400px,
+    // and at 1280px — the exact width where the rail appeared — the document
+    // NARROWED from 824px to 704px, so the page got wider and the reading
+    // column got smaller. Folding the record into the rail's column (see
+    // SkillSidebar) removed the reason for the third column, and with it the
+    // reason to depart from the app's width. The document is now 808px flat
+    // from 1152px up, and the rail arrives at `lg` instead of `xl` — every
+    // laptop under 1280px used to get no navigation at all through a 20,000px
+    // file.
+    // `<main>`, not a div: this branch wrapped the sidebar in `<aside>` and
+    // the rail in `<nav>`, so a screen-reader user got banner / navigation /
+    // navigation / complementary around a 20,000px document that sat in no
+    // landmark at all. Every other route in this app already uses `<main>`.
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
+      {/* The masthead pads itself by exactly the sidebar column so the title
+          cannot run under the card — skill ids reach 40 characters and the h1
+          is the one block here with no measure of its own. It carries no
+          action: Compare used to sit at this row's right edge, and once the
+          layout dropped to two columns that edge stopped being anywhere. It
+          landed 300px right of a short title with the card starting just past
+          it, anchored to nothing. It lives with the other action on this skill
+          now, in the record card.
 
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <h1 className="font-display min-w-0 text-3xl font-medium tracking-tight text-balance">
+          Padding rather than a grid cell because the h1 lives OUTSIDE the
+          Suspense boundary (it is URL data, available on first paint) while
+          every grid child lives inside it. */}
+      <div className="lg:pr-[calc(var(--skill-side)_+_var(--skill-gap))]">
+        {breadcrumb}
+
+        {/* The body sans, not the Geist Pixel display face. Skill ids are long,
+            lowercase, hyphenated machine identifiers, and the pixel face
+            collapses into broken mono under ~40px (DESIGN.md §3, the Pixel
+            Floor Rule) — which is exactly what it was doing here at 30px.
+            Pushing the size up instead would wrap a 30-character id across
+            three lines on a phone. The display face stays on the hero moments
+            that run large enough to earn it.
+
+            `id`/`tabIndex` make the masthead the section nav's first target;
+            it lives in the static shell so the anchor resolves on first paint,
+            before the body streams in. */}
+        <h1
+          id="overview"
+          tabIndex={-1}
+          className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight outline-none sm:text-4xl"
+        >
           {skillId}
         </h1>
-        <Button
-          nativeButton={false}
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          render={<Link href={compareHref([{ source, skillId }])} />}
-          leadingIcon={
-            <HugeiconsIcon
-              icon={GitCompareIcon}
-              strokeWidth={2}
-              className="size-3.5"
-            />
-          }
-        >
-          Compare
-        </Button>
       </div>
 
       {/* Boundary sits around the Suspense, not inside it, so it covers the
@@ -254,7 +305,7 @@ export function SkillDetailPage({
           />
         </Suspense>
       </DataErrorBoundary>
-    </div>
+    </main>
   );
 }
 
@@ -293,208 +344,376 @@ async function SkillDetailBody({
   const updatedKind = skill.contentUpdatedAt ? "Updated" : "Added";
   const updatedDate = formatDate(skill.contentUpdatedAt ?? skill._creationTime);
 
+  const hasCopies = copies.aliases.length > 0 || copies.forks.length > 0;
+
+  // The section nav is assembled here, on the server, so the whole outline is
+  // in the prerendered HTML: the rail is part of the page's structure, not
+  // something that appears once JS lands. Page sections sit at level 0; the
+  // SKILL.md's own headings nest under Documentation at level 1+, which is what
+  // makes the nav readable as "these are our sections, and that last one is
+  // their file".
+  const navItems: SectionNavItem[] = [
+    { id: "overview", title: "Overview", level: 0 },
+    ...(hasCopies
+      ? [{ id: "copies", title: "Also available at", level: 0 }]
+      : []),
+    { id: "history", title: "History", level: 0 },
+    { id: "documentation", title: "Documentation", level: 0 },
+    ...(skill.content
+      ? normalizeOutline(extractOutline(skill.content)).map((heading) => ({
+          id: heading.id,
+          title: heading.title,
+          level: heading.level,
+        }))
+      : []),
+  ];
+
   return (
-    <>
-      {skill.isDelisted && (
-        <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
-          This skill is no longer listed on skills.sh
-        </div>
-      )}
-
-      {skill.hasContentFetchError && !skill.isDelisted && (
-        <div className="mb-4 rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
-          This skill&apos;s source file could not be loaded. The install command
-          may not work.
-        </div>
-      )}
-
-      {skill.isGitHubOnly && !skill.isDelisted && (
-        <div className="mb-4 rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
-          This skill is available only on GitHub, not through the skills.sh API.
-          Install counts and security audits stay unavailable until it&apos;s
-          listed on skills.sh.
-        </div>
-      )}
-
-      {copies.renamedTo && (
-        <div className="mb-4 rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
-          This repository was renamed. Live version:{" "}
-          <Link
-            href={skillHref(copies.renamedTo.source, copies.renamedTo.skillId)}
-            className="font-medium underline underline-offset-2 hover:no-underline"
-          >
-            {copies.renamedTo.source}/{copies.renamedTo.skillId}
-          </Link>
-        </div>
-      )}
-
-      {/* Two-column on desktop: the skill's own content (install, overview,
-          docs) in column 1, supplemental facts in a sticky sidebar in column 2.
-          DOM order is install → overview → sidebar → docs, so on mobile (grid
-          off) the sidebar stacks *above* the long doc rather than at the very
-          bottom. */}
-      <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start lg:gap-x-12">
-        <LabeledSection label="Install" className="lg:col-start-1">
-          <div className="group relative w-fit max-w-full rounded-xl bg-muted">
-            <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-              {installCommand}
-            </pre>
-            <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
-              <CopyButton
-                content={installCommand}
-                className="backdrop-blur-sm"
-              />
-            </div>
-          </div>
-        </LabeledSection>
-
-        {/* Mobile-only: the page's primary action sits right under the install
-            command, where the eye and thumb already are. On desktop the same
-            action lives at the top of the sidebar (below), so this is hidden
-            there to avoid duplicating it. */}
-        <div className="mt-6 lg:hidden">
-          <BundleToggleButton
-            source={source}
-            skillId={skillId}
-            name={skill.name}
-          />
-        </div>
-
+    // ONE grid for the whole body, not a masthead grid stacked on a content
+    // grid. That was the tempting version — facts beside the lead, then a full
+    // width run below — and it does not survive contact: two grids with
+    // different column counts put the description's left edge and the
+    // document's left edge on different x positions, and a page whose two main
+    // text blocks do not share a margin reads as a mistake no amount of
+    // spacing fixes. With one grid every left edge is the same line, and the
+    // sidebar simply runs alongside from the lead to the end of the document.
+    //
+    // The sidebar is what recovered the space this layout was wasting: a lead
+    // capped at a readable measure leaves roughly 45% of a 1152px page empty,
+    // and the facts had been laid across the full width underneath it instead
+    // of into the hole beside it.
+    //
+    // Two columns, one breakpoint, one sidebar — on the trailing side at every
+    // width it exists. It used to be two sidebars that swapped sides at `xl`,
+    // which meant the card jumped across the page on a resize and neither
+    // column was ever affordable.
+    //
+    // The sidebar belongs on the trailing side because of which of the rail's
+    // edges faces the document. Its entries indent rightward with heading
+    // depth, so on the left it turned a ragged column of line-ends toward the
+    // content and the gutter never resolved into a straight line. On the right
+    // the flush edge — every marker starting at the same x — is the one the
+    // reader sees against the text, and the depth indent runs away into the
+    // margin where raggedness costs nothing.
+    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
+      {/* The lead, the warnings that qualify it, and the command. */}
+      <div className="lg:col-start-1 lg:row-start-1">
         {skill.description && (
-          <LabeledSection label="Overview" className="mt-10 lg:col-start-1">
-            <p className="text-lg leading-relaxed text-pretty text-muted-foreground">
-              {skill.description}
-            </p>
-          </LabeledSection>
+          // The lead, at full contrast. PRODUCT.md is explicit that a skill's
+          // description is what decides when an agent invokes it, which makes
+          // it the single most decision-relevant sentence on the page — it
+          // stops being a muted caption under a heading and becomes the thing
+          // the masthead is built around. The old "Overview" section label goes
+          // with it: a heading that only ever introduced one sentence was a
+          // section in name only, and it was one of the three labels the reader
+          // could not tell apart.
+          // 16px, one step over the 14px UI body and no more. At 18px this was
+          // reading as a pull quote: a skill description is frequently a dense
+          // 200-word trigger list rather than a tagline, and set that large it
+          // filled the viewport before the reader reached anything else.
+          <p className="max-w-[74ch] text-base leading-relaxed text-foreground">
+            {skill.description}
+          </p>
         )}
 
-        <SkillCopies
-          aliases={copies.aliases}
-          forks={copies.forks}
-          className="mt-10 lg:col-start-1"
-        />
+        <div className="mt-6 space-y-3">
+          {skill.isDelisted && (
+            <div className="rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
+              This skill is no longer listed on skills.sh
+            </div>
+          )}
 
-        {/* Above Documentation, not below it. A SKILL.md runs to tens of KB, so
-            anything after it is effectively unreachable without deliberate
-            scrolling — and "has this changed recently?" is a question people
-            have BEFORE committing to reading the docs, not after. Collapsed it
-            is only a few rows, so it costs the reader almost nothing on the way
-            past. Sits with the other supplemental sections rather than
-            interrupting the Overview → Documentation run. */}
-        <SkillHistory versions={versions} className="mt-10 lg:col-start-1" />
+          {skill.hasContentFetchError && !skill.isDelisted && (
+            <div className="rounded-lg border border-warning-border bg-warning px-4 py-3 text-sm text-warning-foreground">
+              This skill&apos;s source file could not be loaded. The install
+              command may not work.
+            </div>
+          )}
 
-        {/* Spans all rows of column 2 (`grid-row: 1 / span 99`) so it never
-            forces a column-1 row to its own height — placing it in just row 1
-            would inflate the Install row to the sidebar's height. self-start +
-            sticky keep it pinned at the top while the docs scroll. */}
-        <aside className="mt-10 lg:col-start-2 lg:mt-0 lg:self-start lg:sticky lg:top-20 lg:row-[1/span_99]">
-          {/* Desktop sidebar primary action. On mobile this is hidden and the
-              same button renders under the install command instead. */}
-          <div className="mb-6 hidden lg:block">
+          {skill.isGitHubOnly && !skill.isDelisted && (
+            <div className="rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
+              This skill is available only on GitHub, not through the skills.sh
+              API. Install counts and security audits stay unavailable until
+              it&apos;s listed on skills.sh.
+            </div>
+          )}
+
+          {copies.renamedTo && (
+            <div className="rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
+              This repository was renamed. Live version:{" "}
+              <Link
+                href={skillHref(
+                  copies.renamedTo.source,
+                  copies.renamedTo.skillId,
+                )}
+                className="font-medium underline underline-offset-2 hover:no-underline"
+              >
+                {copies.renamedTo.source}/{copies.renamedTo.skillId}
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* The command to run, on its own. It used to be a labelled section;
+            it needs no label, because a line reading `npx skills add …` beside
+            a copy button is already the most legible thing on the page. The
+            primary action is not beside it — it sits at the top of the sidebar,
+            where the old design had it and where it does not have to share a
+            row with a string the reader is meant to read. */}
+        {/* `w-fit`, not full width. The command is a fixed string a reader
+            copies, so the block shrink-wraps to it; stretched across the whole
+            column the fill became a band of empty grey with a few words at the
+            left end. `max-w-full` keeps a long command scrollable instead of
+            widening the column. */}
+        <div className="group relative mt-7 w-fit max-w-full rounded-xl bg-muted">
+          <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
+            {installCommand}
+          </pre>
+          <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
+            <CopyButton content={installCommand} className="backdrop-blur-sm" />
+          </div>
+        </div>
+      </div>
+
+      {/* The sidebar spans both content rows so its sticky child has the whole
+          page to travel through. It sits BETWEEN the two content blocks in DOM
+          order, which is the only thing deciding where it lands once the grid
+          is off: below `lg` the action and the record follow the install
+          command and precede the document, instead of being stranded past
+          20,000px of someone else's markdown. */}
+      <SkillSidebar
+        className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0"
+        navItems={navItems}
+        source={source}
+        skillId={skillId}
+        externalUrl={externalUrl}
+        externalIcon={externalIcon}
+        externalLabel={externalLabel}
+        curatedOwner={skill.curatedOwner}
+        insights={insights}
+        updatedKind={updatedKind}
+        updatedDate={updatedDate}
+        audits={audits}
+        stars={stars}
+        // Passed in rather than imported by the card, so the card stays free of
+        // bundle state and this server component keeps composing the sidebar.
+        //
+        // Both actions on this skill, ranked and adjacent — the same pairing
+        // the quick-look sheet already uses in its footer. Compare survives the
+        // card's fold with the primary, which is not a concession: "this is not
+        // what I wanted, show me the alternatives" is a thought you have while
+        // reading the file, not only before you start.
+        action={
+          <div className="space-y-2">
             <BundleToggleButton
               source={source}
               skillId={skillId}
               name={skill.name}
             />
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              className="w-full"
+              render={<Link href={compareHref([{ source, skillId }])} />}
+              leadingIcon={
+                <HugeiconsIcon
+                  icon={GitCompareIcon}
+                  strokeWidth={2}
+                  className="size-3.5"
+                />
+              }
+            >
+              Compare
+            </Button>
           </div>
-          <SkillSidebar
-            source={source}
-            skillId={skillId}
-            externalUrl={externalUrl}
-            externalIcon={externalIcon}
-            externalLabel={externalLabel}
-            curatedOwner={skill.curatedOwner}
-            insights={insights}
-            updatedKind={updatedKind}
-            updatedDate={updatedDate}
-            audits={audits}
-            stars={stars}
-          />
-        </aside>
+        }
+      />
+
+      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
+        <SkillCopies aliases={copies.aliases} forks={copies.forks} />
+
+        {/* Above Documentation, not below it. A SKILL.md runs to tens of KB,
+              so anything after it is effectively unreachable without deliberate
+              scrolling — and "has this changed recently?" is a question people
+              have BEFORE committing to reading the docs, not after. The nav now
+              makes the doc one click away from anywhere, so nothing is lost by
+              keeping the short section first, and the page reads as three
+              beats: what we know, what changed, what they wrote. */}
+        <SkillHistory versions={versions} />
 
         {skill.content && (
-          <LabeledSection
-            label="Documentation"
-            className="mt-12 lg:col-start-1 lg:mt-14"
+          <SkillSection
+            id="documentation"
+            title="Documentation"
+            // The file's name and a link to it ride on the heading's
+            // baseline. That is what lets the document below need no header,
+            // no frame, and no rule of its own — and, with `SKILL.md` and a
+            // link to the source sitting right there, no sentence explaining
+            // that the file belongs to its author either. The label is the
+            // explanation.
+            meta={<SkillDocumentMeta sourceUrl={skill.skillMdUrl ?? null} />}
           >
-            <MarkdownContent
+            <SkillDocument
+              content={skill.content}
               preHighlighted={preHighlighted}
-              baseUrl={skill.skillMdUrl ?? null}
-            >
-              {skill.content}
-            </MarkdownContent>
-          </LabeledSection>
+              sourceUrl={skill.skillMdUrl ?? null}
+              // Extra air on top of the section's own `mt-6`. This is the
+              // one place on the page where the voice changes, and with no
+              // frame drawn around the file the gap is what marks the
+              // handoff — the largest space inside any section, so the
+              // author's first heading reads as a beginning rather than as
+              // the next paragraph of ours.
+              className="mt-4"
+            />
+          </SkillSection>
         )}
 
-        {!skill.description && !skill.content && (
-          <p className="mt-10 text-sm text-muted-foreground lg:col-start-1">
-            No documentation available for this skill.
-          </p>
+        {!skill.content && (
+          <SkillSection id="documentation" title="Documentation">
+            <p className="text-sm text-muted-foreground">
+              This skill publishes no SKILL.md content that SkillBundle can
+              read.
+            </p>
+          </SkillSection>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
+/**
+ * The Suspense fallback, and the body of each route's `loading.tsx`.
+ *
+ * It traces the real page: the lead and the command in column 1, the action and
+ * the record panel in the sidebar, then the two sections below. That
+ * correspondence is load bearing and nothing tests it — the e2e guards assert a
+ * shell commits instantly, not that it resembles the page — so a skeleton left
+ * behind after a layout change reads to a user as one skeleton being replaced
+ * by a different skeleton rather than as content arriving. Restructure the page,
+ * restructure this in the same commit.
+ */
 export function SkillDetailPageSkeleton({
   installCommand,
 }: {
   installCommand: string;
 }) {
   return (
-    <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start lg:gap-x-12">
-      <LabeledSection label="Install" className="lg:col-start-1">
-        <div className="w-fit max-w-full rounded-xl bg-muted">
+    <div
+      className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]"
+      style={LAYOUT_VARS}
+    >
+      <div className="lg:col-start-1 lg:row-start-1">
+        <div className="max-w-[74ch] space-y-2.5">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-4/5" />
+        </div>
+
+        <div className="mt-7 w-fit max-w-full rounded-xl bg-muted">
+          {/* The real command, hidden: it reserves the exact width the resolved
+              block will take, so nothing resizes under the reader when the body
+              lands. */}
           <pre className="invisible overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
             {installCommand}
           </pre>
         </div>
-      </LabeledSection>
-
-      <LabeledSection label="Overview" className="mt-10 lg:col-start-1">
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-full max-w-2xl" />
-          <Skeleton className="h-5 w-full max-w-xl" />
-          <Skeleton className="h-5 w-3/4 max-w-md" />
-        </div>
-      </LabeledSection>
-
-      <div className="mt-10 flex flex-col gap-7 lg:col-start-2 lg:mt-0 lg:row-[1/span_99] lg:self-start">
-        <div>
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="mt-2.5 h-7 w-24" />
-          <Skeleton className="mt-3 h-9 w-full rounded-lg" />
-        </div>
-        <div>
-          <Skeleton className="h-3 w-20" />
-          <Skeleton className="mt-2.5 h-4 w-32" />
-        </div>
-        <div>
-          <Skeleton className="h-3 w-16" />
-          <div className="mt-2.5 space-y-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-full" />
-          </div>
-        </div>
       </div>
 
-      <LabeledSection
-        label="Documentation"
-        className="mt-12 lg:col-start-1 lg:mt-14"
-      >
-        <div className="space-y-3">
-          <Skeleton className="h-6 w-64" />
-          <div className="space-y-2 pt-2">
-            <Skeleton className="h-4 w-full max-w-2xl" />
-            <Skeleton className="h-4 w-full max-w-2xl" />
-            <Skeleton className="h-4 w-2/3 max-w-md" />
+      <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
+        {/* The record card itself, with only its values pending. Drawing the
+              container rather than a plain block keeps the sidebar the same
+              shape and the same material before and after. Always drawn
+              unfolded: the fold is a scroll state, and the body resolves long
+              before anyone has scrolled into the document. */}
+        <div className={cn("divide-y divide-border", RECORD_SURFACE)}>
+          {/* The action block. BundleToggleButton renders its own skeleton
+                until hydration, so the first of these reserves the same box it
+                will; the second is Compare, which resolves with the shell. */}
+          <div className="space-y-2 px-4 py-3">
+            <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
+            <Skeleton className="h-9 w-full rounded-lg sm:h-8" />
           </div>
-          <div className="space-y-2 pt-4">
-            <Skeleton className="h-4 w-full max-w-2xl" />
-            <Skeleton className="h-4 w-5/6 max-w-2xl" />
+          {/* Installs: label, total, its trailing-week delta, then the trend. */}
+          <div className="px-4 py-4">
+            <Skeleton className="h-3 w-14" />
+            <div className="mt-1.5 flex min-h-9 items-center">
+              <Skeleton className="h-6 w-20" />
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 py-1">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3.5 w-12" />
+            </div>
+            <Skeleton className="mt-3 h-10 w-full" />
+          </div>
+          {/* Repository: label, the repo link, and its star meta line. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-4 w-full max-w-40" />
+            <div className="mt-2 flex items-center gap-1.5">
+              <Skeleton className="size-3.5 shrink-0 rounded-full" />
+              <Skeleton className="h-3 w-10" />
+            </div>
+          </div>
+          {/* Updated. Security only renders when a skill has audits, so it
+                is not reserved here. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-4 w-full max-w-40" />
           </div>
         </div>
-      </LabeledSection>
+
+        {/* The rail, under the card in the same column. Its label is REAL
+              text, like the section headings below: it does not depend on the
+              data being loaded, so skeletoning it would withhold the page's
+              structure for no reason and then shift it in when the body lands.
+              What is genuinely unknown — the document's own headings — stays a
+              placeholder. Six rows, which is roughly what progressive depth
+              shows before a branch opens. */}
+        <div className="mt-6 hidden lg:block">
+          <p className="mb-4 text-xs font-medium text-muted-foreground">
+            On this page
+          </p>
+          <div className="space-y-3.5">
+            {[0, 1, 2, 3, 4, 5].map((item) => (
+              <Skeleton key={item} className="h-3 w-full max-w-32" />
+            ))}
+          </div>
+        </div>
+      </SkillSidebarShell>
+
+      <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
+        {/* Drawn THROUGH the real section component, not by re-typing its
+            header markup. Both headers are real text either way — neither the
+            word "History" nor "SKILL.md" depends on the data being loaded — and
+            rendering them through `SkillSection` is what stops the skeleton's
+            border, spacing and heading scale from drifting from the page's. */}
+        <SkillSection id="history" title="History">
+          <Skeleton className="-mt-4 h-5 w-full max-w-lg" />
+          <div className="mt-6 space-y-3">
+            <Skeleton className="h-4 w-full max-w-md" />
+            <Skeleton className="h-4 w-full max-w-sm" />
+          </div>
+        </SkillSection>
+
+        <SkillSection
+          id="documentation"
+          title="Documentation"
+          meta={<span className="font-mono text-foreground">SKILL.md</span>}
+        >
+          <div className="mt-4 space-y-3">
+            <Skeleton className="h-6 w-64" />
+            <div className="space-y-2 pt-2">
+              <Skeleton className="h-4 w-full max-w-2xl" />
+              <Skeleton className="h-4 w-full max-w-2xl" />
+              <Skeleton className="h-4 w-2/3 max-w-md" />
+            </div>
+            <div className="space-y-2 pt-4">
+              <Skeleton className="h-4 w-full max-w-2xl" />
+              <Skeleton className="h-4 w-5/6 max-w-2xl" />
+            </div>
+          </div>
+        </SkillSection>
+      </div>
     </div>
   );
 }
@@ -504,14 +723,22 @@ export function SkillDetailPageSkeleton({
 // ISR caches the page, repeat visits serve the finished HTML and never hit this.
 export function SkillDetailPageLoading() {
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    // `<main>` and `max-w-6xl` both match the real page exactly: the app's
+    // default page width (DESIGN.md §4), and the landmark the page itself
+    // renders. A `<div>` here would leave the document with no `main` for as
+    // long as this shell is up, then grow one — the header's `banner` and the
+    // rail's `navigation` are present the whole time, so the gap is visible to
+    // a screen reader rather than theoretical.
+    <main className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
 
-      <Skeleton className="mb-3 h-9 w-1/2 max-w-md" />
+      {/* The title alone. The masthead carries no action now — Compare moved
+          into the record card, which this skeleton draws in the sidebar. */}
+      <Skeleton className="h-9 w-1/2 max-w-md sm:h-10" />
 
       <SkillDetailPageSkeleton installCommand="npx skills add ..." />
-    </div>
+    </main>
   );
 }

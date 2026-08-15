@@ -11,6 +11,8 @@ colors:
   surface-raised: "oklch(1 0 0)"
   secondary: "oklch(0.92 0 0)"
   border-hairline: "oklch(0 0 0 / 0.1)"
+  chrome: "oklch(0.2 0.004 270)"
+  chrome-foreground: "oklch(0.98 0.002 270)"
   destructive: "oklch(0.53 0.19 25)"
   success: "oklch(0.48 0.18 145)"
   warning: "oklch(0.58 0.14 85)"
@@ -23,33 +25,33 @@ typography:
     lineHeight: 0.95
     letterSpacing: "normal"
   headline:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.875rem"
     fontWeight: 600
     lineHeight: 1.1
     letterSpacing: "-0.02em"
   title:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 600
     lineHeight: 1.3
   body:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.6
   section:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 600
     letterSpacing: "normal"
   label:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     letterSpacing: "normal"
   micro:
-    fontFamily: "var(--font-geist-sans), system-ui, sans-serif"
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 500
     letterSpacing: "normal"
@@ -58,6 +60,7 @@ rounded:
   lg: "12px"
   xl: "14px"
   2xl: "16px"
+  5xl: "24px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -113,6 +116,7 @@ The neutral palette is hue-tinted, not flat gray: every neutral carries a trace 
 This system explicitly rejects: generic SaaS landing pages with gradient hero blobs, glassmorphism-heavy dashboards, playful/cartoon dev-tool styling, and anything that reads as template-generated. The blue accent is a signal, never a gradient or a glow.
 
 **Key Characteristics:**
+
 - Near-monochrome neutral field, one blue accent used as a rare signal.
 - Violet-tinted neutrals (`hue 270`, `chroma 0.004`), never pure gray.
 - Eight-step tonal + shadow elevation system, equal light/dark themes.
@@ -124,9 +128,11 @@ This system explicitly rejects: generic SaaS landing pages with gradient hero bl
 A near-monochrome neutral base, one saturated blue signal, and a full semantic state vocabulary held in reserve.
 
 ### Primary
+
 - **Signal Blue** (`oklch(0.6 0.2 250)`): The single accent. Primary buttons, active/selected states, focus rings (`oklch(0.55 0.2 250)`), links, and key highlights. Nothing else competes with it, which is why it reads as "the action."
 
 ### Neutral
+
 - **Ink** (`oklch(0.18 0.004 270)`): Primary text on light surfaces; near-black with a trace of violet.
 - **Ink Muted** (`oklch(0.5 0.004 270)`): Secondary text, captions, placeholder text, ghost-button labels. Tuned to stay above 4.5:1 on the field; do not lighten it for "elegance."
 - **Field** (`oklch(0.97 0 0)`, `surface-1`): The page background. The lowest elevation level.
@@ -134,33 +140,45 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 - **Secondary** (`oklch(0.92 0 0)`): Secondary/soft button fills, quiet chips.
 - **Hairline Border** (`oklch(0 0 0 / 0.1)`): All borders and dividers; a 10% black (10% white in dark mode) so it reads as a hairline, never a stripe.
 
+### Chrome (the off-ladder surface)
+
+One container is deliberately **not** on the surface ladder: the header pill. Everything else is a step up from the field; this is the object the field flows past. It is near-black in **both** themes — light borrows `--neutral`, and dark goes a rung _below_ the page, since the dark page already sits at light's near-black.
+
+Seven tokens. Four are set per theme — `--chrome`, `--chrome-foreground`, and the two edge tokens `--chrome-rim` / `--chrome-hairline` (§5). The other three derive from those roots, so retuning the surface moves the whole family.
+
+**Do not paint on this surface by hand.** Put `data-surface="chrome"` on the container and use ordinary page classes inside — `text-muted-foreground`, `bg-accent`, `Button variant="ghost"`. A rule in `app/globals.css` re-points the page tokens for the whole subtree, so anything dropped in paints correctly with no per-control classes. `--primary` is left alone so a primary button keeps its brand fill anywhere, and portalled content (dropdowns, dialogs) renders at the body and correctly does not inherit. `bg-chrome` is the only chrome utility, for the fill itself; there is deliberately no `bg-chrome-hover`, because a second idiom for the same job is what the contract exists to remove. The one paint it cannot reach is `Skeleton`'s shimmer, whose colours are literals rather than tokens.
+
 ### Tertiary (semantic states)
+
 - **Destructive** (`oklch(0.53 0.19 25)`): Delete/danger actions and validation errors.
 - **Success** (`oklch(0.48 0.18 145)`), **Warning** (`oklch(0.58 0.14 85)`), **Info** (`oklch(0.45 0.2 250)`): Status badges and alerts only. Each ships a paired `-foreground`, `-border`, and tinted background token for light and dark.
 
 ### Named Rules
+
 **The One Signal Rule.** Signal Blue appears on a small fraction of any screen: primary action, current selection, focus. Its rarity is the entire point. If two blue things compete on a screen, one of them is wrong.
 
 **The No-Gray-Gray Rule.** Neutrals are never `chroma 0`. Every neutral inherits `--neutral-hue: 270` at `--neutral-chroma: 0.004`. Pure gray is forbidden; the violet trace is what keeps the interface from feeling dead.
 
 ## 3. Typography
 
-**Display Font:** Geist Pixel Circle (with `ui-monospace` fallback)
-**Body Font:** Geist Sans (with `system-ui, sans-serif` fallback)
+**Display Font:** Geist Pixel Circle, from the `geist` package (with `ui-monospace` fallback)
+**Body Font:** SN Pro, as `--font-sans` (fallback `system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif`). Neither face has an entry in Next's font-metrics table, and `app/layout.tsx` resolves that the same way for both: load through `next/font/local`, which measures the file rather than looking it up. SN Pro is vendored to `app/fonts/` for it; Geist Pixel arrives through the package, which already uses that loader. Read the note in that file before moving either to `next/font/google` — the metrics table is why they are not there.
 **Code Font:** Geist Mono (with `ui-monospace, monospace` fallback)
 
 **Character:** A geometric, technical sans carries the entire interface. The pixel-grid display face marks hero moments, and the monospace is reserved for machine strings. The contrast is structural (sans vs. pixel vs. mono), not three competing sans-serifs.
 
 ### Hierarchy
+
 - **Display** (Geist Pixel Circle, `clamp(3.5rem, 6vw, 5rem)`, line-height 0.95): Hero headlines and large brand moments only.
-- **Headline** (Geist Sans 600, 1.875rem, -0.02em): Page and section headings.
-- **Title** (Geist Sans 600, 1.125rem): Card titles, panel headers.
-- **Section** (Geist Sans 600, 0.875rem, `text-foreground`): Named blocks inside a page — the `LabeledSection` heading, sidebar sections, comparison groups. A real heading element, sentence case.
-- **Body** (Geist Sans 400, 0.875rem, line-height 1.6): Default UI and prose; cap prose at 65–75ch.
-- **Field label** (Geist Sans 500, 0.75rem, `text-muted-foreground`): What names a column, a `dt`, or a value — table headers, stat cells, metadata. Sentence case, normal tracking.
-- **Micro** (Geist Sans 500, `text-micro` / 0.6875rem): Pills and dense chips only. The floor; nothing smaller.
+- **Headline** (SN Pro 600, 1.875rem, -0.02em): Page and section headings.
+- **Title** (SN Pro 600, 1.125rem): Card titles, panel headers.
+- **Section** (SN Pro 600, 0.875rem, `text-foreground`): Named blocks inside a page — the `LabeledSection` heading, sidebar sections, comparison groups. A real heading element, sentence case.
+- **Body** (SN Pro 400, 0.875rem, line-height 1.6): Default UI and prose; cap prose at 65–75ch.
+- **Field label** (SN Pro 500, 0.75rem, `text-muted-foreground`): What names a column, a `dt`, or a value — table headers, stat cells, metadata. Sentence case, normal tracking.
+- **Micro** (SN Pro 500, `text-micro` / 0.6875rem): Pills and dense chips only. The floor; nothing smaller.
 
 ### Named Rules
+
 **The Pixel Floor Rule.** Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; at small sizes it stops reading as pixel-grid and just looks like a broken mono. Display is for hero scale only.
 
 **The Sentence Case Rule.** Nothing in this interface is set in `text-transform: uppercase`. Not eyebrows, not table headers, not status pills, not section labels. Wide-tracked capitals are the default costume of a generated dev-tool UI, and a small caps label is also the least legible way to set the smallest type on the screen. A word that arrives from an API as a raw enum (`warn`, `HIGH`) is normalised to sentence case before it is rendered — see `formatVerdict` in `components/monitoring/condition-meta.ts`. Literal machine constants that are genuinely written in caps (`500 INTERNAL_ERROR`, `SKILL.md`) are quoted as-is, in mono; that is content, not a type treatment.
@@ -183,7 +201,7 @@ different measures, but it means a new page inherits nothing and must state one.
   density. Prose inside them still caps at 65–75ch (§3).
 - **`max-w-md` / `max-w-sm`** for the auth column and other single-task forms.
 - Horizontal padding steps with the viewport on the header (`px-4 sm:px-6
-  lg:px-8`) but stays flat at `px-4` on page bodies. Match the page bodies.
+lg:px-8`) but stays flat at `px-4` on page bodies. Match the page bodies.
 
 ### Vertical rhythm
 
@@ -207,7 +225,7 @@ Tailwind's defaults, unmodified: `sm` 640px, `md` 768px, `lg` 1024px, `xl`
 
 ### Anchors
 
-A section that is a link target takes `scroll-mt-20` so the sticky `h-14` header
+A section that is a link target takes `scroll-mt-24` so the floating header pill (which ends at 72px)
 does not cover the heading the link just jumped to, plus `tabIndex={-1}` so
 focus moves with the jump. `LabeledSection` does both when given an `id`.
 
@@ -218,29 +236,36 @@ Depth is a first-class system, not an afterthought. Eight surface levels (`surfa
 In light mode, lift comes mostly from shadow over a near-white surface. In dark mode, lift comes mostly from the tonal step plus a subtle top-edge rim, with shadows kept soft. Components opt into a `level` (background tier) and `shadowLevel` (shadow tier) independently.
 
 ### Shadow Vocabulary
+
 - **`--surface-shadow-1`** (`0 0 0 1px ring`): Flush elements; a hairline ring with no drop. Default card shadow level.
 - **`--surface-shadow-3`** (ring + near + mid layers): Resting cards and popovers.
 - **`--surface-shadow-5`–`8`** (progressively deeper, longer-throw layers): Dialogs, menus, and overlays. The higher the level, the more ambient the far shadow.
 
 ### Named Rules
+
 **The Material Depth Rule.** Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a `box-shadow`; use a `surface-N` level so light and dark stay coherent.
+
+One exception exists and it is deliberate, so do not "correct" it: the header pill is **flush**, not raised. It takes `--surface-shadow-1` — the ladder's hairline-ring-no-drop level — and supplies its own edge tokens, `--chrome-hairline` outside and `--chrome-rim` on the top inside, rather than pairing a surface level with its matching `SURFACE_SHADOW_COMBINED[N]`. In light both are no-ops and the pill is just that hairline ring; in dark they carry the edge alone, because `--surface-shadow-1` is transparent there.
+
+Both exist for one reason, and it only bites in dark: the ladder's ring and rim assume a fill **lighter** than the page, and the chrome surface (§2) is darker than it — so the ladder's ring lands lighter than the fill it is meant to define, and the boundary blurs instead of sharpening. (In light there is nothing to displace: every `--surface-rim-N` is already transparent there.) `app/globals.css` records what the pill's own tokens measure, and says why a ladder comparison is not recorded alongside them.
 
 ## 6. Shapes
 
 One radius variable drives everything. `--radius: 0.75rem` (12px) is the root,
 and every step is computed from it (`--radius-xs` = root − 6px through
-`--radius-4xl` = root + 8px), so retuning the whole form language is a one-line
+`--radius-5xl` = root + 12px), so retuning the whole form language is a one-line
 change and no component carries a hardcoded corner.
 
 ### The radius scale
 
-| Token | Value | Where |
-| --- | --- | --- |
-| `rounded-sm` | 8px | Nested chips, inline code |
-| `rounded-md` | 10px | Badges, `xs` buttons |
-| `rounded-lg` | 12px | Buttons, inputs, list rows. The default. |
-| `rounded-2xl` | 16px | Cards and panels |
-| `rounded-full` | circle | Avatars, dots, the status light ring, icon-only controls |
+| Token          | Value  | Where                                                                                                                                                                                                                                  |
+| -------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rounded-sm`   | 8px    | Nested chips, inline code                                                                                                                                                                                                              |
+| `rounded-md`   | 10px   | Badges, `xs` buttons                                                                                                                                                                                                                   |
+| `rounded-lg`   | 12px   | Buttons, inputs, list rows. The default.                                                                                                                                                                                               |
+| `rounded-2xl`  | 16px   | Cards and panels                                                                                                                                                                                                                       |
+| `rounded-5xl`  | 24px   | The header pill, and nothing else. Off the 2px cadence on purpose — it exists so that corner stays derived rather than hardcoded. Its controls sit 12px inside it, so their `rounded-lg` is 24 − 12 and the curves read as concentric. |
+| `rounded-full` | circle | Avatars, dots, the status light ring, icon-only controls                                                                                                                                                                               |
 
 ### Borders
 
@@ -273,6 +298,7 @@ different component.
 Built on the cubby-ui library (Base UI primitives + CVA variants). Components are crisp and tactile: subtle real depth, fast feedback, a physical press.
 
 ### Buttons
+
 - **Shape:** Gently rounded (`rounded-lg`, 12px; `rounded-md`, 10px on the `xs` size).
 - **Primary:** Signal Blue fill, white text, `hover:` darkens 5% (`--primary-hover`). Default height 36px (40px on touch), `px-3 py-2`.
 - **Variants:** `primary-soft` (secondary fill, blue text), `neutral`, `outline` (raised surface + hairline border), `secondary`, `ghost` (muted text, fills with `surface-hover` on hover), `destructive` / `destructive-soft`, `link`.
@@ -280,21 +306,25 @@ Built on the cubby-ui library (Base UI primitives + CVA variants). Components ar
 - **Loading:** swaps a section for the `DotMatrixRipple` spinner (the dot-matrix identity mark), never a generic spinner.
 
 ### Badges / Chips
+
 - **Style:** `rounded-md` (10px), `px-2.5 py-1`, `text-xs` 500. Default is a Signal Blue chip with a faint drop shadow.
 - **State variants:** `neutral`, `outline`, `secondary`, plus semantic `success` / `warning` / `info` / `danger`, each with matched tinted bg, foreground, and border.
 
 ### Cards / Containers
+
 - **Corner Style:** `rounded-2xl` (16px).
 - **Background:** Surface Raised (`surface-3`); `inset` variant uses a `muted` gray frame around a raised inner panel.
 - **Shadow Strategy:** `level={3}` background with `shadowLevel={1}` by default; see Elevation. Never a hand-rolled shadow.
 - **Internal Padding:** 24px default (`py-6`, `px-6` on header/content); `gap-6` between sections.
 
 ### Inputs / Fields
+
 - **Style:** Hairline border, `rounded-lg` (12px), 36px height. `default` variant on opaque `bg-input`; `elevated` variant (`bg-input-elevated`, translucent) for use inside cards and dialogs.
 - **Focus:** 2px offset ring at `ring/50`, 100ms; border-color transition 200ms.
 - **Invalid:** 2px offset `destructive` ring via `aria-invalid`.
 
 ### Navigation
+
 - Neutral by default, Signal Blue marks the active item. Section headers take the Section role (§3) at `text-xs` in the narrow sidebar column; sidebar uses `surface-1` with a hairline border. Collapse the sidebar at small breakpoints rather than reflowing type.
 
 ### Status light and condition vocabulary
@@ -380,11 +410,13 @@ for free. Notes that are easy to lose:
   sits between cell and header strip in both themes.
 
 ### Signature: Dot-Matrix Ripple
+
 The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in sequence, echoing the Nothing OS dot-matrix motif. It is the project's loading vocabulary everywhere a spinner would otherwise go.
 
 ## 8. Do's and Don'ts
 
 ### Do:
+
 - **Do** keep Signal Blue (`oklch(0.6 0.2 250)`) rare: primary action, active state, focus, links. One signal per screen.
 - **Do** tint every neutral toward `hue 270` at `chroma 0.004`; never use pure gray.
 - **Do** use `surface-N` levels for any raised element so light and dark depth stay coherent.
@@ -398,6 +430,7 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Do** keep transitions fast (100ms `ease-out`) and let the 0.98 active scale carry the press.
 
 ### Don't:
+
 - **Don't** use gradient hero blobs or any `background-clip: text` gradient text. The accent is a single solid color.
 - **Don't** use decorative glassmorphism; blur and glass are not the default surface.
 - **Don't** set the Geist Pixel face below ~40px; it collapses into broken mono.

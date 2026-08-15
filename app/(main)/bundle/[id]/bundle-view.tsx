@@ -232,7 +232,7 @@ export function BundleView({
               <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
                 <span>by {bundle.creatorName}</span>
               </div>
-              <h1 className="mt-2 font-display text-4xl font-medium tracking-tight leading-hero text-balance wrap-break-word md:text-5xl">
+              <h1 className="mt-2 font-display text-4xl font-medium tracking-tight leading-hero wrap-break-word md:text-5xl">
                 {bundle.name}
               </h1>
 
@@ -514,7 +514,7 @@ function BundleNotFound() {
   return (
     <main className="mx-auto max-w-6xl px-4 pt-20 pb-20">
       <div className="rounded-xl bg-muted/40 px-8 py-20 md:px-12">
-        <h1 className="text-2xl font-semibold tracking-tight text-balance">
+        <h1 className="text-2xl font-semibold tracking-tight">
           This bundle isn&rsquo;t here.
         </h1>
         <p className="mt-3 max-w-md text-sm text-muted-foreground">

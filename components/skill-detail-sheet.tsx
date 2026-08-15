@@ -260,7 +260,7 @@ function SkillDetailBody({ skill }: { skill: SkillData }) {
       {/* h3: these sit under the sheet's own title, which is the h2 here. */}
       {skill.description && (
         <LabeledSection label="Overview" as="h3">
-          <p className="text-base leading-relaxed text-pretty text-muted-foreground">
+          <p className="text-base leading-relaxed text-muted-foreground">
             {skill.description}
           </p>
         </LabeledSection>

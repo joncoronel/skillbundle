@@ -35,7 +35,7 @@ export default async function OfficialPage() {
   return (
     <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <header>
-        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero text-balance">
+        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] font-medium tracking-tight leading-hero">
           Official.
         </h1>
         <p className="mt-3 max-w-prose text-sm text-muted-foreground">
