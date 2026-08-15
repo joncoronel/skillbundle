@@ -679,9 +679,12 @@ html {
   }
 
   /* ── Line breaking ───────────────────────────────────────────────────────
-     Headings balance, body copy avoids orphans. This was 38 hand-applied
+     Headings balance, body copy avoids orphans. This was 37 hand-applied
      `text-balance` / `text-pretty` classes across the app, which meant every
-     new heading started without one until somebody remembered.
+     new heading started without one until somebody remembered. Eight remain,
+     all in vendored `components/ui/cubby-ui/**` dialog and sheet titles — now
+     redundant with this rule, and left alone because a `shadcn add` would
+     restore them anyway.
 
      `:where()` keeps the specificity at zero, so any component that wants a
      different answer still overrides with a plain utility class and no
