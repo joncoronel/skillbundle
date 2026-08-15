@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
 
-// GeistSans is deliberately NOT imported. `--font-sans` is SN Pro and nothing
-// reads `--font-geist-sans`, but next/font decides preloading from the module
-// graph rather than from CSS usage — so merely importing it made every route
-// emit a highest-priority `<link rel="preload" as="font">` for a face no
-// element uses, competing with SN Pro's own preload before first paint.
+// next/font preloads what it finds in the MODULE GRAPH, not what the CSS uses,
+// so an unused import costs a real font download on every route. `GeistSans`
+// and `geist/font/pixel` were both dropped for that (the latter declares five
+// faces in one module). `geist/font/mono` declares one, so it stays.
 import { GeistMono } from "geist/font/mono";
-import { GeistPixelCircle } from "geist/font/pixel";
 
 import localFont from "next/font/local";
+import { Geist_Pixel } from "next/font/google";
 
 import { OpenPanelComponent } from "@openpanel/nextjs";
 
@@ -21,32 +20,33 @@ import "./globals.css";
 // robots and sitemap routes — those emit text and XML, so nothing resolves
 // relative URLs for them and they need the same value spelled out.
 
-// Vendored, not fetched, and the reason is the metrics table.
+// Google, not `geist/font/pixel`: the package ships the five shapes as five
+// files and one import pulls all of them (129 KB downloaded, 27 KB used).
+// Google ships them as ONE variable family on an `ELSH` axis, so `axes` is
+// load-bearing — drop it and the axis flattens to its default, Square. The shape
+// itself is pinned in globals.css. Build logs a harmless "Failed to find font
+// override values": Geist Pixel has no metrics entry, so no fallback face can be
+// built. `adjustFontFallback` does not help — it only selects from that same
+// table. (It IS meaningful in the `geist` package, which uses next/font/local
+// where it defaults to Arial. Different loader; do not carry the flag across.)
+const geistPixel = Geist_Pixel({
+  subsets: ["latin"],
+  axes: ["ELSH"],
+  variable: "--font-geist-pixel",
+  display: "swap",
+});
+
+// Vendored rather than fetched, because SN Pro has no entry in Next's metrics
+// table and `next/font/google` builds its size-adjusted fallback face from that
+// table — so every route reflowed its body text when the woff2 landed.
+// `next/font/local` measures the file instead, which works for any font.
 //
-// `next/font/google` looks a family up in the table Next ships (1753 fonts) and
-// uses those numbers to synthesise a size-adjusted fallback face, so the swap at
-// `display: swap` does not move the page. SN Pro is not in that table — Geist,
-// Inter and Roboto are, which is why this never comes up on other projects — so
-// no fallback face could be built, and every route reflowed its body text when
-// the woff2 landed. `adjustFontFallback: false` only silenced the warning about
-// it.
+// The file is the upright variable font subsetted to `latin`, matching what
+// Google served (47.9 KB vs 46.1 KB). Do not swap in the raw TTF from the Google
+// Fonts zip: 335 KB. No italic — none was requested before either, so emphasis
+// has always been synthesised.
 //
-// `next/font/local` measures the file itself instead of reading the table, so it
-// can build that face for any font. Everything else is identical: still
-// self-hosted from our own origin at build time, still zero runtime cost, still
-// one `<link rel="preload">`. It also drops a build-time dependency on Google's
-// CDN, which AGENTS.md already flags as a fragility for `pnpm build`.
-//
-// The file is the upright variable font, subsetted to the same `latin` range
-// Google served: 47.9 KB against the 46.1 KB the browser actually downloaded
-// before. The raw TTF from the Google Fonts zip is 335 KB and would have cost
-// more in download than the reflow ever cost in layout shift. Italic is
-// deliberately absent — the previous setup requested none either, so emphasis
-// has always been synthesised, and shipping it would double the payload to fix
-// nothing.
-//
-// OFL 1.1 requires the copyright notice and licence to travel with the font.
-// `app/fonts/OFL.txt` is that copy; do not move one without the other.
+// OFL 1.1 requires the licence to travel with the font: `app/fonts/OFL-sn-pro.txt`.
 const snPro = localFont({
   src: "./fonts/sn-pro-latin.woff2",
   variable: "--font-sn-pro",
@@ -85,7 +85,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
+        className={`${GeistMono.variable} ${geistPixel.variable} ${snPro.variable} font-sans antialiased`}
       >
         <div className="root">
           <Providers>{children}</Providers>

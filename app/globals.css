@@ -16,7 +16,11 @@ html {
   /* Fonts */
   --font-sans: var(--font-sn-pro);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-geist-pixel-circle);
+  /* The pixel shape is an axis, not a file: 20 is Circle (1 Square, 40 Grid,
+     60 Triangle, 80 Line). Paired with --font-display so every `font-display`
+     utility carries the shape. */
+  --font-display: var(--font-geist-pixel);
+  --font-display--font-variation-settings: "ELSH" 20;
 
   /* Typography — the one step below text-xs, for pills and dense chips.
      Sentence case in the body face; there is no uppercase label role. */
