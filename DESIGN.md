@@ -247,7 +247,7 @@ In light mode, lift comes mostly from shadow over a near-white surface. In dark 
 
 One exception exists and it is deliberate, so do not "correct" it: the header pill is **flush**, not raised. It takes `--surface-shadow-1` — the ladder's hairline-ring-no-drop level — and supplies its own edge tokens, `--chrome-hairline` outside and `--chrome-rim` on the top inside, rather than pairing a surface level with its matching `SURFACE_SHADOW_COMBINED[N]`. In light both are no-ops and the pill is just that hairline ring; in dark they carry the edge alone, because `--surface-shadow-1` is transparent there.
 
-Both exist for one reason, and it only bites in dark: the ladder's ring and rim assume a fill **lighter** than the page, and the chrome surface (§2) is darker than it, so each lands on the wrong side of what it is meant to define. (In light there is nothing to displace — every `--surface-rim-N` is already transparent there.) `app/globals.css` carries the scanlines, measured against a named ladder level — read them before retuning `--chrome`, and re-measure rather than adjusting them by hand.
+Both exist for one reason, and it only bites in dark: the ladder's ring and rim assume a fill **lighter** than the page, and the chrome surface (§2) is darker than it — so the ladder's ring lands lighter than the fill it is meant to define, and the boundary blurs instead of sharpening. (In light there is nothing to displace: every `--surface-rim-N` is already transparent there.) `app/globals.css` records what the pill's own tokens measure, and says why a ladder comparison is not recorded alongside them.
 
 ## 6. Shapes
 

@@ -268,8 +268,12 @@ html {
     var(--chrome-foreground) 12%,
     transparent
   );
-  /* The pill's outer hairline and inner top highlight. No-ops in light, where
-     the 224-unit fill/page step is already the edge; see `.dark`. */
+  /* The pill's outer hairline and inner top highlight. BOX-SHADOW values, not
+     colours — unlike every other `--chrome-*` token, and unlike
+     `--chrome-border` four lines up. Writing a bare colour into either one
+     silently voids the pill's whole `box-shadow`, in both themes, because an
+     invalid layer invalidates the entire declaration. No-ops in light, where the
+     224-unit fill/page step is already the edge; see `.dark`. */
   --chrome-hairline: 0 0 transparent;
   --chrome-rim: 0 0 transparent;
 
@@ -437,18 +441,22 @@ html {
 
      Neither comes from the ladder, for one shared reason: `--surface-rim-*` and
      the ring baked into `--surface-shadow-*` both assume a fill LIGHTER than the
-     page, and this one is darker. Measured against `SURFACE_SHADOW_COMBINED[3]`,
-     which is what the pill used until it went flush, at page 22 / fill 12:
+     page. This fill is darker, so the ladder's ring lands lighter than the very
+     fill it is meant to define and the boundary blurs instead of sharpening.
 
-       [3]     top 22 → 19 → 20 → 12   ring (19) lighter than the fill it
-               left 22 → 18 → 16 → 12  defines; highlight (20) under the page;
-                                       and a light 16 band inside the ring on
-                                       every non-top edge — the muddy double edge
-       these   top 22 →  6 → 28 → 12
-               left 22 →  6 → 12
+     What these produce instead, at page 22 / fill 12:
 
-     Both numbers move with `--chrome`; re-measure at a NAMED level rather than
-     adjusting them by hand. The hairline stays FIRST in the pill's shadow list
+       top  22 → 6 → 28 → 12     left 22 → 6 → 12
+
+     That row is measurable from the running app and is the only one kept here.
+     A comparison row against a ladder level was tried three times and drifted
+     three times — it depends on the fill, the level AND what is behind the pill
+     (the drop layers composite over the header scrim, so a standalone box gives
+     different numbers), which is more environment than a comment can pin.
+     Re-derive it in a browser if you need it; don't record it.
+
+     The hairline stays FIRST in the pill's shadow list
+     so a deeper `--surface-shadow-N`, which bakes its own ring in as an
      so a deeper `--surface-shadow-N`, which bakes its own ring in as an
      unre-pointable literal, could be swapped back in. */
   --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.065);
