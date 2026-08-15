@@ -36,13 +36,6 @@ import { cn } from "@/lib/utils";
 const PILL_SURFACE = cn("bg-inverse", SURFACE_SHADOW_COMBINED[4]);
 
 /**
- * Shared by the icon-only controls on the pill (menu toggle, theme). Not
- * exported — both consumers are in this file.
- */
-const PILL_CONTROL =
-  "text-inverse-muted-foreground hover:text-inverse-foreground [--btn-bg-hover:var(--color-inverse-hover)] [--btn-bg-active:var(--color-inverse-hover)]";
-
-/**
  * The header pill.
  *
  * A client component because the mobile menu expands the pill itself rather
@@ -128,9 +121,15 @@ export function HeaderPill() {
   }, [menuOpen]);
 
   return (
+    // `data-surface="inverse"` is what lets everything below use the ordinary
+    // page tokens — `text-muted-foreground`, `bg-accent`, Button's own ghost
+    // variant — and still paint correctly on a near-black fill. The rule that
+    // re-points those tokens lives in globals.css, next to the `--inverse*` set
+    // it maps from. Remove this attribute and the pill goes dark-on-dark.
     <div
+      data-surface="inverse"
       className={cn(
-        "mx-auto flex w-full flex-col rounded-5xl text-inverse-foreground md:w-fit md:max-w-full",
+        "mx-auto flex w-full flex-col rounded-5xl text-foreground md:w-fit md:max-w-full",
         PILL_SURFACE,
       )}
     >
@@ -184,7 +183,7 @@ export function HeaderPill() {
               `useSyncExternalStore` and never suspends, so the empty `Suspense`
               that used to wrap this caught nothing. */}
           <div className="max-md:hidden">
-            <ThemeSwitcher className={PILL_CONTROL} />
+            <ThemeSwitcher />
           </div>
 
           <HeaderAuthClient />
@@ -201,7 +200,7 @@ export function HeaderPill() {
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             className={cn(
               "flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-100 ease-out md:hidden",
-              "text-inverse-muted-foreground hover:bg-inverse-hover hover:text-inverse-foreground",
+              "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
             )}
           >
@@ -349,8 +348,8 @@ function MenuLinks({
               // see the NavLink comment there for why the current-page fill
               // went away and what it costs.
               isActive
-                ? "text-inverse-foreground"
-                : "text-inverse-muted-foreground hover:text-inverse-foreground",
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             {item.label}
@@ -358,11 +357,9 @@ function MenuLinks({
         );
       })}
 
-      <div className="mt-2 flex items-center justify-between border-t border-inverse-border px-3 pt-3">
-        <span className="text-sm font-medium text-inverse-muted-foreground">
-          Theme
-        </span>
-        <ThemeSwitcher className={PILL_CONTROL} />
+      <div className="mt-2 flex items-center justify-between border-t border-border px-3 pt-3">
+        <span className="text-sm font-medium text-muted-foreground">Theme</span>
+        <ThemeSwitcher />
       </div>
     </nav>
   );

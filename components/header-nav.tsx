@@ -91,8 +91,8 @@ function NavLink({
         "rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 ease-out",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
         isActive
-          ? "text-inverse-foreground"
-          : "text-inverse-muted-foreground hover:text-inverse-foreground",
+          ? "text-foreground"
+          : "text-muted-foreground hover:text-foreground",
       )}
     >
       {children}

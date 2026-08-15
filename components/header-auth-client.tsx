@@ -29,12 +29,8 @@ export function HeaderAuthClient() {
   // and the menu button takes the other side, so the offset moves with it.
   const gutters = "ml-2 max-md:mr-2";
 
-  // Skeleton's stock fill is a pale page tone and vanishes on an inverse
-  // surface, so it takes the pill's own wash.
   if (!isLoaded)
-    return (
-      <Skeleton className={cn("size-8 rounded-lg bg-inverse-hover", gutters)} />
-    );
+    return <Skeleton className={cn("size-8 rounded-lg", gutters)} />;
 
   if (isSignedIn) return <UserMenu className={gutters} />;
 
@@ -46,7 +42,7 @@ export function HeaderAuthClient() {
     <div className="flex items-center gap-1">
       <Link
         href="/sign-in"
-        className="rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-inverse-muted-foreground transition-colors duration-100 ease-out hover:text-inverse-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60"
+        className="rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors duration-100 ease-out hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60"
       >
         Log in
       </Link>

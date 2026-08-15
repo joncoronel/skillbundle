@@ -629,6 +629,43 @@ html {
   initial-value: 9999px;
 }
 
+/* The inverse surface, as a contract rather than a set of per-control overrides.
+ *
+ * The header pill is near-black in light mode, so any control that looks right
+ * on the page looks wrong inside it. That used to be fixed one control at a
+ * time — a `PILL_CONTROL` class string, a hardcoded `bg-inverse-hover` on the
+ * avatar, another on the auth skeleton — which meant the FOURTH control added to
+ * the pill needed a fourth correction, and nothing said so until it looked wrong.
+ *
+ * This works because no cubby-ui recipe names a colour: Button's ghost variant
+ * is literally `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]`,
+ * and `@theme inline` compiles `text-muted-foreground` to
+ * `color: var(--muted-foreground)` — the raw token, not a `--color-*` indirection.
+ * So re-pointing the tokens on an ancestor reaches every descendant through
+ * ordinary inheritance.
+ *
+ * Which is the point: this needs NO edit to `components/ui/cubby-ui/**`. Adding
+ * `inverse` variants to those recipes would do the same job and be clobbered by
+ * the next `shadcn add` — see the divergence list in TODO.md. A cascade rule
+ * cannot be clobbered, because there is nothing local to overwrite.
+ *
+ * Deliberately NOT re-pointed: `--primary` and friends. The Sign-up button is
+ * meant to stay the brand colour on any surface. Portalled content (dropdowns,
+ * dialogs) renders at the body and never inherits this, which is also correct —
+ * a menu opened from the pill floats over the PAGE. */
+[data-surface="inverse"] {
+  --foreground: var(--inverse-foreground);
+  --muted-foreground: var(--inverse-muted-foreground);
+  --border: var(--inverse-border);
+
+  /* Every wash on this surface is the same 10% of the foreground: there is no
+     separate hover/active/fill step on an object this small. */
+  --muted: var(--inverse-hover);
+  --accent: var(--inverse-hover);
+  --surface-hover: var(--inverse-hover);
+  --surface-active: var(--inverse-hover);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

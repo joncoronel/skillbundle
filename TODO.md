@@ -727,47 +727,10 @@ call, like the focus rings, not a side effect of a component update.
 
 ### Parked from the skill-page-redesign review (Aug 2026)
 
-Four calls made deliberately during that branch's review rounds, each declined
+Three calls made deliberately during that branch's review rounds, each declined
 for a reason that is about scope rather than merit. Recorded here because the
 review file itself is under `reviews/`, which is git-ignored — the reasoning
-disappears at merge otherwise, and the next reviewer re-proposes all four.
-
-- **`data-surface="inverse"` on the header pill.**
-
-  _The problem._ The pill is near-black in light mode, so a control that looks
-  right on the page looks wrong inside it. Today every such control is corrected
-  by hand, in three places: `PILL_CONTROL` (`header-pill.tsx:42`), and hardcoded
-  `bg-inverse-hover` in `auth/user-menu.tsx:38`/`:69` and
-  `header-auth-client.tsx`. A fourth control dropped into the pill needs a
-  fourth correction, and nothing makes that obvious until it looks wrong.
-
-  _The fix, and why it needs no component changes._ Every cubby-ui recipe paints
-  from semantic variables rather than fixed colours. `Button`'s ghost variant is
-  literally `text-muted-foreground … [--btn-bg-hover:var(--surface-hover)]`. CSS
-  variables inherit, so an ancestor that re-points those names changes
-  everything below it:
-
-        [data-surface="inverse"] {
-          --foreground:       var(--inverse-foreground);
-          --muted-foreground: var(--inverse-muted-foreground);
-          --surface-hover:    var(--inverse-hover);
-          --surface-active:   var(--inverse-hover);
-          --border:           var(--inverse-border);
-        }
-
-  Put that in globals.css, put `data-surface="inverse"` on the pill, and every
-  control inside paints correctly with no per-control classes — because they
-  were already asking for `--muted-foreground`, and now they get the inverse
-  one. `PILL_CONTROL` and both hardcoded fills delete.
-
-  **This does not touch `components/ui/cubby-ui/**`.** An earlier version of
-  this entry claimed the fix needed `inverse` variants added to those recipes,
-  and was therefore blocked by the vendoring rule above. That was wrong: adding
-  variants is the _other_, worse fix. Re-pointing tokens on an ancestor is
-  ordinary cascade and survives any `shadcn add`.
-
-  Pairs with the plan to move the `--inverse*` tokens into the cubby-ui theme
-  file — if they live upstream, this rule can go upstream with them.
+disappears at merge otherwise, and the next reviewer re-proposes all three.
 
 - **A skip link in `app/(main)/layout.tsx`. Pre-existing, not from this branch.**
   The app has never had one: `app/(main)/layout.tsx` renders header → children →
