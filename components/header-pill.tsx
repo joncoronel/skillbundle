@@ -12,16 +12,18 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { cn } from "@/lib/utils";
 
 /**
- * Level 3's drop shadows, with `--chrome-rim` in place of `--surface-rim-3`.
+ * Level 3's drop shadows, wrapped in the pill's own edge tokens.
  *
  * `solidSurface(3)` would also bring `bg-surface-3` and fight the chrome fill,
- * so only the shadow half is taken. The rim is swapped because the ladder's rims
- * are tuned for a fill LIGHTER than the page, which this one isn't in either
- * theme — globals.css has the scanline.
+ * so only the shadow half is taken. Both edge tokens exist because the ladder's
+ * ring and rim are tuned for a fill LIGHTER than the page, which this one isn't
+ * in either theme — globals.css has the scanlines. Order matters: `--chrome-ring`
+ * is FIRST so it paints over the ladder's own ring; `--chrome-rim` is last so it
+ * sits under nothing.
  */
 const PILL_SURFACE = cn(
   "bg-chrome",
-  "shadow-[var(--surface-shadow-3),var(--chrome-rim)]",
+  "shadow-[var(--chrome-ring),var(--surface-shadow-1),var(--chrome-rim)]",
 );
 
 /**

@@ -273,10 +273,14 @@ html {
     var(--chrome-foreground) 12%,
     transparent
   );
-  /* The pill's top-edge highlight, replacing `--surface-rim-*` (tuned for fills
-     LIGHTER than the page, which this is in neither theme). Light needs none —
-     every surface rim is transparent here anyway, and the 224-unit fill/page
-     step is the edge. The dark value is where this earns its keep. */
+  /* The two halves of the pill's edge, both no-ops in light because the
+     224-unit fill/page step is the edge there (and every `--surface-rim-*` is
+     transparent in light anyway). The dark values are where they earn their
+     keep — see `.dark`.
+
+       --chrome-ring  the outer hairline, outside the border box
+       --chrome-rim   the inner top-edge highlight */
+  --chrome-ring: 0 0 transparent;
   --chrome-rim: 0 0 transparent;
 
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
@@ -433,7 +437,7 @@ html {
      is where the two themes stop sharing a chain — light's `--chrome` tracks
      `--neutral`, but dark's `--neutral` is near-WHITE (it fills the neutral
      Button, which inverts), so only its chroma and hue carry over. */
-  --chrome: oklch(0.16 var(--neutral-chroma) var(--neutral-hue));
+  --chrome: oklch(0.159 var(--neutral-chroma) var(--neutral-hue));
   --chrome-foreground: var(--foreground);
   /* A specular top edge. The system's light source is above (every rim is
      `inset 0 1px 0 0`) and a dark object lit from above catches its top edge;
@@ -450,7 +454,26 @@ html {
      landed on rgb 20 against a page of 22 — darker than what it sat on, and 2
      units from the shadow, collapsing the bevel into one muddy band. Worth
      knowing before anyone deepens `--chrome` again. */
-  --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
+  --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.065);
+  /* The outer hairline. The ladder's own ring is baked into `--surface-shadow-N`
+     as a literal, so it can't be re-pointed — this is PREPENDED to the shadow
+     list instead, and the first box-shadow layer paints on top, so it covers the
+     ladder's at the same `0 0 0 1px` while its drop layers stay untouched.
+     (That's the whole reason it's a separate token rather than a hand-rolled
+     shadow: the drops still come from the system. See DESIGN.md §5.)
+
+     Needed because the ladder's ring is tuned to darken a page BELOW a lighter
+     card. Here the pill is already darker than the page, so at 12% it landed on
+     rgb 18 — LIGHTER than the fill it was meant to define — and the edge read as
+     a soft blend. Scanned across the left edge:
+
+       ladder 12%   22 → 18 → 13    ring lighter than the fill
+       this   60%   22 →  7 → 13    ring one rung below it
+
+     60% is not a taste number: it puts the ring ~7 below the fill, the same
+     ~7-unit interval by which the fill sits below the page. Page, fill, ring —
+     one rung apart each. */
+  --chrome-ring: 0 0 0 1px oklch(0 0 0 / 0.7);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);
