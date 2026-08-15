@@ -194,23 +194,49 @@ export function HeaderPill() {
           app's easing for a surface that opens. Since this panel replaced the
           drawer, matching it is the point. Note those all pair it with
           `duration-400`; this runs at 300ms, which is the one thing here that
-          does not match them. */}
+          does not match them.
+
+          ── Why the closed state is `display: none` ──────────────────────────
+
+          A clipped block is still in the tab order. Collapsed to `0fr` with
+          `overflow-hidden`, the five links and the second theme control stayed
+          focusable while the toggle reported `aria-expanded="false"`, and the
+          browser would scroll the zero-height box to reveal whichever one took
+          focus. `display: none` is the browser's own answer: it removes the
+          subtree from the tab order, the accessibility tree and find-in-page at
+          once, with no attribute to keep in sync with `menuOpen`. (`inert` did
+          the job too, and was what this carried first — but it is a second
+          source of truth for the same state.)
+
+          `display` is a discrete property, so animating out of it takes two
+          extra pieces, both already used elsewhere in this app:
+
+            transition-discrete  `transition-behavior: allow-discrete`, which
+                                 defers the flip TO `none` until the transition
+                                 ends, and applies the flip FROM `none`
+                                 immediately so there is something to animate.
+            starting:grid-rows-[0fr]
+                                 `@starting-style`. An element arriving from
+                                 `display: none` has no previous computed style
+                                 to transition from, so without this the row
+                                 would appear at its open height instead of
+                                 growing into it.
+
+          The two mechanisms are orthogonal: the height still animates exactly
+          as before. Where `@starting-style` is unsupported the menu opens and
+          closes with no animation, which is a fine failure — and the closed
+          state is still `display: none`, so the focus fix does not depend on
+          any of this. */}
       <div
         id="header-mobile-menu"
         className={cn(
-          "grid overflow-hidden transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none md:hidden",
-          menuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+          "grid overflow-hidden transition-[grid-template-rows,display] transition-discrete duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none md:hidden",
+          menuOpen
+            ? "grid-rows-[1fr] starting:grid-rows-[0fr]"
+            : "hidden grid-rows-[0fr]",
         )}
       >
-        {/* `inert` and not just `overflow-hidden`: a clipped block is still in
-            the tab order, so a keyboard user tabbing past the toggle landed on
-            five invisible links and a second theme control while the toggle
-            reported `aria-expanded="false"` — and the browser then scrolled the
-            zero-height box to reveal whichever one it focused. The drawer this
-            replaced never had the problem, because it unmounted its portal when
-            closed. The record card and the section rail set this for the same
-            reason; the header was the one collapse that missed it. */}
-        <div className="min-h-0" inert={!menuOpen}>
+        <div className="min-h-0">
           <Suspense
             fallback={
               <MenuLinks
