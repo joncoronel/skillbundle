@@ -236,7 +236,20 @@ export function HeaderPill() {
             : "hidden grid-rows-[0fr]",
         )}
       >
-        <div className="min-h-0">
+        {/* The content fades on top of the height, and it needs BOTH halves for
+            the same reason the row does: `starting:opacity-0` supplies the
+            entry value the element cannot have while its parent is
+            `display: none`, and the state-driven `opacity-0` drives the exit,
+            which `@starting-style` has no say over.
+
+            Same duration and curve as the height, so it reads as one gesture
+            rather than two things moving at once. */}
+        <div
+          className={cn(
+            "min-h-0 transition-opacity duration-300 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+            menuOpen ? "opacity-100 starting:opacity-0" : "opacity-0",
+          )}
+        >
           <Suspense
             fallback={
               <MenuLinks
