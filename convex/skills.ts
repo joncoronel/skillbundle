@@ -3534,10 +3534,19 @@ export const listPopularSkills = query({
  * content change?".
  *
  * A purpose-built query rather than a reuse of `listPopularSkills` because the
- * caller walks the WHOLE catalog (~9.5k rows) in one pass. Shipping the full
- * ~200 B summary for every row would put ~2 MB on the wire to use three fields
- * of it; this projection is ~60 B/row. The document reads are the same either
- * way — the saving is bandwidth, not Convex read units.
+ * caller walks the WHOLE catalog (~16k rows) in one pass. Shipping the full
+ * summary for every row would put ~21 MB on the wire to use six fields of it;
+ * this projection is ~60 B/row.
+ *
+ * **The projection saves wire bytes only, and that is NOT the expensive half.**
+ * `.paginate()` reads whole documents, so Convex bills the full ~1.3 KB row
+ * (measured against prod, Aug 2026 — an earlier version of this comment said
+ * ~200 B, which was wrong by 6x and is how a ~21 MB-per-walk query got costed
+ * as a cheap one). At the walk rate this had before app/sitemap.ts gated it to
+ * production, that was 500 MB/day of Convex database bandwidth on each
+ * deployment — the single largest consumer in the app. Cutting it further means
+ * making the ROW narrower, not the projection: see the note in app/sitemap.ts
+ * about a slim projection table, deliberately not built yet.
  *
  * Four fields ship because `lastmod` needs both timestamps AND the two flags
  * that say whether the second one can be trusted. `lib/sitemap-entries.ts`
@@ -3545,7 +3554,7 @@ export const listPopularSkills = query({
  *
  *   `contentUpdatedAt` — the last time the SKILL.md actually MOVED, and NOT the
  *     daily install-count refresh: a `lastmod` that ticked every morning
- *     because a number changed would tell crawlers to re-fetch ~9.5k unchanged
+ *     because a number changed would tell crawlers to re-fetch ~16k unchanged
  *     pages daily, worse than sending none at all. Only written when a fetch
  *     finds the hash moved, so a skill whose file has sat still since ingest
  *     has none — most of the catalog today.
