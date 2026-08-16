@@ -1,5 +1,6 @@
 /**
- * Fixtures for the instant-navigation e2e suite.
+ * Shared route params for the signed-out e2e suites (instant-navigation,
+ * landmarks, skill-history).
  *
  * Two strategies, deliberately:
  *

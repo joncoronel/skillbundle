@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/cubby-ui/button";
 
-/** Stable ref callback — see the note on the `<main>` element below. */
+/** Stable ref callback — see the note on the element below. */
 function focusOnMount(node: HTMLElement | null) {
   node?.focus();
 }
@@ -17,10 +17,17 @@ function focusOnMount(node: HTMLElement | null) {
  * NOT use it: that one renders its own document without the app stylesheet, so
  * it has to be inline-styled and cannot share Tailwind markup.
  *
- * `<main>` with a focus target, because this replaces the whole page body while
- * the layout's header stays. Neither group layout supplies a landmark, so
- * without it a screen-reader user gets no signal the content changed and no
- * landmark to jump to.
+ * A `<div>`, not a `<main>`, and that changed: `(main)/layout.tsx` now owns the
+ * landmark for its whole group, so rendering one here would nest two visible
+ * `<main>`s on every error in that group. `(auth)` has no layout landmark, so
+ * `(auth)/error.tsx` supplies one around this instead — see the note there.
+ *
+ * It keeps the focus target either way, and owns its own box for both callers —
+ * neither boundary should re-wrap it, or the two render at different widths.
+ *
+ * The focus move matters because this swaps the page body underneath whatever
+ * chrome survives, which differs by group: in `(main)` the header stays, in
+ * `(auth)` there is none. Either way nothing announces the change on its own.
  */
 export function RouteErrorBody({
   error,
@@ -33,7 +40,7 @@ export function RouteErrorBody({
   description: string;
 }) {
   return (
-    <main
+    <div
       // A stable callback, not an inline arrow: an inline one is a new function
       // on every render, so React detaches and re-runs it each time and the
       // boundary would re-steal focus mid-interaction. Rare here, but free to
@@ -73,6 +80,6 @@ export function RouteErrorBody({
           Error ID: {error.digest}
         </p>
       ) : null}
-    </main>
+    </div>
   );
 }

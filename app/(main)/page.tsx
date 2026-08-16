@@ -83,20 +83,28 @@ export default async function Home() {
   );
 
   return (
-    <Suspense
-      fallback={
-        <HomeFallback
+    // The width wrapper sits ABOVE the boundary rather than inside both
+    // branches: it used to be duplicated in HomeContent and HomeFallback with a
+    // comment asking future editors to keep them matched, which was forced only
+    // while they were `<main>` elements — a landmark cannot straddle a Suspense
+    // boundary from outside. Now that `(main)/layout.tsx` owns the landmark and
+    // this is a plain box, one copy in the static shell does for both.
+    <div className="mx-auto max-w-6xl px-4">
+      <Suspense
+        fallback={
+          <HomeFallback
+            initialPopularSkills={initialPopularSkills}
+            initialTrending={initialTrending}
+            initialHot={initialHot}
+          />
+        }
+      >
+        <HomeContent
           initialPopularSkills={initialPopularSkills}
           initialTrending={initialTrending}
           initialHot={initialHot}
         />
-      }
-    >
-      <HomeContent
-        initialPopularSkills={initialPopularSkills}
-        initialTrending={initialTrending}
-        initialHot={initialHot}
-      />
-    </Suspense>
+      </Suspense>
+    </div>
   );
 }

@@ -5,7 +5,7 @@ import { DevDashboardContent } from "./dev-dashboard-content";
 
 export default function DevDashboardPage() {
   return (
-    <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="mb-8">
         <h1 className="font-display text-3xl font-medium tracking-tight">
           Skill Sync Monitor
@@ -18,7 +18,7 @@ export default function DevDashboardPage() {
       <Suspense fallback={<DashboardSkeleton />}>
         <DevLoader />
       </Suspense>
-    </main>
+    </div>
   );
 }
 

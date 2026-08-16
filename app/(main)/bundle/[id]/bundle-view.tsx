@@ -224,7 +224,7 @@ export function BundleView({
   const editing = bundle.isOwner && editingSkills;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
           <div>
@@ -444,7 +444,7 @@ export function BundleView({
           />
         </>
       )}
-    </main>
+    </div>
   );
 }
 
@@ -510,7 +510,7 @@ function SectionHeader({
 
 function BundleNotFound() {
   return (
-    <main className="mx-auto max-w-6xl px-4 pt-20 pb-20">
+    <div className="mx-auto max-w-6xl px-4 pt-20 pb-20">
       <div className="rounded-xl bg-muted/40 px-8 py-20 md:px-12">
         <h1 className="text-2xl font-semibold tracking-tight">
           This bundle isn&rsquo;t here.
@@ -528,7 +528,7 @@ function BundleNotFound() {
           </Button>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 

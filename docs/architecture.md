@@ -518,6 +518,18 @@ Bridges Clerk to Convex and wires TanStack Query through `@convex-dev/react-quer
 
 The boundary's fallback is `NavLinks activeHref={null}` — the real links, not a skeleton. `usePathname()` suspends only while the App Shell for a dynamic-param route is generated (`/[org]`, `/[org]/[repo]`, `/site/[source]`), and none of those is a top-level nav target, so "no link is current" is the correct answer rather than a placeholder for one. Swapping in a skeleton would strip working, prefetchable links out of the prerendered HTML for the app's highest-traffic routes.
 
+### The skip link and the `<main>` landmark
+
+`app/(main)/layout.tsx` renders **one** `<main id="main-content" tabIndex={-1} scroll-mt-24>` around `children`, and it is both the group's landmark and the target of the skip link directly above it. **Pages in `(main)` must not render a `<main>` of their own** — they render a plain width/padding wrapper inside it. Nesting two is invalid and both would be visible, unlike the hidden copy React parks mid-stream.
+
+It lives in the layout because per-page landmarks failed silently: `/[org]`, `/[org]/[repo]` and `/site/[source]` shipped with no `<main>` at all and nothing caught it for months. `e2e/landmarks.spec.ts` asserts exactly one visible `<main>` per route, twice — before and after the network settles, because every route already has its `<main>` in the static shell and a single early assertion would miss one mounted during hydration.
+
+The one gap it does not cover: a URL matching no route at all (e.g. `/a/b/c/d`) returns Next's built-in 404, outside `(main)/layout.tsx` — so no header, no landmark and no skip link. `(main)/not-found.tsx` only covers URLs that match a route and then call `notFound()`. Recorded in TODO.md.
+
+Three details are load-bearing. `tabIndex={-1}` lets a non-focusable element take programmatic focus — without it the browser scrolls but focus stays in the header, so the next Tab returns there and the link achieves nothing. `scroll-mt-24` is the same 96px every anchor target takes (DESIGN.md §4); without it the fragment jump aligned `<main>` to y=0, the sticky header re-pinned over it, and the first content landed _behind_ the chrome. And the link is a plain `<a href="#…">`, not `<Link>`, so it stays a same-document fragment navigation with no router involvement.
+
+`(auth)` does **not** follow this: its landmark comes from `AuthFrame` per page, and from `(auth)/error.tsx` when the boundary replaces it (§14). That asymmetry is deliberate; `e2e/landmarks.spec.ts` asserts one visible `<main>` on `/sign-in` so a regression is still caught, and TODO.md carries the case for unifying it.
+
 ---
 
 ## 7. Client-Side Auth State
@@ -759,19 +771,29 @@ Three layers, outermost first. Add to the innermost one that fits — don't
 reach for a `try/catch` inside a Server Component, which swallows the error and
 loses `retry()`.
 
-| Layer   | File                                 | Catches                                             | Keeps visible                        |
-| ------- | ------------------------------------ | --------------------------------------------------- | ------------------------------------ |
-| Global  | `app/global-error.tsx`               | failures in the root layout itself                  | nothing — it replaces the document   |
-| Segment | `app/(main)/error.tsx`               | anything thrown by a page in `(main)`               | `AppHeader`, `GlobalBundleBar`       |
-| Segment | `app/(auth)/error.tsx`               | a throw during sign-in / sign-up or an SSO callback | whatever `(auth)/layout.tsx` renders |
-| Region  | `components/data-error-boundary.tsx` | one data region's Suspense subtree                  | the whole page around it             |
+| Layer   | File                                 | Catches                                             | Keeps visible                             |
+| ------- | ------------------------------------ | --------------------------------------------------- | ----------------------------------------- |
+| Global  | `app/global-error.tsx`               | failures in the root layout itself                  | nothing — it replaces the document        |
+| Segment | `app/(main)/error.tsx`               | anything thrown by a page in `(main)`               | `AppHeader`, `GlobalBundleBar`            |
+| Segment | `app/(auth)/error.tsx`               | a throw during sign-in / sign-up or an SSO callback | nothing but a decorative `lg:` side panel |
+| Region  | `components/data-error-boundary.tsx` | one data region's Suspense subtree                  | the whole page around it                  |
 
 **There are two segment boundaries because `error.js` only wraps its own
 segment.** Without the `(auth)` one, a Clerk render failure escaped all the way
 to `global-error.tsx` — an unstyled document with no header and no route back
-into the app, on the one flow a user cannot skip. Both segment files are thin:
-the markup lives in `components/route-error-body.tsx` so the two cannot drift
-into showing a user two different products for the same condition.
+into the app, on the one flow a user cannot skip. The markup lives in
+`components/route-error-body.tsx` so the two cannot drift into showing a user
+two different products for the same condition — it owns its own width and
+padding, and neither boundary should re-wrap it.
+
+The two files are not interchangeable, because the groups supply the `<main>`
+landmark at different levels. `(main)/layout.tsx` wraps its children in one
+(§6), so `(main)/error.tsx` renders the shared body bare. `(auth)` has
+no layout-level chrome at all — no header, no nav, and only the `aria-hidden`
+`SkillBundlePanel`, which is itself `hidden` below `lg` —
+and its landmark normally comes from `AuthFrame`, which the boundary replaces.
+So `(auth)/error.tsx` supplies a bare `<main>` of its own. Deleting it leaves
+an auth error with no main region.
 
 Four things worth knowing:
 
@@ -812,12 +834,20 @@ routes, and does not hold anywhere the loaders run in the page body.
 
 ---
 
-## 15. Instant-navigation guards (e2e)
+## 15. Signed-out guards (e2e)
 
 `e2e/instant-navigation.spec.ts` is the regression guard for §1. It uses
 `instant()` from `@next/playwright`, which pauses a navigation at its static
 shell: anything asserted **inside** the callback had to be available with no
 network, anything asserted **after** is allowed to stream.
+
+`e2e/landmarks.spec.ts` is a separate contract over the same routes: exactly one
+visible `<main>` each (§6). One file per contract on purpose — the two happen to
+need the same route list, but a failure in one says nothing about the other.
+
+`e2e/skill-history.spec.ts` is the third, and the only one that asserts
+behaviour rather than structure: it drives the History diff panel on a skill
+page, where every assertion corresponds to a regression that shipped once.
 
 ```bash
 pnpm e2e          # headless
@@ -828,7 +858,7 @@ Three Playwright projects:
 
 | Project           | Runs                                                     | Signed in? |
 | ----------------- | -------------------------------------------------------- | ---------- |
-| `chromium`        | `e2e/*.spec.ts` — the instant-navigation guards          | no         |
+| `chromium`        | `e2e/*.spec.ts` — the three signed-out guards above      | no         |
 | `setup`           | `e2e/auth.setup.ts` — signs in once, saves storage state | —          |
 | `chromium-authed` | `e2e/authenticated/*.spec.ts`                            | yes        |
 
@@ -954,7 +984,9 @@ lib/
   representative-params.ts  # picks 1 representative param per catalog route (popular skill + fallback)
 
 e2e/                        # Playwright (see §15); NOT vitest — different runner
-  instant-navigation.spec.ts  # signed-out instant() guards
+  instant-navigation.spec.ts  # signed-out instant() guards (§1)
+  landmarks.spec.ts           # exactly one visible <main> per route (§6)
+  skill-history.spec.ts       # the version-history rows on a skill page
   auth.setup.ts               # signs in once, saves storage state
   authenticated/              # signed-in functional coverage
   fixtures.ts

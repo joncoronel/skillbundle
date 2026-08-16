@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
  */
 export default function BundleLoading() {
   return (
-    <main className="mx-auto max-w-6xl px-4 pt-12 pb-20">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
           {/* "by {creator}" */}
@@ -79,6 +79,6 @@ export default function BundleLoading() {
           </div>
         </section>
       </div>
-    </main>
+    </div>
   );
 }
