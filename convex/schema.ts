@@ -20,6 +20,31 @@ export default defineSchema({
     count: v.number(),
   }).index("by_user_key", ["userId", "key"]),
 
+  // ROW SIZE — authoritative, same reason the `skillSummaries` block below is.
+  // Every "read summaries, not skills" argument in the repo divides by this.
+  //
+  // **~10 KB per billed document** (measured against prod, Aug 2026: mean
+  // 9.7 KB over the oldest 400 rows and 10.5 KB over the newest 400, median
+  // ~9 KB, p90 ~17 KB; 99% of rows carry `content`). Re-measure with:
+  //   npx convex run --prod --inline-query 'const rows = await ctx.db
+  //     .query("skills").order("desc").take(400);
+  //     return rows.reduce((n, r) => n + JSON.stringify(r).length, 0)
+  //       / rows.length / 1024;'
+  //
+  // TWO stale figures preceded this, and both are still quotable from git
+  // history, so check anything you find against this line:
+  //   ~25 KB — the PRE-SPLIT row, back when the embedding vector was stored
+  //     here. It has not been accurate since `skillEmbeddings` was extracted,
+  //     and no read of this table can be billed it. (The vector rows measure
+  //     ~6.4 KB, so the combined row was ~16 KB even then — ~25 KB looks like
+  //     it was never measured at all.)
+  //   ~13 KB — the post-split estimate at the comment on `skillEmbeddings`
+  //     below. Closer, but ~30% high against the sample above.
+  //
+  // So the summaries-vs-skills substitution these comments exist to justify is
+  // ~10 KB / ~1.3 KB = **~8x**, not the 10x, 19x, 65x or 100x variously
+  // claimed before Aug 2026. Eight is still worth every mirror in this file —
+  // the mistake was never the decision, only the arithmetic advertising it.
   skills: defineTable({
     source: v.string(),
     skillId: v.string(),
@@ -160,8 +185,11 @@ export default defineSchema({
     .index("by_needsEmbedding", ["needsEmbedding"]),
 
   // Embedding vectors live in their own table to keep `skills` row reads
-  // cheap. A skill row averages ~13 KB without the embedding vs ~25 KB with
-  // it. The recommendation pipeline reaches summaries by `skillEmbeddingId`
+  // cheap. Measured Aug 2026: a skill row averages ~10 KB (see the ROW SIZE
+  // block on `skills`) and a vector row here ~6.4 KB, so the split takes ~40%
+  // off every skill read — the pre-split "~13 KB vs ~25 KB" this comment used
+  // to claim overstated both sides and was, as far as anyone can tell, never
+  // sampled. The recommendation pipeline reaches summaries by `skillEmbeddingId`
   // (back-reference on skillSummaries), so vector search results don't need
   // to be translated through the heavy embedding rows themselves.
   //
@@ -209,8 +237,8 @@ export default defineSchema({
   //     return Math.round(rows.reduce((n, r) =>
   //       n + JSON.stringify(r).length, 0) / rows.length);'
   //
-  // Still far under the ~13-25 KB `skills` row, so the denormalization this
-  // table exists for is as justified as it ever was — just by 10x, not 65x.
+  // Still far under the ~10 KB `skills` row, so the denormalization this
+  // table exists for is as justified as it ever was — just by ~8x, not 65x.
   skillSummaries: defineTable({
     source: v.string(),
     skillId: v.string(),
@@ -230,15 +258,15 @@ export default defineSchema({
     //
     // The mirror is what makes the per-repo freshness sweep affordable: it can
     // compare a repo's tree against ~1.3 KB summary rows instead of paging the
-    // ~13 KB skills documents, and 40 hex characters is a rounding error on a
+    // ~10 KB skills documents, and 40 hex characters is a rounding error on a
     // row that already carries a 64-character syncHash.
     githubBlobSha: v.optional(v.string()),
     // Also mirrored from skills, and for the same reason: "did this change since
     // I last looked at my bundle?" is one timestamp comparison per skill, and
-    // making it read a ~1.3 KB summary instead of a ~13 KB skills document is
-    // the difference between a bundle page costing ~130 KB and ~1.3 MB of reads
-    // (at 100 skills). A 10x saving, not the 65x the pre-Aug-2026 ~200 B figure
-    // implied — still worth the mirror, and worth knowing it is 10x.
+    // making it read a ~1.3 KB summary instead of a ~10 KB skills document is
+    // the difference between a bundle page costing ~130 KB and ~1 MB of reads
+    // (at 100 skills). An ~8x saving, not the 125x the pre-Aug-2026 ~200 B /
+    // ~25 KB pair implied — still worth the mirror, and worth knowing it is 8x.
     //
     // Note the distinction from `contentFetchedAt` beside it: fetched is the last
     // time we CHECKED, updated is the last time the file actually MOVED. Unread
@@ -254,7 +282,7 @@ export default defineSchema({
     // Non-optional so eq("isDelisted", false) index ranges are exhaustive (no
     // undefined rows to miss). Backfilled before tightening (backfillIsDelistedFalse).
     isDelisted: v.boolean(),
-    // Denormalized from skills table to avoid reading full 30KB+ skill docs.
+    // Denormalized from skills table to avoid reading full ~10 KB skill docs.
     // Required: every summary is created alongside its skill row.
     skillDocId: v.id("skills"),
     contentFetchedAt: v.optional(v.number()),
@@ -266,7 +294,7 @@ export default defineSchema({
     discoveryFailCount: v.optional(v.number()),
     // Embedding state mirrored from the skills table so coverage stats and
     // unembeddable-skill listings can be computed from this small summary
-    // table (~1.3 KB/row) instead of scanning full skill docs (~25 KB/row).
+    // table (~1.3 KB/row) instead of scanning full skill docs (~10 KB/row).
     // The actual embedding vector lives in the skillEmbeddings table.
     hasEmbedding: v.optional(v.boolean()),
     embeddingMode: v.optional(v.string()),
@@ -353,7 +381,7 @@ export default defineSchema({
     // GitHub-only rows, for the slug audit (githubOnlyAudit.ts). A small set —
     // the fallback path is quota-limited — but it has to be reachable without
     // scanning the catalog to find the handful. On summaries rather than
-    // `skills` so the audit reads ~1.3 KB/row instead of a full ~13-25 KB
+    // `skills` so the audit reads ~1.3 KB/row instead of a full ~10 KB
     // document whose `content` it doesn't want.
     .index("by_isGitHubOnly", ["isGitHubOnly"])
     .index("by_hasSkillMdUrl", ["hasSkillMdUrl"])
@@ -505,7 +533,7 @@ export default defineSchema({
   skillVersions: defineTable({
     skillDocId: v.id("skills"),
     // Denormalized so a timeline or cross-skill feed reads without joining back
-    // to `skills`, whose rows are ~13 KB.
+    // to `skills`, whose rows are ~10 KB.
     source: v.string(),
     skillId: v.string(),
     changedAt: v.number(),

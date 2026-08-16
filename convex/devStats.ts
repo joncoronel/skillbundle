@@ -416,7 +416,7 @@ export const listSkillsWithErrors = query({
 
     const LIST_CAP = 1000;
 
-    // All queries use summaries (~1.3 KB) instead of skills (~30KB)
+    // All queries use summaries (~1.3 KB) instead of skills (~10 KB)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function mapSummary(s: any) {
       return {

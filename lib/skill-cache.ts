@@ -33,7 +33,10 @@ import { api } from "@/convex/_generated/api";
  *                     Add a field to this list and you owe it a publisher.
  *
  * Both used to be one tag, which meant the daily install-count refresh
- * invalidated every skill's ~25 KB content entry too. Since ISR writes are
+ * invalidated every skill's ~25 KB content entry too. (That is the RENDERED ISR
+ * entry, not a database row — do not reconcile it with the ~10 KB `skills` row
+ * size in convex/schema.ts. Different things that happen to be adjacent
+ * numbers.) Since ISR writes are
  * billed per entry, that made a routine number update cost 4 writes per visited
  * page instead of 1. Keep install-count-only jobs (syncSkills, reconcile,
  * curatedRefresh — all of them go through drainRefreshBatch) pinging ONLY

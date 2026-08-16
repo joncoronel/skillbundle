@@ -512,7 +512,7 @@ export const upsertSkillsBatch = internalMutation({
    *
    * 1. **Fast path** (~99% of rows): summary exists. We have everything we
    *    need from the ~1.3 KB summary read — name, installs, isDelisted,
-   *    skillDocId — so we patch the skill row BY ID (no 30KB read) and
+   *    skillDocId — so we patch the skill row BY ID (no ~10 KB read) and
    *    patch the summary directly. Patches are idempotent in Convex; we
    *    don't need to compare fields beforehand.
    *
@@ -1241,8 +1241,8 @@ export const clearDiscoveryForWellKnown = internalMutation({
  * **Reads the SUMMARY, never the skills row.** The only things needed from the
  * existing state are `discoveryFailCount` and the summary's id, and both live on
  * the ~1.3 KB summary — which is what that table is for ("to avoid reading full
- * 30KB+ skill docs", schema.ts). A `skills` row carries `content`, so reading one
- * per update would pull ~13 KB each and, batched, would make a docs-heavy source
+ * full skill docs", schema.ts). A `skills` row carries `content`, so reading one
+ * per update would pull ~10 KB each and, batched, would make a docs-heavy source
  * a large transaction to fetch one integer.
  *
  * Reading the counter off the summary is safe on two counts. Every writer that
@@ -1260,7 +1260,7 @@ export const clearDiscoveryForWellKnown = internalMutation({
  *
  * The batch size is bounded by BYTES WRITTEN, not operation count: a patch rewrites
  * the row, and `skills` rows are the big ones. 100 rows is ~1.3 MB written at the
- * schema's documented ~13 KB average, well inside the transaction limit, while the
+ * schema's documented ~10 KB average, well inside the transaction limit, while the
  * read side is now ~20 KB.
  *
  * `skillMdUrl: ""` means "looked and found nothing", which is why the empty string
@@ -2888,7 +2888,7 @@ export const backfillIsDelistedFalseBatch = internalMutation({
 export const backfillIsDelistedFalseSummariesBatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
-    // Summaries are small next to the ~25 KB skills row (~1.3 KB each,
+    // Summaries are small next to the ~10 KB skills row (~1.3 KB each,
     // measured Aug 2026) so we can use a larger page size — 500 reads
     // ~650 KB, comfortably under the 16 MB read budget.
     const result = await ctx.db
@@ -2950,7 +2950,7 @@ export const backfillIsDelistedFalse = internalAction({
  *   npx convex run skills:listUnembeddable
  * Returns an empty array if nothing was skipped (the happy path).
  *
- * Reads from skillSummaries (~1.3 KB/row) instead of skills (~25 KB/row)
+ * Reads from skillSummaries (~1.3 KB/row) instead of skills (~10 KB/row)
  * for cheap pipeline visibility.
  */
 export const listUnembeddable = internalQuery({
@@ -2984,7 +2984,7 @@ export const listUnembeddable = internalQuery({
  * Run via: npx convex run skills:embeddingCoverageStats
  *
  * Reads from skillSummaries (~1.3 KB/row, ~21 MB total for 16k skills)
- * instead of skills (~25 KB/row, ~400 MB total). Still a 19x saving, but note
+ * instead of skills (~10 KB/row, ~160 MB total). Still an ~8x saving, but note
  * the absolute is NOT small — this is the same full-catalog summary walk that
  * app/sitemap.ts documents at ~21 MB, so treat it as a diagnostic to run
  * deliberately rather than something to wire into a cron. Embedding state is
@@ -3708,7 +3708,7 @@ export const listRepoAggregatesByOrg = query({
  * Internal query used by recommendations.ts to load skill metadata after a
  * vector search returns ranked skill IDs. Looks up the corresponding
  * skillSummaries rows (~1.3 KB each) instead of the full skills rows
- * (~25 KB each), making analyzeRepo ~19x cheaper on bandwidth.
+ * (~10 KB each), making analyzeRepo ~8x cheaper on bandwidth.
  *
  * Vector search lives on the skills table (where the embedding vectors are
  * stored) but the recommendation re-rank logic only needs name, source,

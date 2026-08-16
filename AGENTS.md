@@ -105,7 +105,7 @@ ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`
 
 Tables (`schema.ts`), grouped by concern:
 
-- **Skills catalog:** `skills` (full ~25 KB rows), `skillSummaries` (slim ~1.3 KB denormalized rows that lists/search/cards read), `skillEmbeddings` (vector search), `skillAudits` + `skillSnapshots` (security verdicts + install-count history), `syncStats`.
+- **Skills catalog:** `skills` (full ~10 KB rows), `skillSummaries` (slim ~1.3 KB denormalized rows that lists/search/cards read), `skillEmbeddings` (vector search), `skillAudits` + `skillSnapshots` (security verdicts + install-count history), `syncStats`.
 - **Sync / dedup support:** `curatedOwnerSummaries`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`.
 - **Version archive:** `skillVersions` (one row per detected SKILL.md change, raw file in `_storage`; `isBaseline` marks a starting point rather than an edit).
 - **Users & bundles:** `users`, `bundles`. (`bundleStats` and `bundleStars` were removed — see the note at the end of `schema.ts`.)

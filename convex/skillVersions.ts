@@ -160,7 +160,7 @@ async function toEntry(ctx: QueryCtx, row: Doc<"skillVersions">) {
   };
 }
 
-/** Resolve source+skillId through the ~1.3 KB summary, not the ~13 KB skills row. */
+/** Resolve source+skillId through the ~1.3 KB summary, not the ~10 KB skills row. */
 async function resolveSkillDocId(
   ctx: QueryCtx,
   source: string,

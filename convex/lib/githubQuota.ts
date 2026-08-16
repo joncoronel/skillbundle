@@ -5,7 +5,7 @@
  *   - the immutable `leaderboard: "github"` origin tag the insert writes and
  *     the count filters on (one constant, so a rename can't silently split
  *     inserts from counts and turn the quota off);
- *   - the bounded count (reads at most cap+1 rows — `skills` rows are ~25 KB,
+ *   - the bounded count (reads at most cap+1 rows — `skills` rows are ~10 KB,
  *     so an unbounded `.collect()` over a long-lived Pro account's adds would
  *     approach Convex's read ceiling);
  *   - the client-facing quota shape and the quota-exceeded error.
