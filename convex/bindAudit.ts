@@ -52,7 +52,7 @@
  * it was wrong 12 times out of 12.
  *
  * **Run it from the CLI**, not a dev card: it is a one-off backward-looking check
- * over ~9.5k rows, not something to leave a button for.
+ * over ~16k rows, not something to leave a button for.
  *
  *   npx convex run bindAudit:auditSkillMdBinds '{"cursor":null}'
  *

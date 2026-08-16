@@ -731,8 +731,9 @@ export const listChangesForBundle = query({
  * `MASS_CHANGE_THRESHOLD` is only meaningful as a multiple of the ordinary
  * daily rate, and the ordinary daily rate had been INFERRED from catalog size
  * rather than measured. That inference was wrong twice (this file said 3,000
- * skills; `schema.ts` said 9.5k; prod is ~15k), which is reason enough to stop
- * inferring it. Read-only, no auth, safe to run against prod:
+ * skills; `schema.ts` said 9.5k — both since restamped; prod is ~16.8k), which
+ * is reason enough to stop inferring it. Read-only, no auth, safe to run
+ * against prod:
  *
  *   npx convex run skillVersions:changeRateHealth --prod
  *

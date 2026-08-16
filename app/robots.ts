@@ -3,7 +3,7 @@ import { SITE_URL } from "@/lib/site-url";
 
 /**
  * Crawler guidance. The site had none before this, which matters more here than
- * on a typical app: the catalog is ~9.5k skill pages, each one rendered on
+ * on a typical app: the catalog is ~16k skill pages, each one rendered on
  * demand and cached per `'use cache'` entry, so an unguided crawl is a direct
  * bill item (Vercel ISR writes) rather than just load.
  *
@@ -33,7 +33,7 @@ export default function robots(): MetadataRoute.Robots {
         // Blocked outright, not throttled. Measured 2026-08-12 over 24h:
         // amazonbot alone was 755 of ~5.1k total edge requests (15%), semrush
         // another 163 — together ~18% of all traffic, and concentrated on the
-        // ~9.5k skill detail pages, which cache at only 5.3% because traffic
+        // ~16k skill detail pages, which cache at only 5.3% because traffic
         // that thin over that many URLs means an entry is almost never still
         // alive when the next visitor arrives. So each of those crawls is a
         // cold render.
@@ -106,7 +106,7 @@ export default function robots(): MetadataRoute.Robots {
     // it is the one measured in the block rule above: Googlebot made ONE
     // request to this site in 24h. app/sitemap.ts carries the full argument.
     sitemap: `${SITE_URL}/sitemap.xml`,
-    // Note that the OG image routes (app/**/opengraph-image.tsx, ~9.5k of them, one per
+    // Note that the OG image routes (app/**/opengraph-image.tsx, ~16k of them, one per
     // skill) are deliberately NOT blocked: social preview fetchers need them,
     // and they are advertised in every page's `og:image`. They are the most
     // expensive per-request surface in the catalog, so if crawler load on them

@@ -22,7 +22,7 @@ export const HOME_HOT_TAG = "home-hot";
  * Install counts, ranks, snapshots, version history, copies — plus the list
  * surfaces that filter on `isDelisted` or read the curated rollup. Churns
  * catalog-wide every morning by design: syncSkills rewrites the whole
- * ~9.5k-row leaderboard.
+ * ~16k-row leaderboard.
  */
 export const SKILL_SYNC_TAG = "skill-sync";
 

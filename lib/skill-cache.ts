@@ -14,7 +14,7 @@ import { api } from "@/convex/_generated/api";
  * description; convex/lib/revalidate.ts lists the callers.
  *
  *   "skill-sync"    — install count, rank, snapshots, version history, copies.
- *                     syncSkills rewrites the ENTIRE leaderboard (~9.5k rows)
+ *                     syncSkills rewrites the ENTIRE leaderboard (~16k rows)
  *                     every morning, so this tag genuinely churns daily.
  *   "skill-content" — the skill row itself: SKILL.md content, description,
  *                     name, isDelisted, curatedOwner, isGitHubOnly, and the
@@ -50,7 +50,7 @@ import { api } from "@/convex/_generated/api";
  *      no "did we write anything" gate). Detecting the change is easy — the
  *      `skillVersions.by_changedAt` index answers it in one lookup — but a
  *      global gate on a catalog-wide tag only suppresses the ping on days when
- *      NOT ONE of ~9.5k skills changed, which for a catalog of live community
+ *      NOT ONE of ~16k skills changed, which for a catalog of live community
  *      repos is close to never. Per-skill tags are what makes the check pay;
  *      see TODO.md.
  *   2. `cacheLife` is orthogonal to `cacheTag`: an entry's own `revalidate`

@@ -173,7 +173,7 @@ export const syncSkills = internalAction({
     // split), tagged "skill-sync". Ping it so every visited skill page refreshes
     // in lockstep with this sync rather than drifting up to a day behind.
     //
-    // Deliberately NOT "skill-content". This walk rewrites the whole ~9.5k-row
+    // Deliberately NOT "skill-content". This walk rewrites the whole ~16k-row
     // leaderboard daily, and the skill row it would invalidate (SKILL.md content,
     // description) has not changed just because an install number moved — that
     // coupling is exactly what the tag split removed. The fields this path DOES
@@ -1520,7 +1520,7 @@ export const fetchSkillContent = internalAction({
 
           // Archive only on a real change. The unchanged-hash fast path inside
           // the mutation returns changed:false, which is what keeps this from
-          // storing ~9.5k blobs on every 7-day content refresh sweep.
+          // storing ~16k blobs on every 7-day content refresh sweep.
           if (outcome.changed) {
             await archiveSkillVersion(ctx, {
               skillDocId: skillId,

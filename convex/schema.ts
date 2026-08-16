@@ -438,10 +438,14 @@ export default defineSchema({
   // The raw file lives in Convex FILE storage rather than inline. Bodies run
   // ~10-25 KB, and file storage is a separate and much cheaper allowance
   // (100 GB included, $0.03/GB overage) than document storage ($0.20/GB), which
-  // the ~9.5k-row `skills` table already draws on. Measured against prod
-  // (Aug 2026): ~27.5% of the catalog changes per month, so ~2,600 changes →
-  // ~39 MB/month of blobs. `skillSnapshots` above already writes ~285k rows a
-  // month, so this is a rounding error next to what the pipeline does daily.
+  // the ~16.8k-row `skills` table already draws on. Measured against prod
+  // (Aug 2026): ~27.5% of the catalog changes per month. The measured quantity
+  // there is the PERCENTAGE — the absolutes below are derived from it and the
+  // row count, so they move whenever the catalog does: at 16.8k rows that is
+  // ~4,600 changes → ~69 MB/month of blobs. (Both were originally stated as
+  // ~2,600 and ~39 MB, computed off a 9.5k row count that was already stale.)
+  // `skillSnapshots` above already writes ~285k rows a month, so this is still
+  // a rounding error next to what the pipeline does daily.
   //
   // NO PATCH/DIFF IS STORED, deliberately. Because every version's full text is
   // retained, any two versions can be diffed on demand — the client renderer
