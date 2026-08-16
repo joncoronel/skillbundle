@@ -465,20 +465,32 @@ export default defineSchema({
   // raw SKILL.md, written by both content-write paths in skills.ts
   // (`updateDescription` and `updateSkillFromDetail`) via `recordSkillVersion`.
   //
-  // The raw file lives in Convex FILE storage rather than inline. Bodies run
-  // ~10-25 KB, and file storage is a separate and much cheaper allowance
-  // (100 GB included, $0.03/GB overage) than document storage ($0.20/GB), which
-  // the ~16.8k-row `skills` table already draws on. Measured against prod
-  // (Aug 2026): ~27.5% of the catalog changes per month, and a stored blob
-  // averages ~15 KB (the midpoint of the 10-25 KB range above skews high —
-  // most SKILL.mds sit in the lower half).
+  // The raw file lives in Convex FILE storage rather than inline, and file
+  // storage is a separate and much cheaper allowance (100 GB included,
+  // $0.03/GB overage) than document storage ($0.20/GB), which the ~16.8k-row
+  // `skills` table already draws on.
   //
-  // Those two are the MEASURED quantities; everything else here is derived from
-  // them and the LIVE row count (~16.0k — delisted rows are never content-
-  // refetched, so they cannot produce blobs), and so moves whenever the catalog
-  // does: ~16.0k x 27.5% = ~4,400 changes/month x ~15 KB = ~66 MB/month.
-  // Originally stated as ~2,600 and ~39 MB off a 9.5k row count that was
-  // already stale; recompute rather than scale.
+  // MEASURED against prod (Aug 2026), both of them, so the derivation below has
+  // a floor under it:
+  //   - ~27.5% of the catalog changes per month.
+  //   - A stored blob averages **13.8 KB** (mean over the 2,000 most recent
+  //     `skillVersions` rows; median 9.5 KB, p10 2.9 KB, p90 27.2 KB — the
+  //     distribution is right-skewed, so the mean is the right multiplier and
+  //     the median would understate). Re-measure with:
+  //       npx convex run --prod --inline-query 'const rows = await ctx.db
+  //         .query("skillVersions").order("desc").take(2000);
+  //         const b = rows.map(r => r.rawBytes);
+  //         return b.reduce((a, c) => a + c, 0) / b.length / 1024;'
+  //
+  // Everything else here is DERIVED from those two and the LIVE row count
+  // (~16.0k — delisted rows are never content-refetched, so they cannot produce
+  // blobs), and so moves whenever the catalog does:
+  //   ~16.0k x 27.5% = ~4,400 changes/month x 13.8 KB = ~61 MB/month.
+  //
+  // Stated as ~2,600 / ~39 MB until Aug 2026 (off a stale 9.5k row count), then
+  // briefly as ~4,600 / ~69 MB with a ~15 KB blob size that was back-derived
+  // from the retired pair rather than sampled. Recompute from the measurements
+  // above rather than scaling whatever is written here.
   //
   // `skillSnapshots` above already writes ~285k rows a month, so this is still
   // a rounding error next to what the pipeline does daily.
@@ -562,8 +574,9 @@ export default defineSchema({
   // payloads on one row is how a cache starts returning one consumer's data to
   // another; a second small table is cheaper than that class of bug.
   //
-  // One row per GitHub repo (~1,400 at current catalog size), so this stays
-  // small no matter how many skills each repo holds.
+  // One row per GitHub repo (~2,300 at current catalog size — live skills / 6.8,
+  // the same derivation convex/freshness.ts documents), so this stays small no
+  // matter how many skills each repo holds.
   repoSweepState: defineTable({
     repo: v.string(),
     branch: v.string(),

@@ -116,9 +116,12 @@ import {
  * derived, and do not re-derive it. The skill-to-URL ratio is not a constant
  * you can multiply by: directory pages saturate as the catalog grows, because
  * ~98% of skills are GitHub repos averaging ~6.8 skills each
- * (convex/freshness.ts). A one-page build of this branch emits 1,323 URLs from
- * 1,000 skills — 1.32x — and the full-catalog ratio is strictly lower than that
- * (~1.17x), since later pages land mostly in orgs and repos already counted.
+ * (convex/freshness.ts). Two points off this branch's own non-production builds
+ * show the curve: 1,000 skills gave 1,323 URLs (1.32x), 2,000 gave 2,541
+ * (1.27x). It keeps falling, because later pages land mostly in orgs and repos
+ * already counted — which is how 18,701 over ~16k skills (1.17x) is consistent
+ * with both. `NON_PRODUCTION_PAGES` is 2, so the current build reproduces the
+ * second figure.
  * An earlier version of this comment guessed "twice the skill count" and landed
  * ~60% high, which then made both the crawl-time and headroom figures wrong.
  * Re-measure from a production `[sitemap] rows=` log rather than guessing again.

@@ -329,9 +329,9 @@ That ambiguity is exactly how the loop bug survived being watched.
   than scheduled. Revisit if anyone gets near it.
 
 - **Re-measure the mass-change threshold.** `MASS_CHANGE_THRESHOLD` in
-  `skillVersions.ts` is 750, which is ~5x an ESTIMATE (15k skills at the
-  measured 27.5%/month), not a measurement. Under ~3x a busy day it fires on
-  ordinary Tuesdays; far over it never fires at all.
+  `skillVersions.ts` is 750, which is ~5x an ESTIMATE (~16.0k live skills at
+  the measured 27.5%/month is ~150 changes/day), not a measurement. Under ~3x a
+  busy day it fires on ordinary Tuesdays; far over it never fires at all.
 
       npx convex run skillVersions:changeRateHealth --prod
 

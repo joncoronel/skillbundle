@@ -3708,7 +3708,7 @@ export const listRepoAggregatesByOrg = query({
  * Internal query used by recommendations.ts to load skill metadata after a
  * vector search returns ranked skill IDs. Looks up the corresponding
  * skillSummaries rows (~1.3 KB each) instead of the full skills rows
- * (~25 KB each), making analyzeRepo ~100x cheaper on bandwidth.
+ * (~25 KB each), making analyzeRepo ~19x cheaper on bandwidth.
  *
  * Vector search lives on the skills table (where the embedding vectors are
  * stored) but the recommendation re-rank logic only needs name, source,
