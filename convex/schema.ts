@@ -238,7 +238,9 @@ export default defineSchema({
   //       n + JSON.stringify(r).length, 0) / rows.length);'
   //
   // Still far under the ~10 KB `skills` row, so the denormalization this
-  // table exists for is as justified as it ever was — just by ~8x, not 65x.
+  // table exists for is as justified as it ever was — just by ~8x, not the
+  // 65-125x the retired ~200 B figure implied (65x against the stale ~13 KB
+  // skills row, 125x against the staler ~25 KB one — both retired above).
   skillSummaries: defineTable({
     source: v.string(),
     skillId: v.string(),
