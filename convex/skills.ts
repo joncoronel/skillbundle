@@ -511,7 +511,7 @@ export const upsertSkillsBatch = internalMutation({
    * Listing-call upsert. Two paths:
    *
    * 1. **Fast path** (~99% of rows): summary exists. We have everything we
-   *    need from the ~200B summary read — name, installs, isDelisted,
+   *    need from the ~1.3 KB summary read — name, installs, isDelisted,
    *    skillDocId — so we patch the skill row BY ID (no 30KB read) and
    *    patch the summary directly. Patches are idempotent in Convex; we
    *    don't need to compare fields beforehand.
@@ -548,7 +548,7 @@ export const upsertSkillsBatch = internalMutation({
     for (const skill of skills) {
       const isGitHub = isGitHubSource(skill.source);
 
-      // ALWAYS read summary first (~200B). Mirrors every field upsert
+      // ALWAYS read summary first (~1.3 KB). Mirrors every field upsert
       // decisions need, so we don't need to read the heavy skill row.
       const summary = await ctx.db
         .query("skillSummaries")
@@ -609,7 +609,7 @@ export const upsertSkillsBatch = internalMutation({
           await ctx.db.patch(summary._id, {
             lastSeenInApi: now,
             // Rank can shift even when this skill's own installs didn't, as
-            // other skills move around it. Cheap (~200B summary patch) and the
+            // other skills move around it. Cheap (~1.3 KB summary patch) and the
             // heavy skills row is left untouched. Skipped when no rank was
             // supplied (curated/manual paths).
             ...(skill.rank !== undefined &&
@@ -1240,7 +1240,7 @@ export const clearDiscoveryForWellKnown = internalMutation({
  *
  * **Reads the SUMMARY, never the skills row.** The only things needed from the
  * existing state are `discoveryFailCount` and the summary's id, and both live on
- * the ~200 B summary — which is what that table is for ("to avoid reading full
+ * the ~1.3 KB summary — which is what that table is for ("to avoid reading full
  * 30KB+ skill docs", schema.ts). A `skills` row carries `content`, so reading one
  * per update would pull ~13 KB each and, batched, would make a docs-heavy source
  * a large transaction to fetch one integer.
@@ -2553,7 +2553,7 @@ export const delistSkillsBatch = internalMutation({
   },
   handler: async (ctx, { entries }) => {
     for (const { summaryId, source, skillId } of entries) {
-      // Soft-delete the summary. Keeping the row (~200 bytes) lets the
+      // Soft-delete the summary. Keeping the row (~1.3 KB) lets the
       // Delisted stat count correctly and enables the fast-path relist in
       // upsertSkillsBatch. Clear pipeline flags so background workers skip
       // the row, and mirror the embedding deletion below.
@@ -2888,8 +2888,9 @@ export const backfillIsDelistedFalseBatch = internalMutation({
 export const backfillIsDelistedFalseSummariesBatch = internalMutation({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
-    // Summaries are small (~200 bytes each) so we can safely use a larger
-    // page size — but keep it under the 16 MB read budget with headroom.
+    // Summaries are small next to the ~25 KB skills row (~1.3 KB each,
+    // measured Aug 2026) so we can use a larger page size — 500 reads
+    // ~650 KB, comfortably under the 16 MB read budget.
     const result = await ctx.db
       .query("skillSummaries")
       .paginate({ numItems: 500, cursor: cursor ?? null });
@@ -2949,7 +2950,7 @@ export const backfillIsDelistedFalse = internalAction({
  *   npx convex run skills:listUnembeddable
  * Returns an empty array if nothing was skipped (the happy path).
  *
- * Reads from skillSummaries (~200 bytes/row) instead of skills (~25 KB/row)
+ * Reads from skillSummaries (~1.3 KB/row) instead of skills (~25 KB/row)
  * for cheap pipeline visibility.
  */
 export const listUnembeddable = internalQuery({
@@ -2982,8 +2983,11 @@ export const listUnembeddable = internalQuery({
  *
  * Run via: npx convex run skills:embeddingCoverageStats
  *
- * Reads from skillSummaries (~200 bytes/row, ~3 MB total for 16k skills)
- * instead of skills (~25 KB/row, ~400 MB total). Embedding state is
+ * Reads from skillSummaries (~1.3 KB/row, ~21 MB total for 16k skills)
+ * instead of skills (~25 KB/row, ~400 MB total). Still a 19x saving, but note
+ * the absolute is NOT small — this is the same full-catalog summary walk that
+ * app/sitemap.ts documents at ~21 MB, so treat it as a diagnostic to run
+ * deliberately rather than something to wire into a cron. Embedding state is
  * mirrored to summaries by writeEmbeddingsBatch and markSkillUnembeddable
  * — if you ever bypass those, run backfillSummaryEmbeddingState to resync.
  */
@@ -3018,8 +3022,9 @@ interface CoverageBatchResult {
 export const embeddingCoverageStatsBatch = internalQuery({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
-    // Summary docs are ~200 bytes each, so 1000 per page ≈ 200 KB — well
-    // under the 16 MB read budget.
+    // Summary docs are ~1.3 KB each (measured Aug 2026; the ~200 B this
+    // comment used to assume had drifted 6x), so 1000 per page ≈ 1.3 MB —
+    // ~12x under the 16 MB read budget rather than the ~80x implied before.
     const result = await ctx.db
       .query("skillSummaries")
       .paginate({ numItems: 1000, cursor: cursor ?? null });
@@ -3323,7 +3328,7 @@ const INSIGHTS_HISTORY_DAYS = 90;
 /**
  * Just the install count. The OG card renders one integer, and `getInsights`
  * would make it collect every skillSnapshots row inside INSIGHTS_HISTORY_DAYS
- * (90) to get there. Reads the ~200 B summary and stops.
+ * (90) to get there. Reads the ~1.3 KB summary and stops.
  *
  * `null` rather than 0 when there is no summary row — same orphaned-skill-row
  * reasoning as getInsights; a dash beats a confident zero.
@@ -3506,7 +3511,7 @@ export const pruneSnapshotsBatch = internalMutation({
 /**
  * Paginated list of non-delisted skills sorted by installs (descending).
  * Used as the default "browse" view on the home page when no search query
- * is entered. Reads from skillSummaries (~200 bytes/row) for cheap wire size.
+ * is entered. Reads from skillSummaries (~1.3 KB/row) for cheap wire size.
  */
 export const listPopularSkills = query({
   args: {
@@ -3548,7 +3553,7 @@ export const listPopularSkills = query({
  * making the ROW narrower, not the projection: see the note in app/sitemap.ts
  * about a slim projection table, deliberately not built yet.
  *
- * Four fields ship because `lastmod` needs both timestamps AND the two flags
+ * Four of the six are for `lastmod` alone: it needs both timestamps AND the two flags
  * that say whether the second one can be trusted. `lib/sitemap-entries.ts`
  * (`lastChangedAt`) owns that decision and documents each case; in summary:
  *
@@ -3638,7 +3643,7 @@ export const listBySource = query({
  * Per-repo aggregates for every repo under a given org, plus org-level totals.
  * Powers the org directory page. Aggregates inside Convex so the wire payload
  * is O(repos) instead of O(skills) — for an org with N skills across R repos,
- * we ship R aggregate rows instead of N full summary rows (~200 B each).
+ * we ship R aggregate rows instead of N full summary rows (~1.3 KB each).
  *
  * Uses a prefix range scan on `by_source_skillId` because `source` is stored
  * as the full "org/repo" string. The exclusive upper bound `${org}0` works
@@ -3702,7 +3707,7 @@ export const listRepoAggregatesByOrg = query({
 /**
  * Internal query used by recommendations.ts to load skill metadata after a
  * vector search returns ranked skill IDs. Looks up the corresponding
- * skillSummaries rows (~200 bytes each) instead of the full skills rows
+ * skillSummaries rows (~1.3 KB each) instead of the full skills rows
  * (~25 KB each), making analyzeRepo ~100x cheaper on bandwidth.
  *
  * Vector search lives on the skills table (where the embedding vectors are
@@ -4217,7 +4222,7 @@ export const seedAddedSkillContent = internalMutation({
 
     // Mirror the description to the summary — that is what cards, search
     // results and the catalog lists read. `content` is deliberately not
-    // mirrored: summaries are the slim ~200 B rows, and no summary reader wants
+    // mirrored: summaries are the slim ~1.3 KB rows, and no summary reader wants
     // the body. Patched directly rather than through `upsertSkillSummary`
     // because every other field on the summary is already correct from the
     // upsert that just ran; this is a one-field fill, not a re-sync.
@@ -4535,7 +4540,7 @@ export const myGitHubAddQuota = query({
 // The archive only records a version when content CHANGED — `fetchSkillContent`
 // gates `archiveSkillVersion` on `outcome.changed`, and that is false whenever
 // the hash matches. That gate is right for the daily pipeline: without it every
-// content refresh would store ~15k identical blobs.
+// content refresh would store ~16k identical blobs.
 //
 // But it means a skill with no archive row only gets one when it next changes,
 // and that first row is a BASELINE — no predecessor, so no diff, so the change

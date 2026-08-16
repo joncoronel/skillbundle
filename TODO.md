@@ -19,9 +19,13 @@ rather than a decision — it just wants its own thinking:
   50k URLs.
 - `bundles.isPublic` can flip, and `app/(main)/bundle/[id]/page.tsx` already
   emits `robots: { index: false }` when it is false. A sitemap that lags that
-  flip advertises a noindex page — decide whether the entry's cache tag can
-  track bundle writes closely enough, or whether the churn makes it not worth
-  listing them at all.
+  flip advertises a noindex page. Note the loader is now UNTAGGED and runs on
+  `cacheLife("days")` alone (PR #75 — the header in `app/sitemap.ts` argues
+  why), so "the entry's cache tag" is no longer a thing to tune: the real
+  choice is between accepting up to a day of lag on a flip, adding the
+  sitemap-specific tag that file describes as the escape hatch and pinging it
+  from exactly one place, or deciding the churn makes bundles not worth listing
+  at all.
 - `lastmod` is easy here in a way it isn't for skills: `bundles.updatedAt`
   (optional, falling back to the required `createdAt`) is exactly the timestamp
   the field means, with no coalescing argument to make.

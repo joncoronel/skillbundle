@@ -4,6 +4,7 @@ import { fetchQuery } from "convex/nextjs";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { CATALOG_MAX_ROWS, maxIterForRows } from "@/convex/lib/pagination";
+import { IS_PRODUCTION_DEPLOYMENT } from "@/lib/deployment-env";
 import { SITE_URL } from "@/lib/site-url";
 import {
   buildSitemapEntries,
@@ -41,7 +42,7 @@ import {
  * One interaction with app/robots.ts, worth knowing before anyone reads a slow
  * Bing crawl as a fault: the wildcard rule there carries `crawlDelay: 10`.
  * Googlebot ignores it (it uses its own Search Console budget), but Bing
- * honours it, and ~31k URLs at 10s/request is >85h for one compliant pass.
+ * honours it, and ~18.7k URLs at 10s/request is >50h for one compliant pass.
  * Fine for a continuous process; surprising if you expect a sitemap to be
  * consumed in one sitting.
  *
@@ -60,9 +61,13 @@ import {
  * document is billed even though `listSitemapEntries` returns six fields —
  * Convex charges bytes read, not bytes projected.
  *
- * Measured 2026-08-16: ~24 walks/day, ~20 of them deployments (16 of those
- * previews, which build against the prod Convex URL), for **500 MB/day on
- * each of the dev and prod deployments**. Hence the production gate in
+ * Measured 2026-08-16, and the counts are PER CONVEX DEPLOYMENT, not shared:
+ * prod took ~24 walks/day (~21 MB each) and dev ~28 (~18 MB each), so each of
+ * the two independently reached **~500 MB/day**. Prod's ~24 is ~20 deployments
+ * — 4 production plus 16 previews, which build against the prod Convex URL —
+ * and ~4 tag pings. Dev's ~28 is local `pnpm build` and `pnpm e2e` runs. Read
+ * as one shared 24 the arithmetic does not close and the gate looks half
+ * broken, so keep the split explicit. Hence the production gate in
  * `loadSitemapRows` below — that gate, not the tag change, is what moved the
  * number. Deploy frequency is the dominant term here and there is no caching
  * arrangement on the Next side that can absorb it, so do not go looking for
@@ -86,11 +91,20 @@ import {
  *
  * `cacheLife("days")` fits better than any ping, because staleness is the one
  * thing a sitemap can afford. That profile is stale 5m / revalidate 1 day /
- * expire 1 week, so the entry refreshes about once a day IN THE BACKGROUND and
- * no crawler ever waits on a walk. A URL up to a day late to appear (or to
- * leave) costs nothing against a crawler that needs >85h for one compliant
- * pass of this file — see the robots.txt note above. The weekly `isDuplicate`
- * flip, never covered by a publisher anyway, now falls under the same rule.
+ * expire 1 week, so a request arriving a day after generation is served the
+ * cached copy while the walk runs in the background. A URL up to a day late to
+ * appear (or to leave) costs nothing against a crawler that needs >50h for one
+ * compliant pass of this file — see the robots.txt note above. The weekly
+ * `isDuplicate` flip, never covered by a publisher anyway, falls under the same
+ * rule.
+ *
+ * Both behaviors are request-driven, not timer-driven, so "nobody ever waits"
+ * is not quite a guarantee: `expire` is what happens after a week with NO
+ * traffic, and then the next request regenerates SYNCHRONOUSLY (cacheLife.md
+ * :109-125). At the crawl rate measured above a quiet week is conceivable, so
+ * the accurate claim is: no crawler waits as long as this file is requested at
+ * least once a week, or a production deploy lands inside that window — which
+ * at the current deploy cadence is every one of them.
  *
  * If something later needs same-day submission of a new URL, add a
  * sitemap-specific tag and ping it from exactly one place. Do not re-attach
@@ -98,20 +112,50 @@ import {
  *
  * ── Size ──────────────────────────────────────────────────────────────────
  *
- * ~16.0k live skills in production as of Aug 2026 (16,784 rows, 821 delisted),
- * plus their orgs, repos and well-known sources — call it twice that in URLs,
- * at ~130 B each. The 50 MB limit is still far off, but the 50k URL limit is
- * now within one catalog-doubling, so this stays a single file only for the
- * moment. `generateSitemaps` is the escape hatch when it lands.
+ * **18,701 URLs / 2.4 MB, MEASURED** off the PR #68 build (Aug 2026) — not
+ * derived, and do not re-derive it. The skill-to-URL ratio is not a constant
+ * you can multiply by: directory pages saturate as the catalog grows, because
+ * ~98% of skills are GitHub repos averaging ~6.8 skills each
+ * (convex/freshness.ts). A one-page build of this branch emits 1,323 URLs from
+ * 1,000 skills — 1.32x — and the full-catalog ratio is strictly lower than that
+ * (~1.17x), since later pages land mostly in orgs and repos already counted.
+ * An earlier version of this comment guessed "twice the skill count" and landed
+ * ~60% high, which then made both the crawl-time and headroom figures wrong.
+ * Re-measure from a production `[sitemap] rows=` log rather than guessing again.
+ *
+ * At ~130 B/URL (2.4 MB / 18,701) both limits — 50k URLs and 50 MB — are far
+ * off; the URL count is the nearer one at ~2.5x of headroom, which agrees with
+ * TODO.md's reading that only the catalog PLUS public bundle pages could
+ * approach it. `generateSitemaps` is the escape hatch if that day comes, or if
+ * per-generation cost (not per request — that's already amortised) becomes the
+ * problem.
  */
 
-// 1000 rows/page keeps each Convex query two orders of magnitude inside the
-// per-query read limits while holding the walk to ~10 round trips. The cap is
-// the same drain backstop the paginated Convex jobs use: enough pages to cover
-// a catalog far larger than today's, so hitting it means a cursor stopped
-// advancing rather than a catalog that outgrew the number.
+// 1000 rows/page holds the walk to ~16 round trips at today's catalog size.
+//
+// On headroom: a `skillSummaries` row bills ~1.3 KB (measured; see the header),
+// so a 1000-row page reads ~1.3 MB. Against the 16 MB read budget this repo
+// cites at convex/skills.ts:3022 that is ~12x — comfortable, but NOT the "two
+// orders of magnitude" this comment claimed before Aug 2026, which was computed
+// off a ~200 B row that had drifted 6x. Treat ~12x as the number when deciding
+// whether to lower PAGE_SIZE after a SplitRecommended warning below, and note
+// it shrinks as rows grow, unlike a page count.
+//
+// The cap is the same drain backstop the paginated Convex jobs use: enough
+// pages to cover a catalog far larger than today's, so hitting it means a
+// cursor stopped advancing rather than a catalog that outgrew the number.
 const PAGE_SIZE = 1000;
 const MAX_PAGES = maxIterForRows(CATALOG_MAX_ROWS, PAGE_SIZE);
+
+// Two pages, not one, outside production. One page would leave cursor threading
+// — `continueCursor` feeding the next `fetchQuery` — running for the first time
+// on a production build, where a stalled cursor surfaces as a failed deploy with
+// green CI and a green preview behind it. Nothing in tests/ or e2e/ covers this
+// loader (tests/sitemap-entries.test.ts covers only the pure builder), so the
+// preview build is the only canary there is. The second page costs ~1.3 MB and
+// buys back the multi-page path; the drain-cap throw stays production-only,
+// which is fine — it is a backstop, not a code path anyone should reach.
+const NON_PRODUCTION_PAGES = 2;
 
 // Only a production deployment drains the whole catalog. Preview builds and
 // local `next build` / `pnpm e2e` runs prerender this route exactly like
@@ -120,20 +164,31 @@ const MAX_PAGES = maxIterForRows(CATALOG_MAX_ROWS, PAGE_SIZE);
 // entire cost, on both Convex deployments: previews build against the prod
 // Convex URL, and local builds against dev.
 //
-// One page rather than zero, so a preview still serves a real sitemap with
-// real rows in it: the XML shape, the `lastmod` derivation and the directory
-// roll-up are all reviewable, just over the first 1000 skills instead of all
-// of them. An empty file would make a broken sitemap and a correct one look
-// identical on every preview URL, which is where anyone would go to check.
+// A small page count rather than zero, so a preview still serves a real sitemap
+// with real rows in it: the XML shape, the `lastmod` derivation and the
+// directory roll-up are all reviewable, just over the first 2000 skills instead
+// of all of them. An empty file would make a broken sitemap and a correct one
+// look identical on every preview URL, which is where anyone would go to check.
 //
-// The one way this gate fails badly is silently: if `VERCEL_ENV` ever went
-// missing on a production build (it is a Vercel system env var, and the project
-// setting that exposes those can be turned off), production would take the
-// one-page path and ship a truncated sitemap that still looks well-formed.
-// Nothing downstream could tell — hence the log in `loadSitemapRows`, which
-// puts the branch and the row count in the build output. Check it after any
-// change to the project's environment settings.
-const isProductionDeployment = process.env.VERCEL_ENV === "production";
+// Two ways this gate fails SILENTLY, both ending in a truncated sitemap that is
+// still well-formed XML, so nothing downstream can tell:
+//
+//   1. `VERCEL_ENV` goes missing on a production build. It is a Vercel system
+//      env var and the project setting that exposes those can be turned off.
+//      Note this takes `lib/site-url.ts`'s https-origin guard down with it —
+//      same predicate, same blind spot — which is why both now read the shared
+//      `IS_PRODUCTION_DEPLOYMENT` and the hazard is documented on it there.
+//   2. A deployment BUILT as a preview is later promoted to production. The
+//      gate resolves at build time and is baked into the prerendered XML, so
+//      the production domain serves the short version, and the build log reads
+//      exactly like a healthy preview. It self-heals: `VERCEL_ENV` is not
+//      compile-time inlined, so the first background revalidation on the
+//      promoted deployment re-reads it as "production" and walks the full
+//      catalog. Bounded by `cacheLife("days")`, and harmless at the crawl rate
+//      measured above — worth knowing rather than worth engineering against.
+//
+// The log in `loadSitemapRows` is the trace for (1). Check it after any change
+// to the project's environment settings.
 
 // Annotated at the call site below, not inferred: `cursor` is fed from
 // `result.continueCursor` on the next iteration, and without this the checker
@@ -160,18 +215,6 @@ type _RowShapeMatchesQuery = Assert<
   SameKeys<SitemapPage["page"][number], SitemapSkillRow>
 >;
 
-// The one observable trace that the production gate resolved the way it was
-// meant to. A truncated sitemap is well-formed XML, so this line is what
-// separates "prod walked the whole catalog" from "prod quietly took the preview
-// path"; expect `env=production pages=16` in a production build's log and
-// `env=preview pages=1` in a preview's.
-function logAndReturn(rows: SitemapSkillRow[], pages: number) {
-  console.log(
-    `[sitemap] env=${process.env.VERCEL_ENV ?? "local"} pages=${pages} rows=${rows.length}`,
-  );
-  return rows;
-}
-
 async function loadSitemapRows(): Promise<SitemapSkillRow[]> {
   "use cache";
   // No cacheTag — the header explains why the timer is the right invalidator
@@ -180,9 +223,12 @@ async function loadSitemapRows(): Promise<SitemapSkillRow[]> {
 
   const rows: SitemapSkillRow[] = [];
   let cursor: string | null = null;
-  const maxPages = isProductionDeployment ? MAX_PAGES : 1;
+  let drained = false;
+  let pages = 0;
+  const maxPages = IS_PRODUCTION_DEPLOYMENT ? MAX_PAGES : NON_PRODUCTION_PAGES;
 
-  for (let page = 0; page < maxPages; page++) {
+  for (; pages < maxPages && !drained; pages++) {
+    const page = pages;
     const result: SitemapPage = await fetchQuery(
       api.skills.listSitemapEntries,
       { paginationOpts: { numItems: PAGE_SIZE, cursor } },
@@ -212,23 +258,41 @@ async function loadSitemapRows(): Promise<SitemapSkillRow[]> {
         `[sitemap] Convex recommends splitting page ${page} (PAGE_SIZE=${PAGE_SIZE}); the walk is still complete, but lower it before this becomes SplitRequired`,
       );
     }
-    if (result.isDone) return logAndReturn(rows, page + 1);
+    drained = result.isDone;
     cursor = result.continueCursor;
   }
 
-  // Outside production the one-page cap IS the intended stopping point, not a
-  // drained-cursor bug, so falling out of the loop here is expected and the
-  // throw below must not fire.
-  if (!isProductionDeployment) return logAndReturn(rows, maxPages);
-
-  // Throw rather than return what we have. A short sitemap is indistinguishable
+  // Hitting the cap without draining is a bug ONLY in production — outside it,
+  // the small-page cap is the intended stopping point (see NON_PRODUCTION_PAGES).
+  //
+  // Throw rather than return what we have: a short sitemap is indistinguishable
   // from a complete one, and because this function is cached, returning would
-  // persist the truncation and re-serve it as authoritative for a day, with a
-  // single `console.warn` buried in the function logs as the only trace.
-  // Throwing means no cache entry is written and the next crawler retries.
-  throw new Error(
-    `[sitemap] stopped at the ${MAX_PAGES}-page cap with ${rows.length} rows; refusing to cache a truncated sitemap`,
+  // persist the truncation and re-serve it as authoritative, with a single
+  // `console.warn` buried in the function logs as the only trace.
+  //
+  // What throwing costs depends on which phase reached here, and the two are
+  // very different. At build time — the path that runs on every deployment —
+  // it fails `next build` and blocks the deploy, which is the same fact the
+  // SplitRecommended branch above declines to trigger. At runtime it aborts a
+  // background revalidation and leaves the previous entry serving until
+  // `expire`, after which the regeneration is synchronous and the route 500s.
+  // Neither is "the next crawler retries", which is what this comment used to
+  // claim.
+  if (!drained && IS_PRODUCTION_DEPLOYMENT) {
+    throw new Error(
+      `[sitemap] stopped at the ${MAX_PAGES}-page cap with ${rows.length} rows; refusing to cache a truncated sitemap`,
+    );
+  }
+
+  // The one observable trace that the production gate resolved the way it was
+  // meant to. A truncated sitemap is well-formed XML, so this line is what
+  // separates "prod walked the whole catalog" from "prod quietly took the
+  // preview path": expect `env=production pages=16` in a production build's log
+  // and `env=preview pages=2` in a preview's.
+  console.log(
+    `[sitemap] env=${process.env.VERCEL_ENV ?? "local"} pages=${pages} rows=${rows.length}`,
   );
+  return rows;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

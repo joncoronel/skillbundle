@@ -658,7 +658,7 @@ const deleteBundle = useMutation(api.bundles.deleteBundle).withOptimisticUpdate(
 
 ### Pattern: Convex full-text search
 
-Search index in the schema, `withSearchIndex` in queries; search reads go against the slim `skillSummaries` table (~200 B/row) instead of `skills` (~25 KB/row) to keep result sets small on the wire.
+Search index in the schema, `withSearchIndex` in queries; search reads go against the slim `skillSummaries` table (~1.3 KB/row) instead of `skills` (~25 KB/row) to keep result sets small on the wire.
 
 ---
 

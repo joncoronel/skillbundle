@@ -5,7 +5,7 @@
  *
  * Finding out whether a skill changed used to mean downloading its SKILL.md and
  * hashing it — `markStaleContent` re-flags every row whose `contentFetchedAt` is
- * older than 7 days, so the catalog costs ~1,360 file downloads a day just to
+ * older than 7 days, so the catalog costs ~2,280 file downloads a day just to
  * discover that almost nothing moved.
  *
  * GitHub already tells us. Every entry in the recursive tree response carries a
@@ -14,9 +14,18 @@
  * every skill in it, and only the files whose SHA actually moved get fetched.
  *
  * The catalog is ~98% GitHub sources clustering at ~6.8 skills per repo, so the
- * arithmetic works out at roughly 1,400 mostly-304 tree calls plus ~265 real
- * downloads per day — fewer downloads than today's WEEKLY cycle, at daily
- * resolution.
+ * arithmetic works out at roughly 2,300 mostly-304 tree calls plus a few
+ * hundred real downloads per day — fewer downloads than today's WEEKLY cycle,
+ * at daily resolution.
+ *
+ * MEASURED vs DERIVED, because this number moved once already: the ~98% share
+ * and the ~6.8 skills/repo ratio are sampled (Aug 2026); the repo count is
+ * `live skills / 6.8` and moves with the catalog — it was ~1,400 when the
+ * catalog was costed at 9.5k and is ~2,300 at today's ~16.0k. Recompute it
+ * rather than trusting the literal. The download figure is deliberately vague:
+ * the ~265 it used to carry has no recorded derivation, and 27.5%/month over
+ * ~16.0k live rows implies ~150/day, so the two disagree. Take the real number
+ * from `sweepHealth` rather than scaling either.
  *
  * ## This is an accelerator, not a replacement
  *
@@ -379,7 +388,7 @@ export const applySweepResult = internalMutation({
 /**
  * Walk the catalog one page of repos at a time, chaining until done.
  *
- * Self-chaining rather than looping in one action: the catalog is ~1,400 repos
+ * Self-chaining rather than looping in one action: the catalog is ~2,300 repos
  * and a single invocation would run past its time budget, the same reason
  * `backfillDiscoverUrls` chains.
  */
@@ -513,7 +522,7 @@ export const sweepRepoFreshness = internalAction({
       //
       // Still records the sweep. `sweptAt` was only written by
       // `applySweepResult`, which this path skips — so in steady state, where
-      // the module budgets "~1,400 mostly-304 tree calls", almost no repo
+      // the module budgets "~2,300 mostly-304 tree calls", almost no repo
       // advanced its timestamp. `reposSweptInLast25h` decayed toward zero and
       // `oldestSweepHoursAgo` grew without bound on a sweep that was working
       // perfectly, which is exactly the reading a STALLED chain produces — the
@@ -754,13 +763,13 @@ export const sweepHealth = internalQuery({
       .take(CAP);
 
     // Sampled, not counted. A true count is one indexed read per live skill
-    // (~15k), which is both over the per-query budget and far more than a
+    // (~16.0k), which is both over the per-query budget and far more than a
     // health check needs.
     //
     // `.order("desc")` is load-bearing. `backfillArchiveBaselines` paginates
     // this SAME index from the ascending end, so an ascending sample here reads
     // precisely the rows the backfill just finished — it showed 299 -> 70 after
-    // 500 of ~15k skills, which looks like 77% done and is actually 3%. Taking
+    // 500 of ~16.0k skills, which looks like 77% done and is actually 3%. Taking
     // from the far end makes this a conservative reading: it only approaches
     // zero once the backfill has genuinely reached the end of the catalog, and
     // that is the right bias for an alarm too.
