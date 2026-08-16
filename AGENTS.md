@@ -37,7 +37,22 @@ selection_, not the render.
 `tests/**/*.test.ts`; `pnpm e2e` is Playwright over `e2e/**/*.spec.ts`, against a
 production build on port 3100. Don't put one kind of test in the other's
 directory — the globs are what keep the runners apart. `pnpm check` is
-lint + typecheck + unit tests only; e2e is separate because it builds the app.
+format:check + lint + typecheck + unit tests; e2e is separate because it builds
+the app.
+
+**Formatting is gated, so run `pnpm format` before committing.** Prettier owns
+every file except `components/ui/cubby-ui/` and `components/charts/`, which are
+vendored through `shadcn add` and excluded in `.prettierignore` — formatting
+them would be reverted by the next component update and break the gate on
+arrival.
+
+`.gitattributes` pins the working tree to LF and is load-bearing for that gate,
+not housekeeping. `core.autocrlf=true` is the Windows default and rewrites files
+as CRLF whenever git materialises them; Prettier's default `endOfLine: "lf"`
+then rejects them. Which files are hit depends on which ones git last checked
+out, so without the pin `pnpm check` passes or fails according to your recent
+branch switches. If `format:check` ever fails on a file that looks correct,
+check its line endings first.
 
 ## Tech Stack
 

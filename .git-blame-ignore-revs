@@ -1,0 +1,14 @@
+# Commits that changed formatting only, and that `git blame` should look past.
+#
+# GitHub reads this file automatically. For local `git blame` to use it, run
+# once per clone:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Only add a commit here if it changed NO behaviour. Use the SHA the commit has
+# on master — with squash merges that is the squashed commit, not the one from
+# the branch.
+
+# Standardize code and markdown formatting (#72) — repo-wide Prettier run,
+# 164 files, no behaviour change.
+6c2df174ac5b1ce299650cf24491e07597a0592e
