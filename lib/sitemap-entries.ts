@@ -61,7 +61,7 @@ import {
  * `contentUpdatedAt` is the honest answer: the last time the SKILL.md actually
  * moved. It is only written by a fetch that found the hash changed, though, so
  * a skill whose file has sat still since ingest has none — most of the catalog.
- * Shipping ~9.5k URLs with no `lastmod` would leave nothing for a crawler to
+ * Shipping ~16k URLs with no `lastmod` would leave nothing for a crawler to
  * act on, so `contentFetchedAt` (the last time we READ the file) stands in
  * where it is a sound proxy, i.e. where "we read this at T and have detected no
  * change since" is true. `lastChangedAt` below carries the three cases where it

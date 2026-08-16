@@ -19,9 +19,13 @@ rather than a decision — it just wants its own thinking:
   50k URLs.
 - `bundles.isPublic` can flip, and `app/(main)/bundle/[id]/page.tsx` already
   emits `robots: { index: false }` when it is false. A sitemap that lags that
-  flip advertises a noindex page — decide whether the entry's cache tag can
-  track bundle writes closely enough, or whether the churn makes it not worth
-  listing them at all.
+  flip advertises a noindex page. Note the loader is now UNTAGGED and runs on
+  `cacheLife("days")` alone (PR #75 — the header in `app/sitemap.ts` argues
+  why), so "the entry's cache tag" is no longer a thing to tune: the real
+  choice is between accepting up to a day of lag on a flip, adding the
+  sitemap-specific tag that file describes as the escape hatch and pinging it
+  from exactly one place, or deciding the churn makes bundles not worth listing
+  at all.
 - `lastmod` is easy here in a way it isn't for skills: `bundles.updatedAt`
   (optional, falling back to the required `createdAt`) is exactly the timestamp
   the field means, with no coalescing argument to make.
@@ -325,9 +329,9 @@ That ambiguity is exactly how the loop bug survived being watched.
   than scheduled. Revisit if anyone gets near it.
 
 - **Re-measure the mass-change threshold.** `MASS_CHANGE_THRESHOLD` in
-  `skillVersions.ts` is 750, which is ~5x an ESTIMATE (15k skills at the
-  measured 27.5%/month), not a measurement. Under ~3x a busy day it fires on
-  ordinary Tuesdays; far over it never fires at all.
+  `skillVersions.ts` is 750, which is ~5x an ESTIMATE (~16.0k live skills at
+  the measured 27.5%/month is ~150 changes/day), not a measurement. Under ~3x a
+  busy day it fires on ordinary Tuesdays; far over it never fires at all.
 
       npx convex run skillVersions:changeRateHealth --prod
 
@@ -604,7 +608,7 @@ installed set, which the dropped lockfile-checkup idea was going to supply.
 
 **1. Similar skills / alternatives on catalog pages.** Every skill detail page
 gets a "related" block of its nearest neighbors. Do NOT run an O(N²) sweep over
-~9.5k skills; instead query each skill's own vector against the existing
+~16k skills; instead query each skill's own vector against the existing
 `by_embedding` vector index with a small limit — one cheap call per skill, reusing
 machinery that's already tuned. Store the neighbor list on `skillSummaries` so it
 renders from the slim row. Smallest item here, and it doubles as the SEO play:
@@ -854,7 +858,7 @@ worth doing, no longer urgent-shaped. Don't read the demotion as "harmless".
 
 The gate is last because it banks nothing before step 1, for the reason set out
 under "Why the obvious gate isn't worth building": a catalog-wide gate only
-suppresses the ping on a day when NOT ONE skill in ~9.5k changed.
+suppresses the ping on a day when NOT ONE skill in ~16k changed.
 
 This ordering is recorded here because the entry used to state it twice and
 disagree with itself — "per-skill tags are the prerequisite … which is why they
@@ -868,7 +872,7 @@ Updated Aug 2026, after the cadence split (PR #65). The tags are now
 `skill-sync` (install counts, ranks, snapshots, versions, copies) and
 `skill-content` (the skill row) — see `lib/skill-cache.ts`. Both are still
 all-or-nothing across the catalog: every skill's entry carries the same two
-strings, so one ping invalidates all ~9.5k. There is no way to refresh a single
+strings, so one ping invalidates all ~16k. There is no way to refresh a single
 skill.
 
 **The concrete problem left.** `markStaleContent` chains into
@@ -887,7 +891,7 @@ problem: `updateDescription` already returns a transactional `changed` flag,
 Any of those answers "did content change since X" in one indexed lookup.
 
 The problem is that the tag is catalog-wide. A global gate suppresses the ping
-only on a day when NOT ONE skill in ~9.5k changed its SKILL.md — and this app's
+only on a day when NOT ONE skill in ~16k changed its SKILL.md — and this app's
 headline feature is a change feed of exactly those events, so such days are
 close to nonexistent. Building it would be ~20 lines that fire anyway. Per-skill
 tags are the prerequisite that makes any freshness check meaningful — which is

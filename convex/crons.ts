@@ -16,13 +16,15 @@ if (process.env.CRONS_ENABLED === "true") {
   //
   // Asks GitHub's Tree API, once per repo and conditionally, which SKILL.md
   // blob SHAs moved, and flags only those for re-fetch. Because ~98% of the
-  // catalog is GitHub at ~6.8 skills per repo, that costs ~1,400 mostly-304
-  // tree calls plus ~265 downloads — fewer file downloads than the 7-day timer
-  // does, at daily resolution instead of weekly.
+  // catalog is GitHub at ~6.8 skills per repo, that costs ~2,300 mostly-304
+  // tree calls plus a few hundred downloads — fewer file downloads than the
+  // 7-day timer does, at daily resolution instead of weekly.
   //
   // Runs two hours ahead of syncSkills so a full walk (self-chaining across
-  // ~1,400 repos) and the content fetch it queues both settle before the 06:00
-  // chain starts competing for the same work set.
+  // ~2,300 repos) and the content fetch it queues both settle before the 06:00
+  // chain starts competing for the same work set. That gap was sized against
+  // ~1,400 repos; it has not been re-timed since the restamp, so if the sweep
+  // ever starts overlapping the 06:00 chain, this is the first thing to check.
   //
   // It ACCELERATES `markStaleContent`, it does not replace it — see the header
   // in freshness.ts for the gaps the 7-day timer still has to cover.

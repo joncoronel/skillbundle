@@ -99,7 +99,7 @@ pipeline itself (see [GitHub-only skills](#github-only-skills)).
   filter `isDelisted = false`).
 - Embedding row deleted (drops it from vector search); leaderboard denorm fields
   cleared; pipeline flags cleared.
-- **Row is kept** (~200B summary + skills row) for the delisted count and a
+- **Row is kept** (~1.3 KB summary + skills row) for the delisted count and a
   fast relist. If the skill reappears in a feed, `upsertSkillsBatch` relists it
   (`isDelisted = false`, re-fetch content).
 
@@ -220,7 +220,7 @@ newest first**: one call audits up to `AUDIT_PAGE_SIZE` (200) rows and returns a
 null, accumulating into one report. So the whole population is reachable while
 each call stays bounded, and what bounds it is the **fetch loop**: every row
 costs a GitHub round trip inside an action that has a time limit. The DB read is
-the cheap half (`skillSummaries` rows are ~200 B, and `embeddingCoverageStatsBatch`
+the cheap half (`skillSummaries` rows are ~1.3 KB, and `embeddingCoverageStatsBatch`
 pages the same table 1000 at a time). The cursor lives on the client rather than
 being persisted: an audit answers "is anything wrong right now", so resuming a
 run from hours ago would be a stranger contract than continuing the one in front

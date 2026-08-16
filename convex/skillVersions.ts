@@ -96,7 +96,10 @@ const CHANGE_KIND_VALIDATOR = v.union(
  * THE THRESHOLD IS INTERIM. It cannot be measured yet: `changeRateHealth`
  * against prod (Aug 2026) reports 459 baselines and ZERO real changes, because
  * the archive is a day old and nothing has been seen twice. 750 is ~5x an
- * ESTIMATE — 15k skills at the measured 27.5%/month is ~140 real changes a day.
+ * ESTIMATE — ~16.0k live skills at the measured 27.5%/month is ~150 real
+ * changes a day, so 750 is still ~5x. (This line is the surviving instance of
+ * the inference `changeRateHealth` below warns about; it is restamped rather
+ * than trusted, and the diagnostic remains the way to settle it.)
  * The previous 250 was ~10x an estimate built on a catalog of 3,000, a number
  * that was never true. Re-run the diagnostic once the backfill finishes (~33
  * days at the current rate) and set this from what it actually reports.
@@ -157,7 +160,7 @@ async function toEntry(ctx: QueryCtx, row: Doc<"skillVersions">) {
   };
 }
 
-/** Resolve source+skillId through the ~200 B summary, not the ~13 KB skills row. */
+/** Resolve source+skillId through the ~1.3 KB summary, not the ~10 KB skills row. */
 async function resolveSkillDocId(
   ctx: QueryCtx,
   source: string,
@@ -558,7 +561,7 @@ async function resolveSkillChange(
     .unique();
   if (!summary) return null;
 
-  // The mirrored timestamp answers "did the content move?" from a ~200 B row,
+  // The mirrored timestamp answers "did the content move?" from a ~1.3 KB row,
   // so only genuinely-unread skills go on to touch the archive. The audit
   // lookup is NOT gated on it: a verdict can regress on a re-audit of
   // byte-identical content, and that is the highest-severity event there is.
@@ -731,8 +734,9 @@ export const listChangesForBundle = query({
  * `MASS_CHANGE_THRESHOLD` is only meaningful as a multiple of the ordinary
  * daily rate, and the ordinary daily rate had been INFERRED from catalog size
  * rather than measured. That inference was wrong twice (this file said 3,000
- * skills; `schema.ts` said 9.5k; prod is ~15k), which is reason enough to stop
- * inferring it. Read-only, no auth, safe to run against prod:
+ * skills; `schema.ts` said 9.5k — both since restamped; prod is ~16.8k), which
+ * is reason enough to stop inferring it. Read-only, no auth, safe to run
+ * against prod:
  *
  *   npx convex run skillVersions:changeRateHealth --prod
  *

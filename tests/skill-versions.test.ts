@@ -295,7 +295,7 @@ test("an unchanged hash writes no version row", async () => {
   const outcome = await writeContent(t, skillDocId, raw);
 
   expect(outcome.changed).toBe(false);
-  // This is the guard that keeps the 7-day refresh sweep from archiving ~9.5k
+  // This is the guard that keeps the 7-day refresh sweep from archiving ~16k
   // blobs every cycle for a catalog that mostly did not change.
   expect(await versionsFor(t, skillDocId)).toHaveLength(1);
 });

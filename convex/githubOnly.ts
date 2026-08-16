@@ -900,8 +900,8 @@ export const addSkillFromGitHub = action({
  *
  * Reads `skillSummaries`, not `skills`: every field the audit needs is
  * mirrored there (`skillMdUrl` in lockstep via `updateSkillMdUrls`,
- * `isGitHubOnly` at insert and on adoption) at ~200 B/row instead of the
- * ~13-25 KB a `skills` document costs, which `content` dominates.
+ * `isGitHubOnly` at insert and on adoption) at ~1.3 KB/row instead of the
+ * ~10 KB a `skills` document costs, which `content` dominates.
  *
  * Paginated, so the audit can walk the WHOLE population rather than a fixed
  * window. `cursor` is the caller's to hold — the admin card passes the last one

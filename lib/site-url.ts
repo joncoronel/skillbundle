@@ -23,6 +23,7 @@
  * client today; this makes sure nothing starts.
  */
 import "server-only";
+import { IS_PRODUCTION_DEPLOYMENT } from "./deployment-env";
 
 const rawSiteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ??
@@ -43,19 +44,18 @@ export const SITE_URL = rawSiteUrl.replace(/\/+$/, "");
  *
  * A wrong origin here has no symptom anyone would notice: every page renders
  * normally, and the damage is confined to two files nobody opens — a robots.txt
- * advertising a sitemap on the wrong host, and 18k `<loc>` entries pointing at
- * one. `.env.example` ships `NEXT_PUBLIC_SITE_URL=http://localhost:3000`, so a
- * copied env file is the realistic way it happens, and it would shadow the
+ * advertising a sitemap on the wrong host, and ~18.7k `<loc>` entries pointing
+ * at one. `.env.example` ships `NEXT_PUBLIC_SITE_URL=http://localhost:3000`, so
+ * a copied env file is the realistic way it happens, and it would shadow the
  * Vercel fallback that otherwise makes this self-configuring. Nothing in
  * `pnpm check` or the test suite reads this module.
  *
- * Gated on `VERCEL_ENV` so local builds, `pnpm build`, and preview deployments
- * are untouched — the check only speaks up where the value is load-bearing.
+ * Gated on production so local builds, `pnpm build`, and preview deployments are
+ * untouched — the check only speaks up where the value is load-bearing. That
+ * predicate is shared with `app/sitemap.ts` because both fail silently in the
+ * same way if it is wrong; `lib/deployment-env.ts` carries the hazard.
  */
-if (
-  process.env.VERCEL_ENV === "production" &&
-  !SITE_URL.startsWith("https://")
-) {
+if (IS_PRODUCTION_DEPLOYMENT && !SITE_URL.startsWith("https://")) {
   throw new Error(
     `NEXT_PUBLIC_SITE_URL must be an https origin in production (got "${SITE_URL}"). ` +
       `robots.txt and sitemap.xml embed it absolutely, so a wrong value makes both inert.`,

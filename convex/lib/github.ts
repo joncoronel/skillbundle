@@ -289,7 +289,7 @@ export async function fetchRawText(url: string): Promise<string | null> {
  * Deliberately not `extractSkillMdName` (skills.ts), which requires a real
  * `---` fence. That one is right for the resolver and the audit, which ask "what
  * does this file declare itself to be?" about a file they are about to trust.
- * Discovery asks the same question of ~9.5k existing rows, and tightening it
+ * Discovery asks the same question of ~16k existing rows, and tightening it
  * would unbind every fence-less file that binds today — a catalog-wide content
  * change smuggled in as a cleanup. Both passes of discovery use THIS one, so the
  * two at least agree with each other.

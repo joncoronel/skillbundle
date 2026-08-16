@@ -170,8 +170,8 @@ turned on. See architecture.md §11.
 
 Authoritative schema: [`convex/schema.ts`](convex/schema.ts). Key tables:
 
-- **`skills`** — full skill rows (~25 KB): content, install/leaderboard state, pipeline flags (discovery/content/audit/embedding), duplicate + curated markers, denormalized worst-audit status.
-- **`skillSummaries`** — slim (~200 B) denormalized rows that all listing / search / card / leaderboard queries read, so hot paths never touch the heavy rows. Holds the full-text search index.
+- **`skills`** — full skill rows (~10 KB): content, install/leaderboard state, pipeline flags (discovery/content/audit/embedding), duplicate + curated markers, denormalized worst-audit status.
+- **`skillSummaries`** — slim (~1.3 KB) denormalized rows that all listing / search / card / leaderboard queries read, so hot paths never touch the heavy rows. Holds the full-text search index.
 - **`skillEmbeddings`** — 512-dim vectors + vector index for repo recommendations.
 - **`skillAudits`** — per-provider security verdicts.
 - **`skillSnapshots`** — daily install counts per skill (history + momentum).

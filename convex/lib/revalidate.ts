@@ -15,7 +15,7 @@
  *       Install counts, ranks, snapshots, version history, copies — plus the
  *       list surfaces that filter on `isDelisted` / read the curated rollup
  *       (`lib/source-skills.ts`, `app/(main)/[org]`, `app/(main)/official`).
- *       syncSkills rewrites the full ~9.5k-row leaderboard daily, so this tag
+ *       syncSkills rewrites the full ~16k-row leaderboard daily, so this tag
  *       churns the whole catalog every morning by design.
  *   "skill-content"
  *       The skill row read by `loadSkill`: SKILL.md content, description, name,
