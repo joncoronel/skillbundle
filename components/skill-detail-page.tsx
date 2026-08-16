@@ -248,10 +248,6 @@ export function SkillDetailPage({
     // from 1152px up, and the rail arrives at `lg` instead of `xl` — every
     // laptop under 1280px used to get no navigation at all through a 20,000px
     // file.
-    // `<main>`, not a div: this branch wrapped the sidebar in `<aside>` and
-    // the rail in `<nav>`, so a screen-reader user got banner / navigation /
-    // navigation / complementary around a 20,000px document that sat in no
-    // landmark at all. Every other route in this app already uses `<main>`.
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
       {/* The masthead pads itself by exactly the sidebar column so the title
           cannot run under the card — skill ids reach 40 characters and the h1
@@ -723,12 +719,10 @@ export function SkillDetailPageSkeleton({
 // ISR caches the page, repeat visits serve the finished HTML and never hit this.
 export function SkillDetailPageLoading() {
   return (
-    // `<main>` and `max-w-6xl` both match the real page exactly: the app's
-    // default page width (DESIGN.md §4), and the landmark the page itself
-    // renders. A `<div>` here would leave the document with no `main` for as
-    // long as this shell is up, then grow one — the header's `banner` and the
-    // rail's `navigation` are present the whole time, so the gap is visible to
-    // a screen reader rather than theoretical.
+    // `max-w-6xl` matches the real page exactly — the app's default page
+    // width (DESIGN.md §4). The landmark is not here: `(main)/layout.tsx` owns
+    // one `<main>` for the whole group, so this shell and the page it stands in
+    // for are both plain wrappers inside it.
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />

@@ -24,8 +24,18 @@ export default function AuthError({
     // The landmark is supplied here, unlike `(main)/error.tsx`, because the two
     // groups own it at different levels: `(main)/layout.tsx` wraps its children
     // in one, while `(auth)`'s comes from `AuthFrame` — which this replaces.
-    // Without it an auth error has a header and no main region at all.
-    <main className="mx-auto max-w-2xl px-4">
+    //
+    // `(auth)/layout.tsx` renders no chrome at all (just the grid and the side
+    // panel), so an auth error has no header, no brand link and no nav — the
+    // only way out is this body's own "Back home" button. Without the landmark
+    // there would be no main region either.
+    //
+    // Deliberately bare: `RouteErrorBody` owns `mx-auto max-w-2xl px-4 pt-24
+    // pb-24`, and adding a box here nested `max-w-2xl` inside `max-w-2xl` — the
+    // auth error's text column came out 608px against `(main)`'s 640px, so the
+    // one `<h1>` wrapped differently between the two boundaries. That is the
+    // drift the shared component exists to prevent.
+    <main>
       <RouteErrorBody
         error={error}
         retry={retry}

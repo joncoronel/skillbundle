@@ -751,6 +751,47 @@ at merge otherwise. (The other two shipped: `format:check` is wired into
   `app/fonts/` with `adjustFontFallback: false`, exactly as SN Pro is handled —
   same loader, same reason, and the OFL notice travels with it the same way.
 
+### Parked from the skip-link / landmark review (Aug 2026)
+
+Three findings from that branch's panel review, deferred with reasons. The rest
+were fixed in the branch.
+
+- **Eighteen near-identical page width wrappers.** `mx-auto max-w-{2,4,6,7}xl px-4
+pt-{12,16,20,24} pb-{20,24}`, copy-pasted across every route, with drift
+  already in it — the padding varies by no stated rule. Now that
+  `(main)/layout.tsx` owns the landmark, the only per-page concern left is
+  essentially the width, so a `PageContainer` taking a width token would express
+  it. Deferred because it touches every route in the app for zero user-visible
+  change, and the branch that surfaced it was about landmarks; the two shouldn't
+  ride together. The genuine exceptions to preserve: home has no vertical
+  padding, `not-found` uses `pt-24`.
+
+- **`(auth)` still uses the per-page landmark arrangement that `(main)` just
+  abandoned.** `AuthFrame` supplies `<main>` for the pages and
+  `(auth)/error.tsx` supplies its own when the boundary replaces it — exactly
+  the "a route can be missed" shape the `(main)` consolidation was argued
+  against. A new `(auth)` route that doesn't use `AuthFrame` reproduces the
+  `/[org]` bug. The fix is hoisting the landmark into `(auth)/layout.tsx`, but
+  it has to absorb `AuthFrame`'s `min-h-screen flex-col` column too, since its
+  `<main className="flex flex-1 …">` depends on being a flex child of it. That
+  is a restructure of the sign-in surface, which wants its own change and real
+  browser testing of a flow CI doesn't cover. `e2e/landmarks.spec.ts` asserts
+  one visible `<main>` on `/sign-in` in the meantime, so a regression is caught
+  even though the arrangement is unchanged.
+
+- **Deeply unmatched URLs get no app chrome at all.** Measured: `/a/b/c/d`
+  returns 404 with Next's built-in page — no header, no `<main>`, no skip link,
+  no route back into the app. `app/(main)/not-found.tsx` only covers URLs that
+  match a `(main)` route and then call `notFound()` (e.g. `/nope-not-an-org`,
+  which renders correctly inside the layout). Per
+  `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/not-found.md`,
+  a **root** `app/not-found.tsx` or `app/global-not-found.tsx` is what handles
+  unmatched URLs app-wide. Pre-existing, not caused by the landmark work — but
+  that work is what makes "exactly one `<main>`, everywhere" a stated invariant,
+  so the exception is newly worth naming. Fixing it means deciding what a global
+  404 should look like and how much of the header to duplicate outside
+  `(main)/layout.tsx`, which is a product call.
+
 ### Public add-skill: moderation / report queue
 
 The public add flow (`/add`, search empty-state) lets any signed-in user add a

@@ -21,13 +21,11 @@ export function HomeContent({
   initialHot,
 }: HomeContentProps) {
   return (
-    <div className="mx-auto max-w-6xl px-4">
-      <SkillExplorer
-        initialPopularSkills={initialPopularSkills}
-        initialTrending={initialTrending}
-        initialHot={initialHot}
-      />
-    </div>
+    <SkillExplorer
+      initialPopularSkills={initialPopularSkills}
+      initialTrending={initialTrending}
+      initialHot={initialHot}
+    />
   );
 }
 
@@ -39,8 +37,6 @@ export function HomeContent({
  * setters) so the prerendered HTML is the full page. After hydration React
  * swaps in the live tree — identical when no params are set, so the common
  * load has no visible flash.
- *
- * The <main> wrapper mirrors HomeContent above — keep them in sync.
  */
 export function HomeFallback({
   initialPopularSkills,
@@ -48,14 +44,12 @@ export function HomeFallback({
   initialHot,
 }: HomeContentProps) {
   return (
-    <div className="mx-auto max-w-6xl px-4">
-      <ExplorerStaticProvider>
-        <SkillExplorerView
-          initialPopularSkills={initialPopularSkills}
-          initialTrending={initialTrending}
-          initialHot={initialHot}
-        />
-      </ExplorerStaticProvider>
-    </div>
+    <ExplorerStaticProvider>
+      <SkillExplorerView
+        initialPopularSkills={initialPopularSkills}
+        initialTrending={initialTrending}
+        initialHot={initialHot}
+      />
+    </ExplorerStaticProvider>
   );
 }

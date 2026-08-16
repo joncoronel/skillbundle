@@ -32,14 +32,27 @@ export default function MainLayout({
           It lives here because per-page landmarks failed silently: `/[org]`,
           `/[org]/[repo]` and `/site/[source]` shipped with no `<main>` at all
           and nothing caught it. A layout cannot be missed, including by routes
-          added later. `e2e/instant-navigation.spec.ts` asserts exactly one.
+          added later. `e2e/landmarks.spec.ts` asserts exactly one.
 
           `tabIndex={-1}` lets it accept programmatic focus; without it the
           browser scrolls but focus stays in the header, so the next Tab returns
           there and the skip link achieves nothing. Its own focus ring is
           suppressed because a ring around the whole page reads as a rendering
-          fault — the first Tab after the jump shows a real one. */}
-      <main id="main-content" tabIndex={-1} className="focus:outline-none">
+          fault — the first Tab after the jump shows a real one.
+
+          `scroll-mt-24` is the same 96px every anchor target in this app takes
+          (DESIGN.md §4), and it is not cosmetic here. Without it the fragment
+          jump aligns this element to y=0, the sticky header re-pins over that
+          band, and measured: the page scrolled 72px and put the first content
+          at y=48 behind a header whose bottom is 72 — the link left you worse
+          off than not using it. At 96px the target clamps to 0, so activating
+          it scrolls nothing and only moves focus, which is what it should
+          do. */}
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="scroll-mt-24 focus:outline-none"
+      >
         {children}
       </main>
       {/* Lives in the layout (not per page) so the same instance — and its

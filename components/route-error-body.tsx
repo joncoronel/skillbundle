@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/cubby-ui/button";
 
-/** Stable ref callback — see the note on the `<main>` element below. */
+/** Stable ref callback — see the note on the element below. */
 function focusOnMount(node: HTMLElement | null) {
   node?.focus();
 }
@@ -22,9 +22,12 @@ function focusOnMount(node: HTMLElement | null) {
  * `<main>`s on every error in that group. `(auth)` has no layout landmark, so
  * `(auth)/error.tsx` supplies one around this instead — see the note there.
  *
- * It keeps the focus target either way. This replaces the whole page body while
- * the header stays, so without moving focus a screen-reader user gets no signal
- * the content changed.
+ * It keeps the focus target either way, and owns its own box for both callers —
+ * neither boundary should re-wrap it, or the two render at different widths.
+ *
+ * The focus move matters because this swaps the page body underneath whatever
+ * chrome survives, which differs by group: in `(main)` the header stays, in
+ * `(auth)` there is none. Either way nothing announces the change on its own.
  */
 export function RouteErrorBody({
   error,

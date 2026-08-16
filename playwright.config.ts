@@ -63,8 +63,9 @@ export default defineConfig({
     : [["list"]],
   use: { baseURL, trace: "on-first-retry" },
   projects: [
-    // Signed-out. The instant-navigation guards live here — they're about the
-    // public catalog, which is the traffic that matters for those.
+    // Signed-out: the instant-navigation, landmark and skill-history guards.
+    // All three are about the public catalog, which is the traffic that
+    // matters for them.
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
