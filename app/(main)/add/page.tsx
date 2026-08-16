@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function AddSkillPage() {
   return (
-    <main className="mx-auto max-w-4xl px-4 pt-12 pb-20">
+    <div className="mx-auto max-w-4xl px-4 pt-12 pb-20">
       <header className="max-w-prose">
         <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
           Add a skill.
@@ -59,6 +59,6 @@ export default function AddSkillPage() {
           </div>
         </aside>
       </div>
-    </main>
+    </div>
   );
 }

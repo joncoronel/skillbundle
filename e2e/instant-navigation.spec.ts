@@ -413,3 +413,41 @@ test.describe("bundle route", () => {
     await expect(page.locator("h1")).toBeVisible();
   });
 });
+
+/**
+ * One `<main>` per route, from the layout.
+ *
+ * `(main)/layout.tsx` owns the landmark for its whole group and pages render a
+ * plain wrapper inside it. This guards both directions: a page that adds its own
+ * `<main>` back would nest two, and a route that somehow escapes the layout
+ * would have none.
+ *
+ * It exists because the silent case already shipped — `/[org]`, `/[org]/[repo]`
+ * and `/site/[source]` ran for months with no landmark at all, which nothing
+ * caught. Visible-only, because React parks streamed content in a `hidden`
+ * container mid-swap and that copy is legitimately not a second landmark.
+ */
+test.describe("landmarks", () => {
+  const routes = [
+    ["home", "/"],
+    ["org", GITHUB_ORG_PATH],
+    ["repo", GITHUB_REPO_PATH],
+    ["skill", GITHUB_SKILL_PATH],
+    ["site", WELL_KNOWN_SOURCE_PATH],
+    ["official", "/official"],
+    ["compare", "/compare"],
+    ["pricing", "/pricing"],
+  ] as const;
+
+  for (const [name, path] of routes) {
+    test(`${name} renders exactly one visible <main>`, async ({ page }) => {
+      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("main:visible")).toHaveCount(1);
+      // ...and it is the layout's, so the skip link has something to land on.
+      await expect(page.locator("main:visible")).toHaveAttribute(
+        "id",
+        "main-content",
+      );
+    });
+  }
+});

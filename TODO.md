@@ -727,32 +727,11 @@ call, like the focus rings, not a side effect of a component update.
 
 ### Parked from the skill-page-redesign review (Aug 2026)
 
-Three calls made deliberately during that branch's review rounds, each declined
-for a reason that is about scope rather than merit. Recorded here because the
-review file itself is under `reviews/`, which is git-ignored — the reasoning
-disappears at merge otherwise, and the next reviewer re-proposes all three.
-
-- **A skip link in `app/(main)/layout.tsx`. Pre-existing, not from this branch.**
-  The app has never had one: `app/(main)/layout.tsx` renders header → children →
-  bundle bar, with no "Skip to content" affordance, and this branch does not
-  touch that file at all. A keyboard user therefore tabs through the whole
-  header on every page.
-
-  Two separate things got conflated when this was first written, so to be clear
-  about which half is done: the `<main>` landmark is per-page in this app, and
-  the skill detail page was the one route missing it. That IS fixed here
-  (`SkillDetailPage` and `SkillDetailPageLoading` both render `<main>` now). The
-  skip link is the part that remains, it is app-wide, and it predates the
-  branch. It became more worth doing because skill pages can run 20,000px with
-  three landmarks above the content, not because anything here caused it.
-
-- **Wire `format:check` into `pnpm check`.** Prettier landed on this branch but
-  only the touched files were formatted; `npx prettier --check` still fails
-  repo-wide (`components/skill-explorer.tsx`, `DESIGN.md`, `docs/architecture.md`
-  among them). The sequence is: merge, then one repo-wide `pnpm format` commit on
-  master, add its SHA to `.git-blame-ignore-revs`, and only then add the gate —
-  in that order, or the gate fails on arrival and the blame history for every
-  file lands on the reformat.
+One call made deliberately during that branch's review rounds, declined for a
+reason about scope rather than merit. Recorded here because the review file
+itself is under `reviews/`, which is git-ignored — the reasoning would disappear
+at merge otherwise. (The other two shipped: `format:check` is wired into
+`pnpm check` as of #73, and the skip link landed after it.)
 
 - **Geist Pixel ships all five shapes on every route, ~100 KB of it unused.**
   Nothing to do with the header — the font is loaded in the ROOT layout

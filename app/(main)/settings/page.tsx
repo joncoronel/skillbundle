@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 
 export default function SettingsPage() {
   return (
-    <main className="mx-auto max-w-4xl px-4 pt-12 pb-20">
+    <div className="mx-auto max-w-4xl px-4 pt-12 pb-20">
       <div className="mb-8">
         <h1 className="font-display text-3xl font-medium tracking-tight">
           Account Settings
@@ -32,6 +32,6 @@ export default function SettingsPage() {
       <Suspense fallback={<CustomSettingsPageView activeTab="profile" />}>
         <CustomSettingsPage />
       </Suspense>
-    </main>
+    </div>
   );
 }

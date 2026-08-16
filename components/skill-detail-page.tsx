@@ -252,7 +252,7 @@ export function SkillDetailPage({
     // the rail in `<nav>`, so a screen-reader user got banner / navigation /
     // navigation / complementary around a 20,000px document that sat in no
     // landmark at all. Every other route in this app already uses `<main>`.
-    <main className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
       {/* The masthead pads itself by exactly the sidebar column so the title
           cannot run under the card — skill ids reach 40 characters and the h1
           is the one block here with no measure of its own. It carries no
@@ -305,7 +305,7 @@ export function SkillDetailPage({
           />
         </Suspense>
       </DataErrorBoundary>
-    </main>
+    </div>
   );
 }
 
@@ -729,7 +729,7 @@ export function SkillDetailPageLoading() {
     // long as this shell is up, then grow one — the header's `banner` and the
     // rail's `navigation` are present the whole time, so the gap is visible to
     // a screen reader rather than theoretical.
-    <main className="mx-auto max-w-6xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <div className="mb-6">
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
@@ -739,6 +739,6 @@ export function SkillDetailPageLoading() {
       <Skeleton className="h-9 w-1/2 max-w-md sm:h-10" />
 
       <SkillDetailPageSkeleton installCommand="npx skills add ..." />
-    </main>
+    </div>
   );
 }

@@ -21,10 +21,16 @@ export default function AuthError({
   retry: () => void;
 }) {
   return (
-    <RouteErrorBody
-      error={error}
-      retry={retry}
-      description="Sign-in didn't load. It's usually temporary. Try again, or go back home."
-    />
+    // The landmark is supplied here, unlike `(main)/error.tsx`, because the two
+    // groups own it at different levels: `(main)/layout.tsx` wraps its children
+    // in one, while `(auth)`'s comes from `AuthFrame` — which this replaces.
+    // Without it an auth error has a header and no main region at all.
+    <main className="mx-auto max-w-2xl px-4">
+      <RouteErrorBody
+        error={error}
+        retry={retry}
+        description="Sign-in didn't load. It's usually temporary. Try again, or go back home."
+      />
+    </main>
   );
 }

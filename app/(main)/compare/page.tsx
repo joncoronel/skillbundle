@@ -41,7 +41,7 @@ function CompareFallback() {
 
 export default function ComparePage() {
   return (
-    <main className="mx-auto max-w-7xl px-4 pt-12 pb-24">
+    <div className="mx-auto max-w-7xl px-4 pt-12 pb-24">
       <header>
         <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
           Compare.
@@ -60,6 +60,6 @@ export default function ComparePage() {
       {/* The floating bundle selection bar is mounted by the (main) layout
           (GlobalBundleBar), so the instance carried over from the discovery
           surfaces persists here. */}
-    </main>
+    </div>
   );
 }

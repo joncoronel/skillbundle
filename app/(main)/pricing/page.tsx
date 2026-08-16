@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function PricingPage() {
   return (
-    <main className="mx-auto max-w-4xl px-4 pt-16 pb-24">
+    <div className="mx-auto max-w-4xl px-4 pt-16 pb-24">
       <header className="mx-auto max-w-2xl text-center">
         <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] leading-hero font-medium tracking-tight">
           Two plans. One product.
@@ -28,6 +28,6 @@ export default function PricingPage() {
       <section className="mt-20">
         <PricingFaq />
       </section>
-    </main>
+    </div>
   );
 }

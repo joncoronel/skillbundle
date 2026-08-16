@@ -21,13 +21,13 @@ export function HomeContent({
   initialHot,
 }: HomeContentProps) {
   return (
-    <main className="mx-auto max-w-6xl px-4">
+    <div className="mx-auto max-w-6xl px-4">
       <SkillExplorer
         initialPopularSkills={initialPopularSkills}
         initialTrending={initialTrending}
         initialHot={initialHot}
       />
-    </main>
+    </div>
   );
 }
 
@@ -48,7 +48,7 @@ export function HomeFallback({
   initialHot,
 }: HomeContentProps) {
   return (
-    <main className="mx-auto max-w-6xl px-4">
+    <div className="mx-auto max-w-6xl px-4">
       <ExplorerStaticProvider>
         <SkillExplorerView
           initialPopularSkills={initialPopularSkills}
@@ -56,6 +56,6 @@ export function HomeFallback({
           initialHot={initialHot}
         />
       </ExplorerStaticProvider>
-    </main>
+    </div>
   );
 }

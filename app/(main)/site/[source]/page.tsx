@@ -79,6 +79,8 @@ export async function generateMetadata({
 // it blocking, while direct page loads still look fine.
 export default function WellKnownSourcePage({ params }: { params: Params }) {
   return (
+    // `<main>`, not a div: this is the page's content landmark, and the skip
+    // link in app/(main)/layout.tsx targets the wrapper just outside it.
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <Suspense fallback={<SourceHeaderSkeleton />}>
         <SourceHeader params={params} />
