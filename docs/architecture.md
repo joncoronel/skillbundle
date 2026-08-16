@@ -845,6 +845,10 @@ network, anything asserted **after** is allowed to stream.
 visible `<main>` each (§6). One file per contract on purpose — the two happen to
 need the same route list, but a failure in one says nothing about the other.
 
+`e2e/skill-history.spec.ts` is the third, and the only one that asserts
+behaviour rather than structure: it drives the History diff panel on a skill
+page, where every assertion corresponds to a regression that shipped once.
+
 ```bash
 pnpm e2e          # headless
 pnpm e2e:ui       # Playwright UI
@@ -854,7 +858,7 @@ Three Playwright projects:
 
 | Project           | Runs                                                     | Signed in? |
 | ----------------- | -------------------------------------------------------- | ---------- |
-| `chromium`        | `e2e/*.spec.ts` — instant-navigation + landmark guards   | no         |
+| `chromium`        | `e2e/*.spec.ts` — the three signed-out guards above      | no         |
 | `setup`           | `e2e/auth.setup.ts` — signs in once, saves storage state | —          |
 | `chromium-authed` | `e2e/authenticated/*.spec.ts`                            | yes        |
 
