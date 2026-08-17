@@ -149,8 +149,11 @@ export function addSkillErrorText(err: unknown): string {
     return "You don't have access to do that.";
   }
   // Input-shape complaints from parseSkillInput are already written for a human.
+  // `becomes the source` is the scheme-less-URL refusal, listed explicitly
+  // rather than left to the catch-all so a rewrite arm added above this one
+  // can't silently swallow the most actionable message the parser produces.
   if (
-    /Slug is missing|Invalid skill input|Skill input is empty|looks like a domain/i.test(
+    /Slug is missing|Invalid skill input|Skill input is empty|looks like a domain|becomes the source/i.test(
       cleaned,
     )
   ) {

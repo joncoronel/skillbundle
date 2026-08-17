@@ -24,7 +24,16 @@ export function GitHubAddQuota({ className }: { className?: string }) {
     enabled: isAuthenticated,
   });
 
-  if (!data || data.limit === null) return null;
+  // Signed-out visitors and Pro accounts have no quota to show, and no
+  // geometry to reserve either.
+  if (!isAuthenticated) return null;
+  // Reserved while the query is in flight, because this now mounts inside the
+  // page's PRIMARY register rather than a sidebar: without a placeholder the
+  // meter's arrival pushes the third outcome row and everything under it down.
+  // The opacity fade below hides the appearance, never the reflow. Height is
+  // the resolved block's: bar 6px + `mt-2` 8px + one line of `text-xs` 16px.
+  if (!data) return <div className={cn("h-[30px]", className)} aria-hidden />;
+  if (data.limit === null) return null;
   // `atLimit` comes from the server (single source of the comparison rule);
   // `used` is already clamped to the limit there, so the ARIA values below
   // stay valid even for an account whose Pro-era history exceeded the cap.

@@ -1,115 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
-import { parseSkillInput } from "@/lib/parse-skill-input";
+import { useEffect, useMemo, useState } from "react";
+import { readSkillInput, SKILL_INPUT_EXAMPLES } from "@/lib/add-skill-reading";
+import { busyRowProps } from "@/hooks/use-add-skill-field-a11y";
 import { cn } from "@/lib/utils";
 
 /**
- * The field's display window: it reports what the app read from what you
- * pasted, before you commit to it.
- *
- * `parseSkillInput` is pure and already ran on this surface — but only on
- * submit, as a reject-and-explain gate. Running it per keystroke turns the same
- * function into the thing that makes this page an instrument instead of a text
- * box: the identifiers it derives (source, slug, and the SKILL.md path a link
- * already named) are exactly what the add is about to look up, and seeing them
- * resolve is how you know the link you grabbed points where you think it does.
- *
- * Nothing here is authoritative about the RESULT — the server re-parses, and
- * prefers a SKILL.md's frontmatter name over a folder-derived slug, which the
- * confirm card explains where it happens. This reports on the INPUT.
+ * The field's display window: what the app read from what you pasted, before
+ * you commit to it. All of the reading lives in `lib/add-skill-reading.ts`;
+ * this file only renders it.
  */
-
-/**
- * One real catalog entry per accepted form, read off the live catalog rather
- * than invented, so clicking one and submitting lands on the true
- * "already in the catalog" answer instead of a 404.
- *
- * Every URL form carries its scheme deliberately. Without it the first segment
- * is a dot-bearing string, which is the parser's signal for a well-known
- * source, so `github.com/owner/repo/...` resolves to the source "github.com"
- * with the whole rest as a slug. The old placeholder on this page advertised
- * exactly that shape.
- */
-const EXAMPLES = [
-  {
-    label: "skills.sh link",
-    value: "https://skills.sh/anthropics/skills/frontend-design",
-  },
-  {
-    label: "GitHub link",
-    value:
-      "https://github.com/anthropics/skills/tree/main/skills/frontend-design",
-  },
-  {
-    label: "Short form",
-    value: "vercel-labs/agent-skills/web-design-guidelines",
-  },
-] as const;
-
-/** The bare hosts a scheme-less URL collapses to. See EXAMPLES above. */
-const BARE_HOSTS = new Set([
-  "github.com",
-  "skills.sh",
-  "raw.githubusercontent.com",
-]);
-
-type Reading =
-  | { mode: "examples" }
-  | {
-      mode: "parsed";
-      source: string;
-      skillId: string;
-      path?: string;
-      /** The source is `owner/repo`, so there is a repo to fall back to. */
-      viaGitHub: boolean;
-    }
-  | { mode: "invalid"; message: string };
-
-function read(input: string): Reading {
-  const trimmed = input.trim();
-  if (!trimmed) return { mode: "examples" };
-
-  let parsed: ReturnType<typeof parseSkillInput>;
-  try {
-    parsed = parseSkillInput(trimmed);
-  } catch (err) {
-    // Half-typed input is not a mistake to report. Until there is a separator
-    // there is no structure to read, so the reference stays up rather than the
-    // parser's "Invalid skill input" firing on the first character.
-    if (!trimmed.includes("/")) return { mode: "examples" };
-    return {
-      mode: "invalid",
-      message:
-        err instanceof Error
-          ? err.message
-          : "That is not a skill link we recognise.",
-    };
-  }
-
-  // A URL pasted without its scheme parses, and parses WRONG: the host becomes
-  // the source. It is the one failure that looks like a success, so it is
-  // named here rather than left to read as a resolved skill under the source
-  // "github.com".
-  if (BARE_HOSTS.has(parsed.source)) {
-    return {
-      mode: "invalid",
-      message: `Add "https://" to the front. Without it, "${parsed.source}" reads as the source instead of the site.`,
-    };
-  }
-
-  return {
-    mode: "parsed",
-    source: parsed.source,
-    skillId: parsed.skillId,
-    path: parsed.path,
-    // The same split the parser uses: a dot in the first segment means a
-    // well-known source, anything else is owner/repo on GitHub. Only the
-    // latter has a repo the add can fall back into.
-    viaGitHub: !parsed.source.split("/")[0].includes("."),
-  };
-}
-
 export function InputReadout({
   input,
   pending,
@@ -117,38 +17,66 @@ export function InputReadout({
 }: {
   input: string;
   /**
-   * A request is in flight, so the rows must not rewrite the field.
-   *
-   * The field itself is `readOnly` for the length of a request (see the header
-   * of `hooks/use-add-skill-field-a11y.ts` for why `readOnly` and not
-   * `disabled`), and a control that fills that same field is an edit by another
-   * route. `aria-disabled` with a guarded handler rather than the native
-   * attribute, for the reason that module gives: a natively disabled element
-   * cannot hold focus, and one submit can be three round trips.
+   * A request is in flight, so the rows must not rewrite the field. The field
+   * itself is `readOnly` for the length of a request, and a control that fills
+   * that same field is an edit by another route.
    */
   pending: boolean;
   /** Fills the field. Goes through the flow's own setter, so a pending
    *  candidate is invalidated exactly as typing would invalidate it. */
   onUseExample: (value: string) => void;
 }) {
-  const reading = useMemo(() => read(input), [input]);
+  const reading = useMemo(() => readSkillInput(input), [input]);
+
+  // Skip @starting-style on the first paint, following crossfade.tsx.
+  //
+  // Every other `starting:` in this app is on content that mounts after
+  // hydration; this panel is in the prerendered HTML of a fully static route,
+  // and `@starting-style` DOES apply to the initial style resolution there.
+  // Measured in a same-origin iframe load: the panel came up at opacity 0.59
+  // with a 1.65px offset and settled over the next ~40ms. So the one route
+  // whose whole value is that its shell is already painted was fading its
+  // centrepiece in on arrival.
+  //
+  // Adding the classes after mount cannot itself animate: @starting-style
+  // supplies a before-change style only when an element is first styled, and
+  // this one already is. The keyed remount on a frame change is a new element,
+  // so that entrance still fires.
+  // Flipped inside a frame callback rather than synchronously in the effect:
+  // `crossfade.tsx` writes the same guard as a bare `setMounted(true)`, but
+  // `components/ui/cubby-ui/` is outside the lint gate and this file is not, so
+  // the same line here is a cascading-render error. Deferring is also the more
+  // literal statement of the intent, which is "after the first paint".
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   return (
-    // Height is held across the states so resolving a paste never moves the
-    // outcomes below it. Recessed rather than raised: this is the panel the
-    // field reports into, and bg-muted is the house inset tone (Card's `inset`
-    // variant uses it), so it reads the same way inside the dialog.
-    <div className="min-h-36 rounded-lg border border-border bg-muted p-3">
-      {/* Keyed on the FRAME, not the mode: the entrance fires when the panel
-          changes what kind of thing it is showing, and not on every keystroke
-          within one, nor when a bad character merely adds a message above a
-          reference list that was already sitting there. One authored moment
-          rather than a twitch per character. */}
+    // A FLOOR, not a fixed height, and sized per breakpoint to the tallest
+    // frame there (measured, not computed: the reference frame is tallest, and
+    // its lead line and the rows both wrap differently at narrow widths). It
+    // holds only while the four strings below stay their current length, which
+    // is why `break-words` and the parser's 60-character quote cap matter —
+    // together they bound how far copy can push it.
+    //
+    // Recessed rather than raised: this is the panel the field reports into,
+    // and bg-muted is the house inset tone (Card's `inset` variant uses it),
+    // so it reads the same way inside the dialog.
+    <div className="min-h-44 rounded-lg border border-border bg-muted p-3 sm:min-h-38">
+      {/* Keyed on the FRAME: the entrance fires when the panel changes what
+          kind of thing it shows, not on every keystroke within one, and not
+          when a bad character merely adds a message above a reference list
+          that was already sitting there. */}
       <div
-        key={reading.mode === "parsed" ? "parsed" : "reference"}
-        className="transition-[opacity,translate] duration-200 ease-out-cubic motion-reduce:transition-none starting:translate-y-1 starting:opacity-0"
+        key={reading.frame}
+        className={cn(
+          "transition-[opacity,translate] duration-200 ease-out-cubic motion-reduce:transition-none",
+          mounted && "starting:translate-y-1 starting:opacity-0",
+        )}
       >
-        {reading.mode === "parsed" ? (
+        {reading.frame === "parsed" ? (
           <>
             {/* Same term/value vocabulary as the confirm card, so the row you
                 read here is the row you confirm there. */}
@@ -166,52 +94,52 @@ export function InputReadout({
             </dl>
             <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
               {reading.viaGitHub
-                ? "We look for this on skills.sh first. If it isn't listed there, we find the SKILL.md in the repo and ask you to confirm it."
-                : "We look for this on skills.sh. There is no GitHub repo to fall back to."}
+                ? "We check skills.sh first, then look for the SKILL.md in the repo."
+                : "We check skills.sh. There is no GitHub repo to fall back to."}
             </p>
           </>
         ) : (
           <>
             {/* Foreground weight, never `destructive`. The readout guides while
-                you type and the submit notice is what judges: turning this red
-                on a half-finished paste reads as being told off for typing. */}
+                you type and the submit notice is what judges. `break-words`
+                because these messages quote the pasted string, and a pasted
+                URL has no break opportunity in it — without this the message
+                runs past the panel and scrolls the page sideways. */}
             <p
               className={
-                reading.mode === "invalid"
-                  ? "text-xs text-foreground"
-                  : "text-xs text-muted-foreground"
+                reading.message
+                  ? "text-xs break-words text-foreground"
+                  : "text-xs break-words text-muted-foreground"
               }
             >
-              {reading.mode === "invalid"
-                ? reading.message
-                : "Any of these forms works. Click one to fill the field."}
+              {reading.message ??
+                "Any of these forms works. Click one to fill the field."}
             </p>
             {/* Kept up under a message rather than replaced by it. An input the
                 parser can't read is exactly when the accepted forms are worth
                 seeing, and a lone sentence in a fixed-height panel is the void
                 this whole surface exists to remove. */}
-            <ul className="mt-2.5 space-y-1">
-              {EXAMPLES.map((example) => (
+            <ul className="mt-2.5 space-y-1.5">
+              {SKILL_INPUT_EXAMPLES.map((example) => (
                 <li key={example.label}>
-                  {/* `bg-surface-hover` rather than a surface level: the row
-                      carries no fill of its own, so the translucent tint
-                      composites over the panel and reads as a darkening in
-                      light and a lightening in dark. A level would have to
-                      pick a side, and `surface-2` sits the wrong side of
-                      `muted` in dark, where the hover all but vanished. */}
+                  {/* A raw button, not the cubby `Button`: its content wrappers
+                      set no `min-width: 0`, so the truncating value below
+                      overflowed the button and scrolled the page sideways at
+                      375px instead of ellipsising. The a11y half of that
+                      trade-off is owned centrally by `busyRowProps` rather
+                      than re-derived here; its handler guard is mandatory,
+                      because `aria-disabled` alone does not stop a click.
+                      `h-8 sm:h-7` gives the wider touch target on the
+                      viewport where mis-taps overwrite the field. */}
                   <button
                     type="button"
-                    aria-disabled={pending || undefined}
+                    {...busyRowProps({ unavailable: pending })}
                     onClick={() => {
                       if (pending) return;
                       onUseExample(example.value);
                     }}
                     className={cn(
-                      "group flex h-7 w-full items-center gap-3 rounded-md px-2 text-left transition-[opacity,background-color,color] duration-100 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50 motion-reduce:transition-none",
-                      // Dimmed rather than silently inert: a row that looks
-                      // live and does nothing is worse than one that says it
-                      // is unavailable, which is the same call the dialog's
-                      // close button makes while a write is in flight.
+                      "group flex h-8 w-full items-center gap-3 rounded-md px-2 text-left transition-[opacity,background-color,color] duration-100 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50 motion-reduce:transition-none sm:h-7",
                       pending
                         ? "cursor-not-allowed opacity-60"
                         : "hover:bg-surface-hover",
@@ -220,9 +148,11 @@ export function InputReadout({
                     <span className="w-24 shrink-0 text-xs text-muted-foreground">
                       {example.label}
                     </span>
-                    {/* Muted at rest so the reference does not out-shout the
-                        field above it, which is the object on this page. */}
-                    <span className="truncate font-mono text-xs text-muted-foreground transition-colors duration-100 ease-out group-hover:text-foreground motion-reduce:transition-none">
+                    {/* `min-w-0` is what lets `truncate` win: a flex item
+                        defaults to `min-width: auto`, so an unbreakable mono
+                        string sets the floor and pushes the row wider than its
+                        container. */}
+                    <span className="min-w-0 truncate font-mono text-xs text-muted-foreground transition-colors duration-100 ease-out group-hover:text-foreground motion-reduce:transition-none">
                       {example.value}
                     </span>
                   </button>

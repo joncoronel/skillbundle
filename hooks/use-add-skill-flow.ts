@@ -230,7 +230,14 @@ const ADD_SKILL_PHASE_LABEL: Record<Exclude<AddSkillPhase, "idle">, string> = {
   // often about to 404 into the GitHub branch. Nothing is being added yet.
   adding: "Checking…",
   previewing: "Checking GitHub…",
-  retrying: "Adding under its listed name…",
+  // "Adding…", not "Adding under its listed name…". The phase stays distinct
+  // from `adding` (that is what the type is for), and the label still only
+  // moves forward from "Checking GitHub…", which is the constraint above. What
+  // it no longer does is state the slug substitution: at 220px that string was
+  // the widest label by 75px, and every surface that pins a button beside its
+  // field pays for the outlier permanently. The substitution is explained where
+  // it is actually actionable, in the success card's `aliasRetryNote`.
+  retrying: "Adding…",
   confirming: "Adding…",
 };
 

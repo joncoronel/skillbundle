@@ -45,9 +45,12 @@ viewport of nothing under both — a rough draft in the literal sense. The fix w
 not more content but a responsive object: `parseSkillInput` already ran here on
 submit as a reject-and-explain gate, and running it per keystroke turns the field
 into a readout that resolves as you paste. The panel under the field is one
-fixed-height window with two frames — the reference forms when there is nothing
-to read, the resolved identifiers when there is — so it is never empty and never
-jumps. Below it, the outcomes are a condition/result register rather than cards,
+window with two frames — the reference forms when there is nothing to read, the
+resolved identifiers when there is — so it is never empty. Its height is a
+`min-h` floor measured per breakpoint against the tallest frame, not a fixed
+height: the floor is only as good as the copy inside it stays short, which is
+why the message wraps with `break-words` and the parser caps the input it echoes
+at 60 characters. Below it, the outcomes are a condition/result register rather than cards,
 because two of the three add something and one does not, and equal cards would
 assert they are peers.
 

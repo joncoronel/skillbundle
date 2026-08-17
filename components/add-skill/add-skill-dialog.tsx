@@ -62,9 +62,9 @@ export function AddSkillDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            {/* `elevated`, because the dialog's own content fill IS `bg-input`
-                (both resolve to surface-3), so the default opaque field
-                collapsed into its container here and read as a bare border. */}
+            {/* `elevated`: this content sits at `surface-5`, and in light mode
+                that and `bg-input`'s `surface-3` are both pure white, so the
+                default opaque field had nothing here but its hairline. */}
             <AddSkillFlow
               initialInput={initialInput}
               autoFocus

@@ -81,10 +81,12 @@ export function AddSkillFlow({
   onPendingChange?: (pending: boolean) => void;
   /**
    * The Input variant for the substrate this flow is mounted on, passed through
-   * verbatim. `default` paints an opaque `bg-input` (= surface-3), which is the
-   * page's field but is the DIALOG'S OWN FILL — so in the dialog the field used
-   * to disappear into its container and read as a bare underline. `elevated` is
-   * the translucent variant that exists for exactly that case.
+   * verbatim. `default` paints an opaque `bg-input` (= `surface-3`), which is
+   * right on the page but indistinguishable from the dialog: `DialogContent`
+   * sits at `surface-5`, and in LIGHT mode `surface-3` and `surface-5` are both
+   * pure white, so the field there had nothing but its hairline. (In dark they
+   * differ, 0.264 vs 0.321, which is why the collapse only showed in one
+   * theme.) `elevated` is the translucent variant that exists for this case.
    */
   variant?: "default" | "elevated";
 }) {
@@ -323,18 +325,25 @@ export function AddSkillFlow({
             cutting the field off from its own help text. Explicit placement
             also keeps the help under the field's column only, instead of
             running beneath the button. */}
-        <div className="mt-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2">
+        {/* The action track is FIXED, not `auto`. Sized to the widest label the
+            button can hold (measured: "Checking GitHub…" at 145px), because an
+            auto track sizes to max-content and one submit walks through three
+            labels — so the field shrank and re-expanded mid-request,
+            re-truncating the URL under the user's cursor while they waited. It
+            also absorbs the signed-out → signed-in label swap on load. */}
+        <div className="mt-2 sm:grid sm:grid-cols-[minmax(0,1fr)_9.25rem] sm:gap-x-2">
           <Input
             id="add-skill-input"
             type="text"
             variant={variant}
-            // The scheme is part of the shape, not decoration on it: without
-            // it the leading `github.com` is a dot-bearing first segment, which
-            // is the parser's signal for a well-known source, so the whole
-            // remainder becomes the slug. The previous placeholder here
-            // (`github.com/owner/repo/skills/my-skill`) advertised precisely
-            // that broken form.
-            placeholder="https://github.com/owner/repo/tree/main/skills/my-skill"
+            // The skills.sh form, not the GitHub one, for length: a valid
+            // GitHub deep link needs `/tree/<branch>/` (without it the parser
+            // rightly refuses, having been handed a repo rather than a skill),
+            // which pushes it to 55 characters and truncates past its own
+            // point on a phone. This one is 39 and still carries the scheme,
+            // which is the part that matters. Both GitHub forms are one click
+            // away in the readout below.
+            placeholder="https://skills.sh/owner/repo/skill-name"
             // Mono because the field's entire content is a machine string that
             // was pasted, which is what mono is for. h-11/h-10 is one step up
             // the shared Input/Button ramp and is matched by the button's `lg`
@@ -370,7 +379,7 @@ export function AddSkillFlow({
             <Button
               type="button"
               size="lg"
-              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:w-auto sm:text-sm"
+              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:text-sm"
               onClick={() => {
                 const path = window.location.pathname + window.location.search;
                 router.push(signInUrl(path));
@@ -383,7 +392,7 @@ export function AddSkillFlow({
               type="submit"
               size="lg"
               {...submitProps}
-              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:w-auto sm:text-sm"
+              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:text-sm"
             >
               {label ?? "Add skill"}
             </Button>
