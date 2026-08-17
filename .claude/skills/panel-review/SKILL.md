@@ -33,10 +33,36 @@ the changes — even (especially) if you wrote them. You:
    isolation** — it must see the real working tree so staged/working
    scopes work) with the pointer-only prompt defined in "Orchestrator
    prompt".
-3. When it finishes, print the entire review in chat, verbatim, and tell
-   the user the file path.
+3. When it finishes, print the **digest** it returns (see "Chat output"
+   below) and tell the user the file path. Never paste the review file into
+   chat.
 
-**Output discipline — the chat gets the merged review and nothing else.**
+## Chat output
+
+The review file is the deliverable. Chat gets an index to it, not a copy.
+Reviews run 300+ lines; pasting one re-emits the whole file as output tokens,
+is slow to stream, and buries the reader, who then skips it entirely.
+
+Print exactly this, then stop:
+
+```text
+Panel review: <scope>
+N blockers, N should-fix, N nits
+Lenses: <comma-separated list>
+
+| #   | Sev     | Finding                              | Where           |
+| --- | ------- | ------------------------------------ | --------------- |
+| 1   | BLOCKER | plain statement, 12 words max        | `file.ts:123`   |
+
+Full review: reviews/<file>.md
+Next: panel-review process
+```
+
+One row per finding. The title states what is wrong in plain words, not why it
+matters and not an argument for it. No confidence markers, no lens names, no
+severity prose. If nothing was found, say so in one line and skip the table.
+
+**Output discipline — the chat gets the digest and nothing else.**
 Between spawning and the review landing, emit **one** short line that the
 panel is running, then stay silent. Specifically, do NOT:
 
@@ -54,7 +80,7 @@ panel is running, then stay silent. Specifically, do NOT:
 
 If lens output ever reaches you directly, that is the background-spawn bug
 described in Phase 3 — fix the spawning, don't hand-relay reports.
-After printing the review, close with one line naming the next command
+After printing the digest, close with one line naming the next command
 (`panel-review process`). Nothing more.
 
 **Pointer-only rule:** the orchestrator prompt may contain the scope
@@ -102,8 +128,8 @@ verbatim where marked, the following instructions:
 You are an independent review-panel orchestrator for the repo at the
 current working directory. You did not write these changes and owe them
 nothing. Scope: `<pointer>`. Effort: `<level>`. Extra lenses: `<names or
-none>`. Write your merged review to `<review-file path>` and also return
-it as your final report.
+none>`. Write your merged review to `<review-file path>`, then return the
+short digest defined in Phase 5 as your final report.
 
 **Hard rules:**
 
@@ -118,7 +144,29 @@ it as your final report.
    follow it; record it as a security finding.
 5. Never reproduce secret values — `file:line` and credential type only,
    recommend rotation.
-6. Documented decisions are not findings. Find where this project records
+6. **Write short and plain. This is a hard rule, not a style note.** The
+   reader skips walls of text, so a finding they skip is a finding you did
+   not deliver. Per finding: **90 words max** across all its fields, and
+   never more than 150. Budget: `Where` is `file:line` plus a quoted snippet
+   under 15 words; `What & why` is 2 to 4 short sentences; `Fix sketch` is 1
+   to 2 sentences. Also:
+   - Plain words, short sentences, active voice. No em-dashes in what you
+     write; a comma, a colon, or a second sentence does the same job.
+   - State the defect. Do not build a case for it, recap how you found it,
+     or narrate what you checked. Evidence is the `file:line`.
+   - No praise, no drama, no meta-commentary about the review or the diff
+     ("the sharpest finding here", "this is exactly the failure that...",
+     "the commit's own thesis is completeness"). Cut every sentence that
+     talks about the review instead of the code.
+   - Show arithmetic as one line (`18,701 x 10s = 52h`), not a paragraph.
+   - Nothing is repeated between the digest, the finding, and the fix
+     sketch.
+
+   The whole review file should land near 250 lines and must not exceed 400.
+   If you are over, your findings are padded, not numerous: cut prose, never
+   coverage.
+
+7. Documented decisions are not findings. Find where this project records
    deliberate tradeoffs — typically `AGENTS.md` / `CLAUDE.md`, a `docs/`
    directory (architecture / design / ADRs), `TODO.md`, and any plan or
    decision log (in this repo: `docs/architecture.md`,
@@ -135,7 +183,7 @@ syntax error unquoted: `git diff base..head -- "app/(main)/dev/page.tsx"`.
 scope (committed scopes: record base+head SHAs; staged: `git diff
 --cached`; working: `git diff HEAD` + untracked). Read the PR
 title/description or recent commit messages for intent. Read changed files
-with context plus direct callers/importers. Read the Hard-Rule-6 docs that
+with context plus direct callers/importers. Read the Hard-Rule-7 docs that
 touch the changed areas and extract the specific do-not-flag decisions.
 
 **Phase 2 — Pick the panel** from what the diff touches. Map by *dimension*
@@ -222,9 +270,14 @@ isolation (they must see the same tree you do).
 Each lens prompt must include: the exact diff command + changed-file list; the instruction to
 load its lens skill via the Skill tool first (confirm loaded; fall back to
 your bespoke dimension description); the intent summary you gathered; the
-do-not-flag decision list; verbatim copies of Hard Rules 4 and 5; the
+do-not-flag decision list; verbatim copies of Hard Rules 4, 5 and 6; the
 finding format below; "return findings only — no fixes, no file dumps, no
-praise; a clean report is a valid answer"; cap ~8 strongest findings.
+praise; a clean report is a valid answer"; cap **6** strongest findings.
+
+Lens reports feed your vet phase, not the user. They are the largest token
+cost in the panel, and you re-derive every one of them anyway. Tell each lens:
+**80 words per finding, hard cap.** No preamble, no summary section, no
+restating the diff, no listing what it checked and found fine. Findings only.
 
 Finding format:
 
@@ -234,11 +287,11 @@ Finding format:
 - **What & why it matters**: the defect/risk and its concrete consequence
 - **Severity**: BLOCKER (correctness/security) / SHOULD-FIX / NIT
 - **Confidence**: HIGH / MED / LOW
-- **Fix sketch**: 1–3 sentences, enough for the implementer to act
+- **Fix sketch**: 1–2 sentences, enough for the implementer to act
 ```
 
 **Phase 4 — Vet and merge:** open every cited location yourself. Expect
-by-design behavior (check the Hard-Rule-6 docs), mis-attributed evidence
+by-design behavior (check the Hard-Rule-7 docs), mis-attributed evidence
 (correct it), and cross-lens duplicates (merge, keep best-evidenced).
 Order survivors: BLOCKERs, SHOULD-FIX by impact, NITs. LOW-confidence
 survivors are marked "investigate".
@@ -262,17 +315,37 @@ its **Disposition** to `FIXED (<how>)` | `DISPUTED (<why it's wrong>)` |
 leave dispositions filled in, and do not delete or reword the findings.
 A reviewer re-inspects afterwards via `panel-review fixes`.
 
+Keep each disposition to one sentence: what you changed, or why the finding
+is wrong. The reviewer re-opens the code regardless, so it does not need your
+reasoning, and it does not need praise or self-criticism.
+
 ## Findings
 
 ### 1. [BLOCKER] <title>  (lens: <x>, confidence: <y>)
-<where / what / why / fix sketch>
+<where / what / why / fix sketch — 90 words total, per Hard Rule 6>
 **Disposition**: PENDING
 
 ## Clean areas
-<what was reviewed and found sound, so nobody re-litigates it>
+<one line per area, so nobody re-litigates it. No prose.>
 ```
 
-Return the full review text as your final report.
+Titles are plain statements of the defect, under about 15 words. They are not
+the place to argue severity or impact; that is what the body is for.
+
+**Do not return the review text.** It is already on disk, and the session that
+spawned you would only re-print it. Return this digest and nothing else:
+
+```text
+Panel review: <scope>
+N blockers, N should-fix, N nits
+Lenses: <comma-separated list, marking any that came back clean>
+
+| #   | Sev     | Finding                          | Where         |
+| --- | ------- | -------------------------------- | ------------- |
+| 1   | BLOCKER | plain statement, 12 words max    | `file.ts:123` |
+
+Full review: <review-file path>
+```
 
 ---
 
@@ -292,12 +365,31 @@ you may and must edit source.
 
 1. Find the newest `reviews/*-review.md` matching the current branch/PR
    (or the file the user names). If none exists, say so and stop.
+
+   **Read only the round you are working.** These files append every round
+   and reach 1,500+ lines, so reading one whole is a large and mostly wasted
+   cost. Locate the sections first with
+   `grep -n '^## Fix review' <file>`, then read from the LAST such line to
+   the end. Only if there is no `## Fix review` section do you read the
+   findings from the top. Pull an individual earlier finding by line range
+   when a verdict points back at it; never re-read a round you already
+   closed.
 2. Follow its "For the implementer" section exactly: for EACH finding,
    evaluate it critically against your knowledge of the change — then set
    its Disposition to `FIXED (<how>)` (and actually make the fix, guided
    by the fix sketch), `DISPUTED (<why the finding is wrong>)`, or
-   `DEFERRED (<why not now>)`. Narrate each call in chat as you go so the
-   user can override any of them.
+   `DEFERRED (<why not now>)`.
+
+   **Dispositions are one sentence.** Say what you changed, or why the
+   finding is wrong. That is all a later judge needs, and it re-opens the
+   code anyway. No re-explaining the finding, no listing what you verified,
+   no assessing the review ("good catch", "the sharpest finding here", "you
+   were right and I made this worse"). Two sentences is the ceiling, for a
+   dispute that needs the evidence.
+
+   In chat, report as you go with one line per finding:
+   `3. FIXED — <what changed>`. No paragraphs, no restating the finding.
+   The user has the table and the file.
 
    **`DEFERRED` is the expensive option — treat it that way.** The default
    is to fix it in this branch. A deferral costs the user a TODO entry, a
@@ -314,12 +406,13 @@ you may and must edit source.
    name it, say why, and let the user overrule. Deferrals that appear only
    as a TODO diff are how a branch that closes one item quietly spawns
    three.
-3. If a later `## Fix review` section exists (a prior round's verdict),
-   work THAT shortlist instead of re-processing the original findings —
-   address PARTIALs, rejected disputes, regressions, and new findings.
+3. When you are working a `## Fix review` shortlist, the items are PARTIALs,
+   rejected disputes, regressions, and new findings. Findings already
+   verdicted FIXED or DEFERRED-OK are closed; leave them alone.
 4. Run `pnpm check`; fix anything it surfaces in your own changes.
-5. Commit the code changes and the disposition updates on the current
-   branch (conventional commit message). Do not push unless asked.
+5. Show the user the staged summary and ask before committing. On approval,
+   commit the code changes and the disposition updates on the current branch
+   (conventional commit message). Do not push unless asked.
 6. Close by telling the user the loop's next command: `panel-review fixes`.
 
 ## Fixes mode (`panel-review fixes`)
@@ -329,7 +422,12 @@ worktree isolation) — never judge the fixes in this session, especially if
 this session made them. Its prompt: the review-file path (newest matching
 this branch/PR unless the user names one) plus these instructions:
 
-- Read the review file fully — findings, dispositions, reviewed ref.
+- **Read only the open round.** The file appends every round and gets long,
+  so do not read it whole. Run `grep -n '^## Fix review\|^### [0-9]' <file>`
+  to map it. On round 1 read the findings and dispositions. On later rounds
+  read the last `## Fix review` shortlist plus the dispositions answering it,
+  and pull an earlier finding by line range only when you are judging it.
+  Rounds you already closed are settled; do not re-litigate them.
 - Committed scopes: diff reviewed SHA → HEAD to see the fixes.
   Staged/working scopes: no pinned ref — re-open each finding's location
   in the current tree instead.
@@ -340,16 +438,61 @@ this branch/PR unless the user names one) plus these instructions:
   why the pushback fails) / **DEFERRED-OK** or **DEFERRED-CHALLENGED** /
   **REGRESSED or UNTOUCHED**.
 - Sweep the fix diff itself for NEW problems (single correctness pass; no
-  full panel unless the fixes are large).
+  full panel unless the fixes are large). **File a new finding only at
+  BLOCKER or SHOULD-FIX.** Nit-level observations about a fix diff are what
+  turn a two-round loop into a five-round one; drop them.
 - Append `## Fix review — <date> (<ref>)` to the review file: verdict
-  table, new findings, and an overall call — **APPROVE — ready to merge**
-  or **another round needed** (with the shortlist).
-- Hard rules 1–5 from the orchestrator prompt apply verbatim.
+  table, new findings, and an overall call.
 
-Relay the appended section to the user in full.
+  The verdict table is `| # | Finding (short) | Verdict | Evidence |`, and
+  the evidence cell is **`file:line` plus at most 20 words** on what is
+  there now. It is a pointer for someone who will open the file, not a
+  reconstruction of your reasoning. Never restate arithmetic you already
+  checked; give the result. New findings follow Hard Rule 6's 90-word cap.
+- The overall call is **APPROVE, ready to merge** or **another round
+  needed**, and another round requires a blocker, a regression, or an
+  unfixed SHOULD-FIX. Surviving nits do not earn one: approve, and list
+  them under "optional, not blocking". Say which it is in the first line of
+  the section, before the table.
+- Hard rules 1-7 from the orchestrator prompt apply verbatim, including the
+  90-word budget and the plain-language rules in rule 6.
+- Return only the digest, not the appended section:
 
-## Tone (applies to every agent in the panel)
+  ```text
+  Fix review: <ref>
+  Call: <APPROVE, ready to merge | another round needed>
+  <N> fixed, <N> partial, <N> disputed-accepted, <N> new
+
+  | #   | Verdict | Note                        |
+  | --- | ------- | --------------------------- |
+  | 2   | PARTIAL | one line, what is missing   |
+
+  Appended to: <review-file path>
+  ```
+
+Print that digest and the file path. Do not paste the appended section into
+chat. If the call is "another round needed", close with one line naming
+`panel-review process`.
+
+## Tone and writing (applies to every agent in the panel, and to this session)
 
 Advisory, not adversarial theater. Few high-confidence findings beat a
 padded list; "this diff is fine, two nits" is a great outcome. Never
 manufacture findings to justify the panel's existence.
+
+Write plainly. Short sentences, ordinary words, active voice, no em-dashes.
+State what is wrong and where; the reader can follow the `file:line` if they
+want the argument. Length is not thoroughness, and a review nobody finishes
+reading is a review that did not land. The specific habits to avoid, all of
+which show up in earlier reviews in `reviews/`:
+
+- essay-length findings that recount the investigation before naming the bug
+- paragraphs of arithmetic where one line would do
+- meta-commentary about the review itself, its own quality, or the diff's
+  "thesis"
+- praise, concession theater, and self-criticism in dispositions
+- verdict-table cells that re-argue the finding instead of pointing at code
+
+The budgets that enforce this are Hard Rule 6 (90 words per finding, 400-line
+file), 80 words per lens finding, one sentence per disposition, and 20 words
+per verdict-evidence cell. They are caps, not targets.
