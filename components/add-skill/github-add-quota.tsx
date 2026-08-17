@@ -24,16 +24,25 @@ export function GitHubAddQuota({ className }: { className?: string }) {
     enabled: isAuthenticated,
   });
 
-  // Signed-out visitors and Pro accounts have no quota to show, and no
-  // geometry to reserve either.
-  if (!isAuthenticated) return null;
-  // Reserved while the query is in flight, because this now mounts inside the
-  // page's PRIMARY register rather than a sidebar: without a placeholder the
-  // meter's arrival pushes the third outcome row and everything under it down.
-  // The opacity fade below hides the appearance, never the reflow. Height is
-  // the resolved block's: bar 6px + `mt-2` 8px + one line of `text-xs` 16px.
-  if (!data) return <div className={cn("h-[30px]", className)} aria-hidden />;
-  if (data.limit === null) return null;
+  // NOTHING is reserved while the query is in flight, and that is deliberate.
+  //
+  // A 30px placeholder was tried here, to keep the meter's arrival from pushing
+  // the third outcome row down (this mounts inside the page's primary register
+  // now, not a sidebar). It has to be reverted rather than tuned, because the
+  // bet it makes is wrong for a whole class of accounts: whether a meter ever
+  // appears depends on `limit`, which arrives WITH the data, so there is no
+  // earlier signal to reserve against. `isAuthenticated` is not that signal —
+  // it resolves for Pro accounts too, and they get `limit: null` and render
+  // nothing. For them the reservation was a 42px empty gap that appeared once
+  // Clerk resolved and vanished one round trip later, in the middle of a
+  // register. Measured, not guessed.
+  //
+  // So the house rule about holding height across a loading→resolved
+  // transition (DESIGN.md §8) does not reach this component: it assumes the
+  // placeholder is replaced by content, and here it often is not. A free
+  // account still gets one 42px push when the meter lands. That is content
+  // arriving, which reads as normal; an empty hole reads as a bug.
+  if (!isAuthenticated || !data || data.limit === null) return null;
   // `atLimit` comes from the server (single source of the comparison rule);
   // `used` is already clamped to the limit there, so the ARIA values below
   // stay valid even for an account whose Pro-era history exceeded the cap.
