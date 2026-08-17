@@ -275,4 +275,52 @@ describe("parseSkillInput — rejects", () => {
       /empty|Invalid/i,
     );
   });
+
+  test("scheme-less URL, the shape that used to parse to the HOST as source", () => {
+    // Without a scheme `new URL` fails and the raw path is used, where the
+    // dot in "github.com" marks it a well-known source and the entire rest
+    // becomes the slug. It parsed cleanly and was always wrong: downstream it
+    // surfaced as "Only GitHub repos can be added" about a github.com link.
+    for (const input of [
+      "github.com/anthropics/skills/tree/main/skills/frontend-design",
+      "skills.sh/anthropics/skills/frontend-design",
+      "raw.githubusercontent.com/anthropics/skills/main/skills/x/SKILL.md",
+    ]) {
+      expect(() => parseSkillInput(input)).toThrow(/Add "https:\/\/"/i);
+    }
+  });
+
+  test("scheme-less URL keeps failing when it carries a www. prefix", () => {
+    // The `^www\.` strip only runs for inputs that parse as a real URL, so a
+    // scheme-less one reaches the source check with the prefix intact.
+    expect(() =>
+      parseSkillInput(
+        "www.github.com/ibelick/ui-skills/tree/main/skills/improve-ui",
+      ),
+    ).toThrow(/Add "https:\/\/"/i);
+  });
+
+  test("a well-known source that is NOT a site host still parses", () => {
+    // The scheme check must reject the three site hosts only. A genuine
+    // well-known source is the reason the 1-segment form exists.
+    expect(parseSkillInput("mintlify.com/mintlify")).toEqual({
+      source: "mintlify.com",
+      skillId: "mintlify",
+    });
+  });
+
+  test("the echoed input is length-capped in the message", () => {
+    // Messages quote what was pasted, and what gets pasted here is long
+    // unbreakable machine strings. Uncapped, one paste becomes a paragraph
+    // that the live readout renders per keystroke.
+    const long = `${"a".repeat(200)}/`;
+    let message = "";
+    try {
+      parseSkillInput(long);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/…/);
+    expect(message.length).toBeLessThan(200);
+  });
 });

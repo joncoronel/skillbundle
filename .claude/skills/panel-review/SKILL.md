@@ -43,7 +43,11 @@ The review file is the deliverable. Chat gets an index to it, not a copy.
 Reviews run 300+ lines; pasting one re-emits the whole file as output tokens,
 is slow to stream, and buries the reader, who then skips it entirely.
 
-Print exactly this, then stop:
+Print the shape below, then stop.
+
+**Emit it as ordinary markdown, so the table renders as a table. Do not wrap
+it in a code fence.** The fence here delimits the template inside this file;
+it is not part of the output.
 
 ```text
 Panel review: <scope>
@@ -53,14 +57,19 @@ Lenses: <comma-separated list>
 | #   | Sev     | Finding                              | Where           |
 | --- | ------- | ------------------------------------ | --------------- |
 | 1   | BLOCKER | plain statement, 12 words max        | `file.ts:123`   |
+| 2   | ...     | ...                                  | ...             |
 
 Full review: reviews/<file>.md
 Next: panel-review process
 ```
 
-One row per finding. The title states what is wrong in plain words, not why it
-matters and not an argument for it. No confidence markers, no lens names, no
-severity prose. If nothing was found, say so in one line and skip the table.
+**Every finding gets a row.** The table is the user's only view of the
+review, so a partial table hides findings from them. If there are 17
+findings there are 17 rows.
+
+The title states what is wrong in plain words, not why it matters and not an
+argument for it. No confidence markers, no lens names, no severity prose. If
+nothing was found, say so in one line and skip the table.
 
 **Output discipline — the chat gets the digest and nothing else.**
 Between spawning and the review landing, emit **one** short line that the
@@ -343,9 +352,14 @@ Lenses: <comma-separated list, marking any that came back clean>
 | #   | Sev     | Finding                          | Where         |
 | --- | ------- | -------------------------------- | ------------- |
 | 1   | BLOCKER | plain statement, 12 words max    | `file.ts:123` |
+| 2   | ...     | ...                              | ...           |
 
 Full review: <review-file path>
 ```
+
+One row per finding, all of them, in the same order as the file. Write it as
+ordinary markdown; **do not wrap it in a code fence.** The fence above marks
+the template's edges here and is not part of what you return.
 
 ---
 
@@ -387,9 +401,20 @@ you may and must edit source.
    were right and I made this worse"). Two sentences is the ceiling, for a
    dispute that needs the evidence.
 
-   In chat, report as you go with one line per finding:
-   `3. FIXED — <what changed>`. No paragraphs, no restating the finding.
-   The user has the table and the file.
+   **Report every finding in chat as a table, one row each.** This is the
+   user's only view of what you did, and the only chance they get to
+   overrule a call before it is committed. "All 17 dispositioned as FIXED"
+   is not a report; it hides 17 decisions behind one sentence. Emit it as
+   ordinary markdown, never inside a code fence:
+
+   | #   | Finding (short)               | Disposition | What changed         |
+   | --- | ----------------------------- | ----------- | -------------------- |
+   | 1   | 8 words, enough to recognize  | FIXED       | 10 words, concrete   |
+
+   Then, below the table, one short paragraph for each `DISPUTED` and each
+   `DEFERRED` only — these are the calls the user is most likely to
+   overrule, so they get the reasoning the table cannot hold. `FIXED` rows
+   never get a paragraph.
 
    **`DEFERRED` is the expensive option — treat it that way.** The default
    is to fix it in this branch. A deferral costs the user a TODO entry, a
@@ -465,13 +490,26 @@ this branch/PR unless the user names one) plus these instructions:
 
   | #   | Verdict | Note                        |
   | --- | ------- | --------------------------- |
+  | 1   | FIXED   | one line, what landed       |
   | 2   | PARTIAL | one line, what is missing   |
+  | 3   | ...     | ...                         |
+
+  Residual (optional, not blocking):
+  - one line each, with `file:line`
 
   Appended to: <review-file path>
   ```
 
-Print that digest and the file path. Do not paste the appended section into
-chat. If the call is "another round needed", close with one line naming
+  **Every finding you judged gets a row, including the FIXED ones.** A table
+  showing only the interesting verdicts tells the user nothing about the
+  other fifteen, and they cannot tell whether those were checked or skipped.
+  Same for anything you called optional or non-blocking: name it in a line,
+  do not just mention that residuals exist somewhere in the file.
+
+Print that digest as ordinary markdown so the table renders. **Do not wrap it
+in a code fence** — the fence above delimits the template in this file and is
+not part of the output. Do not paste the appended section into chat. If the
+call is "another round needed", close with one line naming
 `panel-review process`.
 
 ## Tone and writing (applies to every agent in the panel, and to this session)
@@ -496,3 +534,10 @@ which show up in earlier reviews in `reviews/`:
 The budgets that enforce this are Hard Rule 6 (90 words per finding, 400-line
 file), 80 words per lens finding, one sentence per disposition, and 20 words
 per verdict-evidence cell. They are caps, not targets.
+
+**Brevity means fewer words per item, never fewer items.** Every budget here
+is per finding. None of them licenses dropping a finding from a table,
+collapsing a list into a count, or replacing rows with a summary sentence.
+"All 17 findings FIXED" and a two-row table over seventeen findings are both
+failures of this rule, not successes of it: the user cannot audit or overrule
+what they cannot see. When a table is long, shorten the cells.

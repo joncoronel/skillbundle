@@ -62,10 +62,14 @@ export function AddSkillDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {/* `elevated`: this content sits at `surface-5`, and in light mode
+                that and `bg-input`'s `surface-3` are both pure white, so the
+                default opaque field had nothing here but its hairline. */}
             <AddSkillFlow
               initialInput={initialInput}
               autoFocus
               onPendingChange={setPending}
+              variant="elevated"
             />
           </DialogBody>
         </DialogContent>

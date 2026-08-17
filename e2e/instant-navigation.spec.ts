@@ -114,6 +114,12 @@ test.describe("initial load", () => {
         await expect(
           page.getByText("Paste its skills.sh link or its GitHub repo"),
         ).toBeVisible();
+        // The page's own content, not just its header. The two assertions above
+        // predate the redesign and cover the one part that never had a reason
+        // to leave the shell, so they would stay green if the readout or the
+        // outcomes register were moved behind a hydration flag.
+        await expect(page.getByText("Any of these forms works")).toBeVisible();
+        await expect(page.getByText("It's on skills.sh")).toBeVisible();
       },
       { baseURL },
     );

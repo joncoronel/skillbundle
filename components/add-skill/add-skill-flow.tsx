@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/cubby-ui/card";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
+import { InputReadout } from "@/components/add-skill/input-readout";
 
 // Derived from the server's return validator so the client can't drift from
 // what the action actually sends (the review's finding on hand-declared
@@ -70,6 +71,7 @@ export function AddSkillFlow({
   initialInput = "",
   autoFocus,
   onPendingChange,
+  variant = "default",
 }: {
   initialInput?: string;
   autoFocus?: boolean;
@@ -77,6 +79,16 @@ export function AddSkillFlow({
   // dialog uses it: dismissing after "Add to catalog" would otherwise complete
   // the insert and spend a quota slot with the confirmation thrown away.
   onPendingChange?: (pending: boolean) => void;
+  /**
+   * The Input variant for the substrate this flow is mounted on, passed through
+   * verbatim. `default` paints an opaque `bg-input` (= `surface-3`), which is
+   * right on the page but indistinguishable from the dialog: `DialogContent`
+   * sits at `surface-5`, and in LIGHT mode `surface-3` and `surface-5` are both
+   * pure white, so the field there had nothing but its hairline. (In dark they
+   * differ, 0.264 vs 0.321, which is why the collapse only showed in one
+   * theme.) `elevated` is the translucent variant that exists for this case.
+   */
+  variant?: "default" | "elevated";
 }) {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
@@ -240,6 +252,17 @@ export function AddSkillFlow({
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
 
+  // One writer for the field, shared by typing and by the readout's example
+  // rows. `changeInput`, never `setInput`, so a pending candidate is
+  // invalidated; and both displays are cleared for the reason the onChange
+  // handler already cleared them — either one otherwise keeps reporting on the
+  // previous skill inside the live region that is about to report on this one.
+  function writeInput(value: string) {
+    changeInput(value);
+    if (notice) setNotice(null);
+    if (added) setAdded(null);
+  }
+
   // `submitBlocked` conflates three unrelated reasons and only `pending` changes
   // the button's label, so a keyboard user would otherwise land on "Add skill,
   // unavailable" with no way to know which applies. The wording is this
@@ -292,41 +315,71 @@ export function AddSkillFlow({
 
   return (
     <div className="space-y-5">
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form onSubmit={handleSubmit}>
         <Label htmlFor="add-skill-input">Skill link or source</Label>
-        <Input
-          id="add-skill-input"
-          type="text"
-          placeholder="github.com/owner/repo/skills/my-skill"
-          value={input}
-          onChange={(e) => {
-            // changeInput also invalidates a pending candidate so its Confirm
-            // can't add the previous input.
-            changeInput(e.target.value);
-            if (notice) setNotice(null);
-            // …and clear the previous success card, which otherwise keeps
-            // announcing skill A inside the same live region that is about to
-            // report on skill B.
-            if (added) setAdded(null);
-          }}
-          {...inputProps}
-          aria-invalid={notice?.tone === "error" || undefined}
-          // Both, space-separated: the help paragraph states what the field
-          // accepts and was previously associated with nothing, so anyone tabbing
-          // straight to the field never heard the one sentence explaining it.
-          aria-describedby="add-skill-help add-skill-notice"
-          autoFocus={autoFocus}
-        />
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p id="add-skill-help" className="text-xs text-muted-foreground">
-            Paste a skills.sh URL, a GitHub link to the skill&apos;s folder, or
-            the <code className="font-mono">owner/repo/slug</code> form. If it
-            isn&apos;t on skills.sh yet, we&apos;ll look in the GitHub repo.
+        {/* Grid rather than a flex row, so the DOM order can be field → help →
+            action at every width while the action still sits BESIDE the field
+            from `sm` up. A flex row puts the button between the field and the
+            sentence describing the field once it wraps, which is what the
+            stacked mobile layout looked like: a full-width primary slab
+            cutting the field off from its own help text. Explicit placement
+            also keeps the help under the field's column only, instead of
+            running beneath the button. */}
+        {/* The action track is FIXED, not `auto`. Sized to the widest label the
+            button can hold (measured: "Checking GitHub…" at 145px), because an
+            auto track sizes to max-content and one submit walks through three
+            labels — so the field shrank and re-expanded mid-request,
+            re-truncating the URL under the user's cursor while they waited. It
+            also absorbs the signed-out → signed-in label swap on load. */}
+        <div className="mt-2 sm:grid sm:grid-cols-[minmax(0,1fr)_9.25rem] sm:gap-x-2">
+          <Input
+            id="add-skill-input"
+            type="text"
+            variant={variant}
+            // The skills.sh form, not the GitHub one, for length: a valid
+            // GitHub deep link needs `/tree/<branch>/` (without it the parser
+            // rightly refuses, having been handed a repo rather than a skill),
+            // which pushes it to 55 characters and truncates past its own
+            // point on a phone. This one is 39 and still carries the scheme,
+            // which is the part that matters. Both GitHub forms are one click
+            // away in the readout below.
+            placeholder="https://skills.sh/owner/repo/skill-name"
+            // Mono because the field's entire content is a machine string that
+            // was pasted, which is what mono is for. h-11/h-10 is one step up
+            // the shared Input/Button ramp and is matched by the button's `lg`
+            // size, so the page's one object carries weight without inventing
+            // a size outside the ramp.
+            className="h-11 font-mono sm:col-start-1 sm:row-start-1 sm:h-10"
+            value={input}
+            onChange={(e) => {
+              // writeInput also invalidates a pending candidate so its Confirm
+              // can't add the previous input.
+              writeInput(e.target.value);
+            }}
+            {...inputProps}
+            aria-invalid={notice?.tone === "error" || undefined}
+            // Both, space-separated: the help paragraph states what the field
+            // accepts and was previously associated with nothing, so anyone tabbing
+            // straight to the field never heard the one sentence explaining it.
+            aria-describedby="add-skill-help add-skill-notice"
+            autoFocus={autoFocus}
+          />
+          {/* Between the field and the action in source order, which is the
+              reading order on mobile and costs nothing in tab order because a
+              paragraph is not a stop: the submit below is still the first thing
+              reached after the field. */}
+          <p
+            id="add-skill-help"
+            className="mt-2 text-xs text-muted-foreground sm:col-start-1 sm:row-start-2"
+          >
+            A skills.sh URL, a GitHub link to the skill&apos;s folder, or the{" "}
+            <code className="font-mono">owner/repo/slug</code> short form.
           </p>
           {signedOut ? (
             <Button
               type="button"
-              className="shrink-0"
+              size="lg"
+              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:text-sm"
               onClick={() => {
                 const path = window.location.pathname + window.location.search;
                 router.push(signInUrl(path));
@@ -335,10 +388,29 @@ export function AddSkillFlow({
               Sign in to add
             </Button>
           ) : (
-            <Button type="submit" {...submitProps} className="shrink-0">
+            <Button
+              type="submit"
+              size="lg"
+              {...submitProps}
+              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:text-sm"
+            >
               {label ?? "Add skill"}
             </Button>
           )}
+        </div>
+        <div className="mt-3">
+          <InputReadout
+            input={input}
+            pending={pending}
+            onUseExample={(value) => {
+              writeInput(value);
+              // The row that was just clicked unmounts with the examples state
+              // it lives in, so focus would fall to <body> — the same hazard
+              // every card exit in this file guards. The field is also simply
+              // where you want to be next, to edit what just landed.
+              focusInput();
+            }}
+          />
         </div>
         {/* Why the button is unavailable, for the tab stop it now always is.
             Outside the live region below on purpose — this is a description of

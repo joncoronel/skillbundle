@@ -36,6 +36,37 @@
  * the first segment means it's a well-known source (1-segment source), no dot
  * means GitHub (2-segment source). The remainder is the slug.
  */
+/**
+ * Hosts that name the SITE and can never be a source.
+ *
+ * A URL pasted without its scheme fails `new URL` and falls through to the raw
+ * `source/slug` path below, where a dot in the first segment marks a
+ * well-known source — so `github.com/owner/repo/tree/main/skills/x` parses
+ * SUCCESSFULLY as source `github.com` with the whole remainder as the slug.
+ * It is the one input shape that looks resolved and is always wrong, and left
+ * alone it surfaces downstream as "Only GitHub repos can be added without a
+ * skills.sh listing" about a github.com link. Rejected here so every caller
+ * (both add surfaces, the live readout, and the server) gets one actionable
+ * message instead of a plausible wrong answer.
+ */
+const SITE_HOSTS = new Set([
+  "github.com",
+  "raw.githubusercontent.com",
+  "skills.sh",
+]);
+
+/**
+ * The input echoed back inside an error message, length-capped.
+ *
+ * Every message below quotes what was pasted, and what gets pasted here is
+ * long unbreakable machine strings. Uncapped, a stray paste turns a one-line
+ * error into a paragraph, which the live readout renders per keystroke.
+ */
+function quoteInput(input: string): string {
+  const trimmed = input.trim();
+  return trimmed.length > 60 ? `${trimmed.slice(0, 60)}…` : trimmed;
+}
+
 export function parseSkillInput(input: string): {
   source: string;
   skillId: string;
@@ -70,7 +101,7 @@ export function parseSkillInput(input: string): {
     }
     if (host !== "skills.sh") {
       throw new Error(
-        `URL must be from skills.sh or github.com — got "${parsedUrl.hostname}".`,
+        `URL must be from skills.sh or github.com. Got "${parsedUrl.hostname}".`,
       );
     }
     raw = parsedUrl.pathname;
@@ -87,11 +118,11 @@ export function parseSkillInput(input: string): {
     // generic "expected source/slug" message.
     if (parts.length === 1 && parts[0].includes(".")) {
       throw new Error(
-        `"${input}" looks like a domain. Paste a full skills.sh URL or use the "source/slug" form like "owner/repo/skill-name".`,
+        `"${quoteInput(input)}" looks like a domain. Paste a full skills.sh URL or use the "source/slug" form like "owner/repo/skill-name".`,
       );
     }
     throw new Error(
-      `Invalid skill input "${input}". Expected "source/slug" or a skills.sh URL.`,
+      `Invalid skill input "${quoteInput(input)}". Expected "source/slug" or a skills.sh URL.`,
     );
   }
 
@@ -99,9 +130,22 @@ export function parseSkillInput(input: string): {
   const isWellKnown = parts[0].includes(".");
   const sourceSegments = isWellKnown ? 1 : 2;
 
+  // A scheme-less URL lands here with its HOST as the would-be source. See
+  // SITE_HOSTS. `www.` is stripped for the comparison because the strip above
+  // only runs for inputs that parsed as a real URL, so `www.github.com/...`
+  // reaches this point intact.
+  if (
+    isWellKnown &&
+    SITE_HOSTS.has(parts[0].toLowerCase().replace(/^www\./, ""))
+  ) {
+    throw new Error(
+      `Add "https://" to the front. Without it, "${parts[0]}" becomes the source.`,
+    );
+  }
+
   if (parts.length <= sourceSegments) {
     throw new Error(
-      `Invalid skill input "${input}". Slug is missing after source.`,
+      `Invalid skill input "${quoteInput(input)}". Slug is missing after source.`,
     );
   }
 
