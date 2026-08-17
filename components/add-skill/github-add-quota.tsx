@@ -66,17 +66,26 @@ export function GitHubAddQuota({ className }: { className?: string }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+      {/* Both states are ONE line at every width, which is what makes the
+          reservation above a correct height rather than an average of two.
+          The long form of the at-limit sentence measured 411px: one line in
+          the 440px outcome column, two at 326px on a phone, so an at-limit
+          account was the one case that still shifted when the query landed.
+          Nothing was lost in shortening it. "your free GitHub-only adds"
+          restated the row this sits in, which is titled "It's only in a
+          GitHub repo", and "for unlimited" restated the clause directly
+          above it. */}
       <p className="mt-2 text-xs text-muted-foreground">
         {atLimit ? (
           <>
-            You&apos;ve used all {limit} of your free GitHub-only adds.{" "}
+            All <span className="tabular-nums">{limit}</span> free adds used.{" "}
             <Link
               href="/pricing"
               className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
             >
               Upgrade to Pro
-            </Link>{" "}
-            for unlimited.
+            </Link>
+            .
           </>
         ) : (
           <>
