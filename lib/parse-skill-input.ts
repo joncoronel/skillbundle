@@ -70,7 +70,7 @@ export function parseSkillInput(input: string): {
     }
     if (host !== "skills.sh") {
       throw new Error(
-        `URL must be from skills.sh or github.com — got "${parsedUrl.hostname}".`,
+        `URL must be from skills.sh or github.com. Got "${parsedUrl.hostname}".`,
       );
     }
     raw = parsedUrl.pathname;

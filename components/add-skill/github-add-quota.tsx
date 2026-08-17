@@ -11,6 +11,11 @@ import { cn } from "@/lib/utils";
  * The signed-in free user's GitHub-only-add allowance, as a compact meter.
  * Renders nothing for signed-out or Pro users (unlimited) — there's no quota to
  * show. skills.sh adds are never counted, so this only speaks to the capped kind.
+ *
+ * Deliberately borderless and untitled: it is mounted INSIDE the GitHub-only
+ * outcome it meters, which already names it. As a bordered box in a sidebar it
+ * read as an unrelated widget, and a free user had to infer for themselves
+ * which of the two add paths it applied to.
  */
 export function GitHubAddQuota({ className }: { className?: string }) {
   const { isAuthenticated } = useConvexAuth();
@@ -30,21 +35,14 @@ export function GitHubAddQuota({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-border p-3",
-        // The box mounts only once the quota query resolves; fade it in per
-        // the house pattern instead of popping the sidebar down a row.
+        // The block mounts only once the quota query resolves; fade it in per
+        // the house pattern instead of popping the row's text down a line.
         "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none starting:opacity-0",
         className,
       )}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium">GitHub-only adds</span>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {used} of {limit} used
-        </span>
-      </div>
       <div
-        className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary"
+        className="h-1.5 max-w-56 overflow-hidden rounded-full bg-secondary"
         role="progressbar"
         aria-valuenow={Math.min(used, limit)}
         aria-valuemin={0}
@@ -62,7 +60,7 @@ export function GitHubAddQuota({ className }: { className?: string }) {
       <p className="mt-2 text-xs text-muted-foreground">
         {atLimit ? (
           <>
-            You&apos;ve used all your free adds.{" "}
+            You&apos;ve used all {limit} of your free GitHub-only adds.{" "}
             <Link
               href="/pricing"
               className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
@@ -73,8 +71,10 @@ export function GitHubAddQuota({ className }: { className?: string }) {
           </>
         ) : (
           <>
-            {remaining} left on the free plan. Skills already on skills.sh are
-            unlimited.
+            <span className="tabular-nums">
+              {used} of {limit}
+            </span>{" "}
+            used on your free plan, {remaining} left.
           </>
         )}
       </p>
