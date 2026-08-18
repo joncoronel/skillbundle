@@ -43,25 +43,28 @@ The review file is the deliverable. Chat gets an index to it, not a copy.
 Reviews run 300+ lines; pasting one re-emits the whole file as output tokens,
 is slow to stream, and buries the reader, who then skips it entirely.
 
-Print the shape below, then stop.
+Print the three parts below as ordinary markdown, then stop.
 
-**Emit it as ordinary markdown, so the table renders as a table. Do not wrap
-it in a code fence.** The fence here delimits the template inside this file;
-it is not part of the output.
+**Your output contains no code fence.** The table must render as a table; a
+fenced table renders as grey monospace text and is unreadable. Nothing in
+this skill is ever echoed back inside a fence.
 
-```text
+Part 1, three plain lines:
+
 Panel review: <scope>
 N blockers, N should-fix, N nits
 Lenses: <comma-separated list>
 
+Part 2, a markdown table, one row per finding:
+
 | #   | Sev     | Finding                              | Where           |
 | --- | ------- | ------------------------------------ | --------------- |
 | 1   | BLOCKER | plain statement, 12 words max        | `file.ts:123`   |
-| 2   | ...     | ...                                  | ...             |
+
+Part 3, two plain lines:
 
 Full review: reviews/<file>.md
 Next: panel-review process
-```
 
 **Every finding gets a row.** The table is the user's only view of the
 review, so a partial table hides findings from them. If there are 17
@@ -111,13 +114,15 @@ gathers everything itself; anything you add is a bias channel.
   review".)
 - `fixes` / `verify` — closing-the-loop mode; see "Fixes mode".
 - `quick` / `deep` — effort level (default `standard`). Effort controls
-  *depth*, never coverage: **every lens the diff maps to always runs** (they
-  run concurrently, so an extra lens costs tokens, not wall time — and a
-  skipped lens is an unrecoverable blind spot, unlike an over-report, which
-  the vet phase absorbs). quick = mapped lenses, HIGH-confidence findings
-  only, no NITs; standard = mapped lenses, full findings; deep = mapped
-  lenses + security even when nothing obviously maps to it, and
-  LOW-confidence "investigate" items are reported too.
+  *depth*, never coverage: **every dimension the diff maps to is always
+  covered.** A skipped dimension is an unrecoverable blind spot, unlike an
+  over-report, which the vet phase absorbs. Cut cost by pairing dimensions
+  onto fewer agents (Phase 2), never by dropping one. Lens agents do run
+  concurrently, but wall time is set by the slowest of them, so each extra
+  agent is another chance to draw a slow one: in a measured run the lens
+  times ranged from 2m30s to 22m46s. quick = HIGH-confidence findings only,
+  no NITs; standard = full findings; deep = adds security even when nothing
+  obviously maps to it, and reports LOW-confidence "investigate" items.
 - Any other skill names — extra lenses, passed through verbatim.
 
 Review-file naming: `reviews/pr-<n>-review.md`, `reviews/<branch>-review.md`,
@@ -142,8 +147,9 @@ short digest defined in Phase 5 as your final report.
 
 **Hard rules:**
 
-1. Read-only on source: the ONLY file you may create/modify is the review
-   file (plus adding a `reviews/` line to `.gitignore` if absent).
+1. Read-only on source: the only files you may create/modify are the review
+   file, the Phase 1 context pack under `.git/`, and a `reviews/` line in
+   `.gitignore` if absent.
 2. Never commit, push, or comment on the PR.
 3. Every finding needs `file:line` evidence you have personally opened and
    confirmed. Subagents over-report and mis-attribute; you re-verify
@@ -195,6 +201,13 @@ title/description or recent commit messages for intent. Read changed files
 with context plus direct callers/importers. Read the Hard-Rule-7 docs that
 touch the changed areas and extract the specific do-not-flag decisions.
 
+Then build the **context pack**, once, before you spawn anything: write the
+full diff to `.git/panel-review-diff.patch` (inside `.git/`, so it never
+dirties the working tree and needs no cleanup) and keep the changed-file
+list. Every lens gets that path instead of a diff command. Resolving the
+diff is identical work for all of them, and paying for it once per agent is
+the single largest piece of duplicated cost in the panel.
+
 **Phase 2 — Pick the panel** from what the diff touches. Map by *dimension*
 first; the named skills are this environment's best implementation of each,
 and stack-specific rows apply only when the project actually uses that stack
@@ -212,9 +225,24 @@ and stack-specific rows apply only when the project actually uses that stack
 | **Framework rendering/caching** — caching directives, route types, prerender, revalidation (here Next.js → `next-best-practices`) | stack-appropriate skill |
 | **User-named extras** | always included |
 
-Skip only dimensions with genuinely nothing to inspect — there is **no cap
-on lens count**; cover every dimension the diff actually touches. A diff can
-and often should map to 5+ lenses.
+Skip only dimensions with genuinely nothing to inspect. Dimension coverage
+is not negotiable. **Agent count is.**
+
+One agent can carry two adjacent dimensions, running both checklists in one
+context, and on a small diff it should:
+
+- **Under ~8 changed files: pair the dimensions and spawn 3 to 4 agents.**
+  Natural pairs are correctness + the stack lens for that same layer,
+  maintainability + component-API, and visible-UI/a11y + docs/registry
+  consistency.
+- **Over ~8 changed files**, or when a pair would need two large lens skills
+  loaded at once, give each dimension its own agent.
+
+Pairing costs no coverage, because the same checklists still run. What it
+saves is the per-agent fixed cost: each lens agent separately loads its
+skill, re-reads the same changed files, and rebuilds the same picture of the
+change. On a measured 5-file diff, six lens agents spent ~584k tokens
+between them, largely reading the same handful of files six times.
 
 ### Loading a lens (verified against the Claude Code docs — don't re-derive)
 
@@ -276,12 +304,20 @@ isolation (they must see the same tree you do).
 > inside your own context, and you continue straight into Phase 4 in the
 > same turn without ever yielding.
 
-Each lens prompt must include: the exact diff command + changed-file list; the instruction to
+Each lens prompt must include: the context-pack path from Phase 1 and the
+changed-file list; the instruction to
 load its lens skill via the Skill tool first (confirm loaded; fall back to
 your bespoke dimension description); the intent summary you gathered; the
 do-not-flag decision list; verbatim copies of Hard Rules 4, 5 and 6; the
 finding format below; "return findings only — no fixes, no file dumps, no
 praise; a clean report is a valid answer"; cap **6** strongest findings.
+
+Give every lens this budget, verbatim: *"Read the diff at the context-pack
+path first; do not re-derive it. Then open only the changed files and their
+direct callers. You are reviewing a diff, not auditing the repo: no
+repo-wide surveys, no reading sibling features for comparison, no tracing
+call chains past the first hop. Stop at about 12 tool calls. If you want a
+13th, you are exploring rather than reviewing, so report what you have."*
 
 Lens reports feed your vet phase, not the user. They are the largest token
 cost in the panel, and you re-derive every one of them anyway. Tell each lens:
@@ -299,9 +335,13 @@ Finding format:
 - **Fix sketch**: 1–2 sentences, enough for the implementer to act
 ```
 
-**Phase 4 — Vet and merge:** open every cited location yourself. Expect
-by-design behavior (check the Hard-Rule-7 docs), mis-attributed evidence
-(correct it), and cross-lens duplicates (merge, keep best-evidenced).
+**Phase 4 — Merge first, then vet.** Group the raw findings by location and
+claim and collapse the duplicates *before* opening anything: paired lenses
+report the same line two or three times, and verifying each copy separately
+is your largest avoidable cost. Then open every surviving location yourself.
+Expect by-design behavior (check the Hard-Rule-7 docs) and mis-attributed
+evidence (correct it); keep the best-evidenced version of each merged
+finding.
 Order survivors: BLOCKERs, SHOULD-FIX by impact, NITs. LOW-confidence
 survivors are marked "investigate".
 
@@ -342,9 +382,9 @@ Titles are plain statements of the defect, under about 15 words. They are not
 the place to argue severity or impact; that is what the body is for.
 
 **Do not return the review text.** It is already on disk, and the session that
-spawned you would only re-print it. Return this digest and nothing else:
+spawned you would only re-print it. Return exactly this digest, as ordinary
+markdown with no code fence around any part of it:
 
-```text
 Panel review: <scope>
 N blockers, N should-fix, N nits
 Lenses: <comma-separated list, marking any that came back clean>
@@ -352,14 +392,12 @@ Lenses: <comma-separated list, marking any that came back clean>
 | #   | Sev     | Finding                          | Where         |
 | --- | ------- | -------------------------------- | ------------- |
 | 1   | BLOCKER | plain statement, 12 words max    | `file.ts:123` |
-| 2   | ...     | ...                              | ...           |
 
 Full review: <review-file path>
-```
 
-One row per finding, all of them, in the same order as the file. Write it as
-ordinary markdown; **do not wrap it in a code fence.** The fence above marks
-the template's edges here and is not part of what you return.
+One row per finding, all of them, in the same order as the file. The session
+that spawned you prints your report verbatim, so a fence you add here is a
+fence the user sees.
 
 ---
 
@@ -481,9 +519,9 @@ this branch/PR unless the user names one) plus these instructions:
   the section, before the table.
 - Hard rules 1-7 from the orchestrator prompt apply verbatim, including the
   90-word budget and the plain-language rules in rule 6.
-- Return only the digest, not the appended section:
+- Return only the digest, not the appended section. Ordinary markdown, no
+  code fence around any part of it:
 
-  ```text
   Fix review: <ref>
   Call: <APPROVE, ready to merge | another round needed>
   <N> fixed, <N> partial, <N> disputed-accepted, <N> new
@@ -492,13 +530,11 @@ this branch/PR unless the user names one) plus these instructions:
   | --- | ------- | --------------------------- |
   | 1   | FIXED   | one line, what landed       |
   | 2   | PARTIAL | one line, what is missing   |
-  | 3   | ...     | ...                         |
 
   Residual (optional, not blocking):
   - one line each, with `file:line`
 
   Appended to: <review-file path>
-  ```
 
   **Every finding you judged gets a row, including the FIXED ones.** A table
   showing only the interesting verdicts tells the user nothing about the
@@ -506,9 +542,8 @@ this branch/PR unless the user names one) plus these instructions:
   Same for anything you called optional or non-blocking: name it in a line,
   do not just mention that residuals exist somewhere in the file.
 
-Print that digest as ordinary markdown so the table renders. **Do not wrap it
-in a code fence** — the fence above delimits the template in this file and is
-not part of the output. Do not paste the appended section into chat. If the
+Print that digest exactly as the judge returned it, with no code fence added
+around it. Do not paste the appended section into chat. If the
 call is "another round needed", close with one line naming
 `panel-review process`.
 
