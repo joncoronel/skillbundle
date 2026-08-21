@@ -48,6 +48,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  createTooltipHandle,
 } from "@/components/ui/cubby-ui/tooltip";
 import {
   Drawer,
@@ -77,6 +78,12 @@ function looksLikeRepo(value: string) {
 // Stable empty list for the modes/states where repo suggestions don't apply,
 // so the Autocomplete root's `items` identity doesn't churn per render.
 const NO_REPOS: MyRepo[] = [];
+
+// One tooltip shared by both scope toggles, addressed by handle. A single
+// popup means moving between the two adjacent cells morphs the existing label
+// (width/height + crossfade) instead of unmounting one tooltip and opening
+// another — the swap Base UI calls "instant" inside a provider group.
+const SCOPE_TOOLTIP = createTooltipHandle<string>();
 
 // Cap on rendered suggestions (the server list caps at 200; nobody scrolls
 // that in a popup — they type). A Status line reports what's hidden.
@@ -349,56 +356,79 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           </div>
         )}
         {/* The two high-frequency search booleans, on the instrument itself
-            (independent multiple-selection, detached cells at the standard
-            32px control size — default radius, no overrides). Desktop-only:
-            the desc toggle needs hover for its tooltip; on mobile both live
-            in the Sort & filter sheet as labeled switches. Hidden in repo
-            mode — they don't apply to repo matching. */}
+            (independent multiple-selection, one attached outline track at the
+            standard 32px control size — default radius, no overrides). Both
+            cells are icon-only and share ONE tooltip via SCOPE_TOOLTIP, so
+            sliding from one to the other morphs the label in place.
+            Desktop-only: the cells are recall-dependent iconography that needs
+            hover to explain itself; on mobile both live in the Sort & filter
+            sheet as labeled switches. Hidden in repo mode — they don't apply
+            to repo matching. */}
         {!isRepo && (
-          <ToggleGroup
-            multiple
-            detached
-            size="sm"
-            variant="outline"
-            aria-label="Search options"
-            className="max-sm:hidden"
-            value={[
-              ...(official ? ["official"] : []),
-              ...(searchDescriptions ? ["desc"] : []),
-            ]}
-            onValueChange={(vals: string[]) => {
-              setParams({
-                official: vals.includes("official"),
-                searchDescriptions: vals.includes("desc"),
-              });
-            }}
-          >
-            {/* Official carries a visible label — it's the product's flagship
-                filter (a nav item and a per-row badge share the word), so its
-                control shouldn't be recall-dependent iconography. */}
-            <ToggleGroupItem
-              value="official"
-              aria-label="Official skills only"
-              className="gap-1.5 px-2 text-sm"
+          <>
+            {/* The break between the field's own affordances (kbd / clear,
+                which act on the text) and the scope instrument. Without it the
+                ghost kbd plate reads as a third cell of the toggle track —
+                same scale, same corner, and the track's own cells are attached
+                at 0 gap, so the addon's 8px is not enough of a step to
+                separate them.
+
+                20px, NOT the chin divider's 16px: the track carries its own
+                cell divider 30px away at 16px (half the cell), and that one is
+                `bg-current`/15% while this is `--border`/10%, so at equal
+                height the OUTER break reads fainter than the inner
+                subdivision. Height is the lever rather than the color —
+                the hairline is one token (DESIGN.md §6). Still well inside the
+                32px track and the 28px kbd, so it stays a divider; at 24px it
+                starts reading as a border on the chip. Rides the group's own
+                breakpoint so it never hangs alone. */}
+            <Separator orientation="vertical" className="h-5! max-sm:hidden" />
+            <ToggleGroup
+              multiple
+              size="sm"
+              variant="solid"
+              aria-label="Search options"
+              className="max-sm:hidden"
+              value={[
+                ...(official ? ["official"] : []),
+                ...(searchDescriptions ? ["desc"] : []),
+              ]}
+              onValueChange={(vals: string[]) => {
+                setParams({
+                  official: vals.includes("official"),
+                  searchDescriptions: vals.includes("desc"),
+                });
+              }}
             >
-              <HugeiconsIcon
-                icon={CheckmarkBadge01Icon}
-                strokeWidth={2}
-                className={cn(
-                  "size-4",
-                  official ? "text-info-foreground" : "text-muted-foreground",
-                )}
-              />
-              Official
-            </ToggleGroupItem>
-            <Tooltip>
               <TooltipTrigger
+                handle={SCOPE_TOOLTIP}
+                payload="Official skills only"
+                render={
+                  <ToggleGroupItem
+                    value="official"
+                    aria-label="Official skills only"
+                    // Re-assert the slot the TooltipTrigger merge overwrites —
+                    // the group's cell styling targets [data-slot=toggle].
+                    data-slot="toggle"
+                  />
+                }
+              >
+                <HugeiconsIcon
+                  icon={CheckmarkBadge01Icon}
+                  strokeWidth={2}
+                  className={cn(
+                    "size-4",
+                    official ? "text-info-foreground" : "text-muted-foreground",
+                  )}
+                />
+              </TooltipTrigger>
+              <TooltipTrigger
+                handle={SCOPE_TOOLTIP}
+                payload="Also search descriptions"
                 render={
                   <ToggleGroupItem
                     value="desc"
                     aria-label="Also search descriptions"
-                    // Re-assert the slot the TooltipTrigger merge overwrites —
-                    // the group's cell styling targets [data-slot=toggle].
                     data-slot="toggle"
                   />
                 }
@@ -414,11 +444,13 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                   )}
                 />
               </TooltipTrigger>
-              <TooltipContent sideOffset={8}>
-                Also search descriptions
-              </TooltipContent>
+            </ToggleGroup>
+            <Tooltip handle={SCOPE_TOOLTIP}>
+              {({ payload }) => (
+                <TooltipContent variant="chrome">{payload}</TooltipContent>
+              )}
             </Tooltip>
-          </ToggleGroup>
+          </>
         )}
         {/* Repo mode's submit lives inline in the field (URL-bar pattern) —
             the one-field form doesn't need a second row for it. Standard sm
