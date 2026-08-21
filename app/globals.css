@@ -190,11 +190,8 @@ html {
   --color-chart-tooltip-muted: var(--chart-tooltip-muted);
   --color-chart-tooltip-foreground: var(--chart-tooltip-foreground);
   --color-chart-tooltip-background: var(--chart-tooltip-background);
-  --chart-brush-border: var(--chart-brush-border);
   --color-chart-grid: var(--chart-grid);
   --color-chart-crosshair: var(--chart-crosshair);
-  --chart-line-secondary: var(--chart-line-secondary);
-  --chart-line-primary: var(--chart-line-primary);
   --color-chart-foreground-muted: var(--chart-foreground-muted);
   --color-chart-foreground: var(--chart-foreground);
   --color-chart-background: var(--chart-background);
@@ -204,6 +201,19 @@ html {
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
   --color-surface-active: var(--surface-active);
+  --color-surface-ring-high: var(--surface-ring-high);
+  --color-surface-ring-mid: var(--surface-ring-mid);
+  --color-surface-ring-base: var(--surface-ring-base);
+  --color-surface-hi-peak: var(--surface-hi-peak);
+  --color-surface-hi-high: var(--surface-hi-high);
+  --color-surface-hi-mid: var(--surface-hi-mid);
+  --color-surface-hi-base: var(--surface-hi-base);
+  --color-surface-shadow-ambient: var(--surface-shadow-ambient);
+  --color-surface-shadow-far: var(--surface-shadow-far);
+  --color-surface-shadow-mid: var(--surface-shadow-mid);
+  --color-surface-shadow-near: var(--surface-shadow-near);
+  --color-surface-shadow-ring: var(--surface-shadow-ring);
+  --color-surface-rim-color: var(--surface-rim-color);
 }
 
 :root {
@@ -222,7 +232,7 @@ html {
   --primary-soft-foreground: var(--primary);
   /* Carries chroma unlike the other light fills: at L 0.2 a pure-neutral
      black beside `--foreground`'s faintly cool one reads as two blacks. */
-  --neutral: oklch(0.2 var(--neutral-chroma) var(--neutral-hue));
+  --neutral: oklch(0.21 var(--neutral-chroma) var(--neutral-hue));
   --neutral-foreground: oklch(
     0.98 var(--neutral-chroma-low) var(--neutral-hue)
   );
@@ -268,15 +278,6 @@ html {
     var(--chrome-foreground) 12%,
     transparent
   );
-  /* The pill's outer hairline and inner top highlight. BOX-SHADOW values, not
-     colours — unlike every other `--chrome-*` token, and unlike
-     `--chrome-border` four lines up. Writing a bare colour into either one
-     silently voids the pill's whole `box-shadow`, in both themes, because an
-     invalid layer invalidates the entire declaration. No-ops in light, where the
-     224-unit fill/page step is already the edge; see `.dark`. */
-  --chrome-hairline: 0 0 transparent;
-  --chrome-rim: 0 0 transparent;
-
   --primary-hover: color-mix(in oklch, var(--primary), black 5%);
   --neutral-hover: color-mix(in oklch, var(--neutral), white 10%);
   --destructive-hover: color-mix(in oklch, var(--destructive), black 5%);
@@ -412,6 +413,23 @@ html {
   --secondary-active: color-mix(in oklch, var(--secondary), black 8%);
   --outline-active: color-mix(in oklch, var(--card), black 8%);
   --surface-active: oklch(0 0 0 / 0.08);
+  --surface-shadow-combined-1: var(--surface-shadow-1), var(--surface-rim-1);
+  --surface-shadow-combined-2: var(--surface-shadow-2), var(--surface-rim-2);
+  --surface-shadow-combined-3: var(--surface-shadow-3), var(--surface-rim-3);
+  --surface-shadow-combined-4: var(--surface-shadow-4), var(--surface-rim-4);
+  --surface-shadow-combined-5: var(--surface-shadow-5), var(--surface-rim-5);
+  --surface-shadow-combined-6: var(--surface-shadow-6), var(--surface-rim-6);
+  --surface-shadow-combined-7: var(--surface-shadow-7), var(--surface-rim-7);
+  --surface-shadow-combined-8: var(--surface-shadow-8), var(--surface-rim-8);
+  /* The pill's entire edge. A BOX-SHADOW value, not a colour — unlike every
+     other `--chrome-*` token, `--chrome-border` included. Writing a bare colour
+     here silently voids the pill's whole `box-shadow`, in both themes, because
+     one invalid layer invalidates the entire declaration.
+
+     In light it is just the ladder's hairline-ring-no-drop level: the 224-unit
+     fill/page step already draws the edge, so nothing is added. Dark is where
+     this token stops being an alias — see `.dark`. */
+  --chrome-shadow: var(--surface-shadow-1);
 }
 
 .dark {
@@ -431,36 +449,6 @@ html {
      to near-white for the Button. */
   --chrome: oklch(0.159 var(--neutral-chroma) var(--neutral-hue));
   --chrome-foreground: var(--foreground);
-  /* The whole edge, since the pill carries no drop shadow at all in dark
-     (`--surface-shadow-1` is transparent here — see DESIGN.md §5).
-
-     `--chrome-rim` is the top-edge specular: the ladder's light source is above
-     (every rim is `inset 0 1px 0 0`), and a dark object lit from above catches
-     its top edge. Without it the pill reads as a hole punched in the page rather
-     than an object on it. `--chrome-hairline` is the outer boundary.
-
-     Neither comes from the ladder, for one shared reason: `--surface-rim-*` and
-     the ring baked into `--surface-shadow-*` both assume a fill LIGHTER than the
-     page. This fill is darker, so the ladder's ring lands lighter than the very
-     fill it is meant to define and the boundary blurs instead of sharpening.
-
-     What these produce instead, at page 22 / fill 12:
-
-       top  22 → 6 → 28 → 12     left 22 → 6 → 12
-
-     That row is measurable from the running app and is the only one kept here.
-     A comparison row against a ladder level was tried three times and drifted
-     three times — it depends on the fill, the level AND what is behind the pill
-     (the drop layers composite over the header scrim, so a standalone box gives
-     different numbers), which is more environment than a comment can pin.
-     Re-derive it in a browser if you need it; don't record it.
-
-     The hairline stays FIRST in the pill's shadow list
-     so a deeper `--surface-shadow-N`, which bakes its own ring in as an
-     so a deeper `--surface-shadow-N`, which bakes its own ring in as an
-     unre-pointable literal, could be swapped back in. */
-  --chrome-rim: inset 0 1px 0 0 oklch(1 0 0 / 0.065);
-  --chrome-hairline: 0 0 0 1px oklch(0 0 0 / 0.7);
   --accent: oklch(0.31 var(--neutral-chroma) var(--neutral-hue));
   --accent-foreground: oklch(0.95 var(--neutral-chroma) var(--neutral-hue));
   --destructive: oklch(0.5 0.22 25);
@@ -617,6 +605,58 @@ html {
   --secondary-active: color-mix(in oklch, var(--secondary), white 8%);
   --outline-active: color-mix(in oklch, var(--card), white 8%);
   --surface-active: oklch(1 0 0 / 0.08);
+  --chrome-muted-foreground: color-mix(
+    in oklab,
+    var(--chrome-foreground) 71%,
+    var(--chrome)
+  );
+  --chrome-hover: color-mix(
+    in oklab,
+    var(--chrome-foreground) 10%,
+    transparent
+  );
+  --chrome-border: color-mix(
+    in oklab,
+    var(--chrome-foreground) 12%,
+    transparent
+  );
+  --surface-shadow-combined-1: var(--surface-shadow-1), var(--surface-rim-1);
+  --surface-shadow-combined-2: var(--surface-shadow-2), var(--surface-rim-2);
+  --surface-shadow-combined-3: var(--surface-shadow-3), var(--surface-rim-3);
+  --surface-shadow-combined-4: var(--surface-shadow-4), var(--surface-rim-4);
+  --surface-shadow-combined-5: var(--surface-shadow-5), var(--surface-rim-5);
+  --surface-shadow-combined-6: var(--surface-shadow-6), var(--surface-rim-6);
+  --surface-shadow-combined-7: var(--surface-shadow-7), var(--surface-rim-7);
+  --surface-shadow-combined-8: var(--surface-shadow-8), var(--surface-rim-8);
+  /* Two literal layers rather than light's alias, because the pill carries no
+     drop shadow at all in dark (`--surface-shadow-1` is transparent here — see
+     DESIGN.md §5) and this token is therefore the pill's whole edge.
+
+     Layer one is the outer boundary. Layer two is the top-edge specular: the
+     ladder's light source is above (every rim is `inset 0 1px 0 0`), and a dark
+     object lit from above catches its top edge. Without it the pill reads as a
+     hole punched in the page rather than an object on it.
+
+     Neither comes from the ladder, for one shared reason: `--surface-rim-*` and
+     the ring baked into `--surface-shadow-*` both assume a fill LIGHTER than the
+     page. This fill is darker, so the ladder's ring lands lighter than the very
+     fill it is meant to define and the boundary blurs instead of sharpening.
+
+     What these produce instead, at page 22 / fill 12:
+
+       top  22 → 6 → 28 → 12     left 22 → 6 → 12
+
+     That row is measurable from the running app and is the only one kept here.
+     A comparison row against a ladder level was tried three times and drifted
+     three times — it depends on the fill, the level AND what is behind the pill
+     (the drop layers composite over the header scrim, so a standalone box gives
+     different numbers), which is more environment than a comment can pin.
+     Re-derive it in a browser if you need it; don't record it.
+
+     The boundary layer stays FIRST so a deeper `--surface-shadow-N`, which bakes
+     its own ring in as an unre-pointable literal, could be swapped back in. */
+  --chrome-shadow:
+    0 0 0 1px oklch(0 0 0 / 0.7), inset 0 1px 0 0 oklch(1 0 0 / 0.065);
 }
 
 /* The reading measure (DESIGN.md §3), registered so it resolves ONCE.
@@ -642,15 +682,18 @@ html {
  * at the body and correctly don't inherit. */
 [data-surface="chrome"] {
   --foreground: var(--chrome-foreground);
+  --accent-foreground: var(--chrome-foreground);
   --muted-foreground: var(--chrome-muted-foreground);
   --border: var(--chrome-border);
 
   /* Every wash on this surface is the same 10% of the foreground: there is no
-     separate hover/active/fill step on an object this small. */
+     separate hover/active/fill step on an object this small. `--accent`'s
+     foreground partner is grouped with the other foregrounds above. */
   --muted: var(--chrome-hover);
   --accent: var(--chrome-hover);
   --surface-hover: var(--chrome-hover);
   --surface-active: var(--chrome-hover);
+  --input: var(--chrome-hover);
 }
 
 /* The one paint the rule above cannot reach: Skeleton's shimmer is a literal in

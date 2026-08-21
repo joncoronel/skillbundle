@@ -144,7 +144,7 @@ A near-monochrome neutral base, one saturated blue signal, and a full semantic s
 
 One container is deliberately **not** on the surface ladder: the header pill. Everything else is a step up from the field; this is the object the field flows past. It is near-black in **both** themes — light borrows `--neutral`, and dark goes a rung _below_ the page, since the dark page already sits at light's near-black.
 
-Seven tokens. Four are set per theme — `--chrome`, `--chrome-foreground`, and the two edge tokens `--chrome-rim` / `--chrome-hairline` (§5). The other three derive from those roots, so retuning the surface moves the whole family.
+Six tokens. Three are set per theme — `--chrome`, `--chrome-foreground`, and the edge token `--chrome-shadow` (§5). The other three derive from those roots, so retuning the surface moves the whole family.
 
 **Do not paint on this surface by hand.** Put `data-surface="chrome"` on the container and use ordinary page classes inside — `text-muted-foreground`, `bg-accent`, `Button variant="ghost"`. A rule in `app/globals.css` re-points the page tokens for the whole subtree, so anything dropped in paints correctly with no per-control classes. `--primary` is left alone so a primary button keeps its brand fill anywhere, and portalled content (dropdowns, dialogs) renders at the body and correctly does not inherit. `bg-chrome` is the only chrome utility, for the fill itself; there is deliberately no `bg-chrome-hover`, because a second idiom for the same job is what the contract exists to remove. The one paint it cannot reach is `Skeleton`'s shimmer, whose colours are literals rather than tokens.
 
@@ -245,9 +245,9 @@ In light mode, lift comes mostly from shadow over a near-white surface. In dark 
 
 **The Material Depth Rule.** Shadow level and surface level are tuned together so a raised element looks lit, not pasted. Never hand-roll a `box-shadow`; use a `surface-N` level so light and dark stay coherent.
 
-One exception exists and it is deliberate, so do not "correct" it: the header pill is **flush**, not raised. It takes `--surface-shadow-1` — the ladder's hairline-ring-no-drop level — and supplies its own edge tokens, `--chrome-hairline` outside and `--chrome-rim` on the top inside, rather than pairing a surface level with its matching `SURFACE_SHADOW_COMBINED[N]`. In light both are no-ops and the pill is just that hairline ring; in dark they carry the edge alone, because `--surface-shadow-1` is transparent there.
+One exception exists and it is deliberate, so do not "correct" it: the header pill is **flush**, not raised. Its whole edge is one token, `--chrome-shadow`, rather than a surface level paired with its matching `SURFACE_SHADOW_COMBINED[N]`. In light that token is just `--surface-shadow-1`, the ladder's hairline-ring-no-drop level. In dark it stops being an alias and carries the edge alone — a hairline outside plus a specular on the top inside — because `--surface-shadow-1` is transparent there.
 
-Both exist for one reason, and it only bites in dark: the ladder's ring and rim assume a fill **lighter** than the page, and the chrome surface (§2) is darker than it — so the ladder's ring lands lighter than the fill it is meant to define, and the boundary blurs instead of sharpening. (In light there is nothing to displace: every `--surface-rim-N` is already transparent there.) `app/globals.css` records what the pill's own tokens measure, and says why a ladder comparison is not recorded alongside them.
+Those two dark layers exist for one reason: the ladder's ring and rim assume a fill **lighter** than the page, and the chrome surface (§2) is darker than it — so the ladder's ring lands lighter than the fill it is meant to define, and the boundary blurs instead of sharpening. (In light there is nothing to displace: every `--surface-rim-N` is already transparent there.) `app/globals.css` records what the pill's own edge measures, and says why a ladder comparison is not recorded alongside it.
 
 ## 6. Shapes
 

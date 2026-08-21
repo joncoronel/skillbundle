@@ -47,6 +47,17 @@ vendored through `shadcn add` and excluded in `.prettierignore` — formatting
 them would be reverted by the next component update and break the gate on
 arrival.
 
+**`shadcn add @cubby-ui/style` needs a manual pass over `app/globals.css`
+afterwards, every time.** `app/globals.css` is NOT in `.prettierignore`, so the
+installer's four-space output fails `format:check` — run `pnpm format`. It also
+runs an update-theme pass that echoes every non-color variable back into
+`@theme inline` as `--x: var(--x)`. Those are inert (a self-reference is a cycle,
+and the real values live in the unlayered `:root` / `.dark` further down, which
+outrank the theme layer either way) but they accumulate; delete them. Delete ONLY
+exact self-references — `--color-x: var(--x)` entries are real aliases that
+generate utilities, and `--color-chrome: var(--chrome)` in particular is what
+makes `bg-chrome` work.
+
 `.gitattributes` pins the working tree to LF and is load-bearing for that gate,
 not housekeeping. `core.autocrlf=true` is the Windows default and rewrites files
 as CRLF whenever git materialises them; Prettier's default `endOfLine: "lf"`

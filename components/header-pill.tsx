@@ -12,16 +12,18 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { cn } from "@/lib/utils";
 
 /**
- * A FLUSH surface — no drop shadow in either theme. `--surface-shadow-1` is the
- * ladder's hairline-ring-no-drop level, so the pill's own edge tokens carry the
- * rest; globals.css has the scanlines for why they aren't the ladder's.
- * `solidSurface(1)` is not used because it would bring `bg-surface-1` along and
- * fight the chrome fill.
+ * A FLUSH surface — no drop shadow in either theme. `--chrome-shadow` is the
+ * pill's whole edge: in light the ladder's hairline ring alone, in dark an outer
+ * boundary plus a top-edge specular. globals.css has the scanlines for why dark's
+ * pair isn't the ladder's. `solidSurface(1)` is not used because it would bring
+ * `bg-surface-1` along and fight the chrome fill.
+ *
+ * The `shadow-(--var)` form is required, not stylistic — see the SURFACE_SHADOW
+ * comment in lib/cubby-ui/elevated.tsx. A square-bracket arbitrary value lands in
+ * tailwind-merge's `shadow-color` group, so `cn(PILL_SURFACE, "shadow-none")`
+ * would keep both classes and let stylesheet order decide the winner.
  */
-const PILL_SURFACE = cn(
-  "bg-chrome",
-  "shadow-[var(--chrome-hairline),var(--surface-shadow-1),var(--chrome-rim)]",
-);
+const PILL_SURFACE = cn("bg-chrome", "shadow-(--chrome-shadow)");
 
 /**
  * The header pill.
