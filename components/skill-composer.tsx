@@ -83,20 +83,94 @@ const NO_REPOS: MyRepo[] = [];
 // popup means moving between the two adjacent cells morphs the existing label
 // (width/height + crossfade) instead of unmounting one tooltip and opening
 // another — the swap Base UI calls "instant" inside a provider group.
-const SCOPE_TOOLTIP = createTooltipHandle<string>();
+// Created PER COMPOSER (see useMemo below), not at module scope: a re-suspend
+// of the home page's boundary hides the live tree rather than unmounting it,
+// so two composers can be mounted at once, and a module handle would have both
+// of them registering triggers and a popup on the same store.
+function createScopeTooltip() {
+  return createTooltipHandle<string>();
+}
 
-// One string per cell, feeding BOTH the tooltip payload and the accessible
-// name. They are the same label, and with the cells icon-only there is no
-// visible text to catch them drifting apart.
-const OFFICIAL_LABEL = "Official skills only";
-const DESCRIPTIONS_LABEL = "Also search descriptions";
+/**
+ * The two scope booleans, as data. `label` is the full phrase, used for BOTH
+ * the tooltip payload and the accessible name. `short` is the word rendered
+ * beside the icon on a coarse pointer, and it stays in this table beside its
+ * own label because WCAG 2.5.3 wants the accessible name to contain the
+ * visible one: each short form is a substring of the label above it.
+ */
+const SCOPE_OPTIONS = [
+  {
+    value: "official",
+    icon: CheckmarkBadge01Icon,
+    label: "Official skills only",
+    short: "Official",
+    // Split by theme because the two blues sit differently against
+    // --muted-foreground: --primary measures 1.55:1 in light, while in dark
+    // --info-foreground lands at 1.04:1. Blue carries only 0.0722 of
+    // luminance, so no blue separates from a mid grey there; in dark the
+    // pressed plate (1.36:1) is what carries the state.
+    activeClass: "text-primary dark:text-info-foreground",
+  },
+  {
+    value: "desc",
+    icon: TextAlignLeftIcon,
+    label: "Also search descriptions",
+    short: "Descriptions",
+    activeClass: "text-foreground",
+  },
+] as const;
 
-// The short forms, rendered beside the icon ONLY on a coarse pointer (see the
-// cells below). Kept next to the full labels because WCAG 2.5.3 wants the
-// accessible name to contain the visible one: each short form is a substring
-// of the label above it, and moving them apart is how that stops being true.
-const OFFICIAL_SHORT = "Official";
-const DESCRIPTIONS_SHORT = "Descriptions";
+/**
+ * One cell of the scope track. Everything except the five fields in
+ * SCOPE_OPTIONS is identical between them, and it was previously copied.
+ * Renders no DOM of its own, so the cells stay direct children of the group
+ * and its end-cap radius and `::after` dividers still resolve.
+ */
+function ScopeToggle({
+  option,
+  active,
+  handle,
+}: {
+  option: (typeof SCOPE_OPTIONS)[number];
+  active: boolean;
+  handle: ReturnType<typeof createScopeTooltip>;
+}) {
+  return (
+    <TooltipTrigger
+      handle={handle}
+      payload={option.label}
+      // Base UI closes on click by default, which pulls the label off screen
+      // on the very click that flips the state, while the pointer is still on
+      // the cell. The label is the only thing naming an icon-only control.
+      closeOnClick={false}
+      render={
+        <ToggleGroupItem
+          value={option.value}
+          aria-label={option.label}
+          // Re-assert the slot the TooltipTrigger merge overwrites — the
+          // group's cell styling targets [data-slot=toggle].
+          data-slot="toggle"
+        />
+      }
+    >
+      <HugeiconsIcon
+        icon={option.icon}
+        strokeWidth={2}
+        className={cn(
+          "size-4",
+          active ? option.activeClass : "text-muted-foreground",
+        )}
+      />
+      {/* An icon-only control that needs hover to explain itself is only
+          legible where hover exists. `pointer-coarse` is the primary-input
+          media query, so a tablet gets the word and a touch LAPTOP (fine
+          pointer, mouse present) keeps the icon. Purely visual: aria-label
+          already names the cell, so this span never changes what a screen
+          reader hears. */}
+      <span className="hidden pointer-coarse:block">{option.short}</span>
+    </TooltipTrigger>
+  );
+}
 
 // Cap on rendered suggestions (the server list caps at 200; nobody scrolls
 // that in a popup — they type). A Status line reports what's hidden.
@@ -120,6 +194,8 @@ interface SkillComposerProps {
  * field's draft (pushed to the URL on submit) and its validation flag.
  */
 export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
+  // Per instance, not module scope — see createScopeTooltip above.
+  const scopeTooltip = useMemo(() => createScopeTooltip(), []);
   const {
     textQuery,
     repoUrl,
@@ -372,7 +448,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         {/* The two high-frequency search booleans, on the instrument itself
             (independent multiple-selection, one attached solid track at the
             standard 32px control size — default radius, no overrides). Both
-            cells are icon-only and share ONE tooltip via SCOPE_TOOLTIP, so
+            cells are icon-only and share ONE tooltip handle, so
             sliding from one to the other morphs the label in place.
             Desktop-only: the cells are recall-dependent iconography that needs
             hover to explain itself; on mobile both live in the Sort & filter
@@ -421,70 +497,18 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                 });
               }}
             >
-              <TooltipTrigger
-                handle={SCOPE_TOOLTIP}
-                payload={OFFICIAL_LABEL}
-                // Base UI closes on click by default, which pulls the label
-                // off screen on the very click that flips the state, while the
-                // pointer is still on the cell. The label is the only thing
-                // naming an icon-only control, so it stays.
-                closeOnClick={false}
-                render={
-                  <ToggleGroupItem
-                    value="official"
-                    aria-label={OFFICIAL_LABEL}
-                    // Re-assert the slot the TooltipTrigger merge overwrites —
-                    // the group's cell styling targets [data-slot=toggle].
-                    data-slot="toggle"
-                  />
-                }
-              >
-                <HugeiconsIcon
-                  icon={CheckmarkBadge01Icon}
-                  strokeWidth={2}
-                  className={cn(
-                    "size-4",
-                    official ? "text-info-foreground" : "text-muted-foreground",
-                  )}
+              {SCOPE_OPTIONS.map((option) => (
+                <ScopeToggle
+                  key={option.value}
+                  option={option}
+                  active={
+                    option.value === "official" ? official : searchDescriptions
+                  }
+                  handle={scopeTooltip}
                 />
-                {/* An icon-only control that needs hover to explain itself is
-                    only legible where hover exists. `pointer-coarse` is the
-                    primary-input media query, so a tablet gets the word and a
-                    touch LAPTOP (fine pointer, mouse present) keeps the icon.
-                    Purely visual: aria-label already names the cell, so this
-                    span never changes what a screen reader hears. */}
-                <span className="hidden pointer-coarse:block">
-                  {OFFICIAL_SHORT}
-                </span>
-              </TooltipTrigger>
-              <TooltipTrigger
-                handle={SCOPE_TOOLTIP}
-                payload={DESCRIPTIONS_LABEL}
-                closeOnClick={false}
-                render={
-                  <ToggleGroupItem
-                    value="desc"
-                    aria-label={DESCRIPTIONS_LABEL}
-                    data-slot="toggle"
-                  />
-                }
-              >
-                <HugeiconsIcon
-                  icon={TextAlignLeftIcon}
-                  strokeWidth={2}
-                  className={cn(
-                    "size-4",
-                    searchDescriptions
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                />
-                <span className="hidden pointer-coarse:block">
-                  {DESCRIPTIONS_SHORT}
-                </span>
-              </TooltipTrigger>
+              ))}
             </ToggleGroup>
-            <Tooltip handle={SCOPE_TOOLTIP}>
+            <Tooltip handle={scopeTooltip}>
               {({ payload }) => (
                 // positionMethod="fixed" — the default `absolute` anchors the
                 // popup in DOCUMENT space, and toggling a filter reflows the
