@@ -91,6 +91,13 @@ const SCOPE_TOOLTIP = createTooltipHandle<string>();
 const OFFICIAL_LABEL = "Official skills only";
 const DESCRIPTIONS_LABEL = "Also search descriptions";
 
+// The short forms, rendered beside the icon ONLY on a coarse pointer (see the
+// cells below). Kept next to the full labels because WCAG 2.5.3 wants the
+// accessible name to contain the visible one: each short form is a substring
+// of the label above it, and moving them apart is how that stops being true.
+const OFFICIAL_SHORT = "Official";
+const DESCRIPTIONS_SHORT = "Descriptions";
+
 // Cap on rendered suggestions (the server list caps at 200; nobody scrolls
 // that in a popup — they type). A Status line reports what's hidden.
 const SUGGESTION_LIMIT = 60;
@@ -440,6 +447,15 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                     official ? "text-info-foreground" : "text-muted-foreground",
                   )}
                 />
+                {/* An icon-only control that needs hover to explain itself is
+                    only legible where hover exists. `pointer-coarse` is the
+                    primary-input media query, so a tablet gets the word and a
+                    touch LAPTOP (fine pointer, mouse present) keeps the icon.
+                    Purely visual: aria-label already names the cell, so this
+                    span never changes what a screen reader hears. */}
+                <span className="hidden pointer-coarse:block">
+                  {OFFICIAL_SHORT}
+                </span>
               </TooltipTrigger>
               <TooltipTrigger
                 handle={SCOPE_TOOLTIP}
@@ -463,6 +479,9 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                       : "text-muted-foreground",
                   )}
                 />
+                <span className="hidden pointer-coarse:block">
+                  {DESCRIPTIONS_SHORT}
+                </span>
               </TooltipTrigger>
             </ToggleGroup>
             <Tooltip handle={SCOPE_TOOLTIP}>
