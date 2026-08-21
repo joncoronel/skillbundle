@@ -85,6 +85,12 @@ const NO_REPOS: MyRepo[] = [];
 // another — the swap Base UI calls "instant" inside a provider group.
 const SCOPE_TOOLTIP = createTooltipHandle<string>();
 
+// One string per cell, feeding BOTH the tooltip payload and the accessible
+// name. They are the same label, and with the cells icon-only there is no
+// visible text to catch them drifting apart.
+const OFFICIAL_LABEL = "Official skills only";
+const DESCRIPTIONS_LABEL = "Also search descriptions";
+
 // Cap on rendered suggestions (the server list caps at 200; nobody scrolls
 // that in a popup — they type). A Status line reports what's hidden.
 const SUGGESTION_LIMIT = 60;
@@ -344,9 +350,10 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                 variant="ghost"
                 // rounded-md! — the ! is load-bearing: the addon's own
                 // [&>kbd]:rounded-[calc(var(--radius)-5px)] rule out-specifies
-                // a bare utility. One radius step under the 32px rounded-lg
-                // controls beside it, proportional to its one size step under
-                // them.
+                // a bare utility. 10px is also exactly the sm track's own
+                // corner (TRACK_RADIUS.sm in toggle-group.tsx), so the chip and
+                // the toggles no longer differ by a radius step; the Separator
+                // below is what keeps them from reading as one run.
                 className="rounded-md! max-sm:hidden"
                 aria-hidden="true"
               >
@@ -356,7 +363,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           </div>
         )}
         {/* The two high-frequency search booleans, on the instrument itself
-            (independent multiple-selection, one attached outline track at the
+            (independent multiple-selection, one attached solid track at the
             standard 32px control size — default radius, no overrides). Both
             cells are icon-only and share ONE tooltip via SCOPE_TOOLTIP, so
             sliding from one to the other morphs the label in place.
@@ -382,7 +389,14 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                 32px track and the 28px kbd, so it stays a divider; at 24px it
                 starts reading as a border on the chip. Rides the group's own
                 breakpoint so it never hangs alone. */}
-            <Separator orientation="vertical" className="h-5! max-sm:hidden" />
+            <Separator
+              orientation="vertical"
+              // Decorative. Base UI always renders role="separator", and this
+              // one divides nothing a screen reader navigates: the grouping it
+              // draws is already carried by the group's aria-label below.
+              aria-hidden="true"
+              className="h-5! max-sm:hidden"
+            />
             <ToggleGroup
               multiple
               size="sm"
@@ -402,11 +416,16 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
             >
               <TooltipTrigger
                 handle={SCOPE_TOOLTIP}
-                payload="Official skills only"
+                payload={OFFICIAL_LABEL}
+                // Base UI closes on click by default, which pulls the label
+                // off screen on the very click that flips the state, while the
+                // pointer is still on the cell. The label is the only thing
+                // naming an icon-only control, so it stays.
+                closeOnClick={false}
                 render={
                   <ToggleGroupItem
                     value="official"
-                    aria-label="Official skills only"
+                    aria-label={OFFICIAL_LABEL}
                     // Re-assert the slot the TooltipTrigger merge overwrites —
                     // the group's cell styling targets [data-slot=toggle].
                     data-slot="toggle"
@@ -424,11 +443,12 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
               </TooltipTrigger>
               <TooltipTrigger
                 handle={SCOPE_TOOLTIP}
-                payload="Also search descriptions"
+                payload={DESCRIPTIONS_LABEL}
+                closeOnClick={false}
                 render={
                   <ToggleGroupItem
                     value="desc"
-                    aria-label="Also search descriptions"
+                    aria-label={DESCRIPTIONS_LABEL}
                     data-slot="toggle"
                   />
                 }
@@ -447,7 +467,17 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
             </ToggleGroup>
             <Tooltip handle={SCOPE_TOOLTIP}>
               {({ payload }) => (
-                <TooltipContent variant="chrome">{payload}</TooltipContent>
+                // positionMethod="fixed" — the default `absolute` anchors the
+                // popup in DOCUMENT space, and toggling a filter reflows the
+                // list region under it. The Popular list and the results list
+                // both lay out for one frame before <Activity> pulls Popular
+                // out, which doubles the page height, and an open tooltip lands
+                // that far down the page for a frame before snapping back.
+                // Viewport coordinates are immune to it, and they suit a
+                // trigger inside a sticky container anyway.
+                <TooltipContent variant="chrome" positionMethod="fixed">
+                  {payload}
+                </TooltipContent>
               )}
             </Tooltip>
           </>

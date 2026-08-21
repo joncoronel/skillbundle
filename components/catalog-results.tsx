@@ -98,10 +98,14 @@ export function ActiveCatalogResults({
   return (
     <div
       className={cn(
-        // `starting:opacity-0` fades the results in on the handoff from the
-        // (dimming-out) Popular list; `opacity-55` dims them while stale
-        // (debounce running) or during a warm refinement fetch.
-        "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none starting:opacity-0",
+        // `opacity-55` dims the rows while stale (debounce running) or during
+        // a warm refinement fetch. Deliberately NO mount fade: the handoff
+        // from the (dimming-out) Popular list used to add a second 200ms
+        // opacity stage on top of that dim, so one filter click read as
+        // dim-out then fade-up. The dim carries information (these rows are
+        // stale), the mount fade only re-animated content that was already
+        // correct.
+        "transition-opacity duration-200 ease-out-cubic motion-reduce:transition-none",
         (stale || isPending) && "opacity-55",
       )}
     >
