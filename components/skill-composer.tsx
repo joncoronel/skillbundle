@@ -108,7 +108,9 @@ const SCOPE_OPTIONS = [
     // --muted-foreground: --primary measures 1.55:1 in light, while in dark
     // --info-foreground lands at 1.04:1. Blue carries only 0.0722 of
     // luminance, so no blue separates from a mid grey there; in dark the
-    // pressed plate (1.36:1) is what carries the state.
+    // pressed plate (1.36:1) is what carries the state. Parked with the
+    // measurements and the lever in TODO.md, beside the focus-ring and
+    // switch-track entries it is a sibling of.
     activeClass: "text-primary dark:text-info-foreground",
   },
   {
@@ -119,6 +121,8 @@ const SCOPE_OPTIONS = [
     activeClass: "text-foreground",
   },
 ] as const;
+
+type ScopeValue = (typeof SCOPE_OPTIONS)[number]["value"];
 
 /**
  * One cell of the scope track. Everything except the five fields in
@@ -204,6 +208,15 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
     searchDescriptions,
     setParams,
   } = useExplorerState();
+
+  // The one per-option fact that cannot live in SCOPE_OPTIONS, since it comes
+  // from the hook. Typed as a Record over the table's own value union, so
+  // adding an option without wiring its boolean is a compile error instead of
+  // a silent fall-through to whichever branch happened to be last.
+  const scopeActive: Record<ScopeValue, boolean> = {
+    official,
+    desc: searchDescriptions,
+  };
 
   // Local draft for the repo field — only pushed to the URL on submit. When
   // the URL's repo changes from elsewhere (the empty state's "Try it on …"
@@ -501,9 +514,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                 <ScopeToggle
                   key={option.value}
                   option={option}
-                  active={
-                    option.value === "official" ? official : searchDescriptions
-                  }
+                  active={scopeActive[option.value]}
                   handle={scopeTooltip}
                 />
               ))}

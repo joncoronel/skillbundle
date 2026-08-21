@@ -729,6 +729,37 @@ against white), or giving the track a 1px border to carry the boundary. Deferred
 because it repaints every switch in the app in light mode — a visual-identity
 call, like the focus rings, not a side effect of a component update.
 
+### Scope toggle: Official's on/off cue is hue-only in dark (design decision)
+
+Third sibling of the two entries above, same shape: a measured 1.4.11 shortfall
+parked rather than fixed in a feature branch.
+
+The home search composer's two scope toggles are icon-only on a fine pointer
+(`components/skill-composer.tsx`, `SCOPE_OPTIONS`). Official's pressed state is
+carried by the icon colour plus the toggle's pressed plate. Measured Aug 2026,
+on vs off:
+
+    icon, light  --primary vs --muted-foreground          1.55:1
+    icon, dark   --info-foreground vs --muted-foreground  1.04:1
+    pressed plate, dark  --surface-selected over --muted  1.36:1
+
+Light is a visible step. Dark is not: the icon pair is effectively the same
+brightness, so state there rests on the 1.36:1 plate alone, and DESIGN.md §8 says
+state is never colour alone. The Descriptions cell is fine, it swaps to
+`--foreground` (2:1 in dark).
+
+**No blue can fix the dark case.** Blue contributes 0.0722 of relative luminance,
+so any saturated blue lands near a mid grey no matter which token is chosen. The
+lever is the pressed plate, not the icon colour: `--tgl-bg-selected` would need to
+reach roughly `oklch(0.42)` in dark for 3:1 against the `--muted` track, against
+about `oklch(0.31)` today.
+
+A stroke-weight cue (pressed icons at `strokeWidth` 3) was built and measured to
+survive greyscale, then reverted on the user's call (Aug 2026) because of how it
+looked. Deferred because raising the selected plate repaints every attached
+ToggleGroup in the app, which is the same visual-identity call as the two entries
+above, not a side effect of one composer branch.
+
 ### Parked from the skill-page-redesign review (Aug 2026)
 
 One call made deliberately during that branch's review rounds, declined for a
