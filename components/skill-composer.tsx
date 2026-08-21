@@ -48,6 +48,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  createTooltipHandle,
 } from "@/components/ui/cubby-ui/tooltip";
 import {
   Drawer,
@@ -78,6 +79,103 @@ function looksLikeRepo(value: string) {
 // so the Autocomplete root's `items` identity doesn't churn per render.
 const NO_REPOS: MyRepo[] = [];
 
+// One tooltip shared by both scope toggles, addressed by handle. A single
+// popup means moving between the two adjacent cells morphs the existing label
+// (width/height + crossfade) instead of unmounting one tooltip and opening
+// another — the swap Base UI calls "instant" inside a provider group.
+// Created PER COMPOSER (see useMemo below), not at module scope: a re-suspend
+// of the home page's boundary hides the live tree rather than unmounting it,
+// so two composers can be mounted at once, and a module handle would have both
+// of them registering triggers and a popup on the same store.
+function createScopeTooltip() {
+  return createTooltipHandle<string>();
+}
+
+/**
+ * The two scope booleans, as data. `label` is the full phrase, used for BOTH
+ * the tooltip payload and the accessible name. `short` is the word rendered
+ * beside the icon on a coarse pointer, and it stays in this table beside its
+ * own label because WCAG 2.5.3 wants the accessible name to contain the
+ * visible one: each short form is a substring of the label above it.
+ */
+const SCOPE_OPTIONS = [
+  {
+    value: "official",
+    icon: CheckmarkBadge01Icon,
+    label: "Official skills only",
+    short: "Official",
+    // Split by theme because the two blues sit differently against
+    // --muted-foreground: --primary measures 1.55:1 in light, while in dark
+    // --info-foreground lands at 1.04:1. Blue carries only 0.0722 of
+    // luminance, so no blue separates from a mid grey there; in dark the
+    // pressed plate (1.36:1) is what carries the state. Parked with the
+    // measurements and the lever in TODO.md, beside the focus-ring and
+    // switch-track entries it is a sibling of.
+    activeClass: "text-primary dark:text-info-foreground",
+  },
+  {
+    value: "desc",
+    icon: TextAlignLeftIcon,
+    label: "Also search descriptions",
+    short: "Descriptions",
+    activeClass: "text-foreground",
+  },
+] as const;
+
+type ScopeValue = (typeof SCOPE_OPTIONS)[number]["value"];
+
+/**
+ * One cell of the scope track. Everything except the five fields in
+ * SCOPE_OPTIONS is identical between them, and it was previously copied.
+ * Renders no DOM of its own, so the cells stay direct children of the group
+ * and its end-cap radius and `::after` dividers still resolve.
+ */
+function ScopeToggle({
+  option,
+  active,
+  handle,
+}: {
+  option: (typeof SCOPE_OPTIONS)[number];
+  active: boolean;
+  handle: ReturnType<typeof createScopeTooltip>;
+}) {
+  return (
+    <TooltipTrigger
+      handle={handle}
+      payload={option.label}
+      // Base UI closes on click by default, which pulls the label off screen
+      // on the very click that flips the state, while the pointer is still on
+      // the cell. The label is the only thing naming an icon-only control.
+      closeOnClick={false}
+      render={
+        <ToggleGroupItem
+          value={option.value}
+          aria-label={option.label}
+          // Re-assert the slot the TooltipTrigger merge overwrites — the
+          // group's cell styling targets [data-slot=toggle].
+          data-slot="toggle"
+        />
+      }
+    >
+      <HugeiconsIcon
+        icon={option.icon}
+        strokeWidth={2}
+        className={cn(
+          "size-4",
+          active ? option.activeClass : "text-muted-foreground",
+        )}
+      />
+      {/* An icon-only control that needs hover to explain itself is only
+          legible where hover exists. `pointer-coarse` is the primary-input
+          media query, so a tablet gets the word and a touch LAPTOP (fine
+          pointer, mouse present) keeps the icon. Purely visual: aria-label
+          already names the cell, so this span never changes what a screen
+          reader hears. */}
+      <span className="hidden pointer-coarse:block">{option.short}</span>
+    </TooltipTrigger>
+  );
+}
+
 // Cap on rendered suggestions (the server list caps at 200; nobody scrolls
 // that in a popup — they type). A Status line reports what's hidden.
 const SUGGESTION_LIMIT = 60;
@@ -100,6 +198,8 @@ interface SkillComposerProps {
  * field's draft (pushed to the URL on submit) and its validation flag.
  */
 export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
+  // Per instance, not module scope — see createScopeTooltip above.
+  const scopeTooltip = useMemo(() => createScopeTooltip(), []);
   const {
     textQuery,
     repoUrl,
@@ -108,6 +208,15 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
     searchDescriptions,
     setParams,
   } = useExplorerState();
+
+  // The one per-option fact that cannot live in SCOPE_OPTIONS, since it comes
+  // from the hook. Typed as a Record over the table's own value union, so
+  // adding an option without wiring its boolean is a compile error instead of
+  // a silent fall-through to whichever branch happened to be last.
+  const scopeActive: Record<ScopeValue, boolean> = {
+    official,
+    desc: searchDescriptions,
+  };
 
   // Local draft for the repo field — only pushed to the URL on submit. When
   // the URL's repo changes from elsewhere (the empty state's "Try it on …"
@@ -337,9 +446,10 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
                 variant="ghost"
                 // rounded-md! — the ! is load-bearing: the addon's own
                 // [&>kbd]:rounded-[calc(var(--radius)-5px)] rule out-specifies
-                // a bare utility. One radius step under the 32px rounded-lg
-                // controls beside it, proportional to its one size step under
-                // them.
+                // a bare utility. 10px is also exactly the sm track's own
+                // corner (TRACK_RADIUS.sm in toggle-group.tsx), so the chip and
+                // the toggles no longer differ by a radius step; the Separator
+                // below is what keeps them from reading as one run.
                 className="rounded-md! max-sm:hidden"
                 aria-hidden="true"
               >
@@ -349,76 +459,82 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
           </div>
         )}
         {/* The two high-frequency search booleans, on the instrument itself
-            (independent multiple-selection, detached cells at the standard
-            32px control size — default radius, no overrides). Desktop-only:
-            the desc toggle needs hover for its tooltip; on mobile both live
-            in the Sort & filter sheet as labeled switches. Hidden in repo
-            mode — they don't apply to repo matching. */}
+            (independent multiple-selection, one attached solid track at the
+            standard 32px control size — default radius, no overrides). Both
+            cells are icon-only and share ONE tooltip handle, so
+            sliding from one to the other morphs the label in place.
+            Desktop-only: the cells are recall-dependent iconography that needs
+            hover to explain itself; on mobile both live in the Sort & filter
+            sheet as labeled switches. Hidden in repo mode — they don't apply
+            to repo matching. */}
         {!isRepo && (
-          <ToggleGroup
-            multiple
-            detached
-            size="sm"
-            variant="outline"
-            aria-label="Search options"
-            className="max-sm:hidden"
-            value={[
-              ...(official ? ["official"] : []),
-              ...(searchDescriptions ? ["desc"] : []),
-            ]}
-            onValueChange={(vals: string[]) => {
-              setParams({
-                official: vals.includes("official"),
-                searchDescriptions: vals.includes("desc"),
-              });
-            }}
-          >
-            {/* Official carries a visible label — it's the product's flagship
-                filter (a nav item and a per-row badge share the word), so its
-                control shouldn't be recall-dependent iconography. */}
-            <ToggleGroupItem
-              value="official"
-              aria-label="Official skills only"
-              className="gap-1.5 px-2 text-sm"
+          <>
+            {/* The break between the field's own affordances (kbd / clear,
+                which act on the text) and the scope instrument. Without it the
+                ghost kbd plate reads as a third cell of the toggle track —
+                same scale, same corner, and the track's own cells are attached
+                at 0 gap, so the addon's 8px is not enough of a step to
+                separate them.
+
+                20px, NOT the chin divider's 16px: the track carries its own
+                cell divider 30px away at 16px (half the cell), and that one is
+                `bg-current`/15% while this is `--border`/10%, so at equal
+                height the OUTER break reads fainter than the inner
+                subdivision. Height is the lever rather than the color —
+                the hairline is one token (DESIGN.md §6). Still well inside the
+                32px track and the 28px kbd, so it stays a divider; at 24px it
+                starts reading as a border on the chip. Rides the group's own
+                breakpoint so it never hangs alone. */}
+            <Separator
+              orientation="vertical"
+              // Decorative. Base UI always renders role="separator", and this
+              // one divides nothing a screen reader navigates: the grouping it
+              // draws is already carried by the group's aria-label below.
+              aria-hidden="true"
+              className="h-5! max-sm:hidden"
+            />
+            <ToggleGroup
+              multiple
+              size="sm"
+              variant="solid"
+              aria-label="Search options"
+              className="max-sm:hidden"
+              value={[
+                ...(official ? ["official"] : []),
+                ...(searchDescriptions ? ["desc"] : []),
+              ]}
+              onValueChange={(vals: string[]) => {
+                setParams({
+                  official: vals.includes("official"),
+                  searchDescriptions: vals.includes("desc"),
+                });
+              }}
             >
-              <HugeiconsIcon
-                icon={CheckmarkBadge01Icon}
-                strokeWidth={2}
-                className={cn(
-                  "size-4",
-                  official ? "text-info-foreground" : "text-muted-foreground",
-                )}
-              />
-              Official
-            </ToggleGroupItem>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <ToggleGroupItem
-                    value="desc"
-                    aria-label="Also search descriptions"
-                    // Re-assert the slot the TooltipTrigger merge overwrites —
-                    // the group's cell styling targets [data-slot=toggle].
-                    data-slot="toggle"
-                  />
-                }
-              >
-                <HugeiconsIcon
-                  icon={TextAlignLeftIcon}
-                  strokeWidth={2}
-                  className={cn(
-                    "size-4",
-                    searchDescriptions
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
+              {SCOPE_OPTIONS.map((option) => (
+                <ScopeToggle
+                  key={option.value}
+                  option={option}
+                  active={scopeActive[option.value]}
+                  handle={scopeTooltip}
                 />
-              </TooltipTrigger>
-              <TooltipContent sideOffset={8}>
-                Also search descriptions
-              </TooltipContent>
+              ))}
+            </ToggleGroup>
+            <Tooltip handle={scopeTooltip}>
+              {({ payload }) => (
+                // positionMethod="fixed" — the default `absolute` anchors the
+                // popup in DOCUMENT space, and toggling a filter reflows the
+                // list region under it. The Popular list and the results list
+                // both lay out for one frame before <Activity> pulls Popular
+                // out, which doubles the page height, and an open tooltip lands
+                // that far down the page for a frame before snapping back.
+                // Viewport coordinates are immune to it, and they suit a
+                // trigger inside a sticky container anyway.
+                <TooltipContent variant="chrome" positionMethod="fixed">
+                  {payload}
+                </TooltipContent>
+              )}
             </Tooltip>
-          </ToggleGroup>
+          </>
         )}
         {/* Repo mode's submit lives inline in the field (URL-bar pattern) —
             the one-field form doesn't need a second row for it. Standard sm
