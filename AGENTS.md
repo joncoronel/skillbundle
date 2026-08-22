@@ -301,6 +301,22 @@ Things that are easy to get wrong, all of which were:
   mid-animation on: taken while the dialog was still scaling open, every tick
   centre came out ~20px adrift and the wrong label faded. The label's own `x`
   times `pxPerUnit` is transform-proof, and so is `clientWidth`.
+- **Above 60 points the cursor stops animating** (`DISCRETE_THRESHOLD`, the old
+  chart's `discreteInteraction`): the ticker swaps its label instead of
+  scrolling and the rule, dots, band, pill and panel all jump. At that density
+  the points are a pixel or two apart, so a spring has nothing to travel and
+  gets retargeted on the way.
+- **A Motion spring configured `{ duration: 0, bounce: 0 }` still animates.**
+  It reads like "settle immediately" and does not: measured under
+  `prefers-reduced-motion: reduce`, the focus dot travelled four intermediate
+  positions. Instantaneity is decided per write with `jump()` instead, which is
+  why the overlay has both `write` and `writePill` — the pill also jumps on
+  touch, where easing under the finger reads as lag rather than motion.
+- **The marker ring is the page tone (`--background`), not the tier the chart
+  sits on.** It is a halo holding the dot off the line, so it has to contrast
+  with the surface, not match it: handed the dialog's own `--surface-5` it
+  vanished into it in dark. The old chart used `--chart-background` — white in
+  light, near-black in dark — for the same reason.
 - **The overlay writes only to MotionValues, never React state.** Putting any
   of it in state would re-render the chart on every pointer move and cancel its
   motion. Same reason the axis-label fade is an imperative write of custom

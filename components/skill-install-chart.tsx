@@ -165,7 +165,6 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       <ChartHoverOverlay
         controller={overlay}
         pillOffset={datePillOffset(AXIS_LABEL_MARGIN, AXIS_LABEL_PADDING)}
-        surface="var(--surface-5)"
         tooltip={{
           title: (index) => dayLabelLong(snapshots[index]?.day ?? ""),
           value: (point, marker) => {

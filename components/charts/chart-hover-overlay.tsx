@@ -36,8 +36,16 @@ import { cn } from "@/lib/utils";
 
 const TICKER_ITEM_HEIGHT = 24;
 
-/** Above this many days the ticker stops scrolling and just swaps the label. */
-const COMPACT_TICKER_THRESHOLD = 60;
+/**
+ * Above this many days the cursor stops animating: the ticker swaps its label
+ * instead of scrolling, and the rule, dots, band, pill and panel all jump.
+ *
+ * The old chart's `discreteInteraction`, at the same count. Past it the points
+ * are only a pixel or two apart, so a spring has nothing to travel and every
+ * one of them is retargeted on the way — motion that costs a frame budget to
+ * express a move too small to read.
+ */
+const DISCRETE_THRESHOLD = 60;
 
 /**
  * Marker springs are allocated up front because hooks cannot be created in a
@@ -247,25 +255,27 @@ export function useChartHoverOverlay({
 }): ChartHoverOverlayController {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
-  // `duration: 0, bounce: 0` is Motion's explicit "settle immediately" spring.
-  // Reduced motion has to be handled here because these values are ours — the
-  // chart's own renderer honours the flag itself, but Motion does not.
+  // Whether the cursor animates at all. Reduced motion has to be handled here
+  // because these values are ours — the chart's own renderer honours the flag,
+  // Motion does not.
+  //
+  // The springs are always built with real transitions and instantaneity is
+  // decided per write, with `jump`. A spring configured `{ duration: 0 }` is
+  // NOT instant — measured under `prefers-reduced-motion: reduce`, the focus
+  // dot still travelled four intermediate positions — so the config that reads
+  // like "settle immediately" quietly animates.
   const reducedMotion = useReducedMotion();
   const coarse = useCoarsePointer();
-  const snap = { duration: 0, bounce: 0 };
-  const focus = reducedMotion ? snap : FOCUS_SPRING;
-  const highlight = reducedMotion ? snap : HIGHLIGHT_SPRING;
-  // The pill sits directly under the finger, so easing it reads as the label
-  // lagging behind the touch rather than as motion. Everything else still
-  // springs on touch — those are further from the contact point.
-  const pill = reducedMotion || coarse ? snap : FOCUS_SPRING;
+  const still = Boolean(reducedMotion) || labels.length > DISCRETE_THRESHOLD;
+  const focus = FOCUS_SPRING;
+  const highlight = HIGHLIGHT_SPRING;
 
   const bandX = useSpring(0, highlight);
   const bandWidth = useSpring(0, highlight);
   const ruleX = useSpring(0, focus);
-  const pillX = useSpring(0, pill);
-  const dayY = useSpring(0, pill);
-  const monthY = useSpring(0, pill);
+  const pillX = useSpring(0, focus);
+  const dayY = useSpring(0, focus);
+  const monthY = useSpring(0, focus);
   const opacity = useMotionValue(0);
   const plotTop = useMotionValue(0);
   const plotBottom = useMotionValue(0);
@@ -471,7 +481,17 @@ export function useChartHoverOverlay({
       // cursor instead of sweeping in from the left edge; ease after that.
       const entering = !wasActive.current;
       const write = (value: MotionValue<number>, next: number) => {
-        if (entering) {
+        if (entering || still) {
+          value.jump(next);
+        } else {
+          value.set(next);
+        }
+      };
+      // The pill sits directly under the finger, so easing it reads as the
+      // label lagging behind the touch rather than as motion. Everything else
+      // still springs on touch — those are further from the contact point.
+      const writePill = (value: MotionValue<number>, next: number) => {
+        if (entering || still || coarse) {
           value.jump(next);
         } else {
           value.set(next);
@@ -499,7 +519,7 @@ export function useChartHoverOverlay({
       write(bandX, Math.min(bandStart, bandEnd));
       write(bandWidth, Math.abs(bandEnd - bandStart));
       write(ruleX, x);
-      write(pillX, cssX);
+      writePill(pillX, cssX);
       // The pill stops at the chart's edge, so what it covers near the ends is
       // not what the cursor is over. Fade against where it actually sits.
       const half = pillHalf.get();
@@ -508,8 +528,8 @@ export function useChartHoverOverlay({
           ? Math.min(Math.max(cssX, half), cssWidth - half)
           : cssX,
       );
-      write(dayY, -index * TICKER_ITEM_HEIGHT);
-      write(monthY, -(segmentOfIndex[index] ?? 0) * TICKER_ITEM_HEIGHT);
+      writePill(dayY, -index * TICKER_ITEM_HEIGHT);
+      writePill(monthY, -(segmentOfIndex[index] ?? 0) * TICKER_ITEM_HEIGHT);
 
       for (const [i, config] of markers.slice(0, MAX_MARKERS).entries()) {
         const values = markerValues[i];
@@ -546,6 +566,8 @@ export function useChartHoverOverlay({
       pxPerUnit,
       pillHalf,
       paintTickFade,
+      still,
+      coarse,
     ],
   );
 
@@ -690,8 +712,13 @@ export function ChartHoverOverlay({
   /** Shrinks the marker for short charts, where full size crowds the plot. */
   dotScale?: number;
   /**
-   * What the markers punch through — the tone the chart sits on. Wrong only
-   * shows in dark mode, where the surface tiers actually differ.
+   * What the markers punch through.
+   *
+   * The page tone, not the tier the chart happens to sit on — the old chart's
+   * `--chart-background`, which was white in light and near-black in dark
+   * whatever was behind it. Handing it the dialog's own surface instead makes
+   * the ring vanish into it in dark, where the tiers actually differ; the halo
+   * is meant to hold the dot off the line, so it has to contrast with both.
    */
   surface?: string;
 }) {
@@ -875,7 +902,7 @@ function DatePill({
     () => splitLabels(controller.labels),
     [controller.labels],
   );
-  const compact = controller.labels.length > COMPACT_TICKER_THRESHOLD;
+  const compact = controller.labels.length > DISCRETE_THRESHOLD;
 
   // The pill is centred on the cursor, so near either end it would hang past
   // the chart — cut off at best, and a horizontal scrollbar at worst. It stops

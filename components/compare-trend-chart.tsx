@@ -253,7 +253,6 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           AXIS_LABEL_MARGIN_WITH_Y_AXIS,
           AXIS_LABEL_PADDING_WITH_Y_AXIS,
         )}
-        surface="var(--surface-3)"
         tooltip={{
           title: (index) => dayLabelLong(days[index] ?? ""),
           value: (point) => intFmt((point.datum as CompareRow).installs),
