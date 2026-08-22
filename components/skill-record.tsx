@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import NumberFlow from "@number-flow/react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
@@ -162,12 +162,18 @@ export function SkillRecord({
   const gain = weekGain(snapshots);
   // Same trailing-week window the "Past 7 days" row counts from, so the line's
   // leftmost point is exactly that row's baseline and the two cannot drift.
-  const sparkPoints = weekWindow(snapshots);
+  // Memoized because the sparkline reports the hovered day back to `setHover`
+  // below, and that re-renders this component. `weekWindow` returns a fresh
+  // slice each call, so without this the chart re-renders on every hover, which
+  // re-pushes its props to the chart host and cancels the focus dot's animation
+  // mid-flight — the dot then jumps instead of travelling.
+  const sparkPoints = useMemo(() => weekWindow(snapshots), [snapshots]);
 
   // Hovering the sparkline scrubs the install total. The scrub stays inside the
   // installs block — the value rolls and the label becomes the date — so no
   // neighbouring row is left quietly describing a different day.
   const [hover, setHover] = useState<SparklineHoverState>(null);
+  const chartDialogRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div className={cn(RECORD_SURFACE, className)}>
@@ -273,7 +279,18 @@ export function SkillRecord({
                       className="size-3"
                     />
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-2xl">
+                  {/* The chart's SVG is keyboard-navigable, so it is the first
+                      tabbable node in the popup and would otherwise take the
+                      dialog's opening focus — which selects a point and opens a
+                      tooltip before the reader has done anything. Focus the
+                      popup instead; Tab still reaches the chart. The popup is
+                      only a focus landing spot, so it draws no ring of its own;
+                      the dialog is already announced as one. */}
+                  <DialogContent
+                    className="focus-visible:outline-none sm:max-w-2xl"
+                    initialFocus={chartDialogRef}
+                    ref={chartDialogRef}
+                  >
                     <DialogHeader>
                       <DialogTitle>Installs over time</DialogTitle>
                       <DialogDescription>

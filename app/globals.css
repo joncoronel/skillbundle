@@ -740,3 +740,80 @@ html {
     isolation: isolate;
   }
 }
+
+/* Chart entrance: a left-to-right wipe over the marks only, so the grid and
+   axes are already in place as the series draws in. `ts-chart__marks` is
+   TanStack Charts' own class on that group, which is why this can be plain CSS
+   rather than a React-driven clip rect.
+
+   The chart's other motion (crosshair, focus dot, highlight band, tooltip
+   travel) is sprung by @tanstack/charts/motion, which handles reduced motion
+   itself. This one is ours, so it opts out here. */
+@keyframes chart-reveal-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.chart-reveal .ts-chart__marks {
+  animation: chart-reveal-wipe 1100ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-reveal .ts-chart__marks {
+    animation: none;
+  }
+}
+
+/* Grid rules keep the dashed pattern the charts have always drawn. TanStack's
+   axis API takes `grid: boolean` and the theme carries only a color, so stroke
+   style belongs to the renderer — restyling its own `ts-chart__grid` group here
+   is cheaper than replacing the built-in grid with authored rule marks.
+
+   The opacity reset is load-bearing, not a taste call. The renderer draws grid
+   rules at `stroke-opacity: 0.11` on top of the theme colour, and our
+   `--border` is itself only ~10% opaque, so the two multiply out to roughly 1%
+   and the grid disappears. Letting `--border` alone set the tone is also what
+   the old chart did. */
+/* The chart SVG is keyboard-navigable, so it carries `tabindex="0"` and the
+   browser draws a focus ring around the whole plot — including after a plain
+   click, which Chrome treats as focus-visible for a non-form element. The chart
+   already shows where focus is, far more precisely: focusing it paints the
+   cursor rule, the marker and the tooltip for the focused point. That is the
+   visible focus indicator; the ring around a 600px box is noise. */
+.ts-chart:focus,
+.ts-chart:focus-visible {
+  outline: none;
+}
+
+.ts-chart__grid line {
+  stroke-dasharray: 4 4;
+  stroke-opacity: 1;
+}
+
+/* Date labels give way to the pill travelling along their row, the way the old
+   chart's did: hidden where the pill covers them, ramping back over the next
+   20px, untouched beyond that.
+
+   The distance ramp is computed per label in the overlay and delivered as
+   `--tick-N` custom properties set on OUR wrapper, which the rules below read.
+   It cannot be written onto the labels directly: the chart owns those nodes and
+   strips inline styles off them on every repaint (which includes every focus
+   change), so a direct write survives about a frame. Custom properties inherit
+   into the chart's SVG from outside it, and the per-label rules are generated
+   into a stylesheet the chart never touches.
+
+   Which label maps to which property is decided in `chart-hover-overlay.tsx`
+   when the chart renders; only the numbers change while the pointer moves. */
+.ts-chart__axes text[data-ts-key^="x-tick-label"] {
+  transition: opacity 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-chart__axes text[data-ts-key^="x-tick-label"] {
+    transition: none;
+  }
+}

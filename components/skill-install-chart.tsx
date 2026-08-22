@@ -1,116 +1,193 @@
 "use client";
 
 import { useMemo } from "react";
-import { ComposedChart } from "@/components/charts/composed-chart";
-import { SeriesBar } from "@/components/charts/series-bar";
-import { Line } from "@/components/charts/line";
-import { Grid } from "@/components/charts/grid";
-import { XAxis } from "@/components/charts/x-axis";
-import { ChartTooltip } from "@/components/charts/tooltip";
+import { barY, defineChart, lineY } from "@tanstack/charts";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { RendererChart } from "@tanstack/charts/react/tooltip";
+import { INITIAL_WIDTH, useChartHostProps } from "@/components/charts/chart";
 import {
-  CHART_VARS,
+  AXIS_TICK_LABELS,
+  CHART_THEME,
+  datePillOffset,
+  AXIS_LABEL_MARGIN,
+  AXIS_LABEL_PADDING,
+} from "@/components/charts/chart-theme";
+import {
+  ChartHoverOverlay,
+  useChartHoverOverlay,
+} from "@/components/charts/chart-hover-overlay";
+import {
+  BAR_UNFOCUSED_DIM,
+  CHART_CURVE,
+  HOVER_DIM,
+} from "@/components/charts/series-state";
+import {
+  dayLabel,
+  dayLabelLong,
   intFmt,
   seriesSummary,
-  toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
-
-// The install dialog chart sits at surface-5, so a surface-3 tooltip wouldn't
-// separate from it (in light mode both are pure white) — there the tooltip
-// rides one tier above the dialog at surface-7, the cubby convention for a
-// popover nested in a dialog. Glass blur off.
-const TOOLTIP_PANEL_STYLE: React.CSSProperties = {
-  background: "var(--surface-7)",
-  color: "var(--popover-foreground)",
-  boxShadow: "var(--surface-shadow-7), var(--surface-rim-7)",
-  backdropFilter: "none",
-};
 
 // Daily bars are the secondary series: the design system's neutral fill,
 // softened so the Signal Blue total line stays the one accent.
 const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
 
+const LINE_ID = "total";
+const BAR_ID = "daily";
+
+// One dot per series, keyed by the `z` group each mark declares below.
+const HOVER_MARKERS = [
+  {
+    key: LINE_ID,
+    color: "var(--primary)",
+    label: "Total installs",
+  },
+  {
+    key: BAR_ID,
+    color: BAR_FILL,
+    // Same recipe as the bars, against the panel's foreground rather than the
+    // page's: `--neutral` is a dark tone and the panel is near-black.
+    swatch: "color-mix(in oklch, currentColor 65%, transparent)",
+    label: "Daily installs",
+  },
+];
+
 /**
- * The full install history: cumulative total (line, right axis) + daily gained
- * (bars, default axis) on independent scales. Lives in the chart dialog where it
- * has room; the sidebar shows the sparkline and opens this on demand.
+ * The full install history: cumulative total (line) + daily gained (bars) on
+ * independent vertical ranges. Lives in the chart dialog where it has room; the
+ * sidebar shows the sparkline and opens this on demand.
  *
- * Kept in its own file (the heavy ComposedChart + bar path) so it only ships to
- * the skill page, never the compare page — and so it can be swapped to
- * `next/dynamic` later, loading on dialog-open, without touching the sparkline.
+ * Kept in its own file (the heavy bar path) so it only ships to the skill page,
+ * never the compare page — and so it can be swapped to `next/dynamic` later,
+ * loading on dialog-open, without touching the sparkline.
  */
 export function InstallChart({ insights }: { insights: SkillInsights }) {
   const { snapshots } = insights;
 
-  // One row per day: `total` (cumulative, the line) and `daily` (gained, the
-  // bars). Day-over-day can dip negative on a correction; floor at 0.
-  const series = useMemo(
-    () =>
-      snapshots.map((s, i) => ({
-        // A Date (pinned to UTC noon) rather than the raw "YYYY-MM-DD" string:
-        // the chart parses bare strings as UTC midnight, which formats a day
-        // early west of UTC. See toDate.
-        date: toDate(s.day),
-        total: s.installs,
-        daily:
-          i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
-      })),
-    [snapshots],
-  );
+  const definition = useMemo(() => {
+    // One row per day: `total` (cumulative, the line) and `daily` (gained, the
+    // bars). Day-over-day can dip negative on a correction; floor at 0.
+    const rows = snapshots.map((s, i) => ({
+      day: s.day,
+      total: s.installs,
+      daily: i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
+    }));
+
+    // A cumulative total dwarfs any single day's gain — often by two or three
+    // orders of magnitude — so on one shared range the bars would be a flat
+    // line along the axis. The bars are therefore measured against their own
+    // peak and rescaled into the totals' range. The old chart got the same
+    // result from a second y-axis, but neither axis was ever labelled — the two
+    // scales only ever existed to let each series fill the plot — so pre-scaling
+    // the value is equivalent and keeps this to one chart.
+    //
+    // `barPlot` is the plotted height; `daily` stays intact and is what the
+    // tooltip reports.
+    const totalMax = rows.reduce((max, r) => Math.max(max, r.total), 0);
+    const dailyMax = rows.reduce((max, r) => Math.max(max, r.daily), 0);
+    const barRatio = dailyMax > 0 ? totalMax / dailyMax : 0;
+
+    return defineChart({
+      marks: [
+        barY(rows, {
+          id: BAR_ID,
+          x: "day",
+          // Scaled in the accessor rather than in a mapped array so both marks
+          // read the same row objects — the tooltip then reports true values
+          // off whichever point the group hands it.
+          y: (r) => r.daily * barRatio,
+          // Both marks need distinct group identity: grouped focus reduces
+          // points that share a group to one member, and with the default
+          // (null) group the bar would swallow the line, taking the hover
+          // highlight and the line's tooltip row with it.
+          z: () => BAR_ID,
+          fill: BAR_FILL,
+          fillOpacity: 1,
+          radius: 4,
+          maxThickness: 26,
+          states: [BAR_UNFOCUSED_DIM],
+        }),
+        lineY(rows, {
+          id: LINE_ID,
+          x: "day",
+          y: "total",
+          z: () => LINE_ID,
+          curve: CHART_CURVE,
+          stroke: "var(--primary)",
+          strokeOpacity: 1,
+          strokeWidth: 2,
+          states: [HOVER_DIM],
+        }),
+      ],
+      // A band scale, not a time scale: there is one row per day and the bars
+      // need a band to sit in. Lines plot at band centres, so the total tracks
+      // the middle of each day's bar. This is also what the old chart's
+      // `tickMode="data"` was emulating on a time axis.
+      x: {
+        scale: () => scaleBand<string>().padding(0.35),
+        axis: {
+          line: false,
+          ticks: { size: 0, padding: AXIS_LABEL_PADDING, format: dayLabel },
+          tickLabels: AXIS_TICK_LABELS,
+        },
+      },
+      y: {
+        scale: scaleLinear,
+        nice: true,
+        grid: true,
+        // Both series share this range but it describes neither on its own
+        // (see `barRatio`), so it stays unlabelled, as it always has been.
+        axis: false,
+      },
+      margin: { top: 16, right: 14, left: 14, bottom: AXIS_LABEL_MARGIN },
+      theme: CHART_THEME,
+      focus: "group-x",
+      maxFocusDistance: Number.POSITIVE_INFINITY,
+      // The overlay owns the gesture and every cursor visual; see
+      // `chart-hover-overlay`. Without `focusRing: false` the chart paints its
+      // own marker underneath ours — two dots, only one of them moving.
+      focusRing: false,
+      pointer: false,
+    });
+  }, [snapshots]);
+
+  const hostProps = useChartHostProps();
+  const overlay = useChartHoverOverlay({
+    labels: useMemo(() => snapshots.map((s) => dayLabel(s.day)), [snapshots]),
+    markers: HOVER_MARKERS,
+  });
 
   return (
     <div>
       <Legend />
-      <div
-        style={CHART_VARS}
-        role="img"
-        aria-label={`Install history: ${seriesSummary(snapshots)}.`}
+      <ChartHoverOverlay
+        controller={overlay}
+        pillOffset={datePillOffset(AXIS_LABEL_MARGIN, AXIS_LABEL_PADDING)}
+        surface="var(--surface-5)"
+        tooltip={{
+          title: (index) => dayLabelLong(snapshots[index]?.day ?? ""),
+          value: (point, marker) => {
+            const row = point.datum as { total: number; daily: number };
+            return marker.key === LINE_ID
+              ? intFmt(row.total)
+              : `+${intFmt(row.daily)}`;
+          },
+        }}
       >
-        <ComposedChart
-          data={series}
-          xDataKey="date"
-          aspectRatio="5 / 2"
-          maxBarSize={26}
-          animationDuration={0}
-          margin={{ top: 16, right: 14, bottom: 30, left: 14 }}
-        >
-          <Grid horizontal />
-          {/* Bars on the default axis (daily, ~0–20), line on its own right
-              axis (cumulative, hundreds) so each scales to fit. */}
-          <SeriesBar
-            animate={false}
-            dataKey="daily"
-            fill={BAR_FILL}
-            radius={4}
-          />
-          <Line
-            animate={false}
-            dataKey="total"
-            stroke="var(--primary)"
-            strokeWidth={2}
-            yAxisId="right"
-          />
-          {/* "data" mode pins one label per data row at its x position. With a
-              short, sparse series the default "domain" mode spreads ticks across
-              the time range and they drift off the actual points/bars. */}
-          <XAxis tickMode="data" />
-          <ChartTooltip
-            panelStyle={TOOLTIP_PANEL_STYLE}
-            rows={(point) => [
-              {
-                color: "var(--primary)",
-                label: "Total installs",
-                value: point.total as number,
-              },
-              {
-                color: BAR_FILL,
-                label: "Daily installs",
-                value: `+${intFmt(point.daily as number)}`,
-              },
-            ]}
-          />
-        </ComposedChart>
-      </div>
+        <RendererChart
+          {...hostProps}
+          initialWidth={INITIAL_WIDTH.dialog}
+          ariaLabel={`Install history: ${seriesSummary(snapshots)}.`}
+          aspectRatio={5 / 2}
+          definition={definition}
+          onRender={overlay.onRender}
+          style={{
+            ...hostProps.style,
+          }}
+        />
+      </ChartHoverOverlay>
     </div>
   );
 }

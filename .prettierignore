@@ -13,4 +13,3 @@ reviews/
 
 # Vendored via `shadcn add` — see TODO.md "Local cubby-ui divergences".
 components/ui/cubby-ui/
-components/charts/

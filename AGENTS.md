@@ -42,10 +42,11 @@ format:check + lint + typecheck + unit tests; e2e is separate because it builds
 the app.
 
 **Formatting is gated, so run `pnpm format` before committing.** Prettier owns
-every file except `components/ui/cubby-ui/` and `components/charts/`, which are
-vendored through `shadcn add` and excluded in `.prettierignore` — formatting
-them would be reverted by the next component update and break the gate on
-arrival.
+every file except `components/ui/cubby-ui/`, which is vendored through
+`shadcn add` and excluded in `.prettierignore` — formatting it would be
+reverted by the next component update and break the gate on arrival.
+`components/charts/` used to be excluded for the same reason; it is now our own
+code (see Charts below) and is formatted like everything else.
 
 **`shadcn add @cubby-ui/style` needs a manual pass over `app/globals.css`
 afterwards, every time.** `app/globals.css` is NOT in `.prettierignore`, so the
@@ -75,7 +76,9 @@ check its line endings first.
 - **Package manager:** pnpm
 - **UI components:** Custom library in `components/ui/cubby-ui/` built on Radix UI and Base UI primitives. Component docs available at https://www.cubby-ui.dev/llms.txt
 - **Icons:** HugeIcons (primary) and Lucide React
-- **Animations:** Motion library (motion)
+- **Animations:** Motion library (motion) for UI; charts animate through
+  TanStack Charts' own motion renderer (see Charts below)
+- **Charts:** TanStack Charts (`@tanstack/charts`)
 
 ## Architecture
 
@@ -143,6 +146,187 @@ NAMES should exist. It has twice pointed at files that had been deleted.
 ### Crons (`crons.ts`)
 
 Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06:45 → `reconcileUnseenSkills` 07:00, with the discovery/content/audit/embedding pipeline chained off the sync), hourly + 30-min leaderboard refreshes (trending / hot), daily cache cleanups, and a weekly Sunday duplicate chain (resolve repo identities 08:00 → curated refresh 09:00 → re-resolve stale identities 10:00). Production-only (gated by `CRONS_ENABLED`).
+
+### Charts
+
+Three charts, all built on **TanStack Charts** (`@tanstack/charts`): the sidebar
+sparkline, the install-history dialog chart, and the compare page's multi-line
+chart. Shared pieces live in `components/charts/`; each chart file owns its own
+`defineChart` definition.
+
+The library ships its own docs and skills inside the package —
+`node_modules/@tanstack/charts/docs/` and `.../skills/`, indexed by `llms.txt`.
+**Read those rather than relying on memory or a docs mirror**; they match the
+installed version, and this is a young library that moves.
+
+Things that are easy to get wrong, all of which were:
+
+- **Charts are composed by spreading `chartHostProps` into `RendererChart`, not
+  by a wrapper component.** A generic wrapper has to re-declare the datum and
+  axis type parameters, and they collapse to `unknown` at the call site, which
+  costs the typed `point.datum` in `renderTooltipBody` and `onFocusChange`.
+- **`RendererChart` comes from `@tanstack/charts/react/tooltip`.** That is the
+  only entry that takes both a `renderer` and `renderTooltipBody`.
+- **Marks that should be read together at one x need distinct `z` values.**
+  Grouped focus reduces points sharing a group to a single member, and the
+  default group is `null` — so two ungrouped marks silently collapse to one,
+  taking a tooltip row and the hover highlight with it. Guarded by
+  `tests/highlight-segment.test.ts`.
+- **`onFocusChange` fires on every committed prop set, not only when focus
+  moves.** Feeding it straight into `setState` is an infinite render loop;
+  compare against the last value first (see `skill-install-sparkline.tsx`).
+- **A re-render of the chart's parent cancels any in-flight focus animation.**
+  Every React commit re-pushes props to the chart host, which repaints and
+  drops the running spring, so the focus dot jumps instead of travelling. Any
+  state a chart feeds back into the page (the sparkline's hovered day) must not
+  re-render the chart: keep its props referentially stable so the component
+  bails out. `weekWindow()` returning a fresh slice each render was enough to
+  break it.
+- **`focusRing: false` on every definition.** The overlay draws the marker, so
+  leaving the built-in ring on paints a second dot underneath it — and only
+  ours moves, which reads as one marker lagging the other.
+- **Scene units are not CSS pixels.** The chart lays its scene out in its own
+  coordinate space and lets the viewBox scale it to the container, so in the
+  dialog a scene x of 564 paints at 594px. Anything in the overlay's SVG
+  inherits that viewBox and needs no conversion, but the date pill and the
+  tooltip panel are HTML positioned in `left`/`top`, and reading scene units
+  into those puts them further and further behind the cursor toward the right
+  edge. `pxPerUnit` in the overlay converts; it is measured off the painted
+  SVG, NOT derived from `scene.width`, which is the container measurement and a
+  different number. Nothing catches this on the compare chart, where the two
+  happen to coincide.
+- **`resolvePointer` answers from anywhere in the element**, including the axis
+  gutters — it does not know where the plot is. Without the bounds check in
+  `inspect` the cursor and tooltip appear while the pointer is down among the
+  tick labels, well below the chart.
+- **Every marker looks the same** — a disc of the series colour inside a ring of
+  the surface. There is no per-mark variant; a hollow ring for lines was tried
+  and rejected.
+- **The tooltip panel wears the tooltip component's `chrome` variant**
+  (`bg-chrome` + `data-surface="chrome"`), not a surface tier. A series painted
+  in a page tone disappears on it — the daily bars' neutral did — which is what
+  `HoverMarker.swatch` exists for. The date pill is on the same surface, so the
+  two read as one instrument; the old chart inverted the pill in dark
+  (`dark:bg-zinc-100`) and this deliberately does not. Fill only on both —
+  `--chrome-shadow` is the variant's opt-in edge, for a header bar rather than a
+  label — except the pill keeps its own `shadow-lg`, which it needs because it
+  sits on the plot.
+- **Bar dimming is a mark state, not overlay work.** `BAR_UNFOCUSED_DIM`
+  (`series-state.ts`) uses `when: { focus: "unmatched" }`, evaluated per datum,
+  because bars are per-datum scene nodes. Lines are not — the whole path is one
+  node — which is why their highlight goes through the overlay's cloned band
+  instead. When checking this in the DOM, note that the focused bar has NO
+  `opacity` attribute rather than `opacity="1"`.
+- **The cursor is not the chart's.** Rule, dots, highlight band and date pill
+  are all Motion, in `chart-hover-overlay.tsx`; the definitions set
+  `focusRing: false` and declare no focus guides. `focusGuideX` markers do
+  animate, but the whole guide path wedges under a fast pointer — scrubbing
+  left and right leaves the rule and dots frozen where the scrub started, and
+  they never recover. The tooltip keeps updating throughout, which is what
+  makes it look like a rendering bug rather than a motion one.
+- **`tooltip.offset` applies along the placement's primary axis.** `bottom-*`
+  offsets vertically and leaves the panel horizontally flush with the cursor;
+  `right`/`left` is what puts a gap beside it.
+- **Entrance motion is ours, the rest is the library's.** The left-to-right
+  wipe is a CSS animation on `.ts-chart__marks` (`.chart-reveal` in
+  `globals.css`); `chartMotion` is built with `initial: false` so the two do not
+  both play. Everything else — crosshair, focus dot, highlight band, tooltip
+  travel — springs through `@tanstack/charts/motion`. If chart motion looks
+  dead, check the two entries below before reaching for Motion: both look like
+  "the renderer is not animating" and neither is.
+- **The overlay owns the pointer gesture (`pointer: false` on every
+  definition).** The chart's own handling is hover-shaped — focus on move,
+  clear on leave — and touch has no leave: a tap paints focus that then sits
+  there, and a drag gets claimed by the browser as a scroll. The overlay maps
+  each input to what it means (a mouse inspects on hover, a finger only while
+  it is down) via `interaction.resolvePointer` / `setControlledFocus`, and the
+  wrapper carries `touch-action: pan-y` so horizontal drags are ours.
+- **The tooltip is capped narrow rather than made to stop animating.** It
+  animates _into_ its resolved position, so on a small chart, where the panel is
+  nearly as wide as the plot, the intermediate frames used to land outside it —
+  and with nothing containing them that widens the document and flicks a
+  horizontal scrollbar mid-drag. `maxWidth: min(16rem, calc(50vw - 3.5rem))`
+  keeps both the resting and the travelled position inside, so motion stays on
+  everywhere, touch included. Do not "fix" the overhang by centring the tooltip:
+  following the cursor is the point, and hanging past the plot edge is fine.
+- **The tooltip panel is ours too, in the overlay.** The built-in one clamps
+  itself into the chart box, so where it does not fit beside the cursor it
+  slides back over the marker it is describing — and that clamping cannot be
+  turned off. Ours uses the old rule: `x + offset`, flipping to
+  `x - offset - width` only when that would run past the chart, never anything
+  between. It hangs off the edge rather than covering the point.
+- **Do not signal overlay repaints through a MotionValue event.**
+  `useMotionValueEvent` keeps whichever callback was registered on mount, so a
+  listener reading refs runs a focus change behind and the panel shows the
+  previous day. `showFocus` writes the panel's nodes inline instead; the panel
+  registers them on the controller. Same trap applies to anything else a
+  listener closes over — the compare page's series list grows as data loads.
+- **Pass `initialWidth`.** The adapter renders its first markup at that width
+  (default 640) and measures the container only after commit, so everything in
+  scene units — stroke widths, marker radii, fixed margins — is scaled by the
+  ratio until it re-lays-out. A 240px sparkline drawn first at 640 paints a
+  hairline, then visibly thickens. `INITIAL_WIDTH` in `charts/chart.tsx`.
+- **The chart SVG carries `tabindex="0"`, and Chrome treats a click on it as
+  focus-visible.** The browser ring around the whole plot is suppressed in
+  `globals.css`; the chart paints its own, far more precise focus state (rule,
+  marker, tooltip), so this costs no accessibility.
+- **The chart strips inline styles off its own nodes when it repaints**, and it
+  repaints on every focus change. The node object survives, its `style` does
+  not, so anything the overlay writes onto a tick label lasts about a frame.
+  Two things it does NOT rewrite: a stylesheet rule, and a custom property
+  inherited from an ancestor it does not own. The date-label fade uses both —
+  one generated rule per label binding it to a `--tick-N`, and the numbers set
+  on our wrapper as the pill moves (`paintTickFade`), reproducing the old
+  chart's ramp: hidden within 10px of the pill's edge, back to full over the
+  next 20px. That clearance is not cosmetic — the old chart hid everything
+  within a flat 50px of the crosshair, and fading on centre distance alone
+  leaves half a glyph poking out from behind the pill.
+  Covering the labels with a strip of surface colour was tried instead and
+  reads as a blank bar sweeping the axis; so does standing the whole row down,
+  which the old chart did not do either.
+- **Mark states cannot animate from an absent attribute.** A state that sets
+  only the dimmed value leaves the focused node with no attribute at all, so
+  the renderer has no `from` to tween: the dim lands in one frame and the
+  transition is silently ignored, which reads as transitions being unsupported.
+  Give the mark the same channel at full strength (`fillOpacity: 1`,
+  `strokeOpacity: 1`) and write the state in that channel rather than
+  `opacity`. Measured: 119ms for a 120ms tween once both ends exist.
+- **`onRender` runs before the markup it describes is in the DOM.** Anything
+  reading the rendered axis — the tick geometry the fade needs — has to wait a
+  frame or it measures the PREVIOUS render. Only bites where data arrives late:
+  the compare page laid out its labels on a pass nothing re-measured, so its
+  labels never faded while the dialog chart's did.
+- **Do not measure chart geometry with `getBoundingClientRect` during an
+  entrance.** It is screen space, so it carries any transform an ancestor is
+  mid-animation on: taken while the dialog was still scaling open, every tick
+  centre came out ~20px adrift and the wrong label faded. The label's own `x`
+  times `pxPerUnit` is transform-proof, and so is `clientWidth`.
+- **The overlay writes only to MotionValues, never React state.** Putting any
+  of it in state would re-render the chart on every pointer move and cancel its
+  motion. Same reason the axis-label fade is an imperative write of custom
+  properties, off geometry measured once per render: reading a box between
+  style writes forces a reflow, and doing that per frame blows the frame budget
+  on its own.
+- **Grid stroke style is CSS, not definition.** `grid` is a boolean and the
+  theme carries only a color, so the dash pattern and the opacity reset live in
+  `globals.css`. The reset matters: the renderer draws grid rules at
+  `stroke-opacity: 0.11` over a `--border` that is itself ~10% opaque, and the
+  two multiply out to invisible.
+- **A `scale:` factory infers its domain; only a configured _instance_ keeps
+  one.** `scale: () => scaleLinear().domain([0, max])` silently loses the zero —
+  the arrow makes it a factory. Pass `scale: scaleLinear().domain([0, max])`.
+- **Give a cumulative y axis an explicit zero-based domain.** Left to infer,
+  the scale starts near the smallest series and exaggerates the gaps between
+  them. The old chart used `[0, max * 1.1]`; `compare-trend-chart.tsx` restates
+  it. This is also why the sidebar sparkline plots `installs - min` rather than
+  the raw total — against a zero-based axis a cumulative count is a flat line.
+- **Date axes thin by `tickLabels.thin.minGap`.** Point and band scales offer
+  every category as a candidate and ignore `count`/`spacing` hints.
+
+`components/charts/chart-hover-overlay.tsx` is the only place that reaches into
+the chart's rendered DOM (for the line's `d`, and to fade the axis labels the
+date pill covers). That is real coupling to the library's output; it is
+deliberate, because rebuilding the curve would not trace it exactly.
 
 ### Technology tagging
 

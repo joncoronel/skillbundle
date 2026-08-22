@@ -1,52 +1,38 @@
-export type FadeEdges = boolean | "left" | "right";
+import type { ChartLinearGradient } from "@tanstack/charts";
 
-export interface FadeSides {
-  /** Whether the left edge should fade out. */
-  left: boolean;
-  /** Whether the right edge should fade out. */
-  right: boolean;
-  /** True if either side fades — use to gate gradient/mask defs. */
-  any: boolean;
-}
+// Softens where a line meets the left and right edges of the plot, so a trace
+// that runs off the axis reads as continuing rather than being cut.
+//
+// The old chart faded with an opacity mask, which was colour-agnostic and could
+// be shared by every series. TanStack declares gradients as chart resources
+// referenced by paint, so a gradient carries its own colour and each series
+// needs its own — hence the id-per-series below.
+//
+// Stops are the historic 0/15/85/100 pattern. Gradient coordinates are the
+// path's bounding box (SVG's `objectBoundingBox` default, which the renderer
+// does not override): fine here because every compared line spans the full day
+// range, so its box and the plot agree horizontally.
 
-export function resolveFadeSides(fade: FadeEdges): FadeSides {
-  if (fade === false) {
-    return { left: false, right: false, any: false };
-  }
-  if (fade === "left") {
-    return { left: true, right: false, any: true };
-  }
-  if (fade === "right") {
-    return { left: false, right: true, any: true };
-  }
-  return { left: true, right: true, any: true };
-}
-
-export interface FadeGradientStop {
-  offset: string;
-  opacity: number;
-}
-
-/**
- * Stops for a horizontal fade gradient with opacity 0 at the faded side(s)
- * and opacity 1 in the middle. Matches the historic 0/15/85/100 pattern.
- */
-export function fadeGradientStops(sides: FadeSides): FadeGradientStop[] {
-  return [
-    { offset: "0%", opacity: sides.left ? 0 : 1 },
-    { offset: "15%", opacity: 1 },
-    { offset: "85%", opacity: 1 },
-    { offset: "100%", opacity: sides.right ? 0 : 1 },
-  ];
-}
-
-/** Horizontal fade gradient pinned to the chart viewport (not the series path bounds). */
-export function viewportFadeGradientAttrs(innerWidth: number) {
+export function fadeEdgesGradient(
+  id: string,
+  color: string,
+): ChartLinearGradient {
   return {
-    gradientUnits: "userSpaceOnUse" as const,
+    id,
     x1: 0,
-    x2: innerWidth,
     y1: 0,
+    x2: 1,
     y2: 0,
+    stops: [
+      { offset: 0, color, opacity: 0 },
+      { offset: 0.15, color, opacity: 1 },
+      { offset: 0.85, color, opacity: 1 },
+      { offset: 1, color, opacity: 0 },
+    ],
   };
+}
+
+/** Stable gradient id for a series key, shared by the resource and its paint. */
+export function fadeEdgesId(seriesKey: string) {
+  return `fade-${seriesKey}`;
 }
