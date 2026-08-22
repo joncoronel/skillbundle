@@ -299,6 +299,11 @@ Things that are easy to get wrong, all of which were:
   reached 0.3 in 123ms and stayed. A CSS transition ignores a write that does
   not change the target, which is what the old per-bar Motion `animate` did.
   The states write instantly (`NO_MOTION`) and `charts/charts.css` owns the ramp.
+  Note which channel each dim uses: `fillOpacity` for the bars, `strokeOpacity`
+  for the line. The overlay's highlight band is cloned from the live line, so it
+  has to strip BOTH — when the line dim moved from `opacity` to `strokeOpacity`
+  the clone kept inheriting 0.5 and the bright segment came out as a half-
+  strength wash of the series colour.
 - **The tooltip panel has an entrance the rest of the cursor does not.** The old
   `TooltipBox` faded its wrapper over 100ms while the panel inside scaled from
   0.85 and slid 20px in from whichever side it had flipped to, and faded out on

@@ -892,7 +892,13 @@ function Cursor({
         (line) => {
           const clone = line.cloneNode(false) as SVGPathElement;
           clone.removeAttribute("data-ts-key");
+          // Both channels: the band is the trace at full strength, and it is
+          // cloned from a line that is already dimmed. `stroke-opacity` is the
+          // one the dim actually uses (`HOVER_DIM`) — leaving it on made the
+          // highlight 50% of the series colour, which reads as a wash rather
+          // than as the bright segment it is meant to be.
           clone.removeAttribute("opacity");
+          clone.removeAttribute("stroke-opacity");
           return clone;
         },
       ),
