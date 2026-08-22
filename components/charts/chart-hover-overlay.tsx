@@ -1289,9 +1289,13 @@ function TooltipPanel({
           the same material, which is what they were on the old chart.
 
           Fill only, like the variant: `--chrome-shadow` is its opt-in edge, for
-          a header bar rather than a label. */}
+          a header bar rather than a label.
+
+          The radius is the old chart's `rounded-lg` (12px), not the variant's
+          `rounded-sm` (8px): this is a two-row data panel about 190px wide, not
+          the one-line label that variant is sized for. */}
       <div
-        className="min-w-[9rem] overflow-hidden rounded-sm bg-chrome px-3 py-2.5 text-foreground"
+        className="min-w-[9rem] overflow-hidden rounded-lg bg-chrome px-3 py-2.5 text-foreground"
         data-surface="chrome"
         ref={panelRef}
         style={{
