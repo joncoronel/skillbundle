@@ -515,16 +515,18 @@ export function useChartHoverOverlay({
       // Jump on the first frame of a hover so everything appears around the
       // cursor instead of sweeping in from the left edge; ease after that.
       const entering = !wasActive.current;
-      // The crosshair and the highlight band: still at high density.
-      const write = (value: MotionValue<number>, next: number) => {
+      // The crosshair rule, and only the rule: still at high density, which is
+      // the whole of what the old chart's `TooltipIndicator animate` covered.
+      const writeRule = (value: MotionValue<number>, next: number) => {
         if (entering || stillCursor) {
           value.jump(next);
         } else {
           value.set(next);
         }
       };
-      // The markers and the panel, which travel at any density — only reduced
-      // motion stops them.
+      // The band, the markers and the panel, which travel at any density — only
+      // reduced motion stops them. The band lived in the old chart's line
+      // layer, not its tooltip, and took no `animate` flag at all.
       const writeTravelling = (value: MotionValue<number>, next: number) => {
         if (entering || reducedMotion) {
           value.jump(next);
@@ -577,9 +579,9 @@ export function useChartHoverOverlay({
         panelSlide.set(0);
       }
 
-      write(bandX, Math.min(bandStart, bandEnd));
-      write(bandWidth, Math.abs(bandEnd - bandStart));
-      write(ruleX, x);
+      writeTravelling(bandX, Math.min(bandStart, bandEnd));
+      writeTravelling(bandWidth, Math.abs(bandEnd - bandStart));
+      writeRule(ruleX, x);
       writePill(pillX, cssX);
       paintTickFade(cssX);
       writePill(dayY, -index * TICKER_ITEM_HEIGHT);

@@ -331,15 +331,18 @@ Things that are easy to get wrong, all of which were:
   mid-animation on: taken while the dialog was still scaling open, every tick
   centre came out ~20px adrift and the wrong label faded. The label's own `x`
   times `pxPerUnit` is transform-proof, and so is `clientWidth`.
-- **Above 60 points only the crosshair and the pill stop animating**
-  (`DISCRETE_THRESHOLD`, the old chart's `discreteInteraction`): the rule, the
-  highlight band and the pill jump, and the ticker swaps its label instead of
-  scrolling. The markers and the tooltip panel keep springing at any length —
-  the old chart gated exactly three things (`TooltipIndicator animate`, the
-  pill's `left`, the ticker's compact form) and `TooltipDot` was never one of
-  them. Measured on the live old chart at 64 points: the marker travels 17
-  distinct positions between two columns. Stilling everything is the obvious
-  reading of that flag and it is wrong.
+- **Above 60 points only the crosshair rule and the pill stop animating**
+  (`DISCRETE_THRESHOLD`, the old chart's `discreteInteraction`): the rule jumps,
+  the pill jumps, and the ticker swaps its label instead of scrolling. The
+  markers, the highlight band and the tooltip panel keep springing at any
+  length. The old chart gated exactly three things — `TooltipIndicator animate`,
+  the pill's `left`, the ticker's compact form — and neither `TooltipDot` nor
+  `SeriesHighlightLayer` was one of them; the band lived in the line layer and
+  took no `animate` flag at all. Measured on the live old chart at 64 points:
+  the marker travels 17 distinct positions between two columns and the band's
+  clip rect 17. Stilling everything is the obvious reading of that flag and it
+  is wrong — and the gap only shows on data long enough to trip it, which dev
+  seeds rarely are.
 - **A Motion spring configured `{ duration: 0, bounce: 0 }` still animates.**
   It reads like "settle immediately" and does not: measured under
   `prefers-reduced-motion: reduce`, the focus dot travelled four intermediate
