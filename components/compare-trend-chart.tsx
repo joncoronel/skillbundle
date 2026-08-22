@@ -277,6 +277,7 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           aspectRatio={5 / 2}
           className={CHART_REVEAL_CLASS}
           definition={definition}
+          onFocusChange={overlay.onFocusChange}
           onRender={overlay.onRender}
           style={{
             ...hostProps.style,

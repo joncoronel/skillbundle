@@ -231,6 +231,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           ariaLabel={`Install history: ${seriesSummary(snapshots)}.`}
           aspectRatio={5 / 2}
           definition={definition}
+          onFocusChange={overlay.onFocusChange}
           onRender={overlay.onRender}
           style={{
             ...hostProps.style,

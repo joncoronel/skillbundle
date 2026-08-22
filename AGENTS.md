@@ -241,6 +241,14 @@ Things that are easy to get wrong, all of which were:
   travel — springs through `@tanstack/charts/motion`. If chart motion looks
   dead, check the two entries below before reaching for Motion: both look like
   "the renderer is not animating" and neither is.
+- **Keyboard focus is a second input, and the overlay has to be told about it.**
+  `pointer: false` stops the chart's pointer handling only — arrow-key
+  navigation stays live, so tabbing to the chart moves its focus, dims the
+  unfocused bars (a mark state it applies itself) and paints nothing else. The
+  bridge is `onFocusChange`, which reports only the PRIMARY point; the group it
+  belongs to is rebuilt from `scene.points` by matching `xValue`, because the
+  panel needs a row per series. Guarded against the pointer path repainting
+  twice by the same `lastFocus` datum check.
 - **The overlay owns the pointer gesture (`pointer: false` on every
   definition).** The chart's own handling is hover-shaped — focus on move,
   clear on leave — and touch has no leave: a tap paints focus that then sits

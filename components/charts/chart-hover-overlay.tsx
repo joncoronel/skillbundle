@@ -122,6 +122,13 @@ interface FocusedPoint {
   group?: unknown;
   markId: string;
   datum: unknown;
+  /** The point's semantic x — the key a focus group shares. */
+  xValue?: unknown;
+}
+
+/** Comparable form of a point's x, so Dates match by value rather than identity. */
+function xKey(value: unknown): string {
+  return value instanceof Date ? String(value.getTime()) : String(value);
 }
 
 export interface ChartHoverOverlayController {
@@ -165,9 +172,18 @@ export interface ChartHoverOverlayController {
   readonly tooltipSlots: React.RefObject<TooltipSlots>;
   /** Pass to the chart's `onRender`; captures the plot box for the rule. */
   onRender: (info: {
-    scene: { width: number; chart: ChartBox };
+    scene: {
+      width: number;
+      chart: ChartBox;
+      points: readonly FocusedPoint[];
+    };
     interaction: InteractionController;
   }) => void;
+  /**
+   * Pass to the chart's `onFocusChange`, which is how keyboard focus reaches
+   * the overlay. Pointer focus is ours already; this is the other input.
+   */
+  onFocusChange: (point: FocusedPoint | null) => void;
   /** Spread onto the element wrapping the chart; owns the pointer gesture. */
   readonly pointerProps: {
     onPointerDown: (event: React.PointerEvent) => void;
@@ -355,6 +371,7 @@ export function useChartHoverOverlay({
 
   const interaction = useRef<InteractionController | null>(null);
   const plotBox = useRef<ChartBox | null>(null);
+  const scenePoints = useRef<readonly FocusedPoint[]>([]);
   // `useId` returns a value containing colons, which a class name cannot carry.
   const tickScope = `chart-ticks-${useId().replaceAll(":", "")}`;
   const tickStyleRef = useRef<HTMLStyleElement | null>(null);
@@ -419,11 +436,16 @@ export function useChartHoverOverlay({
 
   const onRender = useCallback(
     (info: {
-      scene: { width: number; chart: ChartBox };
+      scene: {
+        width: number;
+        chart: ChartBox;
+        points: readonly FocusedPoint[];
+      };
       interaction: InteractionController;
     }) => {
       interaction.current = info.interaction;
       plotBox.current = info.scene.chart;
+      scenePoints.current = info.scene.points;
       plotTop.set(info.scene.chart.y);
       plotBottom.set(info.scene.chart.y + info.scene.chart.height);
       sceneWidth.set(info.scene.width);
@@ -684,6 +706,36 @@ export function useChartHoverOverlay({
     [showFocus],
   );
 
+  // Keyboard focus. The chart keeps navigating by arrow keys under
+  // `pointer: false` — that path is independent of the gesture we own — but it
+  // only reports the PRIMARY point, so the group it belongs to is rebuilt here
+  // from the scene. Without this, tabbing to a bar dims its neighbours (a mark
+  // state, which the chart applies itself) while the cursor, pill and tooltip
+  // stay hidden, which reads as focus doing half a job.
+  const onFocusChange = useCallback(
+    (point: FocusedPoint | null) => {
+      if (!point) {
+        if (lastFocus.current === undefined) {
+          return;
+        }
+        lastFocus.current = undefined;
+        showFocus([]);
+        return;
+      }
+      // Our own pointer path has already drawn this one. `onFocusChange` also
+      // fires on every committed prop set, not only when focus moves, so this
+      // guard is what keeps a hover from repainting the overlay twice.
+      if (point.datum === lastFocus.current) {
+        return;
+      }
+      lastFocus.current = point.datum;
+      const key = xKey(point.xValue);
+      const group = scenePoints.current.filter((p) => xKey(p.xValue) === key);
+      showFocus(group.length > 0 ? group : [point]);
+    },
+    [showFocus],
+  );
+
   const release = useCallback(() => {
     lastFocus.current = undefined;
     interaction.current?.setControlledFocus(null as never);
@@ -769,6 +821,7 @@ export function useChartHoverOverlay({
     panelSlide,
     tooltipSlots,
     onRender,
+    onFocusChange,
     pointerProps,
   };
 }
