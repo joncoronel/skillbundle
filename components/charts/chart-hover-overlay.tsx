@@ -1114,11 +1114,16 @@ function DatePill({
           width. Overlapping nothing is better than covering it up. */}
       {/* The panel's surface, so the two read as one instrument. The old chart
           inverted the pill instead (`bg-zinc-900` / `dark:bg-zinc-100`), which
-          left it near-white in dark against a near-black panel. `shadow-lg` is
-          the old pill's own and stays: unlike the panel, this one sits ON the
-          plot and needs to lift off it. */}
+          left it near-white in dark against a near-black panel.
+
+          It keeps a shadow where the panel has none, because unlike the panel
+          this one sits ON the plot. `sm` rather than the old pill's `lg`: the
+          pill is aligned to the tick-label row, ~3px off the bottom of the
+          chart box, and the dialog's scrollable body ends ~7px below that.
+          `shadow-lg` reaches about 22px and was cut off square there — on the
+          old chart too. `sm` reaches ~4px and fits. */}
       <div
-        className="overflow-hidden rounded-full bg-chrome px-4 py-1 text-foreground shadow-lg"
+        className="overflow-hidden rounded-full bg-chrome px-4 py-1 text-foreground shadow-sm"
         data-surface="chrome"
         ref={pillRef}
       >
