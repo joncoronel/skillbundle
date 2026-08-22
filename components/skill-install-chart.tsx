@@ -36,6 +36,9 @@ import {
 // softened so the Signal Blue total line stays the one accent.
 const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
 
+/** Share of its column each bar paints, from the old `computeSeriesBarWidth`. */
+const BAR_COLUMN_RATIO = 0.88;
+
 /**
  * Top of the y domain, as a multiple of the largest cumulative total.
  */
@@ -133,10 +136,13 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       // the middle of each day's bar. This is also what the old chart's
       // `tickMode="data"` was emulating on a time axis.
       x: {
-        // 0.2 is the old chart's `barGap`: bars take 80% of each band. At 0.35
-        // they are visibly thinner, which on a long series reads as a different
+        // Bars take 88% of their column, which is the old chart's number:
+        // `computeSeriesBarWidth` sized them `min(slot * 0.88, maxBarSize)`.
+        // (The `barGap = 0.2` default nearby belonged to the standalone
+        // BarChart; this chart was a ComposedChart and never used it.) At 0.65
+        // they are visibly thinner and on a long series read as a different
         // chart rather than as a spacing tweak.
-        scale: () => scaleBand<string>().padding(0.2),
+        scale: () => scaleBand<string>().padding(1 - BAR_COLUMN_RATIO),
         axis: {
           line: false,
           ticks: {

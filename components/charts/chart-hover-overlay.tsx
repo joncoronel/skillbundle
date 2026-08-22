@@ -37,13 +37,18 @@ import { cn } from "@/lib/utils";
 const TICKER_ITEM_HEIGHT = 24;
 
 /**
- * Above this many days the cursor stops animating: the ticker swaps its label
- * instead of scrolling, and the rule, dots, band, pill and panel all jump.
+ * Above this many days the crosshair and the date pill stop animating: the rule
+ * and the highlight band jump to the focused column, the pill jumps with them,
+ * and the ticker swaps its label instead of scrolling.
  *
- * The old chart's `discreteInteraction`, at the same count. Past it the points
- * are only a pixel or two apart, so a spring has nothing to travel and every
- * one of them is retargeted on the way — motion that costs a frame budget to
- * express a move too small to read.
+ * The old chart's `discreteInteraction`, at the same count and over the same
+ * three things — `TooltipIndicator animate={!discreteInteraction}`, the pill's
+ * `left: discreteInteraction ? x : animatedX`, and the ticker's compact form.
+ * The markers and the tooltip panel were NOT gated (`TooltipDot` took the
+ * default `animate`, and this chart's tooltip box fell through to
+ * `resolveTooltipBoxMotion`), so they keep springing at any length. Verified
+ * against the live old chart at 64 points: the marker travels 17 distinct
+ * positions between two columns.
  */
 const DISCRETE_THRESHOLD = 60;
 
@@ -255,9 +260,9 @@ export function useChartHoverOverlay({
 }): ChartHoverOverlayController {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
-  // Whether the cursor animates at all. Reduced motion has to be handled here
-  // because these values are ours — the chart's own renderer honours the flag,
-  // Motion does not.
+  // Reduced motion has to be handled here because these values are ours — the
+  // chart's own renderer honours the flag, Motion does not. It stills
+  // everything; the density gate above stills only the crosshair and the pill.
   //
   // The springs are always built with real transitions and instantaneity is
   // decided per write, with `jump`. A spring configured `{ duration: 0 }` is
@@ -266,7 +271,8 @@ export function useChartHoverOverlay({
   // like "settle immediately" quietly animates.
   const reducedMotion = useReducedMotion();
   const coarse = useCoarsePointer();
-  const still = Boolean(reducedMotion) || labels.length > DISCRETE_THRESHOLD;
+  const stillCursor =
+    Boolean(reducedMotion) || labels.length > DISCRETE_THRESHOLD;
   const focus = FOCUS_SPRING;
   const highlight = HIGHLIGHT_SPRING;
 
@@ -480,8 +486,18 @@ export function useChartHoverOverlay({
       // Jump on the first frame of a hover so everything appears around the
       // cursor instead of sweeping in from the left edge; ease after that.
       const entering = !wasActive.current;
+      // The crosshair and the highlight band: still at high density.
       const write = (value: MotionValue<number>, next: number) => {
-        if (entering || still) {
+        if (entering || stillCursor) {
+          value.jump(next);
+        } else {
+          value.set(next);
+        }
+      };
+      // The markers and the panel, which travel at any density — only reduced
+      // motion stops them.
+      const writeTravelling = (value: MotionValue<number>, next: number) => {
+        if (entering || reducedMotion) {
           value.jump(next);
         } else {
           value.set(next);
@@ -491,7 +507,7 @@ export function useChartHoverOverlay({
       // label lagging behind the touch rather than as motion. Everything else
       // still springs on touch — those are further from the contact point.
       const writePill = (value: MotionValue<number>, next: number) => {
-        if (entering || still || coarse) {
+        if (entering || stillCursor || coarse) {
           value.jump(next);
         } else {
           value.set(next);
@@ -510,7 +526,7 @@ export function useChartHoverOverlay({
       // back across the very point it is describing.
       const panel = tooltipWidth.get();
       const flip = cssX + TOOLTIP_OFFSET + panel > cssWidth;
-      write(
+      writeTravelling(
         tooltipX,
         flip ? cssX - TOOLTIP_OFFSET - panel : cssX + TOOLTIP_OFFSET,
       );
@@ -534,8 +550,8 @@ export function useChartHoverOverlay({
           values.opacity.set(0);
           continue;
         }
-        write(values.cx, point.x);
-        write(values.cy, point.y);
+        writeTravelling(values.cx, point.x);
+        writeTravelling(values.cy, point.y);
         values.opacity.set(1);
       }
 
@@ -559,7 +575,8 @@ export function useChartHoverOverlay({
       pxPerUnit,
       pillHalf,
       paintTickFade,
-      still,
+      stillCursor,
+      reducedMotion,
       coarse,
     ],
   );

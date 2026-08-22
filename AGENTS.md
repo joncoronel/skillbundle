@@ -301,11 +301,15 @@ Things that are easy to get wrong, all of which were:
   mid-animation on: taken while the dialog was still scaling open, every tick
   centre came out ~20px adrift and the wrong label faded. The label's own `x`
   times `pxPerUnit` is transform-proof, and so is `clientWidth`.
-- **Above 60 points the cursor stops animating** (`DISCRETE_THRESHOLD`, the old
-  chart's `discreteInteraction`): the ticker swaps its label instead of
-  scrolling and the rule, dots, band, pill and panel all jump. At that density
-  the points are a pixel or two apart, so a spring has nothing to travel and
-  gets retargeted on the way.
+- **Above 60 points only the crosshair and the pill stop animating**
+  (`DISCRETE_THRESHOLD`, the old chart's `discreteInteraction`): the rule, the
+  highlight band and the pill jump, and the ticker swaps its label instead of
+  scrolling. The markers and the tooltip panel keep springing at any length —
+  the old chart gated exactly three things (`TooltipIndicator animate`, the
+  pill's `left`, the ticker's compact form) and `TooltipDot` was never one of
+  them. Measured on the live old chart at 64 points: the marker travels 17
+  distinct positions between two columns. Stilling everything is the obvious
+  reading of that flag and it is wrong.
 - **A Motion spring configured `{ duration: 0, bounce: 0 }` still animates.**
   It reads like "settle immediately" and does not: measured under
   `prefers-reduced-motion: reduce`, the focus dot travelled four intermediate
@@ -347,8 +351,11 @@ Things that are easy to get wrong, all of which were:
   are never read — the install chart's y axis describes neither series on its
   own — pin the domain and pass explicit `values`, which is exact and stable
   across data.
-- **Bars take 80% of their band (`padding(0.2)`)**, the old chart's `barGap`.
-  0.35 is visibly thinner and on a long series reads as a different chart.
+- **Bars take 88% of their column** (`padding(1 - 0.88)`), from the old
+  `computeSeriesBarWidth`'s `min(slot * 0.88, maxBarSize)`. The `barGap = 0.2`
+  default that sits next to it belonged to the standalone BarChart; the install
+  dialog was a ComposedChart and never used it. Measured on the live old chart:
+  width/pitch 0.881.
 - **Do not call `setControlledFocus` when focus has not moved.** It repaints the
   whole scene and restarts every mark-state transition, so calling it per
   pointer move retargets the bars' 120ms fade every frame: the fade never runs
