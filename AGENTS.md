@@ -284,6 +284,24 @@ Things that are easy to get wrong, all of which were:
   Covering the labels with a strip of surface colour was tried instead and
   reads as a blank bar sweeping the axis; so does standing the whole row down,
   which the old chart did not do either.
+- **The hover dim is a CSS transition, not renderer motion.** The renderer
+  re-resolves and re-animates every mark state on each focus change, restarting
+  from the live DOM value, so during a scrub a bar the cursor has already left
+  is handed a fresh tween every column and never arrives: measured mid-drag it
+  decayed 1 → 0.86 → 0.63 → 0.48 → 0.45 and levelled off, where the old chart's
+  reached 0.3 in 123ms and stayed. A CSS transition ignores a write that does
+  not change the target, which is what the old per-bar Motion `animate` did.
+  The states write instantly (`NO_MOTION`) and `globals.css` owns the ramp.
+- **The tooltip panel has an entrance the rest of the cursor does not.** The old
+  `TooltipBox` faded its wrapper over 100ms while the panel inside scaled from
+  0.85 and slid 20px in from whichever side it had flipped to, and faded out on
+  exit. It is driven off its own MotionValues (`panelOpacity` / `panelScale` /
+  `panelSlide`), not the shared `opacity`, which still cuts instantly for the
+  rule and the dots as it always did.
+- **A captured touch keeps the chart until it lifts.** The plot-bounds check is
+  for a hovering mouse; applying it to a drag is what made the cursor vanish the
+  moment a finger strayed below the plot. On the old chart you could drag off
+  the chart, off the dialog, and keep scrubbing.
 - **Mark states cannot animate from an absent attribute.** A state that sets
   only the dimmed value leaves the focused node with no attribute at all, so
   the renderer has no `from` to tween: the dim lands in one frame and the

@@ -812,6 +812,30 @@ html {
   transition: opacity 120ms ease-out;
 }
 
+/* The hover dim on both series, as a CSS transition rather than the renderer's
+   own motion — the old chart's per-bar `transition={{ opacity: { duration:
+   0.12 } }}` and its 0.4s line dim, in the one form that survives a scrub.
+
+   The renderer re-animates every mark state on each focus change, restarting
+   from the live DOM value, so a bar the cursor has already passed keeps being
+   handed a new tween and never lands (see `NO_MOTION` in series-state.ts). CSS
+   ignores a write that does not change the target, so each bar's fade runs once
+   and completes on time. The states themselves write instantly. */
+.ts-chart__bar rect {
+  transition: fill-opacity 120ms ease-out;
+}
+
+.ts-chart__line path {
+  transition: stroke-opacity 400ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-chart__bar rect,
+  .ts-chart__line path {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ts-chart__axes text[data-ts-key^="x-tick-label"] {
     transition: none;

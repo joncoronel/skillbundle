@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import {
+  animate,
   motion,
   useMotionValue,
   useMotionValueEvent,
@@ -72,6 +73,19 @@ const MAX_MARKERS = 3;
 const TICK_FADE_CLEARANCE = 10;
 const TICK_FADE_BUFFER = 20;
 
+/** The old `TooltipBox`'s inner entrance spring. */
+const PANEL_ENTER_SPRING = {
+  type: "spring",
+  stiffness: 300,
+  damping: 25,
+} as const;
+
+/** Where the panel starts its entrance, and how far it slides in. */
+const PANEL_ENTER_SCALE = 0.85;
+const PANEL_ENTER_SLIDE = 20;
+/** The old wrapper's fade, in seconds. */
+const PANEL_FADE = 0.1;
+
 const DOT_RADIUS = 5;
 const DOT_STROKE_WIDTH = 2.5;
 
@@ -137,6 +151,9 @@ export interface ChartHoverOverlayController {
   readonly monthSegments: readonly { month: string; key: string }[];
   readonly tooltipX: MotionValue<number>;
   readonly tooltipWidth: MotionValue<number>;
+  readonly panelOpacity: MotionValue<number>;
+  readonly panelScale: MotionValue<number>;
+  readonly panelSlide: MotionValue<number>;
   /**
    * The panel's own nodes and its current content adapter.
    *
@@ -304,6 +321,12 @@ export function useChartHoverOverlay({
   const pxPerUnit = useMotionValue(1);
   const tooltipX = useSpring(0, focus);
   const tooltipWidth = useMotionValue(0);
+  // The panel's own entrance, which the rest of the cursor does not have: the
+  // old `TooltipBox` faded its wrapper in over 100ms while the panel inside
+  // scaled up from 0.85 and slid 20px in from whichever side it had flipped to.
+  const panelOpacity = useMotionValue(0);
+  const panelScale = useSpring(1, PANEL_ENTER_SPRING);
+  const panelSlide = useSpring(0, PANEL_ENTER_SPRING);
   const tooltipSlots = useRef<TooltipSlots>({
     title: null,
     rows: new Map(),
@@ -455,6 +478,12 @@ export function useChartHoverOverlay({
       const host = hostRef.current;
       if (points.length === 0 || !host) {
         opacity.set(0);
+        // The panel fades rather than cutting, as the old wrapper's `exit` did.
+        if (reducedMotion) {
+          panelOpacity.jump(0);
+        } else {
+          animate(panelOpacity, 0, { duration: PANEL_FADE });
+        }
         wasActive.current = false;
         paintTickFade(null);
         return;
@@ -532,6 +561,22 @@ export function useChartHoverOverlay({
       );
       paintTooltip(tooltipSlots.current, index, points);
 
+      if (entering) {
+        // Start small and offset toward the cursor, then spring into place. The
+        // slide runs from whichever side the panel resolved to, so it always
+        // grows out of the point it is describing.
+        if (reducedMotion) {
+          panelOpacity.jump(1);
+        } else {
+          panelScale.jump(PANEL_ENTER_SCALE);
+          panelSlide.jump(flip ? PANEL_ENTER_SLIDE : -PANEL_ENTER_SLIDE);
+          panelOpacity.jump(0);
+          animate(panelOpacity, 1, { duration: PANEL_FADE });
+        }
+        panelScale.set(1);
+        panelSlide.set(0);
+      }
+
       write(bandX, Math.min(bandStart, bandEnd));
       write(bandWidth, Math.abs(bandEnd - bandStart));
       write(ruleX, x);
@@ -578,6 +623,9 @@ export function useChartHoverOverlay({
       stillCursor,
       reducedMotion,
       coarse,
+      panelOpacity,
+      panelScale,
+      panelSlide,
     ],
   );
 
@@ -600,12 +648,21 @@ export function useChartHoverOverlay({
         event.clientY,
       );
       const box = plotBox.current;
+      // A finger that has already grabbed the chart keeps it: the gesture is
+      // captured, so it goes on scrubbing wherever it travels — off the plot,
+      // off the dialog, anywhere — until it lifts, which is what the old chart
+      // did. The bounds check is for a hovering mouse, which has no such
+      // commitment and should let go the moment it is over the axis gutter
+      // rather than the plot. Focus stays on the nearest column either way,
+      // since every chart resolves with an unbounded `maxFocusDistance`.
+      const dragging = touchId.current !== null;
       const inside =
         resolved && box
-          ? resolved.position.x >= box.x - PLOT_HIT_SLACK &&
-            resolved.position.x <= box.x + box.width + PLOT_HIT_SLACK &&
-            resolved.position.y >= box.y - PLOT_HIT_SLACK &&
-            resolved.position.y <= box.y + box.height + PLOT_HIT_SLACK
+          ? dragging ||
+            (resolved.position.x >= box.x - PLOT_HIT_SLACK &&
+              resolved.position.x <= box.x + box.width + PLOT_HIT_SLACK &&
+              resolved.position.y >= box.y - PLOT_HIT_SLACK &&
+              resolved.position.y <= box.y + box.height + PLOT_HIT_SLACK)
           : false;
       const target = inside ? resolved : null;
       // Everything the overlay draws is anchored to the focused point, not to
@@ -705,6 +762,9 @@ export function useChartHoverOverlay({
     monthSegments: segments,
     tooltipX,
     tooltipWidth,
+    panelOpacity,
+    panelScale,
+    panelSlide,
     tooltipSlots,
     onRender,
     pointerProps,
@@ -1156,7 +1216,9 @@ function TooltipPanel({
       style={{
         left: controller.tooltipX,
         top,
-        opacity: controller.opacity,
+        opacity: controller.panelOpacity,
+        scale: controller.panelScale,
+        x: controller.panelSlide,
       }}
     >
       {/* The chrome surface, matching the tooltip component's `chrome` variant:
