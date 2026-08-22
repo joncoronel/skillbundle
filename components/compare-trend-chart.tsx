@@ -12,6 +12,7 @@ import {
 } from "@/components/charts/chart";
 import {
   AXIS_TICK_LABELS,
+  evenlySpaced,
   CHART_THEME,
   datePillOffset,
   AXIS_LABEL_MARGIN_WITH_Y_AXIS,
@@ -42,6 +43,9 @@ export const COMPARE_LINE_COLORS = [
   "var(--compare-line-2)",
   "var(--compare-line-3)",
 ];
+
+/** The old chart's `XAxis numTicks={6}`; this chart is wider than the dialog's. */
+const COMPARE_TICK_COUNT = 6;
 
 const LINE_ID = "installs";
 
@@ -137,6 +141,15 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
     [series],
   );
 
+  // Above `definition`, which reads it for the axis tick candidates.
+  const days = useMemo(
+    () =>
+      Array.from(
+        new Set(drawable.flatMap((s) => s.snapshots.map((p) => p.day))),
+      ).sort(),
+    [drawable],
+  );
+
   const definition = useMemo(() => {
     const rows = buildCompareRows(drawable);
 
@@ -169,6 +182,10 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
             size: 0,
             padding: AXIS_LABEL_PADDING_WITH_Y_AXIS,
             format: dayLabel,
+            // The old chart's `numTicks={6}`. A point scale offers every day as
+            // a candidate and ignores `count`, so without this the axis prints
+            // one label per day that fits — nearly twice as many as before.
+            values: evenlySpaced(days, COMPARE_TICK_COUNT),
           },
           tickLabels: AXIS_TICK_LABELS,
         },
@@ -210,13 +227,6 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
   }, [drawable]);
 
   const hostProps = useChartHostProps();
-  const days = useMemo(
-    () =>
-      Array.from(
-        new Set(drawable.flatMap((s) => s.snapshots.map((p) => p.day))),
-      ).sort(),
-    [drawable],
-  );
 
   const overlay = useChartHoverOverlay({
     markers: useMemo(

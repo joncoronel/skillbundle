@@ -83,3 +83,26 @@ export function datePillOffset(margin: number, padding: number) {
     margin - padding - AXIS_LABEL_HALF_HEIGHT - DATE_PILL_HALF_HEIGHT,
   );
 }
+
+/**
+ * Tick candidates per axis, on both the date axis and the grid.
+ *
+ * The old chart's `XAxis numTicks` and `Grid numTicksRows`, which were the same
+ * number. Five date labels across two months, and five rules down the plot.
+ */
+export const AXIS_TICK_COUNT = 5;
+
+/**
+ * `count` values spread evenly across `values`, first and last included.
+ *
+ * For scales that offer every datum as a tick candidate and ignore `count` —
+ * band and point — where the alternative is one label per row.
+ */
+export function evenlySpaced<T>(values: readonly T[], count: number): T[] {
+  if (values.length <= count) {
+    return [...values];
+  }
+  const last = values.length - 1;
+  const step = last / (count - 1);
+  return Array.from({ length: count }, (_, i) => values[Math.round(i * step)]);
+}

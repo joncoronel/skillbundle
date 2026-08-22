@@ -7,7 +7,9 @@ import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import { INITIAL_WIDTH, useChartHostProps } from "@/components/charts/chart";
 import {
+  AXIS_TICK_COUNT,
   AXIS_TICK_LABELS,
+  evenlySpaced,
   CHART_THEME,
   datePillOffset,
   AXIS_LABEL_MARGIN,
@@ -33,6 +35,11 @@ import {
 // Daily bars are the secondary series: the design system's neutral fill,
 // softened so the Signal Blue total line stays the one accent.
 const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
+
+/**
+ * Top of the y domain, as a multiple of the largest cumulative total.
+ */
+const Y_HEADROOM = 1.08;
 
 const LINE_ID = "total";
 const BAR_ID = "daily";
@@ -126,20 +133,57 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       // the middle of each day's bar. This is also what the old chart's
       // `tickMode="data"` was emulating on a time axis.
       x: {
-        scale: () => scaleBand<string>().padding(0.35),
+        // 0.2 is the old chart's `barGap`: bars take 80% of each band. At 0.35
+        // they are visibly thinner, which on a long series reads as a different
+        // chart rather than as a spacing tweak.
+        scale: () => scaleBand<string>().padding(0.2),
         axis: {
           line: false,
-          ticks: { size: 0, padding: AXIS_LABEL_PADDING, format: dayLabel },
+          ticks: {
+            size: 0,
+            padding: AXIS_LABEL_PADDING,
+            format: dayLabel,
+            // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
+            // labels pinned to real rows, first and last included. A band scale
+            // offers every category as a candidate and ignores `count`, so the
+            // candidates are chosen here. Thinning still runs on top, which is
+            // what keeps a narrow chart from crowding.
+            values: evenlySpaced(
+              rows.map((r) => r.day),
+              AXIS_TICK_COUNT,
+            ),
+          },
           tickLabels: AXIS_TICK_LABELS,
         },
       },
       y: {
-        scale: scaleLinear,
-        nice: true,
+        // An explicit domain rather than `nice`, because nothing reads this
+        // axis: both series share it and it describes neither on its own (see
+        // `barRatio`), so round numbers buy nothing and a known top is worth
+        // more. The headroom keeps the last point of the cumulative line — its
+        // maximum, and the top of the tallest bar — off the plot's edge, where
+        // the stroke and the focus marker would be clipped.
+        scale: scaleLinear().domain([0, totalMax * Y_HEADROOM]),
         grid: true,
-        // Both series share this range but it describes neither on its own
-        // (see `barRatio`), so it stays unlabelled, as it always has been.
-        axis: false,
+        // Unlabelled, as it always has been, but its ticks still matter: the
+        // grid draws one rule per candidate, so this is what sets how many
+        // dashed lines cross the plot — the old `Grid`'s `numTicksRows={5}`.
+        //
+        // Explicit values, not `count`. `count` is a preference d3 rounds to a
+        // human-friendly step, and on this domain it overshoots badly: 5 asked
+        // for gives 8 rules, 3 gives 5. Since the numbers are never shown,
+        // dividing the domain evenly is both exact and stable across data.
+        axis: {
+          line: false,
+          ticks: {
+            size: 0,
+            values: Array.from(
+              { length: AXIS_TICK_COUNT },
+              (_, i) => (totalMax * Y_HEADROOM * i) / (AXIS_TICK_COUNT - 1),
+            ),
+          },
+          tickLabels: false,
+        },
       },
       margin: { top: 16, right: 14, left: 14, bottom: AXIS_LABEL_MARGIN },
       theme: CHART_THEME,

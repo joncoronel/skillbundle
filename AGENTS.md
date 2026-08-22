@@ -337,7 +337,31 @@ Things that are easy to get wrong, all of which were:
   it. This is also why the sidebar sparkline plots `installs - min` rather than
   the raw total — against a zero-based axis a cumulative count is a flat line.
 - **Date axes thin by `tickLabels.thin.minGap`.** Point and band scales offer
-  every category as a candidate and ignore `count`/`spacing` hints.
+  every category as a candidate and ignore `count`/`spacing` hints, so left
+  alone they print one label per row that fits — nearly twice the old chart's
+  `numTicks`. `evenlySpaced` picks the candidates instead (5 in the dialog, 6 on
+  the compare page); thinning still runs on top, which is what keeps a phone
+  from crowding.
+- **`ticks.count` is a preference d3 rounds, not a count.** On the dialog
+  chart's domain, 5 asks yields 8 grid rules and 3 yields 5. Where the numbers
+  are never read — the install chart's y axis describes neither series on its
+  own — pin the domain and pass explicit `values`, which is exact and stable
+  across data.
+- **Bars take 80% of their band (`padding(0.2)`)**, the old chart's `barGap`.
+  0.35 is visibly thinner and on a long series reads as a different chart.
+- **Do not call `setControlledFocus` when focus has not moved.** It repaints the
+  whole scene and restarts every mark-state transition, so calling it per
+  pointer move retargets the bars' 120ms fade every frame: the fade never runs
+  and reads as though it has none. Everything the overlay draws is anchored to
+  the focused point rather than the pointer, so a move within one column has
+  nothing to redraw anyway.
+- **The date pill hangs past the plot at both ends and nothing may clip it.**
+  It stays centred on its column all the way across, as the old chart's did;
+  clamping it inside decouples it from the mark it is labelling exactly where
+  that mark is easiest to point at. What keeps the overhang from widening the
+  page is the dialog and the card clipping their own overflow — verify at phone
+  width when touching this, since an overhanging absolute child otherwise
+  flicks a horizontal scrollbar mid-drag.
 
 `components/charts/chart-hover-overlay.tsx` is the only place that reaches into
 the chart's rendered DOM (for the line's `d`, and to fade the axis labels the

@@ -520,14 +520,7 @@ export function useChartHoverOverlay({
       write(bandWidth, Math.abs(bandEnd - bandStart));
       write(ruleX, x);
       writePill(pillX, cssX);
-      // The pill stops at the chart's edge, so what it covers near the ends is
-      // not what the cursor is over. Fade against where it actually sits.
-      const half = pillHalf.get();
-      paintTickFade(
-        cssWidth > half * 2
-          ? Math.min(Math.max(cssX, half), cssWidth - half)
-          : cssX,
-      );
+      paintTickFade(cssX);
       writePill(dayY, -index * TICKER_ITEM_HEIGHT);
       writePill(monthY, -(segmentOfIndex[index] ?? 0) * TICKER_ITEM_HEIGHT);
 
@@ -579,6 +572,10 @@ export function useChartHoverOverlay({
   // only while it is down.
   const touchId = useRef<number | null>(null);
 
+  // Identity of the column focus is on, so a pointer move that resolves to the
+  // same one costs nothing.
+  const lastFocus = useRef<unknown>(undefined);
+
   const inspect = useCallback(
     (event: React.PointerEvent) => {
       const resolved = interaction.current?.resolvePointer(
@@ -594,6 +591,17 @@ export function useChartHoverOverlay({
             resolved.position.y <= box.y + box.height + PLOT_HIT_SLACK
           : false;
       const target = inside ? resolved : null;
+      // Everything the overlay draws is anchored to the focused point, not to
+      // the raw pointer, so between two positions over the same column there is
+      // nothing to redraw. Skipping matters: `setControlledFocus` repaints the
+      // whole scene and restarts the marks' state transitions, so calling it on
+      // every move retargets the bars' 120ms fade every frame — the fade never
+      // gets to run, which reads as it not having one.
+      const key = target?.points[0]?.datum;
+      if (key === lastFocus.current) {
+        return;
+      }
+      lastFocus.current = key;
       interaction.current?.setControlledFocus((target ?? null) as never);
       showFocus(target?.points ?? []);
     },
@@ -601,6 +609,7 @@ export function useChartHoverOverlay({
   );
 
   const release = useCallback(() => {
+    lastFocus.current = undefined;
     interaction.current?.setControlledFocus(null as never);
     showFocus([]);
   }, [showFocus]);
@@ -744,15 +753,15 @@ export function ChartHoverOverlay({
         surface={surface}
       />
       {tooltip && <TooltipPanel controller={controller} tooltip={tooltip} />}
-      {/* `clip` is a backstop, not the mechanism: the pill clamps itself inside
-          the chart (see `DatePill`), so nothing should ever reach this edge. It
-          is here because an overhanging absolute child would otherwise widen the
-          nearest scroll container — a horizontal scrollbar on a phone. `clip`
-          rather than `hidden` creates no scroll container of its own, and
-          leaves the vertical axis alone so the sparkline's marker can still
-          overhang its 34px strip. */}
+      {/* The pill hangs past this box at the first and last column, so nothing
+          here may clip: it spills into the padding of whatever the chart sits
+          in, exactly as the old chart's did. What stops that from widening the
+          page is the dialog and the card, both of which clip their own
+          overflow — verified at phone width on both, since an overhanging
+          absolute child otherwise widens the nearest scroll container and
+          flicks a horizontal scrollbar mid-drag. */}
       {showPill && (
-        <div className="pointer-events-none absolute inset-0 overflow-x-clip">
+        <div className="pointer-events-none absolute inset-0">
           <DatePill controller={controller} pillOffset={pillOffset} />
         </div>
       )}
@@ -904,17 +913,15 @@ function DatePill({
   );
   const compact = controller.labels.length > DISCRETE_THRESHOLD;
 
-  // The pill is centred on the cursor, so near either end it would hang past
-  // the chart — cut off at best, and a horizontal scrollbar at worst. It stops
-  // at the edge instead, which decouples it from the cursor for the first and
-  // last sample or two.
+  // The pill stays centred on its column the whole way across, including the
+  // first and last, which means it hangs past the plot at both ends — as the
+  // old chart's did. Clamping it inside instead is worse than the overhang: it
+  // decouples the pill from the mark it is labelling exactly where the mark is
+  // easiest to point at.
   //
-  // What is measured is the pill itself, so the clamp costs the least reach it
-  // can. It used to include a surface-coloured mask around the pill, which put
-  // the stop nearly 40px in from either edge — enough that the pill visibly
-  // gave up before the end of the series. Measured by observer rather than read
-  // in the transform: transforms run per frame, and `offsetWidth` there would
-  // force a layout on each one.
+  // Its width is still measured, for the label fade (`paintTickFade`) and for
+  // the tooltip. By observer rather than read in a transform: transforms run
+  // per frame, and `offsetWidth` there would force a layout on each one.
   const pillRef = useRef<HTMLDivElement | null>(null);
   const pillHalf = controller.pillHalf;
   useEffect(() => {
@@ -929,12 +936,6 @@ function DatePill({
     return () => observer.disconnect();
   }, [pillHalf]);
 
-  const left = useTransform(
-    [controller.pillX, pillHalf, controller.hostWidth],
-    ([x, half, width]: number[]) =>
-      width > half * 2 ? Math.min(Math.max(x, half), width - half) : x,
-  );
-
   // The offset is expressed in the same scene units as the axis margins it is
   // derived from, so it scales with them.
   const bottom = useTransform(
@@ -946,7 +947,7 @@ function DatePill({
     <motion.div
       aria-hidden="true"
       className="pointer-events-none absolute z-20 -translate-x-1/2"
-      style={{ left, bottom, opacity: controller.opacity }}
+      style={{ left: controller.pillX, bottom, opacity: controller.opacity }}
     >
       {/* The pill is opaque and sits on the tick-label row, so it hides the
           label it is standing on. Its neighbours are further apart than it is
