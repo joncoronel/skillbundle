@@ -154,6 +154,13 @@ sparkline, the install-history dialog chart, and the compare page's multi-line
 chart. Shared pieces live in `components/charts/`; each chart file owns its own
 `defineChart` definition.
 
+Styling for the library's own nodes — the grid rules, the axis labels, the bar
+and line hover dim, the entrance wipe — is in `components/charts/charts.css`,
+imported by `charts/chart.tsx` so it travels with the charts. It is deliberately
+NOT in `app/globals.css`. Those selectors reach markup the library renders and
+we never author, which is the one thing a utility class cannot do; anything that
+can be a utility still should be.
+
 The library ships its own docs and skills inside the package —
 `node_modules/@tanstack/charts/docs/` and `.../skills/`, indexed by `llms.txt`.
 **Read those rather than relying on memory or a docs mirror**; they match the
@@ -229,7 +236,7 @@ Things that are easy to get wrong, all of which were:
   `right`/`left` is what puts a gap beside it.
 - **Entrance motion is ours, the rest is the library's.** The left-to-right
   wipe is a CSS animation on `.ts-chart__marks` (`.chart-reveal` in
-  `globals.css`); `chartMotion` is built with `initial: false` so the two do not
+  `charts/charts.css`); `chartMotion` is built with `initial: false` so the two do not
   both play. Everything else — crosshair, focus dot, highlight band, tooltip
   travel — springs through `@tanstack/charts/motion`. If chart motion looks
   dead, check the two entries below before reaching for Motion: both look like
@@ -268,7 +275,7 @@ Things that are easy to get wrong, all of which were:
   hairline, then visibly thickens. `INITIAL_WIDTH` in `charts/chart.tsx`.
 - **The chart SVG carries `tabindex="0"`, and Chrome treats a click on it as
   focus-visible.** The browser ring around the whole plot is suppressed in
-  `globals.css`; the chart paints its own, far more precise focus state (rule,
+  `charts/charts.css`; the chart paints its own, far more precise focus state (rule,
   marker, tooltip), so this costs no accessibility.
 - **The chart strips inline styles off its own nodes when it repaints**, and it
   repaints on every focus change. The node object survives, its `style` does
@@ -291,7 +298,7 @@ Things that are easy to get wrong, all of which were:
   decayed 1 → 0.86 → 0.63 → 0.48 → 0.45 and levelled off, where the old chart's
   reached 0.3 in 123ms and stayed. A CSS transition ignores a write that does
   not change the target, which is what the old per-bar Motion `animate` did.
-  The states write instantly (`NO_MOTION`) and `globals.css` owns the ramp.
+  The states write instantly (`NO_MOTION`) and `charts/charts.css` owns the ramp.
 - **The tooltip panel has an entrance the rest of the cursor does not.** The old
   `TooltipBox` faded its wrapper over 100ms while the panel inside scaled from
   0.85 and slid 20px in from whichever side it had flipped to, and faded out on
@@ -347,7 +354,7 @@ Things that are easy to get wrong, all of which were:
   on its own.
 - **Grid stroke style is CSS, not definition.** `grid` is a boolean and the
   theme carries only a color, so the dash pattern and the opacity reset live in
-  `globals.css`. The reset matters: the renderer draws grid rules at
+  `charts/charts.css`. The reset matters: the renderer draws grid rules at
   `stroke-opacity: 0.11` over a `--border` that is itself ~10% opaque, and the
   two multiply out to invisible.
 - **A `scale:` factory infers its domain; only a configured _instance_ keeps

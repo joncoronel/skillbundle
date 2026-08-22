@@ -3,6 +3,9 @@
 import type { CSSProperties } from "react";
 import { chartMotion } from "./chart-motion";
 import { CHART_HOST_VARS } from "./chart-theme";
+// The library's own nodes, styled where our utilities cannot reach. Imported
+// here because every chart imports this module.
+import "./charts.css";
 
 // Shared host wiring for every chart, spread into `RendererChart` rather than
 // wrapped around it.
