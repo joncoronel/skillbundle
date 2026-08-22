@@ -946,6 +946,19 @@ function Cursor({
       ...[...host.querySelectorAll("svg.ts-chart .ts-chart__line path")].map(
         (line) => {
           const clone = line.cloneNode(false) as SVGPathElement;
+          // The lines paint through their edge-fade gradient; the band must not,
+          // or the bright segment would fade out at either end of the plot
+          // exactly where it is still describing a real point. The old chart
+          // handed `SeriesHighlightLayer` the raw `stroke` for the same reason.
+          // The mark's key carries the marker key as one of its segments
+          // ("total:string:5:total:segment:0", "installs:string:2:s0:...").
+          const segments = (line.getAttribute("data-ts-key") ?? "").split(":");
+          const marker = controller.markers.find((candidate) =>
+            segments.includes(candidate.key),
+          );
+          if (marker) {
+            clone.setAttribute("stroke", marker.color);
+          }
           clone.removeAttribute("data-ts-key");
           // Both channels: the band is the trace at full strength, and it is
           // cloned from a line that is already dimmed. `stroke-opacity` is the

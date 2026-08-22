@@ -24,6 +24,7 @@ import {
   CHART_CURVE,
   HOVER_DIM,
 } from "@/components/charts/series-state";
+import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
 import {
   dayLabel,
   dayLabelLong,
@@ -125,7 +126,10 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           y: "total",
           z: () => LINE_ID,
           curve: CHART_CURVE,
-          stroke: "var(--primary)",
+          // Painted through the edge-fade gradient, as the old chart's line was
+          // (`fadeEdges` defaulted to true on its `Line`). The overlay's
+          // highlight band stays solid — see the clone in `chart-hover-overlay`.
+          stroke: `url(#${fadeEdgesId(LINE_ID)})`,
           strokeOpacity: 1,
           strokeWidth: 2,
           states: [HOVER_DIM],
@@ -191,6 +195,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           tickLabels: false,
         },
       },
+      gradients: [fadeEdgesGradient(fadeEdgesId(LINE_ID), "var(--primary)")],
       margin: { top: 16, right: 14, left: 14, bottom: AXIS_LABEL_MARGIN },
       theme: CHART_THEME,
       focus: "group-x",

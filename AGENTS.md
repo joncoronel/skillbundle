@@ -411,6 +411,16 @@ Things that are easy to get wrong, all of which were:
   width when touching this, since an overhanging absolute child otherwise
   flicks a horizontal scrollbar mid-drag.
 
+- **Both line charts fade at the plot's left and right edges** — the old
+  `Line`'s `fadeEdges`, which defaulted to true, at the same 0/15/85/100 stops.
+  The sidebar sparkline is the exception, as it always was (`fadeEdges={false}`
+  there). The gradient is per series because a TanStack gradient carries its own
+  colour; see `charts/fade-edges.ts`. The overlay's highlight band re-paints the
+  cloned path with the series' solid colour, since inheriting the gradient would
+  fade the bright segment out at exactly the ends where it is still describing a
+  real point — the old chart handed `SeriesHighlightLayer` the raw `stroke` for
+  the same reason.
+
 `components/charts/chart-hover-overlay.tsx` is the only place that reaches into
 the chart's rendered DOM (for the line's `d`, and to fade the axis labels the
 date pill covers). That is real coupling to the library's output; it is
