@@ -97,12 +97,25 @@ export const AXIS_TICK_COUNT = 5;
  *
  * For scales that offer every datum as a tick candidate and ignore `count` —
  * band and point — where the alternative is one label per row.
+ *
+ * `count` is a target, not a quota: a neighbouring count is used instead when
+ * it divides the series exactly and `count` would not. The old chart did the
+ * same (`selectEvenlySpacedIndices` scored every layout from `count - 1` to
+ * `count + 1` and took the most even), and the difference shows on short
+ * series: six days at a target of five gave 17/18/20/21/22, dropping the 19th
+ * and leaving one gap twice the others. Six evenly spaced labels is the honest
+ * axis for six points.
  */
 export function evenlySpaced<T>(values: readonly T[], count: number): T[] {
   if (values.length <= count) {
     return [...values];
   }
   const last = values.length - 1;
-  const step = last / (count - 1);
-  return Array.from({ length: count }, (_, i) => values[Math.round(i * step)]);
+  // A layout is exactly even when its gap count divides the span.
+  const candidates = [count, count - 1, count + 1].filter(
+    (n) => n >= 2 && n <= values.length,
+  );
+  const chosen = candidates.find((n) => last % (n - 1) === 0) ?? count;
+  const step = last / (chosen - 1);
+  return Array.from({ length: chosen }, (_, i) => values[Math.round(i * step)]);
 }
