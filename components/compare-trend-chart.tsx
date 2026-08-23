@@ -224,7 +224,7 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
       focusRing: false,
       pointer: false,
     });
-  }, [drawable]);
+  }, [drawable, days]);
 
   const hostProps = useChartHostProps();
 

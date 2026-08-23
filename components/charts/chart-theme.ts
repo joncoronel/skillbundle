@@ -119,38 +119,3 @@ export function evenlySpaced<T>(values: readonly T[], count: number): T[] {
   const step = last / (chosen - 1);
   return Array.from({ length: chosen }, (_, i) => values[Math.round(i * step)]);
 }
-
-/**
- * Shifts a band-scale tick label from its band centre to where it would sit on
- * a scale that spans the plot edge to edge.
- *
- * The old chart drew bars from a band scale but positioned labels with a time
- * scale, so the first and last labels sat hard against the plot's edges while
- * the bars stayed inset by half a band. On a long series the two agree to
- * within a few pixels; on a short one they do not, and the axis reads as
- * stopping short. This reproduces that split: the marks keep the band, the
- * labels get the full width.
- *
- * `days` is the full row list, not the tick candidates — the offset depends on
- * where a label sits in the SERIES, not among the labels that survived.
- *
- * From d3's band geometry with `paddingInner === paddingOuter === padding`:
- * `step = bandwidth / (1 - padding)`, a band's centre is
- * `origin + step * (padding + i) + bandwidth / 2`, and the plot is
- * `step * (n + padding)` wide.
- */
-export function spanTickLabelDx(days: readonly string[], padding: number) {
-  const count = days.length;
-  const indexOf = new Map(days.map((day, index) => [day, index]));
-
-  return ({ value, bandwidth }: { value: unknown; bandwidth: number }) => {
-    const index = indexOf.get(String(value));
-    if (index === undefined || count < 2 || bandwidth <= 0) {
-      return 0;
-    }
-    const step = bandwidth / (1 - padding);
-    const target = (index / (count - 1)) * step * (count + padding);
-    const centre = step * (padding + index) + bandwidth / 2;
-    return target - centre;
-  };
-}

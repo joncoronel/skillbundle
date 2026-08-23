@@ -381,15 +381,19 @@ Things that are easy to get wrong, all of which were:
   them. The old chart used `[0, max * 1.1]`; `compare-trend-chart.tsx` restates
   it. This is also why the sidebar sparkline plots `installs - min` rather than
   the raw total — against a zero-based axis a cumulative count is a flat line.
-- **The install chart's date labels span the plot; its bars do not.** The old
-  chart drew bars from a band scale but placed labels with a time scale, so the
-  first and last labels sat against the plot's edges while the bars stayed
-  inset by half a band. On a long series the two agree within a few pixels; at
-  six points the labels stop ~55px short, which is what makes the axis look
-  truncated. `spanTickLabelDx` reproduces the split through `tickLabels.dx`.
-  Reproduced to the pixel: 15/134/253/371/490/609 against the old chart's
-  14/133/252/372/491/610. The renderer folds `dx` into the label's `x`, so the
-  fade still measures the right place — do not add it twice.
+- **Every x scale is a point scale, including the install chart's.** It puts
+  the first and last day ON the plot's edges, so the line, its marker, the
+  crosshair, the pill and the labels all share one x. A band scale insets the
+  first and last column by half a band, which at six points leaves the axis
+  ~55px short at each end and the cursor nowhere near the label naming it. The
+  old chart ran two scales at once — bars on a band, line and labels on a time
+  scale — so ITS bars sat up to half a band from their own labels; one scale is
+  that look without the disagreement. Shifting only the labels (a `tickLabels.dx`
+  offset) was tried and is worse: the labels then align with nothing.
+  The cost is bar width. Off a band the mark has no bandwidth to read, so
+  `inferBandwidth` gives it `minimumSpacing * 0.8` — a ceiling, since `inset`
+  clamps at zero — against the old chart's 0.88 of the column. Measured at 45
+  points: 10.3px wide on a 12.8px pitch, about a pixel under the old.
 - **Date axes thin by `tickLabels.thin.minGap`.** Point and band scales offer
   every category as a candidate and ignore `count`/`spacing` hints, so left
   alone they print one label per row that fits — nearly twice the old chart's
@@ -401,11 +405,6 @@ Things that are easy to get wrong, all of which were:
   are never read — the install chart's y axis describes neither series on its
   own — pin the domain and pass explicit `values`, which is exact and stable
   across data.
-- **Bars take 88% of their column** (`padding(1 - 0.88)`), from the old
-  `computeSeriesBarWidth`'s `min(slot * 0.88, maxBarSize)`. The `barGap = 0.2`
-  default that sits next to it belonged to the standalone BarChart; the install
-  dialog was a ComposedChart and never used it. Measured on the live old chart:
-  width/pitch 0.881.
 - **Do not call `setControlledFocus` when focus has not moved.** It repaints the
   whole scene and restarts every mark-state transition, so calling it per
   pointer move retargets the bars' 120ms fade every frame: the fade never runs

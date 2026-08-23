@@ -2,14 +2,13 @@
 
 import { useMemo } from "react";
 import { barY, defineChart, lineY } from "@tanstack/charts";
-import { scaleBand } from "@tanstack/charts/scales/band";
+import { scalePoint } from "@tanstack/charts/scales/point";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import { INITIAL_WIDTH, useChartHostProps } from "@/components/charts/chart";
 import {
   AXIS_TICK_COUNT,
   AXIS_TICK_LABELS,
-  spanTickLabelDx,
   evenlySpaced,
   CHART_THEME,
   datePillOffset,
@@ -37,10 +36,6 @@ import {
 // Daily bars are the secondary series: the design system's neutral fill,
 // softened so the Signal Blue total line stays the one accent.
 const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
-
-/** Share of its column each bar paints, from the old `computeSeriesBarWidth`. */
-const BAR_COLUMN_RATIO = 0.88;
-const BAR_COLUMN_PADDING = 1 - BAR_COLUMN_RATIO;
 
 /**
  * Top of the y domain, as a multiple of the largest cumulative total.
@@ -137,18 +132,20 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           states: [HOVER_DIM],
         }),
       ],
-      // A band scale, not a time scale: there is one row per day and the bars
-      // need a band to sit in. Lines plot at band centres, so the total tracks
-      // the middle of each day's bar. This is also what the old chart's
-      // `tickMode="data"` was emulating on a time axis.
+      // A point scale, not a band: it puts the first and last day ON the plot's
+      // edges, so the line, its marker, the crosshair, the date pill and the
+      // labels all land at the same x. The old chart got there by running two
+      // scales at once — bars on a band, line and labels on a time scale — and
+      // that split is visible on a short series: its bars sat up to half a band
+      // away from the labels naming them. One scale for everything is the same
+      // look without the disagreement.
+      //
+      // The cost is bar width. Off a band the mark has no bandwidth to read, so
+      // `inferBandwidth` gives it `minimumSpacing * 0.8` — a hard ceiling, since
+      // `inset` clamps at zero — against the old chart's 0.88 of the column.
+      // About a pixel at the densities these charts see.
       x: {
-        // Bars take 88% of their column, which is the old chart's number:
-        // `computeSeriesBarWidth` sized them `min(slot * 0.88, maxBarSize)`.
-        // (The `barGap = 0.2` default nearby belonged to the standalone
-        // BarChart; this chart was a ComposedChart and never used it.) At 0.65
-        // they are visibly thinner and on a long series read as a different
-        // chart rather than as a spacing tweak.
-        scale: () => scaleBand<string>().padding(BAR_COLUMN_PADDING),
+        scale: scalePoint,
         axis: {
           line: false,
           ticks: {
@@ -156,25 +153,16 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
             padding: AXIS_LABEL_PADDING,
             format: dayLabel,
             // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
-            // labels pinned to real rows, first and last included. A band scale
-            // offers every category as a candidate and ignores `count`, so the
-            // candidates are chosen here. Thinning still runs on top, which is
-            // what keeps a narrow chart from crowding.
+            // labels pinned to real rows, first and last included. A point
+            // scale offers every category as a candidate and ignores `count`,
+            // so the candidates are chosen here. Thinning still runs on top,
+            // which is what keeps a narrow chart from crowding.
             values: evenlySpaced(
               rows.map((r) => r.day),
               AXIS_TICK_COUNT,
             ),
           },
-          tickLabels: {
-            ...AXIS_TICK_LABELS,
-            // Bars sit at band centres; their labels span the plot. See
-            // `spanTickLabelDx` — this is the old chart's band-marks /
-            // full-width-labels split, which only shows on a short series.
-            dx: spanTickLabelDx(
-              rows.map((r) => r.day),
-              BAR_COLUMN_PADDING,
-            ),
-          },
+          tickLabels: AXIS_TICK_LABELS,
         },
       },
       y: {
