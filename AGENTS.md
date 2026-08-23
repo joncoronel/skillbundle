@@ -381,6 +381,15 @@ Things that are easy to get wrong, all of which were:
   them. The old chart used `[0, max * 1.1]`; `compare-trend-chart.tsx` restates
   it. This is also why the sidebar sparkline plots `installs - min` rather than
   the raw total — against a zero-based axis a cumulative count is a flat line.
+- **The install chart's date labels span the plot; its bars do not.** The old
+  chart drew bars from a band scale but placed labels with a time scale, so the
+  first and last labels sat against the plot's edges while the bars stayed
+  inset by half a band. On a long series the two agree within a few pixels; at
+  six points the labels stop ~55px short, which is what makes the axis look
+  truncated. `spanTickLabelDx` reproduces the split through `tickLabels.dx`.
+  Reproduced to the pixel: 15/134/253/371/490/609 against the old chart's
+  14/133/252/372/491/610. The renderer folds `dx` into the label's `x`, so the
+  fade still measures the right place — do not add it twice.
 - **Date axes thin by `tickLabels.thin.minGap`.** Point and band scales offer
   every category as a candidate and ignore `count`/`spacing` hints, so left
   alone they print one label per row that fits — nearly twice the old chart's

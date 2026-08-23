@@ -9,6 +9,7 @@ import { INITIAL_WIDTH, useChartHostProps } from "@/components/charts/chart";
 import {
   AXIS_TICK_COUNT,
   AXIS_TICK_LABELS,
+  spanTickLabelDx,
   evenlySpaced,
   CHART_THEME,
   datePillOffset,
@@ -39,6 +40,7 @@ const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
 
 /** Share of its column each bar paints, from the old `computeSeriesBarWidth`. */
 const BAR_COLUMN_RATIO = 0.88;
+const BAR_COLUMN_PADDING = 1 - BAR_COLUMN_RATIO;
 
 /**
  * Top of the y domain, as a multiple of the largest cumulative total.
@@ -146,7 +148,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         // BarChart; this chart was a ComposedChart and never used it.) At 0.65
         // they are visibly thinner and on a long series read as a different
         // chart rather than as a spacing tweak.
-        scale: () => scaleBand<string>().padding(1 - BAR_COLUMN_RATIO),
+        scale: () => scaleBand<string>().padding(BAR_COLUMN_PADDING),
         axis: {
           line: false,
           ticks: {
@@ -163,7 +165,16 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
               AXIS_TICK_COUNT,
             ),
           },
-          tickLabels: AXIS_TICK_LABELS,
+          tickLabels: {
+            ...AXIS_TICK_LABELS,
+            // Bars sit at band centres; their labels span the plot. See
+            // `spanTickLabelDx` — this is the old chart's band-marks /
+            // full-width-labels split, which only shows on a short series.
+            dx: spanTickLabelDx(
+              rows.map((r) => r.day),
+              BAR_COLUMN_PADDING,
+            ),
+          },
         },
       },
       y: {
