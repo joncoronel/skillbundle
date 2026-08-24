@@ -87,7 +87,28 @@ const PANEL_ENTER_SLIDE = 20;
 const PANEL_FADE = 0.1;
 
 const DOT_RADIUS = 5;
-const DOT_STROKE_WIDTH = 2.5;
+const DOT_STROKE_WIDTH = 2;
+
+/**
+ * The crosshair's opacity along its length: full strength through the middle,
+ * out to nothing at the plot's top and bottom edges.
+ *
+ * The old `TooltipIndicator`'s own `fadeEdges`, which is separate from the one
+ * on the series line and defaulted to fading both ends. Its stops were
+ * 0/10/50/90/100; the 50% stop sat between two others at the same opacity, so
+ * it is dropped here without changing the ramp. Note the middle is opaque —
+ * a flat `strokeOpacity` of 0.6 reads fainter across the plot and harder at
+ * the ends, which is the opposite of this shape on both counts.
+ */
+const RULE_FADE = [
+  ["0%", 0],
+  ["10%", 1],
+  ["90%", 1],
+  ["100%", 0],
+] as const;
+
+/** In scene units, matching the old chart's 1px indicator. */
+const RULE_WIDTH = 1;
 
 export interface HoverMarker {
   /** Matches a focused point's group, or its mark id when it has no group. */
@@ -137,6 +158,8 @@ export interface ChartHoverOverlayController {
   readonly ruleX: MotionValue<number>;
   readonly plotTop: MotionValue<number>;
   readonly plotBottom: MotionValue<number>;
+  /** Published alongside the edges because the crosshair rect needs a height. */
+  readonly plotHeight: MotionValue<number>;
   readonly sceneWidth: MotionValue<number>;
   /** The chart's CSS width, and CSS pixels per scene unit. */
   readonly hostWidth: MotionValue<number>;
@@ -318,6 +341,7 @@ export function useChartHoverOverlay({
   const opacity = useMotionValue(0);
   const plotTop = useMotionValue(0);
   const plotBottom = useMotionValue(0);
+  const plotHeight = useMotionValue(0);
   const sceneWidth = useMotionValue(0);
   const hostWidth = useMotionValue(0);
   const pillHalf = useMotionValue(0);
@@ -448,6 +472,7 @@ export function useChartHoverOverlay({
       scenePoints.current = info.scene.points;
       plotTop.set(info.scene.chart.y);
       plotBottom.set(info.scene.chart.y + info.scene.chart.height);
+      plotHeight.set(info.scene.chart.height);
       sceneWidth.set(info.scene.width);
       samples.current = null;
       // After paint, not now: `onRender` runs with the scene in hand but before
@@ -457,7 +482,7 @@ export function useChartHoverOverlay({
       cancelAnimationFrame(measureFrame.current);
       measureFrame.current = requestAnimationFrame(measureScale);
     },
-    [plotTop, plotBottom, sceneWidth, measureScale],
+    [plotTop, plotBottom, plotHeight, sceneWidth, measureScale],
   );
 
   useEffect(() => () => cancelAnimationFrame(measureFrame.current), []);
@@ -799,6 +824,7 @@ export function useChartHoverOverlay({
     ruleX,
     plotTop,
     plotBottom,
+    plotHeight,
     sceneWidth,
     hostWidth,
     pxPerUnit,
@@ -924,7 +950,10 @@ function Cursor({
   surface: string;
 }) {
   const clipId = useId();
+  const ruleId = useId();
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // The rule is centred on the focused x, and spans the plot.
+  const ruleLeft = useTransform(controller.ruleX, (x) => x - RULE_WIDTH / 2);
 
   // Cloning happens when a hover starts rather than on render, because the
   // chart owns those paths and repaints them on resize and data change.
@@ -990,16 +1019,29 @@ function Cursor({
             y={0}
           />
         </clipPath>
+        {showRule && (
+          <linearGradient id={ruleId} x1="0" x2="0" y1="0" y2="1">
+            {RULE_FADE.map(([offset, opacity]) => (
+              <stop
+                key={offset}
+                offset={offset}
+                stopColor="var(--primary)"
+                stopOpacity={opacity}
+              />
+            ))}
+          </linearGradient>
+        )}
       </defs>
       {showRule && (
-        <motion.line
-          stroke="var(--primary)"
-          strokeOpacity={0.6}
-          strokeWidth={1}
-          x1={controller.ruleX}
-          x2={controller.ruleX}
-          y1={controller.plotTop}
-          y2={controller.plotBottom}
+        // A filled rect rather than a stroked line, because the fade runs along
+        // its length and a gradient needs a box with height to resolve against.
+        // This is how the old `TooltipIndicator` drew it too.
+        <motion.rect
+          fill={`url(#${ruleId})`}
+          height={controller.plotHeight}
+          width={RULE_WIDTH}
+          x={ruleLeft}
+          y={controller.plotTop}
         />
       )}
       <g clipPath={`url(#${clipId})`} data-band-paths />

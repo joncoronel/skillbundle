@@ -224,6 +224,12 @@ Things that are easy to get wrong, all of which were:
   node — which is why their highlight goes through the overlay's cloned band
   instead. When checking this in the DOM, note that the focused bar has NO
   `opacity` attribute rather than `opacity="1"`.
+- **The crosshair fades at its ends and is opaque through the middle** — the old
+  `TooltipIndicator`'s own `fadeEdges`, separate from the one on the series
+  line, at its 0/10/90/100 stops. It is a filled `rect`, not a stroked line,
+  because a gradient needs a box with height to resolve against. A flat
+  `strokeOpacity` reads fainter across the plot and harder at the ends, which is
+  wrong on both counts.
 - **The cursor is not the chart's.** Rule, dots, highlight band and date pill
   are all Motion, in `chart-hover-overlay.tsx`; the definitions set
   `focusRing: false` and declare no focus guides. `focusGuideX` markers do
