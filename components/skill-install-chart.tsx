@@ -19,6 +19,7 @@ import {
   ChartHoverOverlay,
   useChartHoverOverlay,
 } from "@/components/charts/chart-hover-overlay";
+import { focusCrosshair } from "@/components/charts/focus-crosshair";
 import {
   BAR_UNFOCUSED_DIM,
   CHART_CURVE,
@@ -131,6 +132,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           strokeWidth: 2,
           states: [HOVER_DIM],
         }),
+        focusCrosshair(rows.length),
       ],
       // A point scale, not a band: it puts the first and last day ON the plot's
       // edges, so the line, its marker, the crosshair, the date pill and the

@@ -51,7 +51,7 @@ const TICKER_ITEM_HEIGHT = 24;
  * against the live old chart at 64 points: the marker travels 17 distinct
  * positions between two columns.
  */
-const DISCRETE_THRESHOLD = 60;
+export const DISCRETE_THRESHOLD = 60;
 
 /**
  * Marker springs are allocated up front because hooks cannot be created in a
@@ -88,27 +88,6 @@ const PANEL_FADE = 0.1;
 
 const DOT_RADIUS = 5;
 const DOT_STROKE_WIDTH = 2;
-
-/**
- * The crosshair's opacity along its length: full strength through the middle,
- * out to nothing at the plot's top and bottom edges.
- *
- * The old `TooltipIndicator`'s own `fadeEdges`, which is separate from the one
- * on the series line and defaulted to fading both ends. Its stops were
- * 0/10/50/90/100; the 50% stop sat between two others at the same opacity, so
- * it is dropped here without changing the ramp. Note the middle is opaque —
- * a flat `strokeOpacity` of 0.6 reads fainter across the plot and harder at
- * the ends, which is the opposite of this shape on both counts.
- */
-const RULE_FADE = [
-  ["0%", 0],
-  ["10%", 1],
-  ["90%", 1],
-  ["100%", 0],
-] as const;
-
-/** In scene units, matching the old chart's 1px indicator. */
-const RULE_WIDTH = 1;
 
 export interface HoverMarker {
   /** Matches a focused point's group, or its mark id when it has no group. */
@@ -155,11 +134,7 @@ function xKey(value: unknown): string {
 export interface ChartHoverOverlayController {
   readonly bandX: MotionValue<number>;
   readonly bandWidth: MotionValue<number>;
-  readonly ruleX: MotionValue<number>;
   readonly plotTop: MotionValue<number>;
-  readonly plotBottom: MotionValue<number>;
-  /** Published alongside the edges because the crosshair rect needs a height. */
-  readonly plotHeight: MotionValue<number>;
   readonly sceneWidth: MotionValue<number>;
   /** The chart's CSS width, and CSS pixels per scene unit. */
   readonly hostWidth: MotionValue<number>;
@@ -334,14 +309,11 @@ export function useChartHoverOverlay({
 
   const bandX = useSpring(0, highlight);
   const bandWidth = useSpring(0, highlight);
-  const ruleX = useSpring(0, focus);
   const pillX = useSpring(0, focus);
   const dayY = useSpring(0, focus);
   const monthY = useSpring(0, focus);
   const opacity = useMotionValue(0);
   const plotTop = useMotionValue(0);
-  const plotBottom = useMotionValue(0);
-  const plotHeight = useMotionValue(0);
   const sceneWidth = useMotionValue(0);
   const hostWidth = useMotionValue(0);
   const pillHalf = useMotionValue(0);
@@ -471,8 +443,6 @@ export function useChartHoverOverlay({
       plotBox.current = info.scene.chart;
       scenePoints.current = info.scene.points;
       plotTop.set(info.scene.chart.y);
-      plotBottom.set(info.scene.chart.y + info.scene.chart.height);
-      plotHeight.set(info.scene.chart.height);
       sceneWidth.set(info.scene.width);
       samples.current = null;
       // After paint, not now: `onRender` runs with the scene in hand but before
@@ -482,7 +452,7 @@ export function useChartHoverOverlay({
       cancelAnimationFrame(measureFrame.current);
       measureFrame.current = requestAnimationFrame(measureScale);
     },
-    [plotTop, plotBottom, plotHeight, sceneWidth, measureScale],
+    [plotTop, sceneWidth, measureScale],
   );
 
   useEffect(() => () => cancelAnimationFrame(measureFrame.current), []);
@@ -562,18 +532,11 @@ export function useChartHoverOverlay({
       // Jump on the first frame of a hover so everything appears around the
       // cursor instead of sweeping in from the left edge; ease after that.
       const entering = !wasActive.current;
-      // The crosshair rule, and only the rule: still at high density, which is
-      // the whole of what the old chart's `TooltipIndicator animate` covered.
-      const writeRule = (value: MotionValue<number>, next: number) => {
-        if (entering || stillCursor) {
-          value.jump(next);
-        } else {
-          value.set(next);
-        }
-      };
-      // The band, the markers and the panel, which travel at any density — only
+      // The band, the markers and the panel travel at any density — only
       // reduced motion stops them. The band lived in the old chart's line
-      // layer, not its tooltip, and took no `animate` flag at all.
+      // layer, not its tooltip, and took no `animate` flag at all. The rule
+      // itself is the library's `crosshair` now (see `focus-crosshair.ts`), and
+      // carries the density gate in its own `motion`.
       const writeTravelling = (value: MotionValue<number>, next: number) => {
         if (entering || reducedMotion) {
           value.jump(next);
@@ -628,7 +591,6 @@ export function useChartHoverOverlay({
 
       writeTravelling(bandX, Math.min(bandStart, bandEnd));
       writeTravelling(bandWidth, Math.abs(bandEnd - bandStart));
-      writeRule(ruleX, x);
       writePill(pillX, cssX);
       paintTickFade(cssX);
       writePill(dayY, -index * TICKER_ITEM_HEIGHT);
@@ -655,7 +617,6 @@ export function useChartHoverOverlay({
     [
       bandX,
       bandWidth,
-      ruleX,
       pillX,
       dayY,
       monthY,
@@ -821,10 +782,7 @@ export function useChartHoverOverlay({
   return {
     bandX,
     bandWidth,
-    ruleX,
     plotTop,
-    plotBottom,
-    plotHeight,
     sceneWidth,
     hostWidth,
     pxPerUnit,
@@ -861,7 +819,6 @@ export function useChartHoverOverlay({
 export function ChartHoverOverlay({
   controller,
   children,
-  showRule = true,
   showPill = true,
   pillOffset = 0,
   dotScale = 1,
@@ -872,7 +829,6 @@ export function ChartHoverOverlay({
   children: React.ReactNode;
   /** Omit for a chart with no panel, like the sidebar sparkline. */
   tooltip?: TooltipContent;
-  showRule?: boolean;
   showPill?: boolean;
   /** Distance from the wrapper's bottom edge to the pill, in px. */
   pillOffset?: number;
@@ -904,12 +860,7 @@ export function ChartHoverOverlay({
           chart with no axis (the sparkline). */}
       <style ref={controller.tickStyleRef} />
       {children}
-      <Cursor
-        controller={controller}
-        dotScale={dotScale}
-        showRule={showRule}
-        surface={surface}
-      />
+      <Cursor controller={controller} dotScale={dotScale} surface={surface} />
       {tooltip && <TooltipPanel controller={controller} tooltip={tooltip} />}
       {/* The pill hangs past this box at the first and last column, so nothing
           here may clip: it spills into the padding of whatever the chart sits
@@ -940,20 +891,15 @@ export function ChartHoverOverlay({
  */
 function Cursor({
   controller,
-  showRule,
   dotScale,
   surface,
 }: {
   controller: ChartHoverOverlayController;
-  showRule: boolean;
   dotScale: number;
   surface: string;
 }) {
   const clipId = useId();
-  const ruleId = useId();
   const svgRef = useRef<SVGSVGElement | null>(null);
-  // The rule is centred on the focused x, and spans the plot.
-  const ruleLeft = useTransform(controller.ruleX, (x) => x - RULE_WIDTH / 2);
 
   // Cloning happens when a hover starts rather than on render, because the
   // chart owns those paths and repaints them on resize and data change.
@@ -1019,31 +965,7 @@ function Cursor({
             y={0}
           />
         </clipPath>
-        {showRule && (
-          <linearGradient id={ruleId} x1="0" x2="0" y1="0" y2="1">
-            {RULE_FADE.map(([offset, opacity]) => (
-              <stop
-                key={offset}
-                offset={offset}
-                stopColor="var(--primary)"
-                stopOpacity={opacity}
-              />
-            ))}
-          </linearGradient>
-        )}
       </defs>
-      {showRule && (
-        // A filled rect rather than a stroked line, because the fade runs along
-        // its length and a gradient needs a box with height to resolve against.
-        // This is how the old `TooltipIndicator` drew it too.
-        <motion.rect
-          fill={`url(#${ruleId})`}
-          height={controller.plotHeight}
-          width={RULE_WIDTH}
-          x={ruleLeft}
-          y={controller.plotTop}
-        />
-      )}
       <g clipPath={`url(#${clipId})`} data-band-paths />
       {controller.markers.slice(0, MAX_MARKERS).map((marker, i) => (
         <Dot

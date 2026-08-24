@@ -224,19 +224,24 @@ Things that are easy to get wrong, all of which were:
   node — which is why their highlight goes through the overlay's cloned band
   instead. When checking this in the DOM, note that the focused bar has NO
   `opacity` attribute rather than `opacity="1"`.
-- **The crosshair fades at its ends and is opaque through the middle** — the old
-  `TooltipIndicator`'s own `fadeEdges`, separate from the one on the series
-  line, at its 0/10/90/100 stops. It is a filled `rect`, not a stroked line,
-  because a gradient needs a box with height to resolve against. A flat
-  `strokeOpacity` reads fainter across the plot and harder at the ends, which is
-  wrong on both counts.
-- **The cursor is not the chart's.** Rule, dots, highlight band and date pill
-  are all Motion, in `chart-hover-overlay.tsx`; the definitions set
-  `focusRing: false` and declare no focus guides. `focusGuideX` markers do
-  animate, but the whole guide path wedges under a fast pointer — scrubbing
-  left and right leaves the rule and dots frozen where the scrub started, and
-  they never recover. The tooltip keeps updating throughout, which is what
-  makes it look like a rendering bug rather than a motion one.
+- **The rule is the library's; the rest of the cursor is ours.**
+  `focus-crosshair.ts` returns a `crosshair` mark — neutral, dashed, placed LAST
+  in `marks` because mark order is paint order and earlier hides it behind the
+  bars. Dots, highlight band, date pill and tooltip panel stay Motion, in
+  `chart-hover-overlay.tsx`, because none is expressible as a guide: the band
+  re-strokes the line through a moving window, the pill is a two-track ticker
+  that overhangs the plot, and a guide's own label is clamped inside it.
+- **The guide runs on the renderer's motion, not the overlay's.** Two
+  consequences: hand it `FOCUS_SPRING` or it drifts from the marker it shares an
+  x with (~4px mid-travel on the renderer's default), and gate it separately at
+  `DISCRETE_THRESHOLD` — the overlay's `jump()` writes cannot reach it.
+- **The library's focus guides do NOT wedge under a fast pointer.** This file
+  claimed they did, and that was the stated reason for hand-rolling the cursor.
+  Measured against our own rule through a fast scrub: 80 distinct positions in
+  90 frames versus 89, ending 5.8 units apart. The original freeze was
+  self-inflicted — `setControlledFocus` on every pointer move cancels the
+  in-flight animation, the same bug that later stopped the bar fade completing
+  (see the note on not calling it when focus has not moved).
 - **`tooltip.offset` applies along the placement's primary axis.** `bottom-*`
   offsets vertically and leaves the panel horizontally flush with the cursor;
   `right`/`left` is what puts a gap beside it.

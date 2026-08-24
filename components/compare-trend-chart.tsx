@@ -22,6 +22,7 @@ import {
   ChartHoverOverlay,
   useChartHoverOverlay,
 } from "@/components/charts/chart-hover-overlay";
+import { focusCrosshair } from "@/components/charts/focus-crosshair";
 import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
@@ -169,6 +170,8 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           curve: CHART_CURVE,
           states: [HOVER_DIM],
         }),
+        // Last, so it paints over the lines rather than under them.
+        focusCrosshair(days.length),
       ],
       // Days are discrete samples, one per cron run, so they are positions on a
       // point scale rather than instants on a time scale. This also keeps every

@@ -121,12 +121,7 @@ export function InstallSparkline({
 
   return (
     // No rule or pill over a 40px strip; the sidebar prints the value.
-    <ChartHoverOverlay
-      controller={overlay}
-      dotScale={0.75}
-      showPill={false}
-      showRule={false}
-    >
+    <ChartHoverOverlay controller={overlay} dotScale={0.75} showPill={false}>
       <RendererChart
         {...hostProps}
         initialWidth={INITIAL_WIDTH.sparkline}
