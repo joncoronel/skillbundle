@@ -23,6 +23,8 @@ import {
   useChartHoverOverlay,
 } from "@/components/charts/chart-hover-overlay";
 import { focusCrosshair } from "@/components/charts/focus-crosshair";
+import { CHART_TOOLTIP } from "@/components/charts/chart-tooltip";
+import { ChartTooltipPanel } from "@/components/charts/chart-tooltip-panel";
 import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
@@ -219,6 +221,7 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
       ),
       margin: { top: 16, right: 16, bottom: AXIS_LABEL_MARGIN_WITH_Y_AXIS },
       theme: CHART_THEME,
+      tooltip: CHART_TOOLTIP,
       focus: "group-x",
       maxFocusDistance: Number.POSITIVE_INFINITY,
       // The overlay owns the gesture and every cursor visual; see
@@ -266,10 +269,6 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           AXIS_LABEL_MARGIN_WITH_Y_AXIS,
           AXIS_LABEL_PADDING_WITH_Y_AXIS,
         )}
-        tooltip={{
-          title: (index) => dayLabelLong(days[index] ?? ""),
-          value: (point) => intFmt((point.datum as CompareRow).installs),
-        }}
       >
         <RendererChart
           {...hostProps}
@@ -281,6 +280,20 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           className={CHART_REVEAL_CLASS}
           definition={definition}
           onFocusChange={overlay.onFocusChange}
+          renderTooltipBody={({ points }) => (
+            <ChartTooltipPanel
+              rows={overlay.markers.flatMap((marker) => {
+                const point = points.find(
+                  (candidate) =>
+                    String(candidate.group ?? candidate.markId) === marker.key,
+                );
+                return point
+                  ? [{ marker, value: intFmt(point.datum.installs) }]
+                  : [];
+              })}
+              title={dayLabelLong(points[0]?.datum.day ?? "")}
+            />
+          )}
           onRender={overlay.onRender}
           style={{
             ...hostProps.style,

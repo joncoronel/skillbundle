@@ -110,3 +110,29 @@
     transition: none;
   }
 }
+
+/* The tooltip wrapper is a pass-through: our panel is the visible surface.
+ *
+ * The extension paints its own card — Canvas background, a hairline border,
+ * 0.45rem radius, padding and a drop shadow — and renders `renderTooltipBody`
+ * inside it, so without this our chrome panel sits nested in a white box. Each
+ * of those is a custom property with a fallback, which is the documented way to
+ * restyle it, so neutralising them here leaves the extension owning position
+ * and visibility while the body owns everything visual.
+ *
+ * `max-width` goes too: the panel caps its own width, and the wrapper's default
+ * `min(24rem, 80%)` would cut the rows before that cap applies.
+ *
+ * Document-level and keyed on the class rather than scoped under the chart:
+ * the portal can move this into the top layer, and the fallback path reparents
+ * it to the document body, where chart-scoped properties would not reach it. */
+.ts-chart-tooltip {
+  --ts-chart-tooltip-background: transparent;
+  --ts-chart-tooltip-border: 0;
+  --ts-chart-tooltip-border-radius: 0;
+  --ts-chart-tooltip-color: inherit;
+  --ts-chart-tooltip-font: inherit;
+  --ts-chart-tooltip-max-width: none;
+  --ts-chart-tooltip-padding: 0;
+  --ts-chart-tooltip-shadow: none;
+}

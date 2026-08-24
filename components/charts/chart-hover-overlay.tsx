@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 import {
-  animate,
   motion,
   useMotionValue,
   useMotionValueEvent,
@@ -16,7 +15,6 @@ import {
   HIGHLIGHT_SPRING,
   useCoarsePointer,
 } from "./chart-motion";
-import { TOOLTIP_OFFSET } from "./chart-tooltip";
 import { cn } from "@/lib/utils";
 
 // Everything that follows the cursor — the rule, the dots, the highlight band
@@ -72,19 +70,6 @@ const MAX_MARKERS = 3;
  */
 const TICK_FADE_CLEARANCE = 10;
 const TICK_FADE_BUFFER = 20;
-
-/** The old `TooltipBox`'s inner entrance spring. */
-const PANEL_ENTER_SPRING = {
-  type: "spring",
-  stiffness: 300,
-  damping: 25,
-} as const;
-
-/** Where the panel starts its entrance, and how far it slides in. */
-const PANEL_ENTER_SCALE = 0.85;
-const PANEL_ENTER_SLIDE = 20;
-/** The old wrapper's fade, in seconds. */
-const PANEL_FADE = 0.1;
 
 const DOT_RADIUS = 5;
 const DOT_STROKE_WIDTH = 2;
@@ -154,20 +139,6 @@ export interface ChartHoverOverlayController {
   readonly markers: readonly HoverMarker[];
   readonly markerValues: readonly MarkerValues[];
   readonly monthSegments: readonly { month: string; key: string }[];
-  readonly tooltipX: MotionValue<number>;
-  readonly tooltipWidth: MotionValue<number>;
-  readonly panelOpacity: MotionValue<number>;
-  readonly panelScale: MotionValue<number>;
-  readonly panelSlide: MotionValue<number>;
-  /**
-   * The panel's own nodes and its current content adapter.
-   *
-   * `showFocus` writes them inline rather than signalling through a
-   * MotionValue: `useMotionValueEvent` keeps whichever callback was registered
-   * on mount, and a listener reading refs through that stale closure ran a
-   * focus change behind, so the panel showed the previous day's date.
-   */
-  readonly tooltipSlots: React.RefObject<TooltipSlots>;
   /** Pass to the chart's `onRender`; captures the plot box for the rule. */
   onRender: (info: {
     scene: {
@@ -331,21 +302,6 @@ export function useChartHoverOverlay({
   // Read off the painted SVG rather than derived from `scene.width`, which is
   // the container measurement and not the unit the scene is drawn in.
   const pxPerUnit = useMotionValue(1);
-  const tooltipX = useSpring(0, focus);
-  const tooltipWidth = useMotionValue(0);
-  // The panel's own entrance, which the rest of the cursor does not have: the
-  // old `TooltipBox` faded its wrapper in over 100ms while the panel inside
-  // scaled up from 0.85 and slid 20px in from whichever side it had flipped to.
-  const panelOpacity = useMotionValue(0);
-  const panelScale = useSpring(1, PANEL_ENTER_SPRING);
-  const panelSlide = useSpring(0, PANEL_ENTER_SPRING);
-  const tooltipSlots = useRef<TooltipSlots>({
-    title: null,
-    rows: new Map(),
-    values: new Map(),
-    content: null,
-    markers: [],
-  });
 
   const marker0 = useMarkerValues(focus);
   const marker1 = useMarkerValues(focus);
@@ -495,12 +451,6 @@ export function useChartHoverOverlay({
       const host = hostRef.current;
       if (points.length === 0 || !host) {
         opacity.set(0);
-        // The panel fades rather than cutting, as the old wrapper's `exit` did.
-        if (reducedMotion) {
-          panelOpacity.jump(0);
-        } else {
-          animate(panelOpacity, 0, { duration: PANEL_FADE });
-        }
         wasActive.current = false;
         paintTickFade(null);
         return;
@@ -555,39 +505,8 @@ export function useChartHoverOverlay({
         }
       };
 
-      // The pill and the panel are HTML: they take CSS pixels, not scene units.
-      const scale = pxPerUnit.get();
-      const cssX = x * scale;
-      const cssWidth = hostWidth.get();
-
-      // The old placement rule, verbatim: sit one offset to the right of the
-      // cursor, and flip to the left only when that would run past the chart.
-      // Never anything in between — that is what keeps it off the marker. The
-      // built-in tooltip clamps into the chart box instead, which slides it
-      // back across the very point it is describing.
-      const panel = tooltipWidth.get();
-      const flip = cssX + TOOLTIP_OFFSET + panel > cssWidth;
-      writeTravelling(
-        tooltipX,
-        flip ? cssX - TOOLTIP_OFFSET - panel : cssX + TOOLTIP_OFFSET,
-      );
-      paintTooltip(tooltipSlots.current, index, points);
-
-      if (entering) {
-        // Start small and offset toward the cursor, then spring into place. The
-        // slide runs from whichever side the panel resolved to, so it always
-        // grows out of the point it is describing.
-        if (reducedMotion) {
-          panelOpacity.jump(1);
-        } else {
-          panelScale.jump(PANEL_ENTER_SCALE);
-          panelSlide.jump(flip ? PANEL_ENTER_SLIDE : -PANEL_ENTER_SLIDE);
-          panelOpacity.jump(0);
-          animate(panelOpacity, 1, { duration: PANEL_FADE });
-        }
-        panelScale.set(1);
-        panelSlide.set(0);
-      }
+      // The pill is HTML: it takes CSS pixels, not scene units.
+      const cssX = x * pxPerUnit.get();
 
       writeTravelling(bandX, Math.min(bandStart, bandEnd));
       writeTravelling(bandWidth, Math.abs(bandEnd - bandStart));
@@ -624,8 +543,6 @@ export function useChartHoverOverlay({
       segmentOfIndex,
       markers,
       markerValues,
-      tooltipX,
-      tooltipWidth,
       hostWidth,
       pxPerUnit,
       pillHalf,
@@ -633,9 +550,6 @@ export function useChartHoverOverlay({
       stillCursor,
       reducedMotion,
       coarse,
-      panelOpacity,
-      panelScale,
-      panelSlide,
     ],
   );
 
@@ -798,12 +712,6 @@ export function useChartHoverOverlay({
     markers,
     markerValues,
     monthSegments: segments,
-    tooltipX,
-    tooltipWidth,
-    panelOpacity,
-    panelScale,
-    panelSlide,
-    tooltipSlots,
     onRender,
     onFocusChange,
     pointerProps,
@@ -823,12 +731,9 @@ export function ChartHoverOverlay({
   pillOffset = 0,
   dotScale = 1,
   surface = "var(--background)",
-  tooltip,
 }: {
   controller: ChartHoverOverlayController;
   children: React.ReactNode;
-  /** Omit for a chart with no panel, like the sidebar sparkline. */
-  tooltip?: TooltipContent;
   showPill?: boolean;
   /** Distance from the wrapper's bottom edge to the pill, in px. */
   pillOffset?: number;
@@ -861,7 +766,6 @@ export function ChartHoverOverlay({
       <style ref={controller.tickStyleRef} />
       {children}
       <Cursor controller={controller} dotScale={dotScale} surface={surface} />
-      {tooltip && <TooltipPanel controller={controller} tooltip={tooltip} />}
       {/* The pill hangs past this box at the first and last column, so nothing
           here may clip: it spills into the padding of whatever the chart sits
           in, exactly as the old chart's did. What stops that from widening the
@@ -1159,177 +1063,5 @@ function CompactLabel({
       className="flex h-6 items-center text-sm font-medium whitespace-nowrap"
       ref={ref}
     />
-  );
-}
-
-interface TooltipSlots {
-  title: HTMLElement | null;
-  rows: Map<string, HTMLElement>;
-  values: Map<string, HTMLElement>;
-  content: TooltipContent | null;
-  markers: readonly HoverMarker[];
-}
-
-/** Writes the focused day and its per-series values into the panel. */
-function paintTooltip(
-  slots: TooltipSlots,
-  index: number,
-  points: readonly FocusedPoint[],
-) {
-  const { content } = slots;
-  if (!content) {
-    return;
-  }
-  if (slots.title) {
-    slots.title.textContent = content.title(index);
-  }
-  for (const marker of slots.markers) {
-    const point = points.find(
-      (candidate) => String(candidate.group ?? candidate.markId) === marker.key,
-    );
-    const row = slots.rows.get(marker.key);
-    if (row) {
-      row.hidden = !point;
-    }
-    const value = slots.values.get(marker.key);
-    if (value && point) {
-      value.textContent = content.value(point, marker);
-    }
-  }
-}
-
-export interface TooltipContent {
-  /** Heading for the focused column, by its index along the x axis. */
-  title: (index: number) => string;
-  /** Row value for one focused point. */
-  value: (point: { datum: unknown }, marker: HoverMarker) => string;
-}
-
-/**
- * The hover panel.
- *
- * Ours rather than the chart's because the built-in one clamps itself into the
- * chart box: where the panel does not fit beside the cursor it slides back over
- * it, covering the marker it is describing. That clamping cannot be turned off.
- * The old chart hung off the edge instead, and this reproduces that.
- *
- * Its contents are written imperatively for the same reason the rest of the
- * overlay is: React state here would re-render the chart on every pointer move
- * and cancel its motion. The row structure is fixed — one per series — so only
- * the text ever changes.
- */
-function TooltipPanel({
-  controller,
-  tooltip,
-}: {
-  controller: ChartHoverOverlayController;
-  tooltip: TooltipContent;
-}) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-
-  // The panel hands its nodes and the current adapter to the controller, and
-  // `showFocus` writes them directly. Registering on every render keeps the
-  // adapter fresh — it closes over data that arrives after mount.
-  controller.tooltipSlots.current.content = tooltip;
-  controller.tooltipSlots.current.markers = controller.markers;
-
-  useEffect(() => {
-    const el = panelRef.current;
-    if (!el) {
-      return;
-    }
-    const measure = () => controller.tooltipWidth.set(el.offsetWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [controller.tooltipWidth]);
-
-  // `plotTop` is a scene value and this panel is HTML, so it converts like the
-  // pill's x does.
-  const top = useTransform(
-    [controller.plotTop, controller.pxPerUnit],
-    ([y, scale]: number[]) => y * scale,
-  );
-
-  return (
-    <motion.div
-      aria-hidden="true"
-      className="pointer-events-none absolute z-10"
-      style={{
-        left: controller.tooltipX,
-        top,
-        opacity: controller.panelOpacity,
-        scale: controller.panelScale,
-        x: controller.panelSlide,
-      }}
-    >
-      {/* The chrome surface, matching the tooltip component's `chrome` variant:
-          the same near-black fill in both themes, with `data-surface` re-pointing
-          --foreground / --muted-foreground / --border onto it so the row labels
-          read correctly against it. It also puts the panel and the date pill on
-          the same material, which is what they were on the old chart.
-
-          Fill only, like the variant: `--chrome-shadow` is its opt-in edge, for
-          a header bar rather than a label.
-
-          The radius is the old chart's `rounded-lg` (12px), not the variant's
-          `rounded-sm` (8px): this is a two-row data panel about 190px wide, not
-          the one-line label that variant is sized for. */}
-      <div
-        className="min-w-[9rem] overflow-hidden rounded-lg bg-chrome px-3 py-2.5 text-foreground"
-        data-surface="chrome"
-        ref={panelRef}
-        style={{
-          // Capped so it always fits beside the cursor. Below roughly twice its
-          // width the chart has no room either side, and the panel would hang
-          // off far enough to be cut by whatever the chart sits in. The rows
-          // wrap at that point, which is the trade: a taller panel next to the
-          // marker beats a wider one sliced by the card's edge.
-          maxWidth: "min(16rem, calc(50vw - 3.5rem))",
-        }}
-      >
-        <div
-          className="mb-2 text-xs font-medium"
-          ref={(el) => {
-            controller.tooltipSlots.current.title = el;
-          }}
-        />
-        <div className="space-y-1.5">
-          {controller.markers.map((marker) => (
-            <div
-              className="flex items-center justify-between gap-4"
-              key={marker.key}
-              ref={(el) => {
-                if (el) {
-                  controller.tooltipSlots.current.rows.set(marker.key, el);
-                }
-              }}
-            >
-              {/* The label gives way, not the number: a long skill name
-                  ellipsizes rather than wrapping and squeezing the value it is
-                  labelling out of the panel. */}
-              <div className="flex min-w-0 items-center gap-2">
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: marker.swatch ?? marker.color }}
-                />
-                <span className="truncate text-sm text-muted-foreground">
-                  {marker.label}
-                </span>
-              </div>
-              <span
-                className="shrink-0 text-sm font-medium tabular-nums"
-                ref={(el) => {
-                  if (el) {
-                    controller.tooltipSlots.current.values.set(marker.key, el);
-                  }
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-    </motion.div>
   );
 }

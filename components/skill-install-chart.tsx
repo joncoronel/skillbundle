@@ -20,6 +20,8 @@ import {
   useChartHoverOverlay,
 } from "@/components/charts/chart-hover-overlay";
 import { focusCrosshair } from "@/components/charts/focus-crosshair";
+import { CHART_TOOLTIP } from "@/components/charts/chart-tooltip";
+import { ChartTooltipPanel } from "@/components/charts/chart-tooltip-panel";
 import {
   BAR_UNFOCUSED_DIM,
   CHART_CURVE,
@@ -207,6 +209,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       gradients: [fadeEdgesGradient(fadeEdgesId(LINE_ID), "var(--primary)")],
       margin: { top: 16, right: 14, left: 14, bottom: AXIS_LABEL_MARGIN },
       theme: CHART_THEME,
+      tooltip: CHART_TOOLTIP,
       focus: "group-x",
       maxFocusDistance: Number.POSITIVE_INFINITY,
       // The overlay owns the gesture and every cursor visual; see
@@ -229,15 +232,6 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       <ChartHoverOverlay
         controller={overlay}
         pillOffset={datePillOffset(AXIS_LABEL_MARGIN, AXIS_LABEL_PADDING)}
-        tooltip={{
-          title: (index) => dayLabelLong(snapshots[index]?.day ?? ""),
-          value: (point, marker) => {
-            const row = point.datum as { total: number; daily: number };
-            return marker.key === LINE_ID
-              ? intFmt(row.total)
-              : `+${intFmt(row.daily)}`;
-          },
-        }}
       >
         <RendererChart
           {...hostProps}
@@ -246,6 +240,30 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           aspectRatio={5 / 2}
           definition={definition}
           onFocusChange={overlay.onFocusChange}
+          renderTooltipBody={({ points }) => (
+            <ChartTooltipPanel
+              rows={HOVER_MARKERS.flatMap((marker) => {
+                const point = points.find(
+                  (candidate) =>
+                    String(candidate.group ?? candidate.markId) === marker.key,
+                );
+                if (!point) {
+                  return [];
+                }
+                const row = point.datum;
+                return [
+                  {
+                    marker,
+                    value:
+                      marker.key === LINE_ID
+                        ? intFmt(row.total)
+                        : `+${intFmt(row.daily)}`,
+                  },
+                ];
+              })}
+              title={dayLabelLong(points[0]?.datum.day ?? "")}
+            />
+          )}
           onRender={overlay.onRender}
           style={{
             ...hostProps.style,
