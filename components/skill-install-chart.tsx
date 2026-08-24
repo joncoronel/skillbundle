@@ -183,21 +183,19 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         // for gives 8 rules, 3 gives 5. Since the numbers are never shown,
         // dividing the domain evenly is both exact and stable across data.
         //
-        // The division is by `AXIS_TICK_COUNT - 1` but stops one short, so no
-        // rule is drawn at the domain's ceiling. That matters because
-        // `CHART_CURVE` overshoots a steep step — measured at 21% above the
-        // last value on a one-day jump — and a rule sitting exactly at the top
-        // of the plot turns that into the line escaping a boundary. The old
-        // chart's grid came from its bar axis's round d3 ticks and stopped
-        // below the shared ceiling for the same reason; it drew its fifth rule
-        // hard against the plot's top edge, where it read as the border rather
-        // than as a grid line. Four is what both charts show.
+        // The rules divide the domain, so the topmost sits at its ceiling — on
+        // the plot's top edge, exactly where the old chart drew its own fifth
+        // rule. Stopping one short was tried, to keep `CHART_CURVE`'s overshoot
+        // on a steep step from crossing a rule: it reads as a missing line,
+        // because the remaining four are evenly spaced with precisely one slot
+        // of empty plot above them. The old chart's line crosses its top rule
+        // too.
         axis: {
           line: false,
           ticks: {
             size: 0,
             values: Array.from(
-              { length: AXIS_TICK_COUNT - 1 },
+              { length: AXIS_TICK_COUNT },
               (_, i) => (totalMax * Y_HEADROOM * i) / (AXIS_TICK_COUNT - 1),
             ),
           },

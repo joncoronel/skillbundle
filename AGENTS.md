@@ -405,14 +405,13 @@ Things that are easy to get wrong, all of which were:
   are never read — the install chart's y axis describes neither series on its
   own — pin the domain and pass explicit `values`, which is exact and stable
   across data.
-- **No grid rule at the top of the install chart's domain.** `CHART_CURVE`
-  overshoots a steep step — measured at 21% above the last value on a one-day
-  jump — so a rule sitting at the ceiling turns that into the line escaping a
-  boundary. Its values stop one short for that reason. The old chart landed in
-  the same place from the other direction: its grid came from the BAR axis's
-  round d3 ticks, which stop below the shared ceiling, and its fifth rule sat
-  hard against the plot's top edge where it read as the border. Both charts show
-  four, with the top one at 75% of the plot and the data rising past it.
+- **The install chart's top grid rule sits at the domain ceiling**, on the
+  plot's top edge — where the old chart drew its fifth rule too. Dropping it, so
+  `CHART_CURVE`'s overshoot on a steep step has no rule to cross, was tried and
+  rejected: with the remaining four evenly spaced and exactly one slot of empty
+  plot above them, it reads as a missing line. The overshoot crossing the top
+  rule is what the old chart does as well (measured: its peak 3.5 units above
+  its own top rule).
 - **Do not call `setControlledFocus` when focus has not moved.** It repaints the
   whole scene and restarts every mark-state transition, so calling it per
   pointer move retargets the bars' 120ms fade every frame: the fade never runs
