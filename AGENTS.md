@@ -193,15 +193,34 @@ Things that are easy to get wrong, all of which were:
   leaving the built-in ring on paints a second dot underneath it — and only
   ours moves, which reads as one marker lagging the other.
 - **Scene units are not CSS pixels.** The chart lays its scene out in its own
-  coordinate space and lets the viewBox scale it to the container, so in the
-  dialog a scene x of 564 paints at 594px. Anything in the overlay's SVG
-  inherits that viewBox and needs no conversion, but the date pill and the
-  tooltip panel are HTML positioned in `left`/`top`, and reading scene units
-  into those puts them further and further behind the cursor toward the right
-  edge. `pxPerUnit` in the overlay converts; it is measured off the painted
-  SVG, NOT derived from `scene.width`, which is the container measurement and a
-  different number. Nothing catches this on the compare chart, where the two
-  happen to coincide.
+  coordinate space and lets the viewBox scale it to the container, so the two
+  part company whenever the scene was laid out at a width the chart is no
+  longer painted at. Anything in the overlay's SVG inherits that viewBox and
+  needs no conversion, but the date pill and the tooltip panel are HTML
+  positioned in `left`/`top`, and reading scene units into those puts them
+  further and further behind the cursor toward the right edge. `pxPerUnit` in
+  the overlay converts; it is measured off the painted SVG, NOT derived from
+  `scene.width`, which is the scene's own width and not what it paints at.
+  They now coincide on all three charts (see the next entry), so nothing
+  exercises the conversion — do not conclude from that that it is dead.
+- **The chart measures its container with `getBoundingClientRect`, and only
+  ever re-measures when its ResizeObserver fires.** A transform changes no
+  layout box, so an entrance animation defeats both halves of that: mounted in
+  the install dialog, which opens with `scale-95`, the chart measured 592.8
+  against a 624px container and kept that number for the life of the dialog.
+  Our own code is warned off `getBoundingClientRect` during an entrance further
+  down; this is the library doing it, and it cannot be told not to.
+  `useSettledBox` (`charts/chart.tsx`) waits for the painted box to match the
+  layout box and then rebuilds the definition, which is what forces the
+  re-measure — the adapter re-lays-out on a size or definition prop change, not
+  on every commit. The visible symptom was the library's own tooltip, which
+  positions from scene coordinates without converting and so drifted left by up
+  to 31px: flush against the marker on the right, ~45px of gap on the left.
+  Handing the chart a measured `width` instead is worse and was reverted:
+  `width` means the application owns fixed geometry, so the host is pinned in
+  pixels, and in a grid item at its default `min-width: auto` that pins the
+  very track the chart is measuring — the compare chart could then never shrink
+  on resize.
 - **`resolvePointer` answers from anywhere in the element**, including the axis
   gutters — it does not know where the plot is. Without the bounds check in
   `inspect` the cursor and tooltip appear while the pointer is down among the
@@ -323,12 +342,22 @@ Things that are easy to get wrong, all of which were:
   has to strip BOTH — when the line dim moved from `opacity` to `strokeOpacity`
   the clone kept inheriting 0.5 and the bright segment came out as a half-
   strength wash of the series colour.
-- **The tooltip panel has an entrance the rest of the cursor does not.** The old
-  `TooltipBox` faded its wrapper over 100ms while the panel inside scaled from
-  0.85 and slid 20px in from whichever side it had flipped to, and faded out on
-  exit. It is driven off its own MotionValues (`panelOpacity` / `panelScale` /
-  `panelSlide`), not the shared `opacity`, which still cuts instantly for the
-  rule and the dots as it always did.
+- **The tooltip panel is the library's, and it neither eases nor enters.**
+  Measured: one column step moves it through exactly 2 positions, and a sweep
+  across 13 columns through 14 — one per column, no interpolation — while it
+  appears at full opacity with no transform. `tooltip.motion` does not change
+  this and was tried; `placeTooltip` writes `style.left` directly, and with
+  `pointer: false` the anchor is the focused datum's own scene coordinate,
+  which is discrete. Our markers still spring, so the dot glides between
+  columns while the panel steps.
+  This is the one thing the swap cost. The old `TooltipBox` faded its wrapper
+  over 100ms while the panel inside scaled from 0.85 and slid 20px in from
+  whichever side it had flipped to, and faded out on exit, off its own
+  MotionValues (`panelOpacity` / `panelScale` / `panelSlide`) rather than the
+  shared `opacity`, which still cuts instantly for the rule and the dots as it
+  always did. If it is wanted back, the entrance is reachable in CSS without
+  taking the positioning back: the extension sets `data-placement` on the
+  panel, so a keyframe can slide it in from the correct side.
 - **A captured touch keeps the chart until it lifts.** The plot-bounds check is
   for a hovering mouse; applying it to a drag is what made the cursor vanish the
   moment a finger strayed below the plot. On the old chart you could drag off

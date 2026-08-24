@@ -155,7 +155,16 @@
  * `clip` rather than `hidden`: it creates no scroll container of its own, which
  * is the whole point. The overlay's cursor — markers, highlight band, date pill
  * — is a sibling of `.ts-chart-host`, not a descendant of this, so the pill's
- * deliberate overhang past the plot is untouched. */
+ * deliberate overhang past the plot is untouched.
+ *
+ * The axis labels are NOT untouched, which is what `overflow-clip-margin` is
+ * for. The first and last sit on the plot's edges (every x scale here is a
+ * point scale) and are centred there, so half of each hangs past the box: the
+ * last one overhung by 4px and came out reading "Aug 2" instead of "Aug 21".
+ * The margin lets that ink paint without letting anything add to scrollable
+ * overflow. It cannot leak the tooltip back out, because the extension already
+ * keeps the panel 8px clear of this boundary. */
 .ts-chart-surface {
   overflow: clip;
+  overflow-clip-margin: 8px;
 }

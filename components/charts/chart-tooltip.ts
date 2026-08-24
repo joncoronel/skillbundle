@@ -11,23 +11,21 @@ export const TOOLTIP_OFFSET = 16;
 /**
  * The library's tooltip, placed beside the focused point.
  *
- * Deliberately NOT portalled. The two available behaviours are the whole of the
- * choice — the option surface has no collision-bounds setting between them:
+ * Deliberately NOT portalled. Unportalled, the panel's collision bounds are the
+ * chart, so it flips sides rather than leaving the container, and the offset
+ * holds at 16px the whole way across. Portalled, it is positioned in the top
+ * layer against the viewport instead, which has room the chart does not: on the
+ * install dialog it hangs up to 217px past the chart for the rightmost third,
+ * detaching from the dialog and floating over the backdrop.
  *
- * - Unportalled (this), the panel's collision bounds are the chart. It never
- *   leaves the container, but as the focus crosses the middle the offset is
- *   squeezed against the right edge — measured 15px, 10px, 4px, then 0 at
- *   mid-plot, where the marker sits against the panel's edge — until it flips
- *   to the left side around 70% and recovers a 39px gap.
- * - Portalled, it is positioned in the top layer against the viewport, so the
- *   offset is exactly 16px at every column. The cost is that the viewport has
- *   room the chart does not: on the install dialog it hangs up to 217px past
- *   the chart for the rightmost third, detaching from the dialog and floating
- *   over the backdrop.
- *
- * A gap that narrows for part of the sweep is a smaller flaw than a panel that
- * leaves its dialog, so the squeeze wins. Note it depends on panel width
- * against chart width: longer content widens the band where the gap is gone.
+ * This used to look like a trade rather than a choice, because unportalled the
+ * gap decayed across the plot — 15px, 10px, 4px, then flush against the marker
+ * at mid-plot, recovering ~40px once it flipped. That was not the placement
+ * logic, which is symmetric. The unportalled path positions the panel from
+ * scene coordinates and writes them as CSS pixels, so it drifts wherever the
+ * two disagree, and in the dialog they disagreed by 5%. See `useSettledBox`
+ * for why, and note the portalled path converts (`sceneToClient`), which is why
+ * only this one was affected.
  */
 export const CHART_TOOLTIP = {
   use: tooltip,

@@ -5,7 +5,11 @@ import { barY, defineChart, lineY } from "@tanstack/charts";
 import { scalePoint } from "@tanstack/charts/scales/point";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
-import { INITIAL_WIDTH, useChartHostProps } from "@/components/charts/chart";
+import {
+  INITIAL_WIDTH,
+  useChartHostProps,
+  useSettledBox,
+} from "@/components/charts/chart";
 import {
   AXIS_TICK_COUNT,
   AXIS_TICK_LABELS,
@@ -77,7 +81,24 @@ const HOVER_MARKERS = [
 export function InstallChart({ insights }: { insights: SkillInsights }) {
   const { snapshots } = insights;
 
+  const overlay = useChartHoverOverlay({
+    labels: useMemo(() => snapshots.map((s) => dayLabel(s.day)), [snapshots]),
+    markers: HOVER_MARKERS,
+  });
+
+  // This chart lives in a dialog that opens with `scale-95`, so its first
+  // measurement of the container is 95% of the real width and nothing would
+  // ever correct it. Rebuilding the definition once the box stops moving is
+  // what makes it re-measure; see `useSettledBox`.
+  const settled = useSettledBox(overlay.hostRef);
+
   const definition = useMemo(() => {
+    // Read only to make the dependency real. `settled` changes nothing about
+    // the definition; rebuilding it is itself the effect, because that is what
+    // makes the chart re-measure its container. Without this reference the
+    // dependency lints as unnecessary and `--fix` removes it.
+    void settled;
+
     // One row per day: `total` (cumulative, the line) and `daily` (gained, the
     // bars). Day-over-day can dip negative on a correction; floor at 0.
     const rows = snapshots.map((s, i) => ({
@@ -218,13 +239,9 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       focusRing: false,
       pointer: false,
     });
-  }, [snapshots]);
+  }, [snapshots, settled]);
 
   const hostProps = useChartHostProps();
-  const overlay = useChartHoverOverlay({
-    labels: useMemo(() => snapshots.map((s) => dayLabel(s.day)), [snapshots]),
-    markers: HOVER_MARKERS,
-  });
 
   return (
     <div>
