@@ -50,7 +50,11 @@ export const CHART_CURVE = d3Curve(curveMonotoneX);
  */
 export const HOVER_DIM: ChartMarkState<unknown, ChartLineStateStyle> = {
   when: () => true,
-  style: { strokeOpacity: 0.5 },
+  // 0.3, matching the bars. The old `SeriesHoverDim` defaulted to 0.5 but its
+  // `Line` call site passed `dimOpacity={0.3}`, and the default is what got
+  // copied here — measured against the live old chart, whose line sits at an
+  // effective 0.3 while the highlighted segment stays at 1.
+  style: { strokeOpacity: 0.3 },
   // Written instantly; the ramp is a CSS transition. See `BAR_UNFOCUSED_DIM`.
   transition: NO_MOTION,
 };
