@@ -4,7 +4,7 @@ import type {
   ChartMarkState,
 } from "@tanstack/charts";
 import { d3Curve } from "@tanstack/charts/d3/shape";
-import { curveNatural } from "d3-shape";
+import { curveMonotoneX } from "d3-shape";
 
 // Series presentation shared by every line we draw.
 
@@ -24,11 +24,21 @@ import { curveNatural } from "d3-shape";
 const NO_MOTION = { type: "tween", duration: 0 } as const;
 
 /**
- * The soft curve the charts have always used. TanStack keeps curve algorithms
- * injected rather than bundled, so this is the one D3 module we pull in
- * directly (`d3-shape`); everything else resolves through the compact scales.
+ * The soft curve these charts draw. TanStack keeps curve algorithms injected
+ * rather than bundled, so this is the one D3 module we pull in directly
+ * (`d3-shape`); everything else resolves through the compact scales.
+ *
+ * Monotone, not the old chart's `curveNatural`. Every series here is a
+ * cumulative install count, and a natural spline overshoots each vertex: on a
+ * one-day jump it drew the total rising 21% past the value it reached, sagging
+ * back down afterwards, and dipping 18 units below the lowest figure ever
+ * recorded. Measured on the old chart with that data: the totals never fall,
+ * and a third of the drawn line descends. That is the chart contradicting its
+ * own numbers, so it is not worth keeping for the shape. `curveMonotoneX` is
+ * the same soft cubic between points but cannot overshoot one or reverse
+ * direction between two of them.
  */
-export const CHART_CURVE = d3Curve(curveNatural);
+export const CHART_CURVE = d3Curve(curveMonotoneX);
 
 /**
  * Fades a series while any point is focused, so the highlighted band around the

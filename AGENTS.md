@@ -373,6 +373,14 @@ Things that are easy to get wrong, all of which were:
   `charts/charts.css`. The reset matters: the renderer draws grid rules at
   `stroke-opacity: 0.11` over a `--border` that is itself ~10% opaque, and the
   two multiply out to invisible.
+- **The line curve is monotone, not the old chart's `curveNatural`.** Every
+  series here is a cumulative install count, and a natural spline overshoots
+  each vertex. Measured on the old chart, on a skill whose totals never fall
+  once: a third of the drawn line descends, it peaks 21% above the value it
+  actually reached, and it dips 18 units below the lowest figure ever recorded.
+  That is the chart contradicting its own numbers. `curveMonotoneX` is the same
+  soft cubic and cannot leave the data's envelope — measured 0 units above the
+  highest point and 0 below the lowest on both charts.
 - **A `scale:` factory infers its domain; only a configured _instance_ keeps
   one.** `scale: () => scaleLinear().domain([0, max])` silently loses the zero —
   the arrow makes it a factory. Pass `scale: scaleLinear().domain([0, max])`.
@@ -406,12 +414,11 @@ Things that are easy to get wrong, all of which were:
   own — pin the domain and pass explicit `values`, which is exact and stable
   across data.
 - **The install chart's top grid rule sits at the domain ceiling**, on the
-  plot's top edge — where the old chart drew its fifth rule too. Dropping it, so
-  `CHART_CURVE`'s overshoot on a steep step has no rule to cross, was tried and
-  rejected: with the remaining four evenly spaced and exactly one slot of empty
-  plot above them, it reads as a missing line. The overshoot crossing the top
-  rule is what the old chart does as well (measured: its peak 3.5 units above
-  its own top rule).
+  plot's top edge — where the old chart drew its fifth rule too. Dropping it was
+  tried, to stop a curve overshoot crossing a rule, and rejected: with the
+  remaining four evenly spaced and exactly one slot of empty plot above them, it
+  reads as a missing line. The overshoot itself is gone (see `CHART_CURVE`), so
+  the ceiling rule is no longer something the data crosses.
 - **Do not call `setControlledFocus` when focus has not moved.** It repaints the
   whole scene and restarts every mark-state transition, so calling it per
   pointer move retargets the bars' 120ms fade every frame: the fade never runs
