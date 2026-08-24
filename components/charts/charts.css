@@ -136,3 +136,26 @@
   --ts-chart-tooltip-padding: 0;
   --ts-chart-tooltip-shadow: none;
 }
+
+/* Nothing inside the chart's own box may grow a scroll container.
+ *
+ * The unportalled tooltip is `position: absolute` inside this element, so any
+ * moment it lands outside — the extension positions it after measuring, and a
+ * scroll mid-gesture can change the geometry between those two steps — adds to
+ * an ancestor's scrollable overflow and makes the dialog pan. That was reported
+ * on touch, dragging up from the chart's bottom-left corner, and it does not
+ * happen portalled because the top layer is outside normal flow entirely.
+ *
+ * This costs nothing in normal use: unportalled, the extension clamps the panel
+ * inside the chart, so there is nothing at this boundary to cut. It does not
+ * reach the portalled path either, since top-layer elements are not clipped by
+ * an ancestor's overflow — so switching `CHART_TOOLTIP` back to `portal` still
+ * behaves as it did.
+ *
+ * `clip` rather than `hidden`: it creates no scroll container of its own, which
+ * is the whole point. The overlay's cursor — markers, highlight band, date pill
+ * — is a sibling of `.ts-chart-host`, not a descendant of this, so the pill's
+ * deliberate overhang past the plot is untouched. */
+.ts-chart-surface {
+  overflow: clip;
+}
