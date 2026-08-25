@@ -42,10 +42,11 @@ format:check + lint + typecheck + unit tests; e2e is separate because it builds
 the app.
 
 **Formatting is gated, so run `pnpm format` before committing.** Prettier owns
-every file except `components/ui/cubby-ui/` and `components/charts/`, which are
-vendored through `shadcn add` and excluded in `.prettierignore` — formatting
-them would be reverted by the next component update and break the gate on
-arrival.
+every file except `components/ui/cubby-ui/`, which is vendored through
+`shadcn add` and excluded in `.prettierignore` — formatting it would be
+reverted by the next component update and break the gate on arrival.
+`components/charts/` used to be excluded for the same reason; it is now our own
+code (see Charts below) and is formatted like everything else.
 
 **`shadcn add @cubby-ui/style` needs a manual pass over `app/globals.css`
 afterwards, every time.** `app/globals.css` is NOT in `.prettierignore`, so the
@@ -75,7 +76,9 @@ check its line endings first.
 - **Package manager:** pnpm
 - **UI components:** Custom library in `components/ui/cubby-ui/` built on Radix UI and Base UI primitives. Component docs available at https://www.cubby-ui.dev/llms.txt
 - **Icons:** HugeIcons (primary) and Lucide React
-- **Animations:** Motion library (motion)
+- **Animations:** Motion library (motion) for UI; charts animate through
+  TanStack Charts' own motion renderer (see Charts below)
+- **Charts:** TanStack Charts (`@tanstack/charts`)
 
 ## Architecture
 
@@ -107,6 +110,7 @@ This is a high-level map. The detailed, authoritative guides are:
 §1, §14 and §15.
 
 - **[docs/skill-lifecycle.md](docs/skill-lifecycle.md)** — backend skill pipeline: how skills enter the catalog, the sync / reconcile / curated / duplicate-detection jobs, "seen" + delisting rules, snapshots, and the `needs*` work-set patterns. **Read this before touching the sync or skill-lifecycle code.**
+- **[docs/charts.md](docs/charts.md)** — the three charts and the TanStack Charts integration: how a definition is composed, what the hover overlay owns versus the library, the motion and density rules, and a long list of traps with the measurements behind them. **Read this before touching any chart.**
 
 ### Frontend → backend
 
@@ -143,6 +147,24 @@ NAMES should exist. It has twice pointed at files that had been deleted.
 ### Crons (`crons.ts`)
 
 Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06:45 → `reconcileUnseenSkills` 07:00, with the discovery/content/audit/embedding pipeline chained off the sync), hourly + 30-min leaderboard refreshes (trending / hot), daily cache cleanups, and a weekly Sunday duplicate chain (resolve repo identities 08:00 → curated refresh 09:00 → re-resolve stale identities 10:00). Production-only (gated by `CRONS_ENABLED`).
+
+### Charts
+
+Three charts, all built on **TanStack Charts** (`@tanstack/charts`): the sidebar
+sparkline, the install-history dialog chart, and the compare page's multi-line
+chart. Shared pieces live in `components/charts/`; each chart file owns its own
+`defineChart` definition, and `components/charts/charts.css` holds the styling
+for nodes the library renders and we never author.
+
+**[docs/charts.md](docs/charts.md) is the authoritative guide — read it before
+touching any chart.** It is mostly a list of traps, each with the measurement
+behind it, and the code is written short on the assumption you have read them.
+
+One that costs the most time if you miss it: the library ships its own docs and
+skills inside the package, at `node_modules/@tanstack/charts/docs/` and
+`.../skills/`, indexed by `llms.txt`. Read those rather than relying on memory
+or a docs mirror. They match the installed version, and this is a young library
+that moves.
 
 ### Technology tagging
 

@@ -1,0 +1,181 @@
+/* Styling for the parts of the chart that TanStack Charts renders itself.
+ *
+ * These select the library's own nodes — `ts-chart__grid line`, the axis
+ * `text`, the bar `rect`s — which our components never author, so they cannot
+ * be utilities on an element we control, and one of them is a `@keyframes`.
+ * They live here rather than in `globals.css` so the rules travel with the
+ * charts; `charts/chart.tsx` imports this, and every chart imports that.
+ *
+ * Anything that CAN be a utility should be: this file is for the library's
+ * output, not for our own markup.
+ */
+
+/* Chart entrance: a left-to-right wipe over the marks only, so the grid and
+   axes are already in place as the series draws in. `ts-chart__marks` is
+   TanStack Charts' own class on that group, which is why this can be plain CSS
+   rather than a React-driven clip rect.
+
+   The chart's other motion (crosshair, focus dot, highlight band, tooltip
+   travel) is sprung by @tanstack/charts/motion, which handles reduced motion
+   itself. This one is ours, so it opts out here. */
+@keyframes chart-reveal-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.chart-reveal .ts-chart__marks {
+  animation: chart-reveal-wipe 1100ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-reveal .ts-chart__marks {
+    animation: none;
+  }
+}
+
+/* The chart SVG is keyboard-navigable, so it carries `tabindex="0"` and would
+   otherwise get a browser ring around the whole plot. The chart already shows
+   where focus is, far more precisely: focusing it dims the unfocused bars and
+   paints the rule, the marker and the tooltip. That is the visible focus
+   indicator, and a ring around a 600px box on top of it is noise.
+
+   Suppressing both states is only safe because that indicator is durable. It
+   was not: the overlay used to clear everything when the POINTER left, which
+   says nothing about where keyboard focus is, so tabbing in and then sweeping
+   a mouse across the chart and away left it focused with nothing drawn.
+   `onPointerLeave` in `use-chart-hover-overlay.ts` now holds the focus paint
+   while the SVG is `:focus-visible`. If that guard is ever removed, this rule
+   has to give the ring back.
+
+   Both selectors, not just `:focus-visible`: a plain click leaves this element
+   focused but NOT focus-visible (measured), and the ring should be off in both
+   cases. */
+.ts-chart:focus,
+.ts-chart:focus-visible {
+  outline: none;
+}
+
+/* Grid rules keep the dashed pattern the charts have always drawn. TanStack's
+   axis API takes `grid: boolean` and the theme carries only a color, so stroke
+   style belongs to the renderer — restyling its own `ts-chart__grid` group here
+   is cheaper than replacing the built-in grid with authored rule marks.
+
+   The opacity reset is load-bearing, not a taste call. The renderer draws grid
+   rules at `stroke-opacity: 0.11` on top of the theme colour, and our
+   `--border` is itself only ~10% opaque, so the two multiply out to roughly 1%
+   and the grid disappears. Letting `--border` alone set the tone is also what
+   the old chart did. */
+.ts-chart__grid line {
+  stroke-dasharray: 4 4;
+  stroke-opacity: 1;
+}
+
+/* Date labels give way to the pill travelling along their row, the way the old
+   chart's did: hidden where the pill covers them, ramping back over the next
+   20px, untouched beyond that.
+
+   The distance ramp is computed per label in the overlay and delivered as
+   `--tick-N` custom properties set on OUR wrapper, which the rules below read.
+   It cannot be written onto the labels directly: the chart owns those nodes and
+   strips inline styles off them on every repaint (which includes every focus
+   change), so a direct write survives about a frame. Custom properties inherit
+   into the chart's SVG from outside it, and the per-label rules are generated
+   into a stylesheet the chart never touches.
+
+   Which label maps to which property is decided in `chart-hover-overlay.tsx`
+   when the chart renders; only the numbers change while the pointer moves. */
+.ts-chart__axes text[data-ts-key^="x-tick-label"] {
+  transition: opacity 120ms ease-out;
+}
+
+/* The hover dim on both series, as a CSS transition rather than the renderer's
+   own motion — the old chart's per-bar `transition={{ opacity: { duration:
+   0.12 } }}` and its 0.4s line dim, in the one form that survives a scrub.
+
+   The renderer re-animates every mark state on each focus change, restarting
+   from the live DOM value, so a bar the cursor has already passed keeps being
+   handed a new tween and never lands (see `NO_MOTION` in series-state.ts). CSS
+   ignores a write that does not change the target, so each bar's fade runs once
+   and completes on time. The states themselves write instantly. */
+.ts-chart__bar rect {
+  transition: fill-opacity 120ms ease-out;
+}
+
+.ts-chart__line path {
+  transition: stroke-opacity 400ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-chart__bar rect,
+  .ts-chart__line path {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ts-chart__axes text[data-ts-key^="x-tick-label"] {
+    transition: none;
+  }
+}
+
+/* The tooltip wrapper is a pass-through: our panel is the visible surface.
+ *
+ * The extension paints its own card — Canvas background, a hairline border,
+ * 0.45rem radius, padding and a drop shadow — and renders `renderTooltipBody`
+ * inside it, so without this our chrome panel sits nested in a white box. Each
+ * of those is a custom property with a fallback, which is the documented way to
+ * restyle it, so neutralising them here leaves the extension owning position
+ * and visibility while the body owns everything visual.
+ *
+ * `max-width` goes too: the panel caps its own width, and the wrapper's default
+ * `min(24rem, 80%)` would cut the rows before that cap applies.
+ *
+ * Document-level and keyed on the class rather than scoped under the chart:
+ * the portal can move this into the top layer, and the fallback path reparents
+ * it to the document body, where chart-scoped properties would not reach it. */
+.ts-chart-tooltip {
+  --ts-chart-tooltip-background: transparent;
+  --ts-chart-tooltip-border: 0;
+  --ts-chart-tooltip-border-radius: 0;
+  --ts-chart-tooltip-color: inherit;
+  --ts-chart-tooltip-font: inherit;
+  --ts-chart-tooltip-max-width: none;
+  --ts-chart-tooltip-padding: 0;
+  --ts-chart-tooltip-shadow: none;
+}
+
+/* Nothing inside the chart's own box may grow a scroll container.
+ *
+ * The unportalled tooltip is `position: absolute` inside this element, so any
+ * moment it lands outside — the extension positions it after measuring, and a
+ * scroll mid-gesture can change the geometry between those two steps — adds to
+ * an ancestor's scrollable overflow and makes the dialog pan. That was reported
+ * on touch, dragging up from the chart's bottom-left corner, and it does not
+ * happen portalled because the top layer is outside normal flow entirely.
+ *
+ * This costs nothing in normal use: unportalled, the extension clamps the panel
+ * inside the chart, so there is nothing at this boundary to cut. It does not
+ * reach the portalled path either, since top-layer elements are not clipped by
+ * an ancestor's overflow — so switching `CHART_TOOLTIP` back to `portal` still
+ * behaves as it did.
+ *
+ * `clip` rather than `hidden`: it creates no scroll container of its own, which
+ * is the whole point. The overlay's cursor — markers, highlight band, date pill
+ * — is a sibling of `.ts-chart-host`, not a descendant of this, so the pill's
+ * deliberate overhang past the plot is untouched.
+ *
+ * The axis labels are NOT untouched, which is what `overflow-clip-margin` is
+ * for. The first and last sit on the plot's edges (every x scale here is a
+ * point scale) and are centred there, so half of each hangs past the box: the
+ * last one overhung by 4px and came out reading "Aug 2" instead of "Aug 21".
+ * The margin lets that ink paint without letting anything add to scrollable
+ * overflow. It cannot leak the tooltip back out, because the extension already
+ * keeps the panel 8px clear of this boundary. */
+.ts-chart-surface {
+  overflow: clip;
+  overflow-clip-margin: 8px;
+}
