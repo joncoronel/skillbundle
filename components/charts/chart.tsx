@@ -27,8 +27,8 @@ import "./charts.css";
  * with the finger and that travel is part of how it reads. It used to be
  * disabled on small screens to stop the tooltip's travel escaping the chart and
  * flicking a scrollbar; the panel is now capped narrow enough that its resolved
- * position always fits (see `TOOLTIP_MAX_WIDTH_NARROW`), so the travel between
- * two fitting positions cannot escape either.
+ * position always fits (the `maxWidth` in `chart-tooltip-panel.tsx`), so the
+ * travel between two fitting positions cannot escape either.
  */
 export function useChartHostProps() {
   return {

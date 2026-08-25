@@ -1,4 +1,21 @@
-import type { HoverMarker } from "./chart-hover-overlay";
+import { pointForMarker, type HoverMarker } from "./chart-hover-overlay";
+
+/**
+ * Builds the panel's rows: one per marker that has a point at this x, in marker
+ * order, with the value the chart formats.
+ *
+ * The charts differ only in that formatter, so it is the only thing they pass.
+ */
+export function tooltipRows<T extends { group?: unknown; markId?: unknown }>(
+  markers: readonly HoverMarker[],
+  points: readonly T[],
+  format: (point: T, marker: HoverMarker) => string,
+) {
+  return markers.flatMap((marker) => {
+    const point = pointForMarker(points, marker);
+    return point ? [{ marker, value: format(point, marker) }] : [];
+  });
+}
 
 /**
  * The hover panel's contents, rendered by the library's tooltip extension

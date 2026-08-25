@@ -1,10 +1,8 @@
-import type { CSSProperties } from "react";
-
 // Pure helpers, types, and tokens shared across the three chart surfaces (the
 // sidebar sparkline, the install dialog chart, and the compare chart). Kept free
 // of any chart-engine import on purpose: each page imports only the chart file it
-// renders, so this shared layer must not drag `LineChart`/`ComposedChart` into
-// every bundle.
+// renders, so this shared layer must not drag `@tanstack/charts` into every
+// bundle.
 
 export type SkillInsights = {
   snapshots: { day: string; installs: number }[];
@@ -70,28 +68,6 @@ export function dayLabelLong(day: string) {
   return weekdayFmt.format(new Date(`${day}T00:00:00Z`));
 }
 
-// The bklit charts read their palette from `--chart-*` CSS variables, which
-// this project's Tailwind v4 build tree-shakes out (they're only referenced in
-// runtime SVG). Set them inline on the chart wrapper instead — inline styles
-// are never pruned — mapped to app tokens so the chart tracks the theme.
-export const CHART_VARS = {
-  "--chart-1": "var(--primary)",
-  "--chart-line-primary": "var(--primary)",
-  "--chart-grid": "var(--border)",
-  "--chart-crosshair": "var(--primary)",
-  "--chart-label": "var(--muted-foreground)",
-  "--chart-foreground": "var(--foreground)",
-  "--chart-foreground-muted": "var(--muted-foreground)",
-  "--chart-background": "var(--background)",
-  "--chart-marker-background": "var(--background)",
-  "--chart-marker-border": "var(--border)",
-  "--chart-marker-foreground": "var(--foreground)",
-  "--chart-ring-background": "transparent",
-  "--chart-tooltip-background": "var(--popover)",
-  "--chart-tooltip-foreground": "var(--popover-foreground)",
-  "--chart-tooltip-muted": "var(--muted-foreground)",
-} as CSSProperties;
-
 /**
  * Parse a "YYYY-MM-DD" snapshot day into a Date pinned to UTC noon. Anchoring at
  * noon (not midnight) means local-timezone formatters render the correct
@@ -99,8 +75,8 @@ export const CHART_VARS = {
  * is UTC midnight, which a negative-offset zone (e.g. US Pacific) formats as the
  * *previous* day. (Past +12h, e.g. Kiribati, the label can still read a day
  * ahead, but that's a negligible audience.) Used for the trailing-week math here
- * AND as the chart x-values: the bklit axis/tooltip format these Dates with
- * local-tz Intl formatters, so passing a Date (used as-is) avoids the off-by-one.
+ * AND by `dayLabel` / `dayLabelLong`, which format with local-tz Intl
+ * formatters, so anchoring at noon avoids the off-by-one.
  */
 export function toDate(day: string) {
   return new Date(`${day}T12:00:00Z`);

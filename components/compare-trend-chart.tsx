@@ -24,7 +24,10 @@ import {
 } from "@/components/charts/chart-hover-overlay";
 import { focusCrosshair } from "@/components/charts/focus-crosshair";
 import { CHART_TOOLTIP } from "@/components/charts/chart-tooltip";
-import { ChartTooltipPanel } from "@/components/charts/chart-tooltip-panel";
+import {
+  ChartTooltipPanel,
+  tooltipRows,
+} from "@/components/charts/chart-tooltip-panel";
 import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
 import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
@@ -282,22 +285,13 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
           onFocusChange={overlay.onFocusChange}
           renderTooltipBody={({ points }) => (
             <ChartTooltipPanel
-              rows={overlay.markers.flatMap((marker) => {
-                const point = points.find(
-                  (candidate) =>
-                    String(candidate.group ?? candidate.markId) === marker.key,
-                );
-                return point
-                  ? [{ marker, value: intFmt(point.datum.installs) }]
-                  : [];
-              })}
+              rows={tooltipRows(overlay.markers, points, (point) =>
+                intFmt(point.datum.installs),
+              )}
               title={dayLabelLong(points[0]?.datum.day ?? "")}
             />
           )}
           onRender={overlay.onRender}
-          style={{
-            ...hostProps.style,
-          }}
         />
       </ChartHoverOverlay>
     </div>

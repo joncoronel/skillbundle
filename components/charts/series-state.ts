@@ -10,7 +10,7 @@ import { curveMonotoneX } from "d3-shape";
 
 /**
  * Writes a mark state's value with no renderer animation, leaving the ramp to a
- * CSS transition on the same property (`globals.css`).
+ * CSS transition on the same property (`charts.css`).
  *
  * The renderer re-resolves and re-animates every mark state on each focus
  * change, from whatever value the DOM currently holds. During a scrub that is

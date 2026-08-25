@@ -25,7 +25,10 @@ import {
 } from "@/components/charts/chart-hover-overlay";
 import { focusCrosshair } from "@/components/charts/focus-crosshair";
 import { CHART_TOOLTIP } from "@/components/charts/chart-tooltip";
-import { ChartTooltipPanel } from "@/components/charts/chart-tooltip-panel";
+import {
+  ChartTooltipPanel,
+  tooltipRows,
+} from "@/components/charts/chart-tooltip-panel";
 import {
   BAR_UNFOCUSED_DIM,
   CHART_CURVE,
@@ -48,6 +51,18 @@ const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
  * Top of the y domain, as a multiple of the largest cumulative total.
  */
 const Y_HEADROOM = 1.08;
+
+/**
+ * The domain ceiling, floored so it is never zero.
+ *
+ * `hasChart` gates the dialog on snapshot COUNT, not on values, so a skill with
+ * two or more snapshots and no installs recorded yet reaches here with
+ * `totalMax === 0`. Left alone that gives `domain([0, 0])` and stacks all five
+ * grid rules on one line.
+ */
+function yDomainTop(totalMax: number) {
+  return Math.max(1, totalMax * Y_HEADROOM);
+}
 
 const LINE_ID = "total";
 const BAR_ID = "daily";
@@ -197,7 +212,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         // more. The headroom keeps the last point of the cumulative line — its
         // maximum, and the top of the tallest bar — off the plot's edge, where
         // the stroke and the focus marker would be clipped.
-        scale: scaleLinear().domain([0, totalMax * Y_HEADROOM]),
+        scale: scaleLinear().domain([0, yDomainTop(totalMax)]),
         grid: true,
         // Unlabelled, as it always has been, but its ticks still matter: the
         // grid draws one rule per candidate, so this is what sets how many
@@ -221,7 +236,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
             size: 0,
             values: Array.from(
               { length: AXIS_TICK_COUNT },
-              (_, i) => (totalMax * Y_HEADROOM * i) / (AXIS_TICK_COUNT - 1),
+              (_, i) => (yDomainTop(totalMax) * i) / (AXIS_TICK_COUNT - 1),
             ),
           },
           tickLabels: false,
@@ -259,32 +274,15 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           onFocusChange={overlay.onFocusChange}
           renderTooltipBody={({ points }) => (
             <ChartTooltipPanel
-              rows={HOVER_MARKERS.flatMap((marker) => {
-                const point = points.find(
-                  (candidate) =>
-                    String(candidate.group ?? candidate.markId) === marker.key,
-                );
-                if (!point) {
-                  return [];
-                }
-                const row = point.datum;
-                return [
-                  {
-                    marker,
-                    value:
-                      marker.key === LINE_ID
-                        ? intFmt(row.total)
-                        : `+${intFmt(row.daily)}`,
-                  },
-                ];
-              })}
+              rows={tooltipRows(HOVER_MARKERS, points, (point, marker) =>
+                marker.key === LINE_ID
+                  ? intFmt(point.datum.total)
+                  : `+${intFmt(point.datum.daily)}`,
+              )}
               title={dayLabelLong(points[0]?.datum.day ?? "")}
             />
           )}
           onRender={overlay.onRender}
-          style={{
-            ...hostProps.style,
-          }}
         />
       </ChartHoverOverlay>
     </div>

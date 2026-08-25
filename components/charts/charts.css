@@ -37,6 +37,28 @@
   }
 }
 
+/* The chart SVG is keyboard-navigable, so it carries `tabindex="0"` and would
+   otherwise get a browser ring around the whole plot. The chart already shows
+   where focus is, far more precisely: focusing it dims the unfocused bars and
+   paints the rule, the marker and the tooltip. That is the visible focus
+   indicator, and a ring around a 600px box on top of it is noise.
+
+   Suppressing both states is only safe because that indicator is durable. It
+   was not: the overlay used to clear everything when the POINTER left, which
+   says nothing about where keyboard focus is, so tabbing in and then sweeping
+   a mouse across the chart and away left it focused with nothing drawn.
+   `onPointerLeave` in `use-chart-hover-overlay.ts` now holds the focus paint
+   while the SVG is `:focus-visible`. If that guard is ever removed, this rule
+   has to give the ring back.
+
+   Both selectors, not just `:focus-visible`: a plain click leaves this element
+   focused but NOT focus-visible (measured), and the ring should be off in both
+   cases. */
+.ts-chart:focus,
+.ts-chart:focus-visible {
+  outline: none;
+}
+
 /* Grid rules keep the dashed pattern the charts have always drawn. TanStack's
    axis API takes `grid: boolean` and the theme carries only a color, so stroke
    style belongs to the renderer — restyling its own `ts-chart__grid` group here
@@ -47,17 +69,6 @@
    `--border` is itself only ~10% opaque, so the two multiply out to roughly 1%
    and the grid disappears. Letting `--border` alone set the tone is also what
    the old chart did. */
-/* The chart SVG is keyboard-navigable, so it carries `tabindex="0"` and the
-   browser draws a focus ring around the whole plot — including after a plain
-   click, which Chrome treats as focus-visible for a non-form element. The chart
-   already shows where focus is, far more precisely: focusing it paints the
-   cursor rule, the marker and the tooltip for the focused point. That is the
-   visible focus indicator; the ring around a 600px box is noise. */
-.ts-chart:focus,
-.ts-chart:focus-visible {
-  outline: none;
-}
-
 .ts-chart__grid line {
   stroke-dasharray: 4 4;
   stroke-opacity: 1;

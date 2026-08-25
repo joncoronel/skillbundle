@@ -177,8 +177,9 @@ Things that are easy to get wrong, all of which were:
 - **Marks that should be read together at one x need distinct `z` values.**
   Grouped focus reduces points sharing a group to a single member, and the
   default group is `null` — so two ungrouped marks silently collapse to one,
-  taking a tooltip row and the hover highlight with it. Guarded by
-  `tests/highlight-segment.test.ts`.
+  taking a tooltip row and the hover highlight with it. Nothing guards this;
+  the definitions are built inside components, so there is no seam a unit test
+  can reach.
 - **`onFocusChange` fires on every committed prop set, not only when focus
   moves.** Feeding it straight into `setState` is an infinite render loop;
   compare against the last value first (see `skill-install-sparkline.tsx`).
@@ -286,26 +287,23 @@ Things that are easy to get wrong, all of which were:
   each input to what it means (a mouse inspects on hover, a finger only while
   it is down) via `interaction.resolvePointer` / `setControlledFocus`, and the
   wrapper carries `touch-action: pan-y` so horizontal drags are ours.
-- **The tooltip is capped narrow rather than made to stop animating.** It
-  animates _into_ its resolved position, so on a small chart, where the panel is
-  nearly as wide as the plot, the intermediate frames used to land outside it —
-  and with nothing containing them that widens the document and flicks a
-  horizontal scrollbar mid-drag. `maxWidth: min(16rem, calc(50vw - 3.5rem))`
-  keeps both the resting and the travelled position inside, so motion stays on
-  everywhere, touch included. Do not "fix" the overhang by centring the tooltip:
-  following the cursor is the point, and hanging past the plot edge is fine.
-- **The tooltip panel is ours too, in the overlay.** The built-in one clamps
-  itself into the chart box, so where it does not fit beside the cursor it
-  slides back over the marker it is describing — and that clamping cannot be
-  turned off. Ours uses the old rule: `x + offset`, flipping to
-  `x - offset - width` only when that would run past the chart, never anything
-  between. It hangs off the edge rather than covering the point.
-- **Do not signal overlay repaints through a MotionValue event.**
-  `useMotionValueEvent` keeps whichever callback was registered on mount, so a
-  listener reading refs runs a focus change behind and the panel shows the
-  previous day. `showFocus` writes the panel's nodes inline instead; the panel
-  registers them on the controller. Same trap applies to anything else a
-  listener closes over — the compare page's series list grows as data loads.
+- **The tooltip is capped narrow.** `maxWidth: min(16rem, calc(50vw - 3.5rem))`
+  in `chart-tooltip-panel.tsx`, so on a small chart the panel cannot approach
+  the width of the plot. Do not "fix" the resulting overhang by centring the
+  tooltip: following the cursor is the point, and hanging past the plot edge is
+  fine.
+- **A MotionValue event only fires when the value CHANGES, and only reaches the
+  callback from the last render.** Both halves bite here. `updateAndNotify`
+  skips the notify when the new value equals the old, so writing a datum's
+  index into a value that already holds it paints nothing — which is what left
+  the compact date pill blank when the first hover of a long series landed on
+  column 0 (`CompactLabel` now seeds itself from `dayY.get()`). And
+  `useMotionValueEvent` re-subscribes only when the callback identity changes,
+  which takes a render; the overlay deliberately does not render while the
+  pointer moves, so a listener closing over anything mutable can be a focus
+  change behind. Prefer writing the DOM from `showFocus`, which has the index
+  in hand. (An earlier note here claimed the hook keeps its mount-time
+  callback outright. It does not — `callback` is in its dependency array.)
 - **Pass `initialWidth`.** The adapter renders its first markup at that width
   (default 640) and measures the container only after commit, so everything in
   scene units — stroke widths, marker radii, fixed margins — is scaled by the

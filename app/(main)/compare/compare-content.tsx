@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useQueryState } from "nuqs";
 import { useQuery } from "@tanstack/react-query";
@@ -95,15 +95,27 @@ export function CompareContent() {
 
   // One line per compared skill, colored by column position so the chart line,
   // the legend swatch, and the column header dot all share a hue.
-  const series: CompareSeries[] = refs.map((ref, i) => {
-    const entry = insightFor(ref);
-    return {
-      key: `s${i}`,
-      name: entry?.name ?? ref.skillId,
-      color: COMPARE_LINE_COLORS[i] ?? COMPARE_LINE_COLORS[0],
-      snapshots: entry?.snapshots ?? [],
-    };
-  });
+  //
+  // Memoized on the two things it reads. `CompareTrendChart` keys its whole
+  // memo chain off this array, and `RendererChart` re-lays-out whenever the
+  // definition identity changes, so rebuilding it on every render of this
+  // component (opening the picker, a query settling) forced a full chart
+  // re-layout and re-fired `onRender`.
+  const series: CompareSeries[] = useMemo(
+    () =>
+      refs.map((ref, i) => {
+        const entry = insightsData?.skills.find(
+          (s) => s.source === ref.source && s.skillId === ref.skillId,
+        );
+        return {
+          key: `s${i}`,
+          name: entry?.name ?? ref.skillId,
+          color: COMPARE_LINE_COLORS[i] ?? COMPARE_LINE_COLORS[0],
+          snapshots: entry?.snapshots ?? [],
+        };
+      }),
+    [refs, insightsData],
+  );
 
   return (
     <>

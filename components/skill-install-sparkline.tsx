@@ -12,9 +12,10 @@ import {
   useChartHoverOverlay,
 } from "@/components/charts/chart-hover-overlay";
 import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
-import type {
-  SkillInsights,
-  SparklineHoverState,
+import {
+  seriesSummary,
+  type SkillInsights,
+  type SparklineHoverState,
 } from "@/components/skill-chart-shared";
 
 const LINE_ID = "installs";
@@ -125,7 +126,7 @@ export function InstallSparkline({
       <RendererChart
         {...hostProps}
         initialWidth={INITIAL_WIDTH.sparkline}
-        ariaLabel="Install trend over the past week"
+        ariaLabel={`Install trend over the past week: ${seriesSummary(points)}.`}
         aspectRatio={7}
         definition={definition}
         onFocusChange={handleFocusChange}

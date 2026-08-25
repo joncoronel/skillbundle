@@ -35,7 +35,7 @@ export const HIGHLIGHT_SPRING = {
  *
  * `initial: false` hands the entrance to CSS. TanStack's own first paint grows
  * paths up from the y baseline; ours wipes left to right over the marks group
- * only (see `.chart-reveal` in globals.css), which is the entrance these charts
+ * only (see `.chart-reveal` in `charts.css`), which is the entrance these charts
  * have always had. Leaving both on would play them at once.
  */
 export const chartMotion = motion({
