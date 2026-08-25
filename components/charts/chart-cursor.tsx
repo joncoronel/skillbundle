@@ -11,8 +11,9 @@ import {
 } from "./use-chart-hover-overlay";
 
 /**
- * The rule, the highlight band and the dots, in one SVG sharing the chart's
- * coordinate space.
+ * The highlight band and the dots, in one SVG sharing the chart's coordinate
+ * space. The rule is not here: it is the library's `crosshair` mark, drawn
+ * into the chart's own SVG by `focus-crosshair.ts`.
  *
  * The band re-strokes each series through a moving window, so the segment under
  * the cursor stays at full strength while the rest of the line is dimmed by the

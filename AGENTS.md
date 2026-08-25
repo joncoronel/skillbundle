@@ -309,10 +309,19 @@ Things that are easy to get wrong, all of which were:
   scene units — stroke widths, marker radii, fixed margins — is scaled by the
   ratio until it re-lays-out. A 240px sparkline drawn first at 640 paints a
   hairline, then visibly thickens. `INITIAL_WIDTH` in `charts/chart.tsx`.
-- **The chart SVG carries `tabindex="0"`, and Chrome treats a click on it as
-  focus-visible.** The browser ring around the whole plot is suppressed in
-  `charts/charts.css`; the chart paints its own, far more precise focus state (rule,
-  marker, tooltip), so this costs no accessibility.
+- **The chart SVG carries `tabindex="0"`, and the browser ring around the whole
+  plot is suppressed in `charts/charts.css`.** The chart paints its own, far
+  more precise focus state (rule, marker, tooltip, dimmed bars), so this costs
+  no accessibility — but only because that state is durable. It was not:
+  `onPointerLeave` cleared everything, and a mouse leaving says nothing about
+  where keyboard focus is, so tabbing in and then sweeping a mouse across the
+  chart and away left it focused with nothing drawn. The guard in
+  `use-chart-hover-overlay.ts` holds the paint while the SVG is
+  `:focus-visible`. Remove that and the ring has to come back.
+  The guard rests on a measured fact, and an earlier version of this line
+  asserted its opposite: a plain click leaves the element `:focus` but NOT
+  `:focus-visible`, while Tab sets both. That is what lets one selector
+  separate a mouse user (still gets the clear) from a keyboard user.
 - **The chart strips inline styles off its own nodes when it repaints**, and it
   repaints on every focus change. The node object survives, its `style` does
   not, so anything the overlay writes onto a tick label lasts about a frame.

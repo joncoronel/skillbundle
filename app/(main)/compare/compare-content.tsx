@@ -1,6 +1,12 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useQueryState } from "nuqs";
 import { useQuery } from "@tanstack/react-query";
@@ -88,10 +94,15 @@ export function CompareContent() {
     ...convexQuery(api.skills.getCompareInsights, { refs }),
     staleTime: 5 * 60_000,
   });
-  const insightFor = (ref: SkillRef) =>
-    insightsData?.skills.find(
-      (s) => s.source === ref.source && s.skillId === ref.skillId,
-    );
+  // A `useCallback` so the `series` memo below can depend on it rather than
+  // inlining a second copy of the same lookup.
+  const insightFor = useCallback(
+    (ref: SkillRef) =>
+      insightsData?.skills.find(
+        (s) => s.source === ref.source && s.skillId === ref.skillId,
+      ),
+    [insightsData],
+  );
 
   // One line per compared skill, colored by column position so the chart line,
   // the legend swatch, and the column header dot all share a hue.
@@ -104,9 +115,7 @@ export function CompareContent() {
   const series: CompareSeries[] = useMemo(
     () =>
       refs.map((ref, i) => {
-        const entry = insightsData?.skills.find(
-          (s) => s.source === ref.source && s.skillId === ref.skillId,
-        );
+        const entry = insightFor(ref);
         return {
           key: `s${i}`,
           name: entry?.name ?? ref.skillId,
@@ -114,7 +123,7 @@ export function CompareContent() {
           snapshots: entry?.snapshots ?? [],
         };
       }),
-    [refs, insightsData],
+    [refs, insightFor],
   );
 
   return (
