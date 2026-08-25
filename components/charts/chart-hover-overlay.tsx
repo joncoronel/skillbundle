@@ -5,27 +5,15 @@ import { Cursor } from "./chart-cursor";
 import { DatePill } from "./chart-date-pill";
 import type { ChartHoverOverlayController } from "./use-chart-hover-overlay";
 
-// The dots, the highlight band and the date pill — drawn over the chart and
+// The dots, the highlight band and the date pill, drawn over the chart and
 // driven by Motion. The rule is NOT here: it is the library's `crosshair` mark
-// (`focus-crosshair.ts`), and the tooltip panel is the library's too.
-//
-// What is left is what a focus guide cannot express. The band re-strokes the
-// line through a moving window, cloned from the painted path so it cannot
-// drift off the trace. The pill is a two-track ticker that stays centred on
-// its column and overhangs the plot at both ends, where a guide's own label is
-// clamped inside. The dots carry a per-series marker with a halo in the page
-// tone.
-//
-// This file once claimed the library's guides wedge under a fast pointer, and
-// gave that as the reason for hand-rolling all of it. That was measured and is
-// false: 80 distinct positions in 90 frames against our own rule's 89. The
-// freeze was self-inflicted, by calling `setControlledFocus` on every pointer
-// move and cancelling the in-flight animation each time.
+// (`focus-crosshair.ts`), and the tooltip panel is the library's too. What is
+// left is the part no focus guide can express; docs/charts.md says which and why.
 //
 // Nothing here re-renders while the pointer moves. Focus updates land on
 // MotionValues, which Motion writes straight to the DOM — important, because a
 // React commit re-pushes props to the chart host and cancels its motion
-// mid-flight (see AGENTS.md).
+// mid-flight.
 
 // Re-exported so a chart needs one import for the whole overlay.
 export {

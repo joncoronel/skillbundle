@@ -63,13 +63,7 @@ export const INITIAL_WIDTH = {
  */
 export const CHART_REVEAL_CLASS = "chart-reveal";
 
-/**
- * How long `useSettledBox` waits for a box to stop moving, in ms.
- *
- * Generous against the 200ms the dialog takes, because overshooting costs
- * nothing: the loop exits on the frame the box matches, so this only bounds the
- * case where it never will.
- */
+/** Bounds the wait below, for a transform that never goes away. */
 const SETTLE_TIMEOUT = 1000;
 
 /**
@@ -82,29 +76,14 @@ const SETTLE_TIMEOUT = 1000;
  * const definition = useMemo(() => defineChart({ ... }), [rows, settled]);
  * ```
  *
- * The chart measures its container with `getBoundingClientRect`, which is
- * screen space and so carries any transform an ancestor is mid-animation on.
- * The install dialog opens with `scale-95`, so a chart mounted inside it
- * measures 95% of the real width — 592.8 against a 624px container — and then
- * keeps that number, because the only thing that would make it re-measure is
- * its ResizeObserver, and a transform changes no layout box for one to see.
- *
- * Everything downstream then works in a scene unit worth 1.0526 CSS px. Our
- * overlay converts and survives it, but the library positions its own tooltip
- * from scene coordinates without converting, so the panel drifted left by up
- * to 31px across the plot: flush against the marker on the right, and a ~45px
- * gap once it flipped to the left.
- *
- * Re-rendering is what forces the re-measure — the adapter re-lays-out when a
- * size or definition prop changes, not on every commit — and the rebuilt
- * definition is identical, so nothing else moves.
- *
- * `clientWidth` is the layout box and ignores transforms, which is what makes
- * it the reference to compare against. Handing the chart a measured `width`
- * instead was tried and is worse: `width` means the application owns fixed
- * geometry, so the host is pinned in pixels (`width: 1207px`), and inside a
- * grid item at its default `min-width: auto` that pins the track the chart is
- * measuring — the compare chart then could not shrink on resize.
+ * The chart measures its container with `getBoundingClientRect`, so mounting
+ * it inside the install dialog's `scale-95` entrance measures 95% of the real
+ * width and keeps it: a transform changes no layout box, so its ResizeObserver
+ * never fires to correct it. Rebuilding the definition is what forces the
+ * re-measure, since the adapter re-lays-out on a size or definition prop
+ * change rather than on every commit. `clientWidth` ignores transforms, which
+ * is what makes it the reference. See docs/charts.md, including why handing the
+ * chart a measured `width` instead is worse.
  */
 export function useSettledBox(ref: React.RefObject<HTMLElement | null>) {
   const [settled, setSettled] = useState(false);
@@ -122,14 +101,10 @@ export function useSettledBox(ref: React.RefObject<HTMLElement | null>) {
       const matches =
         Math.abs(element.getBoundingClientRect().width - element.clientWidth) <
         0.5;
-      // The deadline is not a safety net, it is the exit for a transform that
-      // never goes away: cubby-ui's dialog carries
-      // `scale-[calc(1-0.1*var(--nested-dialogs))]`, so opening a dialog on top
-      // of this one leaves it scaled to 0.9 for as long as it is stacked.
-      // Without this the loop would poll at 60fps for the life of the dialog.
-      // Giving up still re-measures, which is the best available answer — a
-      // chart under a standing transform cannot measure itself correctly, and
-      // one wasted re-layout is cheaper than the poll.
+      // The deadline is the exit for a transform that never goes away:
+      // cubby-ui's dialog carries `scale-[calc(1-0.1*var(--nested-dialogs))]`,
+      // so a dialog stacked on this one leaves it at 0.9 and the loop would
+      // otherwise poll at 60fps for the life of the dialog.
       if (matches || performance.now() > deadline) {
         setSettled(true);
         return;

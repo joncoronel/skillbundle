@@ -196,6 +196,13 @@ interface InteractionController {
     position: { x: number; y: number };
     points: readonly FocusedPoint[];
   } | null;
+  // `never`, and the two call sites cast to it. Not a shrug: under
+  // `strictFunctionTypes` the parameter is contravariant, so the bottom type
+  // is the only one that leaves the library's own `setControlledFocus`
+  // assignable to this shape. Anything concrete makes `onRender` reject on all
+  // three charts, and the alternative is threading the library's datum and
+  // axis generics through the whole overlay — which is what spreading
+  // `chartHostProps` exists to avoid (see `chart.tsx`).
   setControlledFocus: (target: never) => void;
 }
 

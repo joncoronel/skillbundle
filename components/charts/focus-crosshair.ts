@@ -3,21 +3,15 @@ import { DISCRETE_THRESHOLD } from "./chart-hover-overlay";
 import { FOCUS_SPRING } from "./chart-motion";
 
 /**
- * The vertical rule marking the focused column.
+ * The vertical rule marking the focused column, following the focus the overlay
+ * sets through `setControlledFocus`.
  *
- * This one IS the library's — `crosshair` follows the focus the overlay sets
- * through `setControlledFocus`, and the motion renderer springs it. The rest of
- * the cursor (markers, highlight band, date pill, tooltip) stays ours, because
- * none of it is expressible as a guide: the band re-strokes the line through a
- * moving window, the pill is a two-track ticker that overhangs the plot, and a
- * guide's own label is clamped inside it.
+ * Place it LAST in `marks`: mark order is paint order, so earlier hides it
+ * behind the bars.
  *
- * Place it LAST in `marks`. Mark order is paint order, so earlier puts the rule
- * behind the bars, where a bar hides it.
- *
- * Neutral rather than the series colour: the rule says which column is being
- * read, and in the accent it competes with the line carrying the data. One step
- * stronger than the grid's `--border` so it does not read as another gridline.
+ * Neutral rather than the series colour, so it does not compete with the line
+ * carrying the data, and one step stronger than the grid's `--border` so it
+ * does not read as another gridline.
  */
 export function focusCrosshair(pointCount: number) {
   return crosshair({
@@ -27,11 +21,9 @@ export function focusCrosshair(pointCount: number) {
       strokeDasharray: "4 4",
     },
     y: false,
-    // The guide runs on the renderer's motion, not the overlay's, so it needs
-    // the same spring or it drifts from the marker it shares an x with —
-    // measured ~4px apart mid-travel on the renderer's default. Above the
-    // density gate the cursor stills, and the guide has to be told separately
-    // for the same reason: it is not driven by the overlay's MotionValues.
+    // The guide runs on the renderer's motion, not the overlay's, so it takes
+    // the same spring or it drifts from the marker it shares an x with (~4px
+    // mid-travel), and it has to be gated at the density threshold separately.
     motion: {
       transition:
         pointCount > DISCRETE_THRESHOLD

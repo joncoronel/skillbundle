@@ -108,10 +108,8 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   const settled = useSettledBox(overlay.hostRef);
 
   const definition = useMemo(() => {
-    // Read only to make the dependency real. `settled` changes nothing about
-    // the definition; rebuilding it is itself the effect, because that is what
-    // makes the chart re-measure its container. Without this reference the
-    // dependency lints as unnecessary and `--fix` removes it.
+    // Read so the dependency is real and `--fix` cannot drop it. Rebuilding is
+    // itself the effect here; see `useSettledBox`.
     void settled;
 
     // One row per day: `total` (cumulative, the line) and `daily` (gained, the
@@ -214,22 +212,11 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         // the stroke and the focus marker would be clipped.
         scale: scaleLinear().domain([0, yDomainTop(totalMax)]),
         grid: true,
-        // Unlabelled, as it always has been, but its ticks still matter: the
-        // grid draws one rule per candidate, so this is what sets how many
-        // dashed lines cross the plot — the old `Grid`'s `numTicksRows={5}`.
-        //
-        // Explicit values, not `count`. `count` is a preference d3 rounds to a
-        // human-friendly step, and on this domain it overshoots badly: 5 asked
-        // for gives 8 rules, 3 gives 5. Since the numbers are never shown,
-        // dividing the domain evenly is both exact and stable across data.
-        //
-        // The rules divide the domain, so the topmost sits at its ceiling — on
-        // the plot's top edge, exactly where the old chart drew its own fifth
-        // rule. Stopping one short was tried, to keep `CHART_CURVE`'s overshoot
-        // on a steep step from crossing a rule: it reads as a missing line,
-        // because the remaining four are evenly spaced with precisely one slot
-        // of empty plot above them. The old chart's line crosses its top rule
-        // too.
+        // Unlabelled, but the ticks still set how many dashed rules cross the
+        // plot — the old `Grid`'s `numTicksRows={5}`. Explicit values rather
+        // than `count`, which d3 rounds to a human-friendly step and overshoots
+        // on this domain. The topmost rule lands on the plot's top edge, where
+        // the old chart drew its fifth. See docs/charts.md for both.
         axis: {
           line: false,
           ticks: {

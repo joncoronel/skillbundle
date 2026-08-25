@@ -12,14 +12,9 @@ import { curveMonotoneX } from "d3-shape";
  * Writes a mark state's value with no renderer animation, leaving the ramp to a
  * CSS transition on the same property (`charts.css`).
  *
- * The renderer re-resolves and re-animates every mark state on each focus
- * change, from whatever value the DOM currently holds. During a scrub that is
- * once per column, so a bar the cursor has already left is handed a fresh
- * 120ms tween every time and never arrives: measured mid-drag it decays 1 →
- * 0.86 → 0.63 → 0.48 → 0.45 and levels off, where the old chart's reached 0.3
- * in 123ms and stayed. A CSS transition does not restart when the value is
- * re-set to the target it is already heading for, which is the behaviour the
- * old per-bar Motion `animate` had.
+ * The renderer restarts every mark state on each focus change, so during a
+ * scrub a fade is retargeted once per column and never arrives. A CSS
+ * transition ignores a write that does not move the target. See docs/charts.md.
  */
 const NO_MOTION = { type: "tween", duration: 0 } as const;
 
@@ -28,15 +23,9 @@ const NO_MOTION = { type: "tween", duration: 0 } as const;
  * rather than bundled, so this is the one D3 module we pull in directly
  * (`d3-shape`); everything else resolves through the compact scales.
  *
- * Monotone, not the old chart's `curveNatural`. Every series here is a
- * cumulative install count, and a natural spline overshoots each vertex: on a
- * one-day jump it drew the total rising 21% past the value it reached, sagging
- * back down afterwards, and dipping 18 units below the lowest figure ever
- * recorded. Measured on the old chart with that data: the totals never fall,
- * and a third of the drawn line descends. That is the chart contradicting its
- * own numbers, so it is not worth keeping for the shape. `curveMonotoneX` is
- * the same soft cubic between points but cannot overshoot one or reverse
- * direction between two of them.
+ * Monotone, not the old chart's `curveNatural`: every series here is a
+ * cumulative count, and a natural spline overshoots each vertex, drawing a
+ * line that contradicts its own numbers. See docs/charts.md.
  */
 export const CHART_CURVE = d3Curve(curveMonotoneX);
 
@@ -45,28 +34,21 @@ export const CHART_CURVE = d3Curve(curveMonotoneX);
  * cursor reads as the bright part of the trace.
  *
  * Mark states are only evaluated when focus exists, so an unconditional `when`
- * means "while hovering" — the old `SeriesHoverDim`'s `tooltipData !== null`,
- * with its 0.4s tween carried over.
+ * means "while hovering".
  */
 export const HOVER_DIM: ChartMarkState<unknown, ChartLineStateStyle> = {
   when: () => true,
-  // 0.3, matching the bars. The old `SeriesHoverDim` defaulted to 0.5 but its
-  // `Line` call site passed `dimOpacity={0.3}`, and the default is what got
-  // copied here — measured against the live old chart, whose line sits at an
-  // effective 0.3 while the highlighted segment stays at 1.
+  // 0.3, matching the bars. The old `SeriesHoverDim` defaulted to 0.5, but its
+  // `Line` call site passed `dimOpacity={0.3}` and the default is what got
+  // copied here first.
   style: { strokeOpacity: 0.3 },
-  // Written instantly; the ramp is a CSS transition. See `BAR_UNFOCUSED_DIM`.
   transition: NO_MOTION,
 };
 
 /**
- * Fades every bar except the focused column, so the day under the cursor is the
- * one the eye lands on. Carried over from the old `SeriesBar`, down to the 0.3
- * target and the 120ms tween — bars are per-datum nodes, so this is one thing
- * the library expresses directly where the line needs the band.
- *
- * `focus: "unmatched"` is evaluated per datum against the current focus, which
- * on these charts the overlay sets through `setControlledFocus`.
+ * Fades every bar except the focused column. Bars are per-datum scene nodes, so
+ * `focus: "unmatched"` resolves per datum and the library expresses this
+ * directly, where the line needs the overlay's cloned band instead.
  */
 export const BAR_UNFOCUSED_DIM: ChartMarkState<unknown, ChartBarStateStyle> = {
   when: { focus: "unmatched" },
