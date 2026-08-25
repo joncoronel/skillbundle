@@ -1137,11 +1137,25 @@ edits silently. Keep this list to exactly what is still local — everything tha
 gets upstreamed should be deleted from it, or the list becomes a to-do nobody
 trusts.
 
-**Currently one entry.** An earlier round of this list had nine; the other eight
+**Currently two entries.** An earlier round of this list had nine; the other eight
 were fixed upstream in cubby-ui and came back in the next `shadcn add`, which is
 the outcome to aim for. That round is worth copying: the Switch's `squash`
 variant, CopyButton's `display: contents` wrapper and the `sr-only` removal from
 Button all landed upstream in better shape than the local patch had them.
+
+- **`drawer/drawer.css` — the horizontal-drawer scroll rules are scoped to the
+  viewport, not to `html`.** Upstream anchors them on the document root with
+  `html:has([data-slot="drawer-viewport"][data-direction="left"|"right"])`. An
+  `:has()` on `html` makes the engine re-check the root on every DOM mutation
+  anywhere in the document, so it is charged to every page that imports the
+  drawer whether or not one is open — and the rules are never unloaded, so one
+  visit to a route with a drawer taxes every later route in the tab. Measured
+  against the install chart: handler p90 4.5ms to 5.3ms, frame p90 12.6ms to
+  16.6ms, with no drawer open. Re-apply by replacing the two `html:has(...)`
+  blocks with a plain `[data-slot="drawer-viewport"][data-direction=...]`
+  selector carrying `overscroll-behavior: none`. Worth upstreaming: the intent
+  is to stop scroll chaining out of the drawer, which belongs on the scrolling
+  element.
 
 - **`button.tsx` — two default values.** `DEFAULT_LOADING_INDICATOR` and
   `DEFAULT_LOADING_LAYOUT`, both at the top of the file, both one line. The

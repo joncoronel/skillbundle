@@ -35,18 +35,28 @@
   }
 }
 
-/* Horizontal drawers: prevent page scroll interference */
-html:has([data-slot="drawer-viewport"][data-direction="left"]),
-html:has([data-slot="drawer-viewport"][data-direction="right"]) {
+/* Horizontal drawers: prevent page scroll interference.
+ *
+ * LOCAL DIVERGENCE — see TODO.md "Local cubby-ui divergences". Upstream scopes
+ * these to the document root with `html:has([data-direction="left"|"right"])`.
+ * That costs every page that so much as imports this file, matched or not: an
+ * `:has()` anchored on `html` makes the engine re-check the root's match state
+ * on every DOM mutation anywhere in the document. Measured on a chart that
+ * mutates SVG attributes per pointer crossing, merely having these rules in the
+ * stylesheet moved handler p90 from 4.5ms to 5.3ms and frame p90 from 12.6ms to
+ * 16.6ms — on a page with no drawer open, and no horizontal drawer anywhere in
+ * the app. The rules are also sticky: they enter the stylesheet the first time
+ * any route importing the drawer is visited and are never unloaded, so one visit
+ * to a page with a drawer taxes every later route in that tab.
+ *
+ * Scoped to the viewport itself instead. `overscroll-behavior` on the scrolling
+ * element is what actually stops scroll chaining out of the drawer, which is the
+ * stated intent. Dropped with the `html` anchor: hiding the PAGE scrollbar while
+ * a horizontal drawer is open. Nothing here uses `direction="left"|"right"` —
+ * `skill-composer.tsx` is the only consumer and it is `"bottom"` — so if a
+ * horizontal drawer is ever added, decide that part deliberately rather than
+ * restoring an `html:has()`. */
+[data-slot="drawer-viewport"][data-direction="left"],
+[data-slot="drawer-viewport"][data-direction="right"] {
   overscroll-behavior: none;
-  scrollbar-width: none;
-}
-
-html:has(
-    [data-slot="drawer-viewport"][data-direction="left"]
-  )::-webkit-scrollbar,
-html:has(
-    [data-slot="drawer-viewport"][data-direction="right"]
-  )::-webkit-scrollbar {
-  display: none !important;
 }
