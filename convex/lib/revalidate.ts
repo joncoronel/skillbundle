@@ -9,8 +9,8 @@
  * A job that moves both kinds of data pings both (markDelistedSkills and
  * syncCurated do exactly that). Getting this wrong is expensive, not just wrong:
  *
- *   "home-hot" / "home-trending" / "home-popular"
- *       Home rails. Pinged by their own leaderboard crons.
+ *   "home-popular"
+ *       The home page's popular rail. Pinged by the sync cron.
  *   "skill-sync"
  *       Install counts, ranks, snapshots, version history, copies — plus the
  *       list surfaces that filter on `isDelisted` / read the curated rollup

@@ -7,26 +7,14 @@ import type { api } from "@/convex/_generated/api";
 
 type HomeContentProps = {
   initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
-  initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
-  initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
 };
 
 // The hero + search + rail + catalog all live inside SkillExplorer (the
 // discovery surface — see components/skill-explorer.tsx). SkillExplorer reads
 // search params via nuqs' Next adapter, so under Cache Components it's dynamic
 // and app/(main)/page.tsx wraps it in Suspense with <HomeFallback> below.
-export function HomeContent({
-  initialPopularSkills,
-  initialTrending,
-  initialHot,
-}: HomeContentProps) {
-  return (
-    <SkillExplorer
-      initialPopularSkills={initialPopularSkills}
-      initialTrending={initialTrending}
-      initialHot={initialHot}
-    />
-  );
+export function HomeContent({ initialPopularSkills }: HomeContentProps) {
+  return <SkillExplorer initialPopularSkills={initialPopularSkills} />;
 }
 
 /**
@@ -38,18 +26,10 @@ export function HomeContent({
  * swaps in the live tree — identical when no params are set, so the common
  * load has no visible flash.
  */
-export function HomeFallback({
-  initialPopularSkills,
-  initialTrending,
-  initialHot,
-}: HomeContentProps) {
+export function HomeFallback({ initialPopularSkills }: HomeContentProps) {
   return (
     <ExplorerStaticProvider>
-      <SkillExplorerView
-        initialPopularSkills={initialPopularSkills}
-        initialTrending={initialTrending}
-        initialHot={initialHot}
-      />
+      <SkillExplorerView initialPopularSkills={initialPopularSkills} />
     </ExplorerStaticProvider>
   );
 }

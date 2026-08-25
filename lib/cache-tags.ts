@@ -13,10 +13,15 @@
  * asserting the route accepts exactly `SITE_TAGS`.
  */
 
-/** Home rails, each pinged by its own leaderboard cron. */
+/**
+ * The home page's popular rail, pinged by the sync cron.
+ *
+ * Hot and Trending had tags here too, until those two moved to a client fetch
+ * inside the leaderboard sheet (they render nowhere else, and the sheet starts
+ * closed). Nothing renders them from a `'use cache'` function any more, so a
+ * tag for them would be a ping with no reader.
+ */
 export const HOME_POPULAR_TAG = "home-popular";
-export const HOME_TRENDING_TAG = "home-trending";
-export const HOME_HOT_TAG = "home-hot";
 
 /**
  * Install counts, ranks, snapshots, version history, copies — plus the list
@@ -37,8 +42,6 @@ export const SKILL_CONTENT_TAG = "skill-content";
 
 /** The complete set `/api/revalidate` will accept. Order is not significant. */
 export const SITE_TAGS = [
-  HOME_HOT_TAG,
-  HOME_TRENDING_TAG,
   HOME_POPULAR_TAG,
   SKILL_SYNC_TAG,
   SKILL_CONTENT_TAG,
