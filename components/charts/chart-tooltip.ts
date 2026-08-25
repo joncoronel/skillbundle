@@ -16,8 +16,9 @@ export const TOOLTIP_OFFSET = 16;
  * against the viewport, which has room the chart does not — on the install
  * dialog it hangs up to 217px past the chart, floating over the backdrop.
  *
- * The unportalled path positions from scene coordinates and writes CSS pixels,
- * so it needs those units to agree. See `useSettledBox`.
+ * Only the unportalled path is exposed to a scene unit that is not a CSS
+ * pixel: it writes scene coordinates straight into `left`, where the portalled
+ * path converts first. See `useSettledBox` for keeping the two in step.
  */
 export const CHART_TOOLTIP = {
   use: tooltip,

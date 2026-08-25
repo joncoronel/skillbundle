@@ -63,7 +63,7 @@ export const INITIAL_WIDTH = {
  */
 export const CHART_REVEAL_CLASS = "chart-reveal";
 
-/** Bounds the wait below, for a transform that never goes away. */
+/** Bounds the wait below. Five times the 200ms the dialog takes to open. */
 const SETTLE_TIMEOUT = 1000;
 
 /**
