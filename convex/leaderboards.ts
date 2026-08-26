@@ -181,7 +181,7 @@ export const syncHot = internalAction({
     }));
 
     await ctx.runMutation(internal.leaderboards.applyHot, { ranked });
-    // No tag ping: see `refreshTrending`.
+    // No tag ping: see `syncTrending`.
   },
 });
 

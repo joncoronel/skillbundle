@@ -4,10 +4,11 @@ import { Suspense } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { HomeContent, HomeFallback } from "./home-content";
+import { SkillExplorer } from "@/components/skill-explorer";
+import { HomeFallback } from "./home-content";
 import { HOME_POPULAR_TAG } from "@/lib/cache-tags";
 
-// The page is static. <HomeContent> reads search params via nuqs' Next
+// The page is static. <SkillExplorer> reads search params via nuqs' Next
 // adapter, which suspends during prerendering — the Suspense fallback below
 // renders the identical default no-params state (hero + search shell + popular
 // leaderboard) under ExplorerStaticProvider (defaults derived from the URL
@@ -66,7 +67,7 @@ export default async function Home() {
 
   return (
     // The width wrapper sits ABOVE the boundary rather than inside both
-    // branches: it used to be duplicated in HomeContent and HomeFallback with a
+    // branches: it used to be duplicated in the page and HomeFallback with a
     // comment asking future editors to keep them matched, which was forced only
     // while they were `<main>` elements — a landmark cannot straddle a Suspense
     // boundary from outside. Now that `(main)/layout.tsx` owns the landmark and
@@ -75,7 +76,7 @@ export default async function Home() {
       <Suspense
         fallback={<HomeFallback initialPopularSkills={initialPopularSkills} />}
       >
-        <HomeContent initialPopularSkills={initialPopularSkills} />
+        <SkillExplorer initialPopularSkills={initialPopularSkills} />
       </Suspense>
     </div>
   );

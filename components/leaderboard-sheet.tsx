@@ -12,6 +12,8 @@ import {
   SheetTitle,
   SheetBody,
 } from "@/components/ui/cubby-ui/sheet";
+import { Button } from "@/components/ui/cubby-ui/button";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import {
   SkillRowGrid,
@@ -48,8 +50,9 @@ const TRENDING_LIMIT = 60;
 function useLeaderboard(active: LeaderboardViewValue, open: boolean) {
   const hot = useQuery({
     ...convexQuery(api.leaderboards.listHot, { limit: HOT_LIMIT }),
-    // Gated on the tab, not on `view`: `view` drops to null the moment closing
-    // starts, and disabling there would empty the list mid-slide-out.
+    // `open` gates both; `active` picks which one actually runs. Closing
+    // disables them, but React Query keeps the cached rows, so the list
+    // survives the slide-out rather than emptying under it.
     enabled: open && active === "hot",
     staleTime: 5 * 60_000,
   });
@@ -67,6 +70,14 @@ function useLeaderboard(active: LeaderboardViewValue, open: boolean) {
     skills: (rows ?? []).map(rowToSkill),
     // `isLoading` is false for a cached tab, so reopening does not flash.
     isLoading: source.isLoading,
+    // A fetch that never produced rows must not read as "no rows". Two
+    // distinct states get there: a thrown query is `isError`, and an offline
+    // one is `isPaused` — TanStack's default `networkMode: "online"` parks the
+    // query instead of failing it, so `isError` stays false, `isLoading` goes
+    // false, and `data` is undefined. Measured offline, that rendered the empty
+    // state, which is the one message that is definitely wrong.
+    failed: source.isError || source.isPaused,
+    retry: source.refetch,
   };
 }
 
@@ -95,7 +106,10 @@ export function LeaderboardSheet({
   const [lastView, setLastView] = useState<LeaderboardViewValue>("hot");
   if (view !== null && view !== lastView) setLastView(view);
   const active: LeaderboardViewValue = view ?? lastView;
-  const { skills, isLoading } = useLeaderboard(active, view !== null);
+  const { skills, isLoading, failed, retry } = useLeaderboard(
+    active,
+    view !== null,
+  );
 
   return (
     <Sheet
@@ -133,8 +147,14 @@ export function LeaderboardSheet({
             </TabsList>
           </Tabs>
           <p className="text-xs text-muted-foreground">{CAPTIONS[active]}</p>
-          <div className="pt-1">
-            {isLoading ? (
+          <div aria-busy={isLoading} className="pt-1" role="status">
+            {failed ? (
+              <EmptyState message="Couldn't load the leaderboard.">
+                <Button onClick={() => retry()} size="sm" variant="outline">
+                  Try again
+                </Button>
+              </EmptyState>
+            ) : isLoading ? (
               <LeaderboardSkeleton />
             ) : skills.length === 0 ? (
               <EmptyState message="No leaderboard data yet — check back after the next sync." />
@@ -149,23 +169,34 @@ export function LeaderboardSheet({
 }
 
 /**
- * Row-shaped placeholder for the first open of a tab. Sized to the real rows so
- * the list does not jump when they arrive.
+ * Row-shaped placeholder for the first open of a tab.
+ *
+ * Mirrors `SelectableSkillRow` as measured, not as guessed: `px-4` inside
+ * `py-3`, a checkbox square, the name and source on ONE baseline row (they sit
+ * side by side even in a sheet this narrow), and the install count pinned
+ * right. `min-h` is the real row's 50px, which its right-hand meta drives
+ * rather than the text.
+ *
+ * Both halves matter. Bars inset differently from the text they stand in for
+ * read as a different list; a row of the wrong height makes the list jump when
+ * the data lands.
  */
 function LeaderboardSkeleton() {
   return (
-    <div aria-hidden="true" className="grid grid-cols-1">
+    <div className="grid grid-cols-1">
+      <span className="sr-only">Loading leaderboard</span>
       {Array.from({ length: 8 }, (_, i) => (
         <div
-          className="flex items-center gap-3 border-b border-border/60 py-3"
+          aria-hidden="true"
+          className="flex min-h-[50px] items-center gap-3 border-b border-border/60 px-4 py-3"
           key={i}
         >
-          <div className="size-4 shrink-0 rounded bg-muted/60" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="h-3.5 w-2/5 rounded bg-muted/60" />
-            <div className="h-3 w-3/5 rounded bg-muted/40" />
+          <Skeleton className="size-4 shrink-0" />
+          <div className="flex min-w-0 flex-1 items-baseline gap-2">
+            <Skeleton className="h-4 w-2/5" />
+            <Skeleton className="h-4 w-1/4" />
           </div>
-          <div className="h-3 w-12 shrink-0 rounded bg-muted/40" />
+          <Skeleton className="ml-auto h-4 w-12 shrink-0" />
         </div>
       ))}
     </div>

@@ -99,12 +99,14 @@ if (process.env.CRONS_ENABLED === "true") {
   // yesterday, so the underlying delta only moves once an hour — a 30-minute
   // cadence was recomputing the same numbers half the time.
   //
-  // Halved 2026-08-12 from "0,30 * * * *". Each run pings /api/revalidate,
-  // which uses `{ expire: 0 }` — an immediate catalog-wide expiry, not a
-  // stale-while-revalidate. Measured that day: /api/revalidate took 97 requests
-  // in 24h, and this cron was 48 of them, the single largest contributor. So
-  // the old cadence cost a function invocation plus a hard invalidation of the
-  // home rail every half hour to publish a number that had not changed.
+  // Halved 2026-08-12 from "0,30 * * * *", when each run still pinged
+  // /api/revalidate with `{ expire: 0 }` — an immediate catalog-wide expiry,
+  // not a stale-while-revalidate. Measured that day: /api/revalidate took 97
+  // requests in 24h, and this cron was 48 of them, the single largest
+  // contributor. So the old cadence cost a function invocation plus a hard
+  // invalidation of the home rail every half hour to publish a number that had
+  // not changed. The ping itself is gone now: Hot renders from a client query
+  // in the leaderboard sheet, so there is no cached snapshot to expire.
   crons.hourly("sync hot", { minuteUTC: 45 }, internal.leaderboards.syncHot);
 
   // Daily at 05:00 UTC: housekeeping for the GitHub tree cache shared by the

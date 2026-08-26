@@ -49,14 +49,14 @@
  * any route importing the drawer is visited and are never unloaded, so one visit
  * to a page with a drawer taxes every later route in that tab.
  *
- * Scoped to the viewport itself instead. `overscroll-behavior` on the scrolling
- * element is what actually stops scroll chaining out of the drawer, which is the
- * stated intent. Dropped with the `html` anchor: hiding the PAGE scrollbar while
- * a horizontal drawer is open. Nothing here uses `direction="left"|"right"` —
- * `skill-composer.tsx` is the only consumer and it is `"bottom"` — so if a
- * horizontal drawer is ever added, decide that part deliberately rather than
- * restoring an `html:has()`. */
-[data-slot="drawer-viewport"][data-direction="left"],
-[data-slot="drawer-viewport"][data-direction="right"] {
-  overscroll-behavior: none;
-}
+ * Deleted rather than rescoped, because the component already does this job:
+ * `drawer.tsx` puts `overscroll-x-none` and `overflow-y-hidden` on the same
+ * viewport for horizontal directions, and hides its scrollbar there too. A
+ * rescoped rule would have added `overscroll-behavior-y: none` to an axis that
+ * cannot scroll.
+ *
+ * What the `html` anchor did and nothing replaces: hiding the PAGE scrollbar
+ * while a horizontal drawer is open. Nothing here uses
+ * `direction="left"|"right"` — `skill-composer.tsx` is the only consumer and it
+ * is `"bottom"` — so if a horizontal drawer is ever added, decide that
+ * deliberately rather than restoring an `html:has()`. */

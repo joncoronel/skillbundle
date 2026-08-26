@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, useMemo } from "react";
+import { Activity } from "react";
 import type { FunctionReturnType } from "convex/server";
 import {
   CatalogFacetsProvider,
