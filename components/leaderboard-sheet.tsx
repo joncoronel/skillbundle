@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
+import { rowPositionClassName } from "@/lib/listing-styles";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import {
   SkillRowGrid,
@@ -147,7 +149,20 @@ export function LeaderboardSheet({
             </TabsList>
           </Tabs>
           <p className="text-xs text-muted-foreground">{CAPTIONS[active]}</p>
-          <div aria-busy={isLoading} className="pt-1" role="status">
+          {/* The live region is a bare status line, not a wrapper around the
+              results. `role="status"` implies `aria-atomic`, so announcing the
+              node that holds the rows reads all 30 to 60 of them in one go the
+              moment they land — and an `sr-only` label inside a node marked
+              `aria-busy` is suppressed until it flips, so the pending state
+              never lands at all. Same shape as `DotMatrixComet`. */}
+          <span aria-live="polite" className="sr-only" role="status">
+            {isLoading
+              ? "Loading leaderboard"
+              : failed
+                ? "Couldn't load the leaderboard"
+                : `${skills.length} skills`}
+          </span>
+          <div aria-busy={isLoading} className="pt-1">
             {failed ? (
               <EmptyState message="Couldn't load the leaderboard.">
                 <Button onClick={() => retry()} size="sm" variant="outline">
@@ -171,24 +186,30 @@ export function LeaderboardSheet({
 /**
  * Row-shaped placeholder for the first open of a tab.
  *
- * Mirrors `SelectableSkillRow` as measured, not as guessed: `px-4` inside
+ * Mirrors `SelectableSkillRow` as measured, not as guessed: the same
+ * `rounded-2xl border bg-card` frame through `rowPositionClassName`, so the
+ * stack reads as one unit exactly as the real list does, then `px-4` inside
  * `py-3`, a checkbox square, the name and source on ONE baseline row (they sit
  * side by side even in a sheet this narrow), and the install count pinned
  * right. `min-h` is the real row's 50px, which its right-hand meta drives
  * rather than the text.
  *
- * Both halves matter. Bars inset differently from the text they stand in for
- * read as a different list; a row of the wrong height makes the list jump when
- * the data lands.
+ * All of it matters for the same reason: bars inset differently, framed
+ * differently, or at the wrong height read as a different list rather than as
+ * this one arriving.
  */
+const SKELETON_ROWS = 8;
+
 function LeaderboardSkeleton() {
   return (
     <div className="grid grid-cols-1">
-      <span className="sr-only">Loading leaderboard</span>
-      {Array.from({ length: 8 }, (_, i) => (
+      {Array.from({ length: SKELETON_ROWS }, (_, i) => (
         <div
           aria-hidden="true"
-          className="flex min-h-[50px] items-center gap-3 border-b border-border/60 px-4 py-3"
+          className={cn(
+            "flex min-h-[50px] items-center gap-3 rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
+            rowPositionClassName(i, SKELETON_ROWS),
+          )}
           key={i}
         >
           <Skeleton className="size-4 shrink-0" />
