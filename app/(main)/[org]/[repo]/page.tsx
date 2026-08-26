@@ -24,9 +24,7 @@ import { cn, formatInstalls } from "@/lib/utils";
 // re-exports them cannot be called from here.
 import {
   LISTING_TITLE_SCALE,
-  LIST_PANEL,
-  LIST_ROW,
-  LIST_STACK,
+  rowPositionClassName,
 } from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
@@ -239,10 +237,16 @@ function RepoListSkeleton() {
         <span>Installs</span>
       </div>
 
-      <div className={cn(LIST_PANEL, LIST_STACK)}>
+      <div className="grid">
         {Array.from({ length: 6 }).map((_, i) => {
           return (
-            <div key={i} className={cn(LIST_ROW, "py-3")}>
+            <div
+              key={i}
+              className={cn(
+                "rounded-2xl border bg-card py-3 dark:border-border/50",
+                rowPositionClassName(i, 6),
+              )}
+            >
               <div className="flex items-center gap-3 px-4">
                 <Skeleton className="h-4 w-40" />
                 <div className="ml-auto shrink-0">

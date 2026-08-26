@@ -7,9 +7,7 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import {
-  LIST_PANEL,
-  LIST_PANEL_SUNKEN,
-  LIST_STACK,
+  rowPositionClassName,
   SelectableSkillRow,
   type SkillData,
   type LeaderboardMetric,
@@ -113,33 +111,25 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
 export function SkillRowGrid({
   skills,
   metric,
-  panel = "raised",
 }: {
   skills: SkillData[];
   metric?: LeaderboardMetric;
-  /** Which way the panel steps off its ground. `raised` over the page;
-   *  `sunken` over anything already raised (the leaderboard sheet), where a
-   *  raised panel would be white on white in light mode. See
-   *  lib/listing-styles.ts. */
-  panel?: "raised" | "sunken";
 }) {
   return (
-    <div
-      className={cn(
-        panel === "sunken" ? LIST_PANEL_SUNKEN : LIST_PANEL,
-        LIST_STACK,
-      )}
-    >
-      {skills.map((skill) => (
+    <div className="grid grid-cols-1">
+      {skills.map((skill, i) => (
         <SelectableSkillRow
           key={`${skill.source}/${skill.skillId}`}
           skill={skill}
           metric={metric}
-          // These lists are unbounded (infinite scroll): content-visibility
-          // skips layout/paint for off-screen rows. The intrinsic-size `auto`
-          // keyword remembers each row's real height once rendered — 76px is
-          // only the pre-render estimate for scrollbar math.
-          className="[contain-intrinsic-size:auto_76px] [content-visibility:auto]"
+          className={cn(
+            // These lists are unbounded (infinite scroll): content-visibility
+            // skips layout/paint for off-screen rows. The intrinsic-size
+            // `auto` keyword remembers each row's real height once rendered
+            // — 76px is only the pre-render estimate for scrollbar math.
+            "[contain-intrinsic-size:auto_76px] [content-visibility:auto]",
+            rowPositionClassName(i, skills.length),
+          )}
         />
       ))}
     </div>

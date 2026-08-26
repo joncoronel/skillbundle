@@ -4,13 +4,7 @@ import { useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Album02Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { cn } from "@/lib/utils";
-import {
-  LIST_PANEL,
-  LIST_STACK,
-  SelectableSkillRow,
-  type SkillData,
-} from "@/components/skill-card";
+import { SelectableSkillRow, type SkillData } from "@/components/skill-card";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useHydrated } from "@/hooks/use-hydrated";
 import {
@@ -152,14 +146,28 @@ export function SourceSkillList({ skills }: { skills: SkillData[] }) {
         <span>Installs</span>
       </div>
 
-      <div className={cn(LIST_PANEL, LIST_STACK)}>
-        {skills.map((skill) => (
-          <SelectableSkillRow
-            key={`${skill.source}/${skill.skillId}`}
-            skill={skill}
-            hideSource
-          />
-        ))}
+      <div className="grid">
+        {skills.map((skill, i) => {
+          const isFirst = i === 0;
+          const isLast = i === skills.length - 1;
+          const isSolo = skills.length === 1;
+          return (
+            <SelectableSkillRow
+              key={`${skill.source}/${skill.skillId}`}
+              skill={skill}
+              hideSource
+              className={
+                isSolo
+                  ? undefined
+                  : isFirst
+                    ? "rounded-b-none"
+                    : isLast
+                      ? "rounded-t-none border-t-0"
+                      : "rounded-none border-t-0"
+              }
+            />
+          );
+        })}
       </div>
     </>
   );

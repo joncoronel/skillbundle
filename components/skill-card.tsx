@@ -26,21 +26,15 @@ import {
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { renderHighlight } from "@/lib/search/highlight";
-import { LIST_ROW } from "@/lib/listing-styles";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
 // ---------------------------------------------------------------------------
 
 // Defined in lib/listing-styles.ts, not here: this module is `"use client"`,
-// and the listing pages that also need them are Server Components. Re-exported
-// so this file stays the one import site for everything a skill row needs.
-export {
-  LIST_PANEL,
-  LIST_PANEL_SUNKEN,
-  LIST_STACK,
-  LIST_ROW,
-} from "@/lib/listing-styles";
+// and the listing pages that also need it are Server Components. Re-exported so
+// this file stays the one import site for everything a skill row needs.
+export { rowPositionClassName } from "@/lib/listing-styles";
 
 export interface SkillData {
   name: string;
@@ -230,21 +224,13 @@ function SelectableWrapper({
       htmlFor={checkboxId}
       data-variant="default"
       className={cn(
-        LIST_ROW,
-        "flex cursor-pointer flex-col",
+        "flex flex-col rounded-2xl border bg-card text-card-foreground dark:border-border/50",
         // 100ms is the system's fast tier (§7 Buttons), not Tailwind's 150ms
         // default. A selection toggle is confirmed by the click, so the fill
-        // should be there by the time the eye gets back to the row.
-        "transition-colors duration-100 ease-out motion-reduce:transition-none",
-        // Selection paints a fill and nothing else — no ring, inset or outer.
-        // A ring is a precision signal, right for a short set of exclusive
-        // choices; this is a 16k-row multi-select whose question is "which ones
-        // did I pick", and a filled band answers that at a glance where an
-        // outline has to be looked at. The checkbox already carries the
-        // precision half. Full-bleed on purpose: the divider above and below is
-        // inset, so an inset fill here would put two different left edges in
-        // the same column.
-        "has-data-checked:bg-primary/10",
+        // and the border tint should both be there by the time the eye gets
+        // back to the row.
+        "cursor-pointer transition-colors duration-100 ease-out motion-reduce:transition-none",
+        "has-data-checked:border-primary/30 has-data-checked:bg-primary/8 dark:has-data-checked:border-primary/30",
         className,
       )}
     >
@@ -392,7 +378,11 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
   return (
     <SelectableWrapper
       checkboxId={checkboxId}
-      className={cn("py-3", className)}
+      className={cn(
+        "py-3",
+        "[&:has(+_label_[data-checked])]:border-b-primary/30 dark:[&:has(+_label_[data-checked])]:border-b-primary/30",
+        className,
+      )}
     >
       <SkillRowContent
         skill={skill}
