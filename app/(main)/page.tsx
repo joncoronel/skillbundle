@@ -4,14 +4,11 @@ import { Suspense } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { HomeContent, HomeFallback } from "./home-content";
-import {
-  HOME_HOT_TAG,
-  HOME_POPULAR_TAG,
-  HOME_TRENDING_TAG,
-} from "@/lib/cache-tags";
+import { SkillExplorer } from "@/components/skill-explorer";
+import { HomeFallback } from "./home-content";
+import { HOME_POPULAR_TAG } from "@/lib/cache-tags";
 
-// The page is static. <HomeContent> reads search params via nuqs' Next
+// The page is static. <SkillExplorer> reads search params via nuqs' Next
 // adapter, which suspends during prerendering — the Suspense fallback below
 // renders the identical default no-params state (hero + search shell + popular
 // leaderboard) under ExplorerStaticProvider (defaults derived from the URL
@@ -19,12 +16,17 @@ import {
 // prefetchable. After hydration the live tree applies
 // any actual URL params — and stays in sync with Next's client-side router, so
 // a <Link> into `/?q=…` (or `/compare?skills=…`) updates the params reactively.
-// The three leaderboards are cached with `'use cache'` and tagged via
-// `cacheTag`; the Convex leaderboard crons revalidate those tags on each sync
-// (see app/api/revalidate/route.ts), so the snapshots stay fresh without a
-// per-request Convex hit — and the tabs render straight from this data with no
-// live subscription, so there's no stale-then-live flash on the client. The
-// `cacheLife` windows are a safety net for a missed cron ping.
+// The popular leaderboard is cached with `'use cache'` and tagged via
+// `cacheTag`; the Convex sync cron revalidates that tag (see
+// app/api/revalidate/route.ts), so the snapshot stays fresh without a
+// per-request Convex hit. The `cacheLife` window is a safety net for a missed
+// cron ping.
+//
+// Hot and Trending are NOT fetched here. They render only inside the
+// leaderboard sheet, which starts closed, so prefetching them put 90 skill
+// rows into every visitor's payload for a surface most never open. The sheet
+// fetches the tab it is showing; see `useLeaderboard` in
+// components/leaderboard-sheet.tsx.
 
 const HOME_TITLE = "SkillBundle — Build your AI skill bundle";
 const HOME_DESCRIPTION =
@@ -60,50 +62,21 @@ async function getInitialPopularSkills() {
   });
 }
 
-async function getInitialTrending() {
-  "use cache";
-  cacheLife("hours");
-  cacheTag(HOME_TRENDING_TAG);
-  return fetchQuery(api.leaderboards.listTrending, {
-    paginationOpts: { numItems: 60, cursor: null },
-  });
-}
-
-async function getInitialHot() {
-  "use cache";
-  cacheLife("hours");
-  cacheTag(HOME_HOT_TAG);
-  return fetchQuery(api.leaderboards.listHot, { limit: 30 });
-}
-
 export default async function Home() {
-  // Fire all three in parallel — they're independent.
-  const [initialPopularSkills, initialTrending, initialHot] = await Promise.all(
-    [getInitialPopularSkills(), getInitialTrending(), getInitialHot()],
-  );
+  const initialPopularSkills = await getInitialPopularSkills();
 
   return (
     // The width wrapper sits ABOVE the boundary rather than inside both
-    // branches: it used to be duplicated in HomeContent and HomeFallback with a
+    // branches: it used to be duplicated in the page and HomeFallback with a
     // comment asking future editors to keep them matched, which was forced only
     // while they were `<main>` elements — a landmark cannot straddle a Suspense
     // boundary from outside. Now that `(main)/layout.tsx` owns the landmark and
     // this is a plain box, one copy in the static shell does for both.
     <div className="mx-auto max-w-6xl px-4">
       <Suspense
-        fallback={
-          <HomeFallback
-            initialPopularSkills={initialPopularSkills}
-            initialTrending={initialTrending}
-            initialHot={initialHot}
-          />
-        }
+        fallback={<HomeFallback initialPopularSkills={initialPopularSkills} />}
       >
-        <HomeContent
-          initialPopularSkills={initialPopularSkills}
-          initialTrending={initialTrending}
-          initialHot={initialHot}
-        />
+        <SkillExplorer initialPopularSkills={initialPopularSkills} />
       </Suspense>
     </div>
   );

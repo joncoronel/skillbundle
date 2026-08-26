@@ -225,7 +225,9 @@ get wrong from memory:
 
 ### Home leaderboard caching + cron revalidation
 
-The home page's three leaderboards are cached with `'use cache'` + `cacheTag` (`home-popular`, `home-trending`, `home-hot`) and a `cacheLife` window (`days` for Popular, `hours` for Trending/Hot). The Convex leaderboard crons POST to `/api/revalidate` (shared-secret gated, tag allowlist) right after writing new ranks; the handler calls `revalidateTag(tag, { expire: 0 })` — Next's documented immediate-expiry pattern for webhooks — so the next visit rebuilds the snapshot rather than serving it stale-while-revalidate. The `cacheLife` windows are a safety net for a missed ping. This gives fresh-enough data with zero per-request Convex calls and no stale-then-live flash (the tabs render the snapshot directly, no client subscription).
+The home page's Popular rail is cached with `'use cache'` + `cacheTag` (`home-popular`) and a `cacheLife` window of `days`. The Convex sync cron POSTs to `/api/revalidate` (shared-secret gated, tag allowlist) right after writing new ranks; the handler calls `revalidateTag(tag, { expire: 0 })` — Next's documented immediate-expiry pattern for webhooks — so the next visit rebuilds the snapshot rather than serving it stale-while-revalidate. The `cacheLife` window is a safety net for a missed ping. This gives fresh-enough data with zero per-request Convex calls.
+
+Hot and Trending are **not** cached here and have no tags. They render only inside the leaderboard sheet, which starts closed, so prefetching them put 90 skill rows into every visitor's payload for a surface most never open — 120 rows and 400KB down to 30 and 289KB when that stopped. The sheet fetches the tab it is showing, through `convexQuery`; see `useLeaderboard` in `components/leaderboard-sheet.tsx`. Their crons still write ranks on the same cadence, they just no longer ping a tag nothing reads.
 
 > **All server caching uses `'use cache'`.** Every server-side cache in the app uses it — the home leaderboards, `official`, the catalog loaders, and the OG-image data loaders (`lib/og/images.tsx`) — with **no `unstable_cache` anywhere**. It's idiomatic and prerender-friendly (the cached result can land in the static shell).
 
@@ -254,8 +256,8 @@ Vercel's Runtime Cache. The app doesn't need `remote` today because its cached
 reads all sit inside prerenderable pages. A loader that ran outside one (a Route
 Handler, say) would not get this for free.
 
-The route accepts a fixed allowlist of tags: `home-hot`, `home-trending`,
-`home-popular`, `skill-sync`, and `skill-content`. The last two are split by
+The route accepts a fixed allowlist of tags: `home-popular`, `skill-sync`, and
+`skill-content`. The last two are split by
 cadence, not by skill — `lib/skill-cache.ts` has the reasoning and
 `convex/lib/revalidate.ts` mirrors the list as a `SiteTag` union so a typo on the
 Convex side is a compile error rather than a swallowed 400.

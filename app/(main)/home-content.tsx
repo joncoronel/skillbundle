@@ -1,55 +1,33 @@
 "use client";
 
 import type { FunctionReturnType } from "convex/server";
-import { SkillExplorer, SkillExplorerView } from "@/components/skill-explorer";
+import { SkillExplorerView } from "@/components/skill-explorer";
 import { ExplorerStaticProvider } from "@/components/explorer-state";
 import type { api } from "@/convex/_generated/api";
 
-type HomeContentProps = {
+type HomeFallbackProps = {
   initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
-  initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
-  initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
 };
 
-// The hero + search + rail + catalog all live inside SkillExplorer (the
-// discovery surface — see components/skill-explorer.tsx). SkillExplorer reads
-// search params via nuqs' Next adapter, so under Cache Components it's dynamic
-// and app/(main)/page.tsx wraps it in Suspense with <HomeFallback> below.
-export function HomeContent({
-  initialPopularSkills,
-  initialTrending,
-  initialHot,
-}: HomeContentProps) {
-  return (
-    <SkillExplorer
-      initialPopularSkills={initialPopularSkills}
-      initialTrending={initialTrending}
-      initialHot={initialHot}
-    />
-  );
-}
-
 /**
- * Static-shell stand-in for <HomeContent>. HomeContent's SkillExplorer reads
- * search params (nuqs/useSearchParams), which suspends during prerendering —
- * this fallback renders the identical view under ExplorerStaticProvider (the
- * no-params entry state, derived mechanically from the URL parsers, with noop
- * setters) so the prerendered HTML is the full page. After hydration React
- * swaps in the live tree — identical when no params are set, so the common
- * load has no visible flash.
+ * Static-shell stand-in for `<SkillExplorer>`, which the page renders directly.
+ *
+ * The hero, search, rail and catalog all live inside SkillExplorer (the
+ * discovery surface). It reads search params via nuqs' Next adapter, which
+ * suspends during prerendering, so `app/(main)/page.tsx` wraps it in Suspense
+ * with this as the fallback: the identical view under ExplorerStaticProvider
+ * (the no-params entry state, derived mechanically from the URL parsers, with
+ * noop setters) so the prerendered HTML is the full page. After hydration React
+ * swaps in the live tree — identical when no params are set, so the common load
+ * has no visible flash.
+ *
+ * There used to be a `HomeContent` beside this, forwarding one prop to
+ * SkillExplorer and nothing else. It earned its place while it passed three.
  */
-export function HomeFallback({
-  initialPopularSkills,
-  initialTrending,
-  initialHot,
-}: HomeContentProps) {
+export function HomeFallback({ initialPopularSkills }: HomeFallbackProps) {
   return (
     <ExplorerStaticProvider>
-      <SkillExplorerView
-        initialPopularSkills={initialPopularSkills}
-        initialTrending={initialTrending}
-        initialHot={initialHot}
-      />
+      <SkillExplorerView initialPopularSkills={initialPopularSkills} />
     </ExplorerStaticProvider>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, useMemo } from "react";
+import { Activity } from "react";
 import type { FunctionReturnType } from "convex/server";
 import {
   CatalogFacetsProvider,
@@ -12,7 +12,7 @@ import {
   useCatalogSearchStatus,
 } from "@/hooks/use-catalog-search";
 import { useDebouncedQueryValue } from "@/hooks/use-debounced-query-value";
-import { PopularList, rowToSkill } from "@/components/default-skills-list";
+import { PopularList } from "@/components/default-skills-list";
 import { SkillComposer } from "@/components/skill-composer";
 import { ActiveCatalogResults } from "@/components/catalog-results";
 import { LeaderboardSheet } from "@/components/leaderboard-sheet";
@@ -27,8 +27,6 @@ import { cn } from "@/lib/utils";
 
 interface SkillExplorerProps {
   initialPopularSkills: FunctionReturnType<typeof api.skills.listPopularSkills>;
-  initialTrending: FunctionReturnType<typeof api.leaderboards.listTrending>;
-  initialHot: FunctionReturnType<typeof api.leaderboards.listHot>;
 }
 
 const skillDetailHandle = createSkillDetailHandle();
@@ -74,8 +72,6 @@ export function SkillExplorer(props: SkillExplorerProps) {
  */
 export function SkillExplorerView({
   initialPopularSkills,
-  initialTrending,
-  initialHot,
 }: SkillExplorerProps) {
   const {
     textQuery,
@@ -91,17 +87,6 @@ export function SkillExplorerView({
     view,
     setParams,
   } = useExplorerState();
-
-  // Trending/Hot sheet rows, mapped once from the server-cached snapshots (the
-  // leaderboard crons keep those fresh; there's no client subscription).
-  const trendingSkills = useMemo(
-    () => (initialTrending?.page ?? []).map(rowToSkill),
-    [initialTrending],
-  );
-  const hotSkills = useMemo(
-    () => (initialHot ?? []).map(rowToSkill),
-    [initialHot],
-  );
 
   // The effective (debounced / cache-bypassed) query — the ONE value
   // ActiveCatalogResults fetches with, so the status derivation below reads
@@ -208,11 +193,10 @@ export function SkillExplorerView({
         {/* BundleBar is mounted by the (main) layout (GlobalBundleBar) so its
           state persists across navigation to /compare. */}
         <SkillDetailSheet handle={skillDetailHandle} />
+        {/* Fetches its own rows, only while open. See `useLeaderboard`. */}
         <LeaderboardSheet
           view={view}
           onViewChange={(v) => setParams({ view: v })}
-          hotSkills={hotSkills}
-          trendingSkills={trendingSkills}
         />
       </CatalogFacetsProvider>
     </SkillDetailHandleProvider>

@@ -108,13 +108,7 @@ describe("POST /api/revalidate", () => {
     // Worth keeping honest because the failure is silent: a tag Convex pings
     // that the route rejects returns 400, which revalidateSiteTag logs and
     // swallows, and the publish quietly degrades to the time-based fallback.
-    const ALLOWED = [
-      "home-hot",
-      "home-trending",
-      "home-popular",
-      "skill-sync",
-      "skill-content",
-    ];
+    const ALLOWED = ["home-popular", "skill-sync", "skill-content"];
 
     it("accepts exactly these tags and no others", () => {
       expect([...SITE_TAGS].sort()).toEqual([...ALLOWED].sort());

@@ -20,7 +20,6 @@ import {
   SkillsApiRateLimitError,
 } from "./lib/skillsApi";
 import { loadSkillsAuth } from "./lib/skillsAuth";
-import { revalidateSiteTag } from "./lib/revalidate";
 
 const TRENDING_LIMIT = 200; // top N to track
 const HOT_LIMIT = 50;
@@ -63,7 +62,8 @@ export const syncTrending = internalAction({
     }));
 
     await ctx.runMutation(internal.leaderboards.applyTrending, { ranked });
-    await revalidateSiteTag("home-trending");
+    // No tag ping: the trending list is read by a client query in the
+    // leaderboard sheet, not by a `'use cache'` function.
   },
 });
 
@@ -181,7 +181,7 @@ export const syncHot = internalAction({
     }));
 
     await ctx.runMutation(internal.leaderboards.applyHot, { ranked });
-    await revalidateSiteTag("home-hot");
+    // No tag ping: see `syncTrending`.
   },
 });
 
