@@ -225,12 +225,17 @@ function SelectableWrapper({
       data-variant="default"
       className={cn(
         "flex flex-col rounded-2xl border bg-card text-card-foreground dark:border-border/50",
-        // 100ms is the system's fast tier (§7 Buttons), not Tailwind's 150ms
-        // default. A selection toggle is confirmed by the click, so the fill
-        // and the border tint should both be there by the time the eye gets
-        // back to the row.
+        // 100ms is the system's fast tier (§7), not Tailwind's 150ms default.
         "cursor-pointer transition-colors duration-100 ease-out motion-reduce:transition-none",
-        "has-data-checked:border-primary/30 has-data-checked:bg-primary/8 dark:has-data-checked:border-primary/30",
+        // OPAQUE mix, not `bg-primary/N`: a translucent fill replaces the row's
+        // background rather than layering on it, so it composites over whatever
+        // is BEHIND the row instead of over the row's own tone. In the
+        // leaderboard sheet, where the row steps down to `muted`, that put the
+        // selected row LIGHTER than its neighbours. Same §7 trap as table
+        // hover. The 14% is relative to `--row-surface`, so it is not
+        // comparable to a translucent percentage over the page.
+        "has-data-checked:bg-[color-mix(in_oklab,var(--primary)_14%,var(--row-surface,var(--card)))]",
+        "has-data-checked:border-primary/30 dark:has-data-checked:border-primary/30",
         className,
       )}
     >
@@ -319,21 +324,11 @@ const SkillRowContent = memo(function SkillRowContent({
       {selectable && checkboxId ? (
         <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
       ) : null}
-      {/* Name + source, and the ONE rule is that this block never changes
-          height between rows. It used to wrap: the source sat beside the name
-          and dropped to a second line whenever the pair overran, which on a
-          phone is most rows but not all of them, so the list scrolled at two
-          alternating heights.
-
-          The variable there is the length of THIS row's name, not the width of
-          the viewport or of the row — which is why a container query does not
-          help. It can tell a row how much room it has; it cannot tell it that
-          the name inside happens to be long. So the line count is declared
-          rather than discovered: stacked below `sm` (where the pair rarely
-          fits), one non-wrapping line at `sm` and up (where it nearly always
-          does), and each part truncates inside its own line. A row with no
-          source is one line at every width, which is still uniform because
-          that's a whole-surface prop. */}
+      {/* The line count is fixed per breakpoint, never per row: stacked below
+          `sm`, one non-wrapping line above it, each part truncating inside its
+          own line. `flex-wrap` here instead let the source drop below the name
+          whenever THAT row's name ran long, which on a phone is most rows but
+          not all, so the list scrolled at two alternating heights. */}
       <div className="flex min-w-0 flex-col sm:flex-row sm:flex-nowrap sm:items-baseline sm:gap-x-2">
         <span className="inline-flex max-w-full min-w-0 items-center gap-1 text-sm font-semibold">
           <SkillName skill={skill} className="min-w-0 truncate" />

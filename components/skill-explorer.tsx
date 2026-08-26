@@ -148,9 +148,8 @@ export function SkillExplorerView({
 
           {isRepo ? (
             /* Repo mode's region: match results (or the paste-a-repo empty
-             state). No entrance transition — switching modes is a direct
-             manipulation, and a fade on the thing you just asked for reads as
-             the page being slow rather than as the mode arriving. */
+             state). No entrance transition: switching modes is a direct
+             manipulation, so a fade here reads as the page being slow. */
             <div className="pt-4">
               <RepoAnalysisResults />
             </div>

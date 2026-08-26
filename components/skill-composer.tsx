@@ -540,8 +540,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
             the one-field form doesn't need a second row for it. Standard sm
             (32px) control, same as the toggles it replaces: a real click
             target that still sits inside the 44px field. No entrance fade:
-            everything the repo morph brings in arrives at once, already
-            there. */}
+            everything the repo morph brings in arrives at once. */}
         {isRepo && (
           <InputGroupButton
             variant="primary"
@@ -566,22 +565,13 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
 
   return (
     <div className="sticky top-[4.5rem] z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-      {/* Flat in both themes, and near-black in dark only.
-          `shadow-none` removes the inset Card's `--surface-shadow-combined-1`,
-          whose ring layer IS the 1px edge this read as in light — the frame
-          separates on tone alone now, `muted` under a `field` page in light and
-          `chrome` under it in dark.
-
-          `dark:bg-chrome` WITHOUT `data-surface="chrome"`, deliberately. That
-          attribute exists to survive a palette INVERSION: a near-black fill
-          under a light page flips every foreground, so the subtree needs the
-          chrome tokens handed to it. Dark inverts nothing — `--chrome-foreground`
-          is literally `var(--foreground)` there, and `--chrome-muted-foreground`
-          computes to 0.71 against the page's own 0.73 — so the repoint would buy
-          a rounding difference and cost the one token that is NOT a near-match:
-          it aims `--input` at `--chrome-hover`, which would dissolve the search
-          field from a raised surface-3 panel into a 10% wash. The field is the
-          instrument here, not a control on a nav bar. */}
+      {/* Flat in both themes, near-black in dark only. `shadow-none` drops the
+          inset Card's `--surface-shadow-combined-1`, whose ring layer is the
+          1px edge this used to read as in light; the frame separates on tone
+          alone now. `dark:bg-chrome` deliberately carries NO
+          `data-surface="chrome"` — DESIGN.md §2 covers why, but the short
+          version is that the attribute would aim `--input` at `--chrome-hover`
+          and dissolve the search field into a 10% wash. */}
       <Card
         variant="inset"
         className="p-1 pb-0 shadow-none dark:bg-chrome dark:[--popup-surface:var(--chrome)]"

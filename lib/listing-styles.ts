@@ -25,50 +25,40 @@ export const LISTING_TITLE_SCALE =
   "font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero";
 
 /**
- * Row fill for a stacked list sitting on a RAISED ground — the leaderboard
- * sheet — rather than on the page.
+ * Row fill for a stacked list on a RAISED ground (the leaderboard sheet) rather
+ * than on the page. Light-only: in light a `card` row inside a `level={5}`
+ * sheet is white on white, and `muted` is the only step left (DESIGN.md §5,
+ * The Light Ceiling Rule). Dark's ladder steps at every rung, so its row
+ * already sits below the sheet.
  *
- * Only light needs it. Light mode has three tonal steps and no more:
- * `--surface-3` through `--surface-8` are all `oklch(1 0 0)`, so a `card` row
- * inside a `level={5}` sheet is white on white, and with no outer border left
- * to draw its perimeter the list has nothing separating it from the sheet at
- * all. Stepping DOWN to `muted` is the only direction light leaves open, and
- * 0.94 under the sheet's 1.0 is the same 6% step the composer's frame uses
- * against the page.
- *
- * Dark keeps `card` because dark already solves this by itself: the ladder
- * really does step at every rung there, so the row's 0.264 sits below the
- * sheet's 0.321 without help. Painting `muted` in both themes would move dark
- * for no reason.
- *
- * See DESIGN.md §5, The Light Ceiling Rule.
+ * Painted THROUGH `--row-surface` rather than as `dark:bg-card`, and do not
+ * "simplify" it back: a `dark:bg-*` carries the same (0,2,0) specificity as
+ * `has-data-checked:bg-*`, so the two race on source order — `dark:` won, and
+ * a selected row in the dark sheet silently kept its unselected fill. Keeping
+ * the `bg-*` unvariant also means the fill and the selection tint read one
+ * variable and cannot drift.
  */
-export const LIST_ROW_ON_RAISED = "bg-muted dark:bg-card";
+export const LIST_ROW_ON_RAISED =
+  "bg-(--row-surface) [--row-surface:var(--muted)] dark:[--row-surface:var(--card)]";
 
 /**
  * Corner/border classes for a row inside a stacked list (SkillRowGrid, repo
  * match results): first row keeps top corners, last keeps bottom corners,
- * middles are square, and the only borders left anywhere are the ones BETWEEN
- * rows. The stack still reads as one unit; it just has no outline around it,
- * so the `card` fill draws its own silhouette against the page.
+ * middles are square, and the only borders left are the ones BETWEEN rows.
  *
- * Each caller's base class supplies `border` (all four sides at the hairline
- * width, coloured by the `*` rule in globals.css). What this function does is
- * subtract: every row loses its left and right, the first loses its top, and
- * the last loses everything. What survives is one bottom border per row except
- * the last — exactly `length - 1` hairlines for `length` rows, each sitting on
- * a seam between two of them and none on the perimeter.
+ * This SUBTRACTS from the caller's base `border` (all four sides): every row
+ * loses left and right, the first loses its top, the last loses everything.
+ * What survives is `length - 1` hairlines, each on a seam and none on the
+ * perimeter.
  *
- * Keeping the bottom edge rather than the top is what lets the selection tint
- * stay continuous: a checked row colours the seam BELOW it through its own
- * `has-data-checked:border-primary/30`, and the seam ABOVE it through the
- * previous row's `:has(+ label [data-checked])`. There is no previous-sibling
- * selector, so the top-edge version of this could only ever tint one of the
- * two.
+ * Bottom edge rather than top, so the selection tint stays continuous: a
+ * checked row colours the seam below it via `has-data-checked:border-primary/30`
+ * and the seam above it via the previous row's `:has(+ label [data-checked])`.
+ * CSS has no previous-sibling selector, so a top-edge version could only ever
+ * tint one of the two.
  *
- * Returns `border-0` for a single-row list, which keeps all four corners and
- * draws no line at all — the case hand-rolled copies of this logic used to
- * forget.
+ * Returns `border-0` for a single-row list, which keeps all four corners — the
+ * case hand-rolled copies of this logic used to forget.
  */
 export function rowPositionClassName(index: number, length: number): string {
   if (length === 1) return "border-0";

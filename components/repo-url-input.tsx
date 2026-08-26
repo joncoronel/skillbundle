@@ -605,12 +605,6 @@ function SkillGroupRow({ group, className }: SkillGroupRowProps) {
         // border is its bottom one, so the group's bottom edge IS the seam
         // above that singleton.
         "[&:has(+_label_[data-checked])]:border-b-primary/30",
-        //
-        // There used to be a (2) here that tinted the group's left and right
-        // borders when a variant inside was checked — the only paintable L/R
-        // edges in this region, since the variants have `border-x-0`. The list
-        // has no L/R edges at all now (rowPositionClassName strips them from
-        // every row), so that rule painted nothing and is gone.
         className,
       )}
     >
