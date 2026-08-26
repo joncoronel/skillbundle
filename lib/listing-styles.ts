@@ -25,6 +25,27 @@ export const LISTING_TITLE_SCALE =
   "font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero";
 
 /**
+ * Row fill for a stacked list sitting on a RAISED ground — the leaderboard
+ * sheet — rather than on the page.
+ *
+ * Only light needs it. Light mode has three tonal steps and no more:
+ * `--surface-3` through `--surface-8` are all `oklch(1 0 0)`, so a `card` row
+ * inside a `level={5}` sheet is white on white, and with no outer border left
+ * to draw its perimeter the list has nothing separating it from the sheet at
+ * all. Stepping DOWN to `muted` is the only direction light leaves open, and
+ * 0.94 under the sheet's 1.0 is the same 6% step the composer's frame uses
+ * against the page.
+ *
+ * Dark keeps `card` because dark already solves this by itself: the ladder
+ * really does step at every rung there, so the row's 0.264 sits below the
+ * sheet's 0.321 without help. Painting `muted` in both themes would move dark
+ * for no reason.
+ *
+ * See DESIGN.md §5, The Light Ceiling Rule.
+ */
+export const LIST_ROW_ON_RAISED = "bg-muted dark:bg-card";
+
+/**
  * Corner/border classes for a row inside a stacked list (SkillRowGrid, repo
  * match results): first row keeps top corners, last keeps bottom corners,
  * middles are square, and the only borders left anywhere are the ones BETWEEN

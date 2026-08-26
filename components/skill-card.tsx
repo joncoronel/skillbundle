@@ -34,7 +34,7 @@ import { renderHighlight } from "@/lib/search/highlight";
 // Defined in lib/listing-styles.ts, not here: this module is `"use client"`,
 // and the listing pages that also need it are Server Components. Re-exported so
 // this file stays the one import site for everything a skill row needs.
-export { rowPositionClassName } from "@/lib/listing-styles";
+export { LIST_ROW_ON_RAISED, rowPositionClassName } from "@/lib/listing-styles";
 
 export interface SkillData {
   name: string;
