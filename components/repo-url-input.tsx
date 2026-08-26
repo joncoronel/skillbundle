@@ -241,9 +241,8 @@ export function RepoAnalysisResults() {
             <div
               key={i}
               className={cn(
-                "flex items-center gap-3 border bg-card px-4 py-3 dark:border-border/50",
-                i === 0 ? "rounded-t-2xl" : "border-t-0",
-                i === rowCount - 1 ? "rounded-b-2xl" : "",
+                "flex items-center gap-3 rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
+                rowPositionClassName(i, rowCount),
               )}
             >
               <Skeleton className="size-4 shrink-0 rounded-sm" />
@@ -601,19 +600,17 @@ function SkillGroupRow({ group, className }: SkillGroupRowProps) {
         // section's square corners, so we don't need to round each child.
         "overflow-hidden",
         "transition-colors",
-        // Selection-border continuity at group boundaries:
-        //
-        // 1) Color the group's bottom border when followed by a checked
-        //    singleton. The singleton has border-t-0 in the outer-list merge,
-        //    so its visual top edge IS the group's bottom edge.
+        // Selection-border continuity at group boundaries: colour the group's
+        // bottom border when followed by a checked singleton. Every row's only
+        // border is its bottom one, so the group's bottom edge IS the seam
+        // above that singleton.
         "[&:has(+_label_[data-checked])]:border-b-primary/30",
-        // 2) Color the group's left + right borders when ANY variant inside
-        //    it is checked. Variants have border-x-0 (no horizontal borders
-        //    of their own), so the only paintable L/R edges in this region
-        //    belong to the outer Collapsible. The orange tints the whole
-        //    group's sides, signaling "a variant inside this group is
-        //    selected" — without introducing any new borders.
-        "has-[label[data-checked]]:border-x-primary/30 dark:has-[label[data-checked]]:border-x-primary/30",
+        //
+        // There used to be a (2) here that tinted the group's left and right
+        // borders when a variant inside was checked — the only paintable L/R
+        // edges in this region, since the variants have `border-x-0`. The list
+        // has no L/R edges at all now (rowPositionClassName strips them from
+        // every row), so that rule painted nothing and is gone.
         className,
       )}
     >

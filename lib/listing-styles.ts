@@ -27,18 +27,31 @@ export const LISTING_TITLE_SCALE =
 /**
  * Corner/border classes for a row inside a stacked list (SkillRowGrid, repo
  * match results): first row keeps top corners, last keeps bottom corners,
- * middles are square, and every non-first row drops its top border so the
- * stack reads as one framed unit.
+ * middles are square, and the only borders left anywhere are the ones BETWEEN
+ * rows. The stack still reads as one unit; it just has no outline around it,
+ * so the `card` fill draws its own silhouette against the page.
  *
- * Returns `undefined` for a single-row list, which keeps all four corners — the
- * case hand-rolled copies of this logic used to forget.
+ * Each caller's base class supplies `border` (all four sides at the hairline
+ * width, coloured by the `*` rule in globals.css). What this function does is
+ * subtract: every row loses its left and right, the first loses its top, and
+ * the last loses everything. What survives is one bottom border per row except
+ * the last — exactly `length - 1` hairlines for `length` rows, each sitting on
+ * a seam between two of them and none on the perimeter.
+ *
+ * Keeping the bottom edge rather than the top is what lets the selection tint
+ * stay continuous: a checked row colours the seam BELOW it through its own
+ * `has-data-checked:border-primary/30`, and the seam ABOVE it through the
+ * previous row's `:has(+ label [data-checked])`. There is no previous-sibling
+ * selector, so the top-edge version of this could only ever tint one of the
+ * two.
+ *
+ * Returns `border-0` for a single-row list, which keeps all four corners and
+ * draws no line at all — the case hand-rolled copies of this logic used to
+ * forget.
  */
-export function rowPositionClassName(
-  index: number,
-  length: number,
-): string | undefined {
-  if (length === 1) return undefined;
-  if (index === 0) return "rounded-b-none";
-  if (index === length - 1) return "rounded-t-none border-t-0";
-  return "rounded-none border-t-0";
+export function rowPositionClassName(index: number, length: number): string {
+  if (length === 1) return "border-0";
+  if (index === 0) return "rounded-b-none border-x-0 border-t-0";
+  if (index === length - 1) return "rounded-t-none border-0";
+  return "rounded-none border-x-0 border-t-0";
 }
