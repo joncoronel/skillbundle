@@ -26,7 +26,7 @@ import {
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { renderHighlight } from "@/lib/search/highlight";
-import { LIST_ROW_FRAME } from "@/lib/listing-styles";
+import { LIST_ROW } from "@/lib/listing-styles";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
@@ -35,7 +35,12 @@ import { LIST_ROW_FRAME } from "@/lib/listing-styles";
 // Defined in lib/listing-styles.ts, not here: this module is `"use client"`,
 // and the listing pages that also need them are Server Components. Re-exported
 // so this file stays the one import site for everything a skill row needs.
-export { LIST_STACK, LIST_ROW_FRAME } from "@/lib/listing-styles";
+export {
+  LIST_PANEL,
+  LIST_PANEL_SUNKEN,
+  LIST_STACK,
+  LIST_ROW,
+} from "@/lib/listing-styles";
 
 export interface SkillData {
   name: string;
@@ -225,16 +230,20 @@ function SelectableWrapper({
       htmlFor={checkboxId}
       data-variant="default"
       className={cn(
-        LIST_ROW_FRAME,
+        LIST_ROW,
         "flex cursor-pointer flex-col",
         // 100ms is the system's fast tier (§7 Buttons), not Tailwind's 150ms
         // default. A selection toggle is confirmed by the click, so the fill
         // should be there by the time the eye gets back to the row.
         "transition-colors duration-100 ease-out motion-reduce:transition-none",
-        // Selection paints the fill and nothing else. There is no border left
-        // to tint, and no sibling to reach for either: this row used to colour
-        // its bottom edge to carry a checked neighbour's outline across the
-        // shared seam, and a gapped stack has no shared seam.
+        // Selection paints a fill and nothing else — no ring, inset or outer.
+        // A ring is a precision signal, right for a short set of exclusive
+        // choices; this is a 16k-row multi-select whose question is "which ones
+        // did I pick", and a filled band answers that at a glance where an
+        // outline has to be looked at. The checkbox already carries the
+        // precision half. Full-bleed on purpose: the divider above and below is
+        // inset, so an inset fill here would put two different left edges in
+        // the same column.
         "has-data-checked:bg-primary/10",
         className,
       )}

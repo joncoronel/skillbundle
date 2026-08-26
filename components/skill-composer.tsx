@@ -566,7 +566,26 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
 
   return (
     <div className="sticky top-[4.5rem] z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-      <Card variant="inset" className="p-1 pb-0">
+      {/* Flat in both themes, and near-black in dark only.
+          `shadow-none` removes the inset Card's `--surface-shadow-combined-1`,
+          whose ring layer IS the 1px edge this read as in light — the frame
+          separates on tone alone now, `muted` under a `field` page in light and
+          `chrome` under it in dark.
+
+          `dark:bg-chrome` WITHOUT `data-surface="chrome"`, deliberately. That
+          attribute exists to survive a palette INVERSION: a near-black fill
+          under a light page flips every foreground, so the subtree needs the
+          chrome tokens handed to it. Dark inverts nothing — `--chrome-foreground`
+          is literally `var(--foreground)` there, and `--chrome-muted-foreground`
+          computes to 0.71 against the page's own 0.73 — so the repoint would buy
+          a rounding difference and cost the one token that is NOT a near-match:
+          it aims `--input` at `--chrome-hover`, which would dissolve the search
+          field from a raised surface-3 panel into a 10% wash. The field is the
+          instrument here, not a control on a nav bar. */}
+      <Card
+        variant="inset"
+        className="p-1 pb-0 shadow-none dark:bg-chrome dark:[--popup-surface:var(--chrome)]"
+      >
         {/* Inner surface — the search instrument. The InputGroup owns
             the input behavior + focus ring; its chrome matches the
             inset Card's inner panel (borderless — elevation shadow +

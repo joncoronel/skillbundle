@@ -33,7 +33,8 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
 import {
-  LIST_ROW_FRAME,
+  LIST_PANEL,
+  LIST_ROW,
   LIST_STACK,
   SelectableSkillRow,
   type SkillData,
@@ -237,14 +238,11 @@ export function RepoAnalysisResults() {
           )}
         </p>
         <Skeleton className="mb-3 h-3 w-48 rounded-sm" aria-hidden="true" />
-        <div className={LIST_STACK} aria-hidden="true">
+        <div className={cn(LIST_PANEL, LIST_STACK)} aria-hidden="true">
           {Array.from({ length: rowCount }).map((_, i) => (
             <div
               key={i}
-              className={cn(
-                LIST_ROW_FRAME,
-                "flex items-center gap-3 px-4 py-3",
-              )}
+              className={cn(LIST_ROW, "flex items-center gap-3 px-4 py-3")}
             >
               <Skeleton className="size-4 shrink-0 rounded-sm" />
               <div className="flex items-baseline gap-x-2">
@@ -410,7 +408,7 @@ export function RepoAnalysisResults() {
           filter to see all {recs.length}.
         </p>
       ) : (
-        <div className={LIST_STACK}>
+        <div className={cn(LIST_PANEL, LIST_STACK)}>
           {shownGroups.map((group) => {
             if (group.variantCount === 1) {
               const variant = group.variants[0];
@@ -575,15 +573,12 @@ function SkillGroupRow({ group }: { group: GroupedRecommendation }) {
   return (
     <Collapsible
       className={cn(
-        LIST_ROW_FRAME,
+        LIST_ROW,
         "flex flex-col",
-        // overflow-hidden lets the outer radius clip the inner tray's square
-        // top corners, so we don't need to round each child.
-        "overflow-hidden",
-        // The group card carries no selection tint of its own. It used to
-        // paint its own borders when a variant inside was checked, because a
-        // variant had no horizontal edges to paint; now each variant is a
-        // whole row on the tray and tints itself.
+        // The group header carries no selection tint of its own — each variant
+        // inside tints itself. It used to paint its own left and right borders
+        // when a variant was checked, because a variant had no horizontal edges
+        // to paint; nothing in this list has an edge any more.
       )}
     >
       <CollapsibleTrigger
@@ -607,12 +602,13 @@ function SkillGroupRow({ group }: { group: GroupedRecommendation }) {
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent className="max-sm:duration-0">
-        {/* Nested tray: the muted step recesses below the group header, so the
-            variants read as children of the row above without a divider. Each
-            variant is a full SelectableSkillRow — same frame, same gap, same
-            checkbox and click-row vs click-name behavior as a singleton — so
-            the nesting is one list idiom on a lower surface, not a second one. */}
-        <div className={cn("bg-muted p-1.5", LIST_STACK)}>
+        {/* Nested tray: the muted step recesses below the group header, which
+            is what says "these belong to the row above" — no extra rule and no
+            indent needed. Inside it the variants are ordinary divided rows, so
+            the nesting is one list idiom on a lower surface, not a second one.
+            The enclosing LIST_PANEL clips the tray at the ends of the run,
+            which is why the tray needs no radius of its own. */}
+        <div className={cn("bg-muted", LIST_STACK)}>
           {group.variants.map((variant) => {
             const skill: SkillData = { ...variant, name: group.name };
             return (

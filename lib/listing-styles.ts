@@ -25,32 +25,71 @@ export const LISTING_TITLE_SCALE =
   "font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero";
 
 /**
+ * A catalog list is THREE pieces: a panel that frames the whole run, a stack
+ * that lays the rows out, and a row that draws its own bottom divider.
+ *
+ * The rows used to separate on fill alone — each one a `card`-filled slab with
+ * a gap showing the `field` between them. That works only where the ground is
+ * `surface-1`, and light mode has no headroom above `surface-3`: `--surface-3`
+ * through `--surface-8` are all `oklch(1 0 0)`. So the same list inside any
+ * raised container (the leaderboard sheet is `level={5}`) was white rows on a
+ * white sheet, with nothing left to see. Dark hid it — there the ladder really
+ * does step — but backwards, with the row DARKER than the sheet it sat on,
+ * the inverse of the page relationship.
+ *
+ * A divider needs no fill delta, so it survives any ground. The panel then
+ * frames the run once instead of asking thirty rows to each define themselves,
+ * and inside a container that already frames its contents you use the stack
+ * without it.
+ */
+
+/**
+ * Frames a whole list as one object, in the one direction its ground leaves
+ * open.
+ *
+ * `overflow-hidden` is load-bearing in both: a selected row's fill runs the
+ * full width of the panel, so the panel is what rounds the first and last
+ * selected rows. Without it they land square.
+ *
+ * No border and no shadow on either. One tonal step reads at panel scale where
+ * it did not at row scale, and an edge here would be the second elevation
+ * signal §5 forbids.
+ *
+ * **RAISED** — over the `surface-1` page. The default.
+ *
+ * **SUNKEN** — over anything already raised: a sheet, a dialog, a card. It goes
+ * DOWN because light mode has no room to go up (DESIGN.md §5, The Light Ceiling
+ * Rule: `--surface-3` through `--surface-8` are all `oklch(1 0 0)`, so a
+ * `card` panel inside a `level={5}` sheet is white on white). `muted` is the
+ * one step that reads in BOTH themes from there — 0.94 under light's 1.0, 0.24
+ * under dark's 0.321 — where `surface-1` would be a 3% whisper in light and an
+ * 11% drop in dark, which is not the same object in the two themes.
+ */
+export const LIST_PANEL = "overflow-hidden rounded-2xl bg-card";
+export const LIST_PANEL_SUNKEN = "overflow-hidden rounded-2xl bg-muted";
+
+/**
  * The container that stacks catalog rows.
  *
  * `grid-cols-1` (minmax(0,1fr)) keeps the track shrinkable — a bare `grid`
  * sizes its implicit track to the widest row's intrinsic width, overflowing the
  * viewport on mobile instead of letting each row's internal truncation kick in.
- *
- * The 6px gap is what separates the rows. Rows used to be welded into one
- * framed unit (square middle corners, dropped top borders), which needed a
- * per-index class to know where it sat in the stack; a gapped list needs no
- * such thing, because every row is the same object regardless of position.
  */
-export const LIST_STACK = "grid grid-cols-1 gap-1.5";
+export const LIST_STACK = "grid grid-cols-1";
 
 /**
- * The frame every row in a stacked list shares: fill and corner, no border.
+ * A row in a stacked list: no fill of its own (the panel supplies it) and a
+ * hairline under every row but the last.
  *
- * Elevation is declared once (§5 The Material Depth Rule) and here it is the
- * tonal step alone — `card` is `surface-3`, a rung above the `surface-1` field
- * the gap shows through. `rounded-lg` (12px) is the list-row radius (§6); the
- * old `rounded-2xl` belonged to the welded stack, which was a panel.
+ * The divider is a pseudo-element rather than a `border-b` because it is INSET
+ * — `inset-x-4` puts it flush with the row's own `px-4` content, so it starts
+ * at the checkbox and stops at the install count instead of running out to the
+ * panel's edge. A full-bleed rule cuts the panel into slices; an inset one
+ * separates the content and leaves the panel whole, which is the whole reason
+ * to frame the run in the first place.
  *
- * Uniform on every row, deliberately: the first and last rows get the SAME
- * corner as the middles. A larger outer corner would assert an enclosing frame,
- * and once the rows are separated there is no frame left to belong to.
- *
- * Pair with `LIST_STACK` on the container so skeleton rows and real rows are
- * framed by the same string rather than by two copies that drift.
+ * It is drawn on the BOTTOM of each row, not the top, purely so `not-last`
+ * expresses the "no rule under the final row" case in one variant.
  */
-export const LIST_ROW_FRAME = "rounded-lg bg-card text-card-foreground";
+export const LIST_ROW =
+  "relative not-last:after:pointer-events-none not-last:after:absolute not-last:after:inset-x-4 not-last:after:bottom-0 not-last:after:h-px not-last:after:bg-border";

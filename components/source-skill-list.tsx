@@ -4,7 +4,9 @@ import { useMemo } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Album02Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { cn } from "@/lib/utils";
 import {
+  LIST_PANEL,
   LIST_STACK,
   SelectableSkillRow,
   type SkillData,
@@ -150,7 +152,7 @@ export function SourceSkillList({ skills }: { skills: SkillData[] }) {
         <span>Installs</span>
       </div>
 
-      <div className={LIST_STACK}>
+      <div className={cn(LIST_PANEL, LIST_STACK)}>
         {skills.map((skill) => (
           <SelectableSkillRow
             key={`${skill.source}/${skill.skillId}`}

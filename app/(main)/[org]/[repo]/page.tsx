@@ -24,7 +24,8 @@ import { cn, formatInstalls } from "@/lib/utils";
 // re-exports them cannot be called from here.
 import {
   LISTING_TITLE_SCALE,
-  LIST_ROW_FRAME,
+  LIST_PANEL,
+  LIST_ROW,
   LIST_STACK,
 } from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
@@ -238,10 +239,10 @@ function RepoListSkeleton() {
         <span>Installs</span>
       </div>
 
-      <div className={LIST_STACK}>
+      <div className={cn(LIST_PANEL, LIST_STACK)}>
         {Array.from({ length: 6 }).map((_, i) => {
           return (
-            <div key={i} className={cn(LIST_ROW_FRAME, "py-3")}>
+            <div key={i} className={cn(LIST_ROW, "py-3")}>
               <div className="flex items-center gap-3 px-4">
                 <Skeleton className="h-4 w-40" />
                 <div className="ml-auto shrink-0">
