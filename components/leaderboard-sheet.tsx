@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { rowPositionClassName } from "@/lib/listing-styles";
+import { LIST_ROW_FRAME, LIST_STACK } from "@/lib/listing-styles";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import {
@@ -186,13 +186,12 @@ export function LeaderboardSheet({
 /**
  * Row-shaped placeholder for the first open of a tab.
  *
- * Mirrors `SelectableSkillRow` as measured, not as guessed: the same
- * `rounded-2xl border bg-card` frame through `rowPositionClassName`, so the
- * stack reads as one unit exactly as the real list does, then `px-4` inside
- * `py-3`, a checkbox square, the name and source on ONE baseline row (they sit
- * side by side even in a sheet this narrow), and the install count pinned
- * right. `min-h` is the real row's 50px, which its right-hand meta drives
- * rather than the text.
+ * Mirrors `SelectableSkillRow` as measured, not as guessed: the same frame and
+ * the same stack gap, through the shared `LIST_ROW_FRAME` / `LIST_STACK`
+ * strings rather than a copy of them, then `px-4` inside `py-3`, a checkbox
+ * square, the name and source on ONE baseline row (they sit side by side even
+ * in a sheet this narrow), and the install count pinned right. `min-h` is the
+ * real row's 50px, which its right-hand meta drives rather than the text.
  *
  * All of it matters for the same reason: bars inset differently, framed
  * differently, or at the wrong height read as a different list rather than as
@@ -202,13 +201,13 @@ const SKELETON_ROWS = 8;
 
 function LeaderboardSkeleton() {
   return (
-    <div className="grid grid-cols-1">
+    <div className={LIST_STACK}>
       {Array.from({ length: SKELETON_ROWS }, (_, i) => (
         <div
           aria-hidden="true"
           className={cn(
-            "flex min-h-[50px] items-center gap-3 rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
-            rowPositionClassName(i, SKELETON_ROWS),
+            LIST_ROW_FRAME,
+            "flex min-h-[50px] items-center gap-3 px-4 py-3",
           )}
           key={i}
         >

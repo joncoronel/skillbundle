@@ -539,13 +539,14 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         {/* Repo mode's submit lives inline in the field (URL-bar pattern) —
             the one-field form doesn't need a second row for it. Standard sm
             (32px) control, same as the toggles it replaces: a real click
-            target that still sits inside the 44px field. starting: fades it
-            in on the morph. */}
+            target that still sits inside the 44px field. No entrance fade:
+            everything the repo morph brings in arrives at once, already
+            there. */}
         {isRepo && (
           <InputGroupButton
             variant="primary"
             size="sm"
-            className="shrink-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0"
+            className="shrink-0"
             onClick={handleRepoSubmit}
             disabled={!repoDraft.trim()}
             leadingIcon={
@@ -702,7 +703,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
           Enter a GitHub repo URL, like github.com/vercel/next.js
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none max-sm:hidden starting:opacity-0">
+        <p className="text-xs text-muted-foreground max-sm:hidden">
           Reads languages and packages from public repos
         </p>
       )}
@@ -712,7 +713,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
       <Button
         variant="ghost"
         size="sm"
-        className="ms-auto -me-2 shrink-0 text-muted-foreground transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0"
+        className="ms-auto -me-2 shrink-0 text-muted-foreground"
         onClick={() => setParams({ mode: "text" })}
         leadingIcon={
           <HugeiconsIcon

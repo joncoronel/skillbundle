@@ -26,15 +26,16 @@ import {
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { renderHighlight } from "@/lib/search/highlight";
+import { LIST_ROW_FRAME } from "@/lib/listing-styles";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
 // ---------------------------------------------------------------------------
 
 // Defined in lib/listing-styles.ts, not here: this module is `"use client"`,
-// and the listing pages that also need it are Server Components. Re-exported so
-// this file stays the one import site for everything a skill row needs.
-export { rowPositionClassName } from "@/lib/listing-styles";
+// and the listing pages that also need them are Server Components. Re-exported
+// so this file stays the one import site for everything a skill row needs.
+export { LIST_STACK, LIST_ROW_FRAME } from "@/lib/listing-styles";
 
 export interface SkillData {
   name: string;
@@ -224,9 +225,17 @@ function SelectableWrapper({
       htmlFor={checkboxId}
       data-variant="default"
       className={cn(
-        "flex flex-col rounded-2xl border bg-card text-card-foreground dark:border-border/50",
-        "cursor-pointer transition-colors",
-        "has-data-checked:border-primary/30 has-data-checked:bg-primary/8 dark:has-data-checked:border-primary/30",
+        LIST_ROW_FRAME,
+        "flex cursor-pointer flex-col",
+        // 100ms is the system's fast tier (§7 Buttons), not Tailwind's 150ms
+        // default. A selection toggle is confirmed by the click, so the fill
+        // should be there by the time the eye gets back to the row.
+        "transition-colors duration-100 ease-out motion-reduce:transition-none",
+        // Selection paints the fill and nothing else. There is no border left
+        // to tint, and no sibling to reach for either: this row used to colour
+        // its bottom edge to carry a checked neighbour's outline across the
+        // shared seam, and a gapped stack has no shared seam.
+        "has-data-checked:bg-primary/10",
         className,
       )}
     >
@@ -315,7 +324,22 @@ const SkillRowContent = memo(function SkillRowContent({
       {selectable && checkboxId ? (
         <SkillSelectionCheckbox skill={skill} checkboxId={checkboxId} />
       ) : null}
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      {/* Name + source, and the ONE rule is that this block never changes
+          height between rows. It used to wrap: the source sat beside the name
+          and dropped to a second line whenever the pair overran, which on a
+          phone is most rows but not all of them, so the list scrolled at two
+          alternating heights.
+
+          The variable there is the length of THIS row's name, not the width of
+          the viewport or of the row — which is why a container query does not
+          help. It can tell a row how much room it has; it cannot tell it that
+          the name inside happens to be long. So the line count is declared
+          rather than discovered: stacked below `sm` (where the pair rarely
+          fits), one non-wrapping line at `sm` and up (where it nearly always
+          does), and each part truncates inside its own line. A row with no
+          source is one line at every width, which is still uniform because
+          that's a whole-surface prop. */}
+      <div className="flex min-w-0 flex-col sm:flex-row sm:flex-nowrap sm:items-baseline sm:gap-x-2">
         <span className="inline-flex max-w-full min-w-0 items-center gap-1 text-sm font-semibold">
           <SkillName skill={skill} className="min-w-0 truncate" />
           {skill.curatedOwner && (
@@ -359,11 +383,7 @@ export const SelectableSkillRow = memo(function SelectableSkillRow({
   return (
     <SelectableWrapper
       checkboxId={checkboxId}
-      className={cn(
-        "py-3",
-        "[&:has(+_label_[data-checked])]:border-b-primary/30 dark:[&:has(+_label_[data-checked])]:border-b-primary/30",
-        className,
-      )}
+      className={cn("py-3", className)}
     >
       <SkillRowContent
         skill={skill}

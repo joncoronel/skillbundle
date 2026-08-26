@@ -26,7 +26,8 @@ import { cn, formatInstalls } from "@/lib/utils";
 // re-exports them cannot be called from here.
 import {
   LISTING_TITLE_SCALE,
-  rowPositionClassName,
+  LIST_ROW_FRAME,
+  LIST_STACK,
 } from "@/lib/listing-styles";
 import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
@@ -231,16 +232,10 @@ async function OrgListContent({ params }: { params: Params }) {
         <span>Installs</span>
       </div>
 
-      <div className="grid">
+      <div className={LIST_STACK}>
         {repos.map((repo, i) => {
           return (
-            <div
-              key={repo.source}
-              className={cn(
-                "rounded-2xl border bg-card py-3 dark:border-border/50",
-                rowPositionClassName(i, repos.length),
-              )}
-            >
+            <div key={repo.source} className={cn(LIST_ROW_FRAME, "py-3")}>
               <div className="flex items-center gap-3 px-4">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <Link
@@ -291,16 +286,10 @@ function OrgListSkeleton() {
         <span>Installs</span>
       </div>
 
-      <div className="grid">
+      <div className={LIST_STACK}>
         {Array.from({ length: 6 }).map((_, i) => {
           return (
-            <div
-              key={i}
-              className={cn(
-                "rounded-2xl border bg-card py-3 dark:border-border/50",
-                rowPositionClassName(i, 6),
-              )}
-            >
+            <div key={i} className={cn(LIST_ROW_FRAME, "py-3")}>
               <div className="flex items-center gap-3 px-4">
                 <div className="flex min-w-0 items-baseline gap-x-2">
                   <Skeleton className="h-4 w-24" />

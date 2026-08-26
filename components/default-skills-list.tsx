@@ -7,14 +7,13 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import {
-  rowPositionClassName,
+  LIST_STACK,
   SelectableSkillRow,
   type SkillData,
   type LeaderboardMetric,
 } from "@/components/skill-card";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
-import { cn } from "@/lib/utils";
 
 type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
 
@@ -116,20 +115,17 @@ export function SkillRowGrid({
   metric?: LeaderboardMetric;
 }) {
   return (
-    <div className="grid grid-cols-1">
-      {skills.map((skill, i) => (
+    <div className={LIST_STACK}>
+      {skills.map((skill) => (
         <SelectableSkillRow
           key={`${skill.source}/${skill.skillId}`}
           skill={skill}
           metric={metric}
-          className={cn(
-            // These lists are unbounded (infinite scroll): content-visibility
-            // skips layout/paint for off-screen rows. The intrinsic-size
-            // `auto` keyword remembers each row's real height once rendered
-            // — 76px is only the pre-render estimate for scrollbar math.
-            "[contain-intrinsic-size:auto_76px] [content-visibility:auto]",
-            rowPositionClassName(i, skills.length),
-          )}
+          // These lists are unbounded (infinite scroll): content-visibility
+          // skips layout/paint for off-screen rows. The intrinsic-size `auto`
+          // keyword remembers each row's real height once rendered — 76px is
+          // only the pre-render estimate for scrollbar math.
+          className="[contain-intrinsic-size:auto_76px] [content-visibility:auto]"
         />
       ))}
     </div>

@@ -33,7 +33,8 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
 import {
-  rowPositionClassName,
+  LIST_ROW_FRAME,
+  LIST_STACK,
   SelectableSkillRow,
   type SkillData,
 } from "@/components/skill-card";
@@ -236,14 +237,13 @@ export function RepoAnalysisResults() {
           )}
         </p>
         <Skeleton className="mb-3 h-3 w-48 rounded-sm" aria-hidden="true" />
-        <div className="grid grid-cols-1" aria-hidden="true">
+        <div className={LIST_STACK} aria-hidden="true">
           {Array.from({ length: rowCount }).map((_, i) => (
             <div
               key={i}
               className={cn(
-                "flex items-center gap-3 border bg-card px-4 py-3 dark:border-border/50",
-                i === 0 ? "rounded-t-2xl" : "border-t-0",
-                i === rowCount - 1 ? "rounded-b-2xl" : "",
+                LIST_ROW_FRAME,
+                "flex items-center gap-3 px-4 py-3",
               )}
             >
               <Skeleton className="size-4 shrink-0 rounded-sm" />
@@ -410,17 +410,8 @@ export function RepoAnalysisResults() {
           filter to see all {recs.length}.
         </p>
       ) : (
-        /* grid-cols-1 (minmax(0,1fr)) keeps the track shrinkable — a bare
-           `grid` sizes its implicit track to the widest row's intrinsic width,
-           overflowing the viewport on mobile instead of letting the rows'
-           internal truncation kick in. Same pattern as SkillRowGrid. */
-        <div className="grid grid-cols-1">
-          {shownGroups.map((group, i) => {
-            const positionClassName = rowPositionClassName(
-              i,
-              shownGroups.length,
-            );
-
+        <div className={LIST_STACK}>
+          {shownGroups.map((group) => {
             if (group.variantCount === 1) {
               const variant = group.variants[0];
               // The variant is structurally a SkillData minus `name`, which
@@ -430,18 +421,11 @@ export function RepoAnalysisResults() {
                 <SelectableSkillRow
                   key={`singleton:${variant.source}/${variant.skillId}`}
                   skill={skill}
-                  className={positionClassName}
                 />
               );
             }
 
-            return (
-              <SkillGroupRow
-                key={`group:${group.name}`}
-                group={group}
-                className={positionClassName}
-              />
-            );
+            return <SkillGroupRow key={`group:${group.name}`} group={group} />;
           })}
         </div>
       )}
@@ -584,37 +568,22 @@ function RepoMatchPaywall({ onTryExample }: { onTryExample: () => void }) {
 // Group row — collapsible row for skills with multiple variants
 // ---------------------------------------------------------------------------
 
-interface SkillGroupRowProps {
-  group: GroupedRecommendation;
-  className?: string;
-}
-
-function SkillGroupRow({ group, className }: SkillGroupRowProps) {
+function SkillGroupRow({ group }: { group: GroupedRecommendation }) {
   const visibleCount = group.variants.length;
   const cappedRemainder = group.variantCount - visibleCount;
 
   return (
     <Collapsible
       className={cn(
-        "flex flex-col rounded-2xl border bg-card text-card-foreground dark:border-border/50",
-        // overflow-hidden lets the outer rounded-2xl clip the inner muted
-        // section's square corners, so we don't need to round each child.
+        LIST_ROW_FRAME,
+        "flex flex-col",
+        // overflow-hidden lets the outer radius clip the inner tray's square
+        // top corners, so we don't need to round each child.
         "overflow-hidden",
-        "transition-colors",
-        // Selection-border continuity at group boundaries:
-        //
-        // 1) Color the group's bottom border when followed by a checked
-        //    singleton. The singleton has border-t-0 in the outer-list merge,
-        //    so its visual top edge IS the group's bottom edge.
-        "[&:has(+_label_[data-checked])]:border-b-primary/30",
-        // 2) Color the group's left + right borders when ANY variant inside
-        //    it is checked. Variants have border-x-0 (no horizontal borders
-        //    of their own), so the only paintable L/R edges in this region
-        //    belong to the outer Collapsible. The orange tints the whole
-        //    group's sides, signaling "a variant inside this group is
-        //    selected" — without introducing any new borders.
-        "has-[label[data-checked]]:border-x-primary/30 dark:has-[label[data-checked]]:border-x-primary/30",
-        className,
+        // The group card carries no selection tint of its own. It used to
+        // paint its own borders when a variant inside was checked, because a
+        // variant had no horizontal edges to paint; now each variant is a
+        // whole row on the tray and tints itself.
       )}
     >
       <CollapsibleTrigger
@@ -638,36 +607,23 @@ function SkillGroupRow({ group, className }: SkillGroupRowProps) {
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent className="max-sm:duration-0">
-        {/* Nested section: muted background visually shows that variants
-            are children of the group row above. Each variant is rendered
-            as a SelectableSkillRow so it inherits the same checkbox +
-            click-row vs click-name behavior the singleton rows use.
-
-            The `border-t` is the visual top edge of the first variant
-            (since variants have border-t-0). Color it orange when the
-            first variant is selected so the selection's top edge visually
-            connects to the rest of its border. */}
-        <div className="border-t bg-muted dark:border-border/50 [&:has(>_label:first-child[data-checked])]:border-t-primary/30">
-          {group.variants.map((variant, i) => {
+        {/* Nested tray: the muted step recesses below the group header, so the
+            variants read as children of the row above without a divider. Each
+            variant is a full SelectableSkillRow — same frame, same gap, same
+            checkbox and click-row vs click-name behavior as a singleton — so
+            the nesting is one list idiom on a lower surface, not a second one. */}
+        <div className={cn("bg-muted p-1.5", LIST_STACK)}>
+          {group.variants.map((variant) => {
             const skill: SkillData = { ...variant, name: group.name };
-            const isLast = i === group.variants.length - 1;
             return (
               <SelectableSkillRow
                 key={`${variant.source}/${variant.skillId}`}
                 skill={skill}
-                className={cn(
-                  // Square the corners and remove the standalone card border
-                  // so variants render as one continuous list inside the
-                  // expanded section. The bottom-most variant retains the
-                  // bottom-rounding from the wrapper div.
-                  "rounded-none border-x-0 border-t-0 bg-transparent",
-                  isLast && cappedRemainder === 0 && "border-b-0",
-                )}
               />
             );
           })}
           {cappedRemainder > 0 && (
-            <div className="px-4 py-2 text-xs text-muted-foreground">
+            <div className="px-4 py-1 text-xs text-muted-foreground">
               showing {visibleCount} of {group.variantCount} versions
             </div>
           )}
