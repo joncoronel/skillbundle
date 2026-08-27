@@ -18,7 +18,9 @@ export const TOOLTIP_OFFSET = 16;
  *
  * Only the unportalled path is exposed to a scene unit that is not a CSS
  * pixel: it writes scene coordinates straight into `left`, where the portalled
- * path converts first. See `useSettledBox` for keeping the two in step.
+ * path converts first. The two coincide only while the chart's scene width
+ * equals its painted width, which is why nothing may mount a chart inside a
+ * scaling ancestor — docs/charts.md, under measurement.
  */
 export const CHART_TOOLTIP = {
   use: tooltip,

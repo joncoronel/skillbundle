@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
-import { chartMotion } from "./chart-motion";
+import { useEffect, type CSSProperties, type RefObject } from "react";
+import { chartMotion, chartMotionEntrance } from "./chart-motion";
 import { CHART_HOST_VARS } from "./chart-theme";
 // The library's own nodes, styled where our utilities cannot reach. Imported
 // here because every chart imports this module.
@@ -30,9 +30,12 @@ import "./charts.css";
  * position always fits (the `maxWidth` in `chart-tooltip-panel.tsx`), so the
  * travel between two fitting positions cannot escape either.
  */
-export function useChartHostProps() {
+export function useChartHostProps(options?: { entrance?: boolean }) {
   return {
-    renderer: chartMotion,
+    // `entrance` opts into the library's own first paint. Only the install
+    // chart takes it; see `chartMotionEntrance` for what it needs from the
+    // surface it mounts in.
+    renderer: options?.entrance ? chartMotionEntrance : chartMotion,
     style: CHART_HOST_VARS as CSSProperties,
   };
 }
@@ -51,69 +54,68 @@ export function useChartHostProps() {
 export const INITIAL_WIDTH = {
   /** Skill page sidebar column. */
   sparkline: 240,
-  /** `sm:max-w-2xl` dialog, less its padding. */
-  dialog: 592,
+  /** `sm:max-w-2xl` dialog (42rem), less `DialogBody`'s 1.5rem each side. */
+  dialog: 624,
   /** Compare page card at the common desktop width. */
   compare: 1160,
 } as const;
 
 /**
- * Plays the left-to-right entrance over the marks group. Two of our three
- * charts opt out, matching the `animationDuration={0}` they have always passed.
+ * Plays the left-to-right entrance over the marks group.
+ *
+ * The compare chart's entrance, and only its own: a `clip-path` animation is
+ * immune to what the renderer commits, which is what makes it the right choice
+ * on a page that can relayout under it. The install chart wants the same
+ * left-to-right reading but gets it from the renderer instead
+ * (`chartMotionEntrance`), which grows the marks rather than uncovering them.
+ * The sidebar sparkline has no entrance, matching the `animationDuration={0}`
+ * it always passed.
  */
 export const CHART_REVEAL_CLASS = "chart-reveal";
 
-/** Bounds the wait below. Five times the 200ms the dialog takes to open. */
-const SETTLE_TIMEOUT = 1000;
-
 /**
- * A token that changes once the element's painted box matches its layout box.
+ * Dev-only tripwire: warns if a chart is mounted inside a scaling ancestor.
  *
- * Fold it into a chart's `defineChart` memo to force one re-layout after an
- * ancestor's entrance transform has finished:
+ * The library measures its container with `getBoundingClientRect`, which
+ * carries an ancestor transform, and a transform fires no ResizeObserver — so
+ * a chart mounted under one lays its scene out at the wrong size and never
+ * finds out. The whole scene then paints at that ratio: at `scale-95`, every
+ * stroke width, tick font and marker radius comes out 5.3% oversized.
  *
- * ```ts
- * const definition = useMemo(() => defineChart({ ... }), [rows, settled]);
- * ```
+ * There used to be a `useSettledBox` hook that polled for this and rebuilt the
+ * definition to correct it. It worked, but the correction is itself a visible
+ * snap, so it also had to hold the chart's paint behind a fade. The install
+ * dialog dropped the scale from its transition instead (`skill-record.tsx`),
+ * which removes the cause rather than the symptom — and this is what keeps
+ * that from silently regressing. It is a warning rather than a repair on
+ * purpose: the failure is a design mistake at the mount site, and the fix
+ * belongs there.
  *
- * The chart measures its container with `getBoundingClientRect`, so mounting
- * it inside the install dialog's `scale-95` entrance measures 95% of the real
- * width and keeps it: a transform changes no layout box, so its ResizeObserver
- * never fires to correct it. Rebuilding the definition is what forces the
- * re-measure, since the adapter re-lays-out on a size or definition prop
- * change rather than on every commit. `clientWidth` ignores transforms, which
- * is what makes it the reference. See docs/charts.md, including why handing the
- * chart a measured `width` instead is worse.
+ * Compiles away in production. `clientWidth` is the reference because it is
+ * the one width a transform cannot reach.
  */
-export function useSettledBox(ref: React.RefObject<HTMLElement | null>) {
-  const [settled, setSettled] = useState(false);
-
+export function useUntransformedHost(
+  ref: RefObject<HTMLElement | null>,
+  name: string,
+) {
   useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
     const element = ref.current;
-    if (!element) {
-      return;
-    }
-    let frame = 0;
-    const deadline = performance.now() + SETTLE_TIMEOUT;
-    const check = () => {
-      // Sub-pixel, because a fractional container width lands the two a
-      // rounding apart even with no transform in play.
-      const matches =
-        Math.abs(element.getBoundingClientRect().width - element.clientWidth) <
-        0.5;
-      // The deadline is the exit for a transform that never goes away:
-      // cubby-ui's dialog carries `scale-[calc(1-0.1*var(--nested-dialogs))]`,
-      // so a dialog stacked on this one leaves it at 0.9 and the loop would
-      // otherwise poll at 60fps for the life of the dialog.
-      if (matches || performance.now() > deadline) {
-        setSettled(true);
-        return;
-      }
-      frame = requestAnimationFrame(check);
-    };
-    check();
+    if (!element) return;
+    // One frame, so an entrance that is only starting has begun to move: a
+    // transform mid-transition reads as 1 on the commit it is applied.
+    const frame = requestAnimationFrame(() => {
+      const painted = element.getBoundingClientRect().width;
+      const layout = element.clientWidth;
+      if (layout === 0 || Math.abs(painted - layout) < 0.5) return;
+      console.warn(
+        `[charts] "${name}" is mounted inside a scaling ancestor: painted ` +
+          `${painted.toFixed(1)}px against a ${layout}px layout box. The ` +
+          `chart has laid its scene out at the painted width and will not ` +
+          `re-measure, so it paints ${((layout / painted - 1) * 100).toFixed(1)}% off. ` +
+          `Remove the scale from the ancestor's transition — see docs/charts.md.`,
+      );
+    });
     return () => cancelAnimationFrame(frame);
-  }, [ref]);
-
-  return settled;
+  }, [ref, name]);
 }

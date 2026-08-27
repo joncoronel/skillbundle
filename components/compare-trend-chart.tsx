@@ -50,8 +50,33 @@ export const COMPARE_LINE_COLORS = [
   "var(--compare-line-3)",
 ];
 
-/** The old chart's `XAxis numTicks={6}`; this chart is wider than the dialog's. */
+/**
+ * Date labels asked for, by how wide the chart was actually laid out.
+ *
+ * Six is the old chart's `XAxis numTicks={6}`, and it is what this card fits on
+ * a desktop. A phone does not fit six, and the label thinning that catches the
+ * overflow (`AXIS_TICK_LABELS.thin`) drops candidates greedily rather than
+ * evenly: measured at 390px it left Jul 31, Aug 13, Aug 21 — thirteen days,
+ * then eight, on an axis whose whole job is even time. Asking for fewer up
+ * front means thinning never has to fire, and `evenlySpaced` still rounds the
+ * count to whatever divides the series exactly.
+ *
+ * The install chart escapes this by luck rather than design: it asks for five
+ * over the same range, `evenlySpaced` returns four because 21 divides by three,
+ * and all four survive. Do not read its axis as evidence that thinning
+ * preserves spacing.
+ */
 const COMPARE_TICK_COUNT = 6;
+const COMPARE_TICK_COUNT_NARROW = 4;
+
+/**
+ * Below this scene width the axis takes the narrow count.
+ *
+ * Read off the chart, not the viewport: the card is what the labels have to
+ * fit in, and `defineChart`'s builder is handed the scene width for exactly
+ * this. A viewport media query would be measuring the wrong box.
+ */
+const NARROW_CHART_WIDTH = 480;
 
 const LINE_ID = "installs";
 
@@ -159,80 +184,91 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
   const definition = useMemo(() => {
     const rows = buildCompareRows(drawable);
 
-    return defineChart({
-      marks: [
-        lineY(rows, {
-          id: LINE_ID,
-          x: "day",
-          y: "installs",
-          // `z` splits the flat rows into one path per skill. Each path paints
-          // with its own fade gradient, declared below from the colour the
-          // compare page already assigned — so the line, the column header dot
-          // and the legend swatch cannot drift apart.
-          z: "series",
-          stroke: (row: CompareRow) => `url(#${fadeEdgesId(row.series)})`,
-          strokeWidth: 2,
-          curve: CHART_CURVE,
-          states: [HOVER_DIM],
-        }),
-        // Last, so it paints over the lines rather than under them.
-        focusCrosshair(days.length),
-      ],
-      // Days are discrete samples, one per cron run, so they are positions on a
-      // point scale rather than instants on a time scale. This also keeps every
-      // tick landing on a real data point, which is what the old chart's
-      // `tickMode="data"` was for.
-      x: {
-        scale: scalePoint,
-        axis: {
-          line: false,
-          ticks: {
-            size: 0,
-            padding: AXIS_LABEL_PADDING_WITH_Y_AXIS,
-            format: dayLabel,
-            // The old chart's `numTicks={6}`. A point scale offers every day as
-            // a candidate and ignores `count`, so without this the axis prints
-            // one label per day that fits — nearly twice as many as before.
-            values: evenlySpaced(days, COMPARE_TICK_COUNT),
+    return defineChart(
+      ({ width }) => ({
+        marks: [
+          lineY(rows, {
+            id: LINE_ID,
+            x: "day",
+            y: "installs",
+            // `z` splits the flat rows into one path per skill. Each path paints
+            // with its own fade gradient, declared below from the colour the
+            // compare page already assigned — so the line, the column header dot
+            // and the legend swatch cannot drift apart.
+            z: "series",
+            stroke: (row: CompareRow) => `url(#${fadeEdgesId(row.series)})`,
+            strokeWidth: 2,
+            curve: CHART_CURVE,
+            states: [HOVER_DIM],
+          }),
+          // Last, so it paints over the lines rather than under them.
+          focusCrosshair(days.length),
+        ],
+        // Days are discrete samples, one per cron run, so they are positions on a
+        // point scale rather than instants on a time scale. This also keeps every
+        // tick landing on a real data point, which is what the old chart's
+        // `tickMode="data"` was for.
+        x: {
+          scale: scalePoint,
+          axis: {
+            line: false,
+            ticks: {
+              size: 0,
+              padding: AXIS_LABEL_PADDING_WITH_Y_AXIS,
+              format: dayLabel,
+              // The old chart's `numTicks={6}`. A point scale offers every day as
+              // a candidate and ignores `count`, so without this the axis prints
+              // one label per day that fits — nearly twice as many as before.
+              values: evenlySpaced(
+                days,
+                width < NARROW_CHART_WIDTH
+                  ? COMPARE_TICK_COUNT_NARROW
+                  : COMPARE_TICK_COUNT,
+              ),
+            },
+            tickLabels: AXIS_TICK_LABELS,
           },
-          tickLabels: AXIS_TICK_LABELS,
         },
-      },
-      y: {
-        // Zero-based with a tenth of headroom, as the old chart's y-domain was.
-        // Letting the scale infer from the data starts the axis near the
-        // smallest series, which exaggerates the gaps between skills — the one
-        // thing this chart exists to compare honestly.
-        // A configured instance, not a factory: a factory infers its domain from
-        // the marks and would discard the zero below.
-        scale: scaleLinear().domain([
-          0,
-          rows.reduce((max, r) => Math.max(max, r.installs), 0) * 1.1,
-        ]),
-        nice: true,
-        grid: true,
-        axis: {
-          line: false,
-          // Abbreviated like the install stats directly below the chart, so the
-          // axis and the tiles read in the same units.
-          ticks: { count: 4, size: 0, format: compactCount },
-          tickLabels: AXIS_TICK_LABELS,
+        y: {
+          // Zero-based with a tenth of headroom, as the old chart's y-domain was.
+          // Letting the scale infer from the data starts the axis near the
+          // smallest series, which exaggerates the gaps between skills — the one
+          // thing this chart exists to compare honestly.
+          // A configured instance, not a factory: a factory infers its domain from
+          // the marks and would discard the zero below.
+          scale: scaleLinear().domain([
+            0,
+            rows.reduce((max, r) => Math.max(max, r.installs), 0) * 1.1,
+          ]),
+          nice: true,
+          grid: true,
+          axis: {
+            line: false,
+            // Abbreviated like the install stats directly below the chart, so the
+            // axis and the tiles read in the same units.
+            ticks: { count: 4, size: 0, format: compactCount },
+            tickLabels: AXIS_TICK_LABELS,
+          },
         },
+        gradients: drawable.map((s) =>
+          fadeEdgesGradient(fadeEdgesId(s.key), s.color),
+        ),
+        margin: { top: 16, right: 16, bottom: AXIS_LABEL_MARGIN_WITH_Y_AXIS },
+        theme: CHART_THEME,
+      }),
+      // The builder owns the spec; these are definition options, which take the
+      // second argument once the first is a function.
+      {
+        tooltip: CHART_TOOLTIP,
+        focus: "group-x",
+        maxFocusDistance: Number.POSITIVE_INFINITY,
+        // The overlay owns the gesture and every cursor visual; see
+        // `chart-hover-overlay`. Without `focusRing: false` the chart paints its
+        // own marker underneath ours — two dots, only one of them moving.
+        focusRing: false,
+        pointer: false,
       },
-      gradients: drawable.map((s) =>
-        fadeEdgesGradient(fadeEdgesId(s.key), s.color),
-      ),
-      margin: { top: 16, right: 16, bottom: AXIS_LABEL_MARGIN_WITH_Y_AXIS },
-      theme: CHART_THEME,
-      tooltip: CHART_TOOLTIP,
-      focus: "group-x",
-      maxFocusDistance: Number.POSITIVE_INFINITY,
-      // The overlay owns the gesture and every cursor visual; see
-      // `chart-hover-overlay`. Without `focusRing: false` the chart paints its
-      // own marker underneath ours — two dots, only one of them moving.
-      focusRing: false,
-      pointer: false,
-    });
+    );
   }, [drawable, days]);
 
   const hostProps = useChartHostProps();

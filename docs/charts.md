@@ -101,8 +101,23 @@ doing at the time:
   every category as a candidate and ignore `count`/`spacing` hints, so left
   alone they print one label per row that fits — nearly twice the old chart's
   `numTicks`. `evenlySpaced` picks the candidates instead (5 in the dialog, 6 on
-  the compare page); thinning still runs on top, which is what keeps a phone
-  from crowding.
+  the compare page), and thinning runs on top as the backstop.
+
+- **Thinning is a backstop, not a narrow-width strategy — it drops candidates
+  greedily, not evenly.** Ask for more labels than fit and what survives is
+  whatever cleared `minGap` on the way through, which on a time axis states a
+  spacing the data does not have. Measured on the compare chart at 390px: six
+  candidates over a 306.86 scene, thinned to Jul 31 / Aug 13 / Aug 21 —
+  thirteen days, then eight. The fix is to ask for fewer up front, which is
+  what `defineChart`'s responsive builder is for: `compare-trend-chart.tsx`
+  takes `({ width }) =>` and drops to four candidates below a 480 scene width,
+  so thinning never fires. Verified at 390 / 640 / 768 / 1440: even 7-day steps
+  narrow, the full six above.
+  Read the width off the **scene**, not the viewport — the card is the box the
+  labels have to fit in, and the builder is handed exactly that.
+  The install chart's axis is not evidence that thinning preserves spacing. It
+  asks for five over the same range, `evenlySpaced` hands back four because 21
+  divides by three, and all four survive; it is even by luck.
 
 - **`ticks.count` is a preference d3 rounds, not a count.** On the dialog
   chart's domain, 5 asks yields 8 grid rules and 3 yields 5. Where the numbers
@@ -140,21 +155,44 @@ doing at the time:
 - **The chart measures its container with `getBoundingClientRect`, and only
   ever re-measures when its ResizeObserver fires.** A transform changes no
   layout box, so an entrance animation defeats both halves of that: mounted in
-  the install dialog, which opens with `scale-95`, the chart measured 592.8
-  against a 624px container and kept that number for the life of the dialog.
-  Our own code is warned off `getBoundingClientRect` during an entrance further
-  down; this is the library doing it, and it cannot be told not to.
-  `useSettledBox` (`charts/chart.tsx`) waits for the painted box to match the
-  layout box and then rebuilds the definition, which is what forces the
-  re-measure — the adapter re-lays-out on a size or definition prop change, not
-  on every commit. The visible symptom was the library's own tooltip, which
-  positions from scene coordinates without converting and so drifted left by up
-  to 31px: flush against the marker on the right, ~45px of gap on the left.
-  Handing the chart a measured `width` instead is worse and was reverted:
-  `width` means the application owns fixed geometry, so the host is pinned in
-  pixels, and in a grid item at its default `min-width: auto` that pins the
-  very track the chart is measuring — the compare chart could then never shrink
-  on resize.
+  the install dialog while it still opened with `scale-95`, the chart measured
+  592.8 against a 624px container and had no way to notice. Our own code is
+  warned off `getBoundingClientRect` during an entrance further down; this is
+  the library doing it, and it cannot be told not to. Two symptoms, both
+  measured: the library's own tooltip positions from scene coordinates without
+  converting and drifted left by up to 31px (flush against the marker on the
+  right, ~45px of gap on the left), and the viewBox — which is what maps scene
+  units to pixels — carried the error into every stroke width, tick font and
+  marker radius, painting them 5.3% oversized.
+
+  **The fix is upstream of the chart: the install dialog's transition carries
+  no scale.** `skill-record.tsx` neutralises `data-starting-style:scale-95`,
+  leaving translate and opacity, neither of which changes a measured width. The
+  chart then lays out once, correctly, and never relayouts — verified across
+  two opens and at phone width, where the only viewBox the SVG ever carries is
+  the container's own (624 desktop, 300 at 390px). That comment in
+  `skill-record.tsx` is load-bearing; restoring the scale silently brings all
+  of this back.
+
+  Two approaches were tried first and are worth not re-deriving. A measured
+  `width` prop is worse: `width` means the application owns fixed geometry, so
+  the host is pinned in pixels, and in a grid item at its default
+  `min-width: auto` that pins the very track the chart is measuring — the
+  compare chart could then never shrink on resize. And a `useSettledBox` hook
+  (deleted in the same change; see git history) polled until the painted box
+  matched the layout box and then rebuilt the definition to force a re-measure.
+  That works, but the correction is itself a visible snap — one frame at
+  ~170ms where the whole scene rescales 5.3% — so it also had to hold the
+  chart's paint behind an opacity fade until then. Removing the scale removes
+  the need for either.
+
+  What replaced it is `useUntransformedHost` (`charts/chart.tsx`), a dev-only
+  warning rather than a repair: it names the chart, prints the two widths and
+  the error, and points at the mount site. That is deliberate. A hook that
+  quietly corrects a scaling ancestor is a hook that hides a design mistake and
+  charges a paint delay for it; the mistake is worth seeing. Verified both
+  ways — silent as things stand, and on restoring `scale-95` it prints
+  "painted 592.8px against a 624px layout box … paints 5.3% off".
 
 - **Pass `initialWidth`.** The adapter renders its first markup at that width
   (default 640) and measures the container only after commit, so everything in
@@ -251,13 +289,80 @@ doing at the time:
   x with (~4px mid-travel on the renderer's default), and gate it separately at
   `DISCRETE_THRESHOLD` — the overlay's `jump()` writes cannot reach it.
 
-- **Entrance motion is ours, the rest is the library's.** The left-to-right
-  wipe is a CSS animation on `.ts-chart__marks` (`.chart-reveal` in
-  `charts/charts.css`); `chartMotion` is built with `initial: false` so the two do not
-  both play. Everything else — crosshair, focus dot, highlight band, tooltip
+- **Two entrances, deliberately different.** The compare chart's is ours: a
+  `clip-path` wipe on `.ts-chart__marks` (`.chart-reveal` in
+  `charts/charts.css`), immune to what the renderer commits, which is what a
+  chart on a page that can relayout under it wants. The install chart's is the
+  library's (`chartMotionEntrance`, `initial: "always"`), which grows the marks
+  from the y baseline staggered left to right and settles ~720ms in; it can
+  only be used because its dialog does not scale (see the measurement section).
+  The shared `chartMotion` stays `initial: false` so the sparkline gets neither
+  and the compare chart does not play both.
+
+  The split is not just what each surface allows, it is what each chart means.
+  A wipe travels along x, so it reveals a time series in the order the data
+  happened — which on the compare chart is also the order its lines cross each
+  other, the whole point of putting them on one axis. A baseline grow travels
+  along y, which reads as magnitude; that is the install chart's daily bars
+  exactly, and the stagger still carries the left-to-right reading. Swapping
+  them would give each chart the other one's metaphor.
+
+  The compare chart could take the library entrance — measured, it mounts once
+  at its final width (a single viewBox of 1206.86 from first paint, because the
+  ghost placeholder holds the slot until the data lands, so the real chart never
+  mounts hidden or empty). It should not. Its definition is rebuilt from a memo
+  over async data that has already caused a full re-layout once (see the
+  comment on `series` in `compare-content.tsx`), and any re-layout inside the
+  entrance's first ~720ms is a `resized` commit that cancels it with no trace.
+  The dialog chart cannot hit that: it mounts with its data already in hand and
+  nothing re-renders it. Robust entrance where re-renders are possible, library
+  entrance where they are not. Everything else — crosshair, focus dot, highlight band, tooltip
   travel — springs through `@tanstack/charts/motion`. If chart motion looks
   dead, check the two entries below before reaching for Motion: both look like
   "the renderer is not animating" and neither is.
+
+- **There are two animation systems and you can only have one.** The default
+  SVG renderer animates from `svgAnimation` on the definition; the optional
+  `motion()` renderer animates from its own options and **ignores
+  `svgAnimation` entirely** — "each host has one animation owner"
+  (`docs/examples/themes-and-motion.md`). Traced: `renderer.js` folds
+  `svgAnimation` into an `animation` option, and only `svg-surface.js` and
+  `canvas.js` read it; `motion.js` never mentions it. All three of our charts
+  pass `motion()`, so any `svgAnimation` we wrote would be live-looking dead
+  config. Its resize half has an equivalent we DO have — `motion({ resize: true })`,
+  default false — and we deliberately leave it off: it animates size changes,
+  and a chart that eases behind a container is lag, not motion. It is there for
+  a size change that is itself a designed transition (a panel expanding), not
+  for tracking a window.
+
+- **The bars' entrance stagger is ours, because the library's is derived from a
+  duration a spring does not have.** `resolveTiming` spans the automatic bar
+  stagger over `baseDuration * 0.4`, and `baseDuration` is the tween's duration
+  or a flat 1100 for a spring — ours is `FOCUS_SPRING`, so the span was 440ms
+  and the only way to shorten it was to change the renderer's transition, which
+  also feeds the tooltip. `skill-install-chart.tsx` authors the delay instead
+  (`ENTRANCE_STAGGER_MS`, 180). Measured: the last bar used to start at 440ms
+  and reach 99% at ~690; it now starts at 176ms and reaches 99% at 442.
+  Divide by `datumCount`, as the library's own does. `stagger()` from
+  `@tanstack/charts/motion/definition` writes a flat milliseconds-per-datum,
+  which is linear in series length — a 200-snapshot skill would sweep ten times
+  longer than a 20-snapshot one instead of taking the same span.
+
+- **`initial: false` is not just to avoid a double entrance — the library's own
+  entrance cannot survive a container-measured chart.** `motion.js` gates it
+  `animate = initial ? motion.initial : motion.resize || !resized`, and the
+  adapter always prerenders at `initialWidth` and then measures, so the first
+  real measurement is a `resized` render: with the default `resize: false` it
+  commits instantly and cancels the entrance. Measured with `initial: true` on
+  the install chart: the bars sit at height 0 for 130ms and then snap to their
+  full 152px in a single frame, having animated nothing. Matching
+  `initialWidth` to the container's `clientWidth` does not rescue it — the
+  dialog's ease-out asymptote left 623.51 on the prerender and 623.77 a frame
+  later, and 0.26px still counts as `resized`. `resize: true` would tween that
+  correction rather than snap it, but the renderer is shared by all three
+  charts, so it would also interpolate the whole scene behind every window
+  resize. The CSS wipe has none of these couplings: it is a `clip-path`
+  animation and does not care what the renderer commits.
 
 - **The hover dim is a CSS transition, not renderer motion.** The renderer
   re-resolves and re-animates every mark state on each focus change, restarting

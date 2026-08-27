@@ -44,6 +44,29 @@ export const chartMotion = motion({
 });
 
 /**
+ * The install chart's renderer: the same motion, plus the library's own
+ * entrance — bars and the line grow from the y baseline, staggered left to
+ * right, settling ~720ms in.
+ *
+ * `"always"` rather than `true` only to take a branch out of play. The gate is
+ * `motion.initial && (!adoptedRoot || motion.initial === "always")`, where
+ * `adoptedRoot` is "the container already holds an `svg.ts-chart`" — the
+ * library's read of server-rendered markup. It is false here, and `true` was
+ * measured to animate fine; `"always"` keeps it animating if that ever
+ * changes. This entrance is decorative, so its loss would be silent.
+ *
+ * This only survives because the install dialog's entrance carries no scale —
+ * see `skill-record.tsx`. A container-measured chart cannot animate through a
+ * transform: the first real measurement would be a `resized` render, and the
+ * renderer commits those instantly (`resize: false`), cancelling the entrance.
+ * docs/charts.md has the measurements.
+ */
+export const chartMotionEntrance = motion({
+  initial: "always",
+  transition: FOCUS_SPRING,
+});
+
+/**
  * True on a touch-primary device.
  *
  * Starts false so the server and first client render agree, then settles after
