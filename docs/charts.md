@@ -333,7 +333,21 @@ doing at the time:
   default false — and we deliberately leave it off: it animates size changes,
   and a chart that eases behind a container is lag, not motion. It is there for
   a size change that is itself a designed transition (a panel expanding), not
-  for tracking a window.
+  for tracking a window. The library's own reason is sharper than that one:
+  "`resize`: defaults to `false`, so responsive relayout does not repeatedly
+  restart animation" — during a drag every event retargets the tween, so it
+  never arrives.
+
+- **Window resizing needs nothing from us.** Omit `width` and the host reads the
+  container's bounding width and observes it with a `ResizeObserver`, schedules
+  relayout on the document's animation frame, and skips renders when the width
+  has not changed (`docs/reference/dom-host.md`). The fallback order is explicit
+  `width`, then a positive container width, then `initialWidth`, then 640. The
+  one thing it asks of us is that the container can actually shrink —
+  `min-width: 0` on a grid or flex child — which is the same constraint that
+  rules out passing a measured `width`, above. Measured on the compare chart at
+  1440 / 1100 / 820 / 560 and through a fast six-step sweep: the viewBox tracks
+  `clientWidth` exactly every time.
 
 - **The bars' entrance stagger is ours, because the library's is derived from a
   duration a spring does not have.** `resolveTiming` spans the automatic bar
