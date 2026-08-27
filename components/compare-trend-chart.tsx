@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { defineChart, lineY } from "@tanstack/charts";
 import { scalePoint } from "@tanstack/charts/scales/point";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
+import { cn } from "@/lib/utils";
+import { solidSurface } from "@/lib/cubby-ui/elevated";
 import {
   CHART_REVEAL_CLASS,
   INITIAL_WIDTH,
   useChartHostProps,
+  useMeasuredHost,
 } from "@/components/charts/chart";
 import {
   AXIS_TICK_LABELS,
@@ -17,6 +20,7 @@ import {
   datePillOffset,
   AXIS_LABEL_MARGIN_WITH_Y_AXIS,
   AXIS_LABEL_PADDING_WITH_Y_AXIS,
+  Y_AXIS_LABEL_MARGIN,
 } from "@/components/charts/chart-theme";
 import {
   ChartHoverOverlay,
@@ -30,7 +34,6 @@ import {
 } from "@/components/charts/chart-tooltip-panel";
 import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
 import {
   compactCount,
   dayLabel,
@@ -79,6 +82,94 @@ const COMPARE_TICK_COUNT_NARROW = 4;
 const NARROW_CHART_WIDTH = 480;
 
 const LINE_ID = "installs";
+
+/**
+ * Days the placeholder series spans while the real data loads.
+ *
+ * The real range is whatever the snapshots turn out to cover, so this is a
+ * guess — and the closer it lands, the better the arrival looks: the renderer
+ * "morphs compatible numeric SVG geometry", and two paths are compatible when
+ * they carry the same command count. Miss, and the lines snap into place
+ * instead of travelling, which is a worse arrival rather than a broken one.
+ * The case that has to be right is not this one but the placeholder-data case
+ * (adding a skill with a chart already on screen), where both sides span the
+ * same days by construction.
+ */
+const SKELETON_DAYS = 21;
+
+/**
+ * How long the placeholder is given to clear before the real series wipes in.
+ *
+ * bklit's loading→ready order, which is what this chart borrows: the
+ * placeholder conceals to the right, the y scale retargets while nothing is
+ * showing, then the real series is revealed. The alternative is to let the
+ * renderer morph placeholder geometry into real geometry, which is smoother but
+ * says the two are the same measurement changing — and one of them is invented.
+ * Concealing says the placeholder is being replaced, which is what happened.
+ *
+ * Mirrors the `.chart-conceal` animation in `charts.css`; the two have to move
+ * together or the phase outlasts the wipe and the plot sits empty waiting.
+ */
+const CONCEAL_MS = 180;
+
+/**
+ * The plot's inset inside the chart box.
+ *
+ * Shared by the definition's `margin` and the loading label that centres on it,
+ * because the two have to agree: the margins are asymmetric (a y-axis gutter on
+ * the left, a date row underneath), so a label centred on the BOX sits 16px off
+ * the plot on both axes. Scene units are CSS pixels here — the viewBox always
+ * equals the container's width — so these carry straight into `style`.
+ */
+const CHART_MARGIN = {
+  top: 16,
+  right: 16,
+  bottom: AXIS_LABEL_MARGIN_WITH_Y_AXIS,
+  left: Y_AXIS_LABEL_MARGIN,
+} as const;
+
+/** Placeholder lines are neutral: they are not any skill's colour. */
+const SKELETON_LINE_COLOR = "var(--muted-foreground)";
+
+/**
+ * Stand-in series carrying the real series' keys.
+ *
+ * This is what lets one chart instance span loading and loaded. TanStack Charts
+ * has no loading state and should not — it is a rendering grammar — so the
+ * choice is between swapping the chart for a spinner and giving it something to
+ * draw. Swapping is what this page used to do, and it costs the thing that
+ * makes the loaded state good: with the chart mounted, new data is a keyed
+ * update, so the lines morph and the y scale tweens. Tear it down and every
+ * arrival is a fresh mount instead.
+ *
+ * The keys have to match the real ones (`s0`/`s1`/`s2`) or the update has no
+ * identity to travel along. Everything else is deliberately not real: a neutral
+ * stroke, and the y axis drops its labels while this is on screen (see the
+ * definition) so no invented number is ever printed.
+ */
+function skeletonSeries(series: CompareSeries[]): CompareSeries[] {
+  const today = new Date();
+  const days = Array.from({ length: SKELETON_DAYS }, (_, i) => {
+    const day = new Date(today);
+    day.setUTCDate(day.getUTCDate() - (SKELETON_DAYS - 1 - i));
+    return day.toISOString().slice(0, 10);
+  });
+
+  return series.map((s, index) => ({
+    ...s,
+    color: SKELETON_LINE_COLOR,
+    // Rising, because the chart plots a cumulative count and a placeholder that
+    // fell would be drawing a shape the data cannot take. Each line gets its own
+    // band and its own steepness so three of them read as three trajectories
+    // rather than one thick stroke.
+    snapshots: days.map((day, i) => {
+      const t = i / (SKELETON_DAYS - 1);
+      const base = 320 - index * 90;
+      const climb = 0.9 - index * 0.22;
+      return { day, installs: Math.round(base * (1 + climb * t * t)) };
+    }),
+  }));
+}
 
 export type CompareSeries = {
   /** Stable series key for the merged rows (e.g. "s0") — avoids odd chars. */
@@ -165,12 +256,61 @@ function CompareLegend({ series }: { series: CompareSeries[] }) {
  * skill it falls back to a ghost placeholder, matching the sidebar's
  * still-collecting state. Series without enough history are listed in the
  * legend (muted) but draw no line until they have points.
+ *
+ * `loading` draws placeholder lines rather than handing the slot to a spinner,
+ * so the chart is mounted before its data exists — see `skeletonSeries`. It
+ * leaves through three phases: the placeholder sweeps while it waits, conceals
+ * to the right when the data lands, and the real series wipes in behind it.
  */
-export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
-  const drawable = useMemo(
-    () => series.filter((s) => s.snapshots.length >= MIN_POINTS),
-    [series],
+export function CompareTrendChart({
+  series,
+  loading = false,
+}: {
+  series: CompareSeries[];
+  loading?: boolean;
+}) {
+  // The chart waits one commit for a container it can be laid out from; the
+  // box below reserves the space meanwhile. See `useMeasuredHost`.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const measured = useMeasuredHost(boxRef);
+
+  // `loading` says whether the data is here; `phase` says what the chart is
+  // doing about it, which outlasts it by the length of the conceal. Holding the
+  // placeholder's definition through `concealing` is the whole point: swap it
+  // for real rows on the frame the data lands and the renderer morphs one into
+  // the other, which is the thing this ordering exists to avoid.
+  const [phase, setPhase] = useState<"loading" | "concealing" | "ready">(
+    loading ? "loading" : "ready",
   );
+  const [lastLoading, setLastLoading] = useState(loading);
+
+  // Adjusting state to a prop change during render, not in an effect: React
+  // re-runs the component immediately without committing the stale phase, so
+  // there is no frame where the data has landed and the chart still says it is
+  // loading. An effect would paint that frame, and the lint rule against
+  // synchronous `setState` in an effect body is pointing at the same thing.
+  if (lastLoading !== loading) {
+    setLastLoading(loading);
+    if (loading) setPhase("loading");
+    else if (phase === "loading") setPhase("concealing");
+  }
+
+  useEffect(() => {
+    if (phase !== "concealing") return;
+    // Nothing to sit through when the conceal is not being drawn.
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const timer = setTimeout(() => setPhase("ready"), reduced ? 0 : CONCEAL_MS);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
+  const showPlaceholder = phase !== "ready";
+
+  const drawable = useMemo(() => {
+    if (showPlaceholder) return skeletonSeries(series);
+    return series.filter((s) => s.snapshots.length >= MIN_POINTS);
+  }, [series, showPlaceholder]);
 
   // Above `definition`, which reads it for the axis tick candidates.
   const days = useMemo(
@@ -226,7 +366,13 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
                   : COMPARE_TICK_COUNT,
               ),
             },
-            tickLabels: AXIS_TICK_LABELS,
+            // Gone with the y labels while the placeholder is up, and for the
+            // same reason: the skeleton spans the last three weeks ending
+            // today, the real series ends wherever its snapshots do, and a date
+            // range is as much a claim about the data as a count is. Leaving
+            // them on had the axis announce Aug 7–27 and then jump back to
+            // Jul 31–Aug 21 on the reveal.
+            tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
           },
         },
         y: {
@@ -247,19 +393,33 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
             // Abbreviated like the install stats directly below the chart, so the
             // axis and the tiles read in the same units.
             ticks: { count: 4, size: 0, format: compactCount },
-            tickLabels: AXIS_TICK_LABELS,
+            // The grid rules stay while loading — they are the frame, and it is
+            // real — but their labels go. A placeholder line is a shape, which
+            // reads as "something will be here"; a placeholder number reads as a
+            // measurement, and there is no way to draw one honestly.
+            tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
           },
         },
         gradients: drawable.map((s) =>
           fadeEdgesGradient(fadeEdgesId(s.key), s.color),
         ),
-        margin: { top: 16, right: 16, bottom: AXIS_LABEL_MARGIN_WITH_Y_AXIS },
+        // `left` is pinned like the others rather than solved, so the plot's
+        // edge does not move when the y labels appear or change width. See
+        // `Y_AXIS_LABEL_MARGIN`.
+        margin: CHART_MARGIN,
         theme: CHART_THEME,
       }),
       // The builder owns the spec; these are definition options, which take the
       // second argument once the first is a function.
       {
-        tooltip: CHART_TOOLTIP,
+        // Nothing on a placeholder is worth reporting a value for, and there are
+        // two ways to ask: `pointer: false` is already permanent (the overlay
+        // owns the gesture), so the tooltip has to go at the source, and
+        // `keyboard` separately — arrow keys still move focus on a chart whose
+        // pointer handling is off, which is how a reader would otherwise land a
+        // tooltip on an invented number.
+        tooltip: showPlaceholder ? false : CHART_TOOLTIP,
+        keyboard: !showPlaceholder,
         focus: "group-x",
         maxFocusDistance: Number.POSITIVE_INFINITY,
         // The overlay owns the gesture and every cursor visual; see
@@ -269,7 +429,7 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
         pointer: false,
       },
     );
-  }, [drawable, days]);
+  }, [drawable, days, showPlaceholder]);
 
   const hostProps = useChartHostProps();
 
@@ -286,7 +446,9 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
     labels: useMemo(() => days.map(dayLabel), [days]),
   });
 
-  if (drawable.length === 0) {
+  // "No history yet" is a resolved answer, so it must not swallow "not answered
+  // yet" — while loading, `drawable` is the placeholder set and never empty.
+  if (!showPlaceholder && drawable.length === 0) {
     return (
       <div>
         <CompareLegend series={series} />
@@ -300,60 +462,144 @@ export function CompareTrendChart({ series }: { series: CompareSeries[] }) {
   }
 
   return (
-    <div>
+    <div aria-busy={showPlaceholder || undefined}>
       <CompareLegend series={series} />
-      <ChartHoverOverlay
-        controller={overlay}
-        pillOffset={datePillOffset(
-          AXIS_LABEL_MARGIN_WITH_Y_AXIS,
-          AXIS_LABEL_PADDING_WITH_Y_AXIS,
-        )}
+      {/* Holds the chart's box while it waits one commit for a measurable
+          container — see `useMeasuredHost`. The ratio matches the chart's own
+          `aspectRatio`, so the box does not change size when the chart lands in
+          it, and the section below never moves. */}
+      <div
+        ref={boxRef}
+        className={cn("relative", !measured && "aspect-5/2 w-full")}
       >
-        <RendererChart
-          {...hostProps}
-          initialWidth={INITIAL_WIDTH.compare}
-          ariaLabel={`Installs over time. ${drawable
-            .map((s) => `${s.name} ${seriesSummary(s.snapshots)}`)
-            .join("; ")}.`}
-          aspectRatio={5 / 2}
-          className={CHART_REVEAL_CLASS}
-          definition={definition}
-          onFocusChange={overlay.onFocusChange}
-          renderTooltipBody={({ points }) => (
-            <ChartTooltipPanel
-              rows={tooltipRows(overlay.markers, points, (point) =>
-                intFmt(point.datum.installs),
+        {measured && (
+          <ChartHoverOverlay
+            controller={overlay}
+            disabled={showPlaceholder}
+            pillOffset={datePillOffset(
+              AXIS_LABEL_MARGIN_WITH_Y_AXIS,
+              AXIS_LABEL_PADDING_WITH_Y_AXIS,
+            )}
+          >
+            <RendererChart
+              {...hostProps}
+              initialWidth={INITIAL_WIDTH.compare}
+              ariaLabel={
+                showPlaceholder
+                  ? "Loading installs over time"
+                  : `Installs over time. ${drawable
+                      .map((s) => `${s.name} ${seriesSummary(s.snapshots)}`)
+                      .join("; ")}.`
+              }
+              aspectRatio={5 / 2}
+              // One class per phase, and never two: the sweep belongs to the
+              // placeholder, the conceal to it leaving, the wipe to the real
+              // series arriving. A class change is a prop change, so the host
+              // re-renders and each CSS animation starts on a node that has been
+              // sitting there — which is what moves the reveal off the mount and
+              // onto the data.
+              className={cn(
+                phase === "loading" && "chart-loading",
+                phase === "concealing" && "chart-conceal",
+                phase === "ready" && CHART_REVEAL_CLASS,
               )}
-              title={dayLabelLong(points[0]?.datum.day ?? "")}
+              definition={definition}
+              onFocusChange={overlay.onFocusChange}
+              renderTooltipBody={({ points }) => (
+                <ChartTooltipPanel
+                  rows={tooltipRows(overlay.markers, points, (point) =>
+                    intFmt(point.datum.installs),
+                  )}
+                  title={dayLabelLong(points[0]?.datum.day ?? "")}
+                />
+              )}
+              onRender={overlay.onRender}
             />
-          )}
-          onRender={overlay.onRender}
-        />
-      </ChartHoverOverlay>
-    </div>
-  );
-}
+          </ChartHoverOverlay>
+        )}
+        {/* AFTER the chart, because DOM order is what puts it on top: both this
+            and the overlay's root are positioned, so the later one paints over.
+            Placed first, the plate below sat under the SVG and the lines went
+            straight through the text.
 
-/**
- * Loading placeholder for the compare chart. The compare data is the one
- * client-side fetch among our charts, so this is the only chart with a real
- * loading phase. It reserves the loaded layout's height (legend row + the 5/2
- * chart) and centers the house dot-matrix loader with a label, so the swap to
- * the real chart doesn't shift. The loader's CSS already drops to a static state
- * under prefers-reduced-motion.
- */
-export function CompareTrendSkeleton() {
-  return (
-    <div className="relative">
-      {/* Invisible spacers hold the legend row + chart height so loading → loaded
-          swaps in place. */}
-      <div className="mb-5 h-4" />
-      <div className="aspect-5/2 w-full" />
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-        <DotMatrixRipple size="lg" ariaLabel="Loading install history" />
-        <p aria-hidden="true" className="text-sm text-muted-foreground">
-          Loading install history
-        </p>
+            Names the wait, and leaves just before the placeholder does: 150ms
+            against the conceal's 180, so it is gone by the time the plot clears
+            rather than racing the unmount. Both move together — the label must
+            stay the shorter of the two.
+
+            Down, blurred and faded is bklit's exit for the same label, and it is
+            already this app's gesture — `Crossfade` moves every swap on
+            `opacity, filter, translate` over 240ms of the same curve. Borrowing
+            that rather than bklit's 30px keeps one vocabulary.
+
+            No spinner beside it. The house loader is `DotMatrixRipple` and this
+            chart deliberately dropped it: the sweeping placeholder is the
+            indicator, and a second one would be saying the same thing twice.
+            Static text, too — a pulse would take `muted-foreground` under the
+            4.5:1 it is tuned to sit at.
+
+            `aria-hidden` because `aria-busy` above and the chart's own
+            `ariaLabel` already carry this to a screen reader. */}
+        {showPlaceholder && (
+          <div
+            aria-hidden="true"
+            className={cn(
+              "pointer-events-none absolute flex items-center justify-center",
+              "transition-[opacity,filter,translate] duration-150",
+              "ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+              "starting:opacity-0 starting:blur-sm",
+              phase === "concealing" && "translate-y-3 opacity-0 blur-sm",
+            )}
+            style={{
+              top: CHART_MARGIN.top,
+              right: CHART_MARGIN.right,
+              bottom: CHART_MARGIN.bottom,
+              left: CHART_MARGIN.left,
+            }}
+          >
+            {/* The plot's centre is where a grid rule and the placeholder
+                curves all cross, so the text was struck through on both
+                viewports. This is `bg-card` — the section's own surface — so it
+                reads as the lines breaking around the label rather than as a
+                chip sitting on top of them. No border and no shadow: it is
+                occluding, not elevated. */}
+            <span
+              className={cn(
+                "rounded-md px-2.5 py-1",
+                // One tier above the section, which is `--card` (`surface-3`).
+                // `solidSurface` rather than `elevatedSurface` because it paints
+                // the rim into the same `box-shadow` instead of an `::after`,
+                // and a label with nothing but text at its edges does not need
+                // the overlay — or the `relative` and z-index that come with it.
+                // In light both tiers are pure white, so the separation is the
+                // shadow alone; in dark it is also a real lightness step.
+                solidSurface(4),
+              )}
+            >
+              {/* Two spans, and they cannot be one: `shimmer` paints through
+                  `background-clip: text`, which clips EVERY background on its
+                  element to the glyphs — so a plate sharing it would be clipped
+                  to the letters and disappear.
+
+                  The highlight is pinned to `foreground` rather than left to
+                  derive. Unset, it resolves to `currentColor` at 20% alpha,
+                  which in light mode fades `muted-foreground` well under the
+                  4.5:1 it is tuned to sit at. Pinned, the band darkens in light
+                  and brightens in dark — contrast rises either way, and the
+                  text reads as lighting up rather than washing out.
+
+                  1000ms is the chart sweep's period, so the two loops share one
+                  tempo instead of beating against each other. Faster than
+                  cubby's 2000ms default because this wait is often short — on a
+                  client navigation the data has usually landed within ~150ms of
+                  the chart mounting, and a slow sweep in that window shows a
+                  band that has barely moved, which reads as static. */}
+              <span className="shimmer text-sm text-muted-foreground shimmer-color-foreground shimmer-duration-1000">
+                Loading install history
+              </span>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

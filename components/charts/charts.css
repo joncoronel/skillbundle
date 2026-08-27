@@ -27,13 +27,103 @@
   }
 }
 
+/* The placeholder leaving, before the real series wipes in — bklit's "ready
+   line conceals to the right", which is what its loading→ready order is built
+   around. It clears from the left edge rightwards, so the two read as one
+   gesture: the placeholder slides out the way the real line will arrive.
+
+   The end state is an empty plot, and so is the reveal's first frame
+   (`inset(0 100% 0 0)` against this `inset(0 0 0 100%)`), which is what makes
+   the handoff seamless — and what lets the y scale retarget underneath while
+   nothing is showing, exactly where bklit puts its domain tween. */
+@keyframes chart-conceal-wipe {
+  from {
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+
+.chart-conceal .ts-chart__marks {
+  /* Mirrored by `CONCEAL_MS` in `compare-trend-chart.tsx`, which is how long the
+     phase is held. Change one and the other has to follow, or the placeholder
+     sits fully concealed waiting for a timer that has not fired. */
+  animation: chart-conceal-wipe 180ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
+/* The wipe belongs to REAL data appearing, never to a placeholder. On the
+   compare chart the class is applied when loading ends, so the order matches
+   bklit's: sweep on the placeholder, then the y domain tweens and the real
+   series wipes in. A chart that opens with its data already in hand wipes at
+   mount, which is the same rule — that is the moment its real data appears.
+
+   450ms, down from 1100 and then 650. The first cut was for consistency with the
+   install chart's ~442ms entrance. The second is about proportion: measured on a
+   client navigation, the data lands ~47ms after the chart mounts and the arrival
+   animation then runs for another 890ms, so almost everything being watched is
+   choreography rather than loading. 180 + 450 brings that to ~630ms.
+
+   Note this lands near the install chart's 442ms across roughly twice the width
+   (a ~1200px card against the dialog's 624), which an earlier revision of this
+   comment argued against as reading like a flicker. It does not at 450 — checked
+   on the wide card — but that is the axis to watch if it is trimmed again. */
 .chart-reveal .ts-chart__marks {
-  animation: chart-reveal-wipe 1100ms cubic-bezier(0.85, 0, 0.15, 1) both;
+  animation: chart-reveal-wipe 450ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
+/* Loading: the chart is mounted and drawing placeholder series, so a band of
+   full strength sweeps along the marks until real data replaces them. The two
+   reference implementations both do a version of this — evilcharts sweeps a
+   diagonal clip window across its skeleton, bklit offers the same as its
+   `loadingStyle="sweep"`.
+
+   A `mask-image`, not a `clip-path`: the reveal wipe below is the clip-path,
+   and one node cannot carry two. They are different properties, so they would
+   in fact compose — but they never co-occur anyway, because the wipe now waits
+   for real data (see `.chart-reveal`).
+
+   `mask-size` is 200%, so the gradient is twice the plot and `mask-position`
+   has room to travel a full width without either end of the band showing. The
+   base is 0.4 rather than 0 so the placeholder is legible between passes: this
+   is a shimmer over something, not a reveal of something hidden. */
+@keyframes chart-loading-sweep {
+  from {
+    mask-position: 0% 0;
+  }
+  to {
+    mask-position: 100% 0;
+  }
+}
+
+.chart-loading .ts-chart__marks {
+  mask-image: linear-gradient(
+    105deg,
+    rgb(0 0 0 / 0.4) 0%,
+    rgb(0 0 0 / 0.4) 32%,
+    rgb(0 0 0 / 1) 50%,
+    rgb(0 0 0 / 0.4) 68%,
+    rgb(0 0 0 / 0.4) 100%
+  );
+  mask-size: 200% 100%;
+  mask-repeat: no-repeat;
+  animation: chart-loading-sweep 1000ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chart-reveal .ts-chart__marks {
+  .chart-reveal .ts-chart__marks,
+  .chart-conceal .ts-chart__marks {
     animation: none;
+  }
+
+  /* The sweep goes, and the mask with it — a frozen gradient would leave one
+     half of the plot brighter than the other for no reason. What stays is the
+     flat dim, because that is what says "not your data yet" once the motion
+     carrying the message is gone. */
+  .chart-loading .ts-chart__marks {
+    animation: none;
+    mask-image: none;
+    opacity: 0.55;
   }
 }
 

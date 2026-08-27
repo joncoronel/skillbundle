@@ -31,9 +31,21 @@ export function ChartHoverOverlay({
   pillOffset = 0,
   dotScale = 1,
   surface = "var(--background)",
+  disabled = false,
 }: {
   controller: ChartHoverOverlayController;
   children: React.ReactNode;
+  /**
+   * Drops the gesture and every cursor visual, leaving the wrapper and its
+   * measurement in place.
+   *
+   * For a chart drawing placeholder data (`compare-trend-chart.tsx`), where a
+   * cursor would report a value that is not a measurement. The definition can
+   * turn off the library's own paths (`tooltip: false`, `keyboard: false`) but
+   * not this one — the overlay's pointer handling is ours, and it is the one
+   * that paints the marker, band and pill.
+   */
+  disabled?: boolean;
   showPill?: boolean;
   /** Distance from the wrapper's bottom edge to the pill, in px. */
   pillOffset?: number;
@@ -59,13 +71,15 @@ export function ChartHoverOverlay({
     <div
       className={cn("relative touch-pan-y", controller.tickScope)}
       ref={controller.hostRef}
-      {...controller.pointerProps}
+      {...(disabled ? undefined : controller.pointerProps)}
     >
       {/* One rule per date label, generated when the chart renders. Empty on a
           chart with no axis (the sparkline). */}
       <style ref={controller.tickStyleRef} />
       {children}
-      <Cursor controller={controller} dotScale={dotScale} surface={surface} />
+      {!disabled && (
+        <Cursor controller={controller} dotScale={dotScale} surface={surface} />
+      )}
       {/* The pill hangs past this box at the first and last column, so nothing
           here may clip: it spills into the padding of whatever the chart sits
           in, exactly as the old chart's did. What stops that from widening the
@@ -73,7 +87,7 @@ export function ChartHoverOverlay({
           overflow — verified at phone width on both, since an overhanging
           absolute child otherwise widens the nearest scroll container and
           flicks a horizontal scrollbar mid-drag. */}
-      {showPill && (
+      {showPill && !disabled && (
         <div className="pointer-events-none absolute inset-0">
           <DatePill controller={controller} pillOffset={pillOffset} />
         </div>

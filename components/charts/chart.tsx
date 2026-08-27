@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type CSSProperties, type RefObject } from "react";
+import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 import { chartMotion, chartMotionEntrance } from "./chart-motion";
 import { CHART_HOST_VARS } from "./chart-theme";
 // The library's own nodes, styled where our utilities cannot reach. Imported
@@ -70,8 +70,54 @@ export const INITIAL_WIDTH = {
  * (`chartMotionEntrance`), which grows the marks rather than uncovering them.
  * The sidebar sparkline has no entrance, matching the `animationDuration={0}`
  * it always passed.
+ *
+ * Apply it to whatever commit puts REAL data on screen, not to the mount. On
+ * the compare chart that is when `loading` ends, since the mount belongs to the
+ * placeholder — a class change is a prop change, so the host re-renders and the
+ * animation starts on a node already sitting there. A chart that opens with its
+ * data in hand wipes at mount under the same rule.
  */
 export const CHART_REVEAL_CLASS = "chart-reveal";
+
+/**
+ * Whether `ref`'s element has a width a chart can be laid out from yet.
+ *
+ * Hold a chart's render on this whenever it can mount into a box that is not
+ * laid out. `currentWidth()` treats a zero measurement as "cannot measure" and
+ * falls back to `initialWidth`, which is a constant and therefore wrong at most
+ * viewport sizes; the container's real width then arrives on a ResizeObserver
+ * pass rather than in the same frame. Measured on the compare page, where the
+ * chart mounts as the Suspense boundary reveals its subtree: the container is
+ * 0 for one frame, so the scene was built at `INITIAL_WIDTH.compare` (1160) and
+ * painted 4% oversized inside a 1207px box for ~130ms before snapping — cold
+ * and warm alike, so not a dev-compile artifact.
+ *
+ * Costs one frame of an empty box, which is why the caller reserves the height.
+ * That is a different thing from the swap this replaced: it is one commit, not
+ * a wait on data.
+ *
+ * An observer rather than a polling loop, so there is no deadline to pick and
+ * nothing spinning if the box stays hidden.
+ */
+export function useMeasuredHost(ref: RefObject<HTMLElement | null>) {
+  const [measured, setMeasured] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || measured) return;
+    if (element.clientWidth > 0) {
+      setMeasured(true);
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth > 0) setMeasured(true);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, measured]);
+
+  return measured;
+}
 
 /**
  * Dev-only tripwire: warns if a chart is mounted inside a scaling ancestor.
