@@ -148,9 +148,9 @@ export function SkillExplorerView({
 
           {isRepo ? (
             /* Repo mode's region: match results (or the paste-a-repo empty
-             state). starting: fades it in on the mode morph — it only mounts
-             on entry, so the static shell never sees the fade. */
-            <div className="pt-4 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0">
+             state). No entrance transition: switching modes is a direct
+             manipulation, so a fade here reads as the page being slow. */
+            <div className="pt-4">
               <RepoAnalysisResults />
             </div>
           ) : (

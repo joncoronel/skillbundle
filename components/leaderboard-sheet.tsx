@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/cubby-ui/sheet";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { rowPositionClassName } from "@/lib/listing-styles";
+import { LIST_ROW_ON_RAISED, rowPositionClassName } from "@/lib/listing-styles";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import {
@@ -174,7 +174,7 @@ export function LeaderboardSheet({
             ) : skills.length === 0 ? (
               <EmptyState message="No leaderboard data yet — check back after the next sync." />
             ) : (
-              <SkillRowGrid skills={skills} metric={active} />
+              <SkillRowGrid skills={skills} metric={active} ground="raised" />
             )}
           </div>
         </SheetBody>
@@ -208,6 +208,7 @@ function LeaderboardSkeleton() {
           aria-hidden="true"
           className={cn(
             "flex min-h-[50px] items-center gap-3 rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
+            LIST_ROW_ON_RAISED,
             rowPositionClassName(i, SKELETON_ROWS),
           )}
           key={i}

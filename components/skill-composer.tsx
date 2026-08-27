@@ -539,13 +539,13 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         {/* Repo mode's submit lives inline in the field (URL-bar pattern) —
             the one-field form doesn't need a second row for it. Standard sm
             (32px) control, same as the toggles it replaces: a real click
-            target that still sits inside the 44px field. starting: fades it
-            in on the morph. */}
+            target that still sits inside the 44px field. No entrance fade:
+            everything the repo morph brings in arrives at once. */}
         {isRepo && (
           <InputGroupButton
             variant="primary"
             size="sm"
-            className="shrink-0 transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0"
+            className="shrink-0"
             onClick={handleRepoSubmit}
             disabled={!repoDraft.trim()}
             leadingIcon={
@@ -565,7 +565,17 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
 
   return (
     <div className="sticky top-[4.5rem] z-30 -mx-4 px-4 py-3 sm:-mx-8 sm:px-8 lg:-mx-10 lg:px-10">
-      <Card variant="inset" className="p-1 pb-0">
+      {/* Flat in both themes, near-black in dark only. `shadow-none` drops the
+          inset Card's `--surface-shadow-combined-1`, whose ring layer is the
+          1px edge this used to read as in light; the frame separates on tone
+          alone now. `dark:bg-chrome` deliberately carries NO
+          `data-surface="chrome"` — DESIGN.md §2 covers why, but the short
+          version is that the attribute would aim `--input` at `--chrome-hover`
+          and dissolve the search field into a 10% wash. */}
+      <Card
+        variant="inset"
+        className="p-1 pb-0 shadow-none dark:bg-chrome dark:[--popup-surface:var(--chrome)]"
+      >
         {/* Inner surface — the search instrument. The InputGroup owns
             the input behavior + focus ring; its chrome matches the
             inset Card's inner panel (borderless — elevation shadow +
@@ -702,7 +712,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
           Enter a GitHub repo URL, like github.com/vercel/next.js
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none max-sm:hidden starting:opacity-0">
+        <p className="text-xs text-muted-foreground max-sm:hidden">
           Reads languages and packages from public repos
         </p>
       )}
@@ -712,7 +722,7 @@ function RepoChin({ repoInputInvalid }: { repoInputInvalid: boolean }) {
       <Button
         variant="ghost"
         size="sm"
-        className="ms-auto -me-2 shrink-0 text-muted-foreground transition-opacity duration-240 ease-out-cubic motion-reduce:transition-none starting:opacity-0"
+        className="ms-auto -me-2 shrink-0 text-muted-foreground"
         onClick={() => setParams({ mode: "text" })}
         leadingIcon={
           <HugeiconsIcon

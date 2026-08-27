@@ -7,6 +7,7 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import { useInfiniteScrollSentinel } from "@/hooks/use-infinite-scroll-sentinel";
 import {
+  LIST_ROW_ON_RAISED,
   rowPositionClassName,
   SelectableSkillRow,
   type SkillData,
@@ -111,9 +112,14 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
 export function SkillRowGrid({
   skills,
   metric,
+  ground = "page",
 }: {
   skills: SkillData[];
   metric?: LeaderboardMetric;
+  /** What the list is sitting on. `raised` steps the row fill down so the
+   *  stack reads against a surface that is already lifted — the leaderboard
+   *  sheet. Light-only; see LIST_ROW_ON_RAISED. */
+  ground?: "page" | "raised";
 }) {
   return (
     <div className="grid grid-cols-1">
@@ -128,6 +134,7 @@ export function SkillRowGrid({
             // `auto` keyword remembers each row's real height once rendered
             // — 76px is only the pre-render estimate for scrollbar math.
             "[contain-intrinsic-size:auto_76px] [content-visibility:auto]",
+            ground === "raised" && LIST_ROW_ON_RAISED,
             rowPositionClassName(i, skills.length),
           )}
         />

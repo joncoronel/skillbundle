@@ -10,6 +10,7 @@ import { ownerHref } from "@/lib/skill-urls";
 import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
+import { rowPositionClassName } from "@/lib/listing-styles";
 
 export const metadata: Metadata = {
   title: "Official skills | SkillBundle",
@@ -91,47 +92,36 @@ async function OfficialContent() {
       </div>
 
       <div className="grid">
-        {owners.map((owner, i) => {
-          const isFirst = i === 0;
-          const isLast = i === owners.length - 1;
-          const isSolo = owners.length === 1;
-          return (
-            <Link
-              key={owner.owner}
-              href={ownerHref(owner.owner)}
-              className={cn(
-                "relative block rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
-                "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0 hover:after:opacity-100",
-                isSolo
-                  ? undefined
-                  : isFirst
-                    ? "rounded-b-none"
-                    : isLast
-                      ? "rounded-t-none border-t-0"
-                      : "rounded-none border-t-0",
-              )}
-            >
-              <div className="flex min-w-0 items-baseline gap-3">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate text-sm font-semibold">
-                    {owner.owner}
-                  </span>
-                  <LinkPending />
+        {owners.map((owner, i) => (
+          <Link
+            key={owner.owner}
+            href={ownerHref(owner.owner)}
+            className={cn(
+              "relative block rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
+              "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:bg-surface-hover after:opacity-0 hover:after:opacity-100",
+              rowPositionClassName(i, owners.length),
+            )}
+          >
+            <div className="flex min-w-0 items-baseline gap-3">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-sm font-semibold">
+                  {owner.owner}
                 </span>
-                <span className="ml-auto flex shrink-0 items-baseline gap-3 text-xs text-muted-foreground tabular-nums">
-                  <span>
-                    {owner.repoCount} repo{owner.repoCount === 1 ? "" : "s"}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {owner.skillCount} skill
-                    {owner.skillCount === 1 ? "" : "s"}
-                  </span>
+                <LinkPending />
+              </span>
+              <span className="ml-auto flex shrink-0 items-baseline gap-3 text-xs text-muted-foreground tabular-nums">
+                <span>
+                  {owner.repoCount} repo{owner.repoCount === 1 ? "" : "s"}
                 </span>
-              </div>
-            </Link>
-          );
-        })}
+                <span aria-hidden="true">·</span>
+                <span>
+                  {owner.skillCount} skill
+                  {owner.skillCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </div>
+          </Link>
+        ))}
       </div>
     </>
   );
@@ -149,31 +139,23 @@ function OfficialPageSkeleton() {
       </div>
 
       <div className="grid">
-        {Array.from({ length: 8 }).map((_, i) => {
-          const isFirst = i === 0;
-          const isLast = i === 7;
-          return (
-            <div
-              key={i}
-              className={cn(
-                "rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
-                isFirst
-                  ? "rounded-b-none"
-                  : isLast
-                    ? "rounded-t-none border-t-0"
-                    : "rounded-none border-t-0",
-              )}
-            >
-              <div className="flex items-baseline gap-3">
-                <Skeleton className="h-4 w-24" />
-                <div className="ml-auto flex items-baseline gap-3">
-                  <Skeleton className="h-3 w-14" />
-                  <Skeleton className="h-3 w-16" />
-                </div>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            className={cn(
+              "rounded-2xl border bg-card px-4 py-3 dark:border-border/50",
+              rowPositionClassName(i, 8),
+            )}
+          >
+            <div className="flex items-baseline gap-3">
+              <Skeleton className="h-4 w-24" />
+              <div className="ml-auto flex items-baseline gap-3">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-3 w-16" />
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </>
   );
