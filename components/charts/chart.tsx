@@ -32,15 +32,12 @@ import "./charts.css";
  */
 export function chartHostProps(renderer: typeof chartMotion = chartMotion) {
   return {
-    // Pass `chartMotionEntrance` for the library's own first paint. Only the
-    // install chart does; see that constant for what it needs from the surface
-    // it mounts in.
+    // `chartMotionEntrance` for the library's own first paint; only the install
+    // chart passes it.
     //
-    // Typed `typeof chartMotion`, NOT `ChartRenderer`. The latter is generic and
-    // annotating with it bare pins the datum to `unknown`, which collapses
-    // `point.datum` at every call site: the same trap the note above describes
-    // for a wrapper component. `motion()` returns a universal renderer that
-    // still infers per chart.
+    // Typed `typeof chartMotion`, NOT `ChartRenderer`: the latter is generic, so
+    // annotating with it bare pins the datum to `unknown` and collapses
+    // `point.datum` at every call site — the same trap the note above describes.
     renderer,
     style: CHART_HOST_VARS as CSSProperties,
   };
@@ -67,49 +64,33 @@ export const INITIAL_WIDTH = {
 } as const;
 
 /**
- * Plays the left-to-right entrance over the marks group.
+ * The compare chart's left-to-right entrance over the marks group, and only its
+ * own. It is the one chart that travels along x: a `clip-path` needs no
+ * per-datum handle, where the renderer has none for a line, so
+ * `chartMotionEntrance` can only grow it from the y baseline (measured, and
+ * reverted). The install chart takes the renderer's, since bars ARE per-datum.
  *
- * The compare chart's entrance, and only its own. It is the only one that
- * travels along x: a `clip-path` needs no per-datum handle, where the renderer
- * has none for a line — its marks are one scene node, so `chartMotionEntrance`
- * can only grow them from the y baseline (measured, and reverted). The install
- * chart takes the renderer's instead, because bars ARE per-datum nodes and it
- * staggers them.
- * The sidebar sparkline has no entrance, matching the `animationDuration={0}`
- * it always passed.
- *
- * Apply it to whatever commit puts REAL data on screen, not to the mount. On
- * the compare chart that is when `loading` ends, since the mount belongs to the
- * placeholder — a class change is a prop change, so the host re-renders and the
- * animation starts on a node already sitting there. A chart that opens with its
- * data in hand wipes at mount under the same rule.
+ * Apply it to the commit that puts REAL data on screen, not to the mount — on
+ * the compare chart the mount belongs to the placeholder.
  */
 export const CHART_REVEAL_CLASS = "chart-reveal";
 
 /**
- * Whether `ref`'s element has a width a chart can be laid out from yet.
+ * Whether the element has a width a chart can be laid out from yet. Hold a
+ * chart's render on this wherever it can mount into a box that is not laid out.
  *
- * Hold a chart's render on this whenever it can mount into a box that is not
- * laid out. `currentWidth()` treats a zero measurement as "cannot measure" and
- * falls back to `initialWidth`, which is a constant and therefore wrong at most
- * viewport sizes; the container's real width then arrives on a ResizeObserver
- * pass rather than in the same frame. Measured on the compare page, where the
- * chart mounts as the Suspense boundary reveals its subtree: the container is
- * 0 for one frame, so the scene was built at `INITIAL_WIDTH.compare` (1160) and
- * painted 4% oversized inside a 1207px box for ~130ms before snapping — cold
- * and warm alike, so not a dev-compile artifact.
+ * `currentWidth()` treats a zero measurement as "cannot measure" and falls back
+ * to the constant `initialWidth`, which is wrong at most viewport sizes.
+ * Measured on the compare page, where the chart mounts as Suspense reveals its
+ * subtree: the container is 0 for one frame, so the scene was built at 1160 and
+ * painted 4% oversized in a 1207px box for ~130ms, cold and warm alike.
  *
- * Costs one frame of an empty box, which is why the caller reserves the height.
- * That is a different thing from the swap this replaced: it is one commit, not
- * a wait on data.
+ * Costs one frame of an empty box, so the caller reserves the height. An
+ * observer rather than a polling loop, so there is no deadline to pick.
  *
- * An observer rather than a polling loop, so there is no deadline to pick and
- * nothing spinning if the box stays hidden.
- *
- * Returns a CALLBACK ref, not a `RefObject`. A ref object never notifies, so a
- * caller that renders another branch first (the compare chart's "no history
- * yet" return) leaves it null, the effect bails, and nothing re-runs when the
- * box finally mounts: the chart then never renders at all.
+ * Returns a CALLBACK ref: a ref object never notifies, so a caller that renders
+ * another branch first (the "no history yet" return) leaves it null and nothing
+ * re-runs when the box finally mounts — the chart never renders at all.
  */
 export function useMeasuredHost() {
   const [node, setNode] = useState<HTMLElement | null>(null);
@@ -134,23 +115,17 @@ export function useMeasuredHost() {
 /**
  * Dev-only tripwire: warns if a chart is mounted inside a scaling ancestor.
  *
- * The library measures its container with `getBoundingClientRect`, which
- * carries an ancestor transform, and a transform fires no ResizeObserver — so
- * a chart mounted under one lays its scene out at the wrong size and never
- * finds out. The whole scene then paints at that ratio: at `scale-95`, every
- * stroke width, tick font and marker radius comes out 5.3% oversized.
+ * The library measures with `getBoundingClientRect`, which carries an ancestor
+ * transform, and a transform fires no ResizeObserver — so the chart lays its
+ * scene out at the wrong size and never finds out. At `scale-95` every stroke
+ * width, tick font and marker radius comes out 5.3% oversized.
  *
- * There used to be a `useSettledBox` hook that polled for this and rebuilt the
- * definition to correct it. It worked, but the correction is itself a visible
- * snap, so it also had to hold the chart's paint behind a fade. The install
- * dialog dropped the scale from its transition instead (`skill-record.tsx`),
- * which removes the cause rather than the symptom — and this is what keeps
- * that from silently regressing. It is a warning rather than a repair on
- * purpose: the failure is a design mistake at the mount site, and the fix
- * belongs there.
+ * A warning rather than a repair on purpose: the fix is to drop the scale at
+ * the mount site, as the install dialog did (`skill-record.tsx`). Correcting it
+ * here means re-laying out, which is itself a visible snap.
  *
- * Compiles away in production. `clientWidth` is the reference because it is
- * the one width a transform cannot reach.
+ * Compiles away in production. `clientWidth` is the reference because it is the
+ * one width a transform cannot reach.
  */
 export function useUntransformedHost(
   ref: RefObject<HTMLElement | null>,
@@ -160,8 +135,8 @@ export function useUntransformedHost(
     if (process.env.NODE_ENV === "production") return;
     const element = ref.current;
     if (!element) return;
-    // One frame, so an entrance that is only starting has begun to move: a
-    // transform mid-transition reads as 1 on the commit it is applied.
+    // One frame, so a starting entrance has begun to move: a transform reads as
+    // 1 on the commit it is applied.
     const frame = requestAnimationFrame(() => {
       const painted = element.getBoundingClientRect().width;
       const layout = element.clientWidth;

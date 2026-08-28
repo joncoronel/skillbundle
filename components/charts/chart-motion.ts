@@ -44,22 +44,19 @@ export const chartMotion = motion({
 });
 
 /**
- * The install chart's renderer: the same motion, plus the library's own
- * entrance — bars and the line grow from the y baseline, staggered left to
- * right, settling ~720ms in.
+ * The install chart's renderer: the same motion plus the library's own entrance
+ * — bars and line grow from the y baseline, staggered, settling ~720ms in.
  *
- * `"always"` rather than `true` only to take a branch out of play. The gate is
- * `motion.initial && (!adoptedRoot || motion.initial === "always")`, where
- * `adoptedRoot` is "the container already holds an `svg.ts-chart`" — the
- * library's read of server-rendered markup. It is false here, and `true` was
- * measured to animate fine; `"always"` keeps it animating if that ever
- * changes. This entrance is decorative, so its loss would be silent.
+ * `"always"` rather than `true` to take a branch out of play: the gate is
+ * `motion.initial && (!adoptedRoot || motion.initial === "always")`, and
+ * `adoptedRoot` is the library's read of server-rendered markup. `true` was
+ * measured to animate fine here; `"always"` survives that changing, and this
+ * entrance is decorative enough that its loss would be silent.
  *
- * This only survives because the install dialog's entrance carries no scale —
- * see `skill-record.tsx`. A container-measured chart cannot animate through a
- * transform: the first real measurement would be a `resized` render, and the
- * renderer commits those instantly (`resize: false`), cancelling the entrance.
- * docs/charts.md has the measurements.
+ * Only works because the install dialog's entrance carries no scale (see
+ * `skill-record.tsx`). Through a transform the first real measurement is a
+ * `resized` render, which the renderer commits instantly (`resize: false`),
+ * cancelling the entrance.
  */
 export const chartMotionEntrance = motion({
   initial: "always",

@@ -55,14 +55,13 @@ export const X_AXIS_LABEL_PADDING = 10;
 /**
  * Bottom margin, for a chart that also labels its y axis.
  *
- * Every constant here leads with the axis it belongs to, which is the one
- * thing that stops a bottom margin being read as a left one. They have held the
- * same value before now, and word order was the only thing telling them apart.
+ * The lowest y tick sits centred on the plot's bottom edge, so the dates have to
+ * clear that label and not just the plot — without the gap the zero and the
+ * first date collide in the corner. Only worth the vertical cost where there is
+ * a y axis: on a phone this is a third of the chart's height.
  *
- * The lowest y tick sits centred on the plot's bottom edge, so the dates have
- * to clear that label and not just the plot — without the extra gap the zero
- * and the first date collide in the corner. Only worth the vertical cost where
- * there is a y axis: on a phone this is a third of the chart's height.
+ * Every constant here leads with its axis letter, which is the one thing that
+ * stops a bottom margin being read as a left one.
  */
 export const X_AXIS_LABEL_MARGIN_WITH_Y_AXIS = 48;
 export const X_AXIS_LABEL_PADDING_WITH_Y_AXIS = 20;

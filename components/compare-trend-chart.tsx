@@ -54,92 +54,65 @@ export const COMPARE_LINE_COLORS = [
 ];
 
 /**
- * Date labels asked for, by how wide the chart was actually laid out.
+ * Date labels asked for, by how wide the chart was laid out.
  *
- * Six is the old chart's `XAxis numTicks={6}`, and it is what this card fits on
- * a desktop. A phone does not fit six, and the label thinning that catches the
- * overflow (`AXIS_TICK_LABELS.thin`) drops candidates greedily rather than
- * evenly: measured at 390px it left Jul 31, Aug 13, Aug 21 — thirteen days,
- * then eight, on an axis whose whole job is even time. Asking for fewer up
- * front means thinning never has to fire, and `evenlySpaced` still rounds the
- * count to whatever divides the series exactly.
- *
- * The install chart escapes this by luck rather than design: it asks for five
- * over the same range, `evenlySpaced` returns four because 21 divides by three,
- * and all four survive. Do not read its axis as evidence that thinning
- * preserves spacing.
+ * Six is the old chart's `XAxis numTicks={6}` and what this card fits on a
+ * desktop. A phone does not, and the thinning that catches the overflow
+ * (`AXIS_TICK_LABELS.thin`) drops candidates greedily: measured at 390px it
+ * left Jul 31, Aug 13, Aug 21 — thirteen days, then eight, on an axis whose
+ * job is even time. Asking for fewer means thinning never fires.
  */
 const COMPARE_TICK_COUNT = 6;
 const COMPARE_TICK_COUNT_NARROW = 4;
 
 /**
- * Below this scene width the axis takes the narrow count.
- *
- * Read off the chart, not the viewport: the card is what the labels have to
- * fit in, and `defineChart`'s builder is handed the scene width for exactly
- * this. A viewport media query would be measuring the wrong box.
+ * Below this SCENE width the axis takes the narrow count. Not the viewport: the
+ * card is the box the labels have to fit, and the builder is handed its width.
  */
 const NARROW_CHART_WIDTH = 480;
 
 const LINE_ID = "installs";
 
 /**
- * Days the placeholder series spans while the real data loads.
- *
- * The real range is whatever the snapshots turn out to cover, so this is a
- * guess — and the closer it lands, the better the arrival looks: the renderer
- * "morphs compatible numeric SVG geometry", and two paths are compatible when
- * they carry the same command count. Miss, and the lines snap into place
- * instead of travelling, which is a worse arrival rather than a broken one.
- * The case that has to be right is not this one but the placeholder-data case
- * (adding a skill with a chart already on screen), where both sides span the
- * same days by construction.
+ * Days the placeholder spans. A guess at a range only the snapshots know, and
+ * the closer it lands the better the arrival: the renderer morphs paths only
+ * when their command counts match. Missing costs a snap, not correctness.
  */
 const SKELETON_DAYS = 21;
 
 /**
  * How long the placeholder is given to clear before the real series wipes in.
  *
- * bklit's loading→ready order, which is what this chart borrows: the
- * placeholder conceals to the right, the y scale retargets while nothing is
- * showing, then the real series is revealed. The alternative is to let the
- * renderer morph placeholder geometry into real geometry, which is smoother but
- * says the two are the same measurement changing — and one of them is invented.
- * Concealing says the placeholder is being replaced, which is what happened.
+ * Concealing rather than morphing one into the other: a morph says the two are
+ * the same measurement changing, and one of them is invented.
  *
- * Mirrors the `.chart-conceal` animation in `charts.css`; the two have to move
- * together or the phase outlasts the wipe and the plot sits empty waiting.
+ * Mirrors `.chart-conceal` in `charts.css`. The two move together or the phase
+ * outlasts the wipe and the plot sits empty waiting.
  */
 const CONCEAL_MS = 180;
 
 /**
- * Shortest time the placeholder stays up once it has been shown at all.
+ * Shortest time the placeholder stays up once shown at all. `useHeldFlag` owns
+ * the timing and the argument for it; this is only the number.
  *
- * `useHeldFlag` owns the timing and the argument for holding at all; this is
- * only the number. 400ms shows about a third of a band crossing
- * (`chart-loading-sweep` is 1200ms per crossing), which with the label is
- * enough to register as a state. The two are coupled: a shorter floor wants a
- * faster sweep to stay legible.
+ * 400ms is about a third of a band crossing (1200ms), enough to register as a
+ * state. Shorten it and the sweep has to speed up to stay legible.
  *
- * A floor on the FETCH would be the tidier shape and is not available: Convex
- * queries resolve through a `queryFn` installed globally on the query client,
- * so flooring one would floor every query in the app — and this result also
- * feeds each column's rank, which has no reason to wait.
+ * A floor on the FETCH would be tidier and is not available: Convex queries
+ * resolve through a `queryFn` installed globally on the query client, so
+ * flooring one floors every query in the app.
  *
- * Only ever paid when the placeholder was rendered at all. A cached query
- * reports `isPending: false` on the first render, so `phase` starts at `ready`
- * and nothing here runs.
+ * Never paid on a cached query, which reports `isPending: false` on the first
+ * render — `phase` starts at `ready` and nothing here runs.
  */
 const PLACEHOLDER_FLOOR_MS = 400;
 
 /**
- * The plot's inset inside the chart box.
- *
- * Shared by the definition's `margin` and the loading label that centres on it,
- * because the two have to agree: the margins are asymmetric (a y-axis gutter on
- * the left, a date row underneath), so a label centred on the BOX sits 16px off
- * the plot on both axes. Scene units are CSS pixels here — the viewBox always
- * equals the container's width — so these carry straight into `style`.
+ * The plot's inset inside the chart box, shared by the definition's `margin`
+ * and the loading label that centres on it — the margins are asymmetric, so a
+ * label centred on the BOX sits 16px off the plot. Scene units are CSS pixels
+ * (the viewBox always equals the container's width), so these carry into
+ * `style` unchanged.
  */
 const CHART_MARGIN = {
   top: 16,
@@ -151,24 +124,15 @@ const CHART_MARGIN = {
 const SKELETON_LINE_COLOR = "var(--muted-foreground)";
 
 /**
- * Stand-in series carrying the real series' keys.
+ * Stand-in series carrying the real series' keys, which is what lets ONE chart
+ * instance span loading and loaded. The library has no loading state by design,
+ * so the choice is a spinner swap or giving the chart something to draw — and
+ * swapping costs what makes the loaded state good: with the chart mounted, new
+ * data is a keyed update and the y scale tweens rather than cutting.
  *
- * This is what lets one chart instance span loading and loaded. TanStack Charts
- * has no loading state and should not — it is a rendering grammar — so the
- * choice is between swapping the chart for a spinner and giving it something to
- * draw. Swapping is what this page used to do, and it costs the thing that
- * makes the loaded state good: with the chart mounted, new data is a keyed
- * update, so the y scale tweens across its change rather than cutting. Tear it
- * down and every arrival is a fresh mount instead.
- *
- * The LINES do not morph across an added skill — the shared date range grows,
- * so every path's command count changes and the renderer can only interpolate
- * compatible geometry. docs/charts.md has the measurement.
- *
- * The keys have to match the real ones (`s0`/`s1`/`s2`) or the update has no
+ * The keys must match the real ones (`s0`/`s1`/`s2`) or the update has no
  * identity to travel along. Everything else is deliberately not real: a neutral
- * stroke, and the y axis drops its labels while this is on screen (see the
- * definition) so no invented number is ever printed.
+ * stroke, and no y labels while it is up, so no invented number is printed.
  */
 function skeletonSeries(keys: string[]): CompareSeries[] {
   // Read once per call, and the caller memoizes on the series keys, so the day
@@ -191,15 +155,11 @@ function skeletonSeries(keys: string[]): CompareSeries[] {
 /**
  * One placeholder series' points: rising, but not smoothly.
  *
- * Accumulated from a daily GAIN rather than evaluated as a curve, which is what
- * gives it shoulders. The gain ebbs and flows (the sine) but never goes
- * negative (the `1 + 0.7 *` keeps its factor in 0.3–1.7), so the running
- * total is still monotonic — a cumulative install count cannot fall, and a
- * placeholder that dipped would be drawing a shape the real data can never
- * take. Varying the slope buys the visual interest without telling that lie.
- *
- * `index` shifts each line's phase and band, so three of them read as three
- * trajectories rather than one thick stroke travelling together.
+ * Accumulated from a daily GAIN rather than evaluated as a curve, which gives
+ * it shoulders. The gain ebbs but never goes negative (`1 + 0.7 *` holds its
+ * factor in 0.3–1.7), so the total stays monotonic — a cumulative install count
+ * cannot fall, and a placeholder that dipped would draw a shape the real data
+ * can never take. `index` shifts each line's phase so three read as three.
  */
 function skeletonPoints(days: string[], index: number) {
   const phase = index * 2.1;
@@ -326,28 +286,23 @@ export function CompareTrendChart({
   const [boxRef, measured] = useMeasuredHost();
 
   // `loading` says whether the data is here; `phase` says what the chart is
-  // doing about it, which outlasts it by the length of the conceal. Holding the
-  // placeholder's definition through `concealing` is the whole point: swap it
-  // for real rows on the frame the data lands and the renderer morphs one into
-  // the other, which is the thing this ordering exists to avoid.
-  // The floor lives in `useHeldFlag`, so what reaches the phase machine is
-  // already "loading, for long enough to be worth concealing".
+  // doing about it, and outlasts it by the length of the conceal. Holding the
+  // placeholder's definition through `concealing` is what stops the renderer
+  // morphing invented geometry into real geometry on the frame data lands.
   const heldLoading = useHeldFlag(loading, PLACEHOLDER_FLOOR_MS);
 
   const [phase, setPhase] = useState<"loading" | "concealing" | "ready">(
     heldLoading ? "loading" : "ready",
   );
-  // Adjusting state to a prop change during render, not in an effect: React
-  // re-runs the component immediately without committing the stale phase, so
-  // there is no frame where the data has landed and the chart still says it is
-  // loading. An effect would paint that frame, and the lint rule against
-  // synchronous `setState` in an effect body is pointing at the same thing.
+  // Adjusted during render, not in an effect: React re-runs the component
+  // without committing the stale phase, so no frame paints with the data landed
+  // and the chart still saying it is loading. An effect would paint that frame.
   if (heldLoading && phase !== "loading") setPhase("loading");
   else if (!heldLoading && phase === "loading") setPhase("concealing");
 
   useEffect(() => {
     if (phase !== "concealing") return;
-    // Nothing to sit through when the conceal is not being drawn.
+    // Nothing to sit through when the conceal is not drawn.
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -357,9 +312,9 @@ export function CompareTrendChart({
 
   const showPlaceholder = phase !== "ready";
 
-  // Keyed on the series KEYS, not on `series`: real data landing during the
-  // floor gives that array a new identity, and rebuilding the definition then
-  // re-lays the chart out and restarts the sweep mid-crossing.
+  // Keyed on the series KEYS, not `series`: data landing during the floor gives
+  // that array a new identity, and rebuilding the definition re-lays the chart
+  // out and restarts the sweep mid-crossing.
   const seriesKeys = series.map((s) => s.key).join(",");
   const placeholder = useMemo(
     () => skeletonSeries(seriesKeys.split(",")),
@@ -425,12 +380,9 @@ export function CompareTrendChart({
                   : COMPARE_TICK_COUNT,
               ),
             },
-            // Gone with the y labels while the placeholder is up, and for the
-            // same reason: the skeleton spans the last three weeks ending
-            // today, the real series ends wherever its snapshots do, and a date
-            // range is as much a claim about the data as a count is. Leaving
-            // them on had the axis announce Aug 7–27 and then jump back to
-            // Jul 31–Aug 21 on the reveal.
+            // Gone with the y labels, and for the same reason: a date range
+            // claims as much about the data as a count does. Left on, the axis
+            // announced Aug 7–27 and jumped back to Jul 31–Aug 21 on the reveal.
             tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
           },
         },
@@ -452,10 +404,8 @@ export function CompareTrendChart({
             // Abbreviated like the install stats directly below the chart, so the
             // axis and the tiles read in the same units.
             ticks: { count: 4, size: 0, format: compactCount },
-            // The grid rules stay while loading — they are the frame, and it is
-            // real — but their labels go. A placeholder line is a shape, which
-            // reads as "something will be here"; a placeholder number reads as a
-            // measurement, and there is no way to draw one honestly.
+            // The rules stay while loading (the frame is real), the labels go:
+            // a placeholder line is a shape, a placeholder number is a claim.
             tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
           },
         },
@@ -469,15 +419,13 @@ export function CompareTrendChart({
         margin: CHART_MARGIN,
         theme: CHART_THEME,
       }),
-      // The builder owns the spec; these are definition options, which take the
-      // second argument once the first is a function.
+      // Definition options, which take the second argument once the first is a
+      // function.
       {
-        // Nothing on a placeholder is worth reporting a value for, and there are
-        // two ways to ask: `pointer: false` is already permanent (the overlay
-        // owns the gesture), so the tooltip has to go at the source, and
-        // `keyboard` separately — arrow keys still move focus on a chart whose
-        // pointer handling is off, which is how a reader would otherwise land a
-        // tooltip on an invented number.
+        // A placeholder has no value worth reporting. `pointer: false` is
+        // already permanent (the overlay owns the gesture), so the tooltip goes
+        // at the source, and `keyboard` separately — arrow keys still move focus
+        // on a chart whose pointer handling is off.
         tooltip: showPlaceholder ? false : CHART_TOOLTIP,
         keyboard: !showPlaceholder,
         focus: "group-x",
@@ -506,16 +454,15 @@ export function CompareTrendChart({
     labels: useMemo(() => days.map(dayLabel), [days]),
   });
 
-  // "No history yet" is a resolved answer, so it must not swallow "not answered
-  // yet" — while loading, `drawable` is the placeholder set and never empty.
+  // "No history yet" is a resolved answer and must not swallow "not answered
+  // yet": while loading, `drawable` is the placeholder set and never empty.
   if (!showPlaceholder && drawable.length === 0) {
     return (
       <div>
         <CompareLegend series={series} />
-        {/* Exactly the placeholder's box, message included, so resolving to
-            "no history" changes nothing about the section's height. The text
-            sits INSIDE it for that reason, and it reads better there anyway:
-            the loading label occupies the same place in the same box. */}
+        {/* Exactly the placeholder's box, so resolving to "no history" changes
+            nothing about the section's height. The text sits inside it for that
+            reason, where the loading label sat. */}
         <div className="flex aspect-5/2 w-full flex-col items-center justify-center gap-3">
           <CompareTrendGhost />
           <p className="max-w-sm text-center text-xs text-muted-foreground">
@@ -530,10 +477,9 @@ export function CompareTrendChart({
   return (
     <div aria-busy={showPlaceholder || undefined}>
       <CompareLegend series={series} loading={showPlaceholder} />
-      {/* Holds the chart's box while it waits one commit for a measurable
-          container — see `useMeasuredHost`. The ratio matches the chart's own
-          `aspectRatio`, so the box does not change size when the chart lands in
-          it, and the section below never moves. */}
+      {/* Holds the box while the chart waits one commit for a measurable
+          container (see `useMeasuredHost`). The ratio matches the chart's own
+          `aspectRatio`, so nothing moves when it lands. */}
       <div
         ref={boxRef}
         className={cn("relative", !measured && "aspect-5/2 w-full")}
@@ -558,18 +504,16 @@ export function CompareTrendChart({
                       .join("; ")}.`
               }
               aspectRatio={5 / 2}
-              // The sweep belongs to the placeholder, the conceal to it
-              // leaving, the wipe to the real series arriving. A class change is
-              // a prop change, so the host re-renders and each animation starts
-              // on a node already sitting there, which is what moves the reveal
-              // off the mount and onto the data.
+              // Sweep belongs to the placeholder, conceal to it leaving, wipe
+              // to the real series arriving. A class change is a prop change, so
+              // each animation starts on a node already sitting there — which is
+              // what moves the reveal off the mount and onto the data.
               className={cn(
-                // `chart-loading` spans BOTH placeholder phases, so `concealing`
-                // carries two classes. It holds the mask that makes the band the
-                // line, and dropping it there un-masks the placeholder: the whole
-                // invented curve snaps to full strength for the 180ms it takes to
-                // clip away. `charts.css` needs a combined
-                // `.chart-loading.chart-conceal` rule to run both animations.
+                // Spans BOTH placeholder phases, so `concealing` carries two
+                // classes: this holds the mask that makes the band the line, and
+                // dropping it un-masks the whole invented curve for the 180ms it
+                // takes to clip away. `charts.css` has the combined rule that
+                // runs both animations.
                 phase !== "ready" && "chart-loading",
                 phase === "concealing" && "chart-conceal",
                 phase === "ready" && CHART_REVEAL_CLASS,
@@ -588,29 +532,21 @@ export function CompareTrendChart({
             />
           </ChartHoverOverlay>
         )}
-        {/* AFTER the chart, because DOM order is what puts it on top: both this
-            and the overlay's root are positioned, so the later one paints over.
-            Placed first, the plate below sat under the SVG and the lines went
+        {/* AFTER the chart: both this and the overlay's root are positioned, so
+            DOM order is what puts it on top. Placed first, the lines drew
             straight through the text.
 
-            Names the wait, and leaves just before the placeholder does: 150ms
-            against the conceal's 180, so it is gone by the time the plot clears
-            rather than racing the unmount. Both move together — the label must
-            stay the shorter of the two.
+            Leaves at 150ms against the conceal's 180, so it is gone by the time
+            the plot clears rather than racing the unmount. It must stay the
+            shorter of the two. Down-blur-fade is this app's own exit gesture
+            (`Crossfade` moves every swap the same way).
 
-            Down, blurred and faded is bklit's exit for the same label, and it is
-            already this app's gesture — `Crossfade` moves every swap on
-            `opacity, filter, translate` over 240ms of the same curve. Borrowing
-            that rather than bklit's 30px keeps one vocabulary.
+            No spinner beside it: the sweeping placeholder IS the indicator, and
+            DESIGN.md's `DotMatrixRipple` would say it twice. Static text too — a
+            pulse takes `muted-foreground` under the 4.5:1 it is tuned for.
 
-            No spinner beside it. The house loader is `DotMatrixRipple` and this
-            chart deliberately dropped it: the sweeping placeholder is the
-            indicator, and a second one would be saying the same thing twice.
-            Static text, too — a pulse would take `muted-foreground` under the
-            4.5:1 it is tuned to sit at.
-
-            `aria-hidden` because `aria-busy` above and the chart's own
-            `ariaLabel` already carry this to a screen reader. */}
+            `aria-hidden` because `aria-busy` and the chart's `ariaLabel` already
+            carry this to a screen reader. */}
         {showPlaceholder && (
           <div
             aria-hidden="true"
@@ -631,41 +567,32 @@ export function CompareTrendChart({
               left: 0,
             }}
           >
-            {/* The plot's centre is where a grid rule and the placeholder
-                curves all cross, so the text was struck through on both
-                viewports. This is `bg-card` — the section's own surface — so it
-                reads as the lines breaking around the label rather than as a
-                chip sitting on top of them. No border and no shadow: it is
-                occluding, not elevated. */}
+            {/* A grid rule and the placeholder curves all cross at the plot's
+                centre, so the text was struck through. The plate is the
+                section's own surface, so it reads as the lines breaking around
+                the label rather than a chip on top of them. */}
             <span
               className={cn(
                 "rounded-md px-2.5 py-1",
-                // One tier above the section, which is `--card` (`surface-3`).
-                // `solidSurface` rather than `elevatedSurface` because it paints
-                // the rim into the same `box-shadow` instead of an `::after`,
-                // and a label with nothing but text at its edges does not need
-                // the overlay — or the `relative` and z-index that come with it.
-                // In light both tiers are pure white, so the separation is the
-                // shadow alone; in dark it is also a real lightness step.
+                // One tier above the section (`--card` is `surface-3`).
+                // `solidSurface`, not `elevatedSurface`: it paints the rim into
+                // the same `box-shadow` instead of an `::after`, and text alone
+                // does not need that overlay or its `relative` and z-index.
                 solidSurface(4),
               )}
             >
               {/* Two spans, and they cannot be one: `shimmer` paints through
                   `background-clip: text`, which clips EVERY background on its
-                  element to the glyphs — so a plate sharing it would be clipped
-                  to the letters and disappear.
+                  element to the glyphs, so a plate sharing it would vanish.
 
-                  The highlight is pinned to `foreground` rather than left to
-                  derive. Unset, it resolves to `currentColor` at 20% alpha,
-                  which in light mode fades `muted-foreground` well under the
-                  4.5:1 it is tuned to sit at. Pinned, the band darkens in light
-                  and brightens in dark — contrast rises either way, and the
-                  text reads as lighting up rather than washing out.
+                  The highlight is pinned to `foreground`. Unset it resolves to
+                  `currentColor` at 20% alpha, which fades `muted-foreground`
+                  under the 4.5:1 it is tuned for; pinned, contrast rises in both
+                  themes and the text reads as lighting up.
 
-                  1200ms is how long one band takes to cross the chart (its
-                  2400ms cycle carries two), so a text sweep and a chart band
-                  keep the same tempo rather than beating against each other.
-                  Change one and the other has to follow. */}
+                  1200ms is one band crossing the chart (its 2400ms cycle carries
+                  two), so text and chart keep one tempo. Change one, change
+                  both. */}
               <span className="shimmer text-sm text-muted-foreground shimmer-color-foreground shimmer-duration-1200">
                 Loading install history
               </span>

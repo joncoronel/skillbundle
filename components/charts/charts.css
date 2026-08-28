@@ -2,22 +2,19 @@
  *
  * These select the library's own nodes — `ts-chart__grid line`, the axis
  * `text`, the bar `rect`s — which our components never author, so they cannot
- * be utilities on an element we control, and one of them is a `@keyframes`.
- * They live here rather than in `globals.css` so the rules travel with the
- * charts; `charts/chart.tsx` imports this, and every chart imports that.
+ * be utilities on an element we control. They live here rather than in
+ * `globals.css` so the rules travel with the charts; `charts/chart.tsx`
+ * imports this, and every chart imports that.
  *
- * Anything that CAN be a utility should be: this file is for the library's
- * output, not for our own markup.
+ * Anything that CAN be a utility should be. docs/charts.md carries the
+ * reasoning behind the choreography below; what is here is what a regression
+ * would need.
  */
 
-/* Chart entrance: a left-to-right wipe over the marks only, so the grid and
-   axes are already in place as the series draws in. `ts-chart__marks` is
-   TanStack Charts' own class on that group, which is why this can be plain CSS
-   rather than a React-driven clip rect.
-
-   The chart's other motion (crosshair, focus dot, highlight band, tooltip
-   travel) is sprung by @tanstack/charts/motion, which handles reduced motion
-   itself. This one is ours, so it opts out here. */
+/* The entrance: a left-to-right wipe over the marks only, so the grid and axes
+   are already in place as the series draws in. The chart's other motion is
+   sprung by @tanstack/charts/motion, which handles reduced motion itself; this
+   one is ours, so it opts out below. */
 @keyframes chart-reveal-wipe {
   from {
     clip-path: inset(0 100% 0 0);
@@ -27,15 +24,10 @@
   }
 }
 
-/* The placeholder leaving, before the real series wipes in — bklit's "ready
-   line conceals to the right", which is what its loading→ready order is built
-   around. It clears from the left edge rightwards, so the two read as one
-   gesture: the placeholder slides out the way the real line will arrive.
-
-   The end state is an empty plot, and so is the reveal's first frame
-   (`inset(0 100% 0 0)` against this `inset(0 0 0 100%)`), which is what makes
-   the handoff seamless — and what lets the y scale retarget underneath while
-   nothing is showing, exactly where bklit puts its domain tween. */
+/* The placeholder leaving, clearing left to right so it reads as one gesture
+   with the reveal that follows. Its end state is the reveal's first frame
+   inverted, which hands off seamlessly and lets the y scale retarget while
+   nothing is showing. */
 @keyframes chart-conceal-wipe {
   from {
     clip-path: inset(0 0 0 0);
@@ -46,72 +38,43 @@
 }
 
 .chart-conceal .ts-chart__marks {
-  /* Mirrored by `CONCEAL_MS` in `compare-trend-chart.tsx`, which is how long the
-     phase is held. Change one and the other has to follow, or the placeholder
-     sits fully concealed waiting for a timer that has not fired. */
+  /* Mirrored by `CONCEAL_MS` in `compare-trend-chart.tsx`, which holds the
+     phase. Change one and the other has to follow, or the placeholder sits
+     concealed waiting on a timer. */
   animation: chart-conceal-wipe 180ms cubic-bezier(0.85, 0, 0.15, 1) both;
 }
 
-/* The wipe belongs to REAL data appearing, never to a placeholder. On the
-   compare chart the class is applied when loading ends, so the order matches
-   bklit's: sweep on the placeholder, then the y domain tweens and the real
-   series wipes in. A chart that opens with its data already in hand wipes at
-   mount, which is the same rule — that is the moment its real data appears.
+/* Applied when REAL data appears, never to a placeholder — on the compare
+   chart that is when loading ends, not at mount.
 
-   450ms, down from 1100 and then 650. The first cut was for consistency with the
-   install chart's ~442ms entrance. The second is about proportion: measured on a
-   client navigation, the data lands ~47ms after the chart mounts and the arrival
-   animation then runs for another 890ms, so almost everything being watched is
-   choreography rather than loading. 180 + 450 brings that to ~630ms.
-
-   This lands near the install chart's 442ms across roughly twice the width (a
-   ~1200px card against the dialog's 624). Checked on the wide card, it does not
-   read as a flicker at 450, but that is the axis to watch if it is trimmed
-   again. */
+   450ms: measured on a client navigation, data lands ~47ms after mount, so
+   anything longer is mostly choreography. 180 + 450 puts the whole arrival at
+   ~630ms. It runs across a ~1200px card without reading as a flicker, but that
+   is the axis to watch if it is trimmed again. */
 .chart-reveal .ts-chart__marks {
   animation: chart-reveal-wipe 450ms cubic-bezier(0.85, 0, 0.15, 1) both;
 }
 
-/* Loading: the chart is mounted and drawing placeholder series, so a band of
-   full strength sweeps along the marks until real data replaces them. The two
-   reference implementations both do a version of this — evilcharts sweeps a
-   diagonal clip window across its skeleton, bklit offers the same as its
-   `loadingStyle="sweep"`.
+/* Loading: a band of full strength sweeps along placeholder marks. A
+   `mask-image` rather than a `clip-path`, because the reveal above is the
+   clip-path and one node cannot carry two.
 
-   A `mask-image`, not a `clip-path`: the reveal wipe above is the clip-path,
-   and one node cannot carry two. They never co-occur anyway, because the wipe
-   waits for real data — but the mask is what makes a band possible at all.
-
-   Three things here are load-bearing and were each wrong once:
+   Three things here were each wrong once:
 
    1. DIRECTION. With a mask wider than its box, percentage positioning
-      resolves to `offset = (boxW - maskW) * P/100`, which for a 200% mask is
-      `-boxW * P/100`. So a POSITIVE P moves the mask left and the band travels
-      right-to-left. Counting DOWN to a negative P moves it right, which is the
-      left-to-right the rest of the chart reads in.
+      resolves to `offset = (boxW - maskW) * P/100`, so for a 200% mask a
+      POSITIVE P moves it LEFT. Counting down to a negative P is what sweeps
+      left to right.
+   2. LOOP. `repeat`, and travel of exactly one tile, so the restart frame is
+      identical to the last. Both ends of the gradient sit in the same flat 0,
+      putting the seam inside a constant region.
+   3. GAP. Two bands per tile, one box-width apart, so exactly one is crossing
+      at any moment. One band leaves the marks bare for half of every cycle,
+      which reads as the sweep cutting out.
 
-   2. SEAMLESS LOOP. `repeat`, not `no-repeat`, and the travel is exactly one
-      tile (200%), so the frame the animation restarts on is identical to the
-      one it ended on. Both ends of the gradient sit in the same flat 0.4, so
-      the tile seam falls inside a constant region and never shows.
-
-   3. NO GAP. Two bands per tile, at 25% and 75%, which puts them one box-width
-      apart — so exactly one is crossing at any moment. One band per tile is
-      two box-widths of spacing, which leaves the marks bare for half of every
-      cycle: that reads as the sweep cutting out rather than looping.
-
-   The base is 0, so the band REVEALS the line rather than brightening one that
-   is already drawn. That is what both references do, and it took two passes to
-   read them correctly: bklit's `Line` exposes only `loadingStroke` and
-   `loadingStrokeOpacity`, both documented as the PULSE's colour and opacity,
-   with no prop for a line underneath it — because there isn't one. evilcharts
-   is blunter: a clip window that "reveals the skeleton", and it re-rolls its
-   random data when the window is off-screen precisely because nothing is
-   visible there. The grid is untouched by any of this; it keeps its own stroke
-   and stays put, which is bklit's arrangement too.
-
-   Reduced motion below restores the whole line at a flat opacity rather than
-   freezing the mask, which would otherwise leave one slice lit forever. */
+   The base is 0, so the band REVEALS the line rather than brightening one
+   already drawn — what both references do; see docs/charts.md. The grid is
+   untouched and keeps its own stroke. */
 @keyframes chart-loading-sweep {
   from {
     mask-position: 0% 0;
@@ -139,28 +102,19 @@
   );
   mask-size: 200% 100%;
   mask-repeat: repeat;
-  /* The tile carries two bands, so a cycle is two crossings: 2400ms puts one
-     band across the plot every 1200ms. 1200 for the cycle (600ms a crossing)
-     was tried and reads as hurried — near enough to evilcharts' one sweep per
-     2000ms, and cubby's own `shimmer` default is 2000 too.
+  /* Two bands per tile, so this is one crossing every 1200ms — the tempo the
+     label's `shimmer-duration-1200` matches. Half this reads as hurried.
 
-     `linear`, and it has to be. Neither reference documents an easing for the
-     loading loop — bklit specifies `cubic-bezier(0.85, 0, 0.15, 1)` only for
-     the clip reveal, which is where we use it too. Anything eased here is
-     applied per CYCLE, and a cycle is two band crossings, so the pattern would
-     slow once every other crossing: a stutter on a loop that is supposed to be
-     endless. The band's character comes from the gradient's falloff instead,
-     which is why the stops above ramp through 0.5 rather than cutting from 0
-     to 1. */
+     `linear`, and it has to be: an easing applies per CYCLE, and a cycle is two
+     crossings, so it would slow every other one. The band's character comes
+     from the gradient falloff instead. */
   animation: chart-loading-sweep 2400ms linear infinite;
 }
 
-/* Concealing keeps the mask on, so the element carries BOTH classes, and both
-   rules set the `animation` shorthand at the same specificity. The later one
-   wins outright, which silently dropped the conceal: measured, 45 frames of
-   `chart-loading-sweep` with `clip-path: none` while the placeholder was
-   supposed to be clipping away. Declaring the pair here, after both and one
-   class more specific, is what runs them together. */
+/* Concealing keeps the mask on, so the element carries both classes and both
+   rules set `animation` at equal specificity — the later one won outright and
+   silently dropped the conceal (measured: 45 frames of sweep with `clip-path:
+   none`). Declaring the pair together is what runs them together. */
 .chart-loading.chart-conceal .ts-chart__marks {
   animation:
     chart-loading-sweep 2400ms linear infinite,
@@ -174,10 +128,9 @@
     animation: none;
   }
 
-  /* The sweep goes, and the mask with it — a frozen gradient would leave one
-     half of the plot brighter than the other for no reason. What stays is the
-     flat dim, because that is what says "not your data yet" once the motion
-     carrying the message is gone. */
+  /* The mask goes with the sweep — frozen, it would leave half the plot
+     brighter for no reason. The flat dim stays, since that is what says "not
+     your data yet" once the motion is gone. */
   .chart-loading .ts-chart__marks {
     animation: none;
     mask-image: none;
@@ -185,70 +138,50 @@
   }
 }
 
-/* The chart SVG is keyboard-navigable, so it carries `tabindex="0"` and would
-   otherwise get a browser ring around the whole plot. The chart already shows
-   where focus is, far more precisely: focusing it dims the unfocused bars and
-   paints the rule, the marker and the tooltip. That is the visible focus
-   indicator, and a ring around a 600px box on top of it is noise.
+/* The chart SVG carries `tabindex="0"` and would otherwise get a ring around
+   the whole plot. Focusing it already dims the unfocused bars and paints the
+   rule, marker and tooltip, which is a far more precise indicator.
 
-   Suppressing both states is only safe because that indicator is durable. It
-   was not: the overlay used to clear everything when the POINTER left, which
-   says nothing about where keyboard focus is, so tabbing in and then sweeping
-   a mouse across the chart and away left it focused with nothing drawn.
-   `onPointerLeave` in `use-chart-hover-overlay.ts` now holds the focus paint
-   while the SVG is `:focus-visible`. If that guard is ever removed, this rule
-   has to give the ring back.
+   That only holds because `onPointerLeave` in `use-chart-hover-overlay.ts`
+   keeps the focus paint while the SVG is `:focus-visible`. It used to clear on
+   pointer leave, which left a keyboard-focused chart drawing nothing. Remove
+   that guard and this rule has to give the ring back.
 
-   Both selectors, not just `:focus-visible`: a plain click leaves this element
-   focused but NOT focus-visible (measured), and the ring should be off in both
-   cases. */
+   Both selectors: a plain click leaves the element focused but NOT
+   focus-visible (measured). */
 .ts-chart:focus,
 .ts-chart:focus-visible {
   outline: none;
 }
 
-/* Grid rules keep the dashed pattern the charts have always drawn. TanStack's
-   axis API takes `grid: boolean` and the theme carries only a color, so stroke
-   style belongs to the renderer — restyling its own `ts-chart__grid` group here
-   is cheaper than replacing the built-in grid with authored rule marks.
+/* TanStack's axis API takes `grid: boolean` and the theme carries only a
+   colour, so stroke style belongs to the renderer.
 
-   The opacity reset is load-bearing, not a taste call. The renderer draws grid
-   rules at `stroke-opacity: 0.11` on top of the theme colour, and our
-   `--border` is itself only ~10% opaque, so the two multiply out to roughly 1%
-   and the grid disappears. Letting `--border` alone set the tone is also what
-   the old chart did. */
+   The opacity reset is load-bearing: the renderer draws grid rules at
+   `stroke-opacity: 0.11` over the theme colour, and `--border` is itself ~10%
+   opaque, so the two multiply out to ~1% and the grid disappears. */
 .ts-chart__grid line {
   stroke-dasharray: 4 4;
   stroke-opacity: 1;
 }
 
-/* Date labels give way to the pill travelling along their row, the way the old
-   chart's did: hidden where the pill covers them, ramping back over the next
-   20px, untouched beyond that.
+/* Date labels give way to the pill travelling along their row: hidden where it
+   covers them, ramping back over the next 20px.
 
-   The distance ramp is computed per label in the overlay and delivered as
-   `--tick-N` custom properties set on OUR wrapper, which the rules below read.
-   It cannot be written onto the labels directly: the chart owns those nodes and
-   strips inline styles off them on every repaint (which includes every focus
-   change), so a direct write survives about a frame. Custom properties inherit
-   into the chart's SVG from outside it, and the per-label rules are generated
-   into a stylesheet the chart never touches.
-
-   Which label maps to which property is decided in `chart-hover-overlay.tsx`
-   when the chart renders; only the numbers change while the pointer moves. */
+   The per-label distance is delivered as `--tick-N` properties set on OUR
+   wrapper. It cannot be written onto the labels directly — the chart owns those
+   nodes and strips inline styles on every repaint, which includes every focus
+   change. Custom properties inherit in from outside, and the generated rules
+   live in a stylesheet the chart never touches. See `chart-hover-overlay.tsx`. */
 .ts-chart__axes text[data-ts-key^="x-tick-label"] {
   transition: opacity 120ms ease-out;
 }
 
-/* The hover dim on both series, as a CSS transition rather than the renderer's
-   own motion — the old chart's per-bar `transition={{ opacity: { duration:
-   0.12 } }}` and its 0.4s line dim, in the one form that survives a scrub.
-
-   The renderer re-animates every mark state on each focus change, restarting
-   from the live DOM value, so a bar the cursor has already passed keeps being
-   handed a new tween and never lands (see `NO_MOTION` in series-state.ts). CSS
-   ignores a write that does not change the target, so each bar's fade runs once
-   and completes on time. The states themselves write instantly. */
+/* The hover dim as a CSS transition rather than the renderer's own motion. The
+   renderer re-animates every mark state on each focus change, restarting from
+   the live DOM value, so a bar the cursor has passed keeps being handed a new
+   tween and never lands (see `NO_MOTION` in series-state.ts). CSS ignores a
+   write that does not change the target, so each fade runs once. */
 .ts-chart__bar rect {
   transition: fill-opacity 120ms ease-out;
 }
@@ -259,32 +192,21 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ts-chart__bar rect,
-  .ts-chart__line path {
-    transition: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
+  .ts-chart__line path,
   .ts-chart__axes text[data-ts-key^="x-tick-label"] {
     transition: none;
   }
 }
 
 /* The tooltip wrapper is a pass-through: our panel is the visible surface.
+ * Without this the extension's own card (background, border, radius, padding,
+ * shadow) wraps our chrome panel in a white box. Each is a custom property with
+ * a fallback, which is the documented way to restyle it. `max-width` goes too,
+ * or the wrapper's `min(24rem, 80%)` cuts the rows before the panel's own cap.
  *
- * The extension paints its own card — Canvas background, a hairline border,
- * 0.45rem radius, padding and a drop shadow — and renders `renderTooltipBody`
- * inside it, so without this our chrome panel sits nested in a white box. Each
- * of those is a custom property with a fallback, which is the documented way to
- * restyle it, so neutralising them here leaves the extension owning position
- * and visibility while the body owns everything visual.
- *
- * `max-width` goes too: the panel caps its own width, and the wrapper's default
- * `min(24rem, 80%)` would cut the rows before that cap applies.
- *
- * Document-level and keyed on the class rather than scoped under the chart:
- * the portal can move this into the top layer, and the fallback path reparents
- * it to the document body, where chart-scoped properties would not reach it. */
+ * Document-level and keyed on the class: the portal can move this to the top
+ * layer, and the fallback path reparents it to the body, where chart-scoped
+ * properties would not reach. */
 .ts-chart-tooltip {
   --ts-chart-tooltip-background: transparent;
   --ts-chart-tooltip-border: 0;
@@ -296,33 +218,20 @@
   --ts-chart-tooltip-shadow: none;
 }
 
-/* Nothing inside the chart's own box may grow a scroll container.
+/* Nothing inside the chart's box may grow a scroll container. The unportalled
+ * tooltip is absolutely positioned in here, so any moment it lands outside adds
+ * to an ancestor's scrollable overflow and pans the dialog — reported on touch,
+ * dragging up from the bottom-left corner.
  *
- * The unportalled tooltip is `position: absolute` inside this element, so any
- * moment it lands outside — the extension positions it after measuring, and a
- * scroll mid-gesture can change the geometry between those two steps — adds to
- * an ancestor's scrollable overflow and makes the dialog pan. That was reported
- * on touch, dragging up from the chart's bottom-left corner, and it does not
- * happen portalled because the top layer is outside normal flow entirely.
+ * `clip` rather than `hidden`, because it creates no scroll container of its
+ * own. The overlay's cursor is a sibling of `.ts-chart-host`, so the pill's
+ * deliberate overhang is untouched.
  *
- * This costs nothing in normal use: unportalled, the extension clamps the panel
- * inside the chart, so there is nothing at this boundary to cut. It does not
- * reach the portalled path either, since top-layer elements are not clipped by
- * an ancestor's overflow — so switching `CHART_TOOLTIP` back to `portal` still
- * behaves as it did.
- *
- * `clip` rather than `hidden`: it creates no scroll container of its own, which
- * is the whole point. The overlay's cursor — markers, highlight band, date pill
- * — is a sibling of `.ts-chart-host`, not a descendant of this, so the pill's
- * deliberate overhang past the plot is untouched.
- *
- * The axis labels are NOT untouched, which is what `overflow-clip-margin` is
- * for. The first and last sit on the plot's edges (every x scale here is a
- * point scale) and are centred there, so half of each hangs past the box: the
- * last one overhung by 4px and came out reading "Aug 2" instead of "Aug 21".
- * The margin lets that ink paint without letting anything add to scrollable
- * overflow. It cannot leak the tooltip back out, because the extension already
- * keeps the panel 8px clear of this boundary. */
+ * `overflow-clip-margin` is for the axis labels, which ARE descendants: the
+ * first and last are centred on the plot's edges, so half of each hangs past
+ * the box — the last overhung by 4px and read "Aug 2" instead of "Aug 21". It
+ * cannot leak the tooltip back out, since the extension keeps the panel 8px
+ * clear of this boundary. */
 .ts-chart-surface {
   overflow: clip;
   overflow-clip-margin: 8px;

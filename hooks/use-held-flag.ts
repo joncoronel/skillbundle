@@ -5,24 +5,19 @@ import { useEffect, useRef, useState } from "react";
 /**
  * `active`, but held true for at least `ms` once it has gone true at all.
  *
- * For a transient state that is worth seeing when it happens: the compare
- * chart's loading placeholder, which leaves through a conceal and a reveal and
- * so needs to have been on screen for the exit to mean anything. Measured
- * there, the data can land about one frame after the chart mounts, and without
- * a hold the chart conceals something nobody saw.
+ * For a transient state that has to be seen to make sense: the compare chart's
+ * placeholder leaves through a conceal and a reveal, and the data can land one
+ * frame after mount, so without a hold the chart conceals something nobody saw.
  *
- * Deliberately NOT a spinner floor. The difference is what the flag drives: a
- * spinner exists only to say "wait", so delaying data to keep one up is pure
- * cost. Holding a state that has its own choreography is what stops that
- * choreography being nonsense. Reach for it only where something animates OUT.
+ * Deliberately NOT a spinner floor. A spinner exists only to say "wait", so
+ * delaying data to keep one up is pure cost; holding a state that has its own
+ * choreography is what stops that choreography being nonsense. Reach for this
+ * only where something animates OUT.
  *
- * Costs nothing when `active` is false from the first render — the common case
- * of a warm cache never enters the hold.
+ * Costs nothing when `active` is false from the first render.
  *
- * Timing is not a motion preference, so this does not consult
- * `prefers-reduced-motion`: seeing the state is useful whether or not it is
- * animated, and it is the exit's DURATION that should collapse. Callers gate
- * that separately.
+ * Does not consult `prefers-reduced-motion`: seeing the state is useful either
+ * way, and it is the exit's DURATION that should collapse. Callers gate that.
  */
 export function useHeldFlag(active: boolean, ms: number) {
   const [held, setHeld] = useState(active);
