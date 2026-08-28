@@ -60,3 +60,7 @@ reviews/
 
 # Clerk e2e session state (written by e2e/auth.setup.ts)
 /playwright/.clerk/
+
+# Scratch copies of third-party docs pulled in while working. Local only:
+# whatever they informed is cited in docs/charts.md.
+docs/temp/

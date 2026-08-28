@@ -30,12 +30,18 @@ import "./charts.css";
  * position always fits (the `maxWidth` in `chart-tooltip-panel.tsx`), so the
  * travel between two fitting positions cannot escape either.
  */
-export function useChartHostProps(options?: { entrance?: boolean }) {
+export function chartHostProps(renderer: typeof chartMotion = chartMotion) {
   return {
-    // `entrance` opts into the library's own first paint. Only the install
-    // chart takes it; see `chartMotionEntrance` for what it needs from the
-    // surface it mounts in.
-    renderer: options?.entrance ? chartMotionEntrance : chartMotion,
+    // Pass `chartMotionEntrance` for the library's own first paint. Only the
+    // install chart does; see that constant for what it needs from the surface
+    // it mounts in.
+    //
+    // Typed `typeof chartMotion`, NOT `ChartRenderer`. The latter is generic and
+    // annotating with it bare pins the datum to `unknown`, which collapses
+    // `point.datum` at every call site: the same trap the note above describes
+    // for a wrapper component. `motion()` returns a universal renderer that
+    // still infers per chart.
+    renderer,
     style: CHART_HOST_VARS as CSSProperties,
   };
 }
@@ -99,25 +105,30 @@ export const CHART_REVEAL_CLASS = "chart-reveal";
  *
  * An observer rather than a polling loop, so there is no deadline to pick and
  * nothing spinning if the box stays hidden.
+ *
+ * Returns a CALLBACK ref, not a `RefObject`. A ref object never notifies, so a
+ * caller that renders another branch first (the compare chart's "no history
+ * yet" return) leaves it null, the effect bails, and nothing re-runs when the
+ * box finally mounts: the chart then never renders at all.
  */
-export function useMeasuredHost(ref: RefObject<HTMLElement | null>) {
+export function useMeasuredHost() {
+  const [node, setNode] = useState<HTMLElement | null>(null);
   const [measured, setMeasured] = useState(false);
 
   useEffect(() => {
-    const element = ref.current;
-    if (!element || measured) return;
-    if (element.clientWidth > 0) {
+    if (!node || measured) return;
+    if (node.clientWidth > 0) {
       setMeasured(true);
       return;
     }
     const observer = new ResizeObserver(() => {
-      if (element.clientWidth > 0) setMeasured(true);
+      if (node.clientWidth > 0) setMeasured(true);
     });
-    observer.observe(element);
+    observer.observe(node);
     return () => observer.disconnect();
-  }, [ref, measured]);
+  }, [node, measured]);
 
-  return measured;
+  return [setNode, measured] as const;
 }
 
 /**

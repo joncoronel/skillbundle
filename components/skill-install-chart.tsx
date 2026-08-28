@@ -7,7 +7,7 @@ import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import {
   INITIAL_WIDTH,
-  useChartHostProps,
+  chartHostProps,
   useUntransformedHost,
 } from "@/components/charts/chart";
 import {
@@ -16,8 +16,8 @@ import {
   evenlySpaced,
   CHART_THEME,
   datePillOffset,
-  AXIS_LABEL_MARGIN,
-  AXIS_LABEL_PADDING,
+  X_AXIS_LABEL_MARGIN,
+  X_AXIS_LABEL_PADDING,
 } from "@/components/charts/chart-theme";
 import {
   ChartHoverOverlay,
@@ -35,6 +35,7 @@ import {
   HOVER_DIM,
 } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
+import { chartMotionEntrance } from "@/components/charts/chart-motion";
 import {
   dayLabel,
   dayLabelLong,
@@ -212,7 +213,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           line: false,
           ticks: {
             size: 0,
-            padding: AXIS_LABEL_PADDING,
+            padding: X_AXIS_LABEL_PADDING,
             format: dayLabel,
             // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
             // labels pinned to real rows, first and last included. A point
@@ -254,7 +255,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         },
       },
       gradients: [fadeEdgesGradient(fadeEdgesId(LINE_ID), "var(--primary)")],
-      margin: { top: 16, right: 14, left: 14, bottom: AXIS_LABEL_MARGIN },
+      margin: { top: 16, right: 14, left: 14, bottom: X_AXIS_LABEL_MARGIN },
       theme: CHART_THEME,
       tooltip: CHART_TOOLTIP,
       focus: "group-x",
@@ -267,14 +268,14 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     });
   }, [snapshots]);
 
-  const hostProps = useChartHostProps({ entrance: true });
+  const hostProps = chartHostProps(chartMotionEntrance);
 
   return (
     <div>
       <Legend />
       <ChartHoverOverlay
         controller={overlay}
-        pillOffset={datePillOffset(AXIS_LABEL_MARGIN, AXIS_LABEL_PADDING)}
+        pillOffset={datePillOffset(X_AXIS_LABEL_MARGIN, X_AXIS_LABEL_PADDING)}
       >
         <RendererChart
           {...hostProps}

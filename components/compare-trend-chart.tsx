@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useHeldFlag } from "@/hooks/use-held-flag";
 import { defineChart, lineY } from "@tanstack/charts";
 import { scalePoint } from "@tanstack/charts/scales/point";
@@ -11,7 +11,7 @@ import { solidSurface } from "@/lib/cubby-ui/elevated";
 import {
   CHART_REVEAL_CLASS,
   INITIAL_WIDTH,
-  useChartHostProps,
+  chartHostProps,
   useMeasuredHost,
 } from "@/components/charts/chart";
 import {
@@ -19,8 +19,8 @@ import {
   evenlySpaced,
   CHART_THEME,
   datePillOffset,
-  AXIS_LABEL_MARGIN_WITH_Y_AXIS,
-  AXIS_LABEL_PADDING_WITH_Y_AXIS,
+  X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
+  X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
   Y_AXIS_LABEL_MARGIN,
 } from "@/components/charts/chart-theme";
 import {
@@ -157,7 +157,7 @@ const PLACEHOLDER_FLOOR_MS = 400;
 const CHART_MARGIN = {
   top: 16,
   right: 16,
-  bottom: AXIS_LABEL_MARGIN_WITH_Y_AXIS,
+  bottom: X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
   left: Y_AXIS_LABEL_MARGIN,
 } as const;
 
@@ -184,7 +184,9 @@ const SKELETON_LINE_COLOR = "var(--muted-foreground)";
  * stroke, and the y axis drops its labels while this is on screen (see the
  * definition) so no invented number is ever printed.
  */
-function skeletonSeries(series: CompareSeries[]): CompareSeries[] {
+function skeletonSeries(keys: string[]): CompareSeries[] {
+  // `Date.now()` at call time, not per render: the memo above only re-runs when
+  // the keys change, so the day window is stable for the life of a placeholder.
   const today = new Date();
   const days = Array.from({ length: SKELETON_DAYS }, (_, i) => {
     const day = new Date(today);
@@ -192,8 +194,9 @@ function skeletonSeries(series: CompareSeries[]): CompareSeries[] {
     return day.toISOString().slice(0, 10);
   });
 
-  return series.map((s, index) => ({
-    ...s,
+  return keys.map((key, index) => ({
+    key,
+    name: "",
     color: SKELETON_LINE_COLOR,
     snapshots: skeletonPoints(days, index),
   }));
@@ -278,11 +281,20 @@ function buildCompareRows(series: CompareSeries[]): CompareRow[] {
   });
 }
 
-function CompareLegend({ series }: { series: CompareSeries[] }) {
+function CompareLegend({
+  series,
+  loading = false,
+}: {
+  series: CompareSeries[];
+  loading?: boolean;
+}) {
   return (
     <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-1.5">
       {series.map((s) => {
-        const thin = s.snapshots.length < MIN_POINTS;
+        // Muting means "this skill has no history", which is a resolved
+        // answer. While loading every series is empty, so it would say that
+        // about all of them and the loading state would read as the empty one.
+        const thin = !loading && s.snapshots.length < MIN_POINTS;
         return (
           <span
             key={s.key}
@@ -325,8 +337,7 @@ export function CompareTrendChart({
 }) {
   // The chart waits one commit for a container it can be laid out from; the
   // box below reserves the space meanwhile. See `useMeasuredHost`.
-  const boxRef = useRef<HTMLDivElement>(null);
-  const measured = useMeasuredHost(boxRef);
+  const [boxRef, measured] = useMeasuredHost();
 
   // `loading` says whether the data is here; `phase` says what the chart is
   // doing about it, which outlasts it by the length of the conceal. Holding the
@@ -340,18 +351,13 @@ export function CompareTrendChart({
   const [phase, setPhase] = useState<"loading" | "concealing" | "ready">(
     heldLoading ? "loading" : "ready",
   );
-  const [lastLoading, setLastLoading] = useState(heldLoading);
-
   // Adjusting state to a prop change during render, not in an effect: React
   // re-runs the component immediately without committing the stale phase, so
   // there is no frame where the data has landed and the chart still says it is
   // loading. An effect would paint that frame, and the lint rule against
   // synchronous `setState` in an effect body is pointing at the same thing.
-  if (lastLoading !== heldLoading) {
-    setLastLoading(heldLoading);
-    if (heldLoading) setPhase("loading");
-    else if (phase === "loading") setPhase("concealing");
-  }
+  if (heldLoading && phase !== "loading") setPhase("loading");
+  else if (!heldLoading && phase === "loading") setPhase("concealing");
 
   useEffect(() => {
     if (phase !== "concealing") return;
@@ -365,10 +371,19 @@ export function CompareTrendChart({
 
   const showPlaceholder = phase !== "ready";
 
+  // Keyed on the series KEYS, not on `series`: real data landing during the
+  // floor gives that array a new identity, and rebuilding the definition then
+  // re-lays the chart out and restarts the sweep mid-crossing.
+  const seriesKeys = series.map((s) => s.key).join(",");
+  const placeholder = useMemo(
+    () => skeletonSeries(seriesKeys.split(",")),
+    [seriesKeys],
+  );
+
   const drawable = useMemo(() => {
-    if (showPlaceholder) return skeletonSeries(series);
+    if (showPlaceholder) return placeholder;
     return series.filter((s) => s.snapshots.length >= MIN_POINTS);
-  }, [series, showPlaceholder]);
+  }, [series, showPlaceholder, placeholder]);
 
   // Above `definition`, which reads it for the axis tick candidates.
   const days = useMemo(
@@ -412,7 +427,7 @@ export function CompareTrendChart({
             line: false,
             ticks: {
               size: 0,
-              padding: AXIS_LABEL_PADDING_WITH_Y_AXIS,
+              padding: X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
               format: dayLabel,
               // The old chart's `numTicks={6}`. A point scale offers every day as
               // a candidate and ignores `count`, so without this the axis prints
@@ -489,7 +504,7 @@ export function CompareTrendChart({
     );
   }, [drawable, days, showPlaceholder]);
 
-  const hostProps = useChartHostProps();
+  const hostProps = chartHostProps();
 
   const overlay = useChartHoverOverlay({
     markers: useMemo(
@@ -510,18 +525,24 @@ export function CompareTrendChart({
     return (
       <div>
         <CompareLegend series={series} />
-        <CompareTrendGhost />
-        <p className="mt-3 text-xs text-muted-foreground">
-          Not enough history yet. Installs are recorded daily, and the
-          comparison fills in as the trend builds.
-        </p>
+        {/* Exactly the placeholder's box, message included, so resolving to
+            "no history" changes nothing about the section's height. The text
+            sits INSIDE it for that reason, and it reads better there anyway:
+            the loading label occupies the same place in the same box. */}
+        <div className="flex aspect-5/2 w-full flex-col items-center justify-center gap-3">
+          <CompareTrendGhost />
+          <p className="max-w-sm text-center text-xs text-muted-foreground">
+            Not enough history yet. Installs are recorded daily, and the
+            comparison fills in as the trend builds.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div aria-busy={showPlaceholder || undefined}>
-      <CompareLegend series={series} />
+      <CompareLegend series={series} loading={showPlaceholder} />
       {/* Holds the chart's box while it waits one commit for a measurable
           container — see `useMeasuredHost`. The ratio matches the chart's own
           `aspectRatio`, so the box does not change size when the chart lands in
@@ -535,8 +556,8 @@ export function CompareTrendChart({
             controller={overlay}
             disabled={showPlaceholder}
             pillOffset={datePillOffset(
-              AXIS_LABEL_MARGIN_WITH_Y_AXIS,
-              AXIS_LABEL_PADDING_WITH_Y_AXIS,
+              X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
+              X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
             )}
           >
             <RendererChart
@@ -550,12 +571,15 @@ export function CompareTrendChart({
                       .join("; ")}.`
               }
               aspectRatio={5 / 2}
-              // One class per phase, and never two: the sweep belongs to the
-              // placeholder, the conceal to it leaving, the wipe to the real
-              // series arriving. A class change is a prop change, so the host
-              // re-renders and each CSS animation starts on a node that has been
-              // sitting there — which is what moves the reveal off the mount and
-              // onto the data.
+              // The sweep belongs to the placeholder, the conceal to it
+              // leaving, the wipe to the real series arriving. `concealing`
+              // deliberately carries TWO of them: the mask has to stay on or
+              // the placeholder flashes to full strength on its way out, which
+              // is why `charts.css` needs a combined `.chart-loading.chart-conceal`
+              // rule to run both animations. A class change is a prop change,
+              // so the host re-renders and each animation starts on a node that
+              // has been sitting there, which is what moves the reveal off the
+              // mount and onto the data.
               className={cn(
                 // `chart-loading` spans BOTH placeholder phases, not just the
                 // first. It carries the mask that makes the band the line, so

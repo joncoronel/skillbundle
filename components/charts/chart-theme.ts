@@ -49,19 +49,24 @@ export const AXIS_TICK_LABELS = {
  * that row (see `chart-hover-overlay`), and automatic margins size to the axis
  * alone — they know nothing about it.
  */
-export const AXIS_LABEL_MARGIN = 34;
-export const AXIS_LABEL_PADDING = 10;
+export const X_AXIS_LABEL_MARGIN = 34;
+export const X_AXIS_LABEL_PADDING = 10;
 
 /**
- * Wider, for a chart that also labels its y axis.
+ * Bottom margin, for a chart that also labels its y axis.
+ *
+ * Every constant here leads with the axis it belongs to, which is the one
+ * thing that stops them being swapped: this and `Y_AXIS_LABEL_MARGIN` are both
+ * 48, and a reader who has to tell them apart by word order eventually will
+ * not.
  *
  * The lowest y tick sits centred on the plot's bottom edge, so the dates have
  * to clear that label and not just the plot — without the extra gap the zero
  * and the first date collide in the corner. Only worth the vertical cost where
  * there is a y axis: on a phone this is a third of the chart's height.
  */
-export const AXIS_LABEL_MARGIN_WITH_Y_AXIS = 48;
-export const AXIS_LABEL_PADDING_WITH_Y_AXIS = 20;
+export const X_AXIS_LABEL_MARGIN_WITH_Y_AXIS = 48;
+export const X_AXIS_LABEL_PADDING_WITH_Y_AXIS = 20;
 
 /**
  * Space held for the y axis's labels, pinned rather than solved.

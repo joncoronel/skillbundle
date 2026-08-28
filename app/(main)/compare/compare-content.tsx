@@ -102,6 +102,7 @@ export function CompareContent() {
     data: insightsData,
     isPending: insightsPending,
     isPlaceholderData: insightsStale,
+    isError: insightsFailed,
   } = useQuery({
     ...convexQuery(api.skills.getCompareInsights, { refs }),
     placeholderData: keepPreviousData,
@@ -129,6 +130,12 @@ export function CompareContent() {
   // `isPending` is false while placeholder data is in hand.
   const insightsCoverRefs =
     refs.length === 0 || refs.some((ref) => insightFor(ref) !== undefined);
+
+  // A failed query never covers the refs, so without the error term the chart
+  // would hold its placeholder and `aria-busy` forever. On failure it settles
+  // instead, and the chart's own "not enough history yet" state is what shows.
+  const chartLoading =
+    !insightsFailed && (insightsPending || !insightsCoverRefs);
 
   // One line per compared skill, colored by column position so the chart line,
   // the legend swatch, and the column header dot all share a hue.
@@ -185,8 +192,11 @@ export function CompareContent() {
           </div>
           <CompareTrendSection
             series={series}
-            loading={insightsPending || !insightsCoverRefs}
-            stale={insightsStale}
+            loading={chartLoading}
+            // Never both: dimming the placeholder puts its label under the
+            // contrast it is tuned for, and doubles up with the reduced-motion
+            // dim in `charts.css`.
+            stale={insightsStale && !chartLoading}
           />
           <CompareGrid refs={refs} onOpenPicker={openPicker}>
             {refs.map((ref, i) => {

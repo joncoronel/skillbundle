@@ -5,7 +5,7 @@ import { defineChart, lineY } from "@tanstack/charts";
 import { scalePoint } from "@tanstack/charts/scales/point";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
-import { INITIAL_WIDTH, useChartHostProps } from "@/components/charts/chart";
+import { INITIAL_WIDTH, chartHostProps } from "@/components/charts/chart";
 import { CHART_THEME } from "@/components/charts/chart-theme";
 import {
   ChartHoverOverlay,
@@ -97,7 +97,7 @@ export function InstallSparkline({
   // day twice would set parent state, re-render, and be called again — so the
   // hovered day is compared before it is forwarded, and the reported object is
   // rebuilt only when it actually changed.
-  const hostProps = useChartHostProps();
+  const hostProps = chartHostProps();
   const overlay = useChartHoverOverlay({
     labels: [],
     markers: HOVER_MARKERS,

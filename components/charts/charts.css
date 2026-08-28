@@ -155,9 +155,22 @@
   animation: chart-loading-sweep 2400ms linear infinite;
 }
 
+/* Concealing keeps the mask on, so the element carries BOTH classes, and both
+   rules set the `animation` shorthand at the same specificity. The later one
+   wins outright, which silently dropped the conceal: measured, 45 frames of
+   `chart-loading-sweep` with `clip-path: none` while the placeholder was
+   supposed to be clipping away. Declaring the pair here, after both and one
+   class more specific, is what runs them together. */
+.chart-loading.chart-conceal .ts-chart__marks {
+  animation:
+    chart-loading-sweep 2400ms linear infinite,
+    chart-conceal-wipe 180ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chart-reveal .ts-chart__marks,
-  .chart-conceal .ts-chart__marks {
+  .chart-conceal .ts-chart__marks,
+  .chart-loading.chart-conceal .ts-chart__marks {
     animation: none;
   }
 
