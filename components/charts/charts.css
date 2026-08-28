@@ -78,36 +78,81 @@
    diagonal clip window across its skeleton, bklit offers the same as its
    `loadingStyle="sweep"`.
 
-   A `mask-image`, not a `clip-path`: the reveal wipe below is the clip-path,
-   and one node cannot carry two. They are different properties, so they would
-   in fact compose — but they never co-occur anyway, because the wipe now waits
-   for real data (see `.chart-reveal`).
+   A `mask-image`, not a `clip-path`: the reveal wipe above is the clip-path,
+   and one node cannot carry two. They never co-occur anyway, because the wipe
+   waits for real data — but the mask is what makes a band possible at all.
 
-   `mask-size` is 200%, so the gradient is twice the plot and `mask-position`
-   has room to travel a full width without either end of the band showing. The
-   base is 0.4 rather than 0 so the placeholder is legible between passes: this
-   is a shimmer over something, not a reveal of something hidden. */
+   Three things here are load-bearing and were each wrong once:
+
+   1. DIRECTION. With a mask wider than its box, percentage positioning
+      resolves to `offset = (boxW - maskW) * P/100`, which for a 200% mask is
+      `-boxW * P/100`. So a POSITIVE P moves the mask left and the band travels
+      right-to-left. Counting DOWN to a negative P moves it right, which is the
+      left-to-right the rest of the chart reads in.
+
+   2. SEAMLESS LOOP. `repeat`, not `no-repeat`, and the travel is exactly one
+      tile (200%), so the frame the animation restarts on is identical to the
+      one it ended on. Both ends of the gradient sit in the same flat 0.4, so
+      the tile seam falls inside a constant region and never shows.
+
+   3. NO GAP. Two bands per tile, at 25% and 75%, which puts them one box-width
+      apart — so exactly one is crossing at any moment. One band per tile is
+      two box-widths of spacing, which leaves the marks bare for half of every
+      cycle: that reads as the sweep cutting out rather than looping.
+
+   The base is 0, so the band REVEALS the line rather than brightening one that
+   is already drawn. That is what both references do, and it took two passes to
+   read them correctly: bklit's `Line` exposes only `loadingStroke` and
+   `loadingStrokeOpacity`, both documented as the PULSE's colour and opacity,
+   with no prop for a line underneath it — because there isn't one. evilcharts
+   is blunter: a clip window that "reveals the skeleton", and it re-rolls its
+   random data when the window is off-screen precisely because nothing is
+   visible there. The grid is untouched by any of this; it keeps its own stroke
+   and stays put, which is bklit's arrangement too.
+
+   Reduced motion below restores the whole line at a flat opacity rather than
+   freezing the mask, which would otherwise leave one slice lit forever. */
 @keyframes chart-loading-sweep {
   from {
     mask-position: 0% 0;
   }
   to {
-    mask-position: 100% 0;
+    mask-position: -200% 0;
   }
 }
 
 .chart-loading .ts-chart__marks {
   mask-image: linear-gradient(
     105deg,
-    rgb(0 0 0 / 0.4) 0%,
-    rgb(0 0 0 / 0.4) 32%,
-    rgb(0 0 0 / 1) 50%,
-    rgb(0 0 0 / 0.4) 68%,
-    rgb(0 0 0 / 0.4) 100%
+    rgb(0 0 0 / 0) 0%,
+    rgb(0 0 0 / 0) 8%,
+    rgb(0 0 0 / 0.5) 17%,
+    rgb(0 0 0 / 1) 25%,
+    rgb(0 0 0 / 0.5) 33%,
+    rgb(0 0 0 / 0) 42%,
+    rgb(0 0 0 / 0) 58%,
+    rgb(0 0 0 / 0.5) 67%,
+    rgb(0 0 0 / 1) 75%,
+    rgb(0 0 0 / 0.5) 83%,
+    rgb(0 0 0 / 0) 92%,
+    rgb(0 0 0 / 0) 100%
   );
   mask-size: 200% 100%;
-  mask-repeat: no-repeat;
-  animation: chart-loading-sweep 1000ms linear infinite;
+  mask-repeat: repeat;
+  /* The tile carries two bands, so a cycle is two crossings: 2400ms puts one
+     band across the plot every 1200ms. 1200 for the cycle (600ms a crossing)
+     was tried and reads as hurried — near enough to evilcharts' one sweep per
+     2000ms, and cubby's own `shimmer` default is 2000 too.
+
+     `linear`, and it has to be. Neither reference documents an easing for the
+     loading loop — bklit specifies `cubic-bezier(0.85, 0, 0.15, 1)` only for
+     the clip reveal, which is where we use it too. Anything eased here is
+     applied per CYCLE, and a cycle is two band crossings, so the pattern would
+     slow once every other crossing: a stutter on a loop that is supposed to be
+     endless. The band's character comes from the gradient's falloff instead,
+     which is why the stops above ramp through 0.5 rather than cutting from 0
+     to 1. */
+  animation: chart-loading-sweep 2400ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

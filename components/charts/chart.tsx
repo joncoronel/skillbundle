@@ -63,11 +63,12 @@ export const INITIAL_WIDTH = {
 /**
  * Plays the left-to-right entrance over the marks group.
  *
- * The compare chart's entrance, and only its own: a `clip-path` animation is
- * immune to what the renderer commits, which is what makes it the right choice
- * on a page that can relayout under it. The install chart wants the same
- * left-to-right reading but gets it from the renderer instead
- * (`chartMotionEntrance`), which grows the marks rather than uncovering them.
+ * The compare chart's entrance, and only its own. It is the only one that
+ * travels along x: a `clip-path` needs no per-datum handle, where the renderer
+ * has none for a line — its marks are one scene node, so `chartMotionEntrance`
+ * can only grow them from the y baseline (measured, and reverted). The install
+ * chart takes the renderer's instead, because bars ARE per-datum nodes and it
+ * staggers them.
  * The sidebar sparkline has no entrance, matching the `animationDuration={0}`
  * it always passed.
  *

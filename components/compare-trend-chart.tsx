@@ -139,8 +139,12 @@ const SKELETON_LINE_COLOR = "var(--muted-foreground)";
  * choice is between swapping the chart for a spinner and giving it something to
  * draw. Swapping is what this page used to do, and it costs the thing that
  * makes the loaded state good: with the chart mounted, new data is a keyed
- * update, so the lines morph and the y scale tweens. Tear it down and every
- * arrival is a fresh mount instead.
+ * update, so the y scale tweens across its change rather than cutting. Tear it
+ * down and every arrival is a fresh mount instead.
+ *
+ * The LINES do not morph across an added skill — the shared date range grows,
+ * so every path's command count changes and the renderer can only interpolate
+ * compatible geometry. docs/charts.md has the measurement.
  *
  * The keys have to match the real ones (`s0`/`s1`/`s2`) or the update has no
  * identity to travel along. Everything else is deliberately not real: a neutral
@@ -158,17 +162,34 @@ function skeletonSeries(series: CompareSeries[]): CompareSeries[] {
   return series.map((s, index) => ({
     ...s,
     color: SKELETON_LINE_COLOR,
-    // Rising, because the chart plots a cumulative count and a placeholder that
-    // fell would be drawing a shape the data cannot take. Each line gets its own
-    // band and its own steepness so three of them read as three trajectories
-    // rather than one thick stroke.
-    snapshots: days.map((day, i) => {
-      const t = i / (SKELETON_DAYS - 1);
-      const base = 320 - index * 90;
-      const climb = 0.9 - index * 0.22;
-      return { day, installs: Math.round(base * (1 + climb * t * t)) };
-    }),
+    snapshots: skeletonPoints(days, index),
   }));
+}
+
+/**
+ * One placeholder series' points: rising, but not smoothly.
+ *
+ * Accumulated from a daily GAIN rather than evaluated as a curve, which is what
+ * gives it shoulders. The gain ebbs and flows (the sine) but never goes
+ * negative (the `1 + 0.7 *` keeps its factor in 0.3–1.7), so the running
+ * total is still monotonic — a cumulative install count cannot fall, and a
+ * placeholder that dipped would be drawing a shape the real data can never
+ * take. Varying the slope buys the visual interest without telling that lie.
+ *
+ * `index` shifts each line's phase and band, so three of them read as three
+ * trajectories rather than one thick stroke travelling together.
+ */
+function skeletonPoints(days: string[], index: number) {
+  const phase = index * 2.1;
+  const scale = 1 - index * 0.28;
+  let total = 320 * scale;
+
+  return days.map((day, i) => {
+    const t = i / (SKELETON_DAYS - 1);
+    const gain = (0.6 + 0.9 * t) * (1 + 0.7 * Math.sin(t * 13 + phase));
+    total += gain * 14 * scale;
+    return { day, installs: Math.round(total) };
+  });
 }
 
 export type CompareSeries = {
@@ -499,7 +520,13 @@ export function CompareTrendChart({
               // sitting there — which is what moves the reveal off the mount and
               // onto the data.
               className={cn(
-                phase === "loading" && "chart-loading",
+                // `chart-loading` spans BOTH placeholder phases, not just the
+                // first. It carries the mask that makes the band the line, so
+                // dropping it at `concealing` un-masks the placeholder — the
+                // whole invented curve snaps to full strength for the 180ms it
+                // takes to clip away, which is the flash of a complete grey
+                // chart just before the real one arrives.
+                phase !== "ready" && "chart-loading",
                 phase === "concealing" && "chart-conceal",
                 phase === "ready" && CHART_REVEAL_CLASS,
               )}
@@ -588,13 +615,11 @@ export function CompareTrendChart({
                   and brightens in dark — contrast rises either way, and the
                   text reads as lighting up rather than washing out.
 
-                  1000ms is the chart sweep's period, so the two loops share one
-                  tempo instead of beating against each other. Faster than
-                  cubby's 2000ms default because this wait is often short — on a
-                  client navigation the data has usually landed within ~150ms of
-                  the chart mounting, and a slow sweep in that window shows a
-                  band that has barely moved, which reads as static. */}
-              <span className="shimmer text-sm text-muted-foreground shimmer-color-foreground shimmer-duration-1000">
+                  1200ms is how long one band takes to cross the chart (its
+                  2400ms cycle carries two), so a text sweep and a chart band
+                  keep the same tempo rather than beating against each other.
+                  Change one and the other has to follow. */}
+              <span className="shimmer text-sm text-muted-foreground shimmer-color-foreground shimmer-duration-1200">
                 Loading install history
               </span>
             </span>

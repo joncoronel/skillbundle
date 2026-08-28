@@ -290,35 +290,33 @@ doing at the time:
   x with (~4px mid-travel on the renderer's default), and gate it separately at
   `DISCRETE_THRESHOLD` — the overlay's `jump()` writes cannot reach it.
 
-- **Two entrances, deliberately different.** The compare chart's is ours: a
-  `clip-path` wipe on `.ts-chart__marks` (`.chart-reveal` in
-  `charts/charts.css`), immune to what the renderer commits, which is what a
-  chart on a page that can relayout under it wants. The install chart's is the
-  library's (`chartMotionEntrance`, `initial: "always"`), which grows the marks
-  from the y baseline staggered left to right and settles ~720ms in; it can
-  only be used because its dialog does not scale (see the measurement section).
-  The shared `chartMotion` stays `initial: false` so the sparkline gets neither
-  and the compare chart does not play both.
+- **Two entrances, and which chart gets which is decided by its marks.** The
+  compare chart's is ours: a `clip-path` wipe on `.ts-chart__marks`
+  (`.chart-reveal` in `charts/charts.css`), applied when `loading` ends so it
+  belongs to the real series arriving. The install chart's is the library's
+  (`chartMotionEntrance`, `initial: "always"`), which grows the marks from the
+  y baseline staggered left to right and settles ~720ms in. The shared
+  `chartMotion` stays `initial: false` so the sparkline gets neither.
 
-  The split is not just what each surface allows, it is what each chart means.
-  A wipe travels along x, so it reveals a time series in the order the data
-  happened — which on the compare chart is also the order its lines cross each
-  other, the whole point of putting them on one axis. A baseline grow travels
-  along y, which reads as magnitude; that is the install chart's daily bars
-  exactly, and the stagger still carries the left-to-right reading. Swapping
-  them would give each chart the other one's metaphor.
+  The split is not taste, it is what the renderer can reach. Bars are per-datum
+  scene nodes, so it can stagger them along x; a line is ONE node, so there is
+  no per-datum handle and the automatic stagger is gated to `role === "bar"`
+  anyway. Shipping the library entrance on the compare chart was tried and
+  measured: the path is full width on its very first frame
+  (`widthEverPartial: false`) and only its height grows, over ~90ms. No travel
+  along x at all — which on a multi-line time series is also the order the lines
+  cross each other, the whole point of putting them on one axis. The wipe is the
+  only entrance that reads that way, which is why it stays.
 
-  The compare chart could take the library entrance — measured, it mounts once
-  at its final width (a single viewBox of 1206.86 from first paint, because the
-  ghost placeholder holds the slot until the data lands, so the real chart never
-  mounts hidden or empty). It should not. Its definition is rebuilt from a memo
-  over async data that has already caused a full re-layout once (see the
-  comment on `series` in `compare-content.tsx`), and any re-layout inside the
-  entrance's first ~720ms is a `resized` commit that cancels it with no trace.
-  The dialog chart cannot hit that: it mounts with its data already in hand and
-  nothing re-renders it. Robust entrance where re-renders are possible, library
-  entrance where they are not. Everything else — crosshair, focus dot, highlight band, tooltip
-  travel — springs through `@tanstack/charts/motion`. If chart motion looks
+- **The library's entrance fires on a host's FIRST render and nothing replays
+  it** — not a definition change, not a prop change. So it cannot serve as a
+  loading→ready reveal on any chart: to get it there the host has to remount,
+  which throws away the single instance at exactly the boundary the placeholder
+  architecture exists to bridge. Tried, measured, and reverted; the wipe needs
+  no remount because it plays off a class on a host that stays put.
+
+- **Everything else — crosshair, focus dot, highlight band, tooltip travel —
+  springs through `@tanstack/charts/motion`.** If chart motion looks
   dead, check the two entries below before reaching for Motion: both look like
   "the renderer is not animating" and neither is.
 
@@ -549,8 +547,8 @@ doing at the time:
 - **One chart instance spans loading and loaded — do not swap it for a
   spinner.** The compare page used to `Crossfade` between a `DotMatrixRipple`
   skeleton and the chart, which cost the best thing the loaded state has: with
-  the chart mounted, new data is a keyed update, so the lines morph and the y
-  scale tweens. Tear it down and every arrival is a fresh mount. The symptom
+  the chart mounted, new data is a keyed update, so the y scale tweens (the
+  lines only morph when the geometry stays compatible — see below). Tear it down and every arrival is a fresh mount. The symptom
   was that removing a skill and adding it back animated beautifully (React
   Query had that combination cached, so `isPending` stayed false and the chart
   survived) while adding a new one did not. Both reference libraries reach the
@@ -566,7 +564,25 @@ doing at the time:
   and it dims (`opacity-55`) while the new ones fetch — the same dimmed-filler
   reading the catalog uses. Measured on an uncached third skill: the chart is
   present in every frame, a line path is added, and the y axis walks
-  `0–500k` → `0–2M` through an intermediate scale.
+  `0–500k` → `0–2M` through an intermediate scale. The LINES do not travel with
+  it; see the next entry.
+
+- **Adding a skill snaps the lines, because it changes the shared date range.**
+  The renderer "morphs compatible numeric SVG geometry", and compatible means
+  the same command count. `buildCompareRows` builds the x axis from the UNION of
+  every drawable series' days, so a skill whose history starts earlier inserts x
+  positions into every other line: measured on one add, 22 path commands to 30
+  as the range went Jul 31–Aug 21 to Jul 23–Aug 21. The path's `d` then changes
+  exactly once, in a single frame, while the grid tweens across ~48 frames
+  underneath it — a gliding axis under jumping lines, which reads worse than
+  either would alone.
+  It is not caused by the entrance choice: measured identical under the wipe.
+  The only fix that would make it morph is a fixed x window rather than a union,
+  so the command count never changes — which truncates the history of whichever
+  skill reaches furthest back, and is a product decision rather than a repair.
+  Do not diagnose this from path COUNT or from y-tick variants; both change on a
+  snap too. Sample the first path's `d` per frame and count how many times it
+  changes: one means a snap, dozens mean a morph.
 
 - **The placeholder conceals before the real series is revealed — it does not
   morph into it.** bklit's loading→ready order, and the reason to prefer it over
@@ -646,17 +662,39 @@ doing at the time:
   placeholder curves cross. Same colour as the section, no border, no shadow, so
   it reads as the lines breaking around the label rather than a chip on top.
 
-- **The sweep is a `mask-image`, and the reveal wipe waits for real data.**
-  Two animations, never at once: `chart-loading-sweep` runs a full-strength band
-  along the marks while the placeholder is up (evilcharts' diagonal shimmer,
-  bklit's `loadingStyle="sweep"`), and `.chart-reveal` is applied only once
-  `loading` ends, so the clip-path reveal lands on the real series exactly where
-  bklit puts it. Two notes on the mask. It has to be a mask rather than a second
-  `clip-path`, because the reveal owns that property on the same node. And
-  `mask-size` is 200% so `mask-position` can travel 0% → 100% without either end
-  of the band entering the plot; the base stop is 0.4 rather than 0 because this
-  shimmers over something legible rather than uncovering something hidden.
-  Verified running on the `<g>` — CSS masks apply to SVG groups.
+- **The sweep is a `mask-image` that REVEALS the line, not a wash over one.**
+  Outside the band nothing is drawn — the band IS the placeholder line. Both
+  references do this and it took two readings to get right: bklit's `Line`
+  exposes only `loadingStroke` and `loadingStrokeOpacity`, both documented as
+  the PULSE's colour and opacity, with no prop for a line beneath it, because
+  there is none; evilcharts is blunter, a clip window that "reveals the
+  skeleton", re-rolling its random data while the window is off-screen
+  precisely because nothing shows there. Its prose ("a soft diagonal shimmer
+  sweeps across the whole line") reads like a wash and is what sent the first
+  attempt wrong. The grid is untouched by any of it and stays put, which is
+  bklit's arrangement too.
+
+  Four things in that mask are load-bearing, and each was wrong once:
+
+  - It is a mask and not a second `clip-path`, because the reveal owns that
+    property on the same node.
+  - DIRECTION. For a mask wider than its box, percentage positioning resolves
+    to `offset = (boxW - maskW) * P/100`, i.e. `-boxW * P/100` at 200%. Positive
+    P moves the mask LEFT, so the band runs right-to-left. Counting down to
+    `-200%` is what makes it read left-to-right.
+  - SEAMLESS. `repeat`, not `no-repeat`, travelling exactly one tile, so the
+    restart frame equals the frame it ended on. Both gradient ends sit in the
+    same flat 0, so the tile seam falls in a constant region.
+  - NO GAP. Two bands per tile, at 25% and 75%, putting them one box-width
+    apart so exactly one is always crossing. One band per tile leaves the marks
+    bare for half of every cycle, which reads as the sweep cutting out.
+
+  `linear`, necessarily: an eased loop is eased per CYCLE, and a cycle is two
+  crossings, so it would slow every other one. The band's character comes from
+  the gradient's falloff (stops ramping through 0.5) rather than from timing.
+  2400ms per cycle is 1200ms per crossing, matched by the label's
+  `shimmer-duration-1200` so the two keep one tempo. Verified running on the
+  `<g>` — CSS masks apply to SVG groups.
 
 - **Placeholder shapes are fine; placeholder labels are not — on either axis.**
   A drawn line reads as "something will be here"; an axis label reads as a

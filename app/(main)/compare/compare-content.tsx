@@ -34,6 +34,8 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import type { PickerSkill } from "@/components/skill-picker";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import { cn, formatInstalls } from "@/lib/utils";
+// TEMPORARY — dev scaffolding for the chart's arrival; TODO.md owns its removal.
+import { CompareTrendDevControls } from "@/components/compare-trend-dev-controls";
 import { compareSkillsParser } from "@/lib/search-params";
 import {
   MAX_COMPARE_SKILLS,
@@ -90,7 +92,7 @@ export function CompareContent() {
   // refs array, so adding/removing a column refetches and React Query caches it.
   // `keepPreviousData` is what keeps the chart mounted across a column change,
   // and that is the whole point: with the chart alive, new data is a keyed
-  // update, so its lines morph and the y scale tweens. Without it an uncached
+  // update, so its y scale tweens rather than cutting. Without it an uncached
   // combination reports `isPending` and the chart is destroyed and rebuilt, which
   // is why removing a skill and adding it back used to animate nicely (cached)
   // while adding a new one did not. Same idiom as the search result sets — see
@@ -119,7 +121,7 @@ export function CompareContent() {
   //
   // `keepPreviousData` can hand over the previous comparison's rows, which is
   // exactly what we want when the two overlap — adding a skill keeps the chart
-  // mounted and lets the new line animate in. When none of the current refs
+  // mounted and the axis animate across the change. When none of the current refs
   // resolve, though, we are holding the answer to a different question, and the
   // chart reads an empty series as its resolved "not enough history yet" state.
   // Reproduced: compare two skills, go home, compare a third from the sheet —
@@ -337,15 +339,31 @@ function CompareTrendSection({
   loading: boolean;
   stale: boolean;
 }) {
+  // TEMPORARY — dev scaffolding. Pins the phase machine so the arrival can be
+  // replayed without a reload. Compiles away in production because the panel
+  // does; see `compare-trend-dev-controls.tsx` and the TODO.md entry that owns
+  // removing it.
+  const [forceLoading, setForceLoading] = useState(false);
+  const showDevControls = process.env.NODE_ENV !== "production";
+
   return (
     <section className="mb-4 rounded-2xl border bg-card p-5 md:mb-6 dark:border-border/50">
       <h2 className="mb-4 text-sm font-semibold text-foreground">
         Installs over time
       </h2>
+      {showDevControls && (
+        <CompareTrendDevControls
+          loading={forceLoading}
+          onLoadingChange={setForceLoading}
+        />
+      )}
       <div
         className={cn("transition-opacity duration-200", stale && "opacity-55")}
       >
-        <CompareTrendChart series={series} loading={loading} />
+        <CompareTrendChart
+          series={series}
+          loading={loading || (showDevControls && forceLoading)}
+        />
       </div>
     </section>
   );
