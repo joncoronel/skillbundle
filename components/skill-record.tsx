@@ -286,8 +286,21 @@ export function SkillRecord({
                       popup instead; Tab still reaches the chart. The popup is
                       only a focus landing spot, so it draws no ring of its own;
                       the dialog is already announced as one. */}
+                  {/* The scale is dropped from this dialog's transition on
+                      purpose, and it is load-bearing — do not restore it
+                      without reading docs/charts.md. TanStack Charts measures
+                      its container with `getBoundingClientRect`, which carries
+                      an ancestor transform: opened with the default
+                      `scale-95`, the chart lays its scene out at 95% of the
+                      real width, paints every scene unit 5% oversized, and has
+                      no way to notice (a transform fires no ResizeObserver).
+                      Translate and opacity leave a box's measured width alone,
+                      so this entrance is the one shape the chart can be
+                      measured through. It is also what lets the chart use the
+                      library's own entrance rather than a CSS stand-in; see
+                      `chartMotionEntrance`. */}
                   <DialogContent
-                    className="focus-visible:outline-none sm:max-w-2xl"
+                    className="focus-visible:outline-none data-ending-style:scale-100 data-starting-style:scale-100 sm:max-w-2xl"
                     initialFocus={chartDialogRef}
                     ref={chartDialogRef}
                   >

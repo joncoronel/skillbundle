@@ -40,6 +40,7 @@ doing at the time:
 - [Pointer, touch and keyboard](#pointer-touch-and-keyboard) — who owns the gesture, focus control
 - [Motion](#motion) — what springs, what steps, what is CSS
 - [The cursor](#the-cursor-rule-markers-band-pill-tooltip) — rule, markers, band, pill, tooltip
+- [Loading and empty states](#loading-and-empty-states) — why the chart is its own skeleton
 
 ### Composing a definition
 
@@ -101,8 +102,23 @@ doing at the time:
   every category as a candidate and ignore `count`/`spacing` hints, so left
   alone they print one label per row that fits — nearly twice the old chart's
   `numTicks`. `evenlySpaced` picks the candidates instead (5 in the dialog, 6 on
-  the compare page); thinning still runs on top, which is what keeps a phone
-  from crowding.
+  the compare page), and thinning runs on top as the backstop.
+
+- **Thinning is a backstop, not a narrow-width strategy — it drops candidates
+  greedily, not evenly.** Ask for more labels than fit and what survives is
+  whatever cleared `minGap` on the way through, which on a time axis states a
+  spacing the data does not have. Measured on the compare chart at 390px: six
+  candidates over a 306.86 scene, thinned to Jul 31 / Aug 13 / Aug 21 —
+  thirteen days, then eight. The fix is to ask for fewer up front, which is
+  what `defineChart`'s responsive builder is for: `compare-trend-chart.tsx`
+  takes `({ width }) =>` and drops to four candidates below a 480 scene width,
+  so thinning never fires. Verified at 390 / 640 / 768 / 1440: even 7-day steps
+  narrow, the full six above.
+  Read the width off the **scene**, not the viewport — the card is the box the
+  labels have to fit in, and the builder is handed exactly that.
+  The install chart's axis is not evidence that thinning preserves spacing. It
+  asks for five over the same range, `evenlySpaced` hands back four because 21
+  divides by three, and all four survive; it is even by luck.
 
 - **`ticks.count` is a preference d3 rounds, not a count.** On the dialog
   chart's domain, 5 asks yields 8 grid rules and 3 yields 5. Where the numbers
@@ -140,21 +156,44 @@ doing at the time:
 - **The chart measures its container with `getBoundingClientRect`, and only
   ever re-measures when its ResizeObserver fires.** A transform changes no
   layout box, so an entrance animation defeats both halves of that: mounted in
-  the install dialog, which opens with `scale-95`, the chart measured 592.8
-  against a 624px container and kept that number for the life of the dialog.
-  Our own code is warned off `getBoundingClientRect` during an entrance further
-  down; this is the library doing it, and it cannot be told not to.
-  `useSettledBox` (`charts/chart.tsx`) waits for the painted box to match the
-  layout box and then rebuilds the definition, which is what forces the
-  re-measure — the adapter re-lays-out on a size or definition prop change, not
-  on every commit. The visible symptom was the library's own tooltip, which
-  positions from scene coordinates without converting and so drifted left by up
-  to 31px: flush against the marker on the right, ~45px of gap on the left.
-  Handing the chart a measured `width` instead is worse and was reverted:
-  `width` means the application owns fixed geometry, so the host is pinned in
-  pixels, and in a grid item at its default `min-width: auto` that pins the
-  very track the chart is measuring — the compare chart could then never shrink
-  on resize.
+  the install dialog while it still opened with `scale-95`, the chart measured
+  592.8 against a 624px container and had no way to notice. Our own code is
+  warned off `getBoundingClientRect` during an entrance further down; this is
+  the library doing it, and it cannot be told not to. Two symptoms, both
+  measured: the library's own tooltip positions from scene coordinates without
+  converting and drifted left by up to 31px (flush against the marker on the
+  right, ~45px of gap on the left), and the viewBox — which is what maps scene
+  units to pixels — carried the error into every stroke width, tick font and
+  marker radius, painting them 5.3% oversized.
+
+  **The fix is upstream of the chart: the install dialog's transition carries
+  no scale.** `skill-record.tsx` neutralises `data-starting-style:scale-95`,
+  leaving translate and opacity, neither of which changes a measured width. The
+  chart then lays out once, correctly, and never relayouts — verified across
+  two opens and at phone width, where the only viewBox the SVG ever carries is
+  the container's own (624 desktop, 300 at 390px). That comment in
+  `skill-record.tsx` is load-bearing; restoring the scale silently brings all
+  of this back.
+
+  Two approaches were tried first and are worth not re-deriving. A measured
+  `width` prop is worse: `width` means the application owns fixed geometry, so
+  the host is pinned in pixels, and in a grid item at its default
+  `min-width: auto` that pins the very track the chart is measuring — the
+  compare chart could then never shrink on resize. And a `useSettledBox` hook
+  (deleted in the same change; see git history) polled until the painted box
+  matched the layout box and then rebuilt the definition to force a re-measure.
+  That works, but the correction is itself a visible snap — one frame at
+  ~170ms where the whole scene rescales 5.3% — so it also had to hold the
+  chart's paint behind an opacity fade until then. Removing the scale removes
+  the need for either.
+
+  What replaced it is `useUntransformedHost` (`charts/chart.tsx`), a dev-only
+  warning rather than a repair: it names the chart, prints the two widths and
+  the error, and points at the mount site. That is deliberate. A hook that
+  quietly corrects a scaling ancestor is a hook that hides a design mistake and
+  charges a paint delay for it; the mistake is worth seeing. Verified both
+  ways — silent as things stand, and on restoring `scale-95` it prints
+  "painted 592.8px against a 624px layout box … paints 5.3% off".
 
 - **Pass `initialWidth`.** The adapter renders its first markup at that width
   (default 640) and measures the container only after commit, so everything in
@@ -251,13 +290,92 @@ doing at the time:
   x with (~4px mid-travel on the renderer's default), and gate it separately at
   `DISCRETE_THRESHOLD` — the overlay's `jump()` writes cannot reach it.
 
-- **Entrance motion is ours, the rest is the library's.** The left-to-right
-  wipe is a CSS animation on `.ts-chart__marks` (`.chart-reveal` in
-  `charts/charts.css`); `chartMotion` is built with `initial: false` so the two do not
-  both play. Everything else — crosshair, focus dot, highlight band, tooltip
-  travel — springs through `@tanstack/charts/motion`. If chart motion looks
+- **Two entrances, and which chart gets which is decided by its marks.** The
+  compare chart's is ours: a `clip-path` wipe on `.ts-chart__marks`
+  (`.chart-reveal` in `charts/charts.css`), applied when `loading` ends so it
+  belongs to the real series arriving. The install chart's is the library's
+  (`chartMotionEntrance`, `initial: "always"`), which grows the marks from the
+  y baseline staggered left to right and settles ~720ms in. The shared
+  `chartMotion` stays `initial: false` so the sparkline gets neither.
+
+  The split is not taste, it is what the renderer can reach. Bars are per-datum
+  scene nodes, so it can stagger them along x; a line is ONE node, so there is
+  no per-datum handle and the automatic stagger is gated to `role === "bar"`
+  anyway. Shipping the library entrance on the compare chart was tried and
+  measured: the path is full width on its very first frame
+  (`widthEverPartial: false`) and only its height grows, over ~90ms. No travel
+  along x at all — which on a multi-line time series is also the order the lines
+  cross each other, the whole point of putting them on one axis. The wipe is the
+  only entrance that reads that way, which is why it stays.
+
+- **The library's entrance fires on a host's FIRST render and nothing replays
+  it** — not a definition change, not a prop change. So it cannot serve as a
+  loading→ready reveal on any chart: to get it there the host has to remount,
+  which throws away the single instance at exactly the boundary the placeholder
+  architecture exists to bridge. Tried, measured, and reverted; the wipe needs
+  no remount because it plays off a class on a host that stays put.
+
+- **Everything else — crosshair, focus dot, highlight band, tooltip travel —
+  springs through `@tanstack/charts/motion`.** If chart motion looks
   dead, check the two entries below before reaching for Motion: both look like
   "the renderer is not animating" and neither is.
+
+- **There are two animation systems and you can only have one.** The default
+  SVG renderer animates from `svgAnimation` on the definition; the optional
+  `motion()` renderer animates from its own options and **ignores
+  `svgAnimation` entirely** — "each host has one animation owner"
+  (`docs/examples/themes-and-motion.md`). Traced: `renderer.js` folds
+  `svgAnimation` into an `animation` option, and only `svg-surface.js` and
+  `canvas.js` read it; `motion.js` never mentions it. All three of our charts
+  pass `motion()`, so any `svgAnimation` we wrote would be live-looking dead
+  config. Its resize half has an equivalent we DO have — `motion({ resize: true })`,
+  default false — and we deliberately leave it off: it animates size changes,
+  and a chart that eases behind a container is lag, not motion. It is there for
+  a size change that is itself a designed transition (a panel expanding), not
+  for tracking a window. The library's own reason is sharper than that one:
+  "`resize`: defaults to `false`, so responsive relayout does not repeatedly
+  restart animation" — during a drag every event retargets the tween, so it
+  never arrives.
+
+- **Window resizing needs nothing from us.** Omit `width` and the host reads the
+  container's bounding width and observes it with a `ResizeObserver`, schedules
+  relayout on the document's animation frame, and skips renders when the width
+  has not changed (`docs/reference/dom-host.md`). The fallback order is explicit
+  `width`, then a positive container width, then `initialWidth`, then 640. The
+  one thing it asks of us is that the container can actually shrink —
+  `min-width: 0` on a grid or flex child — which is the same constraint that
+  rules out passing a measured `width`, above. Measured on the compare chart at
+  1440 / 1100 / 820 / 560 and through a fast six-step sweep: the viewBox tracks
+  `clientWidth` exactly every time.
+
+- **The bars' entrance stagger is ours, because the library's is derived from a
+  duration a spring does not have.** `resolveTiming` spans the automatic bar
+  stagger over `baseDuration * 0.4`, and `baseDuration` is the tween's duration
+  or a flat 1100 for a spring — ours is `FOCUS_SPRING`, so the span was 440ms
+  and the only way to shorten it was to change the renderer's transition, which
+  also feeds the tooltip. `skill-install-chart.tsx` authors the delay instead
+  (`ENTRANCE_STAGGER_MS`, 180). Measured: the last bar used to start at 440ms
+  and reach 99% at ~690; it now starts at 176ms and reaches 99% at 442.
+  Divide by `datumCount`, as the library's own does. `stagger()` from
+  `@tanstack/charts/motion/definition` writes a flat milliseconds-per-datum,
+  which is linear in series length — a 200-snapshot skill would sweep ten times
+  longer than a 20-snapshot one instead of taking the same span.
+
+- **`initial: false` is not just to avoid a double entrance — the library's own
+  entrance cannot survive a container-measured chart.** `motion.js` gates it
+  `animate = initial ? motion.initial : motion.resize || !resized`, and the
+  adapter always prerenders at `initialWidth` and then measures, so the first
+  real measurement is a `resized` render: with the default `resize: false` it
+  commits instantly and cancels the entrance. Measured with `initial: true` on
+  the install chart: the bars sit at height 0 for 130ms and then snap to their
+  full 152px in a single frame, having animated nothing. Matching
+  `initialWidth` to the container's `clientWidth` does not rescue it — the
+  dialog's ease-out asymptote left 623.51 on the prerender and 623.77 a frame
+  later, and 0.26px still counts as `resized`. `resize: true` would tween that
+  correction rather than snap it, but the renderer is shared by all three
+  charts, so it would also interpolate the whole scene behind every window
+  resize. The CSS wipe has none of these couplings: it is a `clip-path`
+  animation and does not care what the renderer commits.
 
 - **The hover dim is a CSS transition, not renderer motion.** The renderer
   re-resolves and re-animates every mark state on each focus change, restarting
@@ -417,6 +535,266 @@ doing at the time:
   Covering the labels with a strip of surface colour was tried instead and
   reads as a blank bar sweeping the axis; so does standing the whole row down,
   which the old chart did not do either.
+
+### Loading and empty states
+
+- **The library has none, and should not.** No `loading`, `pending`,
+  `skeleton`, `empty` or `placeholder` concept exists anywhere in its docs or
+  its twelve bundled skills, and the React adapter says outright that "there is
+  no placeholder-only server mode". It is a rendering grammar; this is the
+  application's job. Do not go looking for a prop.
+
+- **One chart instance spans loading and loaded — do not swap it for a
+  spinner.** The compare page used to `Crossfade` between a `DotMatrixRipple`
+  skeleton and the chart, which cost the best thing the loaded state has: with
+  the chart mounted, new data is a keyed update, so the y scale tweens (the
+  lines only morph when the geometry stays compatible — see below). Tear it down and every arrival is a fresh mount. The symptom
+  was that removing a skill and adding it back animated beautifully (React
+  Query had that combination cached, so `isPending` stayed false and the chart
+  survived) while adding a new one did not. Both reference libraries reach the
+  same conclusion from the other side: bklit's `status="loading"` drives "one
+  `Grid`, one `Line`, no component swap", and evilcharts describes its own
+  Recharts twin unmounting series during loading as the inferior version.
+
+- **Two waits, two treatments, neither of them a swap.** First fetch:
+  `skeletonSeries` in `compare-trend-chart.tsx` builds placeholder rows under
+  the real series keys, so the arrival is a keyed update rather than a mount.
+  Column change with a chart already on screen: `placeholderData: keepPreviousData`
+  on the insights query keeps the previous rows, the chart is never torn down,
+  and it dims (`opacity-55`) while the new ones fetch — the same dimmed-filler
+  reading the catalog uses. Measured on an uncached third skill: the chart is
+  present in every frame, a line path is added, and the y axis walks
+  `0–500k` → `0–2M` through an intermediate scale. The LINES do not travel with
+  it; see the next entry.
+
+- **Adding a skill snaps the lines, because it changes the shared date range.**
+  The renderer "morphs compatible numeric SVG geometry", and compatible means
+  the same command count. `buildCompareRows` builds the x axis from the UNION of
+  every drawable series' days, so a skill whose history starts earlier inserts x
+  positions into every other line: measured on one add, 22 path commands to 30
+  as the range went Jul 31–Aug 21 to Jul 23–Aug 21. The path's `d` then changes
+  exactly once, in a single frame, while the grid tweens across ~48 frames
+  underneath it — a gliding axis under jumping lines, which reads worse than
+  either would alone.
+  It is not caused by the entrance choice: measured identical under the wipe.
+  The only fix that would make it morph is a fixed x window rather than a union,
+  so the command count never changes — which truncates the history of whichever
+  skill reaches furthest back, and is a product decision rather than a repair.
+  Do not diagnose this from path COUNT or from y-tick variants; both change on a
+  snap too. Sample the first path's `d` per frame and count how many times it
+  changes: one means a snap, dozens mean a morph.
+
+- **The placeholder conceals before the real series is revealed — it does not
+  morph into it.** bklit's loading→ready order, and the reason to prefer it over
+  the renderer's morph is not motion but meaning: a morph says these are one
+  measurement changing, and one of them is invented. `CompareTrendChart` runs a
+  three-phase machine (`loading` → `concealing` → `ready`) whose middle phase
+  exists only to hold the PLACEHOLDER's definition open while it clears. Swap to
+  real rows on the frame the data lands and the renderer morphs, which is the
+  thing this ordering exists to avoid. Measured on a client navigation: chart
+  mounts at 414ms, conceal 462–641, reveal 655 and fully drawn at 1108 — and the
+  y-axis labels appear on the phase switch, so the scale retargets while the
+  plot is empty, where bklit puts its domain tween. The conceal ends on `inset(0 0 0 100%)` and the reveal starts on
+  `inset(0 100% 0 0)`; both are an empty plot, which is what makes the handoff
+  seamless.
+  The phase is adjusted during render, not in an effect — an effect commits the
+  stale phase first, so the chart paints one frame claiming to be loading after
+  the data arrived. The lint rule against synchronous `setState` in an effect
+  body is pointing at the same frame.
+
+- **The placeholder has a minimum-visible floor, and that is a reversal worth
+  understanding.** This codebase derives loading states from cache rather than
+  timing them, and min-visible floors were rejected once already — correctly,
+  for spinners, whose only job is to say "wait", so holding data back to keep
+  one up is pure cost. What changed is the exit. The placeholder now leaves
+  through a 180ms conceal and a 450ms reveal, and on a client navigation the
+  data lands about one frame after the chart mounts: without a floor the chart
+  conceals something nobody saw, and the placeholder reads as a flash rather
+  than a state.
+  The part that actually settles it: there is no timer-free alternative. Skipping
+  the ceremony on a fast load needs exactly the same "how long has this been
+  loading" that the floor needs, so the choice is which behaviour a timer buys,
+  not whether to have one. Nor is a floor on the FETCH available, which would be
+  the tidier shape: Convex queries resolve through a `queryFn` installed
+  globally on the query client, so flooring one floors every query in the app —
+  and this result also feeds each column's rank, which has no reason to wait.
+  `PLACEHOLDER_FLOOR_MS` is 400 — about a third of a band crossing, enough with
+  the label to register. Measured: client navigation 395ms of placeholder
+  against ~1 frame before, cold load 617ms (the data was genuinely slower, so
+  the floor never bound). Coupled to the sweep: a shorter floor wants a faster
+  `chart-loading-sweep` to stay legible.
+  The timing lives in `hooks/use-held-flag.ts`, not in the chart, so what
+  reaches the phase machine is already "loading, for long enough to be worth
+  concealing" — one effect left in the component instead of three. The hold
+  deliberately ignores `prefers-reduced-motion`: a minimum display duration is
+  not a motion preference, and seeing the state is useful either way. What
+  collapses under reduce is the exit's DURATION — measured, the conceal goes
+  from ~180ms to ~9ms while the placeholder still gets its time.
+
+- **Three durations, and they are coupled.** Conceal 180ms, reveal 450ms, label
+  exit 150ms. `CONCEAL_MS` in `compare-trend-chart.tsx` mirrors the
+  `.chart-conceal` animation, because it is what holds the phase — let them
+  drift and the plot sits empty waiting on a timer that has not fired. The label
+  has to stay under the conceal or it is still animating when it unmounts.
+  Why these numbers: the reveal was 1100, then 650 for consistency with the
+  install chart's ~442ms entrance, then 450 for proportion. Measured on a client
+  navigation, the data lands ~47ms after the chart mounts and the arrival
+  animation then ran for another 890ms, so nearly everything being watched was
+  choreography rather than loading; 180 + 450 brings that to ~630ms and the
+  chart is fully drawn at ~1108ms rather than ~1350ms. 450 sits near the install
+  chart's 442 across roughly twice the width, which an earlier note here argued
+  would read as a flicker. Checked on the wide card at 45% through: the line is
+  drawn to ~26% with a clean leading edge, so it still reads as a draw. That is
+  the axis to watch if it is ever trimmed again.
+
+- **The loading label is HTML over the chart, and it leaves before the plot
+  does.** bklit's is the reference — its label "drifts down 30px, blurs, and
+  fades" on the way out — but the gesture already exists here: `Crossfade` moves
+  every swap in this app on `opacity, filter, translate` over 240ms of
+  `cubic-bezier(0.32,0.72,0,1)`, so the label borrows the gesture rather than
+  bklit's numbers. 150ms against the conceal's 180 so it is gone before the plot
+  clears instead of racing the unmount — the label has to stay the shorter of
+  the two, so they move together.
+  It shimmers, through cubby-ui's `shimmer` utility — the house affordance for a
+  live status. Two traps in wiring it. The highlight has to be pinned
+  (`shimmer-color-foreground`): left to derive, it resolves to `currentColor` at
+  20% alpha, which in light mode fades `muted-foreground` well under the 4.5:1
+  it is tuned to sit at. Pinned to the foreground it darkens in light and
+  brightens in dark, so contrast rises in both. And the plate cannot share the
+  shimmering element — `background-clip: text` clips EVERY background on its
+  element to the glyphs, so the plate would be clipped to the letters and
+  vanish. Two spans. The utility handles reduced motion itself (solid text, no
+  gradient, verified).
+  Two things it is not. Not spinnered: the house loader is `DotMatrixRipple` and
+  this chart dropped it on purpose, so a second indicator would say the same
+  thing twice. Not announced: `aria-hidden`, because `aria-busy` and the chart's
+  `ariaLabel` already carry it.
+  The plate is on the elevation ladder, one tier above the section's `--card`
+  (which is `surface-3`), because the plot's centre is exactly where a grid rule
+  and the placeholder curves cross and the text was struck through without it.
+  `solidSurface(4)`, not `elevatedSurface(4)`: it paints the rim into the same
+  `box-shadow` rather than an `::after`, and a label with nothing but text at
+  its edges does not need that overlay or the `relative` and z-index it drags
+  in. Never a hand-rolled border — DESIGN.md rules that out, and the ladder is
+  what keeps light and dark coherent. Here that difference is the whole point:
+  `surface-3` and `surface-4` are both pure white in light, so the separation is
+  the shadow alone, while in dark they are a real lightness step (0.264 to
+  0.293). It ends up speaking the same language as the date pill, which carries
+  its own shadow because it too sits on the plot.
+  Two mechanics that are easy to get wrong. It centres on `CHART_MARGIN`, not on
+  the box — the margins are asymmetric, so box-centring lands 16px off the plot
+  on both axes (measured 0px off after). And it renders AFTER the overlay,
+  because DOM order is what puts it on top: both are positioned, so the later
+  one paints over. Placed first it sat under the SVG and the gridline and both
+  curves ran straight through the words on every viewport. It carries a `bg-card`
+  plate for the same reason — the plot's centre is exactly where a rule and the
+  placeholder curves cross. Same colour as the section, no border, no shadow, so
+  it reads as the lines breaking around the label rather than a chip on top.
+
+- **The sweep is a `mask-image` that REVEALS the line, not a wash over one.**
+  Outside the band nothing is drawn — the band IS the placeholder line. Both
+  references do this and it took two readings to get right: bklit's `Line`
+  exposes only `loadingStroke` and `loadingStrokeOpacity`, both documented as
+  the PULSE's colour and opacity, with no prop for a line beneath it, because
+  there is none; evilcharts is blunter, a clip window that "reveals the
+  skeleton", re-rolling its random data while the window is off-screen
+  precisely because nothing shows there. Its prose ("a soft diagonal shimmer
+  sweeps across the whole line") reads like a wash and is what sent the first
+  attempt wrong. The grid is untouched by any of it and stays put, which is
+  bklit's arrangement too.
+
+  Four things in that mask are load-bearing, and each was wrong once:
+
+  - It is a mask and not a second `clip-path`, because the reveal owns that
+    property on the same node.
+  - DIRECTION. For a mask wider than its box, percentage positioning resolves
+    to `offset = (boxW - maskW) * P/100`, i.e. `-boxW * P/100` at 200%. Positive
+    P moves the mask LEFT, so the band runs right-to-left. Counting down to
+    `-200%` is what makes it read left-to-right.
+  - SEAMLESS. `repeat`, not `no-repeat`, travelling exactly one tile, so the
+    restart frame equals the frame it ended on. Both gradient ends sit in the
+    same flat 0, so the tile seam falls in a constant region.
+  - NO GAP. Two bands per tile, at 25% and 75%, putting them one box-width
+    apart so exactly one is always crossing. One band per tile leaves the marks
+    bare for half of every cycle, which reads as the sweep cutting out.
+
+  `linear`, necessarily: an eased loop is eased per CYCLE, and a cycle is two
+  crossings, so it would slow every other one. The band's character comes from
+  the gradient's falloff (stops ramping through 0.5) rather than from timing.
+  2400ms per cycle is 1200ms per crossing, matched by the label's
+  `shimmer-duration-1200` so the two keep one tempo. Verified running on the
+  `<g>` — CSS masks apply to SVG groups.
+
+- **Placeholder shapes are fine; placeholder labels are not — on either axis.**
+  A drawn line reads as "something will be here"; an axis label reads as a
+  measurement. Both axes therefore keep their grid rules and drop their
+  `tickLabels` while loading. The x axis was the easy one to get wrong: its
+  dates are real dates, which sounds like enough, but the placeholder spans the
+  last three weeks ending today while the real series ends wherever its
+  snapshots do — so the axis announced Aug 7–27 and then jumped back to
+  Jul 31–Aug 21 on the reveal. A range is a claim about the data exactly as a
+  count is. Kill both tooltip paths as well — `tooltip: false` for the pointer
+  and `keyboard: false`, because arrow keys still move focus on a chart whose
+  `pointer` is already false — and pass `disabled` to `ChartHoverOverlay`, which
+  is the one cursor the definition cannot switch off.
+
+- **Do not pin the y axis's margin.** The scene solver sizes that side to the
+  widest label it is currently drawing, which does move the plot's left edge:
+  the placeholder draws no y labels, so it gets a ~4px gutter, and the plot
+  slides 31.7px right the moment real labels arrive (measured, 1440px viewport).
+  The grid rules sit outside `ts-chart__marks`, so neither the conceal nor the
+  reveal covers it. The gridlines visibly jump once.
+
+  Pinning it fixes that and costs plot width forever. Measured at the same
+  viewport, a 40px pin gives a 1150.9px plot where the solver gives 1155.2:
+  4.3px of inset on the left edge only, against a right margin of 16, on every
+  load, permanently, to smooth one 450ms transition. It shipped that way briefly
+  and was noticed by eye as the chart no longer filling its card.
+
+  A third option works and was rejected on looks, not cost: pin only the
+  PLACEHOLDER's left margin to ~36, standing in for the labels it is not
+  drawing, and leave the real chart solved. That measures a 0.3px shift with no
+  width lost. It is here because the arithmetic is not obvious, not as a
+  recommendation. The slide is wanted: the placeholder reading full-bleed to the
+  card edge and then settling into a labelled axis is the arrival, and removing
+  it makes the loading state look like a chart that was already there.
+
+- **A chart can mount into a box that is not laid out yet, and the fallback for
+  that is a constant.** `currentWidth()` treats a zero measurement as "cannot
+  measure" and uses `initialWidth`, which is right at one viewport size. Mounting
+  the compare chart early enough to be the loading state put it inside the
+  Suspense reveal, where the container is 0 for one frame: the scene was built at
+  `INITIAL_WIDTH.compare` and painted 4% oversized in a 1207px box for ~130ms
+  before the ResizeObserver corrected it — cold and warm alike. `useMeasuredHost`
+  holds the render for that one commit while a CSS box reserves the height. Note
+  this is the same failure as the dialog's scaling ancestor arriving by a
+  different road: there the measurement was wrong and never corrected, here it is
+  wrong and corrects late.
+
+- **Loading is not "no data".** `CompareTrendChart` early-returns
+  `CompareTrendGhost` when no series has enough history, which is a resolved
+  answer; the loading branch has to be ordered around it or "not answered yet"
+  gets reported as "nothing to show".
+
+- **`keepPreviousData` will hand over an answer to a different question, and
+  `isPending` is false while it does.** That is the point of it when the two
+  comparisons overlap — adding a skill keeps the chart mounted and lets the new
+  line animate in. It is a bug when they do not overlap: compare two skills, go
+  home, then compare a third from the skill sheet, and the placeholder rows are
+  the previous pair's. None of the new refs resolve, so every series arrives
+  empty, `isPending` is false, and the chart skips its loading state entirely
+  and renders the ghost — reporting "not enough history yet" about data it has
+  never seen. Reproduced and fixed: `insightsCoverRefs` in `compare-content.tsx`
+  asks whether any current ref resolves in the insights being held, and the
+  chart is loading when none does. Cheap to miss because it needs a prior
+  compare in the same session; a cold load or a first navigation never shows it.
+
+- **The page's own fallback is a third layer and deliberately generic.**
+  `CompareFallback` in `app/(main)/compare/page.tsx` is the prerendered static
+  shell — `?skills=` is unknown at build time, so `CompareContent` sits behind
+  Suspense. It cannot take the chart's silhouette because it also covers the
+  empty state, where there is no chart. It is not a duplicate of the chart's
+  loading state; it is the shell that precedes it.
 
 ## DOM coupling
 

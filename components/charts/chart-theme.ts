@@ -49,19 +49,22 @@ export const AXIS_TICK_LABELS = {
  * that row (see `chart-hover-overlay`), and automatic margins size to the axis
  * alone — they know nothing about it.
  */
-export const AXIS_LABEL_MARGIN = 34;
-export const AXIS_LABEL_PADDING = 10;
+export const X_AXIS_LABEL_MARGIN = 34;
+export const X_AXIS_LABEL_PADDING = 10;
 
 /**
- * Wider, for a chart that also labels its y axis.
+ * Bottom margin, for a chart that also labels its y axis.
  *
- * The lowest y tick sits centred on the plot's bottom edge, so the dates have
- * to clear that label and not just the plot — without the extra gap the zero
- * and the first date collide in the corner. Only worth the vertical cost where
- * there is a y axis: on a phone this is a third of the chart's height.
+ * The lowest y tick sits centred on the plot's bottom edge, so the dates have to
+ * clear that label and not just the plot — without the gap the zero and the
+ * first date collide in the corner. Only worth the vertical cost where there is
+ * a y axis: on a phone this is a third of the chart's height.
+ *
+ * Every constant here leads with its axis letter, which is the one thing that
+ * stops a bottom margin being read as a left one.
  */
-export const AXIS_LABEL_MARGIN_WITH_Y_AXIS = 48;
-export const AXIS_LABEL_PADDING_WITH_Y_AXIS = 20;
+export const X_AXIS_LABEL_MARGIN_WITH_Y_AXIS = 48;
+export const X_AXIS_LABEL_PADDING_WITH_Y_AXIS = 20;
 
 /** Half the rendered height of a 12px tick label, measured against the axis. */
 const AXIS_LABEL_HALF_HEIGHT = 5;

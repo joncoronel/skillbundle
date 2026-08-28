@@ -9,7 +9,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useQueryState } from "nuqs";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -25,7 +25,6 @@ import { OfficialBadge } from "@/components/skill-badges";
 import { AuditBadge } from "@/components/skill-audit-section";
 import {
   CompareTrendChart,
-  CompareTrendSkeleton,
   COMPARE_LINE_COLORS,
   type CompareSeries,
 } from "@/components/compare-trend-chart";
@@ -34,7 +33,7 @@ import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import type { PickerSkill } from "@/components/skill-picker";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
-import { formatInstalls } from "@/lib/utils";
+import { cn, formatInstalls } from "@/lib/utils";
 import { compareSkillsParser } from "@/lib/search-params";
 import {
   MAX_COMPARE_SKILLS,
@@ -48,7 +47,6 @@ import {
   ComparePickerRailTrigger,
   ComparePickerSheet,
 } from "./compare-picker";
-import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 
 export function CompareContent() {
   const [refs, setRefs] = useQueryState("skills", compareSkillsParser);
@@ -90,8 +88,22 @@ export function CompareContent() {
   // daily snapshot series in a single query, so the combined chart and the
   // per-column rank stat share it (no per-column insights fetch). Keyed by the
   // refs array, so adding/removing a column refetches and React Query caches it.
-  const { data: insightsData, isPending: insightsPending } = useQuery({
+  // `keepPreviousData` is what keeps the chart mounted across a column change,
+  // and that is the whole point: with the chart alive, new data is a keyed
+  // update, so its y scale tweens rather than cutting. Without it an uncached
+  // combination reports `isPending` and the chart is destroyed and rebuilt, which
+  // is why removing a skill and adding it back used to animate nicely (cached)
+  // while adding a new one did not. Same idiom as the search result sets — see
+  // `SEARCH_RESULT_CACHE` in `hooks/use-debounced-query-value.ts` — but not that
+  // constant, whose staleness is tuned for result sets rather than this.
+  const {
+    data: insightsData,
+    isPending: insightsPending,
+    isPlaceholderData: insightsStale,
+    isError: insightsFailed,
+  } = useQuery({
     ...convexQuery(api.skills.getCompareInsights, { refs }),
+    placeholderData: keepPreviousData,
     staleTime: 5 * 60_000,
   });
   // A `useCallback` so the `series` memo below can depend on it rather than
@@ -103,6 +115,25 @@ export function CompareContent() {
       ),
     [insightsData],
   );
+
+  // Whether the insights we are holding actually describe THESE refs.
+  //
+  // `keepPreviousData` can hand over the previous comparison's rows, which is
+  // exactly what we want when the two overlap — adding a skill keeps the chart
+  // mounted and the axis animates across the change. When none of the current refs
+  // resolve, though, we are holding the answer to a different question, and the
+  // chart reads an empty series as its resolved "not enough history yet" state.
+  // Reproduced: compare two skills, go home, compare a third from the sheet —
+  // the ghost flashed and the loading state was skipped entirely, because
+  // `isPending` is false while placeholder data is in hand.
+  const insightsCoverRefs =
+    refs.length === 0 || refs.some((ref) => insightFor(ref) !== undefined);
+
+  // A failed query never covers the refs, so without the error term the chart
+  // would hold its placeholder and `aria-busy` forever. On failure it settles
+  // instead, and the chart's own "not enough history yet" state is what shows.
+  const chartLoading =
+    !insightsFailed && (insightsPending || !insightsCoverRefs);
 
   // One line per compared skill, colored by column position so the chart line,
   // the legend swatch, and the column header dot all share a hue.
@@ -157,7 +188,14 @@ export function CompareContent() {
               <CopyComparisonLink refs={refs} />
             </div>
           </div>
-          <CompareTrendSection series={series} loading={insightsPending} />
+          <CompareTrendSection
+            series={series}
+            loading={chartLoading}
+            // Never both: dimming the placeholder puts its label under the
+            // contrast it is tuned for, and doubles up with the reduced-motion
+            // dim in `charts.css`.
+            stale={insightsStale && !chartLoading}
+          />
           <CompareGrid refs={refs} onOpenPicker={openPicker}>
             {refs.map((ref, i) => {
               const entry = insightFor(ref);
@@ -290,25 +328,35 @@ function CompareGrid({
  * The single combined install chart sitting above the columns: one line per
  * compared skill, so trajectory reads across all of them at once instead of in
  * separate per-column sparklines. The column header dots map each skill to its
- * line. While the batched insights load it holds the chart's height with a
- * skeleton so the columns below don't jump.
+ * line.
+ *
+ * Two waits, and neither swaps the chart out. `loading` is the first fetch,
+ * where the chart draws placeholder lines (see `skeletonSeries`). `stale` is a
+ * column change with a previous result still on screen, where the right thing
+ * is to leave the real chart up and say so quietly — the same dimmed-filler
+ * reading the catalog uses while a refinement fetches
+ * (`components/skill-explorer.tsx`), rather than throwing away rows that are
+ * about to be replaced by very similar ones.
  */
 function CompareTrendSection({
   series,
   loading,
+  stale,
 }: {
   series: CompareSeries[];
   loading: boolean;
+  stale: boolean;
 }) {
   return (
     <section className="mb-4 rounded-2xl border bg-card p-5 md:mb-6 dark:border-border/50">
       <h2 className="mb-4 text-sm font-semibold text-foreground">
         Installs over time
       </h2>
-      <Crossfade active={!loading}>
-        <CompareTrendSkeleton />
-        <CompareTrendChart series={series} />
-      </Crossfade>
+      <div
+        className={cn("transition-opacity duration-200", stale && "opacity-55")}
+      >
+        <CompareTrendChart series={series} loading={loading} />
+      </div>
     </section>
   );
 }

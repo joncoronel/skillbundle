@@ -7,8 +7,8 @@ import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import {
   INITIAL_WIDTH,
-  useChartHostProps,
-  useSettledBox,
+  chartHostProps,
+  useUntransformedHost,
 } from "@/components/charts/chart";
 import {
   AXIS_TICK_COUNT,
@@ -16,8 +16,8 @@ import {
   evenlySpaced,
   CHART_THEME,
   datePillOffset,
-  AXIS_LABEL_MARGIN,
-  AXIS_LABEL_PADDING,
+  X_AXIS_LABEL_MARGIN,
+  X_AXIS_LABEL_PADDING,
 } from "@/components/charts/chart-theme";
 import {
   ChartHoverOverlay,
@@ -35,6 +35,7 @@ import {
   HOVER_DIM,
 } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
+import { chartMotionEntrance } from "@/components/charts/chart-motion";
 import {
   dayLabel,
   dayLabelLong,
@@ -46,6 +47,24 @@ import {
 // Daily bars are the secondary series: the design system's neutral fill,
 // softened so the Signal Blue total line stays the one accent.
 const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
+
+/**
+ * How long the bars' entrance takes to sweep from the first column to the last.
+ *
+ * Replaces the library's automatic bar stagger, which spans
+ * `baseDuration * 0.4`. `baseDuration` is the tween duration, or a flat 1100
+ * when the transition is a spring — and ours is (`FOCUS_SPRING`), so the
+ * automatic span was 440ms with no way to tune it short of changing the
+ * renderer's transition, which also feeds the tooltip. Measured, that put the
+ * last bar's start 440ms in and the whole entrance at ~720ms, which reads
+ * leisurely against a dialog that opens in 200.
+ *
+ * Divided by `datumCount`, exactly as the library's own is. A flat
+ * milliseconds-per-bar — what `stagger()` from `@tanstack/charts/motion/definition`
+ * writes — is linear in the series length, so a skill with 200 snapshots would
+ * sweep for ten times as long as one with 20 rather than the same span.
+ */
+const ENTRANCE_STAGGER_MS = 180;
 
 /**
  * Top of the y domain, as a multiple of the largest cumulative total.
@@ -101,17 +120,12 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     markers: HOVER_MARKERS,
   });
 
-  // This chart lives in a dialog that opens with `scale-95`, so its first
-  // measurement of the container is 95% of the real width and nothing would
-  // ever correct it. Rebuilding the definition once the box stops moving is
-  // what makes it re-measure; see `useSettledBox`.
-  const settled = useSettledBox(overlay.hostRef);
+  // This chart's scene is measured through whatever transform its dialog is
+  // mid-animation on, so the dialog's entrance deliberately carries no scale
+  // (`skill-record.tsx`). Nothing in the type system says so; this does.
+  useUntransformedHost(overlay.hostRef, "InstallChart");
 
   const definition = useMemo(() => {
-    // Read so the dependency is real and `--fix` cannot drop it. Rebuilding is
-    // itself the effect here; see `useSettledBox`.
-    void settled;
-
     // One row per day: `total` (cumulative, the line) and `daily` (gained, the
     // bars). Day-over-day can dip negative on a correction; floor at 0.
     const rows = snapshots.map((s, i) => ({
@@ -153,6 +167,17 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           radius: 4,
           maxThickness: 26,
           states: [BAR_UNFOCUSED_DIM],
+          // Only the entrance is retimed; returning `undefined` for every other
+          // phase leaves the library's own timing in place rather than pinning
+          // it to zero.
+          motion: ({ phase, datumIndex, datumCount }) =>
+            phase === "enter"
+              ? {
+                  delay:
+                    (ENTRANCE_STAGGER_MS * datumIndex) /
+                    Math.max(1, datumCount),
+                }
+              : undefined,
         }),
         lineY(rows, {
           id: LINE_ID,
@@ -188,7 +213,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           line: false,
           ticks: {
             size: 0,
-            padding: AXIS_LABEL_PADDING,
+            padding: X_AXIS_LABEL_PADDING,
             format: dayLabel,
             // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
             // labels pinned to real rows, first and last included. A point
@@ -230,7 +255,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         },
       },
       gradients: [fadeEdgesGradient(fadeEdgesId(LINE_ID), "var(--primary)")],
-      margin: { top: 16, right: 14, left: 14, bottom: AXIS_LABEL_MARGIN },
+      margin: { top: 16, right: 14, left: 14, bottom: X_AXIS_LABEL_MARGIN },
       theme: CHART_THEME,
       tooltip: CHART_TOOLTIP,
       focus: "group-x",
@@ -241,16 +266,16 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       focusRing: false,
       pointer: false,
     });
-  }, [snapshots, settled]);
+  }, [snapshots]);
 
-  const hostProps = useChartHostProps();
+  const hostProps = chartHostProps(chartMotionEntrance);
 
   return (
     <div>
       <Legend />
       <ChartHoverOverlay
         controller={overlay}
-        pillOffset={datePillOffset(AXIS_LABEL_MARGIN, AXIS_LABEL_PADDING)}
+        pillOffset={datePillOffset(X_AXIS_LABEL_MARGIN, X_AXIS_LABEL_PADDING)}
       >
         <RendererChart
           {...hostProps}

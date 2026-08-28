@@ -44,6 +44,26 @@ export const chartMotion = motion({
 });
 
 /**
+ * The install chart's renderer: the same motion plus the library's own entrance
+ * — bars and line grow from the y baseline, staggered, settling ~720ms in.
+ *
+ * `"always"` rather than `true` to take a branch out of play: the gate is
+ * `motion.initial && (!adoptedRoot || motion.initial === "always")`, and
+ * `adoptedRoot` is the library's read of server-rendered markup. `true` was
+ * measured to animate fine here; `"always"` survives that changing, and this
+ * entrance is decorative enough that its loss would be silent.
+ *
+ * Only works because the install dialog's entrance carries no scale (see
+ * `skill-record.tsx`). Through a transform the first real measurement is a
+ * `resized` render, which the renderer commits instantly (`resize: false`),
+ * cancelling the entrance.
+ */
+export const chartMotionEntrance = motion({
+  initial: "always",
+  transition: FOCUS_SPRING,
+});
+
+/**
  * True on a touch-primary device.
  *
  * Starts false so the server and first client render agree, then settles after
