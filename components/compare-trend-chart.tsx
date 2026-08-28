@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useHeldFlag } from "@/hooks/use-held-flag";
 import { defineChart, lineY } from "@tanstack/charts";
 import { scalePoint } from "@tanstack/charts/scales/point";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
@@ -111,6 +112,38 @@ const SKELETON_DAYS = 21;
  * together or the phase outlasts the wipe and the plot sits empty waiting.
  */
 const CONCEAL_MS = 180;
+
+/**
+ * Shortest time the placeholder stays up once it has been shown at all.
+ *
+ * Not a spinner floor. The objection to those is that they exist only to say
+ * "wait", so holding data back to keep one on screen is pure cost — and this
+ * codebase derives its loading states from cache rather than timing them for
+ * that reason. What makes this different is the exit: the placeholder leaves
+ * through a 180ms conceal and a 450ms reveal, and on a client navigation the
+ * data lands ~1 frame after the chart mounts. Without a floor we conceal
+ * something nobody saw, and the placeholder reads as a flash rather than a
+ * state.
+ *
+ * Note there is no timer-free version of this choice. Skipping the ceremony on
+ * a fast load needs the same "how long was it loading" that the floor needs, so
+ * the decision is which of the two a timer buys, not whether to have one. A
+ * floor on the FETCH would be the tidier shape, and is not available: Convex
+ * queries resolve through a `queryFn` installed globally on the query client,
+ * so flooring one would floor every query in the app — and this result also
+ * feeds each column's rank, which has no reason to wait.
+ *
+ * `useHeldFlag` owns the timing; this is only the number.
+ *
+ * 400ms shows about a third of a band crossing (`chart-loading-sweep` is
+ * 1200ms per crossing), which with the label is enough to register as a state.
+ * The two are coupled: a shorter floor wants a faster sweep to stay legible.
+ *
+ * Only ever paid when the placeholder was rendered at all. A cached query
+ * reports `isPending: false` on the first render, so `phase` starts at `ready`
+ * and nothing here runs.
+ */
+const PLACEHOLDER_FLOOR_MS = 400;
 
 /**
  * The plot's inset inside the chart box.
@@ -300,19 +333,23 @@ export function CompareTrendChart({
   // placeholder's definition through `concealing` is the whole point: swap it
   // for real rows on the frame the data lands and the renderer morphs one into
   // the other, which is the thing this ordering exists to avoid.
+  // The floor lives in `useHeldFlag`, so what reaches the phase machine is
+  // already "loading, for long enough to be worth concealing".
+  const heldLoading = useHeldFlag(loading, PLACEHOLDER_FLOOR_MS);
+
   const [phase, setPhase] = useState<"loading" | "concealing" | "ready">(
-    loading ? "loading" : "ready",
+    heldLoading ? "loading" : "ready",
   );
-  const [lastLoading, setLastLoading] = useState(loading);
+  const [lastLoading, setLastLoading] = useState(heldLoading);
 
   // Adjusting state to a prop change during render, not in an effect: React
   // re-runs the component immediately without committing the stale phase, so
   // there is no frame where the data has landed and the chart still says it is
   // loading. An effect would paint that frame, and the lint rule against
   // synchronous `setState` in an effect body is pointing at the same thing.
-  if (lastLoading !== loading) {
-    setLastLoading(loading);
-    if (loading) setPhase("loading");
+  if (lastLoading !== heldLoading) {
+    setLastLoading(heldLoading);
+    if (heldLoading) setPhase("loading");
     else if (phase === "loading") setPhase("concealing");
   }
 

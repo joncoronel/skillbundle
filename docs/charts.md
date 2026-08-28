@@ -602,6 +602,35 @@ doing at the time:
   the data arrived. The lint rule against synchronous `setState` in an effect
   body is pointing at the same frame.
 
+- **The placeholder has a minimum-visible floor, and that is a reversal worth
+  understanding.** This codebase derives loading states from cache rather than
+  timing them, and min-visible floors were rejected once already — correctly,
+  for spinners, whose only job is to say "wait", so holding data back to keep
+  one up is pure cost. What changed is the exit. The placeholder now leaves
+  through a 180ms conceal and a 450ms reveal, and on a client navigation the
+  data lands about one frame after the chart mounts: without a floor the chart
+  conceals something nobody saw, and the placeholder reads as a flash rather
+  than a state.
+  The part that actually settles it: there is no timer-free alternative. Skipping
+  the ceremony on a fast load needs exactly the same "how long has this been
+  loading" that the floor needs, so the choice is which behaviour a timer buys,
+  not whether to have one. Nor is a floor on the FETCH available, which would be
+  the tidier shape: Convex queries resolve through a `queryFn` installed
+  globally on the query client, so flooring one floors every query in the app —
+  and this result also feeds each column's rank, which has no reason to wait.
+  `PLACEHOLDER_FLOOR_MS` is 400 — about a third of a band crossing, enough with
+  the label to register. Measured: client navigation 395ms of placeholder
+  against ~1 frame before, cold load 617ms (the data was genuinely slower, so
+  the floor never bound). Coupled to the sweep: a shorter floor wants a faster
+  `chart-loading-sweep` to stay legible.
+  The timing lives in `hooks/use-held-flag.ts`, not in the chart, so what
+  reaches the phase machine is already "loading, for long enough to be worth
+  concealing" — one effect left in the component instead of three. The hold
+  deliberately ignores `prefers-reduced-motion`: a minimum display duration is
+  not a motion preference, and seeing the state is useful either way. What
+  collapses under reduce is the exit's DURATION — measured, the conceal goes
+  from ~180ms to ~9ms while the placeholder still gets its time.
+
 - **Three durations, and they are coupled.** Conceal 180ms, reveal 450ms, label
   exit 150ms. `CONCEAL_MS` in `compare-trend-chart.tsx` mirrors the
   `.chart-conceal` animation, because it is what holds the phase — let them
