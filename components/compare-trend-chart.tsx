@@ -358,55 +358,57 @@ export function CompareTrendChart({
           // Last, so it paints over the lines rather than under them.
           focusCrosshair(days.length),
         ],
-        // Days are discrete samples, one per cron run, so they are positions on a
-        // point scale rather than instants on a time scale. This also keeps every
-        // tick landing on a real data point, which is what the old chart's
-        // `tickMode="data"` was for.
-        x: {
-          scale: scalePoint,
-          axis: {
-            line: false,
-            ticks: {
-              size: 0,
-              padding: X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
-              format: dayLabel,
-              // The old chart's `numTicks={6}`. A point scale offers every day as
-              // a candidate and ignores `count`, so without this the axis prints
-              // one label per day that fits — nearly twice as many as before.
-              values: evenlySpaced(
-                days,
-                width < NARROW_CHART_WIDTH
-                  ? COMPARE_TICK_COUNT_NARROW
-                  : COMPARE_TICK_COUNT,
-              ),
+        scales: {
+          // Days are discrete samples, one per cron run, so they are positions on a
+          // point scale rather than instants on a time scale. This also keeps every
+          // tick landing on a real data point, which is what the old chart's
+          // `tickMode="data"` was for.
+          x: {
+            scale: scalePoint,
+            axis: {
+              line: false,
+              ticks: {
+                size: 0,
+                padding: X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
+                format: dayLabel,
+                // The old chart's `numTicks={6}`. A point scale offers every day as
+                // a candidate and ignores `count`, so without this the axis prints
+                // one label per day that fits — nearly twice as many as before.
+                values: evenlySpaced(
+                  days,
+                  width < NARROW_CHART_WIDTH
+                    ? COMPARE_TICK_COUNT_NARROW
+                    : COMPARE_TICK_COUNT,
+                ),
+              },
+              // Gone with the y labels, and for the same reason: a date range
+              // claims as much about the data as a count does. Left on, the axis
+              // announced Aug 7–27 and jumped back to Jul 31–Aug 21 on the reveal.
+              tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
             },
-            // Gone with the y labels, and for the same reason: a date range
-            // claims as much about the data as a count does. Left on, the axis
-            // announced Aug 7–27 and jumped back to Jul 31–Aug 21 on the reveal.
-            tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
           },
-        },
-        y: {
-          // Zero-based with a tenth of headroom, as the old chart's y-domain was.
-          // Letting the scale infer from the data starts the axis near the
-          // smallest series, which exaggerates the gaps between skills — the one
-          // thing this chart exists to compare honestly.
-          // A configured instance, not a factory: a factory infers its domain from
-          // the marks and would discard the zero below.
-          scale: scaleLinear().domain([
-            0,
-            rows.reduce((max, r) => Math.max(max, r.installs), 0) * 1.1,
-          ]),
-          nice: true,
-          grid: true,
-          axis: {
-            line: false,
-            // Abbreviated like the install stats directly below the chart, so the
-            // axis and the tiles read in the same units.
-            ticks: { count: 4, size: 0, format: compactCount },
-            // The rules stay while loading (the frame is real), the labels go:
-            // a placeholder line is a shape, a placeholder number is a claim.
-            tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
+          y: {
+            // Zero-based with a tenth of headroom, as the old chart's y-domain was.
+            // Letting the scale infer from the data starts the axis near the
+            // smallest series, which exaggerates the gaps between skills — the one
+            // thing this chart exists to compare honestly.
+            // A configured instance, not a factory: a factory infers its domain from
+            // the marks and would discard the zero below.
+            scale: scaleLinear().domain([
+              0,
+              rows.reduce((max, r) => Math.max(max, r.installs), 0) * 1.1,
+            ]),
+            nice: true,
+            grid: true,
+            axis: {
+              line: false,
+              // Abbreviated like the install stats directly below the chart, so the
+              // axis and the tiles read in the same units.
+              ticks: { count: 4, size: 0, format: compactCount },
+              // The rules stay while loading (the frame is real), the labels go:
+              // a placeholder line is a shape, a placeholder number is a claim.
+              tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
+            },
           },
         },
         gradients: drawable.map((s) =>

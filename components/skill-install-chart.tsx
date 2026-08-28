@@ -136,27 +136,26 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
 
     // A cumulative total dwarfs any single day's gain — often by two or three
     // orders of magnitude — so on one shared range the bars would be a flat
-    // line along the axis. The bars are therefore measured against their own
-    // peak and rescaled into the totals' range. The old chart got the same
-    // result from a second y-axis, but neither axis was ever labelled — the two
-    // scales only ever existed to let each series fill the plot — so pre-scaling
-    // the value is equivalent and keeps this to one chart.
+    // line along the axis. Each series therefore gets its own vertical scale,
+    // measured against its own peak, which is what lets both fill the plot.
     //
-    // `barPlot` is the plotted height; `daily` stays intact and is what the
-    // tooltip reports.
+    // Neither scale is ever labelled: `y` draws the grid rules and the daily
+    // scale draws nothing (`axis: false`, `grid: false`). They exist purely to
+    // give each series its own range, which is why two unlabelled scales are
+    // honest here where two unlabelled AXES would not be.
     const totalMax = rows.reduce((max, r) => Math.max(max, r.total), 0);
     const dailyMax = rows.reduce((max, r) => Math.max(max, r.daily), 0);
-    const barRatio = dailyMax > 0 ? totalMax / dailyMax : 0;
 
     return defineChart({
       marks: [
         barY(rows, {
           id: BAR_ID,
           x: "day",
-          // Scaled in the accessor rather than in a mapped array so both marks
-          // read the same row objects — the tooltip then reports true values
-          // off whichever point the group hands it.
-          y: (r) => r.daily * barRatio,
+          // The true value, on its own scale. Both marks read the same row
+          // objects, so the tooltip reports real numbers off whichever point
+          // the group hands it.
+          y: "daily",
+          yScale: BAR_ID,
           // Both marks need distinct group identity: grouped focus reduces
           // points that share a group to one member, and with the default
           // (null) group the bar would swallow the line, taking the hover
@@ -195,63 +194,81 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         }),
         focusCrosshair(rows.length),
       ],
-      // A point scale, not a band: it puts the first and last day ON the plot's
-      // edges, so the line, its marker, the crosshair, the date pill and the
-      // labels all land at the same x. The old chart got there by running two
-      // scales at once — bars on a band, line and labels on a time scale — and
-      // that split is visible on a short series: its bars sat up to half a band
-      // away from the labels naming them. One scale for everything is the same
-      // look without the disagreement.
-      //
-      // The cost is bar width. Off a band the mark has no bandwidth to read, so
-      // `inferBandwidth` gives it `minimumSpacing * 0.8` — a hard ceiling, since
-      // `inset` clamps at zero — against the old chart's 0.88 of the column.
-      // About a pixel at the densities these charts see.
-      x: {
-        scale: scalePoint,
-        axis: {
-          line: false,
-          ticks: {
-            size: 0,
-            padding: X_AXIS_LABEL_PADDING,
-            format: dayLabel,
-            // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
-            // labels pinned to real rows, first and last included. A point
-            // scale offers every category as a candidate and ignores `count`,
-            // so the candidates are chosen here. Thinning still runs on top,
-            // which is what keeps a narrow chart from crowding.
-            values: evenlySpaced(
-              rows.map((r) => r.day),
-              AXIS_TICK_COUNT,
-            ),
+      scales: {
+        // A point scale, not a band: it puts the first and last day ON the plot's
+        // edges, so the line, its marker, the crosshair, the date pill and the
+        // labels all land at the same x. The old chart got there by running two
+        // scales at once — bars on a band, line and labels on a time scale — and
+        // that split is visible on a short series: its bars sat up to half a band
+        // away from the labels naming them. One scale for everything is the same
+        // look without the disagreement.
+        //
+        // The cost is bar width. Off a band the mark has no bandwidth to read, so
+        // `inferBandwidth` gives it `minimumSpacing * 0.8` — a hard ceiling, since
+        // `inset` clamps at zero — against the old chart's 0.88 of the column.
+        // About a pixel at the densities these charts see.
+        x: {
+          scale: scalePoint,
+          axis: {
+            line: false,
+            ticks: {
+              size: 0,
+              padding: X_AXIS_LABEL_PADDING,
+              format: dayLabel,
+              // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
+              // labels pinned to real rows, first and last included. A point
+              // scale offers every category as a candidate and ignores `count`,
+              // so the candidates are chosen here. Thinning still runs on top,
+              // which is what keeps a narrow chart from crowding.
+              values: evenlySpaced(
+                rows.map((r) => r.day),
+                AXIS_TICK_COUNT,
+              ),
+            },
+            tickLabels: AXIS_TICK_LABELS,
           },
-          tickLabels: AXIS_TICK_LABELS,
         },
-      },
-      y: {
-        // An explicit domain rather than `nice`, because nothing reads this
-        // axis: both series share it and it describes neither on its own (see
-        // `barRatio`), so round numbers buy nothing and a known top is worth
-        // more. The headroom keeps the last point of the cumulative line — its
-        // maximum, and the top of the tallest bar — off the plot's edge, where
-        // the stroke and the focus marker would be clipped.
-        scale: scaleLinear().domain([0, yDomainTop(totalMax)]),
-        grid: true,
-        // Unlabelled, but the ticks still set how many dashed rules cross the
-        // plot — the old `Grid`'s `numTicksRows={5}`. Explicit values rather
-        // than `count`, which d3 rounds to a human-friendly step and overshoots
-        // on this domain. The topmost rule lands on the plot's top edge, where
-        // the old chart drew its fifth. See docs/charts.md for both.
-        axis: {
-          line: false,
-          ticks: {
-            size: 0,
-            values: Array.from(
-              { length: AXIS_TICK_COUNT },
-              (_, i) => (yDomainTop(totalMax) * i) / (AXIS_TICK_COUNT - 1),
-            ),
+        y: {
+          // An explicit domain rather than `nice`, because nothing reads this
+          // axis: both series share it and it describes neither on its own (see
+          // `barRatio`), so round numbers buy nothing and a known top is worth
+          // more. The headroom keeps the last point of the cumulative line — its
+          // maximum, and the top of the tallest bar — off the plot's edge, where
+          // the stroke and the focus marker would be clipped.
+          scale: scaleLinear().domain([0, yDomainTop(totalMax)]),
+          grid: true,
+          // Unlabelled, but the ticks still set how many dashed rules cross the
+          // plot — the old `Grid`'s `numTicksRows={5}`. Explicit values rather
+          // than `count`, which d3 rounds to a human-friendly step and overshoots
+          // on this domain. The topmost rule lands on the plot's top edge, where
+          // the old chart drew its fifth. See docs/charts.md for both.
+          axis: {
+            line: false,
+            ticks: {
+              size: 0,
+              values: Array.from(
+                { length: AXIS_TICK_COUNT },
+                (_, i) => (yDomainTop(totalMax) * i) / (AXIS_TICK_COUNT - 1),
+              ),
+            },
+            tickLabels: false,
           },
-          tickLabels: false,
+        },
+        // The bars' own vertical range, so a daily gain three orders of
+        // magnitude below the cumulative total still fills the plot. Same
+        // headroom as `y`, which is what makes the tallest bar land exactly
+        // where the old pre-scaled value put it.
+        //
+        // Draws nothing itself: `axis: false` (every non-null scale renders an
+        // axis by default, and a second one on the right would claim margin and
+        // state a number this chart deliberately does not) and `grid: false`
+        // (the y channel defaults grid on, which would cross the plot with a
+        // second set of rules on top of the five above).
+        [BAR_ID]: {
+          channel: "y",
+          scale: scaleLinear().domain([0, yDomainTop(dailyMax)]),
+          axis: false,
+          grid: false,
         },
       },
       gradients: [fadeEdgesGradient(fadeEdgesId(LINE_ID), "var(--primary)")],

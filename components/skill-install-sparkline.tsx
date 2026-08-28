@@ -72,8 +72,10 @@ export function InstallSparkline({
           states: [HOVER_DIM],
         }),
       ],
-      x: { scale: scalePoint },
-      y: { scale: scaleLinear },
+      scales: {
+        x: { scale: scalePoint },
+        y: { scale: scaleLinear },
+      },
       // No axes, no grid — and `guides: false` also drops the margins they
       // would otherwise reserve, which is what keeps the line full-width.
       guides: false,
