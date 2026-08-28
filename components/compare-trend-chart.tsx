@@ -21,7 +21,6 @@ import {
   datePillOffset,
   X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
   X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
-  Y_AXIS_LABEL_MARGIN,
 } from "@/components/charts/chart-theme";
 import {
   ChartHoverOverlay,
@@ -158,7 +157,6 @@ const CHART_MARGIN = {
   top: 16,
   right: 16,
   bottom: X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
-  left: Y_AXIS_LABEL_MARGIN,
 } as const;
 
 /** Placeholder lines are neutral: they are not any skill's colour. */
@@ -476,9 +474,12 @@ export function CompareTrendChart({
         gradients: drawable.map((s) =>
           fadeEdgesGradient(fadeEdgesId(s.key), s.color),
         ),
-        // `left` is pinned like the others rather than solved, so the plot's
-        // edge does not move when the y labels appear or change width. See
-        // `Y_AXIS_LABEL_MARGIN`.
+        // `left` is solved, not pinned: it is the only side whose content the
+        // chart does not know in advance, and letting the solver size it to the
+        // labels it is actually drawing is what keeps the plot as wide as it
+        // was before any of this. Only the placeholder pins it, and only to
+        // stand in for the labels it is not drawing. See
+        // `PLACEHOLDER_LEFT_MARGIN`.
         margin: CHART_MARGIN,
         theme: CHART_THEME,
       }),
@@ -642,7 +643,10 @@ export function CompareTrendChart({
               top: CHART_MARGIN.top,
               right: CHART_MARGIN.right,
               bottom: CHART_MARGIN.bottom,
-              left: CHART_MARGIN.left,
+              // No left margin to read: the placeholder draws no y labels, so
+              // the solver gives it a ~4px gutter and its plot starts at the
+              // card edge. Centring on 0 lands within 2px of the plot's centre.
+              left: 0,
             }}
           >
             {/* The plot's centre is where a grid rule and the placeholder

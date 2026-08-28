@@ -35,7 +35,6 @@ import type { PickerSkill } from "@/components/skill-picker";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import { cn, formatInstalls } from "@/lib/utils";
 // TEMPORARY — dev scaffolding for the chart's arrival; TODO.md owns its removal.
-import { CompareTrendDevControls } from "@/components/compare-trend-dev-controls";
 import { compareSkillsParser } from "@/lib/search-params";
 import {
   MAX_COMPARE_SKILLS,
@@ -349,31 +348,15 @@ function CompareTrendSection({
   loading: boolean;
   stale: boolean;
 }) {
-  // TEMPORARY — dev scaffolding. Pins the phase machine so the arrival can be
-  // replayed without a reload. Compiles away in production because the panel
-  // does; see `compare-trend-dev-controls.tsx` and the TODO.md entry that owns
-  // removing it.
-  const [forceLoading, setForceLoading] = useState(false);
-  const showDevControls = process.env.NODE_ENV !== "production";
-
   return (
     <section className="mb-4 rounded-2xl border bg-card p-5 md:mb-6 dark:border-border/50">
       <h2 className="mb-4 text-sm font-semibold text-foreground">
         Installs over time
       </h2>
-      {showDevControls && (
-        <CompareTrendDevControls
-          loading={forceLoading}
-          onLoadingChange={setForceLoading}
-        />
-      )}
       <div
         className={cn("transition-opacity duration-200", stale && "opacity-55")}
       >
-        <CompareTrendChart
-          series={series}
-          loading={loading || (showDevControls && forceLoading)}
-        />
+        <CompareTrendChart series={series} loading={loading} />
       </div>
     </section>
   );

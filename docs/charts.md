@@ -738,16 +738,26 @@ doing at the time:
   `pointer` is already false — and pass `disabled` to `ChartHoverOverlay`, which
   is the one cursor the definition cannot switch off.
 
-- **Pin the y axis's margin, or the plot's left edge becomes a function of the
-  data.** The scene solver sizes that side to the widest label it is currently
-  drawing. Unlabelled placeholder to labelled real series measured a 16px
-  narrowing of the plot, and the grid rules sit outside `ts-chart__marks`, so
-  neither the conceal nor the reveal covers it — the gridlines simply jump. The
-  same solve runs on any data change, so comparing a skill an order of magnitude
-  bigger moves the edge too. `Y_AXIS_LABEL_MARGIN` pins it; measured 0px of
-  shift across the transition afterwards. The trade is that a label wider than
-  the gutter clips instead of pushing the plot, which is why that constant
-  carries its measurement.
+- **Do not pin the y axis's margin.** The scene solver sizes that side to the
+  widest label it is currently drawing, which does move the plot's left edge:
+  the placeholder draws no y labels, so it gets a ~4px gutter, and the plot
+  slides 31.7px right the moment real labels arrive (measured, 1440px viewport).
+  The grid rules sit outside `ts-chart__marks`, so neither the conceal nor the
+  reveal covers it. The gridlines visibly jump once.
+
+  Pinning it fixes that and costs plot width forever. Measured at the same
+  viewport, a 40px pin gives a 1150.9px plot where the solver gives 1155.2:
+  4.3px of inset on the left edge only, against a right margin of 16, on every
+  load, permanently, to smooth one 450ms transition. It shipped that way briefly
+  and was noticed by eye as the chart no longer filling its card.
+
+  A third option works and was rejected on looks, not cost: pin only the
+  PLACEHOLDER's left margin to ~36, standing in for the labels it is not
+  drawing, and leave the real chart solved. That measures a 0.3px shift with no
+  width lost. It is here because the arithmetic is not obvious, not as a
+  recommendation. The slide is wanted: the placeholder reading full-bleed to the
+  card edge and then settling into a labelled axis is the arrival, and removing
+  it makes the loading state look like a chart that was already there.
 
 - **A chart can mount into a box that is not laid out yet, and the fallback for
   that is a constant.** `currentWidth()` treats a zero measurement as "cannot

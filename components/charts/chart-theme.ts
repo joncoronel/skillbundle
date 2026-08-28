@@ -56,9 +56,8 @@ export const X_AXIS_LABEL_PADDING = 10;
  * Bottom margin, for a chart that also labels its y axis.
  *
  * Every constant here leads with the axis it belongs to, which is the one
- * thing that stops them being swapped: this and `Y_AXIS_LABEL_MARGIN` are both
- * 48, and a reader who has to tell them apart by word order eventually will
- * not.
+ * thing that stops a bottom margin being read as a left one. They have held the
+ * same value before now, and word order was the only thing telling them apart.
  *
  * The lowest y tick sits centred on the plot's bottom edge, so the dates have
  * to clear that label and not just the plot — without the extra gap the zero
@@ -67,26 +66,6 @@ export const X_AXIS_LABEL_PADDING = 10;
  */
 export const X_AXIS_LABEL_MARGIN_WITH_Y_AXIS = 48;
 export const X_AXIS_LABEL_PADDING_WITH_Y_AXIS = 20;
-
-/**
- * Space held for the y axis's labels, pinned rather than solved.
- *
- * The scene solver sizes this side to the widest label it is currently drawing,
- * which makes the plot's left edge a function of the data. Two ways that shows:
- * the placeholder axis carries no labels, so the plot narrows by 16px (measured)
- * the moment real ones arrive; and comparing a skill an order of magnitude
- * bigger swaps `500k` for `1.5M` and moves the edge again. The grid rules sit
- * outside `ts-chart__marks`, so no reveal covers either move.
- *
- * 48 against a widest label of 27.9px measured on a 500k series, so ~12px of
- * slack after the tick padding. The axis is `nice`, so its labels are round
- * values — `250k`, `1.5M`, four or five glyphs — rather than anything like the
- * six-glyph `999.9k` that `compactCount` can technically emit but a nice scale
- * will not pick. A label wider than the gutter would be clipped rather than
- * pushing the plot, which is the trade for pinning: re-measure here if the
- * formatter or the tick strategy changes.
- */
-export const Y_AXIS_LABEL_MARGIN = 48;
 
 /** Half the rendered height of a 12px tick label, measured against the axis. */
 const AXIS_LABEL_HALF_HEIGHT = 5;

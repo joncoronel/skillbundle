@@ -6,22 +6,6 @@ delete them when shipped. Newest thinking near the top.
 
 ## Under consideration
 
-### DELETE: compare chart loading toggle — Aug 2026
-
-Temporary scaffolding: a dev-only button that pins the compare chart's phase
-machine to `loading`, so the placeholder, its conceal and the reveal can be
-replayed without reloading. Delete all of it once the loading state is settled:
-
-- `components/compare-trend-dev-controls.tsx` (the whole file)
-- the `forceLoading` state, the `showDevControls` gate and the panel render in
-  `CompareTrendSection` (`app/(main)/compare/compare-content.tsx`)
-- this entry
-
-It also carried an entrance toggle (our CSS wipe against the library's own).
-That question is answered — the wipe stays, because the renderer cannot travel
-along x for a line — so the toggle is gone and docs/charts.md holds the
-measurements.
-
 ### Public bundle pages in the sitemap — Aug 2026
 
 Parked while shipping `app/sitemap.ts` (PR #68), which covers the catalog
