@@ -33,7 +33,7 @@
     "@pierre/diffs": "^1.3.5",
     "@shikijs/themes": "3.22.0",
     "@tailwindcss/typography": "^0.5.19",
-    "@tanstack/charts": "^0.14.0",
+    "@tanstack/charts": "^0.16.0",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-table": "^8.21.3",
     "@vercel/oidc": "^3.8.4",
