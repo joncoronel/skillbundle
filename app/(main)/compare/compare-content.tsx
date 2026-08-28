@@ -34,7 +34,6 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import type { PickerSkill } from "@/components/skill-picker";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import { cn, formatInstalls } from "@/lib/utils";
-// TEMPORARY — dev scaffolding for the chart's arrival; TODO.md owns its removal.
 import { compareSkillsParser } from "@/lib/search-params";
 import {
   MAX_COMPARE_SKILLS,
@@ -121,7 +120,7 @@ export function CompareContent() {
   //
   // `keepPreviousData` can hand over the previous comparison's rows, which is
   // exactly what we want when the two overlap — adding a skill keeps the chart
-  // mounted and the axis animate across the change. When none of the current refs
+  // mounted and the axis animates across the change. When none of the current refs
   // resolve, though, we are holding the answer to a different question, and the
   // chart reads an empty series as its resolved "not enough history yet" state.
   // Reproduced: compare two skills, go home, compare a third from the sheet —

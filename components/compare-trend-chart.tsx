@@ -115,28 +115,16 @@ const CONCEAL_MS = 180;
 /**
  * Shortest time the placeholder stays up once it has been shown at all.
  *
- * Not a spinner floor. The objection to those is that they exist only to say
- * "wait", so holding data back to keep one on screen is pure cost — and this
- * codebase derives its loading states from cache rather than timing them for
- * that reason. What makes this different is the exit: the placeholder leaves
- * through a 180ms conceal and a 450ms reveal, and on a client navigation the
- * data lands ~1 frame after the chart mounts. Without a floor we conceal
- * something nobody saw, and the placeholder reads as a flash rather than a
- * state.
+ * `useHeldFlag` owns the timing and the argument for holding at all; this is
+ * only the number. 400ms shows about a third of a band crossing
+ * (`chart-loading-sweep` is 1200ms per crossing), which with the label is
+ * enough to register as a state. The two are coupled: a shorter floor wants a
+ * faster sweep to stay legible.
  *
- * Note there is no timer-free version of this choice. Skipping the ceremony on
- * a fast load needs the same "how long was it loading" that the floor needs, so
- * the decision is which of the two a timer buys, not whether to have one. A
- * floor on the FETCH would be the tidier shape, and is not available: Convex
+ * A floor on the FETCH would be the tidier shape and is not available: Convex
  * queries resolve through a `queryFn` installed globally on the query client,
  * so flooring one would floor every query in the app — and this result also
  * feeds each column's rank, which has no reason to wait.
- *
- * `useHeldFlag` owns the timing; this is only the number.
- *
- * 400ms shows about a third of a band crossing (`chart-loading-sweep` is
- * 1200ms per crossing), which with the label is enough to register as a state.
- * The two are coupled: a shorter floor wants a faster sweep to stay legible.
  *
  * Only ever paid when the placeholder was rendered at all. A cached query
  * reports `isPending: false` on the first render, so `phase` starts at `ready`
@@ -183,8 +171,8 @@ const SKELETON_LINE_COLOR = "var(--muted-foreground)";
  * definition) so no invented number is ever printed.
  */
 function skeletonSeries(keys: string[]): CompareSeries[] {
-  // `Date.now()` at call time, not per render: the memo above only re-runs when
-  // the keys change, so the day window is stable for the life of a placeholder.
+  // Read once per call, and the caller memoizes on the series keys, so the day
+  // window is stable for the life of a placeholder.
   const today = new Date();
   const days = Array.from({ length: SKELETON_DAYS }, (_, i) => {
     const day = new Date(today);
@@ -474,12 +462,10 @@ export function CompareTrendChart({
         gradients: drawable.map((s) =>
           fadeEdgesGradient(fadeEdgesId(s.key), s.color),
         ),
-        // `left` is solved, not pinned: it is the only side whose content the
-        // chart does not know in advance, and letting the solver size it to the
-        // labels it is actually drawing is what keeps the plot as wide as it
-        // was before any of this. Only the placeholder pins it, and only to
-        // stand in for the labels it is not drawing. See
-        // `PLACEHOLDER_LEFT_MARGIN`.
+        // No `left`: the solver sizes that side to the labels it is drawing,
+        // which is what keeps the plot as wide as its card. Pinning it costs
+        // 4.3px of width on every load to spare one 31.7px shift when the
+        // placeholder's labels arrive. See docs/charts.md.
         margin: CHART_MARGIN,
         theme: CHART_THEME,
       }),
@@ -573,21 +559,17 @@ export function CompareTrendChart({
               }
               aspectRatio={5 / 2}
               // The sweep belongs to the placeholder, the conceal to it
-              // leaving, the wipe to the real series arriving. `concealing`
-              // deliberately carries TWO of them: the mask has to stay on or
-              // the placeholder flashes to full strength on its way out, which
-              // is why `charts.css` needs a combined `.chart-loading.chart-conceal`
-              // rule to run both animations. A class change is a prop change,
-              // so the host re-renders and each animation starts on a node that
-              // has been sitting there, which is what moves the reveal off the
-              // mount and onto the data.
+              // leaving, the wipe to the real series arriving. A class change is
+              // a prop change, so the host re-renders and each animation starts
+              // on a node already sitting there, which is what moves the reveal
+              // off the mount and onto the data.
               className={cn(
-                // `chart-loading` spans BOTH placeholder phases, not just the
-                // first. It carries the mask that makes the band the line, so
-                // dropping it at `concealing` un-masks the placeholder — the
-                // whole invented curve snaps to full strength for the 180ms it
-                // takes to clip away, which is the flash of a complete grey
-                // chart just before the real one arrives.
+                // `chart-loading` spans BOTH placeholder phases, so `concealing`
+                // carries two classes. It holds the mask that makes the band the
+                // line, and dropping it there un-masks the placeholder: the whole
+                // invented curve snaps to full strength for the 180ms it takes to
+                // clip away. `charts.css` needs a combined
+                // `.chart-loading.chart-conceal` rule to run both animations.
                 phase !== "ready" && "chart-loading",
                 phase === "concealing" && "chart-conceal",
                 phase === "ready" && CHART_REVEAL_CLASS,
