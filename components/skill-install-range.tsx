@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { defineChart, lineY } from "@tanstack/charts";
 import { brushX } from "@tanstack/charts/interaction/brush";
 import { controlledSignal } from "@tanstack/charts/interaction/signal";
-import { scalePoint } from "@tanstack/charts/scales/point";
+import { scaleUtc } from "d3-scale";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import {
@@ -160,11 +160,20 @@ export function RangeBrush({
   range,
   onRangeChange,
 }: {
-  rows: readonly (DayRow & { total: number })[];
+  rows: readonly (DayRow & { date: Date; total: number })[];
   range: DayRange;
   onRangeChange: (next: DayRange) => void;
 }) {
-  const days = useMemo(() => rows.map((row) => row.day), [rows]);
+  // Brush candidates are the real instants, matching the strip's time scale.
+  // A `Date` is a `ChartValue`, so this stays the CANDIDATE form of `brushX`
+  // and keeps the keyboard sliders — the continuous form would have forced
+  // `keyboard: false` and cost them.
+  const dates = useMemo(() => rows.map((row) => row.date), [rows]);
+  const dayOf = useMemo(() => {
+    const byTime = new Map<number, string>();
+    for (const row of rows) byTime.set(row.date.getTime(), row.day);
+    return byTime;
+  }, [rows]);
 
   // `total` above the series floor, exactly as the sidebar sparkline plots it
   // and for the same reason: against a zero-based domain a cumulative count
@@ -173,7 +182,7 @@ export function RangeBrush({
   // all 44px on the variation that actually exists.
   const plotted = useMemo(() => {
     const min = rows.reduce((low, row) => Math.min(low, row.total), Infinity);
-    return rows.map((row) => ({ day: row.day, plot: row.total - min }));
+    return rows.map((row) => ({ date: row.date, plot: row.total - min }));
   }, [rows]);
 
   const definition = useMemo(
@@ -181,7 +190,7 @@ export function RangeBrush({
       defineChart({
         marks: [
           lineY(plotted, {
-            x: "day",
+            x: "date",
             y: "plot",
             curve: CHART_CURVE,
             // Muted, not `--primary`: the strip is an index of the data, not a
@@ -193,22 +202,43 @@ export function RangeBrush({
           }),
         ],
         scales: {
-          // Same point scale as the chart above, so a day sits at the same
-          // fraction of the width in both and the selection lines up with what
-          // it selects.
-          x: { scale: scalePoint },
+          // A time scale, matching the chart above. On a point scale the strip
+          // spaced every day evenly while the chart spaced them by elapsed
+          // time, so a missing snapshot would have slid the selection off the
+          // window it names. Identical while the series is unbroken; correct
+          // when it is not.
+          x: {
+            scale: scaleUtc().domain([
+              rows[0].date,
+              rows[rows.length - 1].date,
+            ]),
+          },
           y: { scale: scaleLinear },
         },
         controls: [
-          brushX<string>({
-            range: controlledSignal(range, (next) => onRangeChange(next)),
-            // The candidate form. String days cannot be inverted from a pixel,
-            // so the ordered list is what makes the brush snap to real rows —
-            // and what turns the handles into keyboard sliders.
-            values: days,
+          brushX<Date>({
+            range: controlledSignal(
+              {
+                start:
+                  rows.find((row) => row.day === range.start)?.date ??
+                  rows[0].date,
+                end:
+                  rows.find((row) => row.day === range.end)?.date ??
+                  rows[rows.length - 1].date,
+              },
+              (next) =>
+                onRangeChange({
+                  start: dayOf.get(next.start.getTime()) ?? range.start,
+                  end: dayOf.get(next.end.getTime()) ?? range.end,
+                }),
+            ),
+            // The candidate form: the ordered instants the brush may snap to,
+            // which is also what turns the handles into keyboard sliders.
+            values: dates,
             startAriaLabel: "Range start",
             endAriaLabel: "Range end",
-            format: dayLabelLong,
+            format: (value: Date) =>
+              dayLabelLong(value.toISOString().slice(0, 10)),
             // The SELECTION carries the accent, as a wash — a selected region
             // is one of the states DESIGN.md does assign to Signal Blue, and at
             // this opacity it cannot compete with the solid line above it.
@@ -228,7 +258,7 @@ export function RangeBrush({
         focusRing: false,
         keyboard: false,
       }),
-    [plotted, days, range, onRangeChange],
+    [plotted, dates, dayOf, rows, range, onRangeChange],
   );
 
   return (

@@ -1317,3 +1317,21 @@ true` — that half had already been repaired by the earlier one-shot, so
 - **Fast-delete for dead-but-installable skills ("Fix 2")** — deferred. Full context in
   `docs/skill-lifecycle.md` ("Dead-but-installable skills & the Fix 2 decision") and the
   `/dev` "Dead but installable" stat card. Only revisit if that count climbs.
+
+- **Wheel zoom on the install chart (`zoomX`)** — built, measured, removed. TanStack
+  Charts' `zoomX` works correctly on the chart's time scale (verified: 31 bars → 9 → 72,
+  with the tick cadence adapting per zoom level), but it "captures wheel input only while
+  the plot control is focused", so the wheel does nothing until you click the chart first.
+  `ZoomXOptions` exposes no way to change that, and focusing its control on `pointerenter`
+  does not work — the control (`rect[tabindex="-1"]`) is not in the DOM at hover time.
+  It also cost interaction smoothness: with `zoomX` mounted, the tooltip and the bars'
+  hover dim both went visibly laggy under real pointer input. Do not trust a synthetic
+  probe to check this — one was written, sampled tooltip opacity across 25 moves spaced
+  28ms apart, and reported no difference at all, because that input rate never provoked
+  the per-event cost that a real mouse at 60-125Hz does. Verify by hand.
+
+  Revisit if the library adds an option to capture the wheel on hover, and re-check the
+  interaction cost by hand if so. The alternative, if it never does, is a custom wheel
+  handler: the range is already two day indices, so widening and narrowing it is
+  arithmetic and needs none of `zoomX`'s scale inversion — and it adds no per-event
+  listener to the plot.

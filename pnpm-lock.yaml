@@ -77,6 +77,9 @@ importers:
       convex:
         specifier: ^1.38.0
         version: 1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@clerk/react@6.6.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
+      d3-scale:
+        specifier: ^4.0.2
+        version: 4.0.2
       d3-shape:
         specifier: ^3.2.0
         version: 3.2.0
@@ -171,6 +174,9 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.1.18
+      '@types/d3-scale':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/d3-shape':
         specifier: ^3.1.8
         version: 3.1.8

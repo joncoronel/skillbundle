@@ -31,11 +31,15 @@ export const CHART_THEME = {
 /**
  * Matches the old HTML axis labels: `text-chart-label text-xs`.
  *
- * `thin.minGap` is what controls date-axis density. A point or band scale
- * offers every category as a tick candidate and ignores a `count` or `spacing`
- * hint, so the only lever is how close two labels may sit before one is
- * dropped — which has the advantage of adapting to width on its own, where the
- * old chart's fixed `numTicks` did not.
+ * `thin.minGap` is what controls date-axis density ON A POINT SCALE, which is
+ * the compare chart. Such a scale offers every category as a tick candidate and
+ * ignores a `count` or `spacing` hint, so the only lever is how close two labels
+ * may sit before one is dropped — which has the advantage of adapting to width
+ * on its own, where the old chart's fixed `numTicks` did not.
+ *
+ * The install chart is on a time scale and sizes its own step (`calendarTicks`)
+ * so that thinning never has anything to drop. Thinning stays configured there
+ * as a backstop, not as the strategy.
  */
 export const AXIS_TICK_LABELS = {
   fontSize: 12,
@@ -121,4 +125,59 @@ export function evenlySpaced<T>(values: readonly T[], count: number): T[] {
   const chosen = candidates.find((n) => last % (n - 1) === 0) ?? count;
   const step = last / (chosen - 1);
   return Array.from({ length: chosen }, (_, i) => values[Math.round(i * step)]);
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Day steps a date axis is allowed to tick on. Whole weeks above a fortnight,
+ * so a label never lands mid-week against its neighbours.
+ */
+const TICK_STEPS_DAYS = [1, 2, 3, 7, 14, 28, 56, 112] as const;
+
+/**
+ * Evenly spaced tick dates for a time axis, anchored to a FIXED date rather
+ * than to the visible window.
+ *
+ * The anchor is what makes ticks animate. Anchored to the window, every tick
+ * moves to a new date the moment either edge does, so each one is a different
+ * element with a different key and the axis crossfades instead of travelling —
+ * which is exactly what the index-based `evenlySpaced` did on the old point
+ * scale, and why dragging the range made the dates pile up on each other.
+ * Anchored to a fixed date, the SAME absolute dates keep being produced, so a
+ * tick that stays visible keeps its identity and simply slides.
+ *
+ * Preferred over handing `count` to d3: d3 picks from its own interval ladder
+ * and can propose more labels than fit, at which point `tickLabels.thin` drops
+ * them greedily and unevenly. Measured at 71 days: d3 offered weekly ticks and
+ * thinning cut them to gaps of 14, 7, 14 and 21 days. Choosing the step so
+ * everything fits means thinning never has to run.
+ *
+ * The one discontinuity: crossing a step boundary (weekly to fortnightly, say)
+ * turns the whole set over at once. That is one jump rather than continuous
+ * churn, and it only happens on a zoom that changes the span by a factor.
+ */
+export function calendarTicks(
+  start: Date,
+  end: Date,
+  anchor: Date,
+  count: number,
+): Date[] {
+  const spanDays = Math.max(1, (end.getTime() - start.getTime()) / DAY_MS);
+  const stepDays =
+    TICK_STEPS_DAYS.find((step) => spanDays / step <= count) ??
+    TICK_STEPS_DAYS[TICK_STEPS_DAYS.length - 1];
+  const stepMs = stepDays * DAY_MS;
+
+  // Walk out from the anchor rather than from the window edge, so the emitted
+  // dates depend only on the anchor and the step.
+  const anchorMs = anchor.getTime();
+  const firstIndex = Math.ceil((start.getTime() - anchorMs) / stepMs);
+  const ticks: Date[] = [];
+  for (let i = firstIndex; ; i++) {
+    const at = anchorMs + i * stepMs;
+    if (at > end.getTime()) break;
+    ticks.push(new Date(at));
+  }
+  return ticks;
 }

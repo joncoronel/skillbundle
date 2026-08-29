@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { barY, defineChart, lineY } from "@tanstack/charts";
-import { scalePoint } from "@tanstack/charts/scales/point";
+import { scaleUtc } from "d3-scale";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import {
@@ -13,7 +13,7 @@ import {
 import {
   AXIS_TICK_COUNT,
   AXIS_TICK_LABELS,
-  evenlySpaced,
+  calendarTicks,
   CHART_THEME,
   datePillOffset,
   X_AXIS_LABEL_MARGIN,
@@ -40,7 +40,9 @@ import {
   dayLabel,
   dayLabelLong,
   intFmt,
+  MIN_POINTS,
   seriesSummary,
+  toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
 import {
@@ -133,6 +135,10 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     () =>
       snapshots.map((s, i) => ({
         day: s.day,
+        // The x channel is now a real instant, not an ordinal slot. `day` stays
+        // for the tooltip title, the overlay labels and the range plumbing,
+        // which all speak in calendar days.
+        date: toDate(s.day),
         total: s.installs,
         // Day-over-day can dip negative on a correction; floor at 0.
         daily:
@@ -160,12 +166,25 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     rangeable ? presets[presets.length - 1].range : fullRange(allRows),
   );
 
+  // The window, guarded on two counts.
+  //
   // A skill whose snapshots arrive or extend while the dialog is open would
-  // otherwise hold a range naming days that no longer bound the series.
+  // otherwise hold a range naming days that no longer bound the series. And the
+  // brush can be dragged shut onto a single day, which leaves the x scale with
+  // a zero-width domain — two points at the same instant, nothing to map. A
+  // window is never allowed below `MIN_POINTS` rows; collapsing it just walks
+  // the start back far enough to keep a segment.
   const clampedRange = useMemo(() => {
     const all = fullRange(allRows);
-    const has = (day: string) => allRows.some((row) => row.day === day);
-    return has(range.start) && has(range.end) ? range : all;
+    const startIdx = allRows.findIndex((row) => row.day === range.start);
+    const endIdx = allRows.findIndex((row) => row.day === range.end);
+    if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return all;
+    if (endIdx - startIdx + 1 >= MIN_POINTS) return range;
+    const widenedStart = Math.max(0, endIdx - (MIN_POINTS - 1));
+    // Only possible when the series itself is shorter than `MIN_POINTS`, which
+    // `hasChart` already prevents — but the fallback costs one comparison.
+    if (endIdx - widenedStart + 1 < MIN_POINTS) return all;
+    return { start: allRows[widenedStart].day, end: range.end };
   }, [allRows, range]);
 
   const rows = useMemo(() => {
@@ -201,7 +220,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       marks: [
         barY(rows, {
           id: BAR_ID,
-          x: "day",
+          x: "date",
           // The true value, on its own scale. Both marks read the same row
           // objects, so the tooltip reports real numbers off whichever point
           // the group hands it.
@@ -231,7 +250,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         }),
         lineY(rows, {
           id: LINE_ID,
-          x: "day",
+          x: "date",
           y: "total",
           z: () => LINE_ID,
           curve: CHART_CURVE,
@@ -246,37 +265,55 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         focusCrosshair(rows.length),
       ],
       scales: {
-        // A point scale, not a band: it puts the first and last day ON the plot's
-        // edges, so the line, its marker, the crosshair, the date pill and the
-        // labels all land at the same x. The old chart got there by running two
-        // scales at once — bars on a band, line and labels on a time scale — and
-        // that split is visible on a short series: its bars sat up to half a band
-        // away from the labels naming them. One scale for everything is the same
-        // look without the disagreement.
+        // A UTC time scale, and an explicitly domained instance rather than a
+        // factory: the domain IS the visible window, so the plot always spans
+        // exactly the selected range.
         //
-        // The cost is bar width. Off a band the mark has no bandwidth to read, so
-        // `inferBandwidth` gives it `minimumSpacing * 0.8` — a hard ceiling, since
-        // `inset` clamps at zero — against the old chart's 0.88 of the column.
-        // About a pixel at the densities these charts see.
+        // This was a point scale until the range control landed. Both are
+        // nonband, so bars measure the same way on either ("with a nonband
+        // scale, the mark estimates width from the smallest distance between
+        // distinct mapped positions and uses 80 percent of that distance"), and
+        // both put the first and last day on the plot edges once the domain is
+        // the window. What the time scale adds is calendar-aware ticks: they
+        // land on real week boundaries instead of array indices, which is what
+        // lets a tick keep its identity as the window moves (see
+        // `calendarTicks`). The library names exactly this as the reason to
+        // upgrade off a point scale.
+        //
+        // The one behavioural difference: a MISSING daily snapshot is now a gap
+        // rather than an invisible even step, and bar width keys off the
+        // smallest gap between distinct days. Regular daily data renders
+        // identically to the point scale.
         x: {
-          scale: scalePoint,
+          scale: scaleUtc().domain([rows[0].date, rows[rows.length - 1].date]),
           axis: {
             line: false,
             ticks: {
               size: 0,
               padding: X_AXIS_LABEL_PADDING,
-              format: dayLabel,
-              // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
-              // labels pinned to real rows, first and last included. A point
-              // scale offers every category as a candidate and ignores `count`,
-              // so the candidates are chosen here. Thinning still runs on top,
-              // which is what keeps a narrow chart from crowding.
-              values: evenlySpaced(
-                rows.map((r) => r.day),
+              format: (value: Date) =>
+                dayLabel(value.toISOString().slice(0, 10)),
+              // Anchored to the series' LAST day, which never moves, so the
+              // same absolute dates keep being produced as the window changes
+              // and a tick that stays visible keeps its key and travels. The
+              // old point scale picked tick days by INDEX (`evenlySpaced`), so
+              // every tick became a different date the moment either edge
+              // moved — the churn that made dragging the range pile the dates
+              // on top of each other. See `calendarTicks`.
+              values: calendarTicks(
+                rows[0].date,
+                rows[rows.length - 1].date,
+                allRows[allRows.length - 1].date,
                 AXIS_TICK_COUNT,
               ),
             },
-            tickLabels: AXIS_TICK_LABELS,
+            tickLabels: {
+              ...AXIS_TICK_LABELS,
+              // Now that a label survives a window change, it has somewhere to
+              // travel to. Without this the renderer's spring still applies but
+              // reads as a jump on a label that only moves a few pixels.
+              motion: { transition: { type: "tween", duration: 220 } },
+            },
           },
         },
         y: {
@@ -334,7 +371,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       focusRing: false,
       pointer: false,
     });
-  }, [rows]);
+  }, [rows, allRows]);
 
   const hostProps = chartHostProps(chartMotionEntrance);
 

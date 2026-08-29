@@ -1,10 +1,11 @@
 # Charts
 
 The three charts and the TanStack Charts integration behind them. Keep this in
-sync with `components/charts/` and the three chart components
+sync with `components/charts/`, the three chart components
 (`components/skill-install-sparkline.tsx`,
 `components/skill-install-chart.tsx`, `components/compare-trend-chart.tsx`)
-when behavior changes.
+and the install chart's range control and brush strip
+(`components/skill-install-range.tsx`) when behavior changes.
 
 Most of this file is a list of things that are easy to get wrong and were got
 wrong at least once. Each entry states the trap and the measurement behind it,
@@ -16,6 +17,16 @@ Three charts, all built on **TanStack Charts** (`@tanstack/charts`): the sidebar
 sparkline, the install-history dialog chart, and the compare page's multi-line
 chart. Shared pieces live in `components/charts/`; each chart file owns its own
 `defineChart` definition.
+
+The install dialog also carries a fourth chart host, the range brush strip in
+`components/skill-install-range.tsx`. It is deliberately its OWN host with no
+`ChartHoverOverlay`: `brushX` contains pointer events before normal chart focus,
+and the main chart's overlay already owns press-and-drag there for scrubbing
+(which is how touch scrubbing works at all). Separate surfaces means the two
+gestures never meet, rather than arbitrating between them at runtime. The strip
+and the chart share one `{ start, end }` day range, which the presets, the brush
+and the row slice all read — so they cannot disagree, and a hand-drawn range
+simply lights no preset.
 
 Styling for the library's own nodes — the grid rules, the axis labels, the bar
 and line hover dim, the entrance wipe — is in `components/charts/charts.css`,
@@ -84,25 +95,70 @@ doing at the time:
   it. This is also why the sidebar sparkline plots `installs - min` rather than
   the raw total — against a zero-based axis a cumulative count is a flat line.
 
-- **Every x scale is a point scale, including the install chart's.** It puts
-  the first and last day ON the plot's edges, so the line, its marker, the
-  crosshair, the pill and the labels all share one x. A band scale insets the
-  first and last column by half a band, which at six points leaves the axis
-  ~55px short at each end and the cursor nowhere near the label naming it. The
-  old chart ran two scales at once — bars on a band, line and labels on a time
-  scale — so ITS bars sat up to half a band from their own labels; one scale is
-  that look without the disagreement. Shifting only the labels (a `tickLabels.dx`
-  offset) was tried and is worse: the labels then align with nothing.
-  The cost is bar width. Off a band the mark has no bandwidth to read, so
-  `inferBandwidth` gives it `minimumSpacing * 0.8` — a ceiling, since `inset`
+- **No x scale is a band scale.** A band insets the first and last column by
+  half a band, which at six points leaves the axis ~55px short at each end and
+  the cursor nowhere near the label naming it. Off a band the mark has no
+  bandwidth to read, so it estimates width from "the smallest distance between
+  distinct mapped positions" and takes 80% of it — a ceiling, since `inset`
   clamps at zero — against the old chart's 0.88 of the column. Measured at 45
-  points: 10.3px wide on a 12.8px pitch, about a pixel under the old.
+  points: 10.3px wide on a 12.8px pitch, about a pixel under the old. That cost
+  is the same on a point scale and a time scale, because the 80% rule is what
+  every NONBAND scale gets; it is not an argument between those two.
 
-- **Date axes thin by `tickLabels.thin.minGap`.** Point and band scales offer
-  every category as a candidate and ignore `count`/`spacing` hints, so left
-  alone they print one label per row that fits — nearly twice the old chart's
-  `numTicks`. `evenlySpaced` picks the candidates instead (5 in the dialog, 6 on
-  the compare page), and thinning runs on top as the backstop.
+- **The compare chart's x is a point scale; the install chart's is a UTC time
+  scale.** Both put the first and last day on the plot edges, so in both the
+  line, its marker, the crosshair, the pill and the labels share one x. The old
+  chart ran two scales at once — bars on a band, line and labels on a time
+  scale — so ITS bars sat up to half a band from their own labels; one scale
+  per chart is that look without the disagreement. Shifting only the labels (a
+  `tickLabels.dx` offset) was tried and is worse: the labels then align with
+  nothing.
+
+  The install chart upgraded when it gained the range control, for the reason
+  the library's own guidance names: a point scale holds dates as ordered
+  CATEGORIES, so "a Friday and the following Monday occupy adjacent categorical
+  positions", and you move off it when the values must be spaced by elapsed time
+  **or when the axis needs calendar-aware ticks**. The second is what forced it
+  — see the tick entries below. Two consequences worth knowing:
+  - A missing daily snapshot is now a visible gap rather than an invisible even
+    step. More honest, and it does not thin the bars: the 80% rule keys off the
+    smallest gap, which stays one day wherever the series is unbroken.
+  - `d3-scale` and `@types/d3-scale` are direct dependencies, which the library
+    instructs for any source that imports `scaleUtc`.
+
+  The compare chart stays on a point scale: it has no range control, so its
+  window never moves and its ticks never had to keep their identity.
+
+- **On a point scale, date axes thin by `tickLabels.thin.minGap`.** Point and
+  band scales offer every category as a candidate and ignore `count`/`spacing`
+  hints, so left alone they print one label per row that fits — nearly twice the
+  old chart's `numTicks`. `evenlySpaced` picks the candidates instead (6 on the
+  compare page), and thinning runs on top as the backstop. This is the compare
+  chart's arrangement; the install chart left it behind with the point scale.
+
+- **Index-picked ticks cannot animate, which is what cost the install chart its
+  point scale.** `evenlySpaced` picks by array INDEX, so the moment either edge
+  of a window moves, every tick is a different date. Measured on the install
+  chart with a range control, advancing the brush by ONE day: the label count
+  went 4 → 5 and four of five dates changed (Jul 28/Aug 7/Aug 17/Aug 27 →
+  Jul 29/Aug 5/Aug 13/Aug 20/Aug 27). Labels are keyed by value
+  (`x-tick-label:date:…`), so nothing shared a key, nothing could travel, and
+  the axis crossfaded two full sets of dates on top of each other on every frame
+  of a drag. The same measurement on the time scale: 4 labels → the SAME 4
+  labels, same keys, only their x moved. Calendar-aware ticks are the fix, and
+  a time scale is the only way to get them.
+
+- **Pick date ticks on a fixed cadence, not with `count`.** `calendarTicks` in
+  `charts/chart-theme.ts` chooses a whole-day step from a ladder so every label
+  fits, then walks out from a FIXED anchor (the series' last day). Two separate
+  jobs: the step is what stops thinning ever running, and the anchor is what
+  keeps a tick's identity stable as the window slides. Handing d3 a `count`
+  instead was tried and reintroduces the greedy-thinning failure below —
+  measured at 71 days, d3 offered weekly ticks and thinning cut them to gaps of
+  14, 7, 14 and 21 days. With the ladder: 7,7,7,7 at 30 days, 28,28 at full
+  extent, 3,3,3,3 zoomed in, and dates persist across those changes.
+  The one discontinuity is crossing a step boundary, which turns the whole set
+  over at once — one jump rather than continuous churn.
 
 - **Thinning is a backstop, not a narrow-width strategy — it drops candidates
   greedily, not evenly.** Ask for more labels than fit and what survives is
@@ -116,15 +172,14 @@ doing at the time:
   narrow, the full six above.
   Read the width off the **scene**, not the viewport — the card is the box the
   labels have to fit in, and the builder is handed exactly that.
-  The install chart's axis is not evidence that thinning preserves spacing. It
-  asks for five over the same range, `evenlySpaced` hands back four because 21
-  divides by three, and all four survive; it is even by luck.
+  The install chart is no longer an example either way: `calendarTicks` sizes
+  its step so thinning has nothing to drop.
 
 - **`ticks.count` is a preference d3 rounds, not a count.** On the dialog
   chart's domain, 5 asks yields 8 grid rules and 3 yields 5. Where the numbers
-  are never read — the install chart's y axis describes neither series on its
-  own — pin the domain and pass explicit `values`, which is exact and stable
-  across data.
+  are never read — the install chart draws BOTH its vertical scales unlabelled
+  — pin the domain and pass explicit `values`, which is exact and stable across
+  data.
 
 - **The install chart's top grid rule sits at the domain ceiling**, on the
   plot's top edge — where the old chart drew its fifth rule too. Dropping it was
