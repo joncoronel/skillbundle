@@ -102,6 +102,9 @@ const DAY_MS = 86_400_000;
  */
 const TICK_STEPS_DAYS = [1, 2, 3, 7, 14, 28, 56, 112] as const;
 
+/** Backstop on the tick walk. Ten years at the widest step is 33 ticks. */
+const MAX_TICKS = 512;
+
 /**
  * Evenly spaced tick dates for a time axis, anchored to a FIXED date rather
  * than to the visible window.
@@ -130,6 +133,18 @@ export function calendarTicks(
   anchor: Date,
   count: number,
 ): Date[] {
+  // A malformed day would make `firstIndex` NaN, and the loop below exits only
+  // on `at > end` — which NaN never satisfies, so the tab would hang inside a
+  // render rather than draw a wrong axis. Nothing produces one today; the check
+  // is what keeps that true.
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    !Number.isFinite(anchor.getTime())
+  ) {
+    return [];
+  }
+
   const spanDays = Math.max(1, (end.getTime() - start.getTime()) / DAY_MS);
   const stepDays =
     TICK_STEPS_DAYS.find((step) => spanDays / step <= count) ??
@@ -141,7 +156,10 @@ export function calendarTicks(
   const anchorMs = anchor.getTime();
   const firstIndex = Math.ceil((start.getTime() - anchorMs) / stepMs);
   const ticks: Date[] = [];
-  for (let i = firstIndex; ; i++) {
+  // Bounded as well as guarded. The step is chosen so the span yields about
+  // `count` ticks, so this is unreachable in normal use and only exists so a
+  // future caller cannot turn an axis into a freeze.
+  for (let i = firstIndex; ticks.length < MAX_TICKS; i++) {
     const at = anchorMs + i * stepMs;
     if (at > end.getTime()) break;
     ticks.push(new Date(at));

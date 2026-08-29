@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { barY, defineChart, lineY } from "@tanstack/charts";
 import { scaleUtc } from "d3-scale";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
@@ -41,19 +41,17 @@ import {
 } from "@/components/charts/chart-motion";
 import {
   dayLabel,
+  dayLabelAt,
   dayLabelLong,
   intFmt,
-  MIN_POINTS,
   seriesSummary,
   toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
 import {
-  fullRange,
-  usablePresets,
   RangeBrush,
   RangeControl,
-  type DayRange,
+  useDayRange,
 } from "@/components/skill-install-range";
 
 // Daily bars are the secondary series: the design system's neutral fill,
@@ -150,63 +148,20 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     [snapshots],
   );
 
-  const presets = usablePresets(allRows);
-  // Nothing to narrow (a short series): no control, no strip, and the chart
-  // renders exactly as it did before the range feature existed.
-  const rangeable = presets.length > 0;
-
-  // Opens on the WIDEST finite preset, not the narrowest. 7d over a 71-day
-  // extent leaves a selection about a tenth of the strip, which reads as a
-  // sliver rather than a window; 30d is a window you can see, and is nearer the
-  // "how have the last couple of months gone" this chart is usually opened to
-  // answer.
-  //
-  // Narrowed rather than full by default, because the strip below carries the
-  // whole series — so the default hides nothing, and it starts on the readable
-  // end, where bars are ~15px wide instead of the 5.4px they collapse to across
-  // a full 90 days.
-  const [range, setRange] = useState<DayRange>(() =>
-    rangeable ? presets[presets.length - 1].range : fullRange(allRows),
-  );
-
-  // Whether the reader has changed the window yet.
-  //
-  // `phase === "enter"` fires for BOTH the first paint and every bar arriving on
-  // a later range change, and the two want opposite timings: the first is the
-  // staggered sweep the dialog opens on, the second has to keep up with a
-  // gesture the pointer already finished. Widening the range makes most bars
-  // enter, so without this the whole entrance replayed on every brush drag —
-  // which is what read as sluggish.
-  //
-  // State set from the commit path, not a ref read at animation time: a ref
-  // cannot be read during render, and this is exact where a "has the entrance
-  // finished by now" timer would only be a guess. It flips on the same commit
-  // that changes the range, so the definition was rebuilding anyway.
-  const [touched, setTouched] = useState(false);
-
-  // The window being dragged, held apart from the committed one.
-  //
-  // Both are needed because they answer to different owners. The BRUSH's
-  // controlled value has to stay still for the length of a gesture — rewriting
-  // it per frame rebuilds its definition under D3 and resets the drag anchor.
-  // The CHART above has to move per frame, or the plot sits frozen until you
-  // let go. One piece of state cannot be both, so a preview drives the plot and
-  // the committed range drives the brush.
-  const [preview, setPreview] = useState<DayRange | null>(null);
-
-  const commitRange = useCallback((next: DayRange, committed = true) => {
-    if (!committed) {
-      setPreview(next);
-      return;
-    }
-    setTouched(true);
-    setPreview(null);
-    setRange(next);
-  }, []);
-
-  // What the plot draws: the live drag when there is one, the settled range
-  // otherwise.
-  const shownRange = preview ?? range;
+  // The whole range machine, shared with the compare chart. Opens NARROWED, on
+  // the widest finite preset: the strip below carries the full series, so the
+  // default hides nothing and starts on the readable end, where bars are ~15px
+  // wide instead of the 5.4px they collapse to across a full 90 days. 7d would
+  // be a sliver rather than a window.
+  const {
+    presets,
+    rangeable,
+    windowRows: rows,
+    committedRange,
+    dragging,
+    touched,
+    commitRange,
+  } = useDayRange(allRows, { open: "narrowed" });
 
   // One neutral line for the strip. Neutral because this chart's own line is
   // already the accent, and the strip indexes the data rather than restating it.
@@ -220,40 +175,6 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     ],
     [allRows],
   );
-
-  // The window, guarded on two counts.
-  //
-  // A skill whose snapshots arrive or extend while the dialog is open would
-  // otherwise hold a range naming days that no longer bound the series. And the
-  // brush can be dragged shut onto a single day, which leaves the x scale with
-  // a zero-width domain — two points at the same instant, nothing to map. A
-  // window is never allowed below `MIN_POINTS` rows; collapsing it just walks
-  // the start back far enough to keep a segment.
-  const clampedRange = useMemo(() => {
-    const all = fullRange(allRows);
-    const startIdx = allRows.findIndex((row) => row.day === shownRange.start);
-    const endIdx = allRows.findIndex((row) => row.day === shownRange.end);
-    if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return all;
-    if (endIdx - startIdx + 1 >= MIN_POINTS) return shownRange;
-    const widenedStart = Math.max(0, endIdx - (MIN_POINTS - 1));
-    // Only possible when the series itself is shorter than `MIN_POINTS`, which
-    // `hasChart` already prevents — but the fallback costs one comparison.
-    if (endIdx - widenedStart + 1 < MIN_POINTS) return all;
-    return { start: allRows[widenedStart].day, end: shownRange.end };
-  }, [allRows, shownRange]);
-
-  // The brush's own value, clamped but never carrying the preview.
-  const committedRange = useMemo(() => {
-    const all = fullRange(allRows);
-    const has = (day: string) => allRows.some((row) => row.day === day);
-    return has(range.start) && has(range.end) ? range : all;
-  }, [allRows, range]);
-
-  const rows = useMemo(() => {
-    const startIdx = allRows.findIndex((row) => row.day === clampedRange.start);
-    const endIdx = allRows.findIndex((row) => row.day === clampedRange.end);
-    return allRows.slice(startIdx, endIdx + 1);
-  }, [allRows, clampedRange]);
 
   const overlay = useChartHoverOverlay({
     labels: useMemo(() => rows.map((r) => dayLabel(r.day)), [rows]),
@@ -357,8 +278,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
             ticks: {
               size: 0,
               padding: X_AXIS_LABEL_PADDING,
-              format: (value: Date) =>
-                dayLabel(value.toISOString().slice(0, 10)),
+              format: dayLabelAt,
               // Anchored to the series' LAST day, which never moves, so the
               // same absolute dates keep being produced as the window changes
               // and a tick that stays visible keeps its key and travels. The
@@ -445,10 +365,11 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <Legend />
-        {rangeable && (
+        {rangeable && committedRange && (
           <RangeControl
             rows={allRows}
-            range={clampedRange}
+            presets={presets}
+            range={committedRange}
             // A preset is always a commit; only the brush previews.
             onRangeChange={(next) => commitRange(next)}
           />
@@ -458,7 +379,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         controller={overlay}
         // Stands down while the brush is being dragged: the pointer is captured
         // by the strip, so this chart's hover state would go stale mid-gesture.
-        disabled={preview !== null}
+        disabled={dragging}
         pillOffset={datePillOffset(X_AXIS_LABEL_MARGIN, X_AXIS_LABEL_PADDING)}
       >
         <RendererChart
@@ -483,7 +404,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           onRender={overlay.onRender}
         />
       </ChartHoverOverlay>
-      {rangeable && (
+      {rangeable && committedRange && (
         // Held off the plot so the strip reads as a separate instrument rather
         // than a second series someone forgot to label — the chart's own x
         // labels sit right above it and would otherwise appear to belong to

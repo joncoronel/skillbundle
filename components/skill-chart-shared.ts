@@ -69,6 +69,23 @@ export function dayLabelLong(day: string) {
 }
 
 /**
+ * The same two labels from a `Date` rather than a day string.
+ *
+ * For the time-scale axes and the brush's slider readout, which are handed
+ * instants. Both formatters render in UTC, so a `toDate` noon anchor and a bare
+ * UTC midnight land on the same calendar day and there is no round trip through
+ * `toISOString().slice(0, 10)` to get one — which every caller wrote by hand,
+ * next to the anchoring rule that makes it safe.
+ */
+export function dayLabelAt(date: Date) {
+  return dayFmt.format(date);
+}
+
+export function dayLabelLongAt(date: Date) {
+  return weekdayFmt.format(date);
+}
+
+/**
  * Parse a "YYYY-MM-DD" snapshot day into a Date pinned to UTC noon. Anchoring at
  * noon (not midnight) means local-timezone formatters render the correct
  * calendar day for any zone within ±12h of UTC — a bare `new Date("2026-06-17")`

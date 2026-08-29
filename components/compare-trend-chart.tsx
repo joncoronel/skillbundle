@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useHeldFlag } from "@/hooks/use-held-flag";
 import { defineChart, lineY } from "@tanstack/charts";
 import { scaleUtc } from "d3-scale";
@@ -36,16 +36,15 @@ import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
 import { RANGE_TWEEN } from "@/components/charts/chart-motion";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
 import {
-  fullRange,
   STRIP_HEIGHT,
-  usablePresets,
   RangeBrush,
   RangeControl,
-  type DayRange,
+  useDayRange,
 } from "@/components/skill-install-range";
 import {
   compactCount,
   dayLabel,
+  dayLabelAt,
   dayLabelLong,
   intFmt,
   MIN_POINTS,
@@ -368,61 +367,17 @@ export function CompareTrendChart({
     [days],
   );
 
-  // The range control and the strip only appear once REAL data has landed. A
-  // brush over `skeletonSeries` would be a control you can drag across invented
-  // numbers, which is worse than no control.
-  const presets = useMemo(
-    () => (showPlaceholder ? [] : usablePresets(allDays)),
-    [showPlaceholder, allDays],
-  );
-  const rangeable = presets.length > 0;
-
-  const [range, setRange] = useState<DayRange | null>(null);
-  const [preview, setPreview] = useState<DayRange | null>(null);
-  const [touched, setTouched] = useState(false);
-
-  const commitRange = useCallback((next: DayRange, committed = true) => {
-    if (!committed) {
-      setPreview(next);
-      return;
-    }
-    setTouched(true);
-    setPreview(null);
-    setRange(next);
-  }, []);
-
-  // Null until the reader picks one, so a series that arrives or grows while
-  // the page is open simply widens the default instead of pinning a stale
-  // window. Clamped so a collapsed brush can never leave a zero-width domain.
-  const windowRange = useMemo(() => {
-    const all = allDays.length ? fullRange(allDays) : null;
-    if (!all) return null;
-    const shown = preview ?? range;
-    if (!shown) return all;
-    const startIdx = allDays.findIndex((d) => d.day === shown.start);
-    const endIdx = allDays.findIndex((d) => d.day === shown.end);
-    if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return all;
-    if (endIdx - startIdx + 1 >= MIN_POINTS) return shown;
-    const widened = Math.max(0, endIdx - (MIN_POINTS - 1));
-    if (endIdx - widened + 1 < MIN_POINTS) return all;
-    return { start: allDays[widened].day, end: shown.end };
-  }, [allDays, preview, range]);
-
-  const committedRange = useMemo(() => {
-    if (!allDays.length) return null;
-    const all = fullRange(allDays);
-    if (!range) return all;
-    const has = (day: string) => allDays.some((d) => d.day === day);
-    return has(range.start) && has(range.end) ? range : all;
-  }, [allDays, range]);
-
-  const windowDays = useMemo(() => {
-    if (!windowRange || !allDays.length) return allDays;
-    const startIdx = allDays.findIndex((d) => d.day === windowRange.start);
-    const endIdx = allDays.findIndex((d) => d.day === windowRange.end);
-    if (startIdx === -1 || endIdx === -1) return allDays;
-    return allDays.slice(startIdx, endIdx + 1);
-  }, [allDays, windowRange]);
+  // The same range machine the install chart runs. Disabled while the rows are
+  // `skeletonSeries`: a brush over invented numbers is worse than no control.
+  const {
+    presets,
+    rangeable,
+    windowRows: windowDays,
+    committedRange,
+    dragging,
+    touched,
+    commitRange,
+  } = useDayRange(allDays, { enabled: !showPlaceholder });
 
   // One strip line per skill, in that skill's own colour — three neutral lines
   // would be an unreadable tangle, and the colour is already how the legend and
@@ -450,6 +405,10 @@ export function CompareTrendChart({
   );
 
   const definition = useMemo(() => {
+    // Nothing drawable means no days, so no scale has a domain. The "not enough
+    // history yet" branch below renders in that case, but hooks run first, so
+    // this has to answer rather than index an empty array.
+    if (!windowDays.length || !allDays.length) return null;
     const inWindow = new Set(windowDays.map((d) => d.day));
     const rows = buildCompareRows(drawable).filter((row) =>
       inWindow.has(row.day),
@@ -500,8 +459,7 @@ export function CompareTrendChart({
               ticks: {
                 size: 0,
                 padding: X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
-                format: (value: Date) =>
-                  dayLabel(value.toISOString().slice(0, 10)),
+                format: dayLabelAt,
                 // Anchored to the series' last day, which never moves, so the
                 // same absolute dates keep being produced as the window slides.
                 // The count still narrows with the scene, which is what keeps
@@ -576,7 +534,6 @@ export function CompareTrendChart({
   }, [drawable, windowDays, allDays, touched, showPlaceholder]);
 
   // A brush gesture in flight. The chart's hover overlay stands down for it.
-  const dragging = preview !== null;
 
   const hostProps = chartHostProps();
 
@@ -599,7 +556,7 @@ export function CompareTrendChart({
 
   // "No history yet" is a resolved answer and must not swallow "not answered
   // yet": while loading, `drawable` is the placeholder set and never empty.
-  if (!showPlaceholder && drawable.length === 0) {
+  if (!definition || (!showPlaceholder && drawable.length === 0)) {
     return (
       <div>
         <CompareLegend series={series} />
@@ -621,10 +578,11 @@ export function CompareTrendChart({
     <div aria-busy={showPlaceholder || undefined}>
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <CompareLegend series={series} loading={showPlaceholder} />
-        {rangeable && committedRange && windowRange && (
+        {rangeable && committedRange && (
           <RangeControl
             rows={allDays}
-            range={windowRange}
+            presets={presets}
+            range={committedRange}
             onRangeChange={(next) => commitRange(next)}
           />
         )}

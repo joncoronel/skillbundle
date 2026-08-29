@@ -270,12 +270,13 @@
 .chart-brush-scrim {
   position: absolute;
   inset: 0;
-  /* Set from JS as the computed colour of the first ancestor that paints one.
-     A named token cannot serve both hosts: the strip sits on `--surface-5` in
-     the install dialog and on `--card` in the compare card, and in dark mode
-     those are a whole step apart (0.321 against 0.264). Either way the scrim
-     has to be the CONTAINER'S colour, or it reads as a tinted panel rather than
-     as the surface showing through. The fallback only covers the first frame. */
+  /* Set from the strip's `surface` prop, as a token REFERENCE so it re-resolves
+     on a theme change. A named token cannot serve both hosts: the strip sits on
+     `--surface-5` in the install dialog and on `--card` in the compare card,
+     and in dark mode those are a whole step apart (0.321 against 0.264). Either
+     way the scrim has to be the CONTAINER'S colour, or it reads as a tinted
+     panel rather than as the surface showing through. The fallback only covers
+     the first frame, before the overlay has measured a box. */
   background: var(--scrim-bg, var(--card));
   opacity: 0.66;
   mask-image: linear-gradient(
@@ -315,8 +316,10 @@
 
 /* The pill, and the grip dots over it.
  *
- * The dots are a SECOND layer painted in the surface colour, not holes punched
- * through the pill. Punching them (one `evenodd` mask on the pill) let the line
+ * The dots are a SECOND layer painted in the same `--scrim-bg` the scrim uses,
+ * not holes punched through the pill. Same reason it is a variable there: a
+ * fixed token paints the dialog's surface over the compare card's strip, and
+ * the two are a whole lightness step apart in dark mode. Punching them (one `evenodd` mask on the pill) let the line
  * and the dim show through, so they read as transparent gaps rather than as
  * marks on a solid grip. evilcharts paints its grips the same way — opaque
  * dots in `withAlpha(tokens.background, …)` over the pill.
@@ -337,7 +340,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--surface-5);
+  background: var(--scrim-bg, var(--surface-5));
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cg fill='%23fff'%3E%3Crect x='4' y='3.5' width='2' height='2' rx='0.5'/%3E%3Crect x='4' y='7' width='2' height='2' rx='0.5'/%3E%3Crect x='4' y='10.5' width='2' height='2' rx='0.5'/%3E%3C/g%3E%3C/svg%3E");
   mask-size: 10px 16px;
   mask-repeat: no-repeat;

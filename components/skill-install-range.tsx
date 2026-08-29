@@ -21,7 +21,7 @@ import { chartHostProps, INITIAL_WIDTH } from "@/components/charts/chart";
 import { CHART_THEME } from "@/components/charts/chart-theme";
 import { CHART_CURVE } from "@/components/charts/series-state";
 import {
-  dayLabelLong,
+  dayLabelLongAt,
   dayWindow,
   MIN_POINTS,
 } from "@/components/skill-chart-shared";
@@ -93,7 +93,15 @@ function sameRange(a: DayRange, b: DayRange) {
  * is what "All" is for. A short-history skill therefore gets no control at all
  * rather than a row of dead buttons; see the caller's early return.
  */
-export function usablePresets(rows: readonly DayRow[]) {
+/** One offered window: the button's own text, and the range it selects. */
+export type RangePreset = (typeof FINITE_PRESETS)[number] & { range: DayRange };
+
+export function usablePresets(rows: readonly DayRow[]): RangePreset[] {
+  // No days, no presets. `fullRange` indexes the array, and the compare chart
+  // reaches here with nothing drawable whenever every compared skill is too new
+  // to have a line — its "Not enough history yet" branch renders below the
+  // hooks, so this has to answer rather than throw.
+  if (rows.length === 0) return [];
   const all = fullRange(rows);
   return FINITE_PRESETS.map((preset) => ({
     ...preset,
@@ -103,6 +111,149 @@ export function usablePresets(rows: readonly DayRow[]) {
       dayWindow(rows, preset.days).length >= MIN_POINTS &&
       !sameRange(preset.range, all),
   );
+}
+
+/**
+ * A range narrowed to something the chart can actually draw, or the full extent
+ * when it cannot be placed.
+ *
+ * Two guards in one. A range naming days the series no longer has (snapshots
+ * that arrived or extended while the view was open) falls back to everything.
+ * And a range collapsed onto a single day would leave the x scale with a
+ * zero-width domain, so the start walks back far enough to keep `MIN_POINTS`
+ * rows.
+ */
+function clampRange<T extends DayRow>(
+  rows: readonly T[],
+  shown: DayRange | null,
+): DayRange | null {
+  if (rows.length === 0) return null;
+  const all = fullRange(rows);
+  if (!shown) return all;
+  const startIdx = rows.findIndex((row) => row.day === shown.start);
+  const endIdx = rows.findIndex((row) => row.day === shown.end);
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return all;
+  if (endIdx - startIdx + 1 >= MIN_POINTS) return shown;
+  const widened = Math.max(0, endIdx - (MIN_POINTS - 1));
+  // Only reachable when the series itself is shorter than `MIN_POINTS`, which
+  // both callers already gate on, but the fallback costs one comparison.
+  if (endIdx - widened + 1 < MIN_POINTS) return all;
+  return { start: rows[widened].day, end: shown.end };
+}
+
+/**
+ * The whole range state machine, owned in one place because both charts run it.
+ *
+ * It is three pieces of state and four derivations, and the interesting part is
+ * why the ranges cannot be collapsed into one. The BRUSH's controlled value has
+ * to hold still for the length of a gesture: rewriting it per frame rebuilds
+ * its definition under D3 and resets the drag's own anchor, which stops the
+ * handles crossing and makes drawing a new range outside the selection work
+ * only sometimes. The PLOT has to do the opposite and move per frame, or it
+ * sits frozen until you let go. So `commitRange` routes previews to one and
+ * commits to the other, and every consumer takes the range that answers to it.
+ *
+ * `windowRange` and `committedRange` are both clamped, which is what stops a
+ * blank click on the strip (a snapped zero-width commit) reaching the brush and
+ * making D3 draw an empty selection: the overlay reads its box off that rect,
+ * so the scrim, frame and both grips vanished until the next drag.
+ *
+ * `range` starts null rather than at a computed default, so a series that
+ * arrives or grows while the view is open simply widens the window instead of
+ * pinning a stale one.
+ */
+export function useDayRange<T extends DayRow>(
+  rows: readonly T[],
+  {
+    enabled = true,
+    open = "full",
+  }: {
+    /** False while the rows are a placeholder, which must not be brushable. */
+    enabled?: boolean;
+    /**
+     * Where the window sits before anyone touches it. `"narrowed"` opens on the
+     * widest finite preset: the install dialog is usually opened to answer "how
+     * have the last couple of months gone", and across a full 90 days its bars
+     * collapse to 5.4px.
+     */
+    open?: "full" | "narrowed";
+  } = {},
+) {
+  const presets = useMemo(
+    () => (enabled ? usablePresets(rows) : []),
+    [enabled, rows],
+  );
+  // Nothing to narrow (a short series): no control, no strip, and the chart
+  // renders exactly as it did before the range feature existed.
+  const rangeable = presets.length > 0;
+
+  const [range, setRange] = useState<DayRange | null>(null);
+  const [preview, setPreview] = useState<DayRange | null>(null);
+
+  /**
+   * Whether the reader has changed the window yet.
+   *
+   * `phase === "enter"` fires for BOTH the first paint and every mark arriving
+   * on a later range change, and the two want opposite timings: the first is
+   * the entrance the chart opens on, the second has to keep up with a gesture
+   * the pointer already finished. Widening the range makes most marks enter, so
+   * without this the whole entrance replayed on every drag.
+   *
+   * State set on the commit path, not a ref read at animation time: a ref
+   * cannot be read during render, and this is exact where a "has the entrance
+   * finished by now" timer would only be a guess.
+   */
+  const [touched, setTouched] = useState(false);
+
+  const commitRange = useCallback((next: DayRange, committed = true) => {
+    if (!committed) {
+      setPreview(next);
+      return;
+    }
+    setTouched(true);
+    setPreview(null);
+    setRange(next);
+  }, []);
+
+  const openRange = useMemo(
+    () =>
+      open === "narrowed" && presets.length
+        ? presets[presets.length - 1].range
+        : null,
+    [open, presets],
+  );
+
+  /** What the plot draws: the live drag when there is one, the settled range otherwise. */
+  const windowRange = useMemo(
+    () => clampRange(rows, preview ?? range ?? openRange),
+    [rows, preview, range, openRange],
+  );
+
+  /** The brush's own value: clamped, and never carrying the preview. */
+  const committedRange = useMemo(
+    () => clampRange(rows, range ?? openRange),
+    [rows, range, openRange],
+  );
+
+  const windowRows = useMemo(() => {
+    if (!windowRange) return rows;
+    const startIdx = rows.findIndex((row) => row.day === windowRange.start);
+    const endIdx = rows.findIndex((row) => row.day === windowRange.end);
+    if (startIdx === -1 || endIdx === -1) return rows;
+    return rows.slice(startIdx, endIdx + 1);
+  }, [rows, windowRange]);
+
+  return {
+    presets,
+    rangeable,
+    windowRange,
+    windowRows,
+    committedRange,
+    /** True for the length of a pointer gesture on the strip. */
+    dragging: preview !== null,
+    touched,
+    commitRange,
+  };
 }
 
 /**
@@ -121,14 +272,24 @@ export function usablePresets(rows: readonly DayRow[]) {
  */
 export function RangeControl({
   rows,
+  presets,
   range,
   onRangeChange,
 }: {
   rows: readonly DayRow[];
+  /**
+   * Passed in rather than computed here, because `usablePresets` walks the
+   * series once per preset and this renders on every preview frame of a drag.
+   * The owner already holds the list to decide whether to show the control.
+   */
+  presets: readonly RangePreset[];
+  /**
+   * The COMMITTED range. A preview would light the 7d cell as a hand drag
+   * happened to pass through 7 days and drop it again a frame later.
+   */
   range: DayRange;
   onRangeChange: (next: DayRange) => void;
 }) {
-  const presets = usablePresets(rows);
   const all = fullRange(rows);
   const active =
     presets.find((preset) => sameRange(preset.range, range))?.value ??
@@ -159,7 +320,11 @@ export function RangeControl({
         <ToggleGroupItem
           key={preset.value}
           value={preset.value}
-          aria-label={preset.name}
+          // Leads with the visible text. An accessible name of "Last 7 days"
+          // over a cell reading "7d" does not contain its own label, which
+          // fails WCAG 2.5.3 and leaves voice control with nothing to match
+          // when someone says what they can see.
+          aria-label={`${preset.label}, ${preset.name.toLowerCase()}`}
         >
           {preset.label}
         </ToggleGroupItem>
@@ -432,10 +597,16 @@ export function RangeBrush({
               // drawing a new range outside the selection work only sometimes
               // and stopped the handles crossing each other.
               (next, { reason }) => {
-                if (reason.type === "cancel") return;
+                // A cancel (Escape, or a lost pointer) is reported as a commit
+                // of the gesture's ORIGIN, which is where D3 snaps its own
+                // selection back to. Dropping it instead left the caller's
+                // preview standing: the plot stayed on the abandoned window,
+                // and the hover overlay it disables stayed dead until the next
+                // commit.
+                const to = reason.type === "cancel" ? reason.origin : next;
                 onRangeChange(
-                  { start: dayAt(next.start), end: dayAt(next.end) },
-                  reason.type === "commit",
+                  { start: dayAt(to.start), end: dayAt(to.end) },
+                  reason.type !== "preview",
                 );
               },
             ),
@@ -444,8 +615,7 @@ export function RangeBrush({
             values: dates,
             startAriaLabel: "Range start",
             endAriaLabel: "Range end",
-            format: (value: Date) =>
-              dayLabelLong(value.toISOString().slice(0, 10)),
+            format: dayLabelLongAt,
             // INVISIBLE. `brushX` is kept for interaction alone — pointer and
             // keyboard handling, snapping, slider semantics — and everything
             // you see is drawn by `BrushOverlay`.

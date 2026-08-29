@@ -473,19 +473,20 @@ doing at the time:
 
 - **The dim is one element with a hard-stop gradient mask, not two side
   panels.** `--sel-l` / `--sel-r` are whole pixels set from the measured width,
-  and the mask punches the selection out of a `--surface-5` scrim at 0.66 — the
-  same construction evilcharts uses (`withAlpha(tokens.background, 0.7)`).
-  `--surface-5` because that is what the DIALOG is painted with; `--card` looks
-  identical in light and is a whole step darker in dark (0.264 against 0.321),
-  where it read as a differently coloured panel laid over the strip. The strip
-  therefore draws ONE line at one strength; a second brighter copy of the
+  and the mask punches the selection out of the scrim at 0.66 — the same
+  construction evilcharts uses (`withAlpha(tokens.background, 0.7)`). The
+  scrim's colour is `--scrim-bg`, set from the `surface` prop above, because a
+  fixed token is wrong on one of the two hosts by construction: `--surface-5`
+  and `--card` look identical in light and are a whole step apart in dark
+  (0.321 against 0.264), where the wrong one reads as a differently coloured
+  panel laid over the strip. The strip therefore draws ONE line at one strength; a second brighter copy of the
   selected slice used to carry the figure/ground and is gone.
 
 - **The grip dots are a painted layer, not holes punched through the pill.**
   Punching them with one `evenodd` mask let the line and the dim show through,
   so they read as transparent gaps rather than marks on a solid grip. They are
-  now a `::after` filled with `--surface-5` and masked to HugeIcons'
-  more-vertical-square-01 geometry — opaque dots over the pill, which is how
+  now a `::after` filled with the same `--scrim-bg` as the scrim, for the same
+  reason, and masked to HugeIcons' more-vertical-square-01 geometry — opaque dots over the pill, which is how
   evilcharts paints its grips too (`withAlpha(tokens.background, …)`). The mask
   has to live on that pseudo-element: a mask clips everything drawn on the
   element carrying it, the focus ring included.
@@ -505,11 +506,14 @@ doing at the time:
   own anchor, which made drawing a new range outside the selection work only
   sometimes and stopped the handles crossing each other instead of swapping. The
   plot above must do the opposite and move per frame, or it sits frozen until
-  you let go. So `skill-install-chart.tsx` keeps a committed range for the brush
-  and a `preview` for the plot, and the brush reports every phase with a
-  `committed` flag saying which it is. Gating on `commit` alone — what the docs'
-  controlled-brush example does — fixes the anchor and freezes the plot; both
-  states are what fixes both. Verified mid-drag with the button still down:
+  you let go. So `useDayRange` (in `skill-install-range.tsx`, and run by both
+  charts) keeps a committed range for the brush and a `preview` for the plot,
+  and the brush reports every phase with a `committed` flag saying which it is.
+  Gating on `commit` alone — what the docs' controlled-brush example does —
+  fixes the anchor and freezes the plot; both states are what fixes both. A
+  `cancel` is reported as a commit of the gesture's ORIGIN rather than dropped:
+  dropping it left the preview standing over a window D3 had already snapped
+  away from, with the hover overlay it disables dead until the next commit. Verified mid-drag with the button still down:
   31 → 28 → 24 → 21 → 18 → 14 → 11 bars, with draw-outside and crossing intact.
 
 - **Resolve a brushed value to the NEAREST candidate, never by exact lookup.** A
@@ -522,9 +526,11 @@ doing at the time:
   apart.** Widening the install chart's window makes most bars ENTER, so the bar
   motion callback saw the same phase it sees on first paint and replayed the
   whole staggered opening sweep on every brush drag — on the renderer's spring,
-  which has no duration and settles down a long tail. A `settled` ref set in a
-  mount effect is what separates them: staggered spring while it is false, a
-  short tween forever after. Measured on a 30d → 7d switch: 229ms to settle.
+  which has no duration and settles down a long tail. `useDayRange`'s `touched`
+  state is what separates them: staggered spring while it is false, a short
+  tween forever after. State set on the commit path, not a ref read at
+  animation time — a ref cannot be read during render, and this is exact where
+  a "has the entrance finished by now" timer would only be a guess. Measured on a 30d → 7d switch: 229ms to settle.
 
 - **Range motion is `RANGE_TWEEN`, an exponential ease-out.** 200ms, with a real
   `1 - 2^(-10t)` progress function rather than a CSS keyword — the library takes
