@@ -472,18 +472,36 @@ export function useChartHoverOverlay({
         return;
       }
 
-      // The line's own painted path is the source of truth for where the
-      // samples are, so the band cannot drift off the trace it is highlighting.
-      const linePath = host
-        .querySelector("svg.ts-chart .ts-chart__line path")
-        ?.getAttribute("d");
+      // The painted paths are the source of truth for where the samples are,
+      // so the band cannot drift off the traces it is highlighting.
+      //
+      // EVERY path, unioned — not the first one. The band is a single clip
+      // window over every cloned line, and sizing it from one series breaks the
+      // moment two series cover different spans: on the compare page, a skill
+      // first recorded weeks after the others has a short path, and if that one
+      // came first in DOM order `nearestIndex` clamped to its left edge, so
+      // hovering anywhere before it froze the band there for BOTH lines. The
+      // union has a sample wherever any series does, and a series with no point
+      // at that column simply has nothing inside the window to light up.
+      const paths = [
+        ...host.querySelectorAll<SVGPathElement>(
+          "svg.ts-chart .ts-chart__line path",
+        ),
+      ];
+      const linePath = paths.map((p) => p.getAttribute("d") ?? "").join("|");
       if (!linePath) {
         opacity.set(0);
         wasActive.current = false;
         return;
       }
       if (samples.current?.d !== linePath) {
-        samples.current = { d: linePath, xs: samplePositions(linePath) };
+        const union = paths.flatMap((p) =>
+          samplePositions(p.getAttribute("d") ?? ""),
+        );
+        samples.current = {
+          d: linePath,
+          xs: [...new Set(union)].sort((a, b) => a - b),
+        };
       }
       const xs = samples.current.xs;
       if (xs.length === 0) {

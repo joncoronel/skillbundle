@@ -105,8 +105,7 @@ doing at the time:
   is the same on a point scale and a time scale, because the 80% rule is what
   every NONBAND scale gets; it is not an argument between those two.
 
-- **The compare chart's x is a point scale; the install chart's is a UTC time
-  scale.** Both put the first and last day on the plot edges, so in both the
+- **Both x scales are UTC time scales.** Both put the first and last day on the plot edges, so in both the
   line, its marker, the crosshair, the pill and the labels share one x. The old
   chart ran two scales at once — bars on a band, line and labels on a time
   scale — so ITS bars sat up to half a band from their own labels; one scale
@@ -114,8 +113,8 @@ doing at the time:
   `tickLabels.dx` offset) was tried and is worse: the labels then align with
   nothing.
 
-  The install chart upgraded when it gained the range control, for the reason
-  the library's own guidance names: a point scale holds dates as ordered
+  Each upgraded when it gained a range control, for the reason the library's own
+  guidance names: a point scale holds dates as ordered
   CATEGORIES, so "a Friday and the following Monday occupy adjacent categorical
   positions", and you move off it when the values must be spaced by elapsed time
   **or when the axis needs calendar-aware ticks**. The second is what forced it
@@ -126,17 +125,12 @@ doing at the time:
   - `d3-scale` and `@types/d3-scale` are direct dependencies, which the library
     instructs for any source that imports `scaleUtc`.
 
-  The compare chart stays on a point scale: it has no range control, so its
-  window never moves and its ticks never had to keep their identity.
+  The compare chart followed when it gained the same control. Its case is
+  stronger, not weaker: it builds its x axis from the UNION of days across up to
+  three skills, so a day missing from one series is likelier than on a single
+  skill's chart, and a point scale hid every one of those gaps.
 
-- **On a point scale, date axes thin by `tickLabels.thin.minGap`.** Point and
-  band scales offer every category as a candidate and ignore `count`/`spacing`
-  hints, so left alone they print one label per row that fits — nearly twice the
-  old chart's `numTicks`. `evenlySpaced` picks the candidates instead (6 on the
-  compare page), and thinning runs on top as the backstop. This is the compare
-  chart's arrangement; the install chart left it behind with the point scale.
-
-- **Index-picked ticks cannot animate, which is what cost the install chart its
+- **Index-picked ticks cannot animate, which is what cost both charts their
   point scale.** `evenlySpaced` picks by array INDEX, so the moment either edge
   of a window moves, every tick is a different date. Measured on the install
   chart with a range control, advancing the brush by ONE day: the label count
@@ -362,6 +356,67 @@ doing at the time:
   along x at all — which on a multi-line time series is also the order the lines
   cross each other, the whole point of putting them on one axis. The wipe is the
   only entrance that reads that way, which is why it stays.
+
+- **The highlight band samples EVERY line path, unioned — never the first one.**
+  The band is a single clip window over cloned traces, and its column is found
+  by `nearestIndex` into a list of sample positions. Taking that list from
+  `querySelector` (the first path) breaks as soon as two series cover different
+  spans: on the compare page a skill first recorded weeks after the others has a
+  short path, and if it came first in DOM order the index clamped to its left
+  edge, so hovering anywhere before it froze the band there for BOTH lines. The
+  union has a sample wherever any series does, and a series with no point at
+  that column simply has nothing inside the window to light up.
+
+- **The overlay's `labels` must be the WINDOWED days.** The date pill names a
+  column by index, so a full-length list against a narrowed chart points at the
+  wrong date entirely — at a 7-day window on a 71-day series the pill was
+  indexing a 71-entry array for an 8-column chart.
+
+- **The hover overlay stands down while the brush is being dragged
+  (`disabled`).** The pointer is captured by the strip, so the chart's hover
+  state goes stale mid-gesture: the band stops tracking, the lines never dim,
+  and the crosshair sits still while everything else moves.
+
+- **Reserve the strip's height before the strip exists.** It only mounts once
+  real data lands, and without a reserved box its arrival shoves the page. An
+  empty box rather than a skeleton brush — a placeholder you can almost grab is
+  worse than an obvious gap.
+
+- **A series contributes NO row before its own first recorded day.** The
+  compare chart used to back-fill: every day before a skill existed in our
+  records got that skill's earliest known value. On a shared axis that drew a
+  flat line stretching back through history the skill was never measured in — a
+  skill first seen on Aug 5 at 7,741 installs appeared to have held exactly
+  7,741 for the six weeks before we had heard of it. Forward-fill stays, because
+  carrying the last value over a skipped snapshot claims only that the count did
+  not change; back-fill claimed we had measured something.
+  The strip needs the same rule and got it wrong separately: its own fill used
+  `last ?? 0`, which drew a flat ZERO line back through the same pre-history, so
+  it contradicted the chart it indexes. Fixed in both — the two now start each
+  line within 3px of each other.
+
+- **The scrim's surface is a prop, and a token REFERENCE, not a colour.** The
+  strip sits on `--surface-5` in the install dialog and on `--card` in the
+  compare card; in dark mode those are a whole step apart (0.321 against 0.264),
+  so a fixed token is wrong on one of them by construction. Reading the computed
+  colour off the nearest painted ancestor was tried and is worse: nothing
+  re-runs on a theme toggle, so the strip kept the old surface until something
+  else moved the brush. Passing `var(--card)` and letting the browser resolve it
+  costs nothing and follows the theme on its own.
+
+- **The strip takes N series, and lifts them all by ONE shared floor.** The
+  install chart passes a single neutral line; the compare page passes one per
+  skill in that skill's own colour, because three neutral lines are an
+  unreadable tangle and the colour is already how the legend names each series.
+  The floor is shared rather than per-series on purpose: per-series would
+  rescale every line to fill the strip and quietly claim two skills were the
+  same size. The strip says WHERE you are along time; it must not contradict the
+  chart above to do it.
+
+- **On the compare page the control and the strip appear only once real data has
+  landed.** That chart mounts before its data exists and draws `skeletonSeries`
+  in the meantime. A brush you can drag across invented numbers is worse than no
+  brush, so both are gated on the placeholder being gone.
 
 - **`brushX` is mounted for INTERACTION ONLY; everything visible is an
   overlay.** Its selection rect and handles are painted `none`, and

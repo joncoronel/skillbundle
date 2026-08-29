@@ -33,6 +33,20 @@ export type DayRow = { day: string };
 export type DayRange = { start: string; end: string };
 
 /**
+ * One line on the brush strip.
+ *
+ * The strip takes N of these so both charts can use it: the install chart
+ * passes a single neutral series, the compare page passes one per skill in that
+ * skill's own colour. Values are whatever the caller plots — the strip only
+ * ever reads their shape.
+ */
+export type BrushSeries = {
+  key: string;
+  color: string;
+  values: readonly { date: Date; value: number }[];
+};
+
+/**
  * The windows offered above the chart.
  *
  * "All" rather than a number, because the series is 71 days today and grows to
@@ -52,7 +66,7 @@ const ALL_VALUE = "all";
  * The strip's height. The overlay reads its position from D3's own selection
  * rect, so nothing else about the geometry has to be restated here.
  */
-const STRIP_HEIGHT = 44;
+export const STRIP_HEIGHT = 44;
 
 export function fullRange(rows: readonly DayRow[]): DayRange {
   return { start: rows[0].day, end: rows[rows.length - 1].day };
@@ -167,7 +181,7 @@ export function RangeControl({
  * `pointer-events: none` throughout: the invisible brush underneath still owns
  * every gesture, so this can sit on top without taking any of them.
  */
-function BrushOverlay() {
+function BrushOverlay({ surface }: { surface: string }) {
   const [node, setNode] = useState<HTMLElement | null>(null);
   const [box, setBox] = useState<{ left: number; right: number } | null>(null);
 
@@ -230,6 +244,7 @@ function BrushOverlay() {
           ? ({
               "--sel-l": `${box.left}px`,
               "--sel-r": `${box.right}px`,
+              "--scrim-bg": surface,
             } as CSSProperties)
           : undefined
       }
@@ -270,11 +285,30 @@ function BrushOverlay() {
  * focus on as well would put two competing tab targets on one 44px strip.
  */
 export function RangeBrush({
-  rows,
+  days,
+  series,
+  surface,
   range,
   onRangeChange,
 }: {
-  rows: readonly (DayRow & { date: Date; total: number })[];
+  /** Every day the strip spans, in order. Sets the domain and the candidates. */
+  days: readonly (DayRow & { date: Date })[];
+  series: readonly BrushSeries[];
+  /**
+   * The colour of the surface this strip sits on, as a CSS value.
+   *
+   * The scrim dims by laying the container's OWN colour over the strip, so it
+   * has to be exactly that colour or it reads as a tinted panel instead of the
+   * surface showing through. It cannot be a fixed token: the strip sits on
+   * `--surface-5` inside the install dialog and on `--card` inside the compare
+   * card, and in dark mode those are a whole step apart (0.321 against 0.264).
+   *
+   * A token REFERENCE rather than a resolved colour, so the browser re-resolves
+   * it when the theme changes. Reading the computed colour off the DOM was
+   * tried and is worse: nothing re-runs on a theme toggle, so the strip kept
+   * the old surface until something else happened to move the brush.
+   */
+  surface: string;
   /**
    * The COMMITTED range. Deliberately not the live one: this feeds the brush's
    * controlled value, and rewriting that mid-gesture rebuilds the definition
@@ -288,8 +322,9 @@ export function RangeBrush({
   // A `Date` is a `ChartValue`, so this stays the CANDIDATE form of `brushX`
   // and keeps the keyboard sliders — the continuous form would have forced
   // `keyboard: false` and cost them.
-  const dates = useMemo(() => rows.map((row) => row.date), [rows]);
-  // Nearest row to a proposed instant, never a lookup that can miss.
+  const dates = useMemo(() => days.map((row) => row.date), [days]);
+
+  // Nearest day to a proposed instant, never a lookup that can miss.
   //
   // An exact `Map` hit on `getTime()` was the first attempt and it froze the
   // drag: a proposal that did not land precisely on a candidate fell back to
@@ -297,9 +332,9 @@ export function RangeBrush({
   // they had collided. Nearest always answers.
   const dayAt = useCallback(
     (at: Date) => {
-      let best = rows[0];
+      let best = days[0];
       let bestGap = Infinity;
-      for (const row of rows) {
+      for (const row of days) {
         const gap = Math.abs(row.date.getTime() - at.getTime());
         if (gap < bestGap) {
           bestGap = gap;
@@ -308,38 +343,56 @@ export function RangeBrush({
       }
       return best.day;
     },
-    [rows],
+    [days],
   );
 
-  // `total` above the series floor, exactly as the sidebar sparkline plots it
-  // and for the same reason: against a zero-based domain a cumulative count
-  // barely moves, so the strip drew a near-straight diagonal that told you
-  // nothing about where in the history you were. Subtracting the floor spends
-  // all 44px on the variation that actually exists.
+  // Every series lifted by the SHARED floor, exactly as the sidebar sparkline
+  // plots its own line and for the same reason: against a zero-based domain a
+  // cumulative count barely moves, so the strip drew a near-straight diagonal
+  // that told you nothing about where in the history you were.
+  //
+  // One floor across all series, not one per series. Per-series would rescale
+  // each line to fill the strip and quietly claim two skills were the same
+  // size; the strip's job is to say WHERE you are along the time axis, and it
+  // must not contradict the chart above to do it.
   const plotted = useMemo(() => {
-    const min = rows.reduce((low, row) => Math.min(low, row.total), Infinity);
-    return rows.map((row) => ({ date: row.date, plot: row.total - min }));
-  }, [rows]);
+    let min = Infinity;
+    for (const line of series) {
+      for (const point of line.values) min = Math.min(min, point.value);
+    }
+    const floor = Number.isFinite(min) ? min : 0;
+    return series.map((line) => ({
+      key: line.key,
+      color: line.color,
+      points: line.values.map((point) => ({
+        date: point.date,
+        plot: point.value - floor,
+      })),
+    }));
+  }, [series]);
 
   const definition = useMemo(
     () =>
       defineChart({
         marks: [
-          lineY(plotted, {
-            x: "date",
-            y: "plot",
-            curve: CHART_CURVE,
-            // Muted, not `--primary`: the strip is an index of the data, not a
-            // second reading of it, and the One Signal Rule leaves the accent
-            // to the chart above.
-            stroke: "var(--muted-foreground)",
-            // Back to one strength for the whole line. A second, brighter copy
-            // of the selected slice used to carry the figure/ground; the scrim
-            // does it now by dimming everything else, which is both the
-            // evil-brush read and one less mark to keep in step.
-            strokeOpacity: 0.7,
-            strokeWidth: 1.5,
-          }),
+          ...plotted.map((line) =>
+            lineY(line.points, {
+              id: line.key,
+              x: "date",
+              y: "plot",
+              curve: CHART_CURVE,
+              // The caller's colour. The install chart sends a neutral, because
+              // its one line must not compete with the accent on the chart
+              // above; the compare page sends each skill's own colour, because
+              // three neutral lines would be an unreadable tangle and the strip
+              // should read as a small copy of the chart it indexes.
+              stroke: line.color,
+              // One strength for the whole line. The scrim carries the
+              // figure/ground by dimming everything outside the selection.
+              strokeOpacity: 0.7,
+              strokeWidth: 1.5,
+            }),
+          ),
         ],
         scales: {
           // A time scale, matching the chart above. On a point scale the strip
@@ -349,8 +402,8 @@ export function RangeBrush({
           // when it is not.
           x: {
             scale: scaleUtc().domain([
-              rows[0].date,
-              rows[rows.length - 1].date,
+              days[0].date,
+              days[days.length - 1].date,
             ]),
           },
           y: { scale: scaleLinear },
@@ -360,11 +413,11 @@ export function RangeBrush({
             range: controlledSignal(
               {
                 start:
-                  rows.find((row) => row.day === range.start)?.date ??
-                  rows[0].date,
+                  days.find((row) => row.day === range.start)?.date ??
+                  days[0].date,
                 end:
-                  rows.find((row) => row.day === range.end)?.date ??
-                  rows[rows.length - 1].date,
+                  days.find((row) => row.day === range.end)?.date ??
+                  days[days.length - 1].date,
               },
               // Every phase is reported, with `committed` saying which it is.
               // The caller routes a preview to the chart above (so it tracks the
@@ -414,7 +467,7 @@ export function RangeBrush({
         focusRing: false,
         keyboard: false,
       }),
-    [plotted, dates, dayAt, rows, range, onRangeChange],
+    [plotted, dates, dayAt, days, range, onRangeChange],
   );
 
   return (
@@ -424,10 +477,10 @@ export function RangeBrush({
         className="chart-range-brush"
         initialWidth={INITIAL_WIDTH.dialog}
         height={STRIP_HEIGHT}
-        ariaLabel={`Select a range within all ${rows.length} days of install history.`}
+        ariaLabel={`Select a range within all ${days.length} days of install history.`}
         definition={definition}
       />
-      <BrushOverlay />
+      <BrushOverlay surface={surface} />
     </div>
   );
 }

@@ -31,15 +31,10 @@ export const CHART_THEME = {
 /**
  * Matches the old HTML axis labels: `text-chart-label text-xs`.
  *
- * `thin.minGap` is what controls date-axis density ON A POINT SCALE, which is
- * the compare chart. Such a scale offers every category as a tick candidate and
- * ignores a `count` or `spacing` hint, so the only lever is how close two labels
- * may sit before one is dropped — which has the advantage of adapting to width
- * on its own, where the old chart's fixed `numTicks` did not.
- *
- * The install chart is on a time scale and sizes its own step (`calendarTicks`)
- * so that thinning never has anything to drop. Thinning stays configured there
- * as a backstop, not as the strategy.
+ * `thin.minGap` is a BACKSTOP, not the strategy. Both date axes are on time
+ * scales and size their own step (`calendarTicks`) so that thinning never has
+ * anything to drop; it stays configured in case a future caller asks for more
+ * labels than fit.
  */
 export const AXIS_TICK_LABELS = {
   fontSize: 12,
@@ -98,34 +93,6 @@ export function datePillOffset(margin: number, padding: number) {
  * number. Five date labels across two months, and five rules down the plot.
  */
 export const AXIS_TICK_COUNT = 5;
-
-/**
- * `count` values spread evenly across `values`, first and last included.
- *
- * For scales that offer every datum as a tick candidate and ignore `count` —
- * band and point — where the alternative is one label per row.
- *
- * `count` is a target, not a quota: a neighbouring count is used instead when
- * it divides the series exactly and `count` would not. The old chart did the
- * same (`selectEvenlySpacedIndices` scored every layout from `count - 1` to
- * `count + 1` and took the most even), and the difference shows on short
- * series: six days at a target of five gave 17/18/20/21/22, dropping the 19th
- * and leaving one gap twice the others. Six evenly spaced labels is the honest
- * axis for six points.
- */
-export function evenlySpaced<T>(values: readonly T[], count: number): T[] {
-  if (values.length <= count) {
-    return [...values];
-  }
-  const last = values.length - 1;
-  // A layout is exactly even when its gap count divides the span.
-  const candidates = [count, count - 1, count + 1].filter(
-    (n) => n >= 2 && n <= values.length,
-  );
-  const chosen = candidates.find((n) => last % (n - 1) === 0) ?? count;
-  const step = last / (chosen - 1);
-  return Array.from({ length: chosen }, (_, i) => values[Math.round(i * step)]);
-}
 
 const DAY_MS = 86_400_000;
 

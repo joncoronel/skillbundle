@@ -208,6 +208,19 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   // otherwise.
   const shownRange = preview ?? range;
 
+  // One neutral line for the strip. Neutral because this chart's own line is
+  // already the accent, and the strip indexes the data rather than restating it.
+  const brushSeries = useMemo(
+    () => [
+      {
+        key: LINE_ID,
+        color: "var(--muted-foreground)",
+        values: allRows.map((row) => ({ date: row.date, value: row.total })),
+      },
+    ],
+    [allRows],
+  );
+
   // The window, guarded on two counts.
   //
   // A skill whose snapshots arrive or extend while the dialog is open would
@@ -443,6 +456,9 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       </div>
       <ChartHoverOverlay
         controller={overlay}
+        // Stands down while the brush is being dragged: the pointer is captured
+        // by the strip, so this chart's hover state would go stale mid-gesture.
+        disabled={preview !== null}
         pillOffset={datePillOffset(X_AXIS_LABEL_MARGIN, X_AXIS_LABEL_PADDING)}
       >
         <RendererChart
@@ -475,7 +491,9 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         // many in a dialog that already has the frame and the grid.
         <div className="mt-6">
           <RangeBrush
-            rows={allRows}
+            days={allRows}
+            series={brushSeries}
+            surface={"var(--surface-5)"}
             // The COMMITTED range, not the previewed one — feeding the live
             // drag back in here is what resets D3's anchor mid-gesture.
             range={committedRange}

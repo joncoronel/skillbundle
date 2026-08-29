@@ -254,12 +254,13 @@
 .chart-brush-scrim {
   position: absolute;
   inset: 0;
-  /* `--surface-5`, which is what the dialog itself is painted with — white in
-     light, `oklch(0.321 …)` in dark. `--card` looked identical in light and was
-     wrong in dark, where it is a whole step darker (0.264) and the scrim read
-     as a differently coloured panel laid over the strip rather than as the
-     dialog showing through. */
-  background: var(--surface-5);
+  /* Set from JS as the computed colour of the first ancestor that paints one.
+     A named token cannot serve both hosts: the strip sits on `--surface-5` in
+     the install dialog and on `--card` in the compare card, and in dark mode
+     those are a whole step apart (0.321 against 0.264). Either way the scrim
+     has to be the CONTAINER'S colour, or it reads as a tinted panel rather than
+     as the surface showing through. The fallback only covers the first frame. */
+  background: var(--scrim-bg, var(--card));
   opacity: 0.66;
   mask-image: linear-gradient(
     to right,
