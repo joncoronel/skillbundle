@@ -363,6 +363,59 @@ doing at the time:
   cross each other, the whole point of putting them on one axis. The wipe is the
   only entrance that reads that way, which is why it stays.
 
+- **The brush needs TWO ranges, and collapsing them breaks one thing or the
+  other.** Its controlled value must hold still for the length of a gesture:
+  rewriting it per frame rebuilds the definition under D3 and resets the drag's
+  own anchor, which made drawing a new range outside the selection work only
+  sometimes and stopped the handles crossing each other instead of swapping. The
+  plot above must do the opposite and move per frame, or it sits frozen until
+  you let go. So `skill-install-chart.tsx` keeps a committed range for the brush
+  and a `preview` for the plot, and the brush reports every phase with a
+  `committed` flag saying which it is. Gating on `commit` alone — what the docs'
+  controlled-brush example does — fixes the anchor and freezes the plot; both
+  states are what fixes both. Verified mid-drag with the button still down:
+  31 → 28 → 24 → 21 → 18 → 14 → 11 bars, with draw-outside and crossing intact.
+
+- **Resolve a brushed value to the NEAREST candidate, never by exact lookup.** A
+  `Map` keyed on `getTime()` misses whenever a proposal does not land precisely
+  on a candidate, and a miss that falls back to the previous value reads exactly
+  like a stuck drag — the range stops moving and the handles look like they have
+  collided.
+
+- **A range change is not an entrance, and `phase === "enter"` cannot tell them
+  apart.** Widening the install chart's window makes most bars ENTER, so the bar
+  motion callback saw the same phase it sees on first paint and replayed the
+  whole staggered opening sweep on every brush drag — on the renderer's spring,
+  which has no duration and settles down a long tail. A `settled` ref set in a
+  mount effect is what separates them: staggered spring while it is false, a
+  short tween forever after. Measured on a 30d → 7d switch: 229ms to settle.
+
+- **Range motion is `RANGE_TWEEN`, an exponential ease-out.** 200ms, with a real
+  `1 - 2^(-10t)` progress function rather than a CSS keyword — the library takes
+  either, and `ease-out` is a gentle cubic that does not land the "already
+  arrived" feel a direct-manipulation gesture wants. evilcharts goes further and
+  gives data updates no animation at all (`animationDurationUpdate: 0`), keeping
+  motion for the intro alone; a hard jump is wrong here only because our x scale
+  re-domains under the marks, so something has to show what moved where.
+
+- **The brush strip says "selected" by BRIGHTENING the selection, not by dimming
+  around it.** evil-brush dims the two unselected sides and draws no wash over
+  the selection at all (`BRUSH_FILLER_OPACITY = 0`), which is the better idea —
+  the selection is simply the part that is not dimmed. `brushX` gives you a
+  selection rect and two handles and no outside-the-selection nodes, and a dim
+  on the full-width overlay darkens the selection along with everything else. So
+  the strip draws its line twice: the full extent muted, the selected slice
+  again over it at `--foreground`. A wash was tried first, in the accent at 14%,
+  and it tinted the very stretch it was meant to reveal.
+
+- **The brush's frame and grip geometry live in `charts.css`, its paint in the
+  definition.** `selectionStyle` and `handleStyle` take a `SceneStyle`, which is
+  fill and stroke and nothing else — so the selection's 6px rounding and the
+  handle's 10x16 pill are CSS on `rx` / `width` / `height`, which are
+  presentation attributes on an SVG rect. The handle rect is BOTH the paint and
+  the hit target, which is why ours is 10px wide where evil-brush's is 6: theirs
+  paints a graphic overlay over a separate transparent interaction layer.
+
 - **The library's entrance fires on a host's FIRST render and nothing replays
   it** — not a definition change, not a prop change. So it cannot serve as a
   loading→ready reveal on any chart: to get it there the host has to remount,

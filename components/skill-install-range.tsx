@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { defineChart, lineY } from "@tanstack/charts";
 import { brushX } from "@tanstack/charts/interaction/brush";
 import { controlledSignal } from "@tanstack/charts/interaction/signal";
@@ -161,19 +161,41 @@ export function RangeBrush({
   onRangeChange,
 }: {
   rows: readonly (DayRow & { date: Date; total: number })[];
+  /**
+   * The COMMITTED range. Deliberately not the live one: this feeds the brush's
+   * controlled value, and rewriting that mid-gesture rebuilds the definition
+   * under D3 and resets the drag's own anchor. The caller keeps a separate
+   * preview for what the chart above draws.
+   */
   range: DayRange;
-  onRangeChange: (next: DayRange) => void;
+  onRangeChange: (next: DayRange, committed: boolean) => void;
 }) {
   // Brush candidates are the real instants, matching the strip's time scale.
   // A `Date` is a `ChartValue`, so this stays the CANDIDATE form of `brushX`
   // and keeps the keyboard sliders — the continuous form would have forced
   // `keyboard: false` and cost them.
   const dates = useMemo(() => rows.map((row) => row.date), [rows]);
-  const dayOf = useMemo(() => {
-    const byTime = new Map<number, string>();
-    for (const row of rows) byTime.set(row.date.getTime(), row.day);
-    return byTime;
-  }, [rows]);
+  // Nearest row to a proposed instant, never a lookup that can miss.
+  //
+  // An exact `Map` hit on `getTime()` was the first attempt and it froze the
+  // drag: a proposal that did not land precisely on a candidate fell back to
+  // the previous value, so the range stopped moving and the handles read as if
+  // they had collided. Nearest always answers.
+  const dayAt = useCallback(
+    (at: Date) => {
+      let best = rows[0];
+      let bestGap = Infinity;
+      for (const row of rows) {
+        const gap = Math.abs(row.date.getTime() - at.getTime());
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = row;
+        }
+      }
+      return best.day;
+    },
+    [rows],
+  );
 
   // `total` above the series floor, exactly as the sidebar sparkline plots it
   // and for the same reason: against a zero-based domain a cumulative count
@@ -184,6 +206,24 @@ export function RangeBrush({
     const min = rows.reduce((low, row) => Math.min(low, row.total), Infinity);
     return rows.map((row) => ({ date: row.date, plot: row.total - min }));
   }, [rows]);
+
+  // The selected slice, drawn a second time and brighter on top of the muted
+  // full extent.
+  //
+  // This is how the strip says which part is selected. evilcharts dims the two
+  // UNSELECTED sides instead and draws no wash at all over the selection
+  // (`BRUSH_FILLER_OPACITY = 0`), which is the better idea — the selection is
+  // simply the part that is not dimmed. It is not reachable here: `brushX`
+  // renders a selection rect and two handles and no outside-the-selection nodes,
+  // and a dim laid on the full-width overlay would darken the selection with
+  // everything else. Brightening the inside is the same figure/ground read with
+  // the nodes we actually have.
+  const selected = useMemo(() => {
+    const startIdx = rows.findIndex((row) => row.day === range.start);
+    const endIdx = rows.findIndex((row) => row.day === range.end);
+    if (startIdx === -1 || endIdx === -1) return plotted;
+    return plotted.slice(startIdx, endIdx + 1);
+  }, [rows, plotted, range]);
 
   const definition = useMemo(
     () =>
@@ -197,8 +237,25 @@ export function RangeBrush({
             // second reading of it, and the One Signal Rule leaves the accent
             // to the chart above.
             stroke: "var(--muted-foreground)",
-            strokeOpacity: 0.55,
+            strokeOpacity: 0.35,
             strokeWidth: 1.5,
+          }),
+          lineY(selected, {
+            id: "selected",
+            x: "date",
+            y: "plot",
+            curve: CHART_CURVE,
+            // Neutral, not the accent: the chart above owns the blue, and this
+            // is a figure/ground cue rather than a second reading of the data.
+            stroke: "var(--foreground)",
+            strokeOpacity: 0.8,
+            strokeWidth: 1.5,
+            // No motion. This mark exists to say WHICH part is selected, and a
+            // highlight that eases into place says it a beat after the handle
+            // has already moved — two things reporting one gesture at different
+            // times. `false` snaps it, so the bright stretch is simply wherever
+            // the selection is.
+            motion: false,
           }),
         ],
         scales: {
@@ -226,11 +283,20 @@ export function RangeBrush({
                   rows.find((row) => row.day === range.end)?.date ??
                   rows[rows.length - 1].date,
               },
-              (next) =>
-                onRangeChange({
-                  start: dayOf.get(next.start.getTime()) ?? range.start,
-                  end: dayOf.get(next.end.getTime()) ?? range.end,
-                }),
+              // Every phase is reported, with `committed` saying which it is.
+              // The caller routes a preview to the chart above (so it tracks the
+              // handle live) and a commit to this brush's own value — writing
+              // previews back HERE would rebuild the definition under D3 every
+              // frame and reset the gesture's anchor, which is what made
+              // drawing a new range outside the selection work only sometimes
+              // and stopped the handles crossing each other.
+              (next, { reason }) => {
+                if (reason.type === "cancel") return;
+                onRangeChange(
+                  { start: dayAt(next.start), end: dayAt(next.end) },
+                  reason.type === "commit",
+                );
+              },
             ),
             // The candidate form: the ordered instants the brush may snap to,
             // which is also what turns the handles into keyboard sliders.
@@ -239,17 +305,28 @@ export function RangeBrush({
             endAriaLabel: "Range end",
             format: (value: Date) =>
               dayLabelLong(value.toISOString().slice(0, 10)),
-            // The SELECTION carries the accent, as a wash — a selected region
-            // is one of the states DESIGN.md does assign to Signal Blue, and at
-            // this opacity it cannot compete with the solid line above it.
-            selectionStyle: { fill: "var(--primary)", fillOpacity: 0.14 },
-            // The HANDLES stay neutral and quiet. Painted solid in the accent
-            // they became the loudest thing in the dialog and, at a 7-day
-            // selection on a 71-day extent, the two 24px grips met in the
-            // middle and read as one blue slab rather than a range. The hit
-            // rect keeps its size (this only changes paint), so the touch
-            // target survives the calm.
-            handleStyle: { fill: "var(--foreground)", fillOpacity: 0.28 },
+            // A hairline FRAME around the selection, no wash inside it. The
+            // wash was the accent at 14%, which put a third blue thing in a
+            // dialog whose line already owns the accent, and it tinted the very
+            // stretch of data it was meant to reveal. The rounding is in
+            // `charts.css` — `SceneStyle` carries paint, not geometry.
+            selectionStyle: {
+              fill: "none",
+              // The border token's own recipe at a heavier weight. `--border` is
+              // `foreground 10%`, tuned to read as a hairline between surfaces;
+              // at that weight a frame around the selection was invisible on the
+              // strip, and the frame IS the affordance here. Still a hairline,
+              // just one you can find.
+              stroke: "color-mix(in oklab, var(--foreground) 22%, transparent)",
+              strokeWidth: 1,
+            },
+            // Grip pills at the selection edges. Painted solid in the accent
+            // these were the loudest thing in the dialog, and at a 7-day
+            // selection on a 71-day extent the two 24px slabs met in the middle
+            // and read as one block rather than a range. Paint only — the hit
+            // rect keeps its size, so the touch target survives the calm, and
+            // `charts.css` narrows and rounds what is actually drawn.
+            handleStyle: { fill: "var(--muted-foreground)" },
           }),
         ],
         guides: false,
@@ -258,12 +335,13 @@ export function RangeBrush({
         focusRing: false,
         keyboard: false,
       }),
-    [plotted, dates, dayOf, rows, range, onRangeChange],
+    [plotted, selected, dates, dayAt, rows, range, onRangeChange],
   );
 
   return (
     <RendererChart
       {...chartHostProps()}
+      className="chart-range-brush"
       initialWidth={INITIAL_WIDTH.dialog}
       height={44}
       ariaLabel={`Select a range within all ${rows.length} days of install history.`}

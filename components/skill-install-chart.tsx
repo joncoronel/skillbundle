@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { barY, defineChart, lineY } from "@tanstack/charts";
 import { scaleUtc } from "d3-scale";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
@@ -35,7 +35,10 @@ import {
   HOVER_DIM,
 } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
-import { chartMotionEntrance } from "@/components/charts/chart-motion";
+import {
+  chartMotionEntrance,
+  RANGE_TWEEN,
+} from "@/components/charts/chart-motion";
 import {
   dayLabel,
   dayLabelLong,
@@ -166,6 +169,45 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
     rangeable ? presets[presets.length - 1].range : fullRange(allRows),
   );
 
+  // Whether the reader has changed the window yet.
+  //
+  // `phase === "enter"` fires for BOTH the first paint and every bar arriving on
+  // a later range change, and the two want opposite timings: the first is the
+  // staggered sweep the dialog opens on, the second has to keep up with a
+  // gesture the pointer already finished. Widening the range makes most bars
+  // enter, so without this the whole entrance replayed on every brush drag —
+  // which is what read as sluggish.
+  //
+  // State set from the commit path, not a ref read at animation time: a ref
+  // cannot be read during render, and this is exact where a "has the entrance
+  // finished by now" timer would only be a guess. It flips on the same commit
+  // that changes the range, so the definition was rebuilding anyway.
+  const [touched, setTouched] = useState(false);
+
+  // The window being dragged, held apart from the committed one.
+  //
+  // Both are needed because they answer to different owners. The BRUSH's
+  // controlled value has to stay still for the length of a gesture — rewriting
+  // it per frame rebuilds its definition under D3 and resets the drag anchor.
+  // The CHART above has to move per frame, or the plot sits frozen until you
+  // let go. One piece of state cannot be both, so a preview drives the plot and
+  // the committed range drives the brush.
+  const [preview, setPreview] = useState<DayRange | null>(null);
+
+  const commitRange = useCallback((next: DayRange, committed = true) => {
+    if (!committed) {
+      setPreview(next);
+      return;
+    }
+    setTouched(true);
+    setPreview(null);
+    setRange(next);
+  }, []);
+
+  // What the plot draws: the live drag when there is one, the settled range
+  // otherwise.
+  const shownRange = preview ?? range;
+
   // The window, guarded on two counts.
   //
   // A skill whose snapshots arrive or extend while the dialog is open would
@@ -176,15 +218,22 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   // the start back far enough to keep a segment.
   const clampedRange = useMemo(() => {
     const all = fullRange(allRows);
-    const startIdx = allRows.findIndex((row) => row.day === range.start);
-    const endIdx = allRows.findIndex((row) => row.day === range.end);
+    const startIdx = allRows.findIndex((row) => row.day === shownRange.start);
+    const endIdx = allRows.findIndex((row) => row.day === shownRange.end);
     if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return all;
-    if (endIdx - startIdx + 1 >= MIN_POINTS) return range;
+    if (endIdx - startIdx + 1 >= MIN_POINTS) return shownRange;
     const widenedStart = Math.max(0, endIdx - (MIN_POINTS - 1));
     // Only possible when the series itself is shorter than `MIN_POINTS`, which
     // `hasChart` already prevents — but the fallback costs one comparison.
     if (endIdx - widenedStart + 1 < MIN_POINTS) return all;
-    return { start: allRows[widenedStart].day, end: range.end };
+    return { start: allRows[widenedStart].day, end: shownRange.end };
+  }, [allRows, shownRange]);
+
+  // The brush's own value, clamped but never carrying the preview.
+  const committedRange = useMemo(() => {
+    const all = fullRange(allRows);
+    const has = (day: string) => allRows.some((row) => row.day === day);
+    return has(range.start) && has(range.end) ? range : all;
   }, [allRows, range]);
 
   const rows = useMemo(() => {
@@ -236,17 +285,15 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           radius: 4,
           maxThickness: 26,
           states: [BAR_UNFOCUSED_DIM],
-          // Only the entrance is retimed; returning `undefined` for every other
-          // phase leaves the library's own timing in place rather than pinning
-          // it to zero.
+          // The opening sweep, then snappy for everything after it.
           motion: ({ phase, datumIndex, datumCount }) =>
-            phase === "enter"
+            phase === "enter" && !touched
               ? {
                   delay:
                     (ENTRANCE_STAGGER_MS * datumIndex) /
                     Math.max(1, datumCount),
                 }
-              : undefined,
+              : { transition: RANGE_TWEEN },
         }),
         lineY(rows, {
           id: LINE_ID,
@@ -261,6 +308,12 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           strokeOpacity: 1,
           strokeWidth: 2,
           states: [HOVER_DIM],
+          // Travels with the bars rather than trailing them on the renderer's
+          // spring; the entrance keeps the library's own grow from the baseline.
+          motion: ({ phase }) =>
+            phase === "enter" && !touched
+              ? undefined
+              : { transition: RANGE_TWEEN },
         }),
         focusCrosshair(rows.length),
       ],
@@ -371,7 +424,7 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       focusRing: false,
       pointer: false,
     });
-  }, [rows, allRows]);
+  }, [rows, allRows, touched]);
 
   const hostProps = chartHostProps(chartMotionEntrance);
 
@@ -383,7 +436,8 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           <RangeControl
             rows={allRows}
             range={clampedRange}
-            onRangeChange={setRange}
+            // A preset is always a commit; only the brush previews.
+            onRangeChange={(next) => commitRange(next)}
           />
         )}
       </div>
@@ -421,8 +475,10 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         <div className="mt-4 border-t border-border/60 pt-3">
           <RangeBrush
             rows={allRows}
-            range={clampedRange}
-            onRangeChange={setRange}
+            // The COMMITTED range, not the previewed one — feeding the live
+            // drag back in here is what resets D3's anchor mid-gesture.
+            range={committedRange}
+            onRangeChange={commitRange}
           />
         </div>
       )}

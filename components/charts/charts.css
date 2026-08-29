@@ -236,3 +236,83 @@
   overflow: clip;
   overflow-clip-margin: 8px;
 }
+
+/* The range brush strip under the install chart.
+ *
+ * The evil-brush look, as far as `brushX`'s nodes allow: a hairline frame around
+ * the selection with nothing washed over it, and a grip pill at each edge
+ * instead of the full-height slab D3 draws. `selectionStyle` and `handleStyle`
+ * carry the paint (they take a `SceneStyle`, which is fill and stroke only); the
+ * geometry has to come from here.
+ *
+ * `rx`, `width` and `height` on an SVG rect are presentation attributes, so CSS
+ * can set them — which is the only way to reshape nodes the library owns and we
+ * never author. Scoped to the strip's host class so nothing else with a brush
+ * inherits it later. */
+.chart-range-brush .selection {
+  rx: 6;
+  ry: 6;
+  /* The strip's 624-unit viewBox is scaled to whatever width the dialog gives
+     it, so a 1-unit stroke lands on a fraction of a device pixel and renders as
+     a soft grey smear — worst on mobile, where the scale is about 0.48. This
+     pins the stroke to one device-independent pixel at any scale, which is what
+     makes the frame read as a drawn edge instead of a blur. */
+  vector-effect: non-scaling-stroke;
+}
+
+/* A grip pill, vertically centred on the 44px strip: (44 - 16) / 2 = 14 from the
+ * top. D3 sizes and POSITIONS this rect from `handleSize` (24 by default) and
+ * centres that width on the selection edge, so narrowing the paint alone hung it
+ * 7px off-centre. The translate puts the drawn pill back on the edge while the
+ * untouched 24px box stays the hit target — the grab area is still centred and
+ * still full size, only the paint moved.
+ *
+ * The mask is HugeIcons' more-vertical-square-01 read as a grip: the pill is the
+ * fill, and the icon's three dots are punched out of it with `evenodd`, so the
+ * strip shows through them. One path rather than a pill plus three circles,
+ * because a rect can carry exactly one mask and no children. */
+.chart-range-brush .handle {
+  width: 10px;
+  height: 16px;
+  y: 14px;
+  rx: 5;
+  ry: 5;
+  transform: translateX(7px);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M0,5 a5,5 0 0 1 10,0 v6 a5,5 0 0 1 -10,0 z M4,4.5 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 M4,8 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 M4,11.5 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0'/%3E%3C/svg%3E");
+  mask-size: 10px 16px;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  transition: fill 100ms ease-out;
+}
+
+/* Brighten while the pointer is on it or dragging it. This is a hover/press
+   affordance and nothing more — it is deliberately NOT the focus treatment. */
+.chart-range-brush .handle:hover,
+.chart-range-brush .handle:active {
+  fill: var(--foreground);
+}
+
+/* Keyboard focus, and only keyboard focus.
+ *
+ * The default UA ring drew a hard box around the full 24px hit rect, so grabbing
+ * a handle with the mouse flashed a rectangle around a pill that is not that
+ * shape or size. `:focus-visible` keeps the ring for the tab path that needs it
+ * and drops it for the pointer path that does not, and the ring is the app's own
+ * `--ring` on the pill's real geometry — an outline follows the rect, so this
+ * uses a stroke instead, which follows the mask. */
+.chart-range-brush .handle:focus {
+  outline: none;
+}
+
+.chart-range-brush .handle:focus-visible {
+  fill: var(--foreground);
+  stroke: var(--ring);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-range-brush .handle {
+    transition: none;
+  }
+}
