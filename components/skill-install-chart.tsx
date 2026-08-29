@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { barY, defineChart, lineY } from "@tanstack/charts";
 import { scalePoint } from "@tanstack/charts/scales/point";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
@@ -43,6 +43,13 @@ import {
   seriesSummary,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
+import {
+  fullRange,
+  usablePresets,
+  RangeBrush,
+  RangeControl,
+  type DayRange,
+} from "@/components/skill-install-range";
 
 // Daily bars are the secondary series: the design system's neutral fill,
 // softened so the Signal Blue total line stays the one accent.
@@ -115,8 +122,60 @@ const HOVER_MARKERS = [
 export function InstallChart({ insights }: { insights: SkillInsights }) {
   const { snapshots } = insights;
 
+  // Every row the series has, with `daily` already resolved.
+  //
+  // Built ONCE over the whole series and only then windowed, which is the one
+  // ordering that works: `daily` is a difference against the previous row, so
+  // slicing first would leave the window's opening day reporting a false `+0`
+  // while the day that actually precedes it sits right there in `snapshots`.
+  // The `i === 0` zero is honest only at the true start of recorded history.
+  const allRows = useMemo(
+    () =>
+      snapshots.map((s, i) => ({
+        day: s.day,
+        total: s.installs,
+        // Day-over-day can dip negative on a correction; floor at 0.
+        daily:
+          i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
+      })),
+    [snapshots],
+  );
+
+  const presets = usablePresets(allRows);
+  // Nothing to narrow (a short series): no control, no strip, and the chart
+  // renders exactly as it did before the range feature existed.
+  const rangeable = presets.length > 0;
+
+  // Opens on the WIDEST finite preset, not the narrowest. 7d over a 71-day
+  // extent leaves a selection about a tenth of the strip, which reads as a
+  // sliver rather than a window; 30d is a window you can see, and is nearer the
+  // "how have the last couple of months gone" this chart is usually opened to
+  // answer.
+  //
+  // Narrowed rather than full by default, because the strip below carries the
+  // whole series — so the default hides nothing, and it starts on the readable
+  // end, where bars are ~15px wide instead of the 5.4px they collapse to across
+  // a full 90 days.
+  const [range, setRange] = useState<DayRange>(() =>
+    rangeable ? presets[presets.length - 1].range : fullRange(allRows),
+  );
+
+  // A skill whose snapshots arrive or extend while the dialog is open would
+  // otherwise hold a range naming days that no longer bound the series.
+  const clampedRange = useMemo(() => {
+    const all = fullRange(allRows);
+    const has = (day: string) => allRows.some((row) => row.day === day);
+    return has(range.start) && has(range.end) ? range : all;
+  }, [allRows, range]);
+
+  const rows = useMemo(() => {
+    const startIdx = allRows.findIndex((row) => row.day === clampedRange.start);
+    const endIdx = allRows.findIndex((row) => row.day === clampedRange.end);
+    return allRows.slice(startIdx, endIdx + 1);
+  }, [allRows, clampedRange]);
+
   const overlay = useChartHoverOverlay({
-    labels: useMemo(() => snapshots.map((s) => dayLabel(s.day)), [snapshots]),
+    labels: useMemo(() => rows.map((r) => dayLabel(r.day)), [rows]),
     markers: HOVER_MARKERS,
   });
 
@@ -126,14 +185,6 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   useUntransformedHost(overlay.hostRef, "InstallChart");
 
   const definition = useMemo(() => {
-    // One row per day: `total` (cumulative, the line) and `daily` (gained, the
-    // bars). Day-over-day can dip negative on a correction; floor at 0.
-    const rows = snapshots.map((s, i) => ({
-      day: s.day,
-      total: s.installs,
-      daily: i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
-    }));
-
     // A cumulative total dwarfs any single day's gain — often by two or three
     // orders of magnitude — so on one shared range the bars would be a flat
     // line along the axis. Each series therefore gets its own vertical scale,
@@ -283,13 +334,22 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       focusRing: false,
       pointer: false,
     });
-  }, [snapshots]);
+  }, [rows]);
 
   const hostProps = chartHostProps(chartMotionEntrance);
 
   return (
     <div>
-      <Legend />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <Legend />
+        {rangeable && (
+          <RangeControl
+            rows={allRows}
+            range={clampedRange}
+            onRangeChange={setRange}
+          />
+        )}
+      </div>
       <ChartHoverOverlay
         controller={overlay}
         pillOffset={datePillOffset(X_AXIS_LABEL_MARGIN, X_AXIS_LABEL_PADDING)}
@@ -297,7 +357,9 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         <RendererChart
           {...hostProps}
           initialWidth={INITIAL_WIDTH.dialog}
-          ariaLabel={`Install history: ${seriesSummary(snapshots)}.`}
+          ariaLabel={`Install history: ${seriesSummary(
+            rows.map((r) => ({ day: r.day, installs: r.total })),
+          )}.`}
           aspectRatio={5 / 2}
           definition={definition}
           onFocusChange={overlay.onFocusChange}
@@ -314,6 +376,19 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           onRender={overlay.onRender}
         />
       </ChartHoverOverlay>
+      {rangeable && (
+        // Held off the plot and hairlined, so the strip reads as a separate
+        // instrument rather than a second series someone forgot to label. The
+        // chart's own x labels sit right above it and would otherwise appear to
+        // belong to this line.
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <RangeBrush
+            rows={allRows}
+            range={clampedRange}
+            onRangeChange={setRange}
+          />
+        </div>
+      )}
     </div>
   );
 }
