@@ -69,13 +69,10 @@ export function dayLabelLong(day: string) {
 }
 
 /**
- * The same two labels from a `Date` rather than a day string.
- *
- * For the time-scale axes and the brush's slider readout, which are handed
- * instants. Both formatters render in UTC, so a `toDate` noon anchor and a bare
- * UTC midnight land on the same calendar day and there is no round trip through
- * `toISOString().slice(0, 10)` to get one — which every caller wrote by hand,
- * next to the anchoring rule that makes it safe.
+ * The same two labels from a `Date`, for the time-scale axes and the brush's
+ * slider readout. Both formatters render in UTC, so a `toDate` noon anchor and
+ * a bare UTC midnight land on the same calendar day and no caller needs the
+ * `toISOString().slice(0, 10)` round trip they were all writing by hand.
  */
 export function dayLabelAt(date: Date) {
   return dayFmt.format(date);

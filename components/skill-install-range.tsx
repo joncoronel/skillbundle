@@ -33,13 +33,13 @@ export type DayRow = { day: string };
 export type DayRange = { start: string; end: string };
 
 /**
- * One line on the brush strip.
- *
- * The strip takes N of these so both charts can use it: the install chart
- * passes a single neutral series, the compare page passes one per skill in that
- * skill's own colour. Values are whatever the caller plots — the strip only
- * ever reads their shape.
+ * Where a reported range is in its gesture. Three states, not a `committed`
+ * boolean: a preview moves the plot, a commit settles the range, and a cancel
+ * undoes the preview without settling anything.
  */
+export type RangePhase = "preview" | "commit" | "cancel";
+
+/** One line on the strip. It takes N of these so both charts can use it. */
 export type BrushSeries = {
   key: string;
   color: string;
@@ -49,11 +49,10 @@ export type BrushSeries = {
 /**
  * The windows offered above the chart.
  *
- * "All" rather than a number, because the series is 71 days today and grows to
- * the 90 the server returns (`INSIGHTS_HISTORY_DAYS`): a fixed "90d" would be a
- * claim that only becomes true later, where "All" is true at every length. The
- * brush strip below the plot is what keeps it from being vague — it paints the
- * full extent, so "All" is something you can see rather than take on trust.
+ * "All" rather than "90d": the series is 71 days today and only grows toward
+ * the 90 the server returns (`INSIGHTS_HISTORY_DAYS`), so a number would be a
+ * claim that becomes true later. The strip below paints the full extent, which
+ * is what keeps "All" from being vague.
  */
 const FINITE_PRESETS = [
   { value: "7", label: "7d", days: 7, name: "Last 7 days" },
@@ -63,13 +62,9 @@ const FINITE_PRESETS = [
 const ALL_VALUE = "all";
 
 /**
- * The strip's height. The overlay reads its position from D3's own selection
- * rect, so nothing else about the geometry has to be restated here.
- *
- * 56 rather than 44 for the compare page's sake: three series share one floor
- * there (see `RangeBrush`), so a skill five times another's size pins the small
- * ones near the bottom, and 44px left them bunched. The extra 12px buys real
- * separation without making a secondary control compete with the chart.
+ * The strip's height. 56 rather than 44 for the compare page: three series
+ * share one floor there, so a skill five times another's size bunched the small
+ * ones against the bottom in 44px.
  */
 export const STRIP_HEIGHT = 56;
 
@@ -85,6 +80,9 @@ function sameRange(a: DayRange, b: DayRange) {
   return a.start === b.start && a.end === b.end;
 }
 
+/** One offered window: the button's own text, and the range it selects. */
+export type RangePreset = (typeof FINITE_PRESETS)[number] & { range: DayRange };
+
 /**
  * The presets worth offering for this series, and the range each one selects.
  *
@@ -93,14 +91,10 @@ function sameRange(a: DayRange, b: DayRange) {
  * is what "All" is for. A short-history skill therefore gets no control at all
  * rather than a row of dead buttons; see the caller's early return.
  */
-/** One offered window: the button's own text, and the range it selects. */
-export type RangePreset = (typeof FINITE_PRESETS)[number] & { range: DayRange };
-
 export function usablePresets(rows: readonly DayRow[]): RangePreset[] {
-  // No days, no presets. `fullRange` indexes the array, and the compare chart
-  // reaches here with nothing drawable whenever every compared skill is too new
-  // to have a line — its "Not enough history yet" branch renders below the
-  // hooks, so this has to answer rather than throw.
+  // The compare chart reaches here with no days whenever every compared skill
+  // is too new to draw, and its "not enough history" branch renders below the
+  // hooks — so this answers rather than letting `fullRange` index nothing.
   if (rows.length === 0) return [];
   const all = fullRange(rows);
   return FINITE_PRESETS.map((preset) => ({
@@ -114,14 +108,10 @@ export function usablePresets(rows: readonly DayRow[]): RangePreset[] {
 }
 
 /**
- * A range narrowed to something the chart can actually draw, or the full extent
- * when it cannot be placed.
- *
- * Two guards in one. A range naming days the series no longer has (snapshots
- * that arrived or extended while the view was open) falls back to everything.
- * And a range collapsed onto a single day would leave the x scale with a
- * zero-width domain, so the start walks back far enough to keep `MIN_POINTS`
- * rows.
+ * A range narrowed to something the chart can draw, or the full extent when it
+ * cannot be placed. Two guards: a range naming days the series no longer has
+ * falls back to everything, and one collapsed onto a single day would leave the
+ * x scale a zero-width domain, so its start walks back to keep `MIN_POINTS`.
  */
 function clampRange<T extends DayRow>(
   rows: readonly T[],
@@ -135,32 +125,24 @@ function clampRange<T extends DayRow>(
   if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return all;
   if (endIdx - startIdx + 1 >= MIN_POINTS) return shown;
   const widened = Math.max(0, endIdx - (MIN_POINTS - 1));
-  // Only reachable when the series itself is shorter than `MIN_POINTS`, which
-  // both callers already gate on, but the fallback costs one comparison.
+  // Only reachable on a series shorter than `MIN_POINTS`, which both callers
+  // already gate on.
   if (endIdx - widened + 1 < MIN_POINTS) return all;
   return { start: rows[widened].day, end: shown.end };
 }
 
 /**
- * The whole range state machine, owned in one place because both charts run it.
+ * The range state machine, owned in one place because both charts run it.
  *
- * It is three pieces of state and four derivations, and the interesting part is
- * why the ranges cannot be collapsed into one. The BRUSH's controlled value has
- * to hold still for the length of a gesture: rewriting it per frame rebuilds
- * its definition under D3 and resets the drag's own anchor, which stops the
- * handles crossing and makes drawing a new range outside the selection work
- * only sometimes. The PLOT has to do the opposite and move per frame, or it
- * sits frozen until you let go. So `commitRange` routes previews to one and
- * commits to the other, and every consumer takes the range that answers to it.
+ * The two ranges cannot be collapsed into one, and docs/charts.md carries the
+ * measurements: the brush's controlled value must hold still for a whole
+ * gesture, the plot must move per frame. `commitRange` routes previews to one
+ * and commits to the other.
  *
- * `windowRange` and `committedRange` are both clamped, which is what stops a
- * blank click on the strip (a snapped zero-width commit) reaching the brush and
- * making D3 draw an empty selection: the overlay reads its box off that rect,
- * so the scrim, frame and both grips vanished until the next drag.
- *
- * `range` starts null rather than at a computed default, so a series that
- * arrives or grows while the view is open simply widens the window instead of
- * pinning a stale one.
+ * Both derived ranges are clamped, which keeps a blank click on the strip (a
+ * zero-width commit) from reaching D3 and erasing the overlay's chrome. `range`
+ * starts null so a series that grows while the view is open widens the window
+ * instead of pinning a stale one.
  */
 export function useDayRange<T extends DayRow>(
   rows: readonly T[],
@@ -172,9 +154,8 @@ export function useDayRange<T extends DayRow>(
     enabled?: boolean;
     /**
      * Where the window sits before anyone touches it. `"narrowed"` opens on the
-     * widest finite preset: the install dialog is usually opened to answer "how
-     * have the last couple of months gone", and across a full 90 days its bars
-     * collapse to 5.4px.
+     * widest finite preset, because the install chart's bars collapse to 5.4px
+     * across a full 90 days.
      */
     open?: "full" | "narrowed";
   } = {},
@@ -183,37 +164,37 @@ export function useDayRange<T extends DayRow>(
     () => (enabled ? usablePresets(rows) : []),
     [enabled, rows],
   );
-  // Nothing to narrow (a short series): no control, no strip, and the chart
-  // renders exactly as it did before the range feature existed.
+  // Nothing to narrow: no control, no strip, and the chart renders as it did
+  // before the range feature existed.
   const rangeable = presets.length > 0;
 
   const [range, setRange] = useState<DayRange | null>(null);
   const [preview, setPreview] = useState<DayRange | null>(null);
 
   /**
-   * Whether the reader has changed the window yet.
-   *
-   * `phase === "enter"` fires for BOTH the first paint and every mark arriving
-   * on a later range change, and the two want opposite timings: the first is
-   * the entrance the chart opens on, the second has to keep up with a gesture
-   * the pointer already finished. Widening the range makes most marks enter, so
-   * without this the whole entrance replayed on every drag.
-   *
-   * State set on the commit path, not a ref read at animation time: a ref
-   * cannot be read during render, and this is exact where a "has the entrance
-   * finished by now" timer would only be a guess.
+   * Whether the reader has changed the window yet. `phase === "enter"` fires
+   * for both the first paint and every mark arriving on a range change, so
+   * without this the entrance replayed on every drag. State, not a ref: a ref
+   * cannot be read during render.
    */
   const [touched, setTouched] = useState(false);
 
-  const commitRange = useCallback((next: DayRange, committed = true) => {
-    if (!committed) {
-      setPreview(next);
-      return;
-    }
-    setTouched(true);
-    setPreview(null);
-    setRange(next);
-  }, []);
+  const commitRange = useCallback(
+    (next: DayRange, phase: RangePhase = "commit") => {
+      if (phase === "preview") {
+        setPreview(next);
+        return;
+      }
+      // A cancel only drops the preview; D3 has already snapped its selection
+      // back. Settling a range here would spend the untouched default and the
+      // entrance on a gesture the reader abandoned.
+      setPreview(null);
+      if (phase === "cancel") return;
+      setTouched(true);
+      setRange(next);
+    },
+    [],
+  );
 
   const openRange = useMemo(
     () =>
@@ -259,16 +240,11 @@ export function useDayRange<T extends DayRow>(
 /**
  * Segmented range picker, sized to sit on the chart's legend row.
  *
- * Deliberately NOT painted in Signal Blue when selected: the chart's cumulative
- * line is already `--primary`, and DESIGN.md's One Signal Rule says two blue
- * things competing means one is wrong. The data keeps the blue; the control
- * reads as chrome around it. `ToggleGroup`'s outline variant already selects
- * with a neutral `--secondary` fill, so this is inherited rather than
- * overridden.
- *
- * No preset lights up while the range is hand-drawn on the brush — that state
- * is real and the control should show it rather than round to the nearest
- * preset.
+ * Not painted in Signal Blue when selected: the chart's line is already
+ * `--primary`, and DESIGN.md's One Signal Rule says two competing blues mean
+ * one is wrong. `ToggleGroup`'s outline variant selects with a neutral
+ * `--secondary`, so that is inherited rather than overridden. A hand-drawn
+ * range lights no preset; that state is real and should show.
  */
 export function RangeControl({
   rows,
@@ -278,14 +254,13 @@ export function RangeControl({
 }: {
   rows: readonly DayRow[];
   /**
-   * Passed in rather than computed here, because `usablePresets` walks the
-   * series once per preset and this renders on every preview frame of a drag.
-   * The owner already holds the list to decide whether to show the control.
+   * Passed in, not computed here: `usablePresets` walks the series once per
+   * preset and this renders on every preview frame of a drag.
    */
   presets: readonly RangePreset[];
   /**
-   * The COMMITTED range. A preview would light the 7d cell as a hand drag
-   * happened to pass through 7 days and drop it again a frame later.
+   * The COMMITTED range. A preview would light the 7d cell as a drag passed
+   * through 7 days and drop it again a frame later.
    */
   range: DayRange;
   onRangeChange: (next: DayRange) => void;
@@ -300,14 +275,13 @@ export function RangeControl({
       size="sm"
       variant="outline"
       aria-label="Chart range"
-      // Array-valued even single-select, and an empty array while the range is
-      // custom, which is what leaves every cell unpressed.
+      // Array-valued even single-select; empty while the range is custom,
+      // which is what leaves every cell unpressed.
       value={active ? [active] : []}
       onValueChange={(values: string[]) => {
         const next = values[0];
-        // Base UI reports the empty array when the pressed cell is pressed
-        // again. Re-selecting the current range is a no-op, not a clear: there
-        // is no "no range" state for the chart to render.
+        // Base UI reports an empty array when the pressed cell is pressed
+        // again. That is a no-op, not a clear: there is no "no range" state.
         if (!next) return;
         onRangeChange(
           next === ALL_VALUE
@@ -320,10 +294,9 @@ export function RangeControl({
         <ToggleGroupItem
           key={preset.value}
           value={preset.value}
-          // Leads with the visible text. An accessible name of "Last 7 days"
-          // over a cell reading "7d" does not contain its own label, which
-          // fails WCAG 2.5.3 and leaves voice control with nothing to match
-          // when someone says what they can see.
+          // Leads with the visible text. "Last 7 days" over a cell reading
+          // "7d" does not contain its own label (WCAG 2.5.3), and leaves voice
+          // control nothing to match.
           aria-label={`${preset.label}, ${preset.name.toLowerCase()}`}
         >
           {preset.label}
@@ -338,37 +311,25 @@ export function RangeControl({
 
 /**
  * Everything you SEE on the strip: the dim outside the selection, the frame
- * around it, and a grip at each edge.
+ * around it, and a grip at each edge. `brushX` draws none of it, for two
+ * reasons in docs/charts.md: D3 places its nodes at sub-pixel offsets, where a
+ * 1px stroke changes weight as it moves, and it renders nothing outside the
+ * selection, so the dim was unreachable through its styles.
  *
- * Drawn here rather than by `brushX` for two reasons that both come back to D3
- * owning its geometry. It positions its nodes at whatever fraction the pointer
- * lands on, so a 1px stroke changed weight as it moved (darkest pixel 120 → 64
- * → 0 across sub-pixel offsets) and the outline appeared to crawl; here the
- * edges are rounded to whole pixels and a border is simply crisp. And `brushX`
- * renders nothing outside the selection, so the evil-brush read — the selection
- * is the part that is NOT dimmed — was unreachable through its styles at all.
- *
- * `pointer-events: none` throughout: the invisible brush underneath still owns
- * every gesture, so this can sit on top without taking any of them.
+ * `pointer-events: none` throughout, so the invisible brush underneath keeps
+ * every gesture.
  */
 function BrushOverlay({ surface }: { surface: string }) {
   const [node, setNode] = useState<HTMLElement | null>(null);
   const [box, setBox] = useState<{ left: number; right: number } | null>(null);
 
   // Mirror D3's OWN selection rect rather than deriving a position from the
-  // range.
+  // range. Derived, the overlay could only move a whole day at a time, because
+  // the previews `brushX` reports are snapped to candidates. The rect is
+  // authoritative while dragging and at rest alike.
   //
-  // Deriving it looked right and dragged wrong: the previews `brushX` reports
-  // are snapped to candidates, so the overlay could only move a whole day at a
-  // time — measured against D3's rect during one drag, it advanced in 9px steps
-  // while the overlay jumped 409 → 425. The rect is authoritative in both
-  // states: D3 positions it from the gesture while dragging and from the
-  // controlled value the rest of the time, so mirroring it is both smooth and
-  // correct without a second source of truth.
-  //
-  // Read as client rects, which are CSS pixels — the rect's own `x` is in
-  // viewBox units and would need the strip's scale applied. Rounded, because
-  // whole-pixel edges are the reason this overlay exists.
+  // Client rects, which are CSS pixels: the rect's own `x` is in viewBox units.
+  // Rounded, because whole-pixel edges are why this overlay exists.
   useEffect(() => {
     const shell = node?.parentElement;
     if (!shell) return;
@@ -387,8 +348,8 @@ function BrushOverlay({ surface }: { surface: string }) {
       });
     };
     update();
-    // `childList` catches the brush mounting its nodes after first paint;
-    // the attribute filter catches every move D3 makes thereafter.
+    // `childList` catches the brush mounting its nodes after first paint; the
+    // attribute filter catches every move D3 makes after that.
     const observer = new MutationObserver(update);
     observer.observe(shell, {
       subtree: true,
@@ -423,10 +384,9 @@ function BrushOverlay({ surface }: { surface: string }) {
         <>
           <div className="chart-brush-scrim" />
           <div className="chart-brush-frame" />
-          {/* Two elements per grip on purpose: the inner one carries the
-              mask that shapes the pill and punches its dots, and a mask clips
-              anything drawn on that element — including a focus ring. The
-              outer one is unmasked and owns the ring. */}
+          {/* Two elements per grip: a mask clips everything drawn on its own
+              element, focus ring included, so the inner one carries the mask
+              and the outer one owns the ring. */}
           <span className="chart-brush-grip" data-edge="start">
             <span className="chart-brush-grip-pill" />
           </span>
@@ -443,16 +403,12 @@ function BrushOverlay({ surface }: { surface: string }) {
  * The full-extent strip the range is drawn on: the map, where the chart above
  * it is the viewport.
  *
- * It is a SEPARATE chart host with no `ChartHoverOverlay`, and that is the
- * design rather than an implementation detail. `brushX` mounts a D3 overlay
- * that contains pointer events before normal chart focus, and the main chart's
- * overlay already owns `pointerdown`/`move`/`up` there for scrubbing (which is
- * how touch scrubbing works at all). Putting the brush on its own surface means
- * the two gestures never meet, instead of arbitrating between them at runtime.
- *
- * `keyboard: false` for the same reason on the keyboard side: `brushX` exposes
- * its two handles as real sliders once `values` is supplied, so leaving chart
- * focus on as well would put two competing tab targets on one 44px strip.
+ * A SEPARATE chart host with no `ChartHoverOverlay`, by design: `brushX`
+ * contains pointer events before chart focus, and the main chart's overlay
+ * already owns `pointerdown`/`move`/`up` for scrubbing. Two hosts means the
+ * gestures never meet instead of arbitrating at runtime. `keyboard: false` for
+ * the same reason: `values` already exposes both handles as real sliders, so
+ * chart focus as well would put two tab targets on one strip.
  */
 export function RangeBrush({
   days,
@@ -467,39 +423,30 @@ export function RangeBrush({
   /**
    * The colour of the surface this strip sits on, as a CSS value.
    *
-   * The scrim dims by laying the container's OWN colour over the strip, so it
-   * has to be exactly that colour or it reads as a tinted panel instead of the
-   * surface showing through. It cannot be a fixed token: the strip sits on
-   * `--surface-5` inside the install dialog and on `--card` inside the compare
-   * card, and in dark mode those are a whole step apart (0.321 against 0.264).
+   * The scrim dims by laying the container's own colour over the strip, so it
+   * must be exactly that colour. A fixed token cannot serve both hosts:
+   * `--surface-5` in the install dialog against `--card` in the compare card,
+   * a whole lightness step apart in dark mode (0.321 against 0.264).
    *
-   * A token REFERENCE rather than a resolved colour, so the browser re-resolves
-   * it when the theme changes. Reading the computed colour off the DOM was
-   * tried and is worse: nothing re-runs on a theme toggle, so the strip kept
-   * the old surface until something else happened to move the brush.
+   * A token REFERENCE, not a resolved colour, so it follows a theme change.
+   * Reading the computed colour off the DOM was tried and never re-ran.
    */
   surface: string;
   /**
-   * The COMMITTED range. Deliberately not the live one: this feeds the brush's
-   * controlled value, and rewriting that mid-gesture rebuilds the definition
-   * under D3 and resets the drag's own anchor. The caller keeps a separate
-   * preview for what the chart above draws.
+   * The COMMITTED range, not the live one: this feeds the brush's controlled
+   * value, and rewriting that mid-gesture resets the drag's own anchor.
    */
   range: DayRange;
-  onRangeChange: (next: DayRange, committed: boolean) => void;
+  onRangeChange: (next: DayRange, phase: RangePhase) => void;
 }) {
-  // Brush candidates are the real instants, matching the strip's time scale.
-  // A `Date` is a `ChartValue`, so this stays the CANDIDATE form of `brushX`
-  // and keeps the keyboard sliders — the continuous form would have forced
-  // `keyboard: false` and cost them.
+  // The real instants, matching the strip's time scale. A `Date` is a
+  // `ChartValue`, so this stays the CANDIDATE form of `brushX` and keeps the
+  // keyboard sliders the continuous form would have cost.
   const dates = useMemo(() => days.map((row) => row.date), [days]);
 
-  // Nearest day to a proposed instant, never a lookup that can miss.
-  //
-  // An exact `Map` hit on `getTime()` was the first attempt and it froze the
-  // drag: a proposal that did not land precisely on a candidate fell back to
-  // the previous value, so the range stopped moving and the handles read as if
-  // they had collided. Nearest always answers.
+  // Nearest day to a proposed instant, never a lookup that can miss. An exact
+  // `Map` hit on `getTime()` froze the drag: a miss fell back to the previous
+  // value, which reads exactly like collided handles.
   const dayAt = useCallback(
     (at: Date) => {
       let best = days[0];
@@ -516,15 +463,11 @@ export function RangeBrush({
     [days],
   );
 
-  // Every series lifted by the SHARED floor, exactly as the sidebar sparkline
-  // plots its own line and for the same reason: against a zero-based domain a
-  // cumulative count barely moves, so the strip drew a near-straight diagonal
-  // that told you nothing about where in the history you were.
-  //
-  // One floor across all series, not one per series. Per-series would rescale
-  // each line to fill the strip and quietly claim two skills were the same
-  // size; the strip's job is to say WHERE you are along the time axis, and it
-  // must not contradict the chart above to do it.
+  // Every series lifted by a SHARED floor, as the sidebar sparkline lifts its
+  // own line: against a zero-based domain a cumulative count barely moves and
+  // the strip draws a near-straight diagonal. One floor rather than one per
+  // series, because per-series would rescale each line to fill the strip and
+  // quietly claim two skills were the same size.
   const plotted = useMemo(() => {
     let min = Infinity;
     for (const line of series) {
@@ -551,25 +494,19 @@ export function RangeBrush({
               x: "date",
               y: "plot",
               curve: CHART_CURVE,
-              // The caller's colour. The install chart sends a neutral, because
-              // its one line must not compete with the accent on the chart
-              // above; the compare page sends each skill's own colour, because
-              // three neutral lines would be an unreadable tangle and the strip
-              // should read as a small copy of the chart it indexes.
+              // The caller's colour: neutral from the install chart, whose
+              // one line must not compete with the accent above; each skill's
+              // own from the compare page, where three neutrals would tangle.
               stroke: line.color,
-              // One strength for the whole line. The scrim carries the
-              // figure/ground by dimming everything outside the selection.
+              // One strength throughout. The scrim carries the figure/ground.
               strokeOpacity: 0.7,
               strokeWidth: 1.5,
             }),
           ),
         ],
         scales: {
-          // A time scale, matching the chart above. On a point scale the strip
-          // spaced every day evenly while the chart spaced them by elapsed
-          // time, so a missing snapshot would have slid the selection off the
-          // window it names. Identical while the series is unbroken; correct
-          // when it is not.
+          // A time scale, matching the chart above. On a point scale a missing
+          // snapshot would slide the selection off the window it names.
           x: {
             scale: scaleUtc().domain([
               days[0].date,
@@ -589,49 +526,30 @@ export function RangeBrush({
                   days.find((row) => row.day === range.end)?.date ??
                   days[days.length - 1].date,
               },
-              // Every phase is reported, with `committed` saying which it is.
-              // The caller routes a preview to the chart above (so it tracks the
-              // handle live) and a commit to this brush's own value — writing
-              // previews back HERE would rebuild the definition under D3 every
-              // frame and reset the gesture's anchor, which is what made
-              // drawing a new range outside the selection work only sometimes
-              // and stopped the handles crossing each other.
+              // Every phase reported and named. Previews go to the chart
+              // above; writing them back HERE would rebuild the definition
+              // under D3 every frame and reset the gesture's anchor. A cancel
+              // (Escape, or a lost pointer) carries the gesture's ORIGIN, and
+              // dropping it left the caller's preview standing over a window
+              // D3 had already snapped away from.
               (next, { reason }) => {
-                // A cancel (Escape, or a lost pointer) is reported as a commit
-                // of the gesture's ORIGIN, which is where D3 snaps its own
-                // selection back to. Dropping it instead left the caller's
-                // preview standing: the plot stayed on the abandoned window,
-                // and the hover overlay it disables stayed dead until the next
-                // commit.
                 const to = reason.type === "cancel" ? reason.origin : next;
                 onRangeChange(
                   { start: dayAt(to.start), end: dayAt(to.end) },
-                  reason.type !== "preview",
+                  reason.type,
                 );
               },
             ),
-            // The candidate form: the ordered instants the brush may snap to,
-            // which is also what turns the handles into keyboard sliders.
+            // The ordered instants the brush snaps to, and what turns its
+            // handles into keyboard sliders.
             values: dates,
             startAriaLabel: "Range start",
             endAriaLabel: "Range end",
             format: dayLabelLongAt,
-            // INVISIBLE. `brushX` is kept for interaction alone — pointer and
-            // keyboard handling, snapping, slider semantics — and everything
-            // you see is drawn by `BrushOverlay`.
-            //
-            // Not a style preference. D3 places its nodes at whatever fraction
-            // the pointer lands on, and a 1px stroke at a fractional position
-            // covers a different share of each device pixel at every offset:
-            // measured darkest pixel 120 → 64 → 0 across sub-pixel positions,
-            // so the outline visibly changed weight as it moved. Nothing
-            // reachable through `SceneStyle` fixes that, because the cause is
-            // the geometry and D3 owns it. An overlay whose edges are rounded to
-            // whole pixels has no such problem — and it is also the only way to
-            // dim OUTSIDE the selection, since `brushX` renders no nodes there
-            // to paint. evilcharts does the same thing for the same reasons:
-            // its slider is `handleStyle: { opacity: 0 }`, interaction only,
-            // with the frame and handles drawn over it.
+            // INVISIBLE, and not as a style preference: `brushX` is kept for
+            // interaction alone and `BrushOverlay` draws everything you see.
+            // See its note above, and docs/charts.md for the measurements.
+            // evilcharts hides its own slider the same way.
             selectionStyle: { fill: "none", stroke: "none" },
             handleStyle: { fill: "none" },
           }),

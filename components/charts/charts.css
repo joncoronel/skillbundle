@@ -263,20 +263,18 @@
  * element on a whole-pixel boundary is simply crisp. evilcharts splits the same
  * way, and for the same reason. */
 
-/* The dim, and the evil-brush idea it comes from: the selection is not washed,
- * it is the part that is NOT dimmed. One element rather than two side panels,
- * with a hard-stop gradient mask punching the selection out of it — no extra
- * nodes, and the hole moves by changing two custom properties. */
+/* The dim, and the evil-brush idea behind it: the selection is not washed, it
+ * is the part that is NOT dimmed. One element rather than two side panels, with
+ * a hard-stop gradient mask punching the selection out of it, so the hole moves
+ * by changing two custom properties. */
 .chart-brush-scrim {
   position: absolute;
   inset: 0;
-  /* Set from the strip's `surface` prop, as a token REFERENCE so it re-resolves
-     on a theme change. A named token cannot serve both hosts: the strip sits on
-     `--surface-5` in the install dialog and on `--card` in the compare card,
-     and in dark mode those are a whole step apart (0.321 against 0.264). Either
-     way the scrim has to be the CONTAINER'S colour, or it reads as a tinted
-     panel rather than as the surface showing through. The fallback only covers
-     the first frame, before the overlay has measured a box. */
+  /* The strip's `surface` prop, as a token REFERENCE so it follows a theme
+     change. It has to be the CONTAINER'S colour or the scrim reads as a tinted
+     panel, and no named token serves both hosts: `--surface-5` in the install
+     dialog against `--card` in the compare card, a whole lightness step apart
+     in dark mode. The fallback covers only the first frame. */
   background: var(--scrim-bg, var(--card));
   opacity: 0.66;
   mask-image: linear-gradient(
@@ -316,18 +314,12 @@
 
 /* The pill, and the grip dots over it.
  *
- * The dots are a SECOND layer painted in the same `--scrim-bg` the scrim uses,
- * not holes punched through the pill. Same reason it is a variable there: a
- * fixed token paints the dialog's surface over the compare card's strip, and
- * the two are a whole lightness step apart in dark mode. Punching them (one `evenodd` mask on the pill) let the line
- * and the dim show through, so they read as transparent gaps rather than as
- * marks on a solid grip. evilcharts paints its grips the same way — opaque
- * dots in `withAlpha(tokens.background, …)` over the pill.
- *
- * The dots live on `::after` so the mask that shapes them is confined to that
- * box. A mask clips everything drawn on the element carrying it, the focus ring
- * included, which is why it must not sit on the grip itself. Geometry is
- * HugeIcons' more-vertical-square-01: three rounded squares on the centre line. */
+ * The dots are a SECOND layer in the scrim's own `--scrim-bg`, not holes
+ * punched through the pill: punched, the line and the dim showed through and
+ * they read as gaps rather than marks on a solid grip. evilcharts paints its
+ * grips the same way. They live on `::after` because a mask clips everything
+ * drawn on the element carrying it, focus ring included. Geometry is HugeIcons'
+ * more-vertical-square-01. */
 .chart-brush-grip-pill {
   position: absolute;
   inset: 0;

@@ -31,10 +31,8 @@ export const CHART_THEME = {
 /**
  * Matches the old HTML axis labels: `text-chart-label text-xs`.
  *
- * `thin.minGap` is a BACKSTOP, not the strategy. Both date axes are on time
- * scales and size their own step (`calendarTicks`) so that thinning never has
- * anything to drop; it stays configured in case a future caller asks for more
- * labels than fit.
+ * `thin.minGap` is a BACKSTOP, not the strategy: both date axes size their own
+ * step (`calendarTicks`) so thinning never has anything to drop.
  */
 export const AXIS_TICK_LABELS = {
   fontSize: 12,
@@ -109,23 +107,19 @@ const MAX_TICKS = 512;
  * Evenly spaced tick dates for a time axis, anchored to a FIXED date rather
  * than to the visible window.
  *
- * The anchor is what makes ticks animate. Anchored to the window, every tick
- * moves to a new date the moment either edge does, so each one is a different
- * element with a different key and the axis crossfades instead of travelling —
- * which is exactly what the index-based `evenlySpaced` did on the old point
- * scale, and why dragging the range made the dates pile up on each other.
- * Anchored to a fixed date, the SAME absolute dates keep being produced, so a
- * tick that stays visible keeps its identity and simply slides.
+ * The anchor is what makes ticks animate. Anchored to the window every tick
+ * takes a new date the moment either edge moves, so each is a new element with
+ * a new key and the axis crossfades instead of travelling. Anchored to a fixed
+ * date the same absolute dates keep being produced, so a tick that stays
+ * visible keeps its identity and slides.
  *
- * Preferred over handing `count` to d3: d3 picks from its own interval ladder
- * and can propose more labels than fit, at which point `tickLabels.thin` drops
- * them greedily and unevenly. Measured at 71 days: d3 offered weekly ticks and
- * thinning cut them to gaps of 14, 7, 14 and 21 days. Choosing the step so
- * everything fits means thinning never has to run.
+ * Preferred over handing `count` to d3, which picks from its own ladder and can
+ * propose more labels than fit, leaving `tickLabels.thin` to drop them
+ * unevenly. Measured at 71 days: d3 offered weekly ticks, thinned to gaps of
+ * 14, 7, 14 and 21 days.
  *
- * The one discontinuity: crossing a step boundary (weekly to fortnightly, say)
- * turns the whole set over at once. That is one jump rather than continuous
- * churn, and it only happens on a zoom that changes the span by a factor.
+ * The one discontinuity: crossing a step boundary turns the whole set over at
+ * once. That is one jump, and only on a zoom that changes the span by a factor.
  */
 export function calendarTicks(
   start: Date,
@@ -133,10 +127,9 @@ export function calendarTicks(
   anchor: Date,
   count: number,
 ): Date[] {
-  // A malformed day would make `firstIndex` NaN, and the loop below exits only
-  // on `at > end` — which NaN never satisfies, so the tab would hang inside a
-  // render rather than draw a wrong axis. Nothing produces one today; the check
-  // is what keeps that true.
+  // A malformed day makes `firstIndex` NaN, and the walk below exits only on
+  // `at > end`, which NaN never satisfies: a hang inside a render rather than a
+  // wrong axis. Nothing produces one today; this keeps that true.
   if (
     !Number.isFinite(start.getTime()) ||
     !Number.isFinite(end.getTime()) ||
@@ -156,9 +149,8 @@ export function calendarTicks(
   const anchorMs = anchor.getTime();
   const firstIndex = Math.ceil((start.getTime() - anchorMs) / stepMs);
   const ticks: Date[] = [];
-  // Bounded as well as guarded. The step is chosen so the span yields about
-  // `count` ticks, so this is unreachable in normal use and only exists so a
-  // future caller cannot turn an axis into a freeze.
+  // Bounded as well as guarded: the step already sizes the set to `count`, so
+  // this only exists so a future caller cannot turn an axis into a freeze.
   for (let i = firstIndex; ticks.length < MAX_TICKS; i++) {
     const at = anchorMs + i * stepMs;
     if (at > end.getTime()) break;
