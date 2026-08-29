@@ -69,6 +69,20 @@ export function dayLabelLong(day: string) {
 }
 
 /**
+ * The same two labels from a `Date`, for the time-scale axes and the brush's
+ * slider readout. Both formatters render in UTC, so a `toDate` noon anchor and
+ * a bare UTC midnight land on the same calendar day and no caller needs the
+ * `toISOString().slice(0, 10)` round trip they were all writing by hand.
+ */
+export function dayLabelAt(date: Date) {
+  return dayFmt.format(date);
+}
+
+export function dayLabelLongAt(date: Date) {
+  return weekdayFmt.format(date);
+}
+
+/**
  * Parse a "YYYY-MM-DD" snapshot day into a Date pinned to UTC noon. Anchoring at
  * noon (not midnight) means local-timezone formatters render the correct
  * calendar day for any zone within ±12h of UTC — a bare `new Date("2026-06-17")`
@@ -92,17 +106,37 @@ export function toDate(day: string) {
  * points.
  */
 export function weekWindow(snapshots: SkillInsights["snapshots"]) {
-  if (snapshots.length < 2) return snapshots;
-  const latest = snapshots[snapshots.length - 1];
-  const cutoff = toDate(latest.day).getTime() - 7 * 86_400_000;
+  return dayWindow(snapshots, 7);
+}
+
+/**
+ * `weekWindow` with the 7 lifted out: the trailing `days` of any day-keyed
+ * series, measured back from the series' OWN last day rather than from today.
+ *
+ * That distinction is the whole point and is easy to lose. A skill whose sync
+ * stalled a month ago still has history worth showing; cutting from `Date.now()`
+ * would hand back an empty window for it. Cutting from the latest row always
+ * returns something as long as the series has anything at all.
+ *
+ * Generic over the row rather than fixed to a snapshot, because the install
+ * chart windows its DERIVED rows (which carry `daily`) and not the raw
+ * snapshots — see the note on `daily` where those rows are built.
+ */
+export function dayWindow<T extends { day: string }>(
+  rows: readonly T[],
+  days: number,
+): T[] {
+  if (rows.length < 2) return [...rows];
+  const latest = rows[rows.length - 1];
+  const cutoff = toDate(latest.day).getTime() - days * 86_400_000;
   let startIdx = 0;
-  for (let i = snapshots.length - 1; i >= 0; i--) {
-    if (toDate(snapshots[i].day).getTime() <= cutoff) {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (toDate(rows[i].day).getTime() <= cutoff) {
       startIdx = i;
       break;
     }
   }
-  return snapshots.slice(startIdx);
+  return rows.slice(startIdx);
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { barY, defineChart, lineY } from "@tanstack/charts";
-import { scalePoint } from "@tanstack/charts/scales/point";
+import { scaleUtc } from "d3-scale";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import {
@@ -13,7 +13,7 @@ import {
 import {
   AXIS_TICK_COUNT,
   AXIS_TICK_LABELS,
-  evenlySpaced,
+  calendarTicks,
   CHART_THEME,
   datePillOffset,
   X_AXIS_LABEL_MARGIN,
@@ -35,49 +35,50 @@ import {
   HOVER_DIM,
 } from "@/components/charts/series-state";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
-import { chartMotionEntrance } from "@/components/charts/chart-motion";
+import {
+  chartMotionEntrance,
+  RANGE_TWEEN,
+} from "@/components/charts/chart-motion";
 import {
   dayLabel,
+  dayLabelAt,
   dayLabelLong,
   intFmt,
   seriesSummary,
+  toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
+import {
+  RangeBrush,
+  RangeControl,
+  useDayRange,
+} from "@/components/skill-install-range";
 
 // Daily bars are the secondary series: the design system's neutral fill,
 // softened so the Signal Blue total line stays the one accent.
 const BAR_FILL = "color-mix(in oklch, var(--neutral) 65%, transparent)";
 
 /**
- * How long the bars' entrance takes to sweep from the first column to the last.
+ * How long the bars' entrance sweeps from the first column to the last.
  *
- * Replaces the library's automatic bar stagger, which spans
- * `baseDuration * 0.4`. `baseDuration` is the tween duration, or a flat 1100
- * when the transition is a spring — and ours is (`FOCUS_SPRING`), so the
- * automatic span was 440ms with no way to tune it short of changing the
- * renderer's transition, which also feeds the tooltip. Measured, that put the
- * last bar's start 440ms in and the whole entrance at ~720ms, which reads
- * leisurely against a dialog that opens in 200.
+ * Replaces the library's automatic stagger, which spans `baseDuration * 0.4`
+ * and is untunable short of changing the renderer's transition (which also
+ * feeds the tooltip). Measured at 440ms to the last bar's start and ~720ms
+ * total, leisurely against a dialog that opens in 200.
  *
- * Divided by `datumCount`, exactly as the library's own is. A flat
- * milliseconds-per-bar — what `stagger()` from `@tanstack/charts/motion/definition`
- * writes — is linear in the series length, so a skill with 200 snapshots would
- * sweep for ten times as long as one with 20 rather than the same span.
+ * Divided by `datumCount`, as the library's own is: a flat ms-per-bar is
+ * linear in series length, so 200 snapshots would sweep ten times as long
+ * as 20 rather than over the same span.
  */
 const ENTRANCE_STAGGER_MS = 180;
 
-/**
- * Top of the y domain, as a multiple of the largest cumulative total.
- */
+/** Top of the y domain, as a multiple of the largest cumulative total. */
 const Y_HEADROOM = 1.08;
 
 /**
- * The domain ceiling, floored so it is never zero.
- *
- * `hasChart` gates the dialog on snapshot COUNT, not on values, so a skill with
- * two or more snapshots and no installs recorded yet reaches here with
- * `totalMax === 0`. Left alone that gives `domain([0, 0])` and stacks all five
- * grid rules on one line.
+ * The domain ceiling, floored so it is never zero. `hasChart` gates the dialog
+ * on snapshot COUNT, so a skill with snapshots and no installs yet arrives with
+ * `totalMax === 0`, and `domain([0, 0])` stacks all five grid rules on one line.
  */
 function yDomainTop(totalMax: number) {
   return Math.max(1, totalMax * Y_HEADROOM);
@@ -115,8 +116,59 @@ const HOVER_MARKERS = [
 export function InstallChart({ insights }: { insights: SkillInsights }) {
   const { snapshots } = insights;
 
+  // Every row the series has, with `daily` already resolved.
+  //
+  // Built ONCE over the whole series and only then windowed, which is the one
+  // ordering that works: `daily` is a difference against the previous row, so
+  // slicing first would leave the window's opening day reporting a false `+0`
+  // while the day that actually precedes it sits right there in `snapshots`.
+  // The `i === 0` zero is honest only at the true start of recorded history.
+  const allRows = useMemo(
+    () =>
+      snapshots.map((s, i) => ({
+        day: s.day,
+        // The x channel is now a real instant, not an ordinal slot. `day` stays
+        // for the tooltip title, the overlay labels and the range plumbing,
+        // which all speak in calendar days.
+        date: toDate(s.day),
+        total: s.installs,
+        // Day-over-day can dip negative on a correction; floor at 0.
+        daily:
+          i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
+      })),
+    [snapshots],
+  );
+
+  // The whole range machine, shared with the compare chart. Opens NARROWED, on
+  // the widest finite preset: the strip below carries the full series, so the
+  // default hides nothing and starts on the readable end, where bars are ~15px
+  // wide instead of the 5.4px they collapse to across a full 90 days. 7d would
+  // be a sliver rather than a window.
+  const {
+    presets,
+    rangeable,
+    windowRows: rows,
+    committedRange,
+    dragging,
+    touched,
+    commitRange,
+  } = useDayRange(allRows, { open: "narrowed" });
+
+  // One neutral line for the strip. Neutral because this chart's own line is
+  // already the accent, and the strip indexes the data rather than restating it.
+  const brushSeries = useMemo(
+    () => [
+      {
+        key: LINE_ID,
+        color: "var(--muted-foreground)",
+        values: allRows.map((row) => ({ date: row.date, value: row.total })),
+      },
+    ],
+    [allRows],
+  );
+
   const overlay = useChartHoverOverlay({
-    labels: useMemo(() => snapshots.map((s) => dayLabel(s.day)), [snapshots]),
+    labels: useMemo(() => rows.map((r) => dayLabel(r.day)), [rows]),
     markers: HOVER_MARKERS,
   });
 
@@ -126,132 +178,136 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
   useUntransformedHost(overlay.hostRef, "InstallChart");
 
   const definition = useMemo(() => {
-    // One row per day: `total` (cumulative, the line) and `daily` (gained, the
-    // bars). Day-over-day can dip negative on a correction; floor at 0.
-    const rows = snapshots.map((s, i) => ({
-      day: s.day,
-      total: s.installs,
-      daily: i === 0 ? 0 : Math.max(0, s.installs - snapshots[i - 1].installs),
-    }));
-
-    // A cumulative total dwarfs any single day's gain — often by two or three
-    // orders of magnitude — so on one shared range the bars would be a flat
-    // line along the axis. The bars are therefore measured against their own
-    // peak and rescaled into the totals' range. The old chart got the same
-    // result from a second y-axis, but neither axis was ever labelled — the two
-    // scales only ever existed to let each series fill the plot — so pre-scaling
-    // the value is equivalent and keeps this to one chart.
-    //
-    // `barPlot` is the plotted height; `daily` stays intact and is what the
-    // tooltip reports.
+    // A cumulative total dwarfs a single day's gain by two or three orders of
+    // magnitude, so on one shared range the bars flatten onto the axis. Each
+    // series gets its own vertical scale against its own peak. Neither is
+    // labelled, which is why two scales are honest here where two AXES would
+    // not be.
     const totalMax = rows.reduce((max, r) => Math.max(max, r.total), 0);
     const dailyMax = rows.reduce((max, r) => Math.max(max, r.daily), 0);
-    const barRatio = dailyMax > 0 ? totalMax / dailyMax : 0;
 
     return defineChart({
       marks: [
         barY(rows, {
           id: BAR_ID,
-          x: "day",
-          // Scaled in the accessor rather than in a mapped array so both marks
-          // read the same row objects — the tooltip then reports true values
-          // off whichever point the group hands it.
-          y: (r) => r.daily * barRatio,
-          // Both marks need distinct group identity: grouped focus reduces
-          // points that share a group to one member, and with the default
-          // (null) group the bar would swallow the line, taking the hover
-          // highlight and the line's tooltip row with it.
+          x: "date",
+          // The true value, on its own scale. Both marks read the same rows,
+          // so the tooltip reports real numbers whichever point it is handed.
+          y: "daily",
+          yScale: BAR_ID,
+          // Distinct group identity, both marks: grouped focus reduces a
+          // shared group to one member, so on the default null group the bar
+          // swallows the line and its tooltip row.
           z: () => BAR_ID,
           fill: BAR_FILL,
           fillOpacity: 1,
           radius: 4,
           maxThickness: 26,
           states: [BAR_UNFOCUSED_DIM],
-          // Only the entrance is retimed; returning `undefined` for every other
-          // phase leaves the library's own timing in place rather than pinning
-          // it to zero.
+          // The opening sweep, then snappy for everything after it.
           motion: ({ phase, datumIndex, datumCount }) =>
-            phase === "enter"
+            phase === "enter" && !touched
               ? {
                   delay:
                     (ENTRANCE_STAGGER_MS * datumIndex) /
                     Math.max(1, datumCount),
                 }
-              : undefined,
+              : { transition: RANGE_TWEEN },
         }),
         lineY(rows, {
           id: LINE_ID,
-          x: "day",
+          x: "date",
           y: "total",
           z: () => LINE_ID,
           curve: CHART_CURVE,
-          // Painted through the edge-fade gradient, as the old chart's line was
-          // (`fadeEdges` defaulted to true on its `Line`). The overlay's
-          // highlight band stays solid — see the clone in `chart-hover-overlay`.
+          // Through the edge-fade gradient, as the old chart's line was. The
+          // overlay's highlight band stays solid; see `chart-hover-overlay`.
           stroke: `url(#${fadeEdgesId(LINE_ID)})`,
           strokeOpacity: 1,
           strokeWidth: 2,
           states: [HOVER_DIM],
+          // Travels with the bars rather than trailing them on the renderer's
+          // spring; the entrance keeps the library's own grow from the baseline.
+          motion: ({ phase }) =>
+            phase === "enter" && !touched
+              ? undefined
+              : { transition: RANGE_TWEEN },
         }),
         focusCrosshair(rows.length),
       ],
-      // A point scale, not a band: it puts the first and last day ON the plot's
-      // edges, so the line, its marker, the crosshair, the date pill and the
-      // labels all land at the same x. The old chart got there by running two
-      // scales at once — bars on a band, line and labels on a time scale — and
-      // that split is visible on a short series: its bars sat up to half a band
-      // away from the labels naming them. One scale for everything is the same
-      // look without the disagreement.
-      //
-      // The cost is bar width. Off a band the mark has no bandwidth to read, so
-      // `inferBandwidth` gives it `minimumSpacing * 0.8` — a hard ceiling, since
-      // `inset` clamps at zero — against the old chart's 0.88 of the column.
-      // About a pixel at the densities these charts see.
-      x: {
-        scale: scalePoint,
-        axis: {
-          line: false,
-          ticks: {
-            size: 0,
-            padding: X_AXIS_LABEL_PADDING,
-            format: dayLabel,
-            // The old chart's `numTicks={5}` on a `tickMode="data"` axis: five
-            // labels pinned to real rows, first and last included. A point
-            // scale offers every category as a candidate and ignores `count`,
-            // so the candidates are chosen here. Thinning still runs on top,
-            // which is what keeps a narrow chart from crowding.
-            values: evenlySpaced(
-              rows.map((r) => r.day),
-              AXIS_TICK_COUNT,
-            ),
+      scales: {
+        // A UTC time scale, domained explicitly rather than by factory: the
+        // domain IS the visible window. It was a point scale until the range
+        // control landed, and both are nonband, so bars measure identically.
+        // What the time scale adds is calendar-aware ticks, which keep their
+        // identity as the window moves (`calendarTicks`). The one behavioural
+        // difference: a MISSING snapshot is now a gap rather than an even step.
+        x: {
+          scale: scaleUtc().domain([rows[0].date, rows[rows.length - 1].date]),
+          axis: {
+            line: false,
+            ticks: {
+              size: 0,
+              padding: X_AXIS_LABEL_PADDING,
+              format: dayLabelAt,
+              // Anchored to the series' LAST day, which never moves, so a
+              // tick that stays visible keeps its key and travels. The old
+              // index-picked ticks churned on every frame of a drag.
+              values: calendarTicks(
+                rows[0].date,
+                rows[rows.length - 1].date,
+                allRows[allRows.length - 1].date,
+                AXIS_TICK_COUNT,
+              ),
+            },
+            tickLabels: {
+              ...AXIS_TICK_LABELS,
+              // Now that a label survives a window change, it has somewhere to
+              // travel to. Without this the renderer's spring still applies but
+              // reads as a jump on a label that only moves a few pixels.
+              motion: { transition: { type: "tween", duration: 220 } },
+            },
           },
-          tickLabels: AXIS_TICK_LABELS,
         },
-      },
-      y: {
-        // An explicit domain rather than `nice`, because nothing reads this
-        // axis: both series share it and it describes neither on its own (see
-        // `barRatio`), so round numbers buy nothing and a known top is worth
-        // more. The headroom keeps the last point of the cumulative line — its
-        // maximum, and the top of the tallest bar — off the plot's edge, where
-        // the stroke and the focus marker would be clipped.
-        scale: scaleLinear().domain([0, yDomainTop(totalMax)]),
-        grid: true,
-        // Unlabelled, but the ticks still set how many dashed rules cross the
-        // plot — the old `Grid`'s `numTicksRows={5}`. Explicit values rather
-        // than `count`, which d3 rounds to a human-friendly step and overshoots
-        // on this domain. The topmost rule lands on the plot's top edge, where
-        // the old chart drew its fifth. See docs/charts.md for both.
-        axis: {
-          line: false,
-          ticks: {
-            size: 0,
-            values: Array.from(
-              { length: AXIS_TICK_COUNT },
-              (_, i) => (yDomainTop(totalMax) * i) / (AXIS_TICK_COUNT - 1),
-            ),
+        y: {
+          // An explicit domain rather than `nice`, because nothing reads this
+          // axis: both series share it and it describes neither on its own (see
+          // `barRatio`), so round numbers buy nothing and a known top is worth
+          // more. The headroom keeps the last point of the cumulative line — its
+          // maximum, and the top of the tallest bar — off the plot's edge, where
+          // the stroke and the focus marker would be clipped.
+          scale: scaleLinear().domain([0, yDomainTop(totalMax)]),
+          grid: true,
+          // Unlabelled, but the ticks still set how many dashed rules cross the
+          // plot — the old `Grid`'s `numTicksRows={5}`. Explicit values rather
+          // than `count`, which d3 rounds to a human-friendly step and overshoots
+          // on this domain. The topmost rule lands on the plot's top edge, where
+          // the old chart drew its fifth. See docs/charts.md for both.
+          axis: {
+            line: false,
+            ticks: {
+              size: 0,
+              values: Array.from(
+                { length: AXIS_TICK_COUNT },
+                (_, i) => (yDomainTop(totalMax) * i) / (AXIS_TICK_COUNT - 1),
+              ),
+            },
+            tickLabels: false,
           },
-          tickLabels: false,
+        },
+        // The bars' own vertical range, so a daily gain three orders of
+        // magnitude below the cumulative total still fills the plot. Same
+        // headroom as `y`, which is what makes the tallest bar land exactly
+        // where the old pre-scaled value put it.
+        //
+        // Draws nothing itself. Both defaults are on: a second axis would
+        // claim margin and state a number this chart deliberately does not,
+        // and a second grid would cross the five rules already there.
+        [BAR_ID]: {
+          channel: "y",
+          scale: scaleLinear().domain([0, yDomainTop(dailyMax)]),
+          axis: false,
+          grid: false,
         },
       },
       gradients: [fadeEdgesGradient(fadeEdgesId(LINE_ID), "var(--primary)")],
@@ -260,27 +316,42 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
       tooltip: CHART_TOOLTIP,
       focus: "group-x",
       maxFocusDistance: Number.POSITIVE_INFINITY,
-      // The overlay owns the gesture and every cursor visual; see
-      // `chart-hover-overlay`. Without `focusRing: false` the chart paints its
-      // own marker underneath ours — two dots, only one of them moving.
+      // The overlay owns the gesture and every cursor visual. Without this
+      // the chart paints its own marker under ours: two dots, one moving.
       focusRing: false,
       pointer: false,
     });
-  }, [snapshots]);
+  }, [rows, allRows, touched]);
 
   const hostProps = chartHostProps(chartMotionEntrance);
 
   return (
     <div>
-      <Legend />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <Legend />
+        {rangeable && committedRange && (
+          <RangeControl
+            rows={allRows}
+            presets={presets}
+            range={committedRange}
+            // A preset is always a commit; only the brush previews.
+            onRangeChange={(next) => commitRange(next)}
+          />
+        )}
+      </div>
       <ChartHoverOverlay
         controller={overlay}
+        // Stands down mid-drag: the strip has the pointer, so this chart's
+        // hover state would go stale.
+        disabled={dragging}
         pillOffset={datePillOffset(X_AXIS_LABEL_MARGIN, X_AXIS_LABEL_PADDING)}
       >
         <RendererChart
           {...hostProps}
           initialWidth={INITIAL_WIDTH.dialog}
-          ariaLabel={`Install history: ${seriesSummary(snapshots)}.`}
+          ariaLabel={`Install history: ${seriesSummary(
+            rows.map((r) => ({ day: r.day, installs: r.total })),
+          )}.`}
           aspectRatio={5 / 2}
           definition={definition}
           onFocusChange={overlay.onFocusChange}
@@ -297,6 +368,21 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           onRender={overlay.onRender}
         />
       </ChartHoverOverlay>
+      {rangeable && committedRange && (
+        // Held off the plot so the strip reads as a separate instrument, not
+        // an unlabelled second series under the chart's own x labels. Space
+        // alone does it; a rule as well was one line too many here.
+        <div className="mt-6">
+          <RangeBrush
+            days={allRows}
+            series={brushSeries}
+            surface="var(--surface-5)"
+            // The COMMITTED range: the live drag would reset D3's anchor.
+            range={committedRange}
+            onRangeChange={commitRange}
+          />
+        </div>
+      )}
     </div>
   );
 }

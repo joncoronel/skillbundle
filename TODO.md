@@ -1317,3 +1317,41 @@ true` — that half had already been repaired by the earlier one-shot, so
 - **Fast-delete for dead-but-installable skills ("Fix 2")** — deferred. Full context in
   `docs/skill-lifecycle.md` ("Dead-but-installable skills & the Fix 2 decision") and the
   `/dev` "Dead but installable" stat card. Only revisit if that count climbs.
+
+- **Wheel zoom on the install chart (`zoomX`)** — built, measured, removed. TanStack
+  Charts' `zoomX` works correctly on the chart's time scale (verified: 31 bars → 9 → 72,
+  with the tick cadence adapting per zoom level), but it "captures wheel input only while
+  the plot control is focused", so the wheel does nothing until you click the chart first.
+  `ZoomXOptions` exposes no way to change that, and focusing its control on `pointerenter`
+  does not work — the control (`rect[tabindex="-1"]`) is not in the DOM at hover time.
+  It also cost interaction smoothness: with `zoomX` mounted, the tooltip and the bars'
+  hover dim both went visibly laggy under real pointer input. Do not trust a synthetic
+  probe to check this — one was written, sampled tooltip opacity across 25 moves spaced
+  28ms apart, and reported no difference at all, because that input rate never provoked
+  the per-event cost that a real mouse at 60-125Hz does. Verify by hand.
+
+  Revisit if the library adds an option to capture the wheel on hover, and re-check the
+  interaction cost by hand if so. The alternative, if it never does, is a custom wheel
+  handler: the range is already two day indices, so widening and narrowing it is
+  arithmetic and needs none of `zoomX`'s scale inversion — and it adds no per-event
+  listener to the plot.
+
+- **Widen the charts' history window past 90 days** — discussed Aug 2026, not done.
+  `INSIGHTS_HISTORY_DAYS` (`convex/skills.ts`) is 90; both the install chart and the
+  compare chart read that window. Raising it to 180 needs TWO coordinated changes, not
+  a constant bump:
+
+  1. `SNAPSHOT_RETENTION_DAYS` is also 180, and the wider retention exists so the daily
+     prune never races the query at the window's edge. Setting the query window to 180
+     removes that margin — the prune deletes day `today - 180` while the query asks for
+     `>= today - 180`, so the oldest column winks in and out between loads. Raise
+     retention above the window (270 restores a 90-day buffer) at roughly +50% snapshot
+     rows.
+  2. The install chart's bars stop being readable. Bar width is 80% of the smallest gap
+     between points, and the plot spans 596 units: measured 6.81 at today's 71 points,
+     5.36 at the 90 cap, and 2.66 with 0.67px gaps at 180 — the bars merge into a solid
+     block, and `radius: 4` clamps to half-width so each becomes a lozenge. Full range
+     would need a different bar treatment (or an area mark) at that density.
+
+  The compare chart is lines only and needs neither change. The range control already
+  makes a longer window cheap to look at, which is most of what raising it would buy.

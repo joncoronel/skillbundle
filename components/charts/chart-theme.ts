@@ -31,11 +31,8 @@ export const CHART_THEME = {
 /**
  * Matches the old HTML axis labels: `text-chart-label text-xs`.
  *
- * `thin.minGap` is what controls date-axis density. A point or band scale
- * offers every category as a tick candidate and ignores a `count` or `spacing`
- * hint, so the only lever is how close two labels may sit before one is
- * dropped — which has the advantage of adapting to width on its own, where the
- * old chart's fixed `numTicks` did not.
+ * `thin.minGap` is a BACKSTOP, not the strategy: both date axes size their own
+ * step (`calendarTicks`) so thinning never has anything to drop.
  */
 export const AXIS_TICK_LABELS = {
   fontSize: 12,
@@ -95,30 +92,69 @@ export function datePillOffset(margin: number, padding: number) {
  */
 export const AXIS_TICK_COUNT = 5;
 
+const DAY_MS = 86_400_000;
+
 /**
- * `count` values spread evenly across `values`, first and last included.
- *
- * For scales that offer every datum as a tick candidate and ignore `count` —
- * band and point — where the alternative is one label per row.
- *
- * `count` is a target, not a quota: a neighbouring count is used instead when
- * it divides the series exactly and `count` would not. The old chart did the
- * same (`selectEvenlySpacedIndices` scored every layout from `count - 1` to
- * `count + 1` and took the most even), and the difference shows on short
- * series: six days at a target of five gave 17/18/20/21/22, dropping the 19th
- * and leaving one gap twice the others. Six evenly spaced labels is the honest
- * axis for six points.
+ * Day steps a date axis is allowed to tick on. Whole weeks above a fortnight,
+ * so a label never lands mid-week against its neighbours.
  */
-export function evenlySpaced<T>(values: readonly T[], count: number): T[] {
-  if (values.length <= count) {
-    return [...values];
+const TICK_STEPS_DAYS = [1, 2, 3, 7, 14, 28, 56, 112] as const;
+
+/** Backstop on the tick walk. Ten years at the widest step is 33 ticks. */
+const MAX_TICKS = 512;
+
+/**
+ * Evenly spaced tick dates for a time axis, anchored to a FIXED date rather
+ * than to the visible window.
+ *
+ * The anchor is what makes ticks animate. Anchored to the window every tick
+ * takes a new date the moment either edge moves, so each is a new element with
+ * a new key and the axis crossfades instead of travelling. Anchored to a fixed
+ * date the same absolute dates keep being produced, so a tick that stays
+ * visible keeps its identity and slides.
+ *
+ * Preferred over handing `count` to d3, which picks from its own ladder and can
+ * propose more labels than fit, leaving `tickLabels.thin` to drop them
+ * unevenly. Measured at 71 days: d3 offered weekly ticks, thinned to gaps of
+ * 14, 7, 14 and 21 days.
+ *
+ * The one discontinuity: crossing a step boundary turns the whole set over at
+ * once. That is one jump, and only on a zoom that changes the span by a factor.
+ */
+export function calendarTicks(
+  start: Date,
+  end: Date,
+  anchor: Date,
+  count: number,
+): Date[] {
+  // A malformed day makes `firstIndex` NaN, and the walk below exits only on
+  // `at > end`, which NaN never satisfies: a hang inside a render rather than a
+  // wrong axis. Nothing produces one today; this keeps that true.
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime()) ||
+    !Number.isFinite(anchor.getTime())
+  ) {
+    return [];
   }
-  const last = values.length - 1;
-  // A layout is exactly even when its gap count divides the span.
-  const candidates = [count, count - 1, count + 1].filter(
-    (n) => n >= 2 && n <= values.length,
-  );
-  const chosen = candidates.find((n) => last % (n - 1) === 0) ?? count;
-  const step = last / (chosen - 1);
-  return Array.from({ length: chosen }, (_, i) => values[Math.round(i * step)]);
+
+  const spanDays = Math.max(1, (end.getTime() - start.getTime()) / DAY_MS);
+  const stepDays =
+    TICK_STEPS_DAYS.find((step) => spanDays / step <= count) ??
+    TICK_STEPS_DAYS[TICK_STEPS_DAYS.length - 1];
+  const stepMs = stepDays * DAY_MS;
+
+  // Walk out from the anchor rather than from the window edge, so the emitted
+  // dates depend only on the anchor and the step.
+  const anchorMs = anchor.getTime();
+  const firstIndex = Math.ceil((start.getTime() - anchorMs) / stepMs);
+  const ticks: Date[] = [];
+  // Bounded as well as guarded: the step already sizes the set to `count`, so
+  // this only exists so a future caller cannot turn an axis into a freeze.
+  for (let i = firstIndex; ticks.length < MAX_TICKS; i++) {
+    const at = anchorMs + i * stepMs;
+    if (at > end.getTime()) break;
+    ticks.push(new Date(at));
+  }
+  return ticks;
 }

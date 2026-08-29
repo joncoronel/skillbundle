@@ -1,10 +1,11 @@
 # Charts
 
 The three charts and the TanStack Charts integration behind them. Keep this in
-sync with `components/charts/` and the three chart components
+sync with `components/charts/`, the three chart components
 (`components/skill-install-sparkline.tsx`,
 `components/skill-install-chart.tsx`, `components/compare-trend-chart.tsx`)
-when behavior changes.
+and the install chart's range control and brush strip
+(`components/skill-install-range.tsx`) when behavior changes.
 
 Most of this file is a list of things that are easy to get wrong and were got
 wrong at least once. Each entry states the trap and the measurement behind it,
@@ -16,6 +17,16 @@ Three charts, all built on **TanStack Charts** (`@tanstack/charts`): the sidebar
 sparkline, the install-history dialog chart, and the compare page's multi-line
 chart. Shared pieces live in `components/charts/`; each chart file owns its own
 `defineChart` definition.
+
+The install dialog also carries a fourth chart host, the range brush strip in
+`components/skill-install-range.tsx`. It is deliberately its OWN host with no
+`ChartHoverOverlay`: `brushX` contains pointer events before normal chart focus,
+and the main chart's overlay already owns press-and-drag there for scrubbing
+(which is how touch scrubbing works at all). Separate surfaces means the two
+gestures never meet, rather than arbitrating between them at runtime. The strip
+and the chart share one `{ start, end }` day range, which the presets, the brush
+and the row slice all read — so they cannot disagree, and a hand-drawn range
+simply lights no preset.
 
 Styling for the library's own nodes — the grid rules, the axis labels, the bar
 and line hover dim, the entrance wipe — is in `components/charts/charts.css`,
@@ -84,25 +95,64 @@ doing at the time:
   it. This is also why the sidebar sparkline plots `installs - min` rather than
   the raw total — against a zero-based axis a cumulative count is a flat line.
 
-- **Every x scale is a point scale, including the install chart's.** It puts
-  the first and last day ON the plot's edges, so the line, its marker, the
-  crosshair, the pill and the labels all share one x. A band scale insets the
-  first and last column by half a band, which at six points leaves the axis
-  ~55px short at each end and the cursor nowhere near the label naming it. The
-  old chart ran two scales at once — bars on a band, line and labels on a time
-  scale — so ITS bars sat up to half a band from their own labels; one scale is
-  that look without the disagreement. Shifting only the labels (a `tickLabels.dx`
-  offset) was tried and is worse: the labels then align with nothing.
-  The cost is bar width. Off a band the mark has no bandwidth to read, so
-  `inferBandwidth` gives it `minimumSpacing * 0.8` — a ceiling, since `inset`
+- **No x scale is a band scale.** A band insets the first and last column by
+  half a band, which at six points leaves the axis ~55px short at each end and
+  the cursor nowhere near the label naming it. Off a band the mark has no
+  bandwidth to read, so it estimates width from "the smallest distance between
+  distinct mapped positions" and takes 80% of it — a ceiling, since `inset`
   clamps at zero — against the old chart's 0.88 of the column. Measured at 45
-  points: 10.3px wide on a 12.8px pitch, about a pixel under the old.
+  points: 10.3px wide on a 12.8px pitch, about a pixel under the old. That cost
+  is the same on a point scale and a time scale, because the 80% rule is what
+  every NONBAND scale gets; it is not an argument between those two.
 
-- **Date axes thin by `tickLabels.thin.minGap`.** Point and band scales offer
-  every category as a candidate and ignore `count`/`spacing` hints, so left
-  alone they print one label per row that fits — nearly twice the old chart's
-  `numTicks`. `evenlySpaced` picks the candidates instead (5 in the dialog, 6 on
-  the compare page), and thinning runs on top as the backstop.
+- **Both x scales are UTC time scales.** Both put the first and last day on the plot edges, so in both the
+  line, its marker, the crosshair, the pill and the labels share one x. The old
+  chart ran two scales at once — bars on a band, line and labels on a time
+  scale — so ITS bars sat up to half a band from their own labels; one scale
+  per chart is that look without the disagreement. Shifting only the labels (a
+  `tickLabels.dx` offset) was tried and is worse: the labels then align with
+  nothing.
+
+  Each upgraded when it gained a range control, for the reason the library's own
+  guidance names: a point scale holds dates as ordered
+  CATEGORIES, so "a Friday and the following Monday occupy adjacent categorical
+  positions", and you move off it when the values must be spaced by elapsed time
+  **or when the axis needs calendar-aware ticks**. The second is what forced it
+  — see the tick entries below. Two consequences worth knowing:
+  - A missing daily snapshot is now a visible gap rather than an invisible even
+    step. More honest, and it does not thin the bars: the 80% rule keys off the
+    smallest gap, which stays one day wherever the series is unbroken.
+  - `d3-scale` and `@types/d3-scale` are direct dependencies, which the library
+    instructs for any source that imports `scaleUtc`.
+
+  The compare chart followed when it gained the same control. Its case is
+  stronger, not weaker: it builds its x axis from the UNION of days across up to
+  three skills, so a day missing from one series is likelier than on a single
+  skill's chart, and a point scale hid every one of those gaps.
+
+- **Index-picked ticks cannot animate, which is what cost both charts their
+  point scale.** `evenlySpaced` picks by array INDEX, so the moment either edge
+  of a window moves, every tick is a different date. Measured on the install
+  chart with a range control, advancing the brush by ONE day: the label count
+  went 4 → 5 and four of five dates changed (Jul 28/Aug 7/Aug 17/Aug 27 →
+  Jul 29/Aug 5/Aug 13/Aug 20/Aug 27). Labels are keyed by value
+  (`x-tick-label:date:…`), so nothing shared a key, nothing could travel, and
+  the axis crossfaded two full sets of dates on top of each other on every frame
+  of a drag. The same measurement on the time scale: 4 labels → the SAME 4
+  labels, same keys, only their x moved. Calendar-aware ticks are the fix, and
+  a time scale is the only way to get them.
+
+- **Pick date ticks on a fixed cadence, not with `count`.** `calendarTicks` in
+  `charts/chart-theme.ts` chooses a whole-day step from a ladder so every label
+  fits, then walks out from a FIXED anchor (the series' last day). Two separate
+  jobs: the step is what stops thinning ever running, and the anchor is what
+  keeps a tick's identity stable as the window slides. Handing d3 a `count`
+  instead was tried and reintroduces the greedy-thinning failure below —
+  measured at 71 days, d3 offered weekly ticks and thinning cut them to gaps of
+  14, 7, 14 and 21 days. With the ladder: 7,7,7,7 at 30 days, 28,28 at full
+  extent, 3,3,3,3 zoomed in, and dates persist across those changes.
+  The one discontinuity is crossing a step boundary, which turns the whole set
+  over at once — one jump rather than continuous churn.
 
 - **Thinning is a backstop, not a narrow-width strategy — it drops candidates
   greedily, not evenly.** Ask for more labels than fit and what survives is
@@ -116,15 +166,14 @@ doing at the time:
   narrow, the full six above.
   Read the width off the **scene**, not the viewport — the card is the box the
   labels have to fit in, and the builder is handed exactly that.
-  The install chart's axis is not evidence that thinning preserves spacing. It
-  asks for five over the same range, `evenlySpaced` hands back four because 21
-  divides by three, and all four survive; it is even by luck.
+  The install chart is no longer an example either way: `calendarTicks` sizes
+  its step so thinning has nothing to drop.
 
 - **`ticks.count` is a preference d3 rounds, not a count.** On the dialog
   chart's domain, 5 asks yields 8 grid rules and 3 yields 5. Where the numbers
-  are never read — the install chart's y axis describes neither series on its
-  own — pin the domain and pass explicit `values`, which is exact and stable
-  across data.
+  are never read — the install chart draws BOTH its vertical scales unlabelled
+  — pin the domain and pass explicit `values`, which is exact and stable across
+  data.
 
 - **The install chart's top grid rule sits at the domain ceiling**, on the
   plot's top edge — where the old chart drew its fifth rule too. Dropping it was
@@ -307,6 +356,189 @@ doing at the time:
   along x at all — which on a multi-line time series is also the order the lines
   cross each other, the whole point of putting them on one axis. The wipe is the
   only entrance that reads that way, which is why it stays.
+
+- **The highlight band samples EVERY line path, unioned — never the first one.**
+  The band is a single clip window over cloned traces, and its column is found
+  by `nearestIndex` into a list of sample positions. Taking that list from
+  `querySelector` (the first path) breaks as soon as two series cover different
+  spans: on the compare page a skill first recorded weeks after the others has a
+  short path, and if it came first in DOM order the index clamped to its left
+  edge, so hovering anywhere before it froze the band there for BOTH lines. The
+  union has a sample wherever any series does, and a series with no point at
+  that column simply has nothing inside the window to light up.
+
+- **The overlay's `labels` must be the WINDOWED days.** The date pill names a
+  column by index, so a full-length list against a narrowed chart points at the
+  wrong date entirely — at a 7-day window on a 71-day series the pill was
+  indexing a 71-entry array for an 8-column chart.
+
+- **The hover overlay stands down while the brush is being dragged
+  (`disabled`).** The pointer is captured by the strip, so the chart's hover
+  state goes stale mid-gesture: the band stops tracking, the lines never dim,
+  and the crosshair sits still while everything else moves.
+
+- **Reserve the strip's height, and wipe it in with the chart; never fake it.**
+  It only mounts once real data lands, so without a reserved box its arrival
+  shoves the page. It does NOT get the chart's shimmer placeholder: the chart is
+  content and a placeholder stands in for it, where the strip is a CONTROL and a
+  shimmering fake brush implies a handle you can grab and cannot. What it gets
+  instead is `.chart-brush-reveal`, the same wipe the compare chart plays at
+  `phase === "ready"`, so the two arrive as one gesture rather than the strip
+  appearing after.
+  The wipe goes on the strip's SHELL, not on `.ts-chart__marks` inside it: the
+  frame, grips and scrim are HTML siblings of the SVG, so clipping only the
+  marks group would wipe the line in and pop the chrome on top of it.
+
+- **The strip is 56px, not 44.** Height is the honest lever for the compare
+  strip's legibility. Three series share ONE floor there, so a skill five times
+  another's size pins the small ones near the bottom; per-series normalisation
+  would separate them by rescaling each line to fill the strip, and that puts a
+  small chart saying "these are all similar" directly under a big one saying
+  "one is 5× the others", in the same colours, inside a single glance. The strip
+  indexes that chart and cannot contradict it. 12px of height buys the
+  separation without the lie — measured 42px between two traces, against ~30 at
+  44px.
+
+- **A series contributes NO row before its own first recorded day.** The
+  compare chart used to back-fill: every day before a skill existed in our
+  records got that skill's earliest known value. On a shared axis that drew a
+  flat line stretching back through history the skill was never measured in — a
+  skill first seen on Aug 5 at 7,741 installs appeared to have held exactly
+  7,741 for the six weeks before we had heard of it. Forward-fill stays, because
+  carrying the last value over a skipped snapshot claims only that the count did
+  not change; back-fill claimed we had measured something.
+  The strip needs the same rule and got it wrong separately: its own fill used
+  `last ?? 0`, which drew a flat ZERO line back through the same pre-history, so
+  it contradicted the chart it indexes. Fixed in both — the two now start each
+  line within 3px of each other.
+
+- **The scrim's surface is a prop, and a token REFERENCE, not a colour.** The
+  strip sits on `--surface-5` in the install dialog and on `--card` in the
+  compare card; in dark mode those are a whole step apart (0.321 against 0.264),
+  so a fixed token is wrong on one of them by construction. Reading the computed
+  colour off the nearest painted ancestor was tried and is worse: nothing
+  re-runs on a theme toggle, so the strip kept the old surface until something
+  else moved the brush. Passing `var(--card)` and letting the browser resolve it
+  costs nothing and follows the theme on its own.
+
+- **The strip takes N series, and lifts them all by ONE shared floor.** The
+  install chart passes a single neutral line; the compare page passes one per
+  skill in that skill's own colour, because three neutral lines are an
+  unreadable tangle and the colour is already how the legend names each series.
+  The floor is shared rather than per-series on purpose: per-series would
+  rescale every line to fill the strip and quietly claim two skills were the
+  same size. The strip says WHERE you are along time; it must not contradict the
+  chart above to do it.
+
+- **On the compare page the control and the strip appear only once real data has
+  landed.** That chart mounts before its data exists and draws `skeletonSeries`
+  in the meantime. A brush you can drag across invented numbers is worse than no
+  brush, so both are gated on the placeholder being gone.
+
+- **`brushX` is mounted for INTERACTION ONLY; everything visible is an
+  overlay.** Its selection rect and handles are painted `none`, and
+  `BrushOverlay` in `skill-install-range.tsx` draws the dim, the frame and the
+  two grips as HTML that MIRRORS D3's own selection rect. Two things forced this,
+  both because D3 owns its own geometry:
+  - It places nodes at whatever fraction the pointer lands on, so a 1px stroke
+    covered a different share of each device pixel at every position — measured
+    darkest pixel 120 → 64 → 0 across sub-pixel offsets, which is an outline
+    that changes weight as it moves. Rounding the overlay's edges to whole
+    pixels makes a plain CSS border crisp. Neither `shape-rendering: crispEdges`
+    (which the library already sets, and which Chrome ignores here: at x=8.03 it
+    and `geometricPrecision` produce identical greys 135/120) nor
+    `vector-effect: non-scaling-stroke` (which only matters once the viewBox is
+    scaled) touches this. Widening the stroke to 2px does hide it, and was
+    tried and rejected as too heavy.
+  - `brushX` renders NOTHING outside the selection, so the evil-brush read —
+    the selection is the part that is not dimmed — was unreachable through its
+    styles at any width.
+
+  evilcharts splits exactly the same way and says why: its slider is
+  `handleStyle: { opacity: 0 }`, interaction only, with the frame and handles
+  drawn over it, because routing them through the chart's own update path
+  resets the drag anchor.
+
+- **The overlay mirrors D3's selection rect; it must not derive a position from
+  the range.** Deriving looked right and dragged wrong: the previews `brushX`
+  reports are snapped to candidates, so an overlay computed from them could only
+  move a whole day at a time — measured against D3's rect during one drag, the
+  rect advanced in 9px steps while the overlay jumped 409 → 425. The rect is
+  authoritative in both states (D3 positions it from the gesture while dragging
+  and from the controlled value otherwise), so a `MutationObserver` on its `x` /
+  `width` keeps the overlay exact with no second source of truth. Measured
+  after: the frame trails the rect by a constant 0.17px, which is the rounding.
+  Read the rect through `getBoundingClientRect`, not its `x` attribute — the
+  attribute is in viewBox units and would need the strip's scale applied.
+
+- **The dim is one element with a hard-stop gradient mask, not two side
+  panels.** `--sel-l` / `--sel-r` are whole pixels set from the measured width,
+  and the mask punches the selection out of the scrim at 0.66 — the same
+  construction evilcharts uses (`withAlpha(tokens.background, 0.7)`). The
+  scrim's colour is `--scrim-bg`, set from the `surface` prop above, because a
+  fixed token is wrong on one of the two hosts by construction: `--surface-5`
+  and `--card` look identical in light and are a whole step apart in dark
+  (0.321 against 0.264), where the wrong one reads as a differently coloured
+  panel laid over the strip. The strip therefore draws ONE line at one strength; a second brighter copy of the
+  selected slice used to carry the figure/ground and is gone.
+
+- **The grip dots are a painted layer, not holes punched through the pill.**
+  Punching them with one `evenodd` mask let the line and the dim show through,
+  so they read as transparent gaps rather than marks on a solid grip. They are
+  now a `::after` filled with the same `--scrim-bg` as the scrim, for the same
+  reason, and masked to HugeIcons' more-vertical-square-01 geometry — opaque dots over the pill, which is how
+  evilcharts paints its grips too (`withAlpha(tokens.background, …)`). The mask
+  has to live on that pseudo-element: a mask clips everything drawn on the
+  element carrying it, the focus ring included.
+
+- **Hover, press and focus all hang off the shell, not the chart host.** The
+  element that takes them is still D3's invisible handle inside the chart; the
+  grip standing in for it is a SIBLING, so every `:has()` has to be on the
+  wrapper containing both, keyed on D3's own `handle--w` / `handle--e` so each
+  state lands on the grip it belongs to instead of lighting both. The handles
+  stay hittable while painted `none` because D3 sets `pointer-events: all` on
+  them itself. `:focus-visible` rather than `:focus` keeps a ring off every
+  pointer grab.
+
+- **The brush needs TWO ranges, and collapsing them breaks one thing or the
+  other.** Its controlled value must hold still for the length of a gesture:
+  rewriting it per frame rebuilds the definition under D3 and resets the drag's
+  own anchor, which made drawing a new range outside the selection work only
+  sometimes and stopped the handles crossing each other instead of swapping. The
+  plot above must do the opposite and move per frame, or it sits frozen until
+  you let go. So `useDayRange` (in `skill-install-range.tsx`, and run by both
+  charts) keeps a committed range for the brush and a `preview` for the plot,
+  and the brush reports every phase with a `committed` flag saying which it is.
+  Gating on `commit` alone — what the docs' controlled-brush example does —
+  fixes the anchor and freezes the plot; both states are what fixes both. A
+  `cancel` is reported as a commit of the gesture's ORIGIN rather than dropped:
+  dropping it left the preview standing over a window D3 had already snapped
+  away from, with the hover overlay it disables dead until the next commit. Verified mid-drag with the button still down:
+  31 → 28 → 24 → 21 → 18 → 14 → 11 bars, with draw-outside and crossing intact.
+
+- **Resolve a brushed value to the NEAREST candidate, never by exact lookup.** A
+  `Map` keyed on `getTime()` misses whenever a proposal does not land precisely
+  on a candidate, and a miss that falls back to the previous value reads exactly
+  like a stuck drag — the range stops moving and the handles look like they have
+  collided.
+
+- **A range change is not an entrance, and `phase === "enter"` cannot tell them
+  apart.** Widening the install chart's window makes most bars ENTER, so the bar
+  motion callback saw the same phase it sees on first paint and replayed the
+  whole staggered opening sweep on every brush drag — on the renderer's spring,
+  which has no duration and settles down a long tail. `useDayRange`'s `touched`
+  state is what separates them: staggered spring while it is false, a short
+  tween forever after. State set on the commit path, not a ref read at
+  animation time — a ref cannot be read during render, and this is exact where
+  a "has the entrance finished by now" timer would only be a guess. Measured on a 30d → 7d switch: 229ms to settle.
+
+- **Range motion is `RANGE_TWEEN`, an exponential ease-out.** 200ms, with a real
+  `1 - 2^(-10t)` progress function rather than a CSS keyword — the library takes
+  either, and `ease-out` is a gentle cubic that does not land the "already
+  arrived" feel a direct-manipulation gesture wants. evilcharts goes further and
+  gives data updates no animation at all (`animationDurationUpdate: 0`), keeping
+  motion for the intro alone; a hard jump is wrong here only because our x scale
+  re-domains under the marks, so something has to show what moved where.
 
 - **The library's entrance fires on a host's FIRST render and nothing replays
   it** — not a definition change, not a prop change. So it cannot serve as a

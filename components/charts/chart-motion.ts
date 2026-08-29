@@ -29,6 +29,30 @@ export const HIGHLIGHT_SPRING = {
 } as const;
 
 /**
+ * Range changes: the bars and line re-laying out when the brush moves or a
+ * preset is picked.
+ *
+ * A short tween, NOT `FOCUS_SPRING`. A spring has no duration — it finishes when
+ * `restSpeed` and `restDelta` are both satisfied — so every range change carried
+ * a long settling tail and read as sluggish next to a gesture the pointer had
+ * already finished. evilcharts goes further and animates data updates not at all
+ * (`animationDurationUpdate: 0`), keeping motion for the intro alone; a jump is
+ * too abrupt here because our x scale re-domains under the marks, so this is the
+ * shortest travel that still shows what moved where.
+ *
+ * Exponential ease-out: almost all the distance is covered in the first third,
+ * which is what makes a move read as a response rather than a journey. The
+ * library's `easing` takes the CSS keywords or a raw progress function, and none
+ * of the keywords is steep enough — `ease-out` is a gentle cubic — so this is
+ * the real curve.
+ */
+export const RANGE_TWEEN = {
+  type: "tween",
+  duration: 200,
+  easing: (t: number) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+} as const;
+
+/**
  * Shared across every chart on the page — the renderer is stateless with
  * respect to any one chart, and building it once keeps the spring solver out of
  * each definition's memo.

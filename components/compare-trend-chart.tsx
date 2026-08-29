@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useHeldFlag } from "@/hooks/use-held-flag";
 import { defineChart, lineY } from "@tanstack/charts";
-import { scalePoint } from "@tanstack/charts/scales/point";
+import { scaleUtc } from "d3-scale";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { RendererChart } from "@tanstack/charts/react/tooltip";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ import {
 } from "@/components/charts/chart";
 import {
   AXIS_TICK_LABELS,
-  evenlySpaced,
+  calendarTicks,
   CHART_THEME,
   datePillOffset,
   X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
@@ -33,14 +33,23 @@ import {
   tooltipRows,
 } from "@/components/charts/chart-tooltip-panel";
 import { CHART_CURVE, HOVER_DIM } from "@/components/charts/series-state";
+import { RANGE_TWEEN } from "@/components/charts/chart-motion";
 import { fadeEdgesGradient, fadeEdgesId } from "@/components/charts/fade-edges";
+import {
+  STRIP_HEIGHT,
+  RangeBrush,
+  RangeControl,
+  useDayRange,
+} from "@/components/skill-install-range";
 import {
   compactCount,
   dayLabel,
+  dayLabelAt,
   dayLabelLong,
   intFmt,
   MIN_POINTS,
   seriesSummary,
+  toDate,
   type SkillInsights,
 } from "@/components/skill-chart-shared";
 
@@ -184,6 +193,8 @@ export type CompareSeries = {
 
 type CompareRow = {
   day: string;
+  /** The day as a real instant, for the time scale. */
+  date: Date;
   series: string;
   name: string;
   color: string;
@@ -215,15 +226,25 @@ function buildCompareRows(series: CompareSeries[]): CompareRow[] {
       if (v != null) last = v;
       return last;
     });
-    const first = forward.find((v) => v != null) ?? 0;
-
-    return days.map((day, i) => ({
-      day,
-      series: s.key,
-      name: s.name,
-      color: s.color,
-      installs: forward[i] ?? first,
-    }));
+    // No row before a series' FIRST recorded day. Back-fill drew a flat line
+    // through history the skill was never measured in: one first seen on Aug 5
+    // at 7,741 appeared to have held exactly that for six prior weeks.
+    // Forward-fill stays, because carrying the last value over a skipped
+    // snapshot claims only that the count did not change.
+    return days.flatMap((day, i) => {
+      const installs = forward[i];
+      if (installs == null) return [];
+      return [
+        {
+          day,
+          date: toDate(day),
+          series: s.key,
+          name: s.name,
+          color: s.color,
+          installs,
+        },
+      ];
+    });
   });
 }
 
@@ -335,15 +356,62 @@ export function CompareTrendChart({
     [drawable],
   );
 
+  // The same days as `{ day, date }`, which the range helpers speak.
+  const allDays = useMemo(
+    () => days.map((day) => ({ day, date: toDate(day) })),
+    [days],
+  );
+
+  // The same range machine the install chart runs. Disabled while the rows are
+  // `skeletonSeries`: a brush over invented numbers is worse than no control.
+  const {
+    presets,
+    rangeable,
+    windowRows: windowDays,
+    committedRange,
+    dragging,
+    touched,
+    commitRange,
+  } = useDayRange(allDays, { enabled: !showPlaceholder });
+
+  // One strip line per skill in its own colour: three neutrals would tangle,
+  // and the colour already names each series in the legend and headers.
+  const brushSeries = useMemo(
+    () =>
+      drawable.map((s) => {
+        const byDay = new Map(s.snapshots.map((p) => [p.day, p.installs]));
+        let last: number | null = null;
+        return {
+          key: s.key,
+          color: s.color,
+          // Nothing before the series' first record, for the reason
+          // `buildCompareRows` emits nothing there: `last ?? 0` drew a flat
+          // zero line, so the strip contradicted the chart it indexes.
+          values: allDays.flatMap(({ day, date }) => {
+            const v = byDay.get(day);
+            if (v != null) last = v;
+            return last == null ? [] : [{ date, value: last }];
+          }),
+        };
+      }),
+    [drawable, allDays],
+  );
+
   const definition = useMemo(() => {
-    const rows = buildCompareRows(drawable);
+    // Nothing drawable means no days, so no scale has a domain. The "not
+    // enough history yet" branch below renders then, but hooks run first.
+    if (!windowDays.length || !allDays.length) return null;
+    const inWindow = new Set(windowDays.map((d) => d.day));
+    const rows = buildCompareRows(drawable).filter((row) =>
+      inWindow.has(row.day),
+    );
 
     return defineChart(
       ({ width }) => ({
         marks: [
           lineY(rows, {
             id: LINE_ID,
-            x: "day",
+            x: "date",
             y: "installs",
             // `z` splits the flat rows into one path per skill. Each path paints
             // with its own fade gradient, declared below from the colour the
@@ -354,59 +422,71 @@ export function CompareTrendChart({
             strokeWidth: 2,
             curve: CHART_CURVE,
             states: [HOVER_DIM],
+            // Snappy once the reader has moved the window; the first paint
+            // belongs to the placeholder's reveal wipe. Same split the install
+            // chart makes: `phase === "enter"` fires for both.
+            motion: ({ phase }) =>
+              phase === "enter" && !touched
+                ? undefined
+                : { transition: RANGE_TWEEN },
           }),
           // Last, so it paints over the lines rather than under them.
-          focusCrosshair(days.length),
+          focusCrosshair(windowDays.length),
         ],
-        // Days are discrete samples, one per cron run, so they are positions on a
-        // point scale rather than instants on a time scale. This also keeps every
-        // tick landing on a real data point, which is what the old chart's
-        // `tickMode="data"` was for.
-        x: {
-          scale: scalePoint,
-          axis: {
-            line: false,
-            ticks: {
-              size: 0,
-              padding: X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
-              format: dayLabel,
-              // The old chart's `numTicks={6}`. A point scale offers every day as
-              // a candidate and ignores `count`, so without this the axis prints
-              // one label per day that fits — nearly twice as many as before.
-              values: evenlySpaced(
-                days,
-                width < NARROW_CHART_WIDTH
-                  ? COMPARE_TICK_COUNT_NARROW
-                  : COMPARE_TICK_COUNT,
-              ),
+        scales: {
+          // A UTC time scale over the visible window, matching the install
+          // chart. Days were point-scale positions until this page gained a
+          // range control, and index-picked ticks churn on every frame of a
+          // drag. Calendar-anchored ticks travel instead. See docs/charts.md.
+          x: {
+            scale: scaleUtc().domain([
+              windowDays[0].date,
+              windowDays[windowDays.length - 1].date,
+            ]),
+            axis: {
+              line: false,
+              ticks: {
+                size: 0,
+                padding: X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
+                format: dayLabelAt,
+                // Anchored to the series' last day, which never moves, so
+                // the same dates keep being produced as the window slides. The
+                // count narrows with the scene, so `thin` never has to fire.
+                values: calendarTicks(
+                  windowDays[0].date,
+                  windowDays[windowDays.length - 1].date,
+                  allDays[allDays.length - 1].date,
+                  width < NARROW_CHART_WIDTH
+                    ? COMPARE_TICK_COUNT_NARROW
+                    : COMPARE_TICK_COUNT,
+                ),
+              },
+              // Gone with the y labels: a date range claims as much as a
+              // count. Left on, the axis announced Aug 7–27 and jumped back to
+              // Jul 31–Aug 21 on the reveal.
+              tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
             },
-            // Gone with the y labels, and for the same reason: a date range
-            // claims as much about the data as a count does. Left on, the axis
-            // announced Aug 7–27 and jumped back to Jul 31–Aug 21 on the reveal.
-            tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
           },
-        },
-        y: {
-          // Zero-based with a tenth of headroom, as the old chart's y-domain was.
-          // Letting the scale infer from the data starts the axis near the
-          // smallest series, which exaggerates the gaps between skills — the one
-          // thing this chart exists to compare honestly.
-          // A configured instance, not a factory: a factory infers its domain from
-          // the marks and would discard the zero below.
-          scale: scaleLinear().domain([
-            0,
-            rows.reduce((max, r) => Math.max(max, r.installs), 0) * 1.1,
-          ]),
-          nice: true,
-          grid: true,
-          axis: {
-            line: false,
-            // Abbreviated like the install stats directly below the chart, so the
-            // axis and the tiles read in the same units.
-            ticks: { count: 4, size: 0, format: compactCount },
-            // The rules stay while loading (the frame is real), the labels go:
-            // a placeholder line is a shape, a placeholder number is a claim.
-            tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
+          y: {
+            // Zero-based with a tenth of headroom. Inferred from the data the
+            // axis starts near the smallest series, exaggerating the gaps this
+            // chart exists to compare honestly. A configured instance, not a
+            // factory: a factory infers and would discard the zero.
+            scale: scaleLinear().domain([
+              0,
+              rows.reduce((max, r) => Math.max(max, r.installs), 0) * 1.1,
+            ]),
+            nice: true,
+            grid: true,
+            axis: {
+              line: false,
+              // Abbreviated like the install stats below, so the axis and the
+              // tiles read in the same units.
+              ticks: { count: 4, size: 0, format: compactCount },
+              // The rules stay while loading (the frame is real), the labels go:
+              // a placeholder line is a shape, a placeholder number is a claim.
+              tickLabels: showPlaceholder ? false : AXIS_TICK_LABELS,
+            },
           },
         },
         gradients: drawable.map((s) =>
@@ -437,7 +517,7 @@ export function CompareTrendChart({
         pointer: false,
       },
     );
-  }, [drawable, days, showPlaceholder]);
+  }, [drawable, windowDays, allDays, touched, showPlaceholder]);
 
   const hostProps = chartHostProps();
 
@@ -451,12 +531,15 @@ export function CompareTrendChart({
         })),
       [drawable],
     ),
-    labels: useMemo(() => days.map(dayLabel), [days]),
+    // The WINDOWED days, not every day on record: the pill names a column by
+    // index, so a full-length list against a narrowed chart named the wrong
+    // date entirely.
+    labels: useMemo(() => windowDays.map((d) => dayLabel(d.day)), [windowDays]),
   });
 
   // "No history yet" is a resolved answer and must not swallow "not answered
   // yet": while loading, `drawable` is the placeholder set and never empty.
-  if (!showPlaceholder && drawable.length === 0) {
+  if (!definition || (!showPlaceholder && drawable.length === 0)) {
     return (
       <div>
         <CompareLegend series={series} />
@@ -476,7 +559,17 @@ export function CompareTrendChart({
 
   return (
     <div aria-busy={showPlaceholder || undefined}>
-      <CompareLegend series={series} loading={showPlaceholder} />
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <CompareLegend series={series} loading={showPlaceholder} />
+        {rangeable && committedRange && (
+          <RangeControl
+            rows={allDays}
+            presets={presets}
+            range={committedRange}
+            onRangeChange={(next) => commitRange(next)}
+          />
+        )}
+      </div>
       {/* Holds the box while the chart waits one commit for a measurable
           container (see `useMeasuredHost`). The ratio matches the chart's own
           `aspectRatio`, so nothing moves when it lands. */}
@@ -487,7 +580,9 @@ export function CompareTrendChart({
         {measured && (
           <ChartHoverOverlay
             controller={overlay}
-            disabled={showPlaceholder}
+            // Also mid-drag: the strip has the pointer, so the band stops
+            // tracking, the lines never dim, and the crosshair sits still.
+            disabled={showPlaceholder || dragging}
             pillOffset={datePillOffset(
               X_AXIS_LABEL_MARGIN_WITH_Y_AXIS,
               X_AXIS_LABEL_PADDING_WITH_Y_AXIS,
@@ -597,6 +692,24 @@ export function CompareTrendChart({
                 Loading install history
               </span>
             </span>
+          </div>
+        )}
+      </div>
+      {/* The strip's height is reserved before the strip exists, so its arrival
+          does not shove the page. An empty box rather than a skeleton brush: a
+          placeholder you can almost grab is worse than an obvious gap. */}
+      <div className="mt-6" style={{ minHeight: STRIP_HEIGHT }}>
+        {rangeable && committedRange && (
+          // Wipes in with the chart above on the same commit, so the two read
+          // as one thing arriving rather than the strip appearing after it.
+          <div className={cn(phase === "ready" && "chart-brush-reveal")}>
+            <RangeBrush
+              days={allDays}
+              series={brushSeries}
+              surface="var(--card)"
+              range={committedRange}
+              onRangeChange={commitRange}
+            />
           </div>
         )}
       </div>

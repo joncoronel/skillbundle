@@ -55,6 +55,21 @@
   animation: chart-reveal-wipe 450ms cubic-bezier(0.85, 0, 0.15, 1) both;
 }
 
+/* The brush strip arriving with the chart it indexes, rather than after it.
+ *
+ * The same wipe, but on the strip's whole SHELL rather than on `.ts-chart__marks`
+ * inside it: the frame, the grips and the scrim are HTML siblings of the SVG, so
+ * clipping only the marks group would wipe the line in and pop the chrome on top
+ * of it. Clipping the shell takes everything in one gesture.
+ *
+ * Nothing fakes the strip while it waits. It is a CONTROL, and a shimmering
+ * placeholder brush implies a handle you can grab and cannot — different from
+ * the chart's own placeholder, which stands in for content. The height is
+ * reserved instead, so this only has to cover the arrival. */
+.chart-brush-reveal {
+  animation: chart-reveal-wipe 450ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
 /* Loading: a band of full strength sweeps along placeholder marks. A
    `mask-image` rather than a `clip-path`, because the reveal above is the
    clip-path and one node cannot carry two.
@@ -123,6 +138,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chart-reveal .ts-chart__marks,
+  .chart-brush-reveal,
   .chart-conceal .ts-chart__marks,
   .chart-loading.chart-conceal .ts-chart__marks {
     animation: none;
@@ -235,4 +251,151 @@
 .ts-chart-surface {
   overflow: clip;
   overflow-clip-margin: 8px;
+}
+
+/* The range brush strip under the install chart.
+ *
+ * `brushX` is mounted for INTERACTION ONLY — its selection rect and handles are
+ * painted `none` in the definition — and everything visible is the overlay
+ * below, positioned from `--sel-l` and `--sel-r` (whole pixels, set in JS from
+ * the measured width). D3 positions its own nodes at whatever fraction the
+ * pointer lands on, which made a 1px stroke change weight as it moved; an
+ * element on a whole-pixel boundary is simply crisp. evilcharts splits the same
+ * way, and for the same reason. */
+
+/* The dim, and the evil-brush idea behind it: the selection is not washed, it
+ * is the part that is NOT dimmed. One element rather than two side panels, with
+ * a hard-stop gradient mask punching the selection out of it, so the hole moves
+ * by changing two custom properties. */
+.chart-brush-scrim {
+  position: absolute;
+  inset: 0;
+  /* The strip's `surface` prop, as a token REFERENCE so it follows a theme
+     change. It has to be the CONTAINER'S colour or the scrim reads as a tinted
+     panel, and no named token serves both hosts: `--surface-5` in the install
+     dialog against `--card` in the compare card, a whole lightness step apart
+     in dark mode. The fallback covers only the first frame. */
+  background: var(--scrim-bg, var(--card));
+  opacity: 0.66;
+  mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 var(--sel-l),
+    transparent var(--sel-l),
+    transparent var(--sel-r),
+    #000 var(--sel-r),
+    #000 100%
+  );
+}
+
+/* The frame. A border on a pixel-aligned box, which is the whole point of
+ * drawing this ourselves — no sub-pixel stroke, nothing to shimmer. */
+.chart-brush-frame {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--sel-l);
+  width: calc(var(--sel-r) - var(--sel-l));
+  border: 1px solid color-mix(in oklab, var(--foreground) 22%, transparent);
+  border-radius: 6px;
+}
+
+/* A grip at each edge, centred on it. The outer element only positions and
+ * carries the focus ring; the inner one is the visible pill. */
+.chart-brush-grip {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 16px;
+  margin-top: -8px;
+  margin-left: -5px;
+  border-radius: 5px;
+}
+
+/* The pill, and the grip dots over it.
+ *
+ * The dots are a SECOND layer in the scrim's own `--scrim-bg`, not holes
+ * punched through the pill: punched, the line and the dim showed through and
+ * they read as gaps rather than marks on a solid grip. evilcharts paints its
+ * grips the same way. They live on `::after` because a mask clips everything
+ * drawn on the element carrying it, focus ring included. Geometry is HugeIcons'
+ * more-vertical-square-01. */
+.chart-brush-grip-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--muted-foreground);
+  transition: background-color 100ms ease-out;
+}
+
+.chart-brush-grip-pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--scrim-bg, var(--surface-5));
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cg fill='%23fff'%3E%3Crect x='4' y='3.5' width='2' height='2' rx='0.5'/%3E%3Crect x='4' y='7' width='2' height='2' rx='0.5'/%3E%3Crect x='4' y='10.5' width='2' height='2' rx='0.5'/%3E%3C/g%3E%3C/svg%3E");
+  mask-size: 10px 16px;
+  mask-repeat: no-repeat;
+}
+
+.chart-brush-grip[data-edge="start"] {
+  left: var(--sel-l);
+}
+
+.chart-brush-grip[data-edge="end"] {
+  left: var(--sel-r);
+}
+
+/* Hover, press and focus all live on D3's invisible handles, and all have to be
+ * reflected onto the grips standing in for them. The grips are SIBLINGS of the
+ * chart host rather than descendants, so every one of these hangs off the shell
+ * that contains both. D3 names its handles `handle--w` and `handle--e`, which is
+ * what keeps each state on the grip it belongs to instead of lighting both. */
+.chart-brush-shell:has(.handle--w:hover)
+  .chart-brush-grip[data-edge="start"]
+  .chart-brush-grip-pill,
+.chart-brush-shell:has(.handle--w:active)
+  .chart-brush-grip[data-edge="start"]
+  .chart-brush-grip-pill,
+.chart-brush-shell:has(.handle--e:hover)
+  .chart-brush-grip[data-edge="end"]
+  .chart-brush-grip-pill,
+.chart-brush-shell:has(.handle--e:active)
+  .chart-brush-grip[data-edge="end"]
+  .chart-brush-grip-pill {
+  background: var(--foreground);
+}
+
+/* Keyboard focus, and only keyboard focus: a pointer grab sets `:focus` but not
+ * `:focus-visible`, which is what keeps a ring off every drag.
+ *
+ * The ring is the app's own: `outline-2 outline-offset-2 outline-ring/50`, the
+ * same recipe `button`, `input` and `toggle` use. It goes on the OUTER grip
+ * element because the inner one is masked, and a mask clips the ring with
+ * everything else. */
+.chart-range-brush .handle:focus {
+  outline: none;
+}
+
+.chart-brush-shell:has(.handle--w:focus-visible)
+  .chart-brush-grip[data-edge="start"],
+.chart-brush-shell:has(.handle--e:focus-visible)
+  .chart-brush-grip[data-edge="end"] {
+  outline: 2px solid color-mix(in oklab, var(--ring) 50%, transparent);
+  outline-offset: 2px;
+}
+
+.chart-brush-shell:has(.handle--w:focus-visible)
+  .chart-brush-grip[data-edge="start"]
+  .chart-brush-grip-pill,
+.chart-brush-shell:has(.handle--e:focus-visible)
+  .chart-brush-grip[data-edge="end"]
+  .chart-brush-grip-pill {
+  background: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-brush-grip-pill {
+    transition: none;
+  }
 }
