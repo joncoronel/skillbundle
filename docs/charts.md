@@ -377,10 +377,27 @@ doing at the time:
   state goes stale mid-gesture: the band stops tracking, the lines never dim,
   and the crosshair sits still while everything else moves.
 
-- **Reserve the strip's height before the strip exists.** It only mounts once
-  real data lands, and without a reserved box its arrival shoves the page. An
-  empty box rather than a skeleton brush — a placeholder you can almost grab is
-  worse than an obvious gap.
+- **Reserve the strip's height, and wipe it in with the chart; never fake it.**
+  It only mounts once real data lands, so without a reserved box its arrival
+  shoves the page. It does NOT get the chart's shimmer placeholder: the chart is
+  content and a placeholder stands in for it, where the strip is a CONTROL and a
+  shimmering fake brush implies a handle you can grab and cannot. What it gets
+  instead is `.chart-brush-reveal`, the same wipe the compare chart plays at
+  `phase === "ready"`, so the two arrive as one gesture rather than the strip
+  appearing after.
+  The wipe goes on the strip's SHELL, not on `.ts-chart__marks` inside it: the
+  frame, grips and scrim are HTML siblings of the SVG, so clipping only the
+  marks group would wipe the line in and pop the chrome on top of it.
+
+- **The strip is 56px, not 44.** Height is the honest lever for the compare
+  strip's legibility. Three series share ONE floor there, so a skill five times
+  another's size pins the small ones near the bottom; per-series normalisation
+  would separate them by rescaling each line to fill the strip, and that puts a
+  small chart saying "these are all similar" directly under a big one saying
+  "one is 5× the others", in the same colours, inside a single glance. The strip
+  indexes that chart and cannot contradict it. 12px of height buys the
+  separation without the lie — measured 42px between two traces, against ~30 at
+  44px.
 
 - **A series contributes NO row before its own first recorded day.** The
   compare chart used to back-fill: every day before a skill existed in our

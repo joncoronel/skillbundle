@@ -1335,3 +1335,23 @@ true` — that half had already been repaired by the earlier one-shot, so
   handler: the range is already two day indices, so widening and narrowing it is
   arithmetic and needs none of `zoomX`'s scale inversion — and it adds no per-event
   listener to the plot.
+
+- **Widen the charts' history window past 90 days** — discussed Aug 2026, not done.
+  `INSIGHTS_HISTORY_DAYS` (`convex/skills.ts`) is 90; both the install chart and the
+  compare chart read that window. Raising it to 180 needs TWO coordinated changes, not
+  a constant bump:
+
+  1. `SNAPSHOT_RETENTION_DAYS` is also 180, and the wider retention exists so the daily
+     prune never races the query at the window's edge. Setting the query window to 180
+     removes that margin — the prune deletes day `today - 180` while the query asks for
+     `>= today - 180`, so the oldest column winks in and out between loads. Raise
+     retention above the window (270 restores a 90-day buffer) at roughly +50% snapshot
+     rows.
+  2. The install chart's bars stop being readable. Bar width is 80% of the smallest gap
+     between points, and the plot spans 596 units: measured 6.81 at today's 71 points,
+     5.36 at the 90 cap, and 2.66 with 0.67px gaps at 180 — the bars merge into a solid
+     block, and `radius: 4` clamps to half-width so each becomes a lozenge. Full range
+     would need a different bar treatment (or an area mark) at that density.
+
+  The compare chart is lines only and needs neither change. The range control already
+  makes a longer window cheap to look at, which is most of what raising it would buy.

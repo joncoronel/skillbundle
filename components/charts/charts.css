@@ -55,6 +55,21 @@
   animation: chart-reveal-wipe 450ms cubic-bezier(0.85, 0, 0.15, 1) both;
 }
 
+/* The brush strip arriving with the chart it indexes, rather than after it.
+ *
+ * The same wipe, but on the strip's whole SHELL rather than on `.ts-chart__marks`
+ * inside it: the frame, the grips and the scrim are HTML siblings of the SVG, so
+ * clipping only the marks group would wipe the line in and pop the chrome on top
+ * of it. Clipping the shell takes everything in one gesture.
+ *
+ * Nothing fakes the strip while it waits. It is a CONTROL, and a shimmering
+ * placeholder brush implies a handle you can grab and cannot — different from
+ * the chart's own placeholder, which stands in for content. The height is
+ * reserved instead, so this only has to cover the arrival. */
+.chart-brush-reveal {
+  animation: chart-reveal-wipe 450ms cubic-bezier(0.85, 0, 0.15, 1) both;
+}
+
 /* Loading: a band of full strength sweeps along placeholder marks. A
    `mask-image` rather than a `clip-path`, because the reveal above is the
    clip-path and one node cannot carry two.
@@ -123,6 +138,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chart-reveal .ts-chart__marks,
+  .chart-brush-reveal,
   .chart-conceal .ts-chart__marks,
   .chart-loading.chart-conceal .ts-chart__marks {
     animation: none;

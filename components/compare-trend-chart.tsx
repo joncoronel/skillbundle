@@ -761,13 +761,17 @@ export function CompareTrendChart({
           placeholder you can almost grab is worse than an obvious gap. */}
       <div className="mt-6" style={{ minHeight: STRIP_HEIGHT }}>
         {rangeable && committedRange && (
-          <RangeBrush
-            days={allDays}
-            series={brushSeries}
-            surface={"var(--card)"}
-            range={committedRange}
-            onRangeChange={commitRange}
-          />
+          // Wipes in with the chart above on the same commit, so the two read
+          // as one thing arriving rather than the strip appearing after it.
+          <div className={cn(phase === "ready" && "chart-brush-reveal")}>
+            <RangeBrush
+              days={allDays}
+              series={brushSeries}
+              surface={"var(--card)"}
+              range={committedRange}
+              onRangeChange={commitRange}
+            />
+          </div>
         )}
       </div>
     </div>

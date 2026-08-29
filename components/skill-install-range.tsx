@@ -65,8 +65,13 @@ const ALL_VALUE = "all";
 /**
  * The strip's height. The overlay reads its position from D3's own selection
  * rect, so nothing else about the geometry has to be restated here.
+ *
+ * 56 rather than 44 for the compare page's sake: three series share one floor
+ * there (see `RangeBrush`), so a skill five times another's size pins the small
+ * ones near the bottom, and 44px left them bunched. The extra 12px buys real
+ * separation without making a secondary control compete with the chart.
  */
-export const STRIP_HEIGHT = 44;
+export const STRIP_HEIGHT = 56;
 
 export function fullRange(rows: readonly DayRow[]): DayRange {
   return { start: rows[0].day, end: rows[rows.length - 1].day };
