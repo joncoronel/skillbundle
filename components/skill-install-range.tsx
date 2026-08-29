@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import { defineChart, lineY } from "@tanstack/charts";
 import { brushX } from "@tanstack/charts/interaction/brush";
 import { controlledSignal } from "@tanstack/charts/interaction/signal";
@@ -41,6 +47,12 @@ const FINITE_PRESETS = [
 ] as const;
 
 const ALL_VALUE = "all";
+
+/**
+ * The strip's height. The overlay reads its position from D3's own selection
+ * rect, so nothing else about the geometry has to be restated here.
+ */
+const STRIP_HEIGHT = 44;
 
 export function fullRange(rows: readonly DayRow[]): DayRange {
   return { start: rows[0].day, end: rows[rows.length - 1].day };
@@ -141,6 +153,108 @@ export function RangeControl({
 }
 
 /**
+ * Everything you SEE on the strip: the dim outside the selection, the frame
+ * around it, and a grip at each edge.
+ *
+ * Drawn here rather than by `brushX` for two reasons that both come back to D3
+ * owning its geometry. It positions its nodes at whatever fraction the pointer
+ * lands on, so a 1px stroke changed weight as it moved (darkest pixel 120 → 64
+ * → 0 across sub-pixel offsets) and the outline appeared to crawl; here the
+ * edges are rounded to whole pixels and a border is simply crisp. And `brushX`
+ * renders nothing outside the selection, so the evil-brush read — the selection
+ * is the part that is NOT dimmed — was unreachable through its styles at all.
+ *
+ * `pointer-events: none` throughout: the invisible brush underneath still owns
+ * every gesture, so this can sit on top without taking any of them.
+ */
+function BrushOverlay() {
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  const [box, setBox] = useState<{ left: number; right: number } | null>(null);
+
+  // Mirror D3's OWN selection rect rather than deriving a position from the
+  // range.
+  //
+  // Deriving it looked right and dragged wrong: the previews `brushX` reports
+  // are snapped to candidates, so the overlay could only move a whole day at a
+  // time — measured against D3's rect during one drag, it advanced in 9px steps
+  // while the overlay jumped 409 → 425. The rect is authoritative in both
+  // states: D3 positions it from the gesture while dragging and from the
+  // controlled value the rest of the time, so mirroring it is both smooth and
+  // correct without a second source of truth.
+  //
+  // Read as client rects, which are CSS pixels — the rect's own `x` is in
+  // viewBox units and would need the strip's scale applied. Rounded, because
+  // whole-pixel edges are the reason this overlay exists.
+  useEffect(() => {
+    const shell = node?.parentElement;
+    if (!shell) return;
+    const update = () => {
+      const sel = shell.querySelector(".selection");
+      if (!sel || !node) return;
+      const r = sel.getBoundingClientRect();
+      const base = node.getBoundingClientRect();
+      if (r.width <= 0) {
+        setBox(null);
+        return;
+      }
+      setBox({
+        left: Math.round(r.left - base.left),
+        right: Math.round(r.right - base.left),
+      });
+    };
+    update();
+    // `childList` catches the brush mounting its nodes after first paint;
+    // the attribute filter catches every move D3 makes thereafter.
+    const observer = new MutationObserver(update);
+    observer.observe(shell, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["x", "width"],
+    });
+    const resize = new ResizeObserver(update);
+    resize.observe(shell);
+    return () => {
+      observer.disconnect();
+      resize.disconnect();
+    };
+  }, [node]);
+
+  return (
+    <div
+      ref={setNode}
+      aria-hidden="true"
+      className="chart-brush-overlay pointer-events-none absolute inset-0"
+      style={
+        box
+          ? ({
+              "--sel-l": `${box.left}px`,
+              "--sel-r": `${box.right}px`,
+            } as CSSProperties)
+          : undefined
+      }
+    >
+      {box && (
+        <>
+          <div className="chart-brush-scrim" />
+          <div className="chart-brush-frame" />
+          {/* Two elements per grip on purpose: the inner one carries the
+              mask that shapes the pill and punches its dots, and a mask clips
+              anything drawn on that element — including a focus ring. The
+              outer one is unmasked and owns the ring. */}
+          <span className="chart-brush-grip" data-edge="start">
+            <span className="chart-brush-grip-pill" />
+          </span>
+          <span className="chart-brush-grip" data-edge="end">
+            <span className="chart-brush-grip-pill" />
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * The full-extent strip the range is drawn on: the map, where the chart above
  * it is the viewport.
  *
@@ -207,24 +321,6 @@ export function RangeBrush({
     return rows.map((row) => ({ date: row.date, plot: row.total - min }));
   }, [rows]);
 
-  // The selected slice, drawn a second time and brighter on top of the muted
-  // full extent.
-  //
-  // This is how the strip says which part is selected. evilcharts dims the two
-  // UNSELECTED sides instead and draws no wash at all over the selection
-  // (`BRUSH_FILLER_OPACITY = 0`), which is the better idea — the selection is
-  // simply the part that is not dimmed. It is not reachable here: `brushX`
-  // renders a selection rect and two handles and no outside-the-selection nodes,
-  // and a dim laid on the full-width overlay would darken the selection with
-  // everything else. Brightening the inside is the same figure/ground read with
-  // the nodes we actually have.
-  const selected = useMemo(() => {
-    const startIdx = rows.findIndex((row) => row.day === range.start);
-    const endIdx = rows.findIndex((row) => row.day === range.end);
-    if (startIdx === -1 || endIdx === -1) return plotted;
-    return plotted.slice(startIdx, endIdx + 1);
-  }, [rows, plotted, range]);
-
   const definition = useMemo(
     () =>
       defineChart({
@@ -237,25 +333,12 @@ export function RangeBrush({
             // second reading of it, and the One Signal Rule leaves the accent
             // to the chart above.
             stroke: "var(--muted-foreground)",
-            strokeOpacity: 0.35,
+            // Back to one strength for the whole line. A second, brighter copy
+            // of the selected slice used to carry the figure/ground; the scrim
+            // does it now by dimming everything else, which is both the
+            // evil-brush read and one less mark to keep in step.
+            strokeOpacity: 0.7,
             strokeWidth: 1.5,
-          }),
-          lineY(selected, {
-            id: "selected",
-            x: "date",
-            y: "plot",
-            curve: CHART_CURVE,
-            // Neutral, not the accent: the chart above owns the blue, and this
-            // is a figure/ground cue rather than a second reading of the data.
-            stroke: "var(--foreground)",
-            strokeOpacity: 0.8,
-            strokeWidth: 1.5,
-            // No motion. This mark exists to say WHICH part is selected, and a
-            // highlight that eases into place says it a beat after the handle
-            // has already moved — two things reporting one gesture at different
-            // times. `false` snaps it, so the bright stretch is simply wherever
-            // the selection is.
-            motion: false,
           }),
         ],
         scales: {
@@ -305,28 +388,24 @@ export function RangeBrush({
             endAriaLabel: "Range end",
             format: (value: Date) =>
               dayLabelLong(value.toISOString().slice(0, 10)),
-            // A hairline FRAME around the selection, no wash inside it. The
-            // wash was the accent at 14%, which put a third blue thing in a
-            // dialog whose line already owns the accent, and it tinted the very
-            // stretch of data it was meant to reveal. The rounding is in
-            // `charts.css` — `SceneStyle` carries paint, not geometry.
-            selectionStyle: {
-              fill: "none",
-              // The border token's own recipe at a heavier weight. `--border` is
-              // `foreground 10%`, tuned to read as a hairline between surfaces;
-              // at that weight a frame around the selection was invisible on the
-              // strip, and the frame IS the affordance here. Still a hairline,
-              // just one you can find.
-              stroke: "color-mix(in oklab, var(--foreground) 22%, transparent)",
-              strokeWidth: 1,
-            },
-            // Grip pills at the selection edges. Painted solid in the accent
-            // these were the loudest thing in the dialog, and at a 7-day
-            // selection on a 71-day extent the two 24px slabs met in the middle
-            // and read as one block rather than a range. Paint only — the hit
-            // rect keeps its size, so the touch target survives the calm, and
-            // `charts.css` narrows and rounds what is actually drawn.
-            handleStyle: { fill: "var(--muted-foreground)" },
+            // INVISIBLE. `brushX` is kept for interaction alone — pointer and
+            // keyboard handling, snapping, slider semantics — and everything
+            // you see is drawn by `BrushOverlay`.
+            //
+            // Not a style preference. D3 places its nodes at whatever fraction
+            // the pointer lands on, and a 1px stroke at a fractional position
+            // covers a different share of each device pixel at every offset:
+            // measured darkest pixel 120 → 64 → 0 across sub-pixel positions,
+            // so the outline visibly changed weight as it moved. Nothing
+            // reachable through `SceneStyle` fixes that, because the cause is
+            // the geometry and D3 owns it. An overlay whose edges are rounded to
+            // whole pixels has no such problem — and it is also the only way to
+            // dim OUTSIDE the selection, since `brushX` renders no nodes there
+            // to paint. evilcharts does the same thing for the same reasons:
+            // its slider is `handleStyle: { opacity: 0 }`, interaction only,
+            // with the frame and handles drawn over it.
+            selectionStyle: { fill: "none", stroke: "none" },
+            handleStyle: { fill: "none" },
           }),
         ],
         guides: false,
@@ -335,17 +414,20 @@ export function RangeBrush({
         focusRing: false,
         keyboard: false,
       }),
-    [plotted, selected, dates, dayAt, rows, range, onRangeChange],
+    [plotted, dates, dayAt, rows, range, onRangeChange],
   );
 
   return (
-    <RendererChart
-      {...chartHostProps()}
-      className="chart-range-brush"
-      initialWidth={INITIAL_WIDTH.dialog}
-      height={44}
-      ariaLabel={`Select a range within all ${rows.length} days of install history.`}
-      definition={definition}
-    />
+    <div className="chart-brush-shell relative">
+      <RendererChart
+        {...chartHostProps()}
+        className="chart-range-brush"
+        initialWidth={INITIAL_WIDTH.dialog}
+        height={STRIP_HEIGHT}
+        ariaLabel={`Select a range within all ${rows.length} days of install history.`}
+        definition={definition}
+      />
+      <BrushOverlay />
+    </div>
   );
 }

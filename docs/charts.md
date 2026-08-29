@@ -363,6 +363,70 @@ doing at the time:
   cross each other, the whole point of putting them on one axis. The wipe is the
   only entrance that reads that way, which is why it stays.
 
+- **`brushX` is mounted for INTERACTION ONLY; everything visible is an
+  overlay.** Its selection rect and handles are painted `none`, and
+  `BrushOverlay` in `skill-install-range.tsx` draws the dim, the frame and the
+  two grips as HTML that MIRRORS D3's own selection rect. Two things forced this,
+  both because D3 owns its own geometry:
+  - It places nodes at whatever fraction the pointer lands on, so a 1px stroke
+    covered a different share of each device pixel at every position — measured
+    darkest pixel 120 → 64 → 0 across sub-pixel offsets, which is an outline
+    that changes weight as it moves. Rounding the overlay's edges to whole
+    pixels makes a plain CSS border crisp. Neither `shape-rendering: crispEdges`
+    (which the library already sets, and which Chrome ignores here: at x=8.03 it
+    and `geometricPrecision` produce identical greys 135/120) nor
+    `vector-effect: non-scaling-stroke` (which only matters once the viewBox is
+    scaled) touches this. Widening the stroke to 2px does hide it, and was
+    tried and rejected as too heavy.
+  - `brushX` renders NOTHING outside the selection, so the evil-brush read —
+    the selection is the part that is not dimmed — was unreachable through its
+    styles at any width.
+
+  evilcharts splits exactly the same way and says why: its slider is
+  `handleStyle: { opacity: 0 }`, interaction only, with the frame and handles
+  drawn over it, because routing them through the chart's own update path
+  resets the drag anchor.
+
+- **The overlay mirrors D3's selection rect; it must not derive a position from
+  the range.** Deriving looked right and dragged wrong: the previews `brushX`
+  reports are snapped to candidates, so an overlay computed from them could only
+  move a whole day at a time — measured against D3's rect during one drag, the
+  rect advanced in 9px steps while the overlay jumped 409 → 425. The rect is
+  authoritative in both states (D3 positions it from the gesture while dragging
+  and from the controlled value otherwise), so a `MutationObserver` on its `x` /
+  `width` keeps the overlay exact with no second source of truth. Measured
+  after: the frame trails the rect by a constant 0.17px, which is the rounding.
+  Read the rect through `getBoundingClientRect`, not its `x` attribute — the
+  attribute is in viewBox units and would need the strip's scale applied.
+
+- **The dim is one element with a hard-stop gradient mask, not two side
+  panels.** `--sel-l` / `--sel-r` are whole pixels set from the measured width,
+  and the mask punches the selection out of a `--surface-5` scrim at 0.66 — the
+  same construction evilcharts uses (`withAlpha(tokens.background, 0.7)`).
+  `--surface-5` because that is what the DIALOG is painted with; `--card` looks
+  identical in light and is a whole step darker in dark (0.264 against 0.321),
+  where it read as a differently coloured panel laid over the strip. The strip
+  therefore draws ONE line at one strength; a second brighter copy of the
+  selected slice used to carry the figure/ground and is gone.
+
+- **The grip dots are a painted layer, not holes punched through the pill.**
+  Punching them with one `evenodd` mask let the line and the dim show through,
+  so they read as transparent gaps rather than marks on a solid grip. They are
+  now a `::after` filled with `--surface-5` and masked to HugeIcons'
+  more-vertical-square-01 geometry — opaque dots over the pill, which is how
+  evilcharts paints its grips too (`withAlpha(tokens.background, …)`). The mask
+  has to live on that pseudo-element: a mask clips everything drawn on the
+  element carrying it, the focus ring included.
+
+- **Hover, press and focus all hang off the shell, not the chart host.** The
+  element that takes them is still D3's invisible handle inside the chart; the
+  grip standing in for it is a SIBLING, so every `:has()` has to be on the
+  wrapper containing both, keyed on D3's own `handle--w` / `handle--e` so each
+  state lands on the grip it belongs to instead of lighting both. The handles
+  stay hittable while painted `none` because D3 sets `pointer-events: all` on
+  them itself. `:focus-visible` rather than `:focus` keeps a ring off every
+  pointer grab.
+
 - **The brush needs TWO ranges, and collapsing them breaks one thing or the
   other.** Its controlled value must hold still for the length of a gesture:
   rewriting it per frame rebuilds the definition under D3 and resets the drag's
@@ -397,24 +461,6 @@ doing at the time:
   gives data updates no animation at all (`animationDurationUpdate: 0`), keeping
   motion for the intro alone; a hard jump is wrong here only because our x scale
   re-domains under the marks, so something has to show what moved where.
-
-- **The brush strip says "selected" by BRIGHTENING the selection, not by dimming
-  around it.** evil-brush dims the two unselected sides and draws no wash over
-  the selection at all (`BRUSH_FILLER_OPACITY = 0`), which is the better idea —
-  the selection is simply the part that is not dimmed. `brushX` gives you a
-  selection rect and two handles and no outside-the-selection nodes, and a dim
-  on the full-width overlay darkens the selection along with everything else. So
-  the strip draws its line twice: the full extent muted, the selected slice
-  again over it at `--foreground`. A wash was tried first, in the accent at 14%,
-  and it tinted the very stretch it was meant to reveal.
-
-- **The brush's frame and grip geometry live in `charts.css`, its paint in the
-  definition.** `selectionStyle` and `handleStyle` take a `SceneStyle`, which is
-  fill and stroke and nothing else — so the selection's 6px rounding and the
-  handle's 10x16 pill are CSS on `rx` / `width` / `height`, which are
-  presentation attributes on an SVG rect. The handle rect is BOTH the paint and
-  the hit target, which is why ours is 10px wide where evil-brush's is 6: theirs
-  paints a graphic overlay over a separate transparent interaction layer.
 
 - **The library's entrance fires on a host's FIRST render and nothing replays
   it** — not a definition change, not a prop change. So it cannot serve as a

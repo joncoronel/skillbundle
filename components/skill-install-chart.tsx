@@ -468,11 +468,12 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
         />
       </ChartHoverOverlay>
       {rangeable && (
-        // Held off the plot and hairlined, so the strip reads as a separate
-        // instrument rather than a second series someone forgot to label. The
-        // chart's own x labels sit right above it and would otherwise appear to
-        // belong to this line.
-        <div className="mt-4 border-t border-border/60 pt-3">
+        // Held off the plot so the strip reads as a separate instrument rather
+        // than a second series someone forgot to label — the chart's own x
+        // labels sit right above it and would otherwise appear to belong to
+        // this line. Space alone does that; a rule as well was one line too
+        // many in a dialog that already has the frame and the grid.
+        <div className="mt-6">
           <RangeBrush
             rows={allRows}
             // The COMMITTED range, not the previewed one — feeding the live
