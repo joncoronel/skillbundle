@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 // table it's missing from). TODO.md has the fix that costs neither.
 import { GeistMono } from "geist/font/mono";
 import { GeistPixelCircle } from "geist/font/pixel";
+import { Google_Sans_Code } from "next/font/google";
 
 import localFont from "next/font/local";
 
@@ -50,6 +51,11 @@ const snPro = localFont({
   ],
 });
 
+const googleSans = Google_Sans_Code({
+  subsets: ["latin"],
+  variable: "--font-google-sans-code",
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "SkillBundle",
@@ -70,7 +76,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
+        className={`${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} ${googleSans.variable} font-sans antialiased`}
       >
         <div className="root">
           <Providers>{children}</Providers>

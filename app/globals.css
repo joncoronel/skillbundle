@@ -16,7 +16,7 @@ html {
 @theme inline {
   /* Fonts */
   --font-sans: var(--font-sn-pro);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-google-sans-code);
   /* Circle is a separate static face in the `geist` package, so the shape is
      picked by the variable name — no axis to set. See app/layout.tsx. */
   --font-display: var(--font-geist-pixel-circle);

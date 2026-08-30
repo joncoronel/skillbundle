@@ -117,7 +117,7 @@ const DIFF_OPTIONS = {
  * and `disableBackground` are both dead ends.
  */
 const DIFF_SURFACE_VARS = {
-  "--diffs-font-family": "var(--font-geist-mono)",
+  "--diffs-font-family": "var(--font-google-sans-code)",
   "--diffs-font-size": "0.8125rem",
   "--diffs-line-height": "1.5",
 } as CSSProperties;
