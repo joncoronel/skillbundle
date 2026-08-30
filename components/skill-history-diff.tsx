@@ -25,7 +25,8 @@ import {
   type VersionEntry,
 } from "./skill-history-diff-query";
 
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { LiveStatus } from "@/components/ui/live-status";
+import { Spinner } from "@/components/ui/spinner";
 import { elevatedSurface } from "@/lib/cubby-ui/elevated";
 import { cn } from "@/lib/utils";
 
@@ -208,42 +209,50 @@ export function VersionDiff({
     [fileDiff, from.versionId, to.versionId],
   );
 
-  if (isPending) {
-    return (
-      <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
-        <DotMatrixRipple className="size-4" />
-        Loading diff
-      </div>
-    );
-  }
-
-  if (isError || !data || !fileDiff) {
-    return (
-      <p className="py-4 text-sm text-muted-foreground">
-        This version&apos;s file could not be loaded, so there is no diff to
-        show. The change itself is still recorded above.
-      </p>
-    );
-  }
-
+  /**
+   * The three outcomes are a ternary under one fragment rather than three early
+   * returns, so that `LiveStatus` keeps a single stable position in the tree.
+   * As early returns it sat inside a `div`, a `p` and a `div` — three different
+   * parent types, so React unmounted and remounted it on every transition, and
+   * a region that arrives already holding its text never announces.
+   */
   return (
-    // ONE container, no tray. This matches how fenced code actually renders in
-    // skill content: markdown-content.tsx passes the outer CodeBlock
-    // `rounded-none bg-transparent p-0! shadow-none` and comments that it is
-    // "always a structureless wrapper (no padding, fill, or ring), so the code
-    // is a single container, never a box-in-a-box". The tray exists on the raw
-    // CodeBlock component but the app's own prose never shows it, so a diff
-    // rendering one was the odd surface out.
-    //
-    // The surface lives on the single panel below, as elevatedSurface(3) — the
-    // elevated card with its rim and shadow, exactly what CodeBlockPre carries.
-    <div className="w-full" style={DIFF_SURFACE_VARS}>
-      {/* CodeView rather than MultiFileDiff, on the library's own advice: the
+    <>
+      <LiveStatus>
+        {isPending
+          ? "Loading diff"
+          : isError || !data || !fileDiff
+            ? "The diff could not be loaded"
+            : "Diff ready"}
+      </LiveStatus>
+      {isPending ? (
+        <div className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+          <Spinner size="xs" />
+          Loading diff
+        </div>
+      ) : isError || !data || !fileDiff ? (
+        <p className="py-4 text-sm text-muted-foreground">
+          This version&apos;s file could not be loaded, so there is no diff to
+          show. The change itself is still recorded above.
+        </p>
+      ) : (
+        // ONE container, no tray. This matches how fenced code actually renders in
+        // skill content: markdown-content.tsx passes the outer CodeBlock
+        // `rounded-none bg-transparent p-0! shadow-none` and comments that it is
+        // "always a structureless wrapper (no padding, fill, or ring), so the code
+        // is a single container, never a box-in-a-box". The tray exists on the raw
+        // CodeBlock component but the app's own prose never shows it, so a diff
+        // rendering one was the odd surface out.
+        //
+        // The surface lives on the single panel below, as elevatedSurface(3) — the
+        // elevated card with its rim and shadow, exactly what CodeBlockPre carries.
+        <div className="w-full" style={DIFF_SURFACE_VARS}>
+          {/* CodeView rather than MultiFileDiff, on the library's own advice: the
           lower-level components hand virtualization to the caller and blank when
           nothing supplies a render window, which is exactly what they did here —
           container mounted, stylesheet attached, <pre> with zero rows and no
           console error. CodeView owns its rendering surface. */}
-      {/* The single surface, mirroring CodeBlockPre: `rounded-lg`, capped at
+          {/* The single surface, mirroring CodeBlockPre: `rounded-lg`, capped at
           `max-h-96`, carrying elevatedSurface(3)'s fill, rim and shadow.
 
           The height cap and the scroll must be on the SAME element. Putting
@@ -251,7 +260,7 @@ export function VersionDiff({
           `visible`, so expanding a collapsed hunk pushed content past the cap
           and an outer `overflow-hidden` simply clipped it — the extra lines
           rendered but were unreachable, with nothing to scroll. */}
-      {/* Two elements, and the split is load-bearing.
+          {/* Two elements, and the split is load-bearing.
 
           The rim only exists in dark mode (`--surface-rim-3` is
           `0 0 transparent` in light), which is why this only ever showed up
@@ -277,19 +286,21 @@ export function VersionDiff({
           div whose `overflow` is `visible`, so expanding a collapsed hunk pushed
           content past the cap with nothing to scroll. That still holds; it just
           does not require the surface to ride along. */}
-      <div
-        className={cn(
-          "relative overflow-hidden rounded-lg",
-          elevatedSurface(3),
-        )}
-      >
-        <div className="max-h-96 overflow-y-auto">
-          {/* `items` is memoised alongside the diff — see above. A fresh array
+          <div
+            className={cn(
+              "relative overflow-hidden rounded-lg",
+              elevatedSurface(3),
+            )}
+          >
+            <div className="max-h-96 overflow-y-auto">
+              {/* `items` is memoised alongside the diff — see above. A fresh array
               literal here re-entered the highlight pipeline on every render even
               when the diff itself was unchanged. */}
-          <CodeView items={items} options={diffOptions} disableWorkerPool />
+              <CodeView items={items} options={diffOptions} disableWorkerPool />
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

@@ -39,7 +39,8 @@ import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Card } from "@/components/ui/cubby-ui/card";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { LiveStatus } from "@/components/ui/live-status";
+import { Spinner } from "@/components/ui/spinner";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -382,9 +383,11 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   // parameter — the input's fixed height is inlined below).
   const searchField = (
     <div className="flex w-full items-center">
+      {/* Mounted whatever `showInputSpinner` is doing — see LiveStatus. */}
+      <LiveStatus>{showInputSpinner ? "Searching skills" : ""}</LiveStatus>
       <InputGroupAddon>
         {showInputSpinner ? (
-          <DotMatrixRipple size="xs" ariaLabel="Searching" />
+          <Spinner size="xs" />
         ) : (
           <HugeiconsIcon
             icon={isRepo ? GithubIcon : Search01Icon}

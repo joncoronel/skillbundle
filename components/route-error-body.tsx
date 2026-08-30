@@ -53,9 +53,7 @@ export function RouteErrorBody({
         500 INTERNAL_ERROR
       </p>
 
-      <h1 className="mb-6 font-display text-[clamp(2.5rem,6vw,4rem)] leading-hero font-medium tracking-tight">
-        Something went wrong.
-      </h1>
+      <h1 className="mb-6 text-hero">Something went wrong.</h1>
 
       <p className="mb-10 max-w-md text-base leading-relaxed text-muted-foreground">
         {description}

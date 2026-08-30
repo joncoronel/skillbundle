@@ -1355,3 +1355,12 @@ true` — that half had already been repaired by the earlier one-shot, so
 
   The compare chart is lines only and needs neither change. The range control already
   makes a longer window cheap to look at, which is most of what raising it would buy.
+
+- **Bring the OG images onto SN Pro** — the app's own face, deferred Aug 2026 when the
+  pixel display face was retired. `lib/og/fonts.ts` still ships Geist Sans, so the cards
+  are the one surface not set in the product's typeface. The gap is mechanical, not a
+  design decision: Satori wants static ttf/otf/woff, and SN Pro is vendored as a
+  VARIABLE woff2 (`app/fonts/sn-pro-latin.woff2`). Closing it needs static instances
+  cut at the weights the cards use (400/500/600/700) and committed under `assets/og/`,
+  which is a `fonttools` step this machine does not currently have. The pixel face
+  itself is fully gone from the cards — this is only about the remaining sans.

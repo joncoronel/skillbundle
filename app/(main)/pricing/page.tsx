@@ -12,9 +12,7 @@ export default function PricingPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 pt-16 pb-24">
       <header className="mx-auto max-w-2xl text-center">
-        <h1 className="font-display text-[clamp(2.5rem,6vw,4rem)] leading-hero font-medium tracking-tight">
-          Two plans. One product.
-        </h1>
+        <h1 className="text-hero">Two plans. One product.</h1>
         <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
           Both watch the skills you depend on and tell you the day one changes.
           The difference is how many you can watch.

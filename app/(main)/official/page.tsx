@@ -36,9 +36,7 @@ export default async function OfficialPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <header>
-        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
-          Official.
-        </h1>
+        <h1 className="text-display">Official.</h1>
         <p className="mt-3 max-w-prose text-sm text-muted-foreground">
           Skills published by the companies and organizations that build the
           technology. Curated by{" "}

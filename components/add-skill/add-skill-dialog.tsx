@@ -53,9 +53,7 @@ export function AddSkillDialog({
             in progress, so the state is still reported. */}
         <DialogContent variant="inset" showCloseButton={!pending}>
           <DialogHeader>
-            <DialogTitle className="font-display font-medium">
-              Add a skill
-            </DialogTitle>
+            <DialogTitle className="font-semibold">Add a skill</DialogTitle>
             <DialogDescription>
               Paste a skills.sh link or a GitHub repo. We&apos;ll pull it from
               GitHub if it isn&apos;t on skills.sh yet.

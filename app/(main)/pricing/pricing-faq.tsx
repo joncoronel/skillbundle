@@ -55,7 +55,7 @@ export function PricingFaq() {
     <div aria-labelledby="faq-heading" className="flex flex-col gap-6">
       <h2
         id="faq-heading"
-        className="font-display text-2xl font-medium tracking-tight md:text-3xl"
+        className="text-2xl font-semibold tracking-tight md:text-3xl"
       >
         Things people ask.
       </h2>

@@ -178,7 +178,7 @@ function PlanHead({ plan, cycle }: { plan: "free" | "pro"; cycle: Cycle }) {
       <div>
         <p className="text-sm font-semibold text-foreground">{info.name}</p>
         <p className="mt-1 flex items-baseline gap-1">
-          <span className="font-display text-3xl font-medium tracking-tight tabular-nums">
+          <span className="text-3xl font-semibold tracking-tight tabular-nums">
             ${amount}
           </span>
           <span className="text-xs text-muted-foreground">

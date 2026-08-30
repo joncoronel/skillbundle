@@ -17,16 +17,58 @@ html {
   /* Fonts */
   --font-sans: var(--font-sn-pro);
   --font-mono: var(--font-google-sans-code);
-  /* Circle is a separate static face in the `geist` package, so the shape is
-     picked by the variable name — no axis to set. See app/layout.tsx. */
-  --font-display: var(--font-geist-pixel-circle);
+  /* There is deliberately no `--font-display`. SN Pro carries every text role,
+     so a display-family hook would resolve to the body face and read as a
+     no-op at 20 call sites. The display ROLE survives the face it used to
+     name — it lives in `--text-display` below, which is a stronger marker
+     because it carries the treatment rather than just a family. */
+
+  /* The display end, in three steps.
+     A single-family system has to BUILD its display end; scaled-up body text
+     is what makes one look undesigned. Weight sits at 640 across all three
+     (SN Pro is a 200-900 variable face) and tracking tightens as size grows,
+     because optical tracking runs opposite to size: what reads as open at
+     14px reads as loose at 56px. Each step ships its own leading, weight and
+     tracking, so a call site is one class and nothing else.
+
+     SIZE THESE AGAINST THE PAGE, NOT AGAINST EACH OTHER. The reason there are
+     three steps and not one is a measurement: the single 64px step these
+     replaced was calibrated for the Geist Pixel face, which is mostly
+     whitespace and carries far less ink at a given size than SN Pro does. It
+     survived the face swap unchanged and became enormous. Worse, it was
+     applied to every page alike, so `/add` and `/official` — whose entire
+     content sits at 12-14px — ran a ladder of 64 → 18 → 14 with nothing in
+     between. `/pricing` was the only page it looked right on, because that is
+     the only page with a 30px tier underneath it to step down to. */
+
+  /* Hero — moment pages, where the heading IS the content and there is no
+     dense material under it: pricing, 404, the route error. */
+  --text-hero: clamp(2.5rem, 3.9vw, 3.5rem);
+  --text-hero--line-height: 0.95;
+  --text-hero--font-weight: 640;
+  --text-hero--letter-spacing: -0.03em;
+
+  /* Display — an app page's title. It names the surface; it is not a hero, and
+     it sits above dense 12-14px material, so it lands about 3x the body rather
+     than 4.6x. Its floor is the headline size (§3), which is correct: on a
+     phone a page title and a section heading converge. */
+  --text-display: clamp(1.875rem, 2.8vw, 2.5rem);
+  --text-display--line-height: 1;
+  --text-display--font-weight: 640;
+  --text-display--letter-spacing: -0.025em;
+
+  /* Display small — the same job for headings carrying strings we do not
+     control: bundle names, `owner/repo`, empty-state titles. A step lower with
+     more leading because those wrap, where the fixed titles above are short
+     copy we wrote ourselves. */
+  --text-display-sm: clamp(1.75rem, 2.4vw, 2.125rem);
+  --text-display-sm--line-height: 1.1;
+  --text-display-sm--font-weight: 640;
+  --text-display-sm--letter-spacing: -0.02em;
 
   /* Typography — the one step below text-xs, for pills and dense chips.
      Sentence case in the body face; there is no uppercase label role. */
   --text-micro: 0.6875rem; /* 11px */
-
-  /* Typography — page hero leading */
-  --leading-hero: 0.95;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

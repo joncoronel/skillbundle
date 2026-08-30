@@ -34,7 +34,7 @@ export default function BundleLoading() {
           </div>
 
           {/* Bundle name — mirrors the real h1's scale and leading. */}
-          <div className="mt-2 font-display text-4xl leading-hero md:text-5xl">
+          <div className="mt-2 text-display-sm">
             <Skeleton className="h-[1em] w-2/3 max-w-md rounded" />
           </div>
 

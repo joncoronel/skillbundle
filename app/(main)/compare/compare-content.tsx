@@ -29,7 +29,6 @@ import {
   type CompareSeries,
 } from "@/components/compare-trend-chart";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { DotMatrix } from "@/components/ui/dot-matrix";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import type { PickerSkill } from "@/components/skill-picker";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
@@ -264,12 +263,9 @@ function CopyComparisonLink({ refs }: { refs: SkillRef[] }) {
 
 function EmptyState({ onOpenPicker }: { onOpenPicker: () => void }) {
   return (
-    <div className="relative overflow-hidden rounded-xl bg-muted/40">
-      <DotMatrix />
-      <div className="relative px-6 py-16 md:px-12 md:py-24">
-        <h2 className="font-display text-4xl leading-hero font-medium tracking-tight md:text-5xl">
-          Nothing to compare yet.
-        </h2>
+    <div className="overflow-hidden rounded-xl bg-muted/40">
+      <div className="px-6 py-16 md:px-12 md:py-24">
+        <h2 className="text-display-sm">Nothing to compare yet.</h2>
         <p className="mt-4 max-w-md text-sm text-muted-foreground">
           Pick two or three skills to read their docs and stats side by side,
           then send the winner straight to your bundle.

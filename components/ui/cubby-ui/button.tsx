@@ -3,7 +3,7 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Button as BaseButton } from "@base-ui/react/button";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 // The button's fill and border render on a ::before pseudo-element that
@@ -135,7 +135,7 @@ const buttonVariants = cva(cn(buttonBase, buttonPaint), {
 // that swap in a pending label while working, so it wants the other end of both
 // choices. Everything else here is stock — the props are the mechanism, these
 // are just the values.
-const DEFAULT_LOADING_INDICATOR = <DotMatrixRipple size="xs" />;
+const DEFAULT_LOADING_INDICATOR = <Spinner size="xs" />;
 const DEFAULT_LOADING_LAYOUT: LoadingLayout = "inline";
 // ---------------------------------------------------------------------------
 

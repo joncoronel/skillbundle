@@ -20,7 +20,8 @@ import {
   InputGroupInput,
 } from "@/components/ui/cubby-ui/input-group";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { LiveStatus } from "@/components/ui/live-status";
+import { Spinner } from "@/components/ui/spinner";
 import { skillPickerSearchOptions } from "@/hooks/use-skill-picker-search";
 import { renderHighlight } from "@/lib/search/highlight";
 import { formatInstalls } from "@/lib/utils";
@@ -74,9 +75,12 @@ export function SkillSearchField({
 }) {
   return (
     <InputGroup variant="elevated">
+      {/* Mounted whatever `loading` is doing — see LiveStatus. Outside the
+          addon so it never lands inside a control's name-from-content. */}
+      <LiveStatus>{loading ? "Searching skills" : ""}</LiveStatus>
       <InputGroupAddon>
         {loading ? (
-          <DotMatrixRipple size="xs" ariaLabel="Searching" />
+          <Spinner size="xs" />
         ) : (
           <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
         )}

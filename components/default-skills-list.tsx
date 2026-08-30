@@ -14,7 +14,8 @@ import {
   type LeaderboardMetric,
 } from "@/components/skill-card";
 import { useHydrated } from "@/hooks/use-hydrated";
-import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
+import { LiveStatus } from "@/components/ui/live-status";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
@@ -98,6 +99,14 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
 
   return (
     <>
+      {/* The count, not "loading more". This is mounted for the life of the
+          list while the number climbs, so each landed page announces once;
+          `LoadingMoreFooter` is decorative because firing "Loading more" on
+          every scroll is noise, and it unmounts between pages anyway. Same
+          shape as the result count in `catalog-results.tsx`. */}
+      <LiveStatus>
+        {skills.length} skill{skills.length !== 1 && "s"}
+      </LiveStatus>
       <SkillRowGrid skills={skills} />
       <div ref={sentinelRef} aria-hidden="true" className="h-px" />
       {isFetchingNextPage && <LoadingMoreFooter noun="skills" />}
@@ -162,8 +171,11 @@ export function EmptyState({
 /** Infinite-scroll "loading more" footer, shared by the paginated lists. */
 export function LoadingMoreFooter({ noun }: { noun: string }) {
   return (
-    <div className="mt-4 flex items-center justify-center gap-2 text-muted-foreground">
-      <DotMatrixComet size="xs" ariaLabel={`Loading more ${noun}`} />
+    <div
+      aria-hidden
+      className="mt-4 flex items-center justify-center gap-2 text-muted-foreground"
+    >
+      <Spinner size="xs" />
       <span className="text-xs">Loading more {noun}…</span>
     </div>
   );

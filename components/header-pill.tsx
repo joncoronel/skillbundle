@@ -116,7 +116,7 @@ export function HeaderPill() {
               wordmark is ~99px of that (90px of letters plus the 8px gap) and
               it is the one part a phone can lose: the mark still identifies
               the app, and it is still a link home. */}
-          <span className="font-display text-lg font-medium tracking-tight max-md:hidden">
+          <span className="text-lg font-semibold tracking-tight max-md:hidden">
             skillbundle
           </span>
         </Link>
