@@ -14,9 +14,10 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
  * replaced by a second, different skeleton.
  *
  * Geometry notes, so this survives the next redesign:
- *  - Type-scale wrappers (`text-4xl md:text-5xl` etc.) with `h-[1em]` bars
- *    inside, rather than hardcoded pixel heights, so the placeholder tracks the
- *    real element's line box at every breakpoint.
+ *  - Type-scale wrappers (`text-display-sm` etc.) with `h-[1em]` bars inside,
+ *    rather than hardcoded pixel heights, so the placeholder tracks the real
+ *    element's line box at every breakpoint. This is what let the Aug 2026
+ *    display-scale recalibration land without touching this file at all.
  *  - No action row. The real one is `empty:hidden` and renders nothing for
  *    non-owners, which is the common case for a shared link — drawing buttons
  *    there guaranteed a shift for exactly the visitor this route exists for.

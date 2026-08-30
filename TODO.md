@@ -768,24 +768,6 @@ itself is under `reviews/`, which is git-ignored — the reasoning would disappe
 at merge otherwise. (The other two shipped: `format:check` is wired into
 `pnpm check` as of #73, and the skip link landed after it.)
 
-- **Geist Pixel ships all five shapes on every route, ~100 KB of it unused.**
-  Nothing to do with the header — the font is loaded in the ROOT layout
-  (`app/layout.tsx`) and backs `--font-display`, which about 20 files use, mostly
-  page `h1`s. The pill's wordmark is one of them, and it is hidden below `md`
-  anyway.
-
-  `geist/font/pixel` declares all five pixel faces at module scope, and next/font
-  preloads from the module graph rather than from what the CSS uses, so importing
-  Circle pulls ~129 KB to use ~27 KB. `next/font/google`'s `Geist_Pixel` is the
-  same family as one variable font on an `ELSH` axis and avoids that, but has no
-  entry in Next's font-metrics table, so it logs "Failed to find font override
-  values" on every build and dev request with no way to silence it —
-  `adjustFontFallback` only picks a different row from the table the font is
-  missing from. The package is the current choice for that reason (user's call,
-  Aug 2026). The fix that costs neither is vendoring the single Circle woff2 to
-  `app/fonts/` with `adjustFontFallback: false`, exactly as SN Pro is handled —
-  same loader, same reason, and the OFL notice travels with it the same way.
-
 ### Parked from the skip-link / landmark review (Aug 2026)
 
 Three findings from that branch's panel review, deferred with reasons. The rest
