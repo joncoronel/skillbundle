@@ -4,36 +4,23 @@ import { cn } from "@/lib/utils";
  * A persistent screen-reader status line.
  *
  * **Reach for `aria-busy` first; most loading states do not need this.** A
- * spinner swapping into a field, or a page appending to a list, is a state a
- * screen reader can be told about with one attribute on the control or the
- * container. `publisher-select.tsx`, `skill-picker.tsx` and
- * `skill-composer.tsx` all do exactly that, and `repo-url-input.tsx` pairs it
- * with a VISIBLE status line, which is better still because sighted users get
- * the same information. This component is for an OUTCOME that nothing on
- * screen announces: "the diff could not be loaded", "3 skills". It grew to
- * seven call sites once and four of them were saying what `aria-busy` already
- * said, two of those on a surface that already had a visible `role="status"`.
+ * spinner swapping into a field, or a page appending to a list, is covered by
+ * one attribute on the control or the container. This is for an OUTCOME nothing
+ * on screen announces. Better still, pair `aria-busy` with a VISIBLE status
+ * line as `repo-url-input.tsx` does, so sighted users get the same information.
  *
- * **Mount it unconditionally and vary its children.** A live region that
- * mounts already holding its text has not *changed*, so it never announces —
- * which is the whole reason this is a separate always-present node rather than
- * a label on the spinner or a wrapper around the thing that is loading. If you
- * find yourself writing `{loading && <LiveStatus>…}`, the region is inside the
- * condition it is supposed to be reporting on; hoist it.
+ * **Mount it unconditionally and vary its children.** A region that mounts
+ * already holding its text has not *changed*, so it never announces. Writing
+ * `{loading && <LiveStatus>…}` puts the region inside the condition it is
+ * meant to report on.
  *
- * Two placement rules, both learned the hard way in this codebase:
+ * Two placement rules:
  *
- * - **Never inside an element whose accessible name comes from its contents**
- *   (a button, a link). `sr-only` clips rather than hides, so the text joins
- *   name-from-content and the control renames itself mid-request — "Save"
- *   becomes "Save Loading". `components/ui/cubby-ui/button.tsx` documents the
- *   same trap at its own loading slot.
- * - **Keep the contents to a short sentence.** `role="status"` implies
- *   `aria-atomic`, so a region wrapped around a result list gets read out in
- *   full — all 30 to 60 rows — the moment the data lands.
- *
- * `aria-live="polite"` is implied by `role="status"` and is spelled out anyway:
- * it costs nothing and assistive-tech behaviour varies more than the spec does.
+ * - **Never inside an element named by its contents** (a button, a link).
+ *   `sr-only` clips rather than hides, so the text joins name-from-content and
+ *   the control renames itself mid-request: "Save" becomes "Save Loading".
+ * - **Keep it to a short sentence.** `role="status"` implies `aria-atomic`, so
+ *   a region wrapped around a result list reads every row when data lands.
  */
 export function LiveStatus({
   children,

@@ -81,10 +81,8 @@ export function SkillSearchField({
           <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
         )}
       </InputGroupAddon>
-      {/* `aria-busy`, not a live region: the spinner beside this input is
-          decorative, and this is the same one attribute `publisher-select`
-          uses for the same field shape. The listbox announces its own results
-          when they land. */}
+      {/* `aria-busy`, not a live region: the spinner is decorative and the
+          listbox announces its own results. Same shape as `publisher-select`. */}
       <InputGroupInput
         aria-busy={loading}
         placeholder={placeholder}

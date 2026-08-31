@@ -17,29 +17,16 @@ html {
   /* Fonts */
   --font-sans: var(--font-sn-pro);
   --font-mono: var(--font-google-sans-code);
-  /* There is deliberately no `--font-display`. SN Pro carries every text role,
-     so a display-family hook would resolve to the body face and read as a
-     no-op at 20 call sites. The display ROLE survives the face it used to
-     name — it lives in `--text-display` below, which is a stronger marker
-     because it carries the treatment rather than just a family. */
+  /* No `--font-display`: SN Pro carries every text role, so the hook would
+     resolve to the body face and read as a no-op at 20 call sites. The display
+     ROLE lives in the tokens below, which carry the treatment, not a family.
 
-  /* The display end, in three steps.
-     A single-family system has to BUILD its display end; scaled-up body text
-     is what makes one look undesigned. Weight sits at 640 across all three
-     (SN Pro is a 200-900 variable face) and tracking tightens as size grows,
-     because optical tracking runs opposite to size: what reads as open at
-     14px reads as loose at 56px. Each step ships its own leading, weight and
-     tracking, so a call site is one class and nothing else.
-
-     SIZE THESE AGAINST THE PAGE, NOT AGAINST EACH OTHER. The reason there are
-     three steps and not one is a measurement: the single 64px step these
-     replaced was calibrated for the Geist Pixel face, which is mostly
-     whitespace and carries far less ink at a given size than SN Pro does. It
-     survived the face swap unchanged and became enormous. Worse, it was
-     applied to every page alike, so `/add` and `/official` — whose entire
-     content sits at 12-14px — ran a ladder of 64 → 18 → 14 with nothing in
-     between. `/pricing` was the only page it looked right on, because that is
-     the only page with a 30px tier underneath it to step down to. */
+     SIZE THESE AGAINST THE PAGE, NOT AGAINST EACH OTHER. A step is right or
+     wrong relative to the ladder under it: a page whose content sits at 12-14px
+     cannot carry the hero a pricing page can. Each ships its own leading,
+     weight and tracking, so a call site is one class and nothing else. Weight
+     is 640 throughout and tracking tightens as size grows, because optical
+     tracking runs opposite to size. Re-measure whenever the family moves. */
 
   /* Hero — moment pages, where the heading IS the content and there is no
      dense material under it: pricing, 404, the route error. */
@@ -48,19 +35,16 @@ html {
   --text-hero--font-weight: 640;
   --text-hero--letter-spacing: -0.03em;
 
-  /* Display — an app page's title. It names the surface; it is not a hero, and
-     it sits above dense 12-14px material, so it lands about 3x the body rather
-     than 4.6x. Its floor is the headline size (§3), which is correct: on a
-     phone a page title and a section heading converge. */
+  /* Display — an app page's title, above dense material. Lands about 3x the
+     body. Its floor is the headline size: on a phone the two converge. */
   --text-display: clamp(1.875rem, 2.8vw, 2.5rem);
   --text-display--line-height: 1;
   --text-display--font-weight: 640;
   --text-display--letter-spacing: -0.025em;
 
-  /* Display small — the same job for headings carrying strings we do not
-     control: bundle names, `owner/repo`, empty-state titles. A step lower with
-     more leading because those wrap, where the fixed titles above are short
-     copy we wrote ourselves. */
+  /* Display small — the same job for strings we do not control: bundle names,
+     `owner/repo`, empty-state titles. Lower, with more leading, because those
+     wrap where the fixed titles above do not. */
   --text-display-sm: clamp(1.75rem, 2.4vw, 2.125rem);
   --text-display-sm--line-height: 1.1;
   --text-display-sm--font-weight: 640;

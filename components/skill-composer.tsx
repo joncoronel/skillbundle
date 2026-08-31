@@ -399,9 +399,8 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         render={
           <InputGroupInput
             ref={inputRef}
-            // `aria-busy`, not a live region: the addon spinner is decorative,
-            // and the Autocomplete listbox announces its own results. Same one
-            // attribute `publisher-select` uses for the same field shape.
+            // `aria-busy`, not a live region: the spinner is decorative and
+            // the listbox announces its own results.
             aria-busy={showInputSpinner}
             placeholder={placeholder}
             onKeyDown={handleInputKeyDown}

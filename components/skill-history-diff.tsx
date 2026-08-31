@@ -210,18 +210,14 @@ export function VersionDiff({
   );
 
   /**
-   * The three outcomes are a ternary under one fragment rather than three early
-   * returns, so that `LiveStatus` keeps a single stable position in the tree.
-   * As early returns it sat inside a `div`, a `p` and a `div` — three different
-   * parent types, so React unmounted and remounted it on every transition, and
-   * a region that arrives already holding its text never announces.
+   * One ternary under a fragment, not three early returns: `LiveStatus` needs a
+   * stable position in the tree, and three returns put it under three different
+   * parent types, remounting it on every transition.
    *
-   * The pending branch is EMPTY for that same reason: this component mounts
-   * when the panel opens, so whatever the region holds on that first render is
-   * silent anyway. Putting "Loading diff" there announced nothing and put the
-   * string in the accessibility tree twice, once here and once in the visible
-   * block below. The trigger in `skill-history-row.tsx` carries `aria-busy`
-   * for the opening window; this region owns the outcome.
+   * Its pending branch is empty on purpose. This component mounts when the
+   * panel opens, so whatever the region holds on that first render is silent
+   * anyway, and "Loading diff" there only duplicated the visible block. The
+   * trigger carries `aria-busy` for the wait; this region owns the outcome.
    */
   return (
     <>

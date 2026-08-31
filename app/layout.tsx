@@ -2,11 +2,7 @@ import type { Metadata } from "next";
 
 // next/font preloads from the MODULE GRAPH, not from what the CSS uses, so an
 // unused import costs a real download on every route. Three faces have been
-// dropped from here for exactly that reason, so check the CSS before adding
-// one back: Geist Sans; Geist Pixel Circle, when the pixel display face was
-// retired (`geist/font/pixel` declares all five faces at module scope, so it
-// pulled ~129 KB to use ~27 KB); and Geist Mono, once `--font-mono` moved to
-// Google Sans Code and nothing read `--font-geist-mono` any more.
+// dropped from here for that reason; check the CSS before adding one back.
 import { Google_Sans_Code } from "next/font/google";
 
 import localFont from "next/font/local";
@@ -48,23 +44,19 @@ const snPro = localFont({
   ],
 });
 
-// The app's mono face. Both options below are load-bearing; `display: "swap"`
-// used to sit here too and was removed because it is the documented default and
-// the emitted @font-face carries it either way.
+// The app's mono face. Both options below are load-bearing. Don't add
+// `display: "swap"`: it is the documented default and the @font-face carries it
+// either way.
 //
-// `adjustFontFallback: false` — Google Sans Code has NO row in Next's metrics
+// `adjustFontFallback: false` — Google Sans Code has no row in Next's metrics
 // table (`next/dist/server/capsize-font-metrics.json`), so the default `true`
 // can only fail its lookup and log "Failed to find font override values" on
-// every build and dev request. It produces no size-adjusted fallback either
-// way; turning it off just skips the doomed lookup.
+// every build and dev request. It yields no size-adjusted fallback either way.
 //
-// `fallback` — without it the loader emits a BARE family name
-// (`--font-google-sans-code: "Google Sans Code"`), so a failed load drops
-// straight to the browser default, which is proportional. Measured: `iiiii`
-// 27.8px vs `MMMMM` 88.9px with no fallback, both exactly 55.0px with one. That
-// is every install command, file path, `owner/repo` and diff marker in the app
-// losing its columns. The stack mirrors the `geist` package's own mono config;
-// only the first few entries realistically ever run.
+// `fallback` — without it the loader emits a bare family name, so a failed load
+// drops to the browser default, which is proportional. Measured at 20px: `iiiii`
+// 27.8px vs `MMMMM` 88.9px bare, both 55.0px with the stack. That is every
+// install command, file path and diff marker losing its columns.
 const googleSansCode = Google_Sans_Code({
   subsets: ["latin"],
   variable: "--font-google-sans-code",
