@@ -3,6 +3,17 @@ import { cn } from "@/lib/utils";
 /**
  * A persistent screen-reader status line.
  *
+ * **Reach for `aria-busy` first; most loading states do not need this.** A
+ * spinner swapping into a field, or a page appending to a list, is a state a
+ * screen reader can be told about with one attribute on the control or the
+ * container. `publisher-select.tsx`, `skill-picker.tsx` and
+ * `skill-composer.tsx` all do exactly that, and `repo-url-input.tsx` pairs it
+ * with a VISIBLE status line, which is better still because sighted users get
+ * the same information. This component is for an OUTCOME that nothing on
+ * screen announces: "the diff could not be loaded", "3 skills". It grew to
+ * seven call sites once and four of them were saying what `aria-busy` already
+ * said, two of those on a surface that already had a visible `role="status"`.
+ *
  * **Mount it unconditionally and vary its children.** A live region that
  * mounts already holding its text has not *changed*, so it never announces —
  * which is the whole reason this is a separate always-present node rather than

@@ -456,19 +456,44 @@ spinner would go. It replaced three hand-built dot-matrix loaders (`ripple`,
 `comet`, and a `sweep` that nothing ever imported), which is the reason it is
 specified here rather than left to each surface.
 
-- HugeIcons `Loading02Icon` under `animate-spin`. It is the only loading glyph
-  in the set that reads as spinning — one open arc with a rounded cap, so the
-  gap gives the rotation something to track. The other four are an hourglass, a
-  sundial and a progress bar, all identical at every angle.
+- HugeIcons `LoaderCircle` under `animate-spin` — eight evenly spaced spokes,
+  rotating continuously. Keep the rotation continuous: a stepped animation ticks
+  the wheel 45 degrees onto its own symmetry and it sits dead still.
+- **It is decorative and announces nothing.** `aria-hidden`, no label, and no
+  `ariaLabel` prop to add one back. A status node that mounts already holding
+  its label has not changed, so it never announces, and inside a `<button>` it
+  is pruned outright. The surface owns the announcement: `aria-busy` on the
+  control, or a persistently mounted `LiveStatus` (§7 below) beside it.
 - Stroke weight rises as the box shrinks (2.5 at `xs` down to 1.75 at `lg`).
   Optical correction, not decoration: the glyph ships at 1.5, and a 1.5 stroke
   on a 16px arc reads as a grey smudge rather than a line.
 - Sizes are Tailwind classes, not inline width/height, so a caller's
   `className` can override through `cn`'s tailwind-merge. The loader this
   replaced set inline styles, which silently beat the `size-4` one call site
-  was passing.
-- `role="status"` + `aria-live="polite"` + an `ariaLabel`, and
-  `motion-reduce:animate-none` so the arc holds still rather than disappearing.
+  was passing. `xs` is the default and the only size in use.
+- No wrapper element. `HugeiconsIcon` spreads its rest props onto the `<svg>`,
+  which under Tailwind's preflight is already `display: block` with a centred
+  `transform-origin`. A host `<span>` would need `inline-flex` just to take a
+  size, plus `size-full` on the icon to fill it.
+- Under `prefers-reduced-motion` it pulses rather than freezing. The loaders it
+  replaced held a static opacity gradient when stopped, so they still read as
+  busy; eight identical spokes stopped dead read as an ordinary icon.
+
+### The live region
+
+`aria-busy` is the default and covers most loading states: one attribute on the
+control or the container that is updating. A spinner swapping into a search
+field and a list appending a page both take it, and nothing more. Better still,
+pair it with a VISIBLE status line as `repo-url-input.tsx` does, so sighted
+users get the same information.
+
+`components/ui/live-status.tsx` is for the case that leaves over: an OUTCOME
+nothing on screen announces. Mount it unconditionally and vary its children: a region that mounts already holding its
+text has not changed, so it never announces. Two placement rules, both learned
+here. Never inside an element whose accessible name comes from its contents,
+because `sr-only` clips rather than hides and the control renames itself
+mid-request. And keep it to a short sentence, because `role="status"` implies
+`aria-atomic` and a region wrapped around a result list gets read out in full.
 
 ## 8. Do's and Don'ts
 

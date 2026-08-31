@@ -154,11 +154,16 @@ export function ActiveCatalogResults({
           >
             {found.toLocaleString()} result{found !== 1 && "s"}
           </p>
-          {/* SkillHit is structurally a SkillData (plus engine fields) — rows
-              render hits directly, no mapping layer. */}
-          <SkillRowGrid skills={hits} />
-          <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-          {isFetchingNextPage && <LoadingMoreFooter noun="results" />}
+          {/* `aria-busy` while a page is in flight, not a second live region.
+              The visible count above is already a `role="status"`, and two
+              status regions on one surface read the same event twice. */}
+          <div aria-busy={isFetchingNextPage || undefined}>
+            {/* SkillHit is structurally a SkillData (plus engine fields) — rows
+                render hits directly, no mapping layer. */}
+            <SkillRowGrid skills={hits} />
+            <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+            {isFetchingNextPage && <LoadingMoreFooter noun="results" />}
+          </div>
         </>
       )}
     </div>

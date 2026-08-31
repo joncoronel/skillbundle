@@ -39,7 +39,6 @@ import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Card } from "@/components/ui/cubby-ui/card";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { LiveStatus } from "@/components/ui/live-status";
 import { Spinner } from "@/components/ui/spinner";
 import {
   ToggleGroup,
@@ -383,8 +382,6 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   // parameter — the input's fixed height is inlined below).
   const searchField = (
     <div className="flex w-full items-center">
-      {/* Mounted whatever `showInputSpinner` is doing — see LiveStatus. */}
-      <LiveStatus>{showInputSpinner ? "Searching skills" : ""}</LiveStatus>
       <InputGroupAddon>
         {showInputSpinner ? (
           <Spinner size="xs" />
@@ -402,6 +399,10 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         render={
           <InputGroupInput
             ref={inputRef}
+            // `aria-busy`, not a live region: the addon spinner is decorative,
+            // and the Autocomplete listbox announces its own results. Same one
+            // attribute `publisher-select` uses for the same field shape.
+            aria-busy={showInputSpinner}
             placeholder={placeholder}
             onKeyDown={handleInputKeyDown}
             // h-11 at BOTH breakpoints: the Input's own sm:h-9 would win the

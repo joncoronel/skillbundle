@@ -215,12 +215,19 @@ export function VersionDiff({
    * As early returns it sat inside a `div`, a `p` and a `div` — three different
    * parent types, so React unmounted and remounted it on every transition, and
    * a region that arrives already holding its text never announces.
+   *
+   * The pending branch is EMPTY for that same reason: this component mounts
+   * when the panel opens, so whatever the region holds on that first render is
+   * silent anyway. Putting "Loading diff" there announced nothing and put the
+   * string in the accessibility tree twice, once here and once in the visible
+   * block below. The trigger in `skill-history-row.tsx` carries `aria-busy`
+   * for the opening window; this region owns the outcome.
    */
   return (
     <>
       <LiveStatus>
         {isPending
-          ? "Loading diff"
+          ? ""
           : isError || !data || !fileDiff
             ? "The diff could not be loaded"
             : "Diff ready"}
@@ -248,44 +255,44 @@ export function VersionDiff({
         // elevated card with its rim and shadow, exactly what CodeBlockPre carries.
         <div className="w-full" style={DIFF_SURFACE_VARS}>
           {/* CodeView rather than MultiFileDiff, on the library's own advice: the
-          lower-level components hand virtualization to the caller and blank when
-          nothing supplies a render window, which is exactly what they did here —
-          container mounted, stylesheet attached, <pre> with zero rows and no
-          console error. CodeView owns its rendering surface. */}
+              lower-level components hand virtualization to the caller and blank when
+              nothing supplies a render window, which is exactly what they did here —
+              container mounted, stylesheet attached, <pre> with zero rows and no
+              console error. CodeView owns its rendering surface. */}
           {/* The single surface, mirroring CodeBlockPre: `rounded-lg`, capped at
-          `max-h-96`, carrying elevatedSurface(3)'s fill, rim and shadow.
+              `max-h-96`, carrying elevatedSurface(3)'s fill, rim and shadow.
 
-          The height cap and the scroll must be on the SAME element. Putting
-          `max-h-96` on CodeView's own className capped a div whose `overflow` is
-          `visible`, so expanding a collapsed hunk pushed content past the cap
-          and an outer `overflow-hidden` simply clipped it — the extra lines
-          rendered but were unreachable, with nothing to scroll. */}
+              The height cap and the scroll must be on the SAME element. Putting
+              `max-h-96` on CodeView's own className capped a div whose `overflow` is
+              `visible`, so expanding a collapsed hunk pushed content past the cap
+              and an outer `overflow-hidden` simply clipped it — the extra lines
+              rendered but were unreachable, with nothing to scroll. */}
           {/* Two elements, and the split is load-bearing.
 
-          The rim only exists in dark mode (`--surface-rim-3` is
-          `0 0 transparent` in light), which is why this only ever showed up
-          there. Two separate things were eating it.
+              The rim only exists in dark mode (`--surface-rim-3` is
+              `0 0 transparent` in light), which is why this only ever showed up
+              there. Two separate things were eating it.
 
-          First, it is an INSET shadow, and Chromium paints those against an
-          element's scrollable overflow area rather than its visible box — so
-          while the surface and the scroller were one element, the rim scrolled
-          away with the content.
+              First, it is an INSET shadow, and Chromium paints those against an
+              element's scrollable overflow area rather than its visible box — so
+              while the surface and the scroller were one element, the rim scrolled
+              away with the content.
 
-          Second, an inset shadow paints BEHIND its children, and the diff's
-          rows carry opaque tints right up to the container's edges, so they
-          covered it. `elevatedSurface` is the house answer: same fill and drop
-          shadow, but the rim moves to an `::after` overlay that re-paints above
-          the children. `solidSurface`'s own doc says to switch to it the moment
-          a container gains opaque children near its edges — which this one
-          always had. It requires a positioned host, a radius, and clipped
-          overflow; all three are on the div below.
+              Second, an inset shadow paints BEHIND its children, and the diff's
+              rows carry opaque tints right up to the container's edges, so they
+              covered it. `elevatedSurface` is the house answer: same fill and drop
+              shadow, but the rim moves to an `::after` overlay that re-paints above
+              the children. `solidSurface`'s own doc says to switch to it the moment
+              a container gains opaque children near its edges — which this one
+              always had. It requires a positioned host, a radius, and clipped
+              overflow; all three are on the div below.
 
-          The surface stays on a non-scrolling outer box; the cap and the scroll
-          stay together on the inner one — which is the constraint the earlier
-          note here was about: `max-h-96` on CodeView's own className capped a
-          div whose `overflow` is `visible`, so expanding a collapsed hunk pushed
-          content past the cap with nothing to scroll. That still holds; it just
-          does not require the surface to ride along. */}
+              The surface stays on a non-scrolling outer box; the cap and the scroll
+              stay together on the inner one — which is the constraint the earlier
+              note here was about: `max-h-96` on CodeView's own className capped a
+              div whose `overflow` is `visible`, so expanding a collapsed hunk pushed
+              content past the cap with nothing to scroll. That still holds; it just
+              does not require the surface to ride along. */}
           <div
             className={cn(
               "relative overflow-hidden rounded-lg",
@@ -294,8 +301,8 @@ export function VersionDiff({
           >
             <div className="max-h-96 overflow-y-auto">
               {/* `items` is memoised alongside the diff — see above. A fresh array
-              literal here re-entered the highlight pipeline on every render even
-              when the diff itself was unchanged. */}
+                  literal here re-entered the highlight pipeline on every render even
+                  when the diff itself was unchanged. */}
               <CodeView items={items} options={diffOptions} disableWorkerPool />
             </div>
           </div>

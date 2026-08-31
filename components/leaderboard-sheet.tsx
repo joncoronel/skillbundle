@@ -155,7 +155,7 @@ export function LeaderboardSheet({
               node that holds the rows reads all 30 to 60 of them in one go the
               moment they land — and an `sr-only` label inside a node marked
               `aria-busy` is suppressed until it flips, so the pending state
-              never lands at all. Same shape as `Spinner`. */}
+              never lands at all. Same shape as `LiveStatus`. */}
           <LiveStatus>
             {isLoading
               ? "Loading leaderboard"

@@ -14,7 +14,6 @@ import {
   type LeaderboardMetric,
 } from "@/components/skill-card";
 import { useHydrated } from "@/hooks/use-hydrated";
-import { LiveStatus } from "@/components/ui/live-status";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -99,17 +98,14 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
 
   return (
     <>
-      {/* The count, not "loading more". This is mounted for the life of the
-          list while the number climbs, so each landed page announces once;
-          `LoadingMoreFooter` is decorative because firing "Loading more" on
-          every scroll is noise, and it unmounts between pages anyway. Same
-          shape as the result count in `catalog-results.tsx`. */}
-      <LiveStatus>
-        {skills.length} skill{skills.length !== 1 && "s"}
-      </LiveStatus>
-      <SkillRowGrid skills={skills} />
-      <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-      {isFetchingNextPage && <LoadingMoreFooter noun="skills" />}
+      {/* `aria-busy` while a page is in flight. Announcing every appended page
+          of homogeneous rows is noise, and `LoadingMoreFooter` is decorative
+          because it unmounts between pages and so could never announce. */}
+      <div aria-busy={isFetchingNextPage || undefined}>
+        <SkillRowGrid skills={skills} />
+        <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+        {isFetchingNextPage && <LoadingMoreFooter noun="skills" />}
+      </div>
     </>
   );
 }

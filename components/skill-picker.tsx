@@ -20,7 +20,6 @@ import {
   InputGroupInput,
 } from "@/components/ui/cubby-ui/input-group";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { LiveStatus } from "@/components/ui/live-status";
 import { Spinner } from "@/components/ui/spinner";
 import { skillPickerSearchOptions } from "@/hooks/use-skill-picker-search";
 import { renderHighlight } from "@/lib/search/highlight";
@@ -75,9 +74,6 @@ export function SkillSearchField({
 }) {
   return (
     <InputGroup variant="elevated">
-      {/* Mounted whatever `loading` is doing — see LiveStatus. Outside the
-          addon so it never lands inside a control's name-from-content. */}
-      <LiveStatus>{loading ? "Searching skills" : ""}</LiveStatus>
       <InputGroupAddon>
         {loading ? (
           <Spinner size="xs" />
@@ -85,7 +81,12 @@ export function SkillSearchField({
           <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
         )}
       </InputGroupAddon>
+      {/* `aria-busy`, not a live region: the spinner beside this input is
+          decorative, and this is the same one attribute `publisher-select`
+          uses for the same field shape. The listbox announces its own results
+          when they land. */}
       <InputGroupInput
+        aria-busy={loading}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
