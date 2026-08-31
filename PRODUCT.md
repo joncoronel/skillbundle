@@ -65,7 +65,7 @@ Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to
 - **Name:** SkillBundle. The name predates the shift toward monitoring; the install command still exists, so it is not inaccurate, but it describes the second-most-important thing the product does.
 - **Voice, three words:** Sharp, fast, inviting. It feels like a well-made developer tool that respects your time: confident and opinionated, never tentative or generic, with a cleverness to the interactions and copy that reads as built by someone who actually uses these tools. It moves quickly, communicates clearly, and does not waste space on ceremony.
 - **Emotional goals:** confidence (I know the state of my setup), efficiency (this is fast), and a quiet sense of delight (this feels good to use). Alerts must add vigilance without adding anxiety.
-- **Identity constraint:** the Geist Pixel display face is a deliberate, binding identity choice. Keep it. (Full visual world, palette, typography, references live in DESIGN.md, which is the authority for it.)
+- **Identity constraint:** the near-monochrome field with one blue signal is binding, and so is the single-family typography — one sans across every role, with the display end built from weight and tracking. Do not add a second display family. (The Geist Pixel face and the dot-matrix loader were previously named here as binding; both were retired in August 2026 because the pixel face was rendering at 18-36px across the app, well under the size it needs to read as pixels. DESIGN.md §1 records why, and remains the authority for the full visual world, palette, typography, and references.)
 
 ## Evidence on Hand
 

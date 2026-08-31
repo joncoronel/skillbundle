@@ -14,9 +14,10 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
  * replaced by a second, different skeleton.
  *
  * Geometry notes, so this survives the next redesign:
- *  - Type-scale wrappers (`text-4xl md:text-5xl` etc.) with `h-[1em]` bars
- *    inside, rather than hardcoded pixel heights, so the placeholder tracks the
- *    real element's line box at every breakpoint.
+ *  - Type-scale wrappers (`text-display-sm` etc.) with `h-[1em]` bars inside,
+ *    rather than hardcoded pixel heights, so the placeholder tracks the real
+ *    element's line box at every breakpoint. This is what let the Aug 2026
+ *    display-scale recalibration land without touching this file at all.
  *  - No action row. The real one is `empty:hidden` and renders nothing for
  *    non-owners, which is the common case for a shared link — drawing buttons
  *    there guaranteed a shift for exactly the visitor this route exists for.
@@ -34,7 +35,7 @@ export default function BundleLoading() {
           </div>
 
           {/* Bundle name — mirrors the real h1's scale and leading. */}
-          <div className="mt-2 font-display text-4xl leading-hero md:text-5xl">
+          <div className="mt-2 text-display-sm">
             <Skeleton className="h-[1em] w-2/3 max-w-md rounded" />
           </div>
 

@@ -637,7 +637,7 @@ export function CompareTrendChart({
             (`Crossfade` moves every swap the same way).
 
             No spinner beside it: the sweeping placeholder IS the indicator, and
-            DESIGN.md's `DotMatrixRipple` would say it twice. Static text too — a
+            DESIGN.md's `Spinner` would say it twice. Static text too — a
             pulse takes `muted-foreground` under the 4.5:1 it is tuned for.
 
             `aria-hidden` because `aria-busy` and the chart's `ariaLabel` already

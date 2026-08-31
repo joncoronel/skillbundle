@@ -1,15 +1,9 @@
 import type { Metadata } from "next";
 
 // next/font preloads from the MODULE GRAPH, not from what the CSS uses, so an
-// unused import costs a real download on every route (`GeistSans` was dropped
-// for that). `geist/font/pixel` declares all five faces at module scope, so
-// importing Circle pulls ~129 KB to use ~27 KB — accepted deliberately, because
-// `next/font/google`'s smaller `Geist_Pixel` has no entry in Next's metrics
-// table and logs "Failed to find font override values" on every build and dev
-// request, unsilenceable (`adjustFontFallback` only picks another row from the
-// table it's missing from). TODO.md has the fix that costs neither.
-import { GeistMono } from "geist/font/mono";
-import { GeistPixelCircle } from "geist/font/pixel";
+// unused import costs a real download on every route. Three faces have been
+// dropped from here for that reason; check the CSS before adding one back.
+import { Google_Sans_Code } from "next/font/google";
 
 import localFont from "next/font/local";
 
@@ -50,6 +44,35 @@ const snPro = localFont({
   ],
 });
 
+// The app's mono face. Both options below are load-bearing. Don't add
+// `display: "swap"`: it is the documented default and the @font-face carries it
+// either way.
+//
+// `adjustFontFallback: false` — Google Sans Code has no row in Next's metrics
+// table (`next/dist/server/capsize-font-metrics.json`), so the default `true`
+// can only fail its lookup and log "Failed to find font override values" on
+// every build and dev request. It yields no size-adjusted fallback either way.
+//
+// `fallback` — without it the loader emits a bare family name, so a failed load
+// drops to the browser default, which is proportional. Measured at 20px: `iiiii`
+// 27.8px vs `MMMMM` 88.9px bare, both 55.0px with the stack. That is every
+// install command, file path and diff marker losing its columns.
+const googleSansCode = Google_Sans_Code({
+  subsets: ["latin"],
+  variable: "--font-google-sans-code",
+  adjustFontFallback: false,
+  fallback: [
+    "ui-monospace",
+    "SFMono-Regular",
+    "Menlo",
+    "Monaco",
+    "Liberation Mono",
+    "DejaVu Sans Mono",
+    "Courier New",
+    "monospace",
+  ],
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "SkillBundle",
@@ -70,7 +93,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${GeistMono.variable} ${GeistPixelCircle.variable} ${snPro.variable} font-sans antialiased`}
+        className={`${snPro.variable} ${googleSansCode.variable} font-sans antialiased`}
       >
         <div className="root">
           <Providers>{children}</Providers>

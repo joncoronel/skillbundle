@@ -43,9 +43,7 @@ export default function ComparePage() {
   return (
     <div className="mx-auto max-w-7xl px-4 pt-12 pb-24">
       <header>
-        <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
-          Compare.
-        </h1>
+        <h1 className="text-display">Compare.</h1>
         <p className="mt-3 max-w-prose text-sm text-muted-foreground">
           Installs, rank, audits, and docs side by side, with every skill&apos;s
           install trend on one chart. Pick up to three and see which earns the

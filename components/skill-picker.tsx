@@ -20,7 +20,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/cubby-ui/input-group";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { Spinner } from "@/components/ui/spinner";
 import { skillPickerSearchOptions } from "@/hooks/use-skill-picker-search";
 import { renderHighlight } from "@/lib/search/highlight";
 import { formatInstalls } from "@/lib/utils";
@@ -76,12 +76,15 @@ export function SkillSearchField({
     <InputGroup variant="elevated">
       <InputGroupAddon>
         {loading ? (
-          <DotMatrixRipple size="xs" ariaLabel="Searching" />
+          <Spinner size="xs" />
         ) : (
           <HugeiconsIcon icon={Search01Icon} strokeWidth={2} />
         )}
       </InputGroupAddon>
+      {/* `aria-busy`, not a live region: the spinner is decorative and the
+          listbox announces its own results. Same shape as `publisher-select`. */}
       <InputGroupInput
+        aria-busy={loading}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}

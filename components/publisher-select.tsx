@@ -18,7 +18,7 @@ import {
   ComboboxTrigger,
 } from "@/components/ui/cubby-ui/combobox/combobox";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { Spinner } from "@/components/ui/spinner";
 import { ItemCount } from "@/components/item-count";
 import type { ControlSurface } from "@/components/catalog-controls";
 import {
@@ -205,13 +205,13 @@ export function PublisherSelect({
                 className="text-muted-foreground"
               />
             }
-            end={
-              showLoading ? (
-                <DotMatrixRipple size="xs" ariaLabel="Searching publishers" />
-              ) : null
-            }
+            end={showLoading ? <Spinner size="xs" /> : null}
           />
         </div>
+        {/* Base UI's Status ships `role="status"` + `aria-live`, and it stays
+            mounted for the life of the popup while `status()` varies — so this
+            IS the live region for the search. The spinner in the input stays
+            decorative rather than announcing the same thing twice. */}
         <ComboboxStatus className="empty:hidden">{status()}</ComboboxStatus>
         {/* Dim (don't replace) stale results while the next query resolves, so
             there's no relayout. Gated on items so a first search doesn't fade

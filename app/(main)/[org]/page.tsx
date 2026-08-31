@@ -140,11 +140,7 @@ async function OrgHeader({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1
-        className={cn(LISTING_TITLE_SCALE, "mb-6 font-medium tracking-tight")}
-      >
-        {org}
-      </h1>
+      <h1 className={cn(LISTING_TITLE_SCALE, "mb-6")}>{org}</h1>
     </>
   );
 }

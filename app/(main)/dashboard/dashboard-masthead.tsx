@@ -11,9 +11,7 @@ export function DashboardMasthead() {
           {/* Names the page's job, not its contents. The status panel leads
               now, so "Your bundles." described the section that comes second —
               and the wording stays true when bundles become watchlists. */}
-          <h1 className="font-display text-[clamp(2.5rem,5vw,4rem)] leading-hero font-medium tracking-tight">
-            Your setup.
-          </h1>
+          <h1 className="text-display">Your setup.</h1>
           <p className="mt-3 max-w-prose text-sm text-muted-foreground">
             What you&rsquo;re watching, and what has changed since you last
             looked.

@@ -13,10 +13,10 @@ import {
   Frame,
   Lede,
   MetaLine,
-  PixelHero,
-  PixelStatStrip,
+  StatStrip,
   Tag,
   Title,
+  WordHero,
   renderOg,
   truncate,
 } from "./templates";
@@ -29,9 +29,10 @@ import {
  * `renderOg` (lib/og/templates.tsx) — that's what keeps images from
  * regenerating on every link, independent of these data loaders.
  *
- * Identity rule: the Geist Pixel face appears big — section words, the
- * wordmark, every figure — so the brand reads at a glance. Variable-length
- * names and prose stay in Geist Sans.
+ * Identity rule: one family, with the display end built from weight and
+ * tracking. Section words, the wordmark and every figure are set at 700 and
+ * tracked hard so the card reads at a glance; variable-length names and prose
+ * stay at body weight and normal tracking.
  */
 
 // ── Cached loaders ──────────────────────────────────────────────────────────
@@ -151,21 +152,21 @@ export function brandOgImage() {
 }
 
 /**
- * Generic section card: a short word in the pixel face as the hero, plus a
- * Geist subtitle. For explore / official / pricing / compare and fallbacks.
+ * Generic section card: a short word at hero scale, plus a subtitle. For
+ * explore / official / pricing / compare and fallbacks.
  */
 export function sectionOgImage({
   word,
   subtitle,
-  pixelSize,
+  wordSize,
 }: {
   word: string;
   subtitle: string;
-  pixelSize?: number;
+  wordSize?: number;
 }) {
   return renderOg(
     <Frame>
-      <PixelHero text={word} size={pixelSize} />
+      <WordHero text={word} size={wordSize} />
       <Lede text={subtitle} top={34} />
     </Frame>,
   );
@@ -216,7 +217,7 @@ export async function skillOgImage(source: string, skillId: string) {
           marginTop: 30,
         }}
       >
-        <PixelStatStrip
+        <StatStrip
           top={0}
           stats={[
             {
@@ -272,7 +273,7 @@ export async function bundleOgImage(urlId: string, version: string) {
         }
         top={18}
       />
-      <PixelStatStrip stats={stats} />
+      <StatStrip stats={stats} />
     </Frame>,
     { cache: true },
   );
@@ -286,7 +287,7 @@ export async function sourceOgImage(source: string, category = "Source") {
     return sectionOgImage({
       word: source,
       subtitle: "No published skills found for this source.",
-      pixelSize: 64,
+      wordSize: 64,
     });
   }
 
@@ -294,7 +295,7 @@ export async function sourceOgImage(source: string, category = "Source") {
     <Frame category={category}>
       <Title text={source} size={nameSize(source)} />
       <Lede text="AI coding skills published by this source." top={18} />
-      <PixelStatStrip
+      <StatStrip
         stats={[
           { value: String(count), label: count === 1 ? "Skill" : "Skills" },
           { value: formatInstalls(totalInstalls), label: "Total installs" },
@@ -313,7 +314,7 @@ export async function orgOgImage(org: string) {
     return sectionOgImage({
       word: org,
       subtitle: "No published skills found for this organization.",
-      pixelSize: 64,
+      wordSize: 64,
     });
   }
 
@@ -321,7 +322,7 @@ export async function orgOgImage(org: string) {
     <Frame category="Organization">
       <Title text={org} size={nameSize(org)} />
       <Lede text="AI coding skills across this organization." top={18} />
-      <PixelStatStrip
+      <StatStrip
         stats={[
           {
             value: String(repos.length),

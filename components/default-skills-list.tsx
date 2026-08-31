@@ -14,7 +14,7 @@ import {
   type LeaderboardMetric,
 } from "@/components/skill-card";
 import { useHydrated } from "@/hooks/use-hydrated";
-import { DotMatrixComet } from "@/components/ui/dot-matrix-comet";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 type Page = FunctionReturnType<typeof api.skills.listPopularSkills>;
@@ -98,9 +98,13 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
 
   return (
     <>
-      <SkillRowGrid skills={skills} />
-      <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-      {isFetchingNextPage && <LoadingMoreFooter noun="skills" />}
+      {/* A defer hint, not an announcement. Appending pages of homogeneous rows
+          is not worth speaking; the footer below carries the readable text. */}
+      <div aria-busy={isFetchingNextPage || undefined}>
+        <SkillRowGrid skills={skills} />
+        <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+        {isFetchingNextPage && <LoadingMoreFooter noun="skills" />}
+      </div>
     </>
   );
 }
@@ -159,11 +163,17 @@ export function EmptyState({
   );
 }
 
-/** Infinite-scroll "loading more" footer, shared by the paginated lists. */
+/**
+ * Infinite-scroll "loading more" footer, shared by the paginated lists.
+ *
+ * Not `aria-hidden`. It mounts with the fetch so it cannot announce, but that
+ * is a reason to expect no announcement, not to hide the text: hidden, it left
+ * both lists with nothing a screen reader could reach.
+ */
 export function LoadingMoreFooter({ noun }: { noun: string }) {
   return (
     <div className="mt-4 flex items-center justify-center gap-2 text-muted-foreground">
-      <DotMatrixComet size="xs" ariaLabel={`Loading more ${noun}`} />
+      <Spinner size="xs" />
       <span className="text-xs">Loading more {noun}…</span>
     </div>
   );

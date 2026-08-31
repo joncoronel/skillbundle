@@ -21,8 +21,7 @@
  * the shared App Shell, so that swap is the first thing every client navigation
  * into those routes shows.
  */
-export const LISTING_TITLE_SCALE =
-  "font-display text-[clamp(2.25rem,5vw,3.5rem)] leading-hero";
+export const LISTING_TITLE_SCALE = "text-display-sm";
 
 /**
  * Row fill for a stacked list on a RAISED ground (the leaderboard sheet) rather

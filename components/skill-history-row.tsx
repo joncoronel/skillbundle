@@ -23,7 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/cubby-ui/select";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { LiveStatus } from "@/components/ui/live-status";
+import { Spinner } from "@/components/ui/spinner";
 import { cn, formatDate } from "@/lib/utils";
 
 /**
@@ -394,7 +395,7 @@ export function HistoryRow({
               // instead of sitting inside the control. The prop also drives the
               // iconLeft compound variant that corrects the optical padding.
               // The Button owns the busy visual. Its `inline` loading layout
-              // puts the DotMatrixRipple in the leading icon's own slot, so the
+              // puts the Spinner in the leading icon's own slot, so the
               // control keeps its exact geometry — hand-swapping the icon here
               // sized the ripple differently and nudged the trigger.
               loading={opening}
@@ -510,25 +511,20 @@ export function HistoryRow({
                       non-visual user picks a range, hears the previous value
                       read back, and the diff changes unannounced some hundreds
                       of milliseconds later. */}
-                  <span role="status" aria-live="polite" className="sr-only">
+                  <LiveStatus>
                     {swapping ? "Loading comparison" : ""}
-                  </span>
+                  </LiveStatus>
                   {/* Occupies its slot in both states so the row cannot reflow
                       when the swap starts. The diff below stays on screen while
                       this runs — the indicator is the only thing that changes. */}
                   <span
-                    aria-hidden={!swapping}
+                    aria-hidden
                     className={cn(
                       "grid size-4 shrink-0 place-items-center transition-opacity duration-100 ease-out",
                       swapping ? "opacity-100" : "opacity-0",
                     )}
                   >
-                    {swapping ? (
-                      <DotMatrixRipple
-                        size="xs"
-                        ariaLabel="Loading comparison"
-                      />
-                    ) : null}
+                    {swapping ? <Spinner size="xs" /> : null}
                   </span>
                 </div>
               )}

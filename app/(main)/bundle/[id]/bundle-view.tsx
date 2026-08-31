@@ -231,7 +231,7 @@ export function BundleView({
             <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
               <span>by {bundle.creatorName}</span>
             </div>
-            <h1 className="mt-2 font-display text-4xl leading-hero font-medium tracking-tight wrap-break-word md:text-5xl">
+            <h1 className="mt-2 text-display-sm wrap-break-word">
               {bundle.name}
             </h1>
 

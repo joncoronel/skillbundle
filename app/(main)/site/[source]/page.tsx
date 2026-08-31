@@ -110,11 +110,7 @@ async function SourceHeader({ params }: { params: Params }) {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <h1
-        className={cn(LISTING_TITLE_SCALE, "mb-6 font-medium tracking-tight")}
-      >
-        {source}
-      </h1>
+      <h1 className={cn(LISTING_TITLE_SCALE, "mb-6")}>{source}</h1>
     </>
   );
 }

@@ -264,13 +264,10 @@ export function SkillDetailPage({
       <div className="lg:pr-[calc(var(--skill-side)_+_var(--skill-gap))]">
         {breadcrumb}
 
-        {/* The body sans, not the Geist Pixel display face. Skill ids are long,
-            lowercase, hyphenated machine identifiers, and the pixel face
-            collapses into broken mono under ~40px (DESIGN.md §3, the Pixel
-            Floor Rule) — which is exactly what it was doing here at 30px.
-            Pushing the size up instead would wrap a 30-character id across
-            three lines on a phone. The display face stays on the hero moments
-            that run large enough to earn it.
+        {/* Deliberately NOT the display role. Skill ids are long, lowercase,
+            hyphenated machine identifiers, and `text-display-sm` would wrap a
+            30-character id across three lines on a phone. This heading is
+            sized to the content it carries, not to its position on the page.
 
             `id`/`tabIndex` make the masthead the section nav's first target;
             it lives in the static shell so the anchor resolves on first paint,

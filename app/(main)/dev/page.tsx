@@ -7,7 +7,7 @@ export default function DevDashboardPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-medium tracking-tight">
+        <h1 className="text-3xl font-semibold tracking-tight">
           Skill Sync Monitor
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">

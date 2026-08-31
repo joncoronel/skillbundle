@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { LIST_ROW_ON_RAISED, rowPositionClassName } from "@/lib/listing-styles";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
+import { LiveStatus } from "@/components/ui/live-status";
 import {
   SkillRowGrid,
   EmptyState,
@@ -154,14 +155,14 @@ export function LeaderboardSheet({
               node that holds the rows reads all 30 to 60 of them in one go the
               moment they land — and an `sr-only` label inside a node marked
               `aria-busy` is suppressed until it flips, so the pending state
-              never lands at all. Same shape as `DotMatrixComet`. */}
-          <span aria-live="polite" className="sr-only" role="status">
+              never lands at all. Same shape as `LiveStatus`. */}
+          <LiveStatus>
             {isLoading
               ? "Loading leaderboard"
               : failed
                 ? "Couldn't load the leaderboard"
                 : `${skills.length} skills`}
-          </span>
+          </LiveStatus>
           <div aria-busy={isLoading} className="pt-1">
             {failed ? (
               <EmptyState message="Couldn't load the leaderboard.">

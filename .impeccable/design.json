@@ -201,9 +201,12 @@
       }
     },
     "typographyMeta": {
+      "hero": {
+        "purpose": "SN Pro at weight 640; moment pages only, 40 to 56px, where the heading IS the content and nothing dense sits under it."
+      },
       "display": {
         "displayName": "Display",
-        "purpose": "Geist Pixel Circle; hero headlines at 60px and up only. Below ~40px it collapses into broken mono."
+        "purpose": "SN Pro at weight 640; an app page's title, 30 to 40px. Sized against the page under it, not on its own."
       },
       "headline": {
         "displayName": "Headline",
@@ -320,10 +323,22 @@
       }
     ],
     "breakpoints": [
-      { "name": "sm", "value": "640px" },
-      { "name": "md", "value": "768px" },
-      { "name": "lg", "value": "1024px" },
-      { "name": "xl", "value": "1280px" }
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
     ]
   },
   "components": [
@@ -410,12 +425,12 @@
   ],
   "narrative": {
     "northStar": "The Control Panel",
-    "overview": "SkillBundle looks like a precision instrument for builders. The base is an almost-monochrome neutral field carrying a single blue signal color that means one thing: this is the action. Identity comes from contrast, exact alignment, and a few deliberate motifs (the Geist Pixel display face, the dot-matrix loading ripple) rather than from decoration. It borrows Firecrawl's restraint (clean neutrals, generous gutters, one accent used sparingly) and Nothing OS's confidence (high contrast, bold typographic hierarchy, dot-matrix detailing on a monochrome base).\n\nThe neutral palette is hue-tinted, not flat gray: every neutral carries a trace of violet (--neutral-hue: 270 at chroma 0.004), which keeps large surfaces from reading as dead gray and gives dark mode a cool, considered cast. Depth is real but quiet, built from an eight-step surface elevation system (surface-1 through surface-8) where each level pairs a tonal background, a layered shadow, and an inset rim highlight. Light and dark are equal first-class themes driven by the same token names.\n\nThe body face carries the entire interface. The pixel display marks hero moments and the monospace is reserved for machine strings; neither is a costume applied to make ordinary chrome look technical. This system explicitly rejects: generic SaaS landing pages with gradient hero blobs, glassmorphism-heavy dashboards, playful/cartoon dev-tool styling, wide-tracked uppercase labels, and anything that reads as template-generated. The blue accent is a signal, never a gradient or a glow.",
+    "overview": "SkillBundle looks like a precision instrument for builders. The base is an almost-monochrome neutral field carrying a single blue signal color that means one thing: this is the action. Identity comes from contrast, exact alignment, and typographic authority rather than from decoration or from a second face. The dot-matrix world (the Geist Pixel face, the dot loaders, the dot-grid backdrop) was retired in August 2026. It borrows Firecrawl's restraint (clean neutrals, generous gutters, one accent used sparingly) and Nothing OS's confidence (high contrast, bold typographic hierarchy) on a monochrome base.\n\nThe neutral palette is hue-tinted, not flat gray: every neutral carries a trace of violet (--neutral-hue: 270 at chroma 0.004), which keeps large surfaces from reading as dead gray and gives dark mode a cool, considered cast. Depth is real but quiet, built from an eight-step surface elevation system (surface-1 through surface-8) where each level pairs a tonal background, a layered shadow, and an inset rim highlight. Light and dark are equal first-class themes driven by the same token names.\n\nOne family carries the entire interface, and the monospace is reserved for machine strings. The display end is built from weight and tracking rather than from a second face, and mono is never a costume applied to make ordinary chrome look technical. This system explicitly rejects: generic SaaS landing pages with gradient hero blobs, glassmorphism-heavy dashboards, playful/cartoon dev-tool styling, wide-tracked uppercase labels, and anything that reads as template-generated. The blue accent is a signal, never a gradient or a glow.",
     "keyCharacteristics": [
       "Near-monochrome neutral field, one blue accent used as a rare signal.",
       "Violet-tinted neutrals (hue 270, chroma 0.004), never pure gray.",
       "Eight-step tonal + shadow elevation system, equal light/dark themes.",
-      "Geist Pixel display face and dot-matrix loader as deliberate identity marks.",
+      "One family, SN Pro, across every text role; the display end is built from weight and tracking, not from a second face.",
       "Fast, tactile interactions: 100ms transitions, a 0.98 active-press scale.",
       "Sentence case everywhere; mono means machine string, never decoration."
     ],
@@ -431,8 +446,8 @@
         "section": "colors"
       },
       {
-        "name": "The Pixel Floor Rule",
-        "body": "Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; at small sizes it stops reading as pixel-grid and just looks like a broken mono. Display is for hero scale only.",
+        "name": "The Built-Display Rule",
+        "body": "A one-family system has to BUILD its display end; scaled-up body text is what makes one look undesigned. Weight climbs to 640 and tracking tightens as size grows. Size the display against the page under it: an app page title lands about 3x its body text, and only a moment page earns a hero.",
         "section": "typography"
       },
       {
@@ -442,7 +457,7 @@
       },
       {
         "name": "The Mono-Is-Data Rule",
-        "body": "Geist Mono means \"this is a machine string you could copy\": install commands, code and <pre>, file paths, owner/repo identifiers, version strings, diff −/+ markers, error digests. It is not a way to make a label look technical. Two consequences worth stating, because both were violated across the app: a label never gets mono just because it sits near data, and a metadata line like \"42 skills · 1.2k installs\" gets tabular-nums — which is the actual requirement, stable digit widths — not font-mono, because it is a sentence with numbers in it.",
+        "body": "Google Sans Code means \"this is a machine string you could copy\": install commands, code and <pre>, file paths, owner/repo identifiers, version strings, diff −/+ markers, error digests. It is not a way to make a label look technical. Two consequences worth stating, because both were violated across the app: a label never gets mono just because it sits near data, and a metadata line like \"42 skills · 1.2k installs\" gets tabular-nums — which is the actual requirement, stable digit widths — not font-mono, because it is a sentence with numbers in it.",
         "section": "typography"
       },
       {
@@ -456,8 +471,8 @@
       "Do tint every neutral toward hue 270 at chroma 0.004; never use pure gray.",
       "Do use surface-N levels for any raised element so light and dark depth stay coherent.",
       "Do keep Ink Muted (oklch(0.5 ...)) for secondary text; verify ≥4.5:1 before lightening anything.",
-      "Do reserve the Geist Pixel display face for ≥60px hero moments.",
-      "Do use the DotMatrixRipple for loading states, not a generic spinner.",
+      "Do reach for text-hero / text-display / text-display-sm rather than assembling a heading from size, weight and tracking classes.",
+      "Do use Spinner for every loading state. There is one indicator, and it is decorative.",
       "Do give an unresolved state its own tone. Never let \"not checked yet\" or \"nothing here\" fall through to the success colour.",
       "Do hold layout height across a loading→resolved transition; a placeholder that occupies no space makes every row jump when data lands.",
       "Do keep transitions fast (100ms ease-out) and let the 0.98 active scale carry the press."
@@ -465,7 +480,7 @@
     "donts": [
       "Don't use gradient hero blobs or any background-clip: text gradient text. The accent is a single solid color.",
       "Don't use decorative glassmorphism; blur and glass are not the default surface.",
-      "Don't set the Geist Pixel face below ~40px; it collapses into broken mono.",
+      "Don't add a second font family. The display end is weight and tracking.",
       "Don't apply uppercase to anything, at any size, in any role. There is no label treatment that earns it back.",
       "Don't reach for font-mono on a label, a heading, a count, or a status word. Mono is for strings a machine produced and a user might copy.",
       "Don't hand-roll box-shadow; use the surface-N elevation system.",

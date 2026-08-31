@@ -154,11 +154,15 @@ export function ActiveCatalogResults({
           >
             {found.toLocaleString()} result{found !== 1 && "s"}
           </p>
-          {/* SkillHit is structurally a SkillData (plus engine fields) — rows
-              render hits directly, no mapping layer. */}
-          <SkillRowGrid skills={hits} />
-          <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-          {isFetchingNextPage && <LoadingMoreFooter noun="results" />}
+          {/* A defer hint, not a second live region: the count above is already
+              a `role="status"`, and two would read the same event twice. */}
+          <div aria-busy={isFetchingNextPage || undefined}>
+            {/* SkillHit is structurally a SkillData (plus engine fields) — rows
+                render hits directly, no mapping layer. */}
+            <SkillRowGrid skills={hits} />
+            <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+            {isFetchingNextPage && <LoadingMoreFooter noun="results" />}
+          </div>
         </>
       )}
     </div>

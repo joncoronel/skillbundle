@@ -12,11 +12,12 @@ import { FONT, loadOgFonts } from "./fonts";
  * (see `theme.ts`), and long strings are truncated in JS.
  *
  * Design system:
- *   - Geist Pixel (the brand's display face) is used BIG — section words, the
- *     wordmark, and every figure — because below ~40px its circular pixels
- *     merge into a plain mono and the identity disappears. It is never used for
- *     body copy or variable-length names.
- *   - Geist Sans carries names, descriptions, and labels (legible at any size).
+ *   - One family carries every role, so the display end is built from weight
+ *     and tracking rather than from a second face: 700 with tracking pulled to
+ *     -0.035em at hero sizes, easing back toward normal as size drops. Optical
+ *     tracking runs opposite to size, so a single value across the ramp is what
+ *     makes a one-family card look unset.
+ *   - Geist Mono is reserved for machine strings (install commands).
  *   - Monochrome on near-black with blue as a single, rare accent. No glow, no
  *     background texture, no eyebrow pills — structure comes from a hairline
  *     header rule and precise alignment.
@@ -65,7 +66,7 @@ export function Watermark() {
   );
 }
 
-/** Brand signature: the real logo + the lowercase pixel wordmark. */
+/** Brand signature: the real logo + the lowercase wordmark. */
 function BrandLockup() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
@@ -73,10 +74,10 @@ function BrandLockup() {
       <div
         style={{
           display: "flex",
-          fontFamily: FONT.pixel,
           fontSize: 30,
+          fontWeight: 600,
           color: og.fg,
-          letterSpacing: "0.01em",
+          letterSpacing: "-0.02em",
         }}
       >
         skillbundle
@@ -85,8 +86,8 @@ function BrandLockup() {
   );
 }
 
-/** The brand presented large: logo + the pixel wordmark at hero scale. Used on
- *  the home/default card where the wordmark itself is the subject. */
+/** The brand presented large: logo + the wordmark at hero scale. Used on the
+ *  home/default card where the wordmark itself is the subject. */
 export function BrandHero() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
@@ -94,10 +95,10 @@ export function BrandHero() {
       <div
         style={{
           display: "flex",
-          fontFamily: FONT.pixel,
           fontSize: 70,
+          fontWeight: 700,
           color: og.fg,
-          letterSpacing: "0.01em",
+          letterSpacing: "-0.035em",
         }}
       >
         skillbundle
@@ -145,7 +146,7 @@ export function Frame({
   children,
 }: {
   /** Quiet label shown top-right. Omit on cards whose hero already names the
-   *  surface (e.g. the big pixel section word). */
+   *  surface (e.g. the `WordHero` section word). */
   category?: string;
   children: ReactNode;
 }) {
@@ -206,9 +207,10 @@ export function Frame({
   );
 }
 
-/** A large dot-matrix word — the pixel font as hero (section names, wordmark).
- *  Use only for short, fixed strings; it's unreadable for long/variable text. */
-export function PixelHero({
+/** A single short word set as large as the card allows — section names and the
+ *  like. Distinct from `Title` in that it assumes fixed copy we wrote, so it
+ *  can be set at hero scale and tracked hard without risking a wrap. */
+export function WordHero({
   text,
   size = 104,
 }: {
@@ -219,8 +221,9 @@ export function PixelHero({
     <div
       style={{
         display: "flex",
-        fontFamily: FONT.pixel,
         fontSize: size,
+        fontWeight: 700,
+        letterSpacing: "-0.035em",
         lineHeight: 1,
         color: og.fg,
       }}
@@ -307,11 +310,12 @@ export function MetaLine({ text }: { text: string }) {
 }
 
 /**
- * Overview figures with the numbers rendered in the dot-matrix pixel face —
- * the brand's signature for any card that summarizes a collection. Figures are
- * always short, so pixel stays legible and distinctive.
+ * Overview figures for any card that summarizes a collection. The figures are
+ * the loudest thing on these cards, so they take the display treatment; the
+ * labels stay at body weight so the pair reads as figure-then-name rather than
+ * as two competing lines.
  */
-export function PixelStatStrip({
+export function StatStrip({
   stats,
   top = 48,
 }: {
@@ -335,8 +339,9 @@ export function PixelStatStrip({
           <div
             style={{
               display: "flex",
-              fontFamily: FONT.pixel,
               fontSize: 58,
+              fontWeight: 700,
+              letterSpacing: "-0.03em",
               lineHeight: 1,
               color: og.fg,
             }}

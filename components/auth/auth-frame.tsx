@@ -20,7 +20,7 @@ export function AuthFrame({
       <header>
         <Link
           href="/"
-          className="group inline-flex items-center gap-2 font-display text-lg font-medium tracking-tight"
+          className="group inline-flex items-center gap-2 text-lg font-semibold tracking-tight"
         >
           <LogoMark className="transition-transform group-hover:scale-110" />
           skillbundle
@@ -29,9 +29,7 @@ export function AuthFrame({
 
       <main className="flex flex-1 items-center py-16">
         <div className="mx-auto w-full max-w-md">
-          <h1 className="font-display text-[clamp(2.5rem,6vw,3.75rem)] leading-hero font-medium tracking-tight">
-            {title}
-          </h1>
+          <h1 className="text-display">{title}</h1>
           <p className="mt-4 max-w-sm text-sm text-muted-foreground sm:text-base">
             {description}
           </p>

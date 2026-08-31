@@ -18,12 +18,24 @@ colors:
   warning: "oklch(0.58 0.14 85)"
   info: "oklch(0.45 0.2 250)"
 typography:
-  display:
-    fontFamily: "var(--font-geist-pixel-circle), ui-monospace, monospace"
-    fontSize: "clamp(3.5rem, 6vw, 5rem)"
-    fontWeight: 400
+  hero:
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "clamp(2.5rem, 3.9vw, 3.5rem)"
+    fontWeight: 640
     lineHeight: 0.95
-    letterSpacing: "normal"
+    letterSpacing: "-0.03em"
+  display:
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "clamp(1.875rem, 2.8vw, 2.5rem)"
+    fontWeight: 640
+    lineHeight: 1
+    letterSpacing: "-0.025em"
+  display-sm:
+    fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "clamp(1.75rem, 2.4vw, 2.125rem)"
+    fontWeight: 640
+    lineHeight: 1.1
+    letterSpacing: "-0.02em"
   headline:
     fontFamily: "var(--font-sans), system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.875rem"
@@ -109,7 +121,9 @@ components:
 
 **Creative North Star: "The Control Panel"**
 
-SkillBundle looks like a precision instrument for builders. The base is an almost-monochrome neutral field carrying a single blue signal color that means one thing: this is the action. Identity comes from contrast, exact alignment, and a few deliberate motifs (the Geist Pixel display face, the dot-matrix loading ripple) rather than from decoration. It borrows Firecrawl's restraint (clean neutrals, generous gutters, one accent used sparingly) and Nothing OS's confidence (high contrast, bold typographic hierarchy, dot-matrix detailing on a monochrome base).
+SkillBundle looks like a precision instrument for builders. The base is an almost-monochrome neutral field carrying a single blue signal color that means one thing: this is the action. Identity comes from contrast, exact alignment, and typographic authority rather than from decoration or from a second face. It borrows Firecrawl's restraint (clean neutrals, generous gutters, one accent used sparingly) and Nothing OS's confidence (high contrast, bold typographic hierarchy) on a monochrome base.
+
+**The dot-matrix world was retired in August 2026, deliberately and completely** — the Geist Pixel display face, the rippling dot loader, its comet and sweep siblings, and the static dot-grid backdrop behind empty states. It is recorded here because the reason generalises. The pixel face was specified for hero moments at 60px and up, and the app never had one: it rendered at 36px on the home page and 18px in the header wordmark, so on the two most-seen surfaces the identity mark was running below the size at which it stops being pixels at all. A motif that only works in a size band the product does not use is not an identity, and propping it up would have meant sizing headings to suit a font rather than the content. Do not reintroduce a second display family without first checking, in the browser, the sizes it would actually render at.
 
 The neutral palette is hue-tinted, not flat gray: every neutral carries a trace of violet (`--neutral-hue: 270` at chroma `0.004`), which keeps large surfaces from reading as dead gray and gives dark mode a cool, considered cast. Depth is real but quiet, built from an eight-step surface elevation system (`surface-1` through `surface-8`) where each level pairs a tonal background, a layered shadow, and an inset rim highlight. Light and dark are equal first-class themes driven by the same token names.
 
@@ -120,7 +134,7 @@ This system explicitly rejects: generic SaaS landing pages with gradient hero bl
 - Near-monochrome neutral field, one blue accent used as a rare signal.
 - Violet-tinted neutrals (`hue 270`, `chroma 0.004`), never pure gray.
 - Eight-step tonal + shadow elevation system, equal light/dark themes.
-- Geist Pixel display face and dot-matrix loader as deliberate identity marks.
+- One family, SN Pro, across every text role — the display end is built from weight and tracking, not from a second face.
 - Fast, tactile interactions: 100ms transitions, a 0.98 active-press scale.
 
 ## 2. Colors
@@ -163,15 +177,17 @@ Six tokens. Three are set per theme — `--chrome`, `--chrome-foreground`, and t
 
 ## 3. Typography
 
-**Display Font:** Geist Pixel Circle, from the `geist` package (with `ui-monospace` fallback)
-**Body Font:** SN Pro, as `--font-sans` (fallback `system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif`). Neither face has an entry in Next's font-metrics table, and `app/layout.tsx` resolves that the same way for both: load through `next/font/local`, which measures the file rather than looking it up. SN Pro is vendored to `app/fonts/` for it; Geist Pixel arrives through the package, which already uses that loader. Read the note in that file before moving either to `next/font/google` — the metrics table is why they are not there.
-**Code Font:** Geist Mono (with `ui-monospace, monospace` fallback)
+**Text Font:** SN Pro, as `--font-sans`, carrying every text role from micro label to hero (fallback `system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif`). It has no entry in Next's font-metrics table, so `app/layout.tsx` loads it through `next/font/local`, which measures the file rather than looking it up, and vendors the subsetted variable woff2 to `app/fonts/`. Read the note in that file before moving it to `next/font/google`.
+**Code Font:** Google Sans Code, as `--font-mono` (with `ui-monospace, monospace` fallback). Also has no metrics row, which is why it carries `adjustFontFallback: false` and an explicit stack — see `app/layout.tsx`.
+**There is deliberately no display family.** `--font-display` was removed with the pixel face rather than repointed at SN Pro, because a family hook resolving to the body face is a no-op that reads as meaningful at every call site. The display ROLE lives in `--text-display` / `--text-display-sm`, which is a stronger marker: it carries the treatment, not just a name.
 
-**Character:** A geometric, technical sans carries the entire interface. The pixel-grid display face marks hero moments, and the monospace is reserved for machine strings. The contrast is structural (sans vs. pixel vs. mono), not three competing sans-serifs.
+**Character:** One geometric, technical sans carries the entire interface, and the monospace is reserved for machine strings. The contrast is structural (sans vs. mono) and, within the sans, built from weight and tracking rather than from a third face.
 
 ### Hierarchy
 
-- **Display** (Geist Pixel Circle, `clamp(3.5rem, 6vw, 5rem)`, line-height 0.95): Hero headlines and large brand moments only.
+- **Hero** (`text-hero` — 40 → 56px, weight 640, -0.03em, line-height 0.95): Moment pages only, where the heading IS the content and nothing dense sits under it: `/pricing`, the 404, the route error. Three call sites; if a fourth wants it, check §3's Page-Fit Rule first.
+- **Display** (`text-display` — 30 → 40px, weight 640, -0.025em, line-height 1): An app page's title. Names the surface above dense material — add, official, compare, dashboard, auth.
+- **Display small** (`text-display-sm` — 28 → 34px, weight 640, -0.02em, line-height 1.1): The same job for headings carrying strings we do not control — bundle names, `owner/repo`, empty-state titles. A step lower with more leading because those wrap.
 - **Headline** (SN Pro 600, 1.875rem, -0.02em): Page and section headings.
 - **Title** (SN Pro 600, 1.125rem): Card titles, panel headers.
 - **Section** (SN Pro 600, 0.875rem, `text-foreground`): Named blocks inside a page — the `LabeledSection` heading, sidebar sections, comparison groups. A real heading element, sentence case.
@@ -181,11 +197,31 @@ Six tokens. Three are set per theme — `--chrome`, `--chrome-foreground`, and t
 
 ### Named Rules
 
-**The Pixel Floor Rule.** Geist Pixel Circle collapses to ordinary mono below ~40px. Never set the display face below 60px; at small sizes it stops reading as pixel-grid and just looks like a broken mono. Display is for hero scale only.
+**The Page-Fit Rule.** A display size is right or wrong only relative to the
+page under it, never on its own. Measure the type ladder of the actual page
+before sizing its heading: `/pricing` carries a 30px price tier, so a 56px hero
+has something to step down to; `/add` and `/official` are 12-14px throughout, so
+the same 56px would open a gap with nothing in it. This is not theory — one
+display step was applied to every page alike and `/add` measured 64 → 18 → 14,
+a 4.6x jump straight from the title to the body. An app page title lands about
+3x its body text; a hero can go further only where the page earns it.
+
+**The Optical-Mass Rule.** When the face changes, the sizes do not carry over.
+The 64px above was calibrated for Geist Pixel, which is mostly whitespace and
+puts far less ink on the page than SN Pro does at the same nominal size. The
+number survived the face swap untouched and every heading in the app became
+enormous. Re-measure the scale against the page whenever the family, weight, or
+tracking moves.
+
+**The Built-Display Rule.** A one-family system has to BUILD its display end; scaled-up body text is what makes one look undesigned. Weight climbs to 640 and tracking tightens to -0.03em at hero sizes, because optical tracking runs opposite to size — what reads as open at 14px reads as loose at 64px. Both display steps ship their own size, leading, weight and tracking, so a call site is `text-display` and nothing else. This is not a style preference: the six near-identical arbitrary clamps that preceded the token, all spelling out `font-medium tracking-tight` by hand, are what it replaced. Never hand-roll a hero out of `text-5xl` plus weight and tracking classes.
+
+**The Weight Ladder Rule.** Display 640, headline and title 600, section 600, body 400, labels 500. Weight only ever climbs with size. This is worth stating because the app once broke it invisibly: the display role sat at `font-medium` (500) while headline sat at 600, which was survivable only while display was a different family. The moment one face carries both, a 500 hero above a 600 subhead reads as less important than the thing under it.
+
+**No second family for emphasis.** Mono is for machine strings (below); it is not a display option. If a heading needs more presence, it gets weight, size, or space — not a different face.
 
 **The Sentence Case Rule.** Nothing in this interface is set in `text-transform: uppercase`. Not eyebrows, not table headers, not status pills, not section labels. Wide-tracked capitals are the default costume of a generated dev-tool UI, and a small caps label is also the least legible way to set the smallest type on the screen. A word that arrives from an API as a raw enum (`warn`, `HIGH`) is normalised to sentence case before it is rendered — see `formatVerdict` in `components/monitoring/condition-meta.ts`. Literal machine constants that are genuinely written in caps (`500 INTERNAL_ERROR`, `SKILL.md`) are quoted as-is, in mono; that is content, not a type treatment.
 
-**The Mono-Is-Data Rule.** Geist Mono means "this is a machine string you could copy": install commands, code and `<pre>`, file paths, `owner/repo` identifiers, version strings, diff `−`/`+` markers, error digests. It is not a way to make a label look technical. Two consequences worth stating, because both were violated across the app: a label never gets mono just because it sits near data, and a metadata line like "42 skills · 1.2k installs" gets `tabular-nums` — which is the actual requirement, stable digit widths — not `font-mono`, because it is a sentence with numbers in it.
+**The Mono-Is-Data Rule.** Google Sans Code means "this is a machine string you could copy": install commands, code and `<pre>`, file paths, `owner/repo` identifiers, version strings, diff `−`/`+` markers, error digests. It is not a way to make a label look technical. Two consequences worth stating, because both were violated across the app: a label never gets mono just because it sits near data, and a metadata line like "42 skills · 1.2k installs" gets `tabular-nums` — which is the actual requirement, stable digit widths — not `font-mono`, because it is a sentence with numbers in it.
 
 ## 4. Layout
 
@@ -307,7 +343,7 @@ Built on the cubby-ui library (Base UI primitives + CVA variants). Components ar
 - **Primary:** Signal Blue fill, white text, `hover:` darkens 5% (`--primary-hover`). Default height 36px (40px on touch), `px-3 py-2`.
 - **Variants:** `primary-soft` (secondary fill, blue text), `neutral`, `outline` (raised surface + hairline border), `secondary`, `ghost` (muted text, fills with `surface-hover` on hover), `destructive` / `destructive-soft`, `link`.
 - **States:** `focus-visible` draws a 2px offset ring at `ring/50`; `active` removes shadow and scales to `0.98` (the press). All transitions 100ms `ease-out`.
-- **Loading:** swaps a section for the `DotMatrixRipple` spinner (the dot-matrix identity mark), never a generic spinner.
+- **Loading:** swaps a section for `Spinner` (§7 Signature). One indicator, everywhere.
 
 ### Badges / Chips
 
@@ -413,9 +449,52 @@ for free. Notes that are easy to lose:
   darker than the header strip in light, lighter in dark. Use `surface-2`, which
   sits between cell and header strip in both themes.
 
-### Signature: Dot-Matrix Ripple
+### The loading indicator
 
-The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in sequence, echoing the Nothing OS dot-matrix motif. It is the project's loading vocabulary everywhere a spinner would otherwise go.
+`components/ui/spinner.tsx` is the app's ONLY loading indicator, everywhere a
+spinner would go. It replaced three hand-built dot-matrix loaders (`ripple`,
+`comet`, and a `sweep` that nothing ever imported), which is the reason it is
+specified here rather than left to each surface.
+
+- HugeIcons `LoaderCircle` under `animate-spin` — eight evenly spaced spokes,
+  rotating continuously. Keep the rotation continuous: a stepped animation ticks
+  the wheel 45 degrees onto its own symmetry and it sits dead still.
+- **It is decorative and announces nothing.** `aria-hidden`, no label, and no
+  `ariaLabel` prop to add one back. A status node that mounts already holding
+  its label has not changed, so it never announces, and inside a `<button>` it
+  is pruned outright. The surface owns the announcement: `aria-busy` on the
+  control, or a persistently mounted `LiveStatus` (see "The live region" just
+  below) beside it.
+- Stroke weight rises as the box shrinks (2.5 at `xs` down to 1.75 at `lg`).
+  Optical correction, not decoration: the glyph ships at 1.5, and a 1.5 stroke
+  on a 16px arc reads as a grey smudge rather than a line.
+- Sizes are Tailwind classes, not inline width/height, so a caller's
+  `className` can override through `cn`'s tailwind-merge. The loader this
+  replaced set inline styles, which silently beat the `size-4` one call site
+  was passing. `xs` is the default and the only size in use.
+- No wrapper element. `HugeiconsIcon` spreads its rest props onto the `<svg>`,
+  which under Tailwind's preflight is already `display: block` with a centred
+  `transform-origin`. A host `<span>` would need `inline-flex` just to take a
+  size, plus `size-full` on the icon to fill it.
+- Under `prefers-reduced-motion` it pulses rather than freezing. The loaders it
+  replaced held a static opacity gradient when stopped, so they still read as
+  busy; eight identical spokes stopped dead read as an ordinary icon.
+
+### The live region
+
+`aria-busy` is the default and covers most loading states: one attribute on the
+control or the container that is updating. A spinner swapping into a search
+field and a list appending a page both take it, and nothing more. Better still,
+pair it with a VISIBLE status line as `repo-url-input.tsx` does, so sighted
+users get the same information.
+
+`components/ui/live-status.tsx` is for the case that leaves over: an OUTCOME
+nothing on screen announces. Mount it unconditionally and vary its children: a region that mounts already holding its
+text has not changed, so it never announces. Two placement rules, both learned
+here. Never inside an element whose accessible name comes from its contents,
+because `sr-only` clips rather than hides and the control renames itself
+mid-request. And keep it to a short sentence, because `role="status"` implies
+`aria-atomic` and a region wrapped around a result list gets read out in full.
 
 ## 8. Do's and Don'ts
 
@@ -425,8 +504,8 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 - **Do** tint every neutral toward `hue 270` at `chroma 0.004`; never use pure gray.
 - **Do** use `surface-N` levels for any raised element so light and dark depth stay coherent.
 - **Do** keep Ink Muted (`oklch(0.5 ...)`) for secondary text; verify ≥4.5:1 before lightening anything.
-- **Do** reserve the Geist Pixel display face for ≥60px hero moments.
-- **Do** use the `DotMatrixRipple` for loading states, not a generic spinner.
+- **Do** reach for `text-display` / `text-display-sm` for a hero rather than assembling one from size, weight and tracking classes.
+- **Do** use `Spinner` for every loading state. There is one indicator.
 - **Do** give an unresolved state its own tone. Never let "not checked yet" or
   "nothing here" fall through to the success colour.
 - **Do** hold layout height across a loading→resolved transition; a placeholder
@@ -437,7 +516,7 @@ The loading indicator (`DotMatrixRipple`) is a grid of dots that ripple in seque
 
 - **Don't** use gradient hero blobs or any `background-clip: text` gradient text. The accent is a single solid color.
 - **Don't** use decorative glassmorphism; blur and glass are not the default surface.
-- **Don't** set the Geist Pixel face below ~40px; it collapses into broken mono.
+- **Don't** add a second font family. The display end is weight and tracking.
 - **Don't** apply `uppercase` to anything, at any size, in any role. There is no
   label treatment that earns it back.
 - **Don't** reach for `font-mono` on a label, a heading, a count, or a status

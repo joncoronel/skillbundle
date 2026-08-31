@@ -39,7 +39,7 @@ import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Card } from "@/components/ui/cubby-ui/card";
 import { Kbd } from "@/components/ui/cubby-ui/kbd";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { DotMatrixRipple } from "@/components/ui/dot-matrix-ripple";
+import { Spinner } from "@/components/ui/spinner";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -384,7 +384,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
     <div className="flex w-full items-center">
       <InputGroupAddon>
         {showInputSpinner ? (
-          <DotMatrixRipple size="xs" ariaLabel="Searching" />
+          <Spinner size="xs" />
         ) : (
           <HugeiconsIcon
             icon={isRepo ? GithubIcon : Search01Icon}
@@ -399,6 +399,9 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
         render={
           <InputGroupInput
             ref={inputRef}
+            // `aria-busy`, not a live region: the spinner is decorative and
+            // the listbox announces its own results.
+            aria-busy={showInputSpinner}
             placeholder={placeholder}
             onKeyDown={handleInputKeyDown}
             // h-11 at BOTH breakpoints: the Input's own sm:h-9 would win the

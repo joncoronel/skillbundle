@@ -143,7 +143,7 @@ function SkillDetailSheetContent({
   return (
     <>
       <SheetHeader>
-        <SheetTitle className="flex items-center gap-1.5 font-display font-medium">
+        <SheetTitle className="flex items-center gap-1.5 font-semibold">
           {skill.name}
           {skill.curatedOwner && <OfficialBadge owner={skill.curatedOwner} />}
         </SheetTitle>
