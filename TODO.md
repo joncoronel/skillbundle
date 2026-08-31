@@ -1338,11 +1338,25 @@ true` — that half had already been repaired by the earlier one-shot, so
   The compare chart is lines only and needs neither change. The range control already
   makes a longer window cheap to look at, which is most of what raising it would buy.
 
-- **Bring the OG images onto SN Pro** — the app's own face, deferred Aug 2026 when the
-  pixel display face was retired. `lib/og/fonts.ts` still ships Geist Sans, so the cards
-  are the one surface not set in the product's typeface. The gap is mechanical, not a
-  design decision: Satori wants static ttf/otf/woff, and SN Pro is vendored as a
-  VARIABLE woff2 (`app/fonts/sn-pro-latin.woff2`). Closing it needs static instances
-  cut at the weights the cards use (400/500/600/700) and committed under `assets/og/`,
-  which is a `fonttools` step this machine does not currently have. The pixel face
-  itself is fully gone from the cards — this is only about the remaining sans.
+- **OG cards stay on Geist Sans. Considered and declined, Aug 2026.** `lib/og/fonts.ts`
+  ships Geist Sans and Geist Mono, so the cards are the one surface not set in the app's
+  own SN Pro and Google Sans Code. The pixel face is fully gone from them; this is only
+  about the remaining sans and mono.
+
+  Not blocked. An earlier version of this entry said the work needed `fonttools`, which
+  the machine did not have. It installs fine. Declined on value instead:
+
+  - Geist Sans and SN Pro are both geometric sans faces, and the difference at card
+    scale in a chat unfurl is slight.
+  - Satori wants static ttf/otf/woff and SN Pro is vendored as a VARIABLE woff2
+    (`app/fonts/sn-pro-latin.woff2`), so it needs instances cut at 400/500/600/700 and
+    committed. That is a hand-run binary step with no script, which somebody has to
+    repeat whenever SN Pro moves.
+  - It would not even reach one typeface: the cards set code in Geist Mono, and fixing
+    that half needs a TTF `next/font/google` never writes to disk.
+
+  Checked for side effects and there are none: `lib/og/*` is `server-only` and used just
+  by the `opengraph-image` routes, the cards are CDN-cached, and `next.config.ts` traces
+  `assets/og/**` as a glob. Revisit only if the brand-consistency case gets stronger. If
+  it does, keep the reads at module scope in `lib/og/fonts.ts` — that is what keeps
+  those routes prerendering static.
