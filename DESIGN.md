@@ -463,7 +463,8 @@ specified here rather than left to each surface.
   `ariaLabel` prop to add one back. A status node that mounts already holding
   its label has not changed, so it never announces, and inside a `<button>` it
   is pruned outright. The surface owns the announcement: `aria-busy` on the
-  control, or a persistently mounted `LiveStatus` (§7 below) beside it.
+  control, or a persistently mounted `LiveStatus` (see "The live region" just
+  below) beside it.
 - Stroke weight rises as the box shrinks (2.5 at `xs` down to 1.75 at `lg`).
   Optical correction, not decoration: the glyph ships at 1.5, and a 1.5 stroke
   on a 16px arc reads as a grey smudge rather than a line.

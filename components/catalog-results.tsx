@@ -154,9 +154,10 @@ export function ActiveCatalogResults({
           >
             {found.toLocaleString()} result{found !== 1 && "s"}
           </p>
-          {/* `aria-busy` while a page is in flight, not a second live region.
-              The visible count above is already a `role="status"`, and two
-              status regions on one surface read the same event twice. */}
+          {/* `aria-busy` while a page is in flight: a defer hint, not a second
+              live region. The visible count above is already a `role="status"`,
+              and two status regions on one surface read the same event twice.
+              `LoadingMoreFooter` carries the readable text. */}
           <div aria-busy={isFetchingNextPage || undefined}>
             {/* SkillHit is structurally a SkillData (plus engine fields) — rows
                 render hits directly, no mapping layer. */}

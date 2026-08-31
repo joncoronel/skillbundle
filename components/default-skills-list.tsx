@@ -98,9 +98,10 @@ function PopularInfiniteList({ initialPage }: { initialPage: Page }) {
 
   return (
     <>
-      {/* `aria-busy` while a page is in flight. Announcing every appended page
-          of homogeneous rows is noise, and `LoadingMoreFooter` is decorative
-          because it unmounts between pages and so could never announce. */}
+      {/* `aria-busy` while a page is in flight, so assistive tech can hold off
+          on the rows landing one by one. It is a defer hint, not an
+          announcement: appending pages of homogeneous rows is not an event
+          worth speaking, and the footer below carries the readable text. */}
       <div aria-busy={isFetchingNextPage || undefined}>
         <SkillRowGrid skills={skills} />
         <div ref={sentinelRef} aria-hidden="true" className="h-px" />
@@ -164,13 +165,17 @@ export function EmptyState({
   );
 }
 
-/** Infinite-scroll "loading more" footer, shared by the paginated lists. */
+/**
+ * Infinite-scroll "loading more" footer, shared by the paginated lists.
+ *
+ * NOT `aria-hidden`. It cannot announce, because it mounts and unmounts with
+ * the fetch, but that is an argument for expecting no announcement, not for
+ * hiding the text. Hidden, it left both lists with nothing a screen reader
+ * could reach at all. The spinner inside it is decorative on its own.
+ */
 export function LoadingMoreFooter({ noun }: { noun: string }) {
   return (
-    <div
-      aria-hidden
-      className="mt-4 flex items-center justify-center gap-2 text-muted-foreground"
-    >
+    <div className="mt-4 flex items-center justify-center gap-2 text-muted-foreground">
       <Spinner size="xs" />
       <span className="text-xs">Loading more {noun}…</span>
     </div>
