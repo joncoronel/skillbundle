@@ -1,5 +1,6 @@
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
 import { AuthFrame } from "@/components/auth/auth-frame";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function SignInSSOCallbackPage() {
   // OAuth sign-in for a not-yet-registered user transfers into sign-up, whose
@@ -8,6 +9,9 @@ export default function SignInSSOCallbackPage() {
   // users). The AuthFrame avoids a blank screen while the callback resolves.
   return (
     <AuthFrame title="Signing you in…" description="One moment.">
+      <div className="flex justify-center" aria-hidden="true">
+        <Spinner size="md" />
+      </div>
       <div id="clerk-captcha" />
       <AuthenticateWithRedirectCallback />
     </AuthFrame>

@@ -3,7 +3,10 @@
 import * as React from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { cn } from "@/lib/utils";
 
@@ -112,7 +115,7 @@ export function AuthArrowRight({ className }: { className?: string }) {
 
 export function AuthDivider({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-4" aria-hidden="true">
+    <div className="flex items-center gap-3" aria-hidden="true">
       <span className="h-px flex-1 bg-border" />
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="h-px flex-1 bg-border" />
@@ -120,8 +123,20 @@ export function AuthDivider({ label }: { label: string }) {
   );
 }
 
+/**
+ * The cross-links live in the card's tray band (`AuthFrame`'s footer), where
+ * they are the only interactive thing — so they read at full foreground
+ * strength beside muted prose rather than as muted-until-hover text.
+ *
+ * `py-2` and `-my-2` are a pair and neither is decoration. This is an
+ * inline-block, so its MARGIN box is what contributes to the line box: the
+ * padding grows the clickable box to 36px, and the negative margin subtracts
+ * exactly that back out so the band stays one line tall. Measured — dropping
+ * the margin takes the paragraph 20px → 36px and the footer 38px → 54px;
+ * dropping the padding collapses the target to the 20px line box.
+ */
 const crossLinkClass =
-  "-my-2 inline-flex items-center py-2 underline-offset-[6px] transition-colors hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50";
+  "text-foreground focus-visible:outline-ring/60 -my-2 inline-block rounded-sm py-2 font-medium underline-offset-4 transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50";
 
 export function AuthCrossLink({
   href,
@@ -149,6 +164,65 @@ export function AuthCrossButton({
   );
 }
 
+/**
+ * Password input with a reveal toggle, the one place the auth forms deviate
+ * from a bare `Input`.
+ *
+ * `variant="elevated"` throughout the auth forms: the opaque `bg-input` default
+ * is the same value as `surface-3`, so on the card's raised well every field
+ * would vanish into its own container.
+ *
+ * The toggle is `aria-pressed` rather than a label that flips meaning, and it
+ * sits outside the input's padding box (`pr-10`) so a long password never runs
+ * under it.
+ */
+export function AuthPasswordField({
+  id,
+  value,
+  onChange,
+  autoComplete,
+  invalid,
+  describedBy,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: "current-password" | "new-password";
+  invalid?: boolean;
+  describedBy?: string;
+}) {
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type={visible ? "text" : "password"}
+        variant="elevated"
+        className="pr-10"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
+        autoComplete={autoComplete}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby={describedBy}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label="Show password"
+        aria-pressed={visible}
+        aria-controls={id}
+        className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors duration-100 ease-out hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/60"
+      >
+        <HugeiconsIcon
+          icon={visible ? ViewOffIcon : ViewIcon}
+          className="size-4"
+        />
+      </button>
+    </div>
+  );
+}
+
 export function AuthSubmitButton({
   idleLabel,
   pendingLabel,
@@ -162,7 +236,7 @@ export function AuthSubmitButton({
   return (
     <Button
       type="submit"
-      size="lg"
+      variant="neutral"
       loading={pending}
       trailingIcon={<AuthArrowRight />}
       className={cn("w-full", className)}

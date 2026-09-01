@@ -79,16 +79,26 @@ export function OAuthButtons({ mode }: OAuthButtonsProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    // Two across, below the email form: the labels are short enough to pair and
+    // the row keeps the card from growing a third full-width button.
+    //
+    // `secondary` (a filled tint) rather than an outline: `outline` fills with
+    // `--card`, which is the same value as the well these sit on, so its border
+    // would ring a fill indistinguishable from its parent. The tint reads as a
+    // control at a glance and sits a clear step under the neutral submit.
+    <div className="grid grid-cols-2 gap-2">
       {oauthProviders.map((provider) => (
         <Button
           key={provider.strategy}
-          variant="outline"
+          variant="secondary"
           className="w-full"
           leadingIcon={provider.icon}
           onClick={() => handleOAuth(provider.strategy)}
         >
-          Continue with {provider.label}
+          {/* Visible label is the provider alone; the accessible name keeps the
+              verb, and contains the visible text in order (WCAG 2.5.3). */}
+          <span className="sr-only">Continue with </span>
+          {provider.label}
         </Button>
       ))}
     </div>

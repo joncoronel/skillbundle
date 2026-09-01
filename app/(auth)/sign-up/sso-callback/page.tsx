@@ -1,5 +1,6 @@
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
 import { AuthFrame } from "@/components/auth/auth-frame";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function SignUpSSOCallbackPage() {
   // For OAuth sign-ups, signUp.create() runs here in the redirect callback, so
@@ -12,6 +13,9 @@ export default function SignUpSSOCallbackPage() {
       title="Signing you in…"
       description="One moment while we finish setting up your account."
     >
+      <div className="flex justify-center" aria-hidden="true">
+        <Spinner size="md" />
+      </div>
       <div id="clerk-captcha" />
       <AuthenticateWithRedirectCallback />
     </AuthFrame>

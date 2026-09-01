@@ -124,7 +124,6 @@ html {
 
   /* Custom Animations */
   --animate-fade-in-up: fade-in-up 0.8s ease-out forwards;
-  --animate-scroll-stack: scroll-stack 30s linear infinite;
   --animate-otp-field-shake-a: otp-field-shake-a 180ms ease-in-out;
   --animate-otp-field-shake-b: otp-field-shake-b 180ms ease-in-out;
 
@@ -136,17 +135,6 @@ html {
     to {
       opacity: 1;
       transform: translateY(0);
-    }
-  }
-
-  @keyframes scroll-stack {
-    from {
-      transform: translateY(0);
-    }
-    to {
-      /* One copy of the list (rendered 3x in the DOM) — keeps loop seamless
-         when the container is taller than a single copy. */
-      transform: translateY(-33.333%);
     }
   }
 
