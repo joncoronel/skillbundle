@@ -6,14 +6,15 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
 import { AuthFrame } from "./auth-frame";
-import { CodeField } from "./code-field";
 import { OAuthButtons } from "./oauth-buttons";
 import {
+  AuthCodeGroup,
   AuthCrossButton,
   AuthCrossLink,
   AuthDivider,
   AuthFieldError,
   AuthFieldLabel,
+  AuthFooterPrompt,
   AuthFormError,
   AuthPasswordField,
   AuthSubmitButton,
@@ -183,42 +184,27 @@ export function SignInForm() {
             : `New device, so we sent a 6-digit code to ${email}.`
         }
         footer={
-          <>
-            <span className="text-muted-foreground">Didn&apos;t get it?</span>{" "}
+          <AuthFooterPrompt prompt="Didn't get it?">
             <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
               {countdown > 0 ? `Resend code (${countdown})` : "Resend code"}
             </AuthCrossButton>
-          </>
+          </AuthFooterPrompt>
         }
       >
         <form
           action={(formData) => verifyCode(String(formData.get("code") ?? ""))}
           className="flex flex-col gap-6"
         >
-          {/* Centred, unlike the email/password groups: those labels align to
-              the left edge of a full-width field, but the six OTP slots are a
-              fixed 280px inside a wider column, so a left-aligned pair would
-              sit visibly off-axis on a centred card. */}
-          <div className="flex flex-col items-center gap-3">
-            <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
-            <CodeField
-              id="code"
-              name="code"
-              value={code}
-              onValueChange={setCode}
-              autoSubmit
-              variant="elevated"
-              invalid={!!codeError}
-              describedBy={codeError ? "code-error" : undefined}
-              autoFocus
-            />
-            {codeError && (
-              <AuthFieldError
-                id="code-error"
-                message={resolveClerkErrorMessage(codeError)}
-              />
-            )}
-          </div>
+          <AuthCodeGroup
+            value={code}
+            onValueChange={setCode}
+            autoSubmit
+            invalid={!!codeError}
+            autoFocus
+            errorMessage={
+              codeError ? resolveClerkErrorMessage(codeError) : undefined
+            }
+          />
 
           <AuthFormError messages={globalErrorMessages} />
 
@@ -233,10 +219,9 @@ export function SignInForm() {
       title="Sign in."
       description="Welcome back."
       footer={
-        <>
-          <span className="text-muted-foreground">New here?</span>{" "}
+        <AuthFooterPrompt prompt="New here?">
           <AuthCrossLink href="/sign-up">Create account</AuthCrossLink>
-        </>
+        </AuthFooterPrompt>
       }
     >
       <div className="flex flex-col gap-6">

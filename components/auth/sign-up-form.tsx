@@ -4,19 +4,20 @@ import * as React from "react";
 import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { useResendTimer } from "@/hooks/use-resend-timer";
 import { AuthFrame } from "./auth-frame";
-import { CodeField } from "./code-field";
 import { OAuthButtons } from "./oauth-buttons";
 import {
+  AuthCodeGroup,
   AuthCrossButton,
   AuthCrossLink,
   AuthDivider,
   AuthFieldError,
   AuthFieldLabel,
+  AuthFooterPrompt,
   AuthFormError,
   AuthPasswordField,
+  AuthPendingBody,
   AuthSubmitButton,
   isExpiredCodeError,
   navigateAfterAuth,
@@ -162,31 +163,19 @@ export function SignUpForm() {
           }
           className="flex flex-col gap-6"
         >
-          {/* Centred, unlike the email/password groups: those labels align to
-              the left edge of a full-width field, but the six OTP slots are a
-              fixed 280px inside a wider column, so a left-aligned pair would
-              sit visibly off-axis on a centred card. */}
-          <div className="flex flex-col items-center gap-3">
-            <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
-            <CodeField
-              id="code"
-              name="code"
-              value={code}
-              onValueChange={setCode}
-              autoSubmit={!isVerifyComplete}
-              variant="elevated"
-              disabled={isVerifyComplete}
-              invalid={!!codeError && !isVerifyComplete}
-              describedBy={codeError ? "code-error" : undefined}
-              autoFocus={!isVerifyComplete}
-            />
-            {codeError && !isVerifyComplete && (
-              <AuthFieldError
-                id="code-error"
-                message={resolveClerkErrorMessage(codeError)}
-              />
-            )}
-          </div>
+          <AuthCodeGroup
+            value={code}
+            onValueChange={setCode}
+            autoSubmit={!isVerifyComplete}
+            disabled={isVerifyComplete}
+            invalid={!!codeError && !isVerifyComplete}
+            autoFocus={!isVerifyComplete}
+            errorMessage={
+              codeError && !isVerifyComplete
+                ? resolveClerkErrorMessage(codeError)
+                : undefined
+            }
+          />
 
           {!isVerifyComplete && (
             <AuthFormError messages={globalErrorMessages} />
@@ -212,9 +201,7 @@ export function SignUpForm() {
     // (e.g. some edge case). Keep a minimal fallback so the layout stays stable.
     return (
       <AuthFrame title="Signing you in…" description="One moment.">
-        <div className="flex justify-center" aria-hidden="true">
-          <Spinner size="md" />
-        </div>
+        <AuthPendingBody />
       </AuthFrame>
     );
   }
@@ -224,12 +211,9 @@ export function SignUpForm() {
       title="New account."
       description="Start building your stack. Takes a minute."
       footer={
-        <>
-          <span className="text-muted-foreground">
-            Already have an account?
-          </span>{" "}
+        <AuthFooterPrompt prompt="Already have an account?">
           <AuthCrossLink href="/sign-in">Sign in</AuthCrossLink>
-        </>
+        </AuthFooterPrompt>
       }
     >
       <div className="flex flex-col gap-6">

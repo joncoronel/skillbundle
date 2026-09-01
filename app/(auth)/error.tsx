@@ -25,10 +25,10 @@ export default function AuthError({
     // groups own it at different levels: `(main)/layout.tsx` wraps its children
     // in one, while `(auth)`'s comes from `AuthFrame` — which this replaces.
     //
-    // `(auth)/layout.tsx` renders no chrome at all (just the grid and the side
-    // panel), so an auth error has no header, no brand link and no nav — the
-    // only way out is this body's own "Back home" button. Without the landmark
-    // there would be no main region either.
+    // `(auth)/layout.tsx` renders no chrome at all, just a full-height
+    // background, so an auth error has no header, no brand link and no nav —
+    // the only way out is this body's own "Back home" button. Without the
+    // landmark there would be no main region either.
     //
     // Deliberately bare: `RouteErrorBody` owns `mx-auto max-w-2xl px-4 pt-24
     // pb-24`, and adding a box here nested `max-w-2xl` inside `max-w-2xl` — the

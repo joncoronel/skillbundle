@@ -773,12 +773,12 @@ Three layers, outermost first. Add to the innermost one that fits — don't
 reach for a `try/catch` inside a Server Component, which swallows the error and
 loses `retry()`.
 
-| Layer   | File                                 | Catches                                             | Keeps visible                             |
-| ------- | ------------------------------------ | --------------------------------------------------- | ----------------------------------------- |
-| Global  | `app/global-error.tsx`               | failures in the root layout itself                  | nothing — it replaces the document        |
-| Segment | `app/(main)/error.tsx`               | anything thrown by a page in `(main)`               | `AppHeader`, `GlobalBundleBar`            |
-| Segment | `app/(auth)/error.tsx`               | a throw during sign-in / sign-up or an SSO callback | nothing but a decorative `lg:` side panel |
-| Region  | `components/data-error-boundary.tsx` | one data region's Suspense subtree                  | the whole page around it                  |
+| Layer   | File                                 | Catches                                             | Keeps visible                         |
+| ------- | ------------------------------------ | --------------------------------------------------- | ------------------------------------- |
+| Global  | `app/global-error.tsx`               | failures in the root layout itself                  | nothing — it replaces the document    |
+| Segment | `app/(main)/error.tsx`               | anything thrown by a page in `(main)`               | `AppHeader`, `GlobalBundleBar`        |
+| Segment | `app/(auth)/error.tsx`               | a throw during sign-in / sign-up or an SSO callback | nothing — the group renders no chrome |
+| Region  | `components/data-error-boundary.tsx` | one data region's Suspense subtree                  | the whole page around it              |
 
 **There are two segment boundaries because `error.js` only wraps its own
 segment.** Without the `(auth)` one, a Clerk render failure escaped all the way
@@ -791,9 +791,9 @@ padding, and neither boundary should re-wrap it.
 The two files are not interchangeable, because the groups supply the `<main>`
 landmark at different levels. `(main)/layout.tsx` wraps its children in one
 (§6), so `(main)/error.tsx` renders the shared body bare. `(auth)` has
-no layout-level chrome at all — no header, no nav, and only the `aria-hidden`
-`SkillBundlePanel`, which is itself `hidden` below `lg` —
-and its landmark normally comes from `AuthFrame`, which the boundary replaces.
+no layout-level chrome at all — no header, no nav, and no side panel, just a
+full-height background around one centred card — and its landmark normally
+comes from `AuthFrame`, which the boundary replaces.
 So `(auth)/error.tsx` supplies a bare `<main>` of its own. Deleting it leaves
 an auth error with no main region.
 

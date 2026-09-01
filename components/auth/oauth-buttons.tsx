@@ -86,7 +86,12 @@ export function OAuthButtons({ mode }: OAuthButtonsProps) {
     // `--card`, which is the same value as the well these sit on, so its border
     // would ring a fill indistinguishable from its parent. The tint reads as a
     // control at a glance and sits a clear step under the neutral submit.
-    <div className="grid grid-cols-2 gap-2">
+    // Stacks below 300px of viewport. The labels are `whitespace-nowrap` with
+    // no truncation, and each cell needs ~98px: viewport minus 32 (page) minus
+    // 12 (tray) minus 32 (well) minus the 8px gap, halved. That clears 98px at
+    // 296px and not below, which 200% zoom on a 375px phone (187px) reaches.
+    // No real device at 100% zoom stacks.
+    <div className="grid grid-cols-1 gap-2 min-[300px]:grid-cols-2">
       {oauthProviders.map((provider) => (
         <Button
           key={provider.strategy}

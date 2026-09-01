@@ -40,9 +40,15 @@ export function AuthFrame({
       <main className="m-auto w-full max-w-[25rem]">
         <Card variant="inset" className="rounded-5xl p-1.5">
           {/* `rounded-3xl!` needs the bang — CardContent's own `rounded-lg` is
-              scoped by an arbitrary variant, so tailwind-merge never sees the
-              two as the same utility and the variant's specificity wins. */}
-          <CardContent className="rounded-3xl! px-6 py-9 sm:px-8">
+              scoped by an arbitrary variant (specificity 0,2,0), so
+              tailwind-merge never sees the two as the same utility and the
+              variant wins. Any padding class here needs the same bang, which is
+              why there is none: the variant's own `p-4` is what we want. 16px
+              plus the tray's 6px band puts the fields 22px from the card edge,
+              and the reference this card was built from insets them 23px. An
+              earlier `px-6 py-9 sm:px-8` here was dead for the specificity
+              reason above; forcing it through pinched the card. */}
+          <CardContent className="rounded-3xl!">
             {/* `neutral`, not `chrome`. Chrome is near-black in BOTH themes by
                 design, so in dark the badge lost its edge against the card and
                 only the mark read. Neutral inverts with the theme — black badge

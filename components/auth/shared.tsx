@@ -8,6 +8,8 @@ import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { CodeField } from "./code-field";
 import { cn } from "@/lib/utils";
 
 /**
@@ -192,6 +194,17 @@ export function AuthPasswordField({
   describedBy?: string;
 }) {
   const [visible, setVisible] = React.useState(false);
+
+  // Both forms clear `password` in a `useLayoutEffect` cleanup because Cache
+  // Components keeps the route mounted through React Activity, which preserves
+  // state across a hide. This state is out of that cleanup's reach, so without
+  // its own the field came back cleared but still `type="text"` and the next
+  // password was typed in plaintext. Activity runs cleanups for the whole
+  // subtree, so the child resets itself rather than threading a prop.
+  React.useLayoutEffect(() => {
+    return () => setVisible(false);
+  }, []);
+
   return (
     <div className="relative">
       <Input
@@ -219,6 +232,85 @@ export function AuthPasswordField({
           className="size-4"
         />
       </button>
+    </div>
+  );
+}
+
+/**
+ * The muted prompt plus its cross-link, as one piece. Hand-built at four call
+ * sites before, where the separating `{" "}` is a JSX literal that is invisible
+ * in review and silently closes the gap if dropped.
+ */
+export function AuthFooterPrompt({
+  prompt,
+  children,
+}: {
+  prompt: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <span className="text-muted-foreground">{prompt}</span> {children}
+    </>
+  );
+}
+
+/**
+ * The labelled six-digit code field, shared by sign-in's second factor and
+ * sign-up's email verification.
+ *
+ * Centred, unlike the email/password groups: those labels align to the left
+ * edge of a full-width field, but the six OTP slots are a fixed 280px inside a
+ * wider column, so a left-aligned pair sits visibly off-axis on a centred card.
+ */
+export function AuthCodeGroup({
+  value,
+  onValueChange,
+  autoSubmit,
+  disabled,
+  invalid,
+  autoFocus,
+  errorMessage,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  autoSubmit?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  autoFocus?: boolean;
+  errorMessage?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
+      <CodeField
+        id="code"
+        name="code"
+        value={value}
+        onValueChange={onValueChange}
+        autoSubmit={autoSubmit}
+        disabled={disabled}
+        variant="elevated"
+        invalid={invalid}
+        describedBy={errorMessage ? "code-error" : undefined}
+        autoFocus={autoFocus}
+      />
+      {errorMessage && (
+        <AuthFieldError id="code-error" message={errorMessage} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The body of every "hold on, we are finishing" step. No `aria-hidden` on the
+ * wrapper: `Spinner` already carries it, so a second one only suggests the
+ * wrapper is doing work.
+ */
+export function AuthPendingBody() {
+  return (
+    <div className="flex justify-center">
+      <Spinner size="md" />
     </div>
   );
 }
