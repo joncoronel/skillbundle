@@ -5,7 +5,7 @@ import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
-import { AuthFrame } from "./auth-frame";
+import { AuthFrame, AuthPendingBody } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
 import {
   AuthCodeGroup,
@@ -17,7 +17,6 @@ import {
   AuthFooterPrompt,
   AuthFormError,
   AuthPasswordField,
-  AuthPendingBody,
   AuthSubmitButton,
   isExpiredCodeError,
   navigateAfterAuth,
@@ -272,16 +271,11 @@ export function SignUpForm() {
         <OAuthButtons mode="sign-up" />
       </div>
 
-      {/* Outside the gapped column on purpose, and outside the form — Clerk only
-          needs the element to exist by id, anywhere in the document.
-          On submit Clerk mounts an invisible Turnstile widget here and collapses
-          the container with an inline `max-height: 0`. That contract holds in
-          normal flow but not in a flex column: a zero-height flex item still
-          collects the column's gap, so mounting it inside the form grew the form
-          by exactly one `gap-4` (208px → 224px, measured) and shoved the button
-          down mid-submit. As the last block child of the card it contributes
-          nothing when collapsed, and still has room to render for the rare
-          falsely-flagged user who gets a real challenge. */}
+      {/* Outside the gapped column, and outside the form: Clerk only needs the
+          element to exist by id. On submit it mounts an invisible Turnstile
+          widget and collapses this with an inline `max-height: 0`, which
+          contributes nothing in normal flow but still collects a gap as a flex
+          item, so inside the form it shoved the button down mid-submit. */}
       <div id="clerk-captcha" />
     </AuthFrame>
   );

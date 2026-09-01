@@ -8,7 +8,6 @@ import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
-import { Spinner } from "@/components/ui/spinner";
 import { CodeField } from "./code-field";
 import { cn } from "@/lib/utils";
 
@@ -126,16 +125,14 @@ export function AuthDivider({ label }: { label: string }) {
 }
 
 /**
- * The cross-links live in the card's tray band (`AuthFrame`'s footer), where
- * they are the only interactive thing — so they read at full foreground
- * strength beside muted prose rather than as muted-until-hover text.
+ * The cross-links sit in the card's tray band, where they are the only
+ * interactive thing, so they read at full foreground strength beside muted
+ * prose rather than as muted-until-hover text.
  *
- * `py-2` and `-my-2` are a pair and neither is decoration. This is an
- * inline-block, so its MARGIN box is what contributes to the line box: the
- * padding grows the clickable box to 36px, and the negative margin subtracts
- * exactly that back out so the band stays one line tall. Measured — dropping
- * the margin takes the paragraph 20px → 36px and the footer 38px → 54px;
- * dropping the padding collapses the target to the 20px line box.
+ * `py-2` and `-my-2` are a pair. An inline-block contributes its MARGIN box to
+ * the line box, so the padding grows the target to 36px and the negative margin
+ * subtracts it back out, keeping the band one line tall. Drop either and you
+ * lose the target or the band.
  */
 const crossLinkClass =
   "text-foreground focus-visible:outline-ring/60 -my-2 inline-block rounded-sm py-2 font-medium underline-offset-4 transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50";
@@ -167,16 +164,9 @@ export function AuthCrossButton({
 }
 
 /**
- * Password input with a reveal toggle, the one place the auth forms deviate
- * from a bare `Input`.
- *
- * `variant="elevated"` throughout the auth forms: the opaque `bg-input` default
- * is the same value as `surface-3`, so on the card's raised well every field
- * would vanish into its own container.
- *
- * The toggle is `aria-pressed` rather than a label that flips meaning, and it
- * sits outside the input's padding box (`pr-10`) so a long password never runs
- * under it.
+ * Password input with a reveal toggle. `elevated` because the opaque `bg-input`
+ * default is the same value as `surface-3` and would vanish into the card's
+ * well; `pr-10` so a long password never runs under the toggle.
  */
 export function AuthPasswordField({
   id,
@@ -195,12 +185,9 @@ export function AuthPasswordField({
 }) {
   const [visible, setVisible] = React.useState(false);
 
-  // Both forms clear `password` in a `useLayoutEffect` cleanup because Cache
-  // Components keeps the route mounted through React Activity, which preserves
-  // state across a hide. This state is out of that cleanup's reach, so without
-  // its own the field came back cleared but still `type="text"` and the next
-  // password was typed in plaintext. Activity runs cleanups for the whole
-  // subtree, so the child resets itself rather than threading a prop.
+  // React Activity keeps the route mounted across a hide, so the forms' own
+  // resets cannot reach this state. Without it the field returns cleared but
+  // still `type="text"` and the next password is typed in plaintext.
   React.useLayoutEffect(() => {
     return () => setVisible(false);
   }, []);
@@ -237,9 +224,8 @@ export function AuthPasswordField({
 }
 
 /**
- * The muted prompt plus its cross-link, as one piece. Hand-built at four call
- * sites before, where the separating `{" "}` is a JSX literal that is invisible
- * in review and silently closes the gap if dropped.
+ * The muted prompt plus its cross-link. One piece because the separating space
+ * is a JSX literal, invisible in review and silently lost if dropped.
  */
 export function AuthFooterPrompt({
   prompt,
@@ -257,11 +243,8 @@ export function AuthFooterPrompt({
 
 /**
  * The labelled six-digit code field, shared by sign-in's second factor and
- * sign-up's email verification.
- *
- * Centred, unlike the email/password groups: those labels align to the left
- * edge of a full-width field, but the six OTP slots are a fixed 280px inside a
- * wider column, so a left-aligned pair sits visibly off-axis on a centred card.
+ * sign-up's email verification. Centred, unlike the full-width email/password
+ * groups, because the six slots are a fixed 280px in a wider column.
  */
 export function AuthCodeGroup({
   value,
@@ -298,19 +281,6 @@ export function AuthCodeGroup({
       {errorMessage && (
         <AuthFieldError id="code-error" message={errorMessage} />
       )}
-    </div>
-  );
-}
-
-/**
- * The body of every "hold on, we are finishing" step. No `aria-hidden` on the
- * wrapper: `Spinner` already carries it, so a second one only suggests the
- * wrapper is doing work.
- */
-export function AuthPendingBody() {
-  return (
-    <div className="flex justify-center">
-      <Spinner size="md" />
     </div>
   );
 }

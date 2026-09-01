@@ -1,6 +1,5 @@
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
-import { AuthFrame } from "@/components/auth/auth-frame";
-import { AuthPendingBody } from "@/components/auth/shared";
+import { AuthFrame, AuthPendingBody } from "@/components/auth/auth-frame";
 
 export default function SignUpSSOCallbackPage() {
   // For OAuth sign-ups, signUp.create() runs here in the redirect callback, so
