@@ -1,29 +1,14 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import { SkillDetailPage } from "@/components/skill-detail-page";
 import { loadSkill } from "@/lib/skill-cache";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/cubby-ui/breadcrumbs";
-import { representativeWellKnownSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ source: string; skillId: string }>;
 
-// One representative skill is prerendered so Next can extract this route's App
-// Shell; every other skill is served that shell instantly (via loading.tsx) and
-// upgraded in the background on its first visit.
-export async function generateStaticParams() {
-  const { source, skillId } = await representativeWellKnownSkill();
-  return [{ source, skillId }];
-}
+// generateStaticParams lives on this segment's layout.tsx — one representative
+// skill covers the Overview and every tab route.
 
 export async function generateMetadata({
   params,
@@ -65,25 +50,6 @@ export default async function WellKnownSkillPage({
       externalUrl={`https://${source}`}
       externalIcon={GlobalSearchIcon}
       externalLabel={source}
-      breadcrumb={
-        <Breadcrumb size="sm" className="mb-6">
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href="/" />}>Home</BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href={`/site/${source}`} />}>
-                {source}
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{skillId}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      }
     />
   );
 }

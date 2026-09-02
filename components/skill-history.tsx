@@ -38,6 +38,9 @@ export function SkillHistory({
     <SkillSection
       id="history"
       title="History"
+      // This section renders as the History tab's whole pane; the tab strip's
+      // divider already rules its top.
+      rule={false}
       className={className}
       // Says out loud whose record this is. A reader landing mid-page had no
       // way to tell this timeline apart from something the skill's author

@@ -14,11 +14,14 @@ so the code can stay short and point here.
 ## Overview
 
 Three charts, all built on **TanStack Charts** (`@tanstack/charts`): the sidebar
-sparkline, the install-history dialog chart, and the compare page's multi-line
-chart. Shared pieces live in `components/charts/`; each chart file owns its own
-`defineChart` definition.
+sparkline, the install-history chart (on the skill page's Stats tab — it lived
+in a dialog opened from the record card until the tab routes replaced the
+dialogs, so entries below that say "the install dialog" describe that era's
+measurements; the traps still hold wherever the chart mounts), and the compare
+page's multi-line chart. Shared pieces live in `components/charts/`; each chart
+file owns its own `defineChart` definition.
 
-The install dialog also carries a fourth chart host, the range brush strip in
+The install chart also carries a fourth chart host, the range brush strip in
 `components/skill-install-range.tsx`. It is deliberately its OWN host with no
 `ChartHoverOverlay`: `brushX` contains pointer events before normal chart focus,
 and the main chart's overlay already owns press-and-drag there for scrubbing
@@ -215,14 +218,16 @@ doing at the time:
   units to pixels — carried the error into every stroke width, tick font and
   marker radius, painting them 5.3% oversized.
 
-  **The fix is upstream of the chart: the install dialog's transition carries
-  no scale.** `skill-record.tsx` neutralises `data-starting-style:scale-95`,
-  leaving translate and opacity, neither of which changes a measured width. The
-  chart then lays out once, correctly, and never relayouts — verified across
-  two opens and at phone width, where the only viewBox the SVG ever carries is
-  the container's own (624 desktop, 300 at 390px). That comment in
-  `skill-record.tsx` is load-bearing; restoring the scale silently brings all
-  of this back.
+  **The fix is upstream of the chart: no transformed ancestor while it
+  measures.** When the chart lived in the record card's dialog,
+  `skill-record.tsx` neutralised `data-starting-style:scale-95`, leaving
+  translate and opacity, neither of which changes a measured width — verified
+  across two opens and at phone width, where the only viewBox the SVG ever
+  carried was the container's own (624 desktop, 300 at 390px). The chart now
+  mounts on the Stats tab in normal page flow with no entrance transform, which
+  satisfies the same rule for free — but re-homing it inside anything that
+  scales in (a dialog, a popover, a transition) silently brings all of this
+  back.
 
   Two approaches were tried first and are worth not re-deriving. A measured
   `width` prop is worse: `width` means the application owns fixed geometry, so

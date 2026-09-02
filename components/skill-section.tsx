@@ -31,6 +31,7 @@ export function SkillSection({
   title,
   meta,
   description,
+  rule = true,
   className,
   children,
 }: {
@@ -41,6 +42,14 @@ export function SkillSection({
   meta?: ReactNode;
   /** One line under the heading, before the content. */
   description?: ReactNode;
+  /**
+   * The full-column rule above the heading. On the Overview it is what
+   * separates stacked sections; the tab pages pass `false` because the tab
+   * strip's own divider already rules the top of the pane, and a second
+   * hairline 30px below it — shorter, since these panes cap their measure —
+   * read as a mistake rather than as structure.
+   */
+  rule?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -54,7 +63,12 @@ export function SkillSection({
       tabIndex={-1}
       className={cn("scroll-mt-24 outline-none", className)}
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border pt-4">
+      <div
+        className={cn(
+          "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1",
+          rule && "border-t border-border pt-4",
+        )}
+      >
         <h2 className="text-base font-semibold tracking-tight text-foreground">
           {title}
         </h2>

@@ -353,8 +353,10 @@ function worstTone(feed: Feed): Tone {
 
 function ChangeRow({ item }: { item: FeedItem }) {
   const meta = CONDITION_META[item.condition];
+  // A change row's payoff is the recorded edit, which lives on the skill's
+  // History tab; rows without a version land on the Overview.
   const href = item.version
-    ? `${skillHref(item.source, item.skillId)}#history`
+    ? `${skillHref(item.source, item.skillId)}/history`
     : skillHref(item.source, item.skillId);
 
   return (

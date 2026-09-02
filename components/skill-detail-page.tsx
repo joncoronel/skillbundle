@@ -1,7 +1,7 @@
 import "server-only";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Suspense, type CSSProperties, type ReactNode } from "react";
+import { Suspense, type CSSProperties } from "react";
 import { cacheLife, cacheTag } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -21,7 +21,6 @@ import type { SectionNavItem } from "@/components/skill-section-nav";
 import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
-import { SkillHistory } from "@/components/skill-history";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
@@ -72,7 +71,7 @@ export async function loadAudits(source: string, skillId: string) {
 //              points to, plus aliases (same repo, other names) and forks
 //              (different repos, same content). Populated by
 //              resolveRepoIdentities on the weekly duplicate chain.
-//   versions — version history for the History section, written on the
+//   versions — version history for the History tab, written on the
 //              content-refresh path.
 //
 // These were three separate `'use cache'` functions. They bought nothing:
@@ -80,8 +79,10 @@ export async function loadAudits(source: string, skillId: string) {
 // Suspense boundary, so there was never any independent streaming to gain, and
 // they share one tag so they were always invalidated together anyway. Three
 // entries meant three ISR writes per post-sync visit for one boundary's worth
-// of data. Only split them again if one of them moves behind its own Suspense
-// boundary or onto a different tag.
+// of data. The History tab reading `versions` through the same loader is the
+// point, not a leak: the tab routes share this one cache entry with the
+// Overview instead of adding entries of their own. Only split them again if
+// one of them moves onto a different tag.
 //
 // The 24h cacheLife is the fallback if a revalidate ping is missed.
 export async function loadSkillSyncData(source: string, skillId: string) {
@@ -223,10 +224,14 @@ type SkillDetailPageProps = {
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
-  /** Breadcrumb slot rendered above the h1. */
-  breadcrumb: ReactNode;
 };
 
+/**
+ * The Overview tab's content. The page frame — container, breadcrumb, h1, tab
+ * strip — moved up into each skill route's `layout.tsx` when the page grew its
+ * History / Stats / Security tab routes, so this component starts below the
+ * tabs and owns only the two-column overview body.
+ */
 export function SkillDetailPage({
   source,
   skillId,
@@ -234,56 +239,12 @@ export function SkillDetailPage({
   externalUrl,
   externalIcon,
   externalLabel,
-  breadcrumb,
 }: SkillDetailPageProps) {
   return (
-    // `max-w-6xl`, the app's default page width (DESIGN.md §4), with no special
-    // case. This page used to widen to 92rem at `xl` to afford a THIRD column,
-    // and that was a bad trade twice over: the layout only worked past ~1400px,
-    // and at 1280px — the exact width where the rail appeared — the document
-    // NARROWED from 824px to 704px, so the page got wider and the reading
-    // column got smaller. Folding the record into the rail's column (see
-    // SkillSidebar) removed the reason for the third column, and with it the
-    // reason to depart from the app's width. The document is now 808px flat
-    // from 1152px up, and the rail arrives at `lg` instead of `xl` — every
-    // laptop under 1280px used to get no navigation at all through a 20,000px
-    // file.
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24" style={LAYOUT_VARS}>
-      {/* The masthead pads itself by exactly the sidebar column so the title
-          cannot run under the card — skill ids reach 40 characters and the h1
-          is the one block here with no measure of its own. It carries no
-          action: Compare used to sit at this row's right edge, and once the
-          layout dropped to two columns that edge stopped being anywhere. It
-          landed 300px right of a short title with the card starting just past
-          it, anchored to nothing. It lives with the other action on this skill
-          now, in the record card.
-
-          Padding rather than a grid cell because the h1 lives OUTSIDE the
-          Suspense boundary (it is URL data, available on first paint) while
-          every grid child lives inside it. */}
-      <div className="lg:pr-[calc(var(--skill-side)_+_var(--skill-gap))]">
-        {breadcrumb}
-
-        {/* Deliberately NOT the display role. Skill ids are long, lowercase,
-            hyphenated machine identifiers, and `text-display-sm` would wrap a
-            30-character id across three lines on a phone. This heading is
-            sized to the content it carries, not to its position on the page.
-
-            `id`/`tabIndex` make the masthead the section nav's first target;
-            it lives in the static shell so the anchor resolves on first paint,
-            before the body streams in. */}
-        <h1
-          id="overview"
-          tabIndex={-1}
-          className="min-w-0 scroll-mt-24 text-3xl font-semibold tracking-tight outline-none sm:text-4xl"
-        >
-          {skillId}
-        </h1>
-      </div>
-
+    <div className="mt-8" style={LAYOUT_VARS}>
       {/* Boundary sits around the Suspense, not inside it, so it covers the
-          fallback too. The breadcrumb, h1 and Compare action above stay
-          rendered if the body fails — the page remains navigable. */}
+          fallback too. The layout's masthead and tab strip stay rendered if
+          the body fails — the page remains navigable. */}
       <DataErrorBoundary label="this skill">
         <Suspense
           fallback={<SkillDetailPageSkeleton installCommand={installCommand} />}
@@ -328,7 +289,7 @@ async function SkillDetailBody({
     notFound();
   }
 
-  const { insights, copies, versions } = syncData;
+  const { insights, copies } = syncData;
 
   const preHighlighted = skill.content
     ? await highlightSkillContent(skill.content)
@@ -350,7 +311,6 @@ async function SkillDetailBody({
     ...(hasCopies
       ? [{ id: "copies", title: "Also available at", level: 0 }]
       : []),
-    { id: "history", title: "History", level: 0 },
     { id: "documentation", title: "Documentation", level: 0 },
     ...(skill.content
       ? normalizeOutline(extractOutline(skill.content)).map((heading) => ({
@@ -388,7 +348,7 @@ async function SkillDetailBody({
     // the flush edge — every marker starting at the same x — is the one the
     // reader sees against the text, and the depth indent runs away into the
     // margin where raggedness costs nothing.
-    <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
+    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
       {/* The lead, the warnings that qualify it, and the command. */}
       <div className="lg:col-start-1 lg:row-start-1">
         {skill.description && (
@@ -477,8 +437,7 @@ async function SkillDetailBody({
       <SkillSidebar
         className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0"
         navItems={navItems}
-        source={source}
-        skillId={skillId}
+        detailBase={skillHref(source, skillId)}
         externalUrl={externalUrl}
         externalIcon={externalIcon}
         externalLabel={externalLabel}
@@ -525,15 +484,6 @@ async function SkillDetailBody({
 
       <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
         <SkillCopies aliases={copies.aliases} forks={copies.forks} />
-
-        {/* Above Documentation, not below it. A SKILL.md runs to tens of KB,
-              so anything after it is effectively unreachable without deliberate
-              scrolling — and "has this changed recently?" is a question people
-              have BEFORE committing to reading the docs, not after. The nav now
-              makes the doc one click away from anywhere, so nothing is lost by
-              keeping the short section first, and the page reads as three
-              beats: what we know, what changed, what they wrote. */}
-        <SkillHistory versions={versions} />
 
         {skill.content && (
           <SkillSection
@@ -593,7 +543,7 @@ export function SkillDetailPageSkeleton({
 }) {
   return (
     <div
-      className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]"
+      className="lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]"
       style={LAYOUT_VARS}
     >
       <div className="lg:col-start-1 lg:row-start-1">
@@ -676,18 +626,10 @@ export function SkillDetailPageSkeleton({
 
       <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
         {/* Drawn THROUGH the real section component, not by re-typing its
-            header markup. Both headers are real text either way — neither the
-            word "History" nor "SKILL.md" depends on the data being loaded — and
-            rendering them through `SkillSection` is what stops the skeleton's
-            border, spacing and heading scale from drifting from the page's. */}
-        <SkillSection id="history" title="History">
-          <Skeleton className="-mt-4 h-5 w-full max-w-lg" />
-          <div className="mt-6 space-y-3">
-            <Skeleton className="h-4 w-full max-w-md" />
-            <Skeleton className="h-4 w-full max-w-sm" />
-          </div>
-        </SkillSection>
-
+            header markup. The header is real text either way — the word
+            "SKILL.md" doesn't depend on the data being loaded — and rendering
+            it through `SkillSection` is what stops the skeleton's border,
+            spacing and heading scale from drifting from the page's. */}
         <SkillSection
           id="documentation"
           title="Documentation"
@@ -711,24 +653,14 @@ export function SkillDetailPageSkeleton({
   );
 }
 
-// Route-level fallback for each skill route's `loading.tsx`. The router shows
-// this instantly while a not-yet-generated skill is rendered on-demand; once
-// ISR caches the page, repeat visits serve the finished HTML and never hit this.
+// Fallback for the Overview segment's `loading.tsx`. The router shows this
+// under the layout's masthead + tab strip while a not-yet-generated skill is
+// rendered on-demand; once ISR caches the page, repeat visits serve the
+// finished HTML and never hit this. The masthead's own skeleton lives with the
+// layout (SkillMastheadSkeleton) — this covers only the tab body.
 export function SkillDetailPageLoading() {
   return (
-    // `max-w-6xl` matches the real page exactly — the app's default page
-    // width (DESIGN.md §4). The landmark is not here: `(main)/layout.tsx` owns
-    // one `<main>` for the whole group, so this shell and the page it stands in
-    // for are both plain wrappers inside it.
-    <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
-      <div className="mb-6">
-        <Skeleton className="h-4 w-64 max-w-full" />
-      </div>
-
-      {/* The title alone. The masthead carries no action now — Compare moved
-          into the record card, which this skeleton draws in the sidebar. */}
-      <Skeleton className="h-9 w-1/2 max-w-md sm:h-10" />
-
+    <div className="mt-8">
       <SkillDetailPageSkeleton installCommand="npx skills add ..." />
     </div>
   );

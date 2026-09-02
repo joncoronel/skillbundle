@@ -87,7 +87,7 @@ export function worstAuditStatus(audits: SkillAuditEntry[]): string {
 /**
  * Labeled "Security Audits" block wrapping the accordion, with the empty guard.
  * Used by the quick-view sheet (the full skill page renders the accordion
- * inside a dialog from the sidebar instead).
+ * on its Security tab instead).
  */
 export function SkillAuditSection({
   source,
@@ -154,8 +154,8 @@ function MetaField({
  * Per-provider security audits, expandable inline. Each provider is a row:
  * verdict pill + name on the trigger; the panel reads as a small fact sheet —
  * a one-line summary over a metadata strip (risk, detected behaviors, date) and
- * a quiet link to the provider's full report. Rendered inside the security
- * dialog from the sidebar.
+ * a quiet link to the provider's full report. Rendered by the quick-view sheet
+ * and the skill page's Security tab.
  */
 export function AuditAccordion({
   source,
