@@ -79,16 +79,25 @@ export function OAuthButtons({ mode }: OAuthButtonsProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    // `secondary`, not `outline`: outline fills with `--card`, the same value as
+    // the well these sit on, so its border would ring an invisible fill.
+    //
+    // Stacks below 300px of viewport. The labels are `whitespace-nowrap` with no
+    // truncation, so narrower cells overlap; 200% zoom on a 375px phone gets
+    // there. No real device at 100% zoom stacks.
+    <div className="grid grid-cols-1 gap-2 min-[300px]:grid-cols-2">
       {oauthProviders.map((provider) => (
         <Button
           key={provider.strategy}
-          variant="outline"
+          variant="secondary"
           className="w-full"
           leadingIcon={provider.icon}
           onClick={() => handleOAuth(provider.strategy)}
         >
-          Continue with {provider.label}
+          {/* Accessible name keeps the verb and contains the visible text in
+              order (WCAG 2.5.3). */}
+          <span className="sr-only">Continue with </span>
+          {provider.label}
         </Button>
       ))}
     </div>

@@ -6,15 +6,17 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
 import { AuthFrame } from "./auth-frame";
-import { CodeField } from "./code-field";
 import { OAuthButtons } from "./oauth-buttons";
 import {
+  AuthCodeGroup,
   AuthCrossButton,
   AuthCrossLink,
   AuthDivider,
   AuthFieldError,
   AuthFieldLabel,
+  AuthFooterPrompt,
   AuthFormError,
+  AuthPasswordField,
   AuthSubmitButton,
   isExpiredCodeError,
   navigateAfterAuth,
@@ -182,34 +184,27 @@ export function SignInForm() {
             : `New device, so we sent a 6-digit code to ${email}.`
         }
         footer={
-          <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
-            {countdown > 0 ? `resend code (${countdown})` : "resend code"}
-          </AuthCrossButton>
+          <AuthFooterPrompt prompt="Didn't get it?">
+            <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
+              {countdown > 0 ? `Resend code (${countdown})` : "Resend code"}
+            </AuthCrossButton>
+          </AuthFooterPrompt>
         }
       >
         <form
           action={(formData) => verifyCode(String(formData.get("code") ?? ""))}
           className="flex flex-col gap-6"
         >
-          <div className="flex flex-col gap-3">
-            <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
-            <CodeField
-              id="code"
-              name="code"
-              value={code}
-              onValueChange={setCode}
-              autoSubmit
-              invalid={!!codeError}
-              describedBy={codeError ? "code-error" : undefined}
-              autoFocus
-            />
-            {codeError && (
-              <AuthFieldError
-                id="code-error"
-                message={resolveClerkErrorMessage(codeError)}
-              />
-            )}
-          </div>
+          <AuthCodeGroup
+            value={code}
+            onValueChange={setCode}
+            autoSubmit
+            invalid={!!codeError}
+            autoFocus
+            errorMessage={
+              codeError ? resolveClerkErrorMessage(codeError) : undefined
+            }
+          />
 
           <AuthFormError messages={globalErrorMessages} />
 
@@ -224,22 +219,19 @@ export function SignInForm() {
       title="Sign in."
       description="Welcome back."
       footer={
-        <AuthCrossLink href="/sign-up">
-          new here? create account →
-        </AuthCrossLink>
+        <AuthFooterPrompt prompt="New here?">
+          <AuthCrossLink href="/sign-up">Create account</AuthCrossLink>
+        </AuthFooterPrompt>
       }
     >
-      <div className="flex flex-col gap-8">
-        <OAuthButtons mode="sign-in" />
-
-        <AuthDivider label="or email" />
-
-        <form action={submit} className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
+        <form action={submit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <AuthFieldLabel htmlFor="email">Email</AuthFieldLabel>
             <Input
               id="email"
               type="email"
+              variant="elevated"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -261,15 +253,13 @@ export function SignInForm() {
 
           <div className="flex flex-col gap-2">
             <AuthFieldLabel htmlFor="password">Password</AuthFieldLabel>
-            <Input
+            <AuthPasswordField
               id="password"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+              onChange={setPassword}
               autoComplete="current-password"
-              aria-invalid={passwordError ? true : undefined}
-              aria-describedby={passwordError ? "password-error" : undefined}
+              invalid={!!passwordError}
+              describedBy={passwordError ? "password-error" : undefined}
             />
             {passwordError && (
               <AuthFieldError
@@ -287,6 +277,10 @@ export function SignInForm() {
             className="mt-2"
           />
         </form>
+
+        <AuthDivider label="or" />
+
+        <OAuthButtons mode="sign-in" />
       </div>
     </AuthFrame>
   );

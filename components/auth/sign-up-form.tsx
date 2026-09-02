@@ -5,16 +5,18 @@ import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
-import { AuthFrame } from "./auth-frame";
-import { CodeField } from "./code-field";
+import { AuthFrame, AuthPendingBody } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
 import {
+  AuthCodeGroup,
   AuthCrossButton,
   AuthCrossLink,
   AuthDivider,
   AuthFieldError,
   AuthFieldLabel,
+  AuthFooterPrompt,
   AuthFormError,
+  AuthPasswordField,
   AuthSubmitButton,
   isExpiredCodeError,
   navigateAfterAuth,
@@ -145,9 +147,12 @@ export function SignUpForm() {
         description={`We sent a 6-digit code to ${email}.`}
         footer={
           isVerifyComplete ? null : (
-            <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
-              {countdown > 0 ? `resend code (${countdown})` : "resend code"}
-            </AuthCrossButton>
+            <>
+              <span className="text-muted-foreground">Didn&apos;t get it?</span>{" "}
+              <AuthCrossButton onClick={handleResend} disabled={countdown > 0}>
+                {countdown > 0 ? `Resend code (${countdown})` : "Resend code"}
+              </AuthCrossButton>
+            </>
           )
         }
       >
@@ -157,26 +162,19 @@ export function SignUpForm() {
           }
           className="flex flex-col gap-6"
         >
-          <div className="flex flex-col gap-3">
-            <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
-            <CodeField
-              id="code"
-              name="code"
-              value={code}
-              onValueChange={setCode}
-              autoSubmit={!isVerifyComplete}
-              disabled={isVerifyComplete}
-              invalid={!!codeError && !isVerifyComplete}
-              describedBy={codeError ? "code-error" : undefined}
-              autoFocus={!isVerifyComplete}
-            />
-            {codeError && !isVerifyComplete && (
-              <AuthFieldError
-                id="code-error"
-                message={resolveClerkErrorMessage(codeError)}
-              />
-            )}
-          </div>
+          <AuthCodeGroup
+            value={code}
+            onValueChange={setCode}
+            autoSubmit={!isVerifyComplete}
+            disabled={isVerifyComplete}
+            invalid={!!codeError && !isVerifyComplete}
+            autoFocus={!isVerifyComplete}
+            errorMessage={
+              codeError && !isVerifyComplete
+                ? resolveClerkErrorMessage(codeError)
+                : undefined
+            }
+          />
 
           {!isVerifyComplete && (
             <AuthFormError messages={globalErrorMessages} />
@@ -202,7 +200,7 @@ export function SignUpForm() {
     // (e.g. some edge case). Keep a minimal fallback so the layout stays stable.
     return (
       <AuthFrame title="Signing you in…" description="One moment.">
-        <div />
+        <AuthPendingBody />
       </AuthFrame>
     );
   }
@@ -212,22 +210,19 @@ export function SignUpForm() {
       title="New account."
       description="Start building your stack. Takes a minute."
       footer={
-        <AuthCrossLink href="/sign-in">
-          already registered? sign in →
-        </AuthCrossLink>
+        <AuthFooterPrompt prompt="Already have an account?">
+          <AuthCrossLink href="/sign-in">Sign in</AuthCrossLink>
+        </AuthFooterPrompt>
       }
     >
-      <div className="flex flex-col gap-8">
-        <OAuthButtons mode="sign-up" />
-
-        <AuthDivider label="or email" />
-
-        <form action={submitSignUp} className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
+        <form action={submitSignUp} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <AuthFieldLabel htmlFor="email">Email</AuthFieldLabel>
             <Input
               id="email"
               type="email"
+              variant="elevated"
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -246,15 +241,13 @@ export function SignUpForm() {
 
           <div className="flex flex-col gap-2">
             <AuthFieldLabel htmlFor="password">Password</AuthFieldLabel>
-            <Input
+            <AuthPasswordField
               id="password"
-              type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+              onChange={setPassword}
               autoComplete="new-password"
-              aria-invalid={passwordError ? true : undefined}
-              aria-describedby={passwordError ? "password-error" : undefined}
+              invalid={!!passwordError}
+              describedBy={passwordError ? "password-error" : undefined}
             />
             {passwordError && (
               <AuthFieldError
@@ -264,8 +257,6 @@ export function SignUpForm() {
             )}
           </div>
 
-          <div id="clerk-captcha" />
-
           <AuthFormError messages={globalErrorMessages} />
 
           <AuthSubmitButton
@@ -274,7 +265,18 @@ export function SignUpForm() {
             className="mt-2"
           />
         </form>
+
+        <AuthDivider label="or" />
+
+        <OAuthButtons mode="sign-up" />
       </div>
+
+      {/* Outside the gapped column, and outside the form: Clerk only needs the
+          element to exist by id. On submit it mounts an invisible Turnstile
+          widget and collapses this with an inline `max-height: 0`, which
+          contributes nothing in normal flow but still collects a gap as a flex
+          item, so inside the form it shoved the button down mid-submit. */}
+      <div id="clerk-captcha" />
     </AuthFrame>
   );
 }

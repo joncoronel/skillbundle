@@ -3,8 +3,12 @@
 import * as React from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
+import { CodeField } from "./code-field";
 import { cn } from "@/lib/utils";
 
 /**
@@ -112,7 +116,7 @@ export function AuthArrowRight({ className }: { className?: string }) {
 
 export function AuthDivider({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-4" aria-hidden="true">
+    <div className="flex items-center gap-3" aria-hidden="true">
       <span className="h-px flex-1 bg-border" />
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="h-px flex-1 bg-border" />
@@ -120,8 +124,18 @@ export function AuthDivider({ label }: { label: string }) {
   );
 }
 
+/**
+ * The cross-links sit in the card's tray band, where they are the only
+ * interactive thing, so they read at full foreground strength beside muted
+ * prose rather than as muted-until-hover text.
+ *
+ * `py-2` and `-my-2` are a pair. An inline-block contributes its MARGIN box to
+ * the line box, so the padding grows the target to 36px and the negative margin
+ * subtracts it back out, keeping the band one line tall. Drop either and you
+ * lose the target or the band.
+ */
 const crossLinkClass =
-  "-my-2 inline-flex items-center py-2 underline-offset-[6px] transition-colors hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50";
+  "text-foreground focus-visible:outline-ring/60 -my-2 inline-block rounded-sm py-2 font-medium underline-offset-4 transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:pointer-events-none disabled:opacity-50";
 
 export function AuthCrossLink({
   href,
@@ -149,6 +163,128 @@ export function AuthCrossButton({
   );
 }
 
+/**
+ * Password input with a reveal toggle. `elevated` because the opaque `bg-input`
+ * default is the same value as `surface-3` and would vanish into the card's
+ * well; `pr-10` so a long password never runs under the toggle.
+ */
+export function AuthPasswordField({
+  id,
+  value,
+  onChange,
+  autoComplete,
+  invalid,
+  describedBy,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: "current-password" | "new-password";
+  invalid?: boolean;
+  describedBy?: string;
+}) {
+  const [visible, setVisible] = React.useState(false);
+
+  // React Activity keeps the route mounted across a hide, so the forms' own
+  // resets cannot reach this state. Without it the field returns cleared but
+  // still `type="text"` and the next password is typed in plaintext.
+  React.useLayoutEffect(() => {
+    return () => setVisible(false);
+  }, []);
+
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type={visible ? "text" : "password"}
+        variant="elevated"
+        className="pr-10"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required
+        autoComplete={autoComplete}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby={describedBy}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label="Show password"
+        aria-pressed={visible}
+        aria-controls={id}
+        className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors duration-100 ease-out hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/60"
+      >
+        <HugeiconsIcon
+          icon={visible ? ViewOffIcon : ViewIcon}
+          className="size-4"
+        />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The muted prompt plus its cross-link. One piece because the separating space
+ * is a JSX literal, invisible in review and silently lost if dropped.
+ */
+export function AuthFooterPrompt({
+  prompt,
+  children,
+}: {
+  prompt: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <span className="text-muted-foreground">{prompt}</span> {children}
+    </>
+  );
+}
+
+/**
+ * The labelled six-digit code field, shared by sign-in's second factor and
+ * sign-up's email verification. Centred, unlike the full-width email/password
+ * groups, because the six slots are a fixed 280px in a wider column.
+ */
+export function AuthCodeGroup({
+  value,
+  onValueChange,
+  autoSubmit,
+  disabled,
+  invalid,
+  autoFocus,
+  errorMessage,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  autoSubmit?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  autoFocus?: boolean;
+  errorMessage?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <AuthFieldLabel htmlFor="code">Verification code</AuthFieldLabel>
+      <CodeField
+        id="code"
+        name="code"
+        value={value}
+        onValueChange={onValueChange}
+        autoSubmit={autoSubmit}
+        disabled={disabled}
+        variant="elevated"
+        invalid={invalid}
+        describedBy={errorMessage ? "code-error" : undefined}
+        autoFocus={autoFocus}
+      />
+      {errorMessage && (
+        <AuthFieldError id="code-error" message={errorMessage} />
+      )}
+    </div>
+  );
+}
+
 export function AuthSubmitButton({
   idleLabel,
   pendingLabel,
@@ -162,7 +298,7 @@ export function AuthSubmitButton({
   return (
     <Button
       type="submit"
-      size="lg"
+      variant="neutral"
       loading={pending}
       trailingIcon={<AuthArrowRight />}
       className={cn("w-full", className)}

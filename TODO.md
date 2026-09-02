@@ -955,6 +955,41 @@ pipeline previously never pinged the tag itself; publishing relied on `reconcile
 when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
 `internal.skills.publishSkillUpdate` at their terminals.
 
+### Forgot password: no reset flow exists (Sep 2026)
+
+Password sign-in has no recovery path. A user who forgets their password
+cannot get back in, and the only other route is an OAuth provider they may
+never have connected. Noticed during the sign-in/sign-up redesign, where the
+reference design carried a "Forgot password?" link and we deliberately shipped
+without one rather than add a dead link.
+
+The API is on the same `useSignIn()` actions surface the forms already use, so
+this is UI work rather than an integration (verified against
+`@clerk/shared@4.27.1`, `dist/types/signInFuture.d.ts:379-470`):
+
+1. `signIn.create({ identifier })` with the email.
+2. `signIn.resetPasswordEmailCode.sendCode()`.
+3. `signIn.resetPasswordEmailCode.verifyCode({ code })` — moves
+   `signIn.status` to `'needs_new_password'`.
+4. `signIn.resetPasswordEmailCode.submitPassword({ password })` — moves it to
+   `'complete'`, then the existing `finalize({ navigate })` path.
+
+Nearly every piece already exists: `AuthFrame` for the shell, `AuthCodeGroup`
+for step 3, `AuthPasswordField` for step 4, `AuthFooterPrompt` /
+`AuthCrossLink` for the way back, `useResendTimer` for the cooldown, and
+`resolveClerkErrorMessage` for the errors. What has to be decided is the shape:
+a fourth step inside `components/auth/sign-in-form.tsx` (which already carries
+password + second-factor branches and would grow a third), or its own
+`/sign-in/reset` route reusing the same pieces. The route is probably right —
+the form is already the largest file in `components/auth/`.
+
+Two things not to miss. `signIn.resetPasswordMfa` exists
+(`signInFuture.d.ts:470`) because an account with a second factor still has to
+clear it after the reset, and this app's Client Trust setup produces exactly
+that second factor on a new device. And the link belongs beside the password
+field's label in the card, not in the tray footer, which already holds the
+sign-up cross-link.
+
 ### Sign-in second factor: real MFA (future)
 
 Today `submit`'s second-factor branch handles Clerk's `email_code` factor ONLY,
