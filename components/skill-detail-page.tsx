@@ -2,11 +2,9 @@ import "server-only";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type CSSProperties } from "react";
-import { cacheLife, cacheTag } from "next/cache";
-import { fetchQuery } from "convex/nextjs";
+import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { GitCompareIcon } from "@hugeicons/core-free-icons";
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
@@ -23,80 +21,12 @@ import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { SkillCopies } from "@/components/skill-copies";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
-import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
+import { loadAudits, loadSkill, loadSkillSyncData } from "@/lib/skill-cache";
 
-// Shared loaders. `fetchQuery` forces `cache: "no-store"` on its underlying
-// fetch, which would block prerendering. Each loader is a `'use cache'`
-// function: that isolates the no-store fetch behind a cache boundary and keys
-// the result by its args (source, skillId), so the route prerenders a static
-// shell and the `generateMetadata` pass + body share one entry.
+// The skill loaders (`loadSkill`, `loadAudits`, `loadSkillSyncData`) live in
+// lib/skill-cache.ts, shared by this Overview and the three tab routes. Only
+// `loadStars` stays here: the Overview is its one caller.
 //
-// The skill row itself is loaded by `loadSkill` in lib/skill-cache.ts, which
-// also carries the canonical explanation of the two-tag split ("skill-sync" for
-// daily install data, "skill-content" for the row). Read that before re-tagging
-// or merging anything below.
-//
-// loadAudits and loadStars stay untagged, for two different reasons: the audit chain writes audits but pinging for them does not
-// pay (see below), and nothing in this app writes star counts at all — that
-// loader calls GitHub directly, so a tag would have no publisher.
-//
-// loadAudits deliberately stays on "days" and untagged. A weekly life plus a
-// dedicated "skill-audit" tag was tried and reverted: that tag's publish gate is
-// a catalog-wide OR over the whole day's audit drain (~1.3k skills), and
-// `auditsChanged` counts a provider re-stamping `auditedAt` under an identical
-// verdict — so the gate fires most days and the entry gets expired daily anyway,
-// exactly as this timer does. It bought no writes while replacing a guaranteed
-// 24h self-heal with a best-effort ping whose only signal lived in scheduler
-// args, and moving `expire` from 7 days to 30 on a security surface. Revisit
-// only alongside per-skill tags (TODO.md), which is what would make such a gate
-// selective enough to pay.
-
-export async function loadAudits(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
-    source,
-    skillId,
-  });
-  return row?.audits ?? null;
-}
-
-// Everything on the "skill-sync" cadence, in ONE cache entry:
-//
-//   insights — install count, installRank, snapshots (daily syncSkills). The
-//              faster-moving momentum fields (trending/hot) deliberately stay
-//              off this page; they live on the home rails, kept fresh by their
-//              own crons.
-//   copies   — duplicate/rename relationships: the live skill a renamed alias
-//              points to, plus aliases (same repo, other names) and forks
-//              (different repos, same content). Populated by
-//              resolveRepoIdentities on the weekly duplicate chain.
-//   versions — version history for the History tab, written on the
-//              content-refresh path.
-//
-// These were three separate `'use cache'` functions. They bought nothing:
-// SkillDetailBody awaits all of them in a single Promise.all inside a single
-// Suspense boundary, so there was never any independent streaming to gain, and
-// they share one tag so they were always invalidated together anyway. Three
-// entries meant three ISR writes per post-sync visit for one boundary's worth
-// of data. The History tab reading `versions` through the same loader is the
-// point, not a leak: the tab routes share this one cache entry with the
-// Overview instead of adding entries of their own. Only split them again if
-// one of them moves onto a different tag.
-//
-// The 24h cacheLife is the fallback if a revalidate ping is missed.
-export async function loadSkillSyncData(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag(SKILL_SYNC_TAG);
-  const [insights, copies, versions] = await Promise.all([
-    fetchQuery(api.skills.getInsights, { source, skillId }),
-    fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
-    fetchQuery(api.skillVersions.listForSkill, { source, skillId }),
-  ]);
-  return { insights, copies, versions };
-}
-
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
 // viewed skills) rather than by a sync over thousands of repos.
 // GitHub sources only (source is "owner/repo"); well-known sources have no repo.

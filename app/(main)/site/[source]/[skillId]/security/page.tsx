@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import {
-  SkillSecurityTab,
-  SkillSecurityTabSkeleton,
-} from "@/components/skill-security-tab";
-import { DataErrorBoundary } from "@/components/data-error-boundary";
-import { loadSkill } from "@/lib/skill-cache";
+import { SkillTabPage, skillTabMetadata } from "@/lib/skill-tab-route";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
 
 type Params = Promise<{ source: string; skillId: string }>;
@@ -17,31 +11,11 @@ export async function generateMetadata({
   params: Params;
 }): Promise<Metadata> {
   const { source, skillId } = await params;
-  const skill = await loadSkill(source, skillId);
-  if (!skill) return { title: "Skill Not Found | SkillBundle" };
-
-  const title = `${skill.name} security | SkillBundle`;
-  const description = `Security audit verdicts for ${skill.name} from skills.sh's audit partners.`;
-  return {
-    title,
-    description,
-    openGraph: { title, description, type: "article" },
-  };
+  return skillTabMetadata("security", source, skillId);
 }
 
-export default async function WellKnownSkillSecurityPage({
-  params,
-}: {
-  params: Params;
-}) {
+export default async function Page({ params }: { params: Params }) {
   const { source, skillId } = await params;
   if (buildSkillInstallCommand(source, skillId) === null) notFound();
-
-  return (
-    <DataErrorBoundary label="this skill's security audits">
-      <Suspense fallback={<SkillSecurityTabSkeleton />}>
-        <SkillSecurityTab source={source} skillId={skillId} />
-      </Suspense>
-    </DataErrorBoundary>
-  );
+  return <SkillTabPage tab="security" source={source} skillId={skillId} />;
 }

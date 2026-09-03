@@ -1,7 +1,6 @@
+import type { ReactNode } from "react";
 import { SkillSection } from "@/components/skill-section";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
-import { SkillTabEmpty } from "@/components/skill-tab-empty";
-import { BundleToggleButton } from "@/components/bundle-toggle-button";
 
 /**
  * The History section — a Server Component.
@@ -12,7 +11,7 @@ import { BundleToggleButton } from "@/components/bundle-toggle-button";
  * highest-traffic route for a region most readers never scroll to — a real
  * problem, but deferring only moved it.
  *
- * The data is now loaded by `loadSkillSyncData` in skill-detail-page.tsx, in the
+ * The data is now loaded by `loadSkillSyncData` in lib/skill-cache.ts, in the
  * same `Promise.all` as the rest of the page and behind the same `'use cache'` +
  * `cacheTag("skill-sync")` treatment. That solves the original concern more
  * completely — there is no subscription at all now, deferred or otherwise — and
@@ -31,16 +30,12 @@ import { BundleToggleButton } from "@/components/bundle-toggle-button";
  */
 export function SkillHistory({
   versions,
-  source,
-  skillId,
-  name,
+  empty,
   className,
 }: {
   versions: VersionEntry[];
-  source: string;
-  skillId: string;
-  /** The skill's display name, for the empty state's watch action. */
-  name: string;
+  /** Rendered in place of the timeline when there are no versions. */
+  empty: ReactNode;
   className?: string;
 }) {
   return (
@@ -62,7 +57,7 @@ export function SkillHistory({
       }
     >
       {versions.length === 0 ? (
-        <EmptyHistory source={source} skillId={skillId} name={name} />
+        empty
       ) : (
         <ol className="relative">
           {/* The spine. Inset to run through the centre of the 7px markers, and
@@ -86,35 +81,5 @@ export function SkillHistory({
         </ol>
       )}
     </SkillSection>
-  );
-}
-
-function EmptyHistory({
-  source,
-  skillId,
-  name,
-}: {
-  source: string;
-  skillId: string;
-  name: string;
-}) {
-  return (
-    <SkillTabEmpty
-      title="Nothing has changed yet."
-      // The watch action is the product's answer to an empty timeline: the
-      // reason to care about this file's history is what it does to an agent
-      // the day it changes, and adding the skill to a bundle is how someone
-      // finds out. PRODUCT.md calls that the return visit.
-      action={
-        <BundleToggleButton source={source} skillId={skillId} name={name} />
-      }
-    >
-      <p>
-        SkillBundle began recording edits to skill files in August 2026, and
-        this one has not changed since. When it does, the edit lands here as a
-        diff against the version before it.
-      </p>
-      <p>Add it to a bundle to hear about that change when it happens.</p>
-    </SkillTabEmpty>
   );
 }

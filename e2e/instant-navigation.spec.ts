@@ -159,14 +159,15 @@ test.describe("initial load", () => {
         // `generateStaticParams` picked. It would have gone red on a healthy
         // route the day the catalog shifted.
         //
-        // "History" matches the tab label; "Documentation" is the one section
-        // heading the Overview skeleton renders as real text. Neither depends
-        // on the skill's data, so both are known before the body resolves.
-        await expect(
-          page.locator("*:visible", { hasText: /^History$/ }).first(),
-        ).toBeVisible();
+        // Both strings are unique to the Overview segment's skeleton: the
+        // "Documentation" heading and its "SKILL.md" meta. The tab labels
+        // are deliberately NOT asserted here; they come from the masthead
+        // skeleton, which renders whether or not this segment's shell does.
         await expect(
           page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
+        ).toBeVisible();
+        await expect(
+          page.locator("*:visible", { hasText: /^SKILL\.md$/ }).first(),
         ).toBeVisible();
       },
       { baseURL },
@@ -330,9 +331,9 @@ test.describe("client navigation", () => {
   // title are URL data behind the layout's masthead Suspense boundary, so the
   // shell a client navigation commits is the masthead skeleton (tab labels as
   // real text) plus the Overview segment's `loading.tsx`. This asserts that
-  // shell commits with real structure — the "History" tab label and the
-  // "Documentation" section heading, neither of which depends on the skill's
-  // data — rather than the navigation blocking.
+  // shell commits with real structure — the "Documentation" heading and its
+  // "SKILL.md" meta, which only the Overview skeleton renders — rather than
+  // the navigation blocking.
   test("/[org]/[repo] -> skill detail commits its shell instantly", async ({
     page,
   }) => {
@@ -347,10 +348,10 @@ test.describe("client navigation", () => {
       await skill.click();
       await page.waitForURL((url) => url.pathname === href);
       await expect(
-        page.locator("*:visible", { hasText: /^History$/ }).first(),
+        page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
       await expect(
-        page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
+        page.locator("*:visible", { hasText: /^SKILL\.md$/ }).first(),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
   });

@@ -11,9 +11,8 @@ import {
   AuditBadge,
   worstAuditStatus,
 } from "@/components/skill-audit-section";
-import { loadSkill } from "@/lib/skill-cache";
+import { loadAudits, loadSkill } from "@/lib/skill-cache";
 import { externalSkillUrl } from "@/lib/skill-urls";
-import { loadAudits } from "@/components/skill-detail-page";
 
 /**
  * The Security tab's body: the per-provider audit accordion, promoted from the

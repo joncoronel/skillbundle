@@ -7,8 +7,7 @@ import { InstallChart } from "@/components/skill-install-chart";
 import { InstallSparklineGhost } from "@/components/skill-install-sparkline";
 import { MIN_POINTS, intFmt, weekGain } from "@/components/skill-chart-shared";
 import { formatInstalls } from "@/lib/utils";
-import { loadSkill } from "@/lib/skill-cache";
-import { loadSkillSyncData } from "@/components/skill-detail-page";
+import { loadSkill, loadSkillSyncData } from "@/lib/skill-cache";
 
 /**
  * The Stats tab's body: the full install history chart, promoted from the
@@ -44,6 +43,12 @@ export async function SkillStatsTab({
   const { installs, installRank, snapshots } = insights;
   const hasChart = snapshots.length >= MIN_POINTS;
   const gain = weekGain(snapshots);
+  // GitHub-only rows carry `installs: 0` (convex/githubOnly.ts), a placeholder
+  // rather than a count, so the figures are gated on the flag as well as on
+  // null. An orphaned row (a `skills` row with no `skillSummaries` mirror)
+  // reports null and is NOT GitHub-only; it gets neutral copy, not the
+  // "only on GitHub" explanation.
+  const hasCount = installs != null && !skill.isGitHubOnly;
 
   return (
     <SkillSection
@@ -53,12 +58,15 @@ export async function SkillStatsTab({
       description="Cumulative total and daily installs, recorded once a day from skills.sh."
       className="mt-8"
     >
-      {installs != null && (
+      {hasCount && (
         <dl className="flex flex-wrap gap-x-10 gap-y-4">
           <StatFigure label="Total">{formatInstalls(installs)}</StatFigure>
           <StatFigure label="Past 7 days">
             {gain != null ? (
               <span className="text-success-foreground">+{intFmt(gain)}</span>
+            ) : snapshots.length < MIN_POINTS ? (
+              // Not measured yet, which is different from measured at zero.
+              <span className="text-muted-foreground">Not yet</span>
             ) : (
               <span className="text-muted-foreground">No change</span>
             )}
@@ -69,20 +77,25 @@ export async function SkillStatsTab({
         </dl>
       )}
 
-      {hasChart ? (
-        <div className="mt-8">
+      <div className={hasCount ? "mt-8" : undefined}>
+        {hasChart ? (
           <InstallChart insights={insights} />
-        </div>
-      ) : skill.isGitHubOnly || installs == null ? (
-        <SkillTabEmpty title="No install counts for this skill.">
-          <p>
-            It is available only on GitHub, not through the skills.sh API, and
-            skills.sh is where install counts come from. There is nothing to
-            record until it is listed there.
-          </p>
-        </SkillTabEmpty>
-      ) : (
-        <div className="mt-8">
+        ) : skill.isGitHubOnly ? (
+          <SkillTabEmpty title="No install counts for this skill.">
+            <p>
+              It is available only on GitHub, not through the skills.sh API, and
+              skills.sh is where install counts come from. There is nothing to
+              record until it is listed there.
+            </p>
+          </SkillTabEmpty>
+        ) : installs == null ? (
+          <SkillTabEmpty title="No install count recorded yet.">
+            <p>
+              skills.sh has not reported a count for this skill. SkillBundle
+              checks daily, and the figures and chart appear here once it does.
+            </p>
+          </SkillTabEmpty>
+        ) : (
           <SkillTabEmpty title="Recording daily.">
             {/* The same ghost trend the record card shows before it has a
                 line: a stand-in for where the chart will live, not a chart. */}
@@ -96,8 +109,8 @@ export async function SkillStatsTab({
               from there.
             </p>
           </SkillTabEmpty>
-        </div>
-      )}
+        )}
+      </div>
     </SkillSection>
   );
 }

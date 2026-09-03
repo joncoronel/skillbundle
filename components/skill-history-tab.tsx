@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SkillSection } from "@/components/skill-section";
 import { SkillHistory } from "@/components/skill-history";
-import { loadSkill } from "@/lib/skill-cache";
-import { loadSkillSyncData } from "@/components/skill-detail-page";
+import { SkillTabEmpty } from "@/components/skill-tab-empty";
+import { BundleToggleButton } from "@/components/bundle-toggle-button";
+import { loadSkill, loadSkillSyncData } from "@/lib/skill-cache";
 
 /**
  * The History tab's body. The timeline itself is unchanged from when it was a
@@ -33,10 +34,30 @@ export async function SkillHistoryTab({
   return (
     <SkillHistory
       versions={syncData.versions}
-      source={source}
-      skillId={skillId}
-      name={skill.name}
       className="mt-8"
+      empty={
+        <SkillTabEmpty
+          title="Nothing has changed yet."
+          // The watch action is the product's answer to an empty timeline:
+          // the reason to care about this file's history is what it does to
+          // an agent the day it changes, and adding the skill to a bundle is
+          // how someone finds out. PRODUCT.md calls that the return visit.
+          action={
+            <BundleToggleButton
+              source={source}
+              skillId={skillId}
+              name={skill.name}
+            />
+          }
+        >
+          <p>
+            SkillBundle began recording edits to skill files in August 2026, and
+            this one has not changed since. When it does, the edit lands here as
+            a diff against the version before it.
+          </p>
+          <p>Add it to a bundle to hear about that change when it happens.</p>
+        </SkillTabEmpty>
+      }
     />
   );
 }

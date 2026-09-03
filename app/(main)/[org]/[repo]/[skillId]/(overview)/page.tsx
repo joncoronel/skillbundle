@@ -2,13 +2,17 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { SkillDetailPage } from "@/components/skill-detail-page";
-import { loadSkill } from "@/lib/skill-cache";
+import { skillTabMetadata } from "@/lib/skill-tab-route";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
 
-// generateStaticParams lives on this segment's layout.tsx — one representative
-// skill covers the Overview and every tab route.
+// In a route group so this segment's `loading.tsx` wraps ONLY the Overview.
+// A `loading.tsx` beside `layout.tsx` at `[skillId]` would be the outer
+// Suspense fallback for every tab subtree too, and a tab whose RSC had not
+// arrived yet would paint the two-column Overview skeleton before its own
+// (docs/architecture.md §1, "pick one, not both"). `generateStaticParams`,
+// `layout.tsx` and `opengraph-image.tsx` stay at `[skillId]`.
 
 export async function generateMetadata({
   params,
@@ -17,26 +21,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
-
-  const skill = await loadSkill(source, skillId);
-
-  if (!skill) {
-    return { title: "Skill Not Found | SkillBundle" };
-  }
-
-  const title = `${skill.name} | SkillBundle`;
-  const description =
-    skill.description ?? `${skill.name} — a skill from ${source}`;
-
-  return {
-    title,
-    description,
-    openGraph: {
-      title,
-      description,
-      type: "article",
-    },
-  };
+  return skillTabMetadata("overview", source, skillId);
 }
 
 export default async function SkillPage({ params }: { params: Params }) {

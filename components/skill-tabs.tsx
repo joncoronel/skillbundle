@@ -33,16 +33,18 @@ import { cn } from "@/lib/utils";
  * is only known at runtime, so a Client Component reading it outside
  * `<Suspense>` is a blocking route.
  */
-export const SKILL_TABS = [
+const SKILL_TABS = [
   { slug: "", label: "Overview" },
   { slug: "history", label: "History" },
   { slug: "stats", label: "Stats" },
   { slug: "security", label: "Security" },
 ] as const;
 
+type SkillTabSlug = (typeof SKILL_TABS)[number]["slug"];
+
 /** The active tab for a selected layout segment: a known slug, else Overview. */
-export function activeSkillTab(segment: string | null): string {
-  return SKILL_TABS.some((t) => t.slug === segment) ? (segment as string) : "";
+function activeSkillTab(segment: string | null): SkillTabSlug {
+  return SKILL_TABS.find((t) => t.slug === segment)?.slug ?? "";
 }
 
 export function SkillTabs({
@@ -87,7 +89,7 @@ export function SkillTabs({
  * The strip's chrome — the full-width hairline the tabs sit on — shared with
  * the skeleton so the two cannot drift.
  */
-export function SkillTabsFrame({
+function SkillTabsFrame({
   className,
   children,
 }: {
