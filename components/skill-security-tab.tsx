@@ -1,13 +1,18 @@
 import "server-only";
 import { notFound } from "next/navigation";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SkillSection } from "@/components/skill-section";
+import { SkillTabEmpty } from "@/components/skill-tab-empty";
 import {
   AuditAccordion,
   AuditBadge,
   worstAuditStatus,
 } from "@/components/skill-audit-section";
 import { loadSkill } from "@/lib/skill-cache";
+import { externalSkillUrl } from "@/lib/skill-urls";
 import { loadAudits } from "@/components/skill-detail-page";
 
 /**
@@ -17,7 +22,9 @@ import { loadAudits } from "@/components/skill-detail-page";
  *
  * The tab renders even when there are no audits — hiding it would make the tab
  * strip differ per skill, which reads as breakage, and "no audits recorded" is
- * itself the answer a maintainer came for.
+ * itself the answer a maintainer came for. The empty state says which of the
+ * two reasons applies: the partners have not got to it, or they cannot,
+ * because the skill is not on skills.sh at all.
  */
 export async function SkillSecurityTab({
   source,
@@ -41,16 +48,51 @@ export async function SkillSecurityTab({
       rule={false}
       description="Independent checks from skills.sh's audit partners."
       meta={hasAudits && <AuditBadge status={worstAuditStatus(audits)} />}
-      className="mt-8 max-w-3xl"
+      className="mt-8"
     >
       {hasAudits ? (
         <AuditAccordion source={source} skillId={skillId} audits={audits} />
+      ) : skill.isGitHubOnly ? (
+        <SkillTabEmpty title="Not audited.">
+          <p>
+            skills.sh&apos;s audit partners only review skills listed there, and
+            this one is available only on GitHub. Verdicts appear here once it
+            is listed.
+          </p>
+        </SkillTabEmpty>
       ) : (
-        <p className="max-w-prose text-sm text-muted-foreground">
-          {skill.isGitHubOnly
-            ? "This skill is available only on GitHub, and skills.sh's audit partners only review listed skills — so no audits exist for it yet."
-            : "No security audits recorded for this skill yet."}
-        </p>
+        <SkillTabEmpty
+          title="No audits yet."
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={
+                <a
+                  href={externalSkillUrl(source, skillId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+              trailingIcon={
+                <HugeiconsIcon
+                  icon={ArrowUpRight01Icon}
+                  strokeWidth={2}
+                  className="size-3.5"
+                />
+              }
+            >
+              View on skills.sh
+            </Button>
+          }
+        >
+          <p>
+            The audit partners review skills on their own schedule, and none has
+            published a verdict for this one. SkillBundle checks for new
+            verdicts daily and shows them here the day they land.
+          </p>
+        </SkillTabEmpty>
       )}
     </SkillSection>
   );
@@ -64,7 +106,7 @@ export function SkillSecurityTabSkeleton() {
       title="Security"
       rule={false}
       description="Independent checks from skills.sh's audit partners."
-      className="mt-8 max-w-3xl"
+      className="mt-8"
     >
       <div className="space-y-3">
         <Skeleton className="h-10 w-full" />

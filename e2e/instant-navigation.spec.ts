@@ -188,7 +188,7 @@ test.describe("initial load", () => {
     // skill has recorded versions.
     await page.goto(`${GITHUB_SKILL_PATH}/history`);
     await expect(page.locator("#history")).toContainText(
-      /No changes recorded yet|View changes|Earliest recorded version/,
+      /Nothing has changed yet|View changes|Earliest recorded version/,
     );
     await expect(page.getByText("Loading history")).toHaveCount(0);
   });
@@ -364,11 +364,10 @@ test.describe("client navigation", () => {
   }) => {
     await page.goto(GITHUB_SKILL_PATH);
 
-    // Scoped to the tab strip: the record card in the sidebar has its own
-    // "History" link once the body streams in.
-    const historyTab = page
-      .locator('nav[aria-label="Skill sections"]')
-      .getByRole("link", { name: "History" });
+    // role=tab, not link: the strip is Base UI Tabs with each trigger rendered
+    // as a <Link>, so the anchor carries the tab role. That also keeps this
+    // from matching the record card's own "History" link in the sidebar.
+    const historyTab = page.getByRole("tab", { name: "History" });
     await expect(historyTab).toBeVisible();
 
     await instant(page, async () => {

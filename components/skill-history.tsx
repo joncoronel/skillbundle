@@ -1,5 +1,7 @@
 import { SkillSection } from "@/components/skill-section";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
+import { SkillTabEmpty } from "@/components/skill-tab-empty";
+import { BundleToggleButton } from "@/components/bundle-toggle-button";
 
 /**
  * The History section — a Server Component.
@@ -29,9 +31,16 @@ import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
  */
 export function SkillHistory({
   versions,
+  source,
+  skillId,
+  name,
   className,
 }: {
   versions: VersionEntry[];
+  source: string;
+  skillId: string;
+  /** The skill's display name, for the empty state's watch action. */
+  name: string;
   className?: string;
 }) {
   return (
@@ -53,7 +62,7 @@ export function SkillHistory({
       }
     >
       {versions.length === 0 ? (
-        <EmptyHistory />
+        <EmptyHistory source={source} skillId={skillId} name={name} />
       ) : (
         <ol className="relative">
           {/* The spine. Inset to run through the centre of the 7px markers, and
@@ -80,12 +89,32 @@ export function SkillHistory({
   );
 }
 
-function EmptyHistory() {
+function EmptyHistory({
+  source,
+  skillId,
+  name,
+}: {
+  source: string;
+  skillId: string;
+  name: string;
+}) {
   return (
-    <p className="max-w-prose text-sm text-muted-foreground">
-      No changes recorded yet. SkillBundle began tracking edits to skill files
-      in August 2026, so a skill that hasn&apos;t changed since then has nothing
-      here.
-    </p>
+    <SkillTabEmpty
+      title="Nothing has changed yet."
+      // The watch action is the product's answer to an empty timeline: the
+      // reason to care about this file's history is what it does to an agent
+      // the day it changes, and adding the skill to a bundle is how someone
+      // finds out. PRODUCT.md calls that the return visit.
+      action={
+        <BundleToggleButton source={source} skillId={skillId} name={name} />
+      }
+    >
+      <p>
+        SkillBundle began recording edits to skill files in August 2026, and
+        this one has not changed since. When it does, the edit lands here as a
+        diff against the version before it.
+      </p>
+      <p>Add it to a bundle to hear about that change when it happens.</p>
+    </SkillTabEmpty>
   );
 }

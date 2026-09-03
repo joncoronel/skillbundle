@@ -2,7 +2,9 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SkillSection } from "@/components/skill-section";
+import { SkillTabEmpty } from "@/components/skill-tab-empty";
 import { InstallChart } from "@/components/skill-install-chart";
+import { InstallSparklineGhost } from "@/components/skill-install-sparkline";
 import { MIN_POINTS, intFmt, weekGain } from "@/components/skill-chart-shared";
 import { formatInstalls } from "@/lib/utils";
 import { loadSkill } from "@/lib/skill-cache";
@@ -11,7 +13,12 @@ import { loadSkillSyncData } from "@/components/skill-detail-page";
 /**
  * The Stats tab's body: the full install history chart, promoted from the
  * dialog the record card used to open. The dialog capped it at 672px and made
- * it a detour; here it gets the reading column and a URL.
+ * it a detour; here it gets the whole page width and a URL.
+ *
+ * Full width, unlike the History and Security panes, which cap at a reading
+ * measure. A chart is not prose: it has no line length to protect, more width
+ * is more resolution, and at 768px under a 1152px tab strip the pane read as
+ * a column with a hole beside it.
  *
  * The figure row above the chart repeats the record card's numbers on purpose —
  * this tab has no sidebar, so the totals the chart illustrates have to live on
@@ -44,43 +51,52 @@ export async function SkillStatsTab({
       title="Installs"
       rule={false}
       description="Cumulative total and daily installs, recorded once a day from skills.sh."
-      className="mt-8 max-w-3xl"
+      className="mt-8"
     >
-      <dl className="flex flex-wrap gap-x-10 gap-y-4">
-        <StatFigure label="Total">
-          {installs != null ? (
-            formatInstalls(installs)
-          ) : (
-            <span
-              className="text-muted-foreground"
-              aria-label="Install count unavailable"
-            >
-              —
-            </span>
+      {installs != null && (
+        <dl className="flex flex-wrap gap-x-10 gap-y-4">
+          <StatFigure label="Total">{formatInstalls(installs)}</StatFigure>
+          <StatFigure label="Past 7 days">
+            {gain != null ? (
+              <span className="text-success-foreground">+{intFmt(gain)}</span>
+            ) : (
+              <span className="text-muted-foreground">No change</span>
+            )}
+          </StatFigure>
+          {installRank != null && (
+            <StatFigure label="Rank">#{intFmt(installRank)}</StatFigure>
           )}
-        </StatFigure>
-        <StatFigure label="Past 7 days">
-          {gain != null ? (
-            <span className="text-success-foreground">+{intFmt(gain)}</span>
-          ) : (
-            <span className="text-muted-foreground">No change</span>
-          )}
-        </StatFigure>
-        {installRank != null && (
-          <StatFigure label="Rank">#{intFmt(installRank)}</StatFigure>
-        )}
-      </dl>
+        </dl>
+      )}
 
       {hasChart ? (
         <div className="mt-8">
           <InstallChart insights={insights} />
         </div>
+      ) : skill.isGitHubOnly || installs == null ? (
+        <SkillTabEmpty title="No install counts for this skill.">
+          <p>
+            It is available only on GitHub, not through the skills.sh API, and
+            skills.sh is where install counts come from. There is nothing to
+            record until it is listed there.
+          </p>
+        </SkillTabEmpty>
       ) : (
-        <p className="mt-8 max-w-prose text-sm text-muted-foreground">
-          {skill.isGitHubOnly
-            ? "This skill is available only on GitHub, so skills.sh records no install counts for it."
-            : "Recording daily. The chart appears once there's enough history."}
-        </p>
+        <div className="mt-8">
+          <SkillTabEmpty title="Recording daily.">
+            {/* The same ghost trend the record card shows before it has a
+                line: a stand-in for where the chart will live, not a chart. */}
+            <div className="max-w-xs">
+              <InstallSparklineGhost />
+            </div>
+            <p>
+              skills.sh only exposes a point-in-time count, so SkillBundle
+              snapshots it once a day and rebuilds the history from those. The
+              chart appears with the second snapshot, and the trend fills in
+              from there.
+            </p>
+          </SkillTabEmpty>
+        </div>
       )}
     </SkillSection>
   );
@@ -111,7 +127,7 @@ export function SkillStatsTabSkeleton() {
       title="Installs"
       rule={false}
       description="Cumulative total and daily installs, recorded once a day from skills.sh."
-      className="mt-8 max-w-3xl"
+      className="mt-8"
     >
       <div className="flex flex-wrap gap-x-10 gap-y-4">
         {[0, 1].map((figure) => (

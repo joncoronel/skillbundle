@@ -31,14 +31,20 @@ export async function SkillHistoryTab({
   if (!skill) notFound();
 
   return (
-    <SkillHistory versions={syncData.versions} className="mt-8 max-w-3xl" />
+    <SkillHistory
+      versions={syncData.versions}
+      source={source}
+      skillId={skillId}
+      name={skill.name}
+      className="mt-8"
+    />
   );
 }
 
 /** Suspense fallback and `loading.tsx` body for the History tab. */
 export function SkillHistoryTabSkeleton() {
   return (
-    <div className="mt-8 max-w-3xl">
+    <div className="mt-8">
       {/* Drawn through the real section component so the border, spacing and
           heading scale cannot drift from the page's. Header and description
           are real text: neither depends on the skill's data. */}

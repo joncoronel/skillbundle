@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,24 +12,26 @@ import { cn } from "@/lib/utils";
  * metadata, and the layout above this strip persists across the navigation so
  * switching tabs never re-renders the masthead.
  *
- * Two inputs, and neither is URL data read on the client:
+ * Built on the cubby-ui Tabs (Base UI) for its sliding underline indicator,
+ * with two deliberate departures from the usual composition:
  *
- *   - `base` (the skill's own path) comes from the server, from the masthead
- *     that already awaits `params` inside the layout's Suspense boundary.
- *   - the active tab is `useSelectedLayoutSegment()`, the child segment the
- *     router has mounted under the skill layout — `null` on the Overview
- *     page, `"history"` / `"stats"` / `"security"` on a tab.
+ *   - Each trigger renders as a `<Link>` (`nativeButton={false}`), so a click
+ *     is a real navigation the router prefetches. `value` is controlled by
+ *     `useSelectedLayoutSegment()` — the child segment mounted under the skill
+ *     layout, `null` on Overview — so the indicator slides when the ROUTE
+ *     changes, not when Base UI thinks a tab was picked. `activateOnFocus` is
+ *     off for the same reason: arrow keys move focus between the links, Enter
+ *     follows one, and Base UI never activates a tab the router hasn't.
+ *   - There are no `TabsPanels`, and no entrance on the content. The panel is
+ *     whatever page the router renders below, arriving through its own
+ *     `loading.tsx`; a fade on top of that was tried and cut.
  *
- * It used to read `usePathname()` and derive both from it, which kept the strip
- * params-free and in the shared App Shell — and tripped Next's instant
- * validation in dev: a pathname is only known at runtime, so a Client
- * Component reading it outside `<Suspense>` is a blocking route. The strip now
- * renders WITH the masthead and its skeleton draws the four labels as static
- * text, so the shell keeps the same structure either way.
- *
- * Styled after the cubby-ui underline Tabs (hairline divider, 3px rounded
- * indicator) but hand-rolled over Links: Base UI's Tabs own their active state,
- * and here the router owns it.
+ * Neither input is URL data read on the client: `base` comes from the server
+ * (the masthead that awaits `params` inside the layout's Suspense boundary),
+ * and the selected segment is router tree state. It used to read
+ * `usePathname()`, which tripped Next's instant validation in dev — a pathname
+ * is only known at runtime, so a Client Component reading it outside
+ * `<Suspense>` is a blocking route.
  */
 export const SKILL_TABS = [
   { slug: "", label: "Overview" },
@@ -36,6 +39,11 @@ export const SKILL_TABS = [
   { slug: "stats", label: "Stats" },
   { slug: "security", label: "Security" },
 ] as const;
+
+/** The active tab for a selected layout segment: a known slug, else Overview. */
+export function activeSkillTab(segment: string | null): string {
+  return SKILL_TABS.some((t) => t.slug === segment) ? (segment as string) : "";
+}
 
 export function SkillTabs({
   base,
@@ -45,39 +53,39 @@ export function SkillTabs({
   base: string;
   className?: string;
 }) {
-  const segment = useSelectedLayoutSegment();
-  const active = SKILL_TABS.some((t) => t.slug === segment) ? segment : "";
+  const active = activeSkillTab(useSelectedLayoutSegment());
 
   return (
     <SkillTabsFrame className={className}>
-      {SKILL_TABS.map((tab) => {
-        const isActive = tab.slug === active;
-        return (
-          <Link
-            key={tab.slug}
-            href={tab.slug ? `${base}/${tab.slug}` : base}
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              TAB_CLASS,
-              isActive
-                ? "text-foreground after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.75 after:rounded-full after:bg-neutral"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
+      <Tabs value={active}>
+        <TabsList
+          variant="underline"
+          activateOnFocus={false}
+          // The frame draws the divider as a full-width hairline; the list's
+          // own two-pixel divider would double it. `-mb-px` sits the sliding
+          // indicator on the frame's line.
+          className="-mb-px [&_[data-slot=tabs-divider]]:hidden"
+          aria-label="Skill sections"
+        >
+          {SKILL_TABS.map((tab) => (
+            <TabsTrigger
+              key={tab.slug}
+              value={tab.slug}
+              nativeButton={false}
+              render={<Link href={tab.slug ? `${base}/${tab.slug}` : base} />}
+            >
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </SkillTabsFrame>
   );
 }
 
-const TAB_CLASS =
-  "relative rounded-sm px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50";
-
 /**
- * The strip's chrome — the divider and the row — shared with the skeleton so
- * the two cannot drift.
+ * The strip's chrome — the full-width hairline the tabs sit on — shared with
+ * the skeleton so the two cannot drift.
  */
 export function SkillTabsFrame({
   className,
@@ -87,31 +95,29 @@ export function SkillTabsFrame({
   children: React.ReactNode;
 }) {
   return (
-    <nav
-      aria-label="Skill sections"
-      className={cn("border-b border-border", className)}
-    >
-      {/* -mb-px drops the active indicator onto the divider so the two read as
-          one line, the way an underline tab always sits. */}
-      <div className="-mb-px flex gap-1 overflow-x-auto">{children}</div>
-    </nav>
+    <div className={cn("border-b border-border", className)}>{children}</div>
   );
 }
 
 /**
  * The strip as the masthead skeleton draws it: the same four labels in the
- * same boxes, as plain text rather than links, none active. Real text, because
+ * same boxes as plain text rather than links, none active. Real text, because
  * none of it depends on the skill — only the hrefs do, and those arrive with
- * the masthead.
+ * the masthead. Box metrics mirror the medium underline trigger.
  */
 export function SkillTabsSkeleton({ className }: { className?: string }) {
   return (
     <SkillTabsFrame className={className}>
-      {SKILL_TABS.map((tab) => (
-        <span key={tab.slug} className={cn(TAB_CLASS, "text-muted-foreground")}>
-          {tab.label}
-        </span>
-      ))}
+      <div className="flex gap-x-1 pb-1">
+        {SKILL_TABS.map((tab) => (
+          <span
+            key={tab.slug}
+            className="px-2.5 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground"
+          >
+            {tab.label}
+          </span>
+        ))}
+      </div>
     </SkillTabsFrame>
   );
 }
