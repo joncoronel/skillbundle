@@ -14,6 +14,10 @@ import {
   SkillSecurityTab,
   SkillSecurityTabSkeleton,
 } from "@/components/skill-security-tab";
+import {
+  SkillCopiesTab,
+  SkillCopiesTabSkeleton,
+} from "@/components/skill-copies-tab";
 import { loadSkill } from "@/lib/skill-cache";
 import { skillHref } from "@/lib/skill-urls";
 
@@ -23,7 +27,7 @@ import { skillHref } from "@/lib/skill-urls";
  * call these. The trees differ only in how `params` becomes a source and in
  * the external-link props the Overview needs.
  */
-export type SkillTab = "overview" | "history" | "stats" | "security";
+export type SkillTab = "overview" | "history" | "stats" | "security" | "copies";
 
 const TAB_COPY: Record<
   Exclude<SkillTab, "overview">,
@@ -46,6 +50,12 @@ const TAB_COPY: Record<
     description: (name) =>
       `Security audit verdicts for ${name} from skills.sh's audit partners.`,
     errorLabel: "this skill's security audits",
+  },
+  copies: {
+    suffix: "copies",
+    description: (name) =>
+      `Every repo publishing ${name}'s content, ranked by install count.`,
+    errorLabel: "this skill's copies",
   },
 };
 
@@ -106,6 +116,7 @@ const TAB_PARTS: Record<
   history: [SkillHistoryTab, SkillHistoryTabSkeleton],
   stats: [SkillStatsTab, SkillStatsTabSkeleton],
   security: [SkillSecurityTab, SkillSecurityTabSkeleton],
+  copies: [SkillCopiesTab, SkillCopiesTabSkeleton],
 };
 
 /** The body of a non-Overview tab page: boundary, skeleton, and the tab. */

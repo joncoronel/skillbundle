@@ -13,6 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { skillHref } from "@/lib/skill-urls";
+import { loadSkillSyncData } from "@/lib/skill-cache";
 import { representativeGitHubSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
@@ -63,11 +64,17 @@ export default function SkillLayout({
 async function GitHubSkillMasthead({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
+  // The tab strip needs to know whether this skill has copies. Loaded here,
+  // inside the boundary that already awaits `params`, and through the SAME
+  // `'use cache'` entry the Copies, History and Stats tabs read, so it costs
+  // no extra Convex call on any path.
+  const { copies } = await loadSkillSyncData(source, skillId);
 
   return (
     <SkillMasthead
       skillId={skillId}
       base={skillHref(source, skillId)}
+      hasCopies={copies.aliases.length > 0 || copies.forks.length > 0}
       breadcrumb={
         <Breadcrumb size="sm" className="mb-6">
           <BreadcrumbList>

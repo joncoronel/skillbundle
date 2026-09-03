@@ -116,6 +116,8 @@ export function SkillRecord({
   externalIcon,
   externalLabel,
   curatedOwner,
+  copiesCount,
+  isRenamed,
   insights,
   updatedKind,
   updatedDate,
@@ -136,6 +138,10 @@ export function SkillRecord({
   externalIcon: IconSvgElement;
   externalLabel: string;
   curatedOwner?: string;
+  /** How many other repos publish this content. 0 hides the Copies row. */
+  copiesCount: number;
+  /** This source is an older name for a repo that now lives elsewhere. */
+  isRenamed: boolean;
   insights: SkillInsights;
   updatedKind: string;
   updatedDate: string;
@@ -301,6 +307,16 @@ export function SkillRecord({
                   {externalLabel}
                 </span>
                 {curatedOwner && <OfficialBadge owner={curatedOwner} />}
+                {/* A fact about the repository, so it rides the repository
+                    row. It replaced a full-width info callout at the top of
+                    the page, which read as a warning: a rename breaks
+                    nothing, because GitHub 301s the old name and the CLI
+                    clones through the redirect. */}
+                {isRenamed && (
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
+                    Renamed
+                  </span>
+                )}
                 <HugeiconsIcon
                   icon={ArrowUpRight01Icon}
                   strokeWidth={2}
@@ -354,6 +370,35 @@ export function SkillRecord({
                     className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
                   >
                     Verdicts
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      strokeWidth={2}
+                      className="size-3"
+                    />
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Copies, when there are any. The card's other rows already
+                work this way: a fact plus the tab that expands it. This was
+                the one thing SkillBundle knows about a skill that the card
+                did not carry, and its section used to sit inline on the
+                Overview at 649px tall. */}
+            {copiesCount > 0 && (
+              <div className="px-4 py-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Also published at
+                </p>
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <span className="text-sm text-foreground">
+                    {copiesCount} other {copiesCount === 1 ? "repo" : "repos"}
+                  </span>
+                  <Link
+                    href={`${detailBase}/copies`}
+                    className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                  >
+                    Copies
                     <HugeiconsIcon
                       icon={ArrowRight01Icon}
                       strokeWidth={2}

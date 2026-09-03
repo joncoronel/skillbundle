@@ -38,6 +38,12 @@ const SKILL_TABS = [
   { slug: "history", label: "History" },
   { slug: "stats", label: "Stats" },
   { slug: "security", label: "Security" },
+  // Conditional: rendered only for skills that have aliases or forks. History,
+  // Stats and Security are dimensions every skill has, possibly empty. Copies
+  // is a condition most skills do not meet, so a permanent tab reading
+  // "published in one place" across the catalog would be chrome, and the tab
+  // appearing is itself information.
+  { slug: "copies", label: "Copies" },
 ] as const;
 
 type SkillTabSlug = (typeof SKILL_TABS)[number]["slug"];
@@ -49,13 +55,19 @@ function activeSkillTab(segment: string | null): SkillTabSlug {
 
 export function SkillTabs({
   base,
+  hasCopies,
   className,
 }: {
   /** The skill's own path (`skillHref(source, skillId)`). */
   base: string;
+  /** Whether this skill has aliases or forks, which adds the Copies tab. */
+  hasCopies: boolean;
   className?: string;
 }) {
   const active = activeSkillTab(useSelectedLayoutSegment());
+  const tabs = hasCopies
+    ? SKILL_TABS
+    : SKILL_TABS.filter((t) => t.slug !== "copies");
 
   return (
     <SkillTabsFrame className={className}>
@@ -69,7 +81,7 @@ export function SkillTabs({
           className="-mb-px [&_[data-slot=tabs-divider]]:hidden"
           aria-label="Skill sections"
         >
-          {SKILL_TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TabsTrigger
               key={tab.slug}
               value={tab.slug}
@@ -110,8 +122,10 @@ function SkillTabsFrame({
 export function SkillTabsSkeleton({ className }: { className?: string }) {
   return (
     <SkillTabsFrame className={className}>
+      {/* The four tabs every skill has. Copies depends on the skill, so the
+          skeleton cannot know about it and does not reserve a box for it. */}
       <div className="flex gap-x-1 pb-1">
-        {SKILL_TABS.map((tab) => (
+        {SKILL_TABS.filter((t) => t.slug !== "copies").map((tab) => (
           <span
             key={tab.slug}
             className="px-2.5 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground"
