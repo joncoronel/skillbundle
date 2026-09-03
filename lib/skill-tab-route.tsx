@@ -2,7 +2,6 @@ import "server-only";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
-import { SkillDetailPage } from "@/components/skill-detail-page";
 import {
   SkillHistoryTab,
   SkillHistoryTabSkeleton,
@@ -129,5 +128,3 @@ export function SkillTabPage({
     </DataErrorBoundary>
   );
 }
-
-export { SkillDetailPage };
