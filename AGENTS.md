@@ -151,7 +151,7 @@ Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06
 ### Charts
 
 Three charts, all built on **TanStack Charts** (`@tanstack/charts`): the sidebar
-sparkline, the install-history dialog chart, and the compare page's multi-line
+sparkline, the Stats tab's install-history chart, and the compare page's multi-line
 chart. Shared pieces live in `components/charts/`; each chart file owns its own
 `defineChart` definition, and `components/charts/charts.css` holds the styling
 for nodes the library renders and we never author.

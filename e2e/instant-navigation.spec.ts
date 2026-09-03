@@ -150,50 +150,46 @@ test.describe("initial load", () => {
       page,
       async () => {
         await page.goto(GITHUB_SKILL_PATH);
-        // Assert the shell this route actually has, which is `loading.tsx` —
-        // `SkillPage` awaits `params` at the top (deliberate: everything on the
-        // page is URL data, see docs/architecture.md §1), so nothing below it
-        // is in the shared App Shell and `SkillDetailPageLoading` renders a
-        // Skeleton where the h1 goes.
+        // The shell this route has: the masthead skeleton (which draws the
+        // tab strip's labels as real text) plus the Overview segment's
+        // `loading.tsx`. The masthead's breadcrumb, h1 and tab hrefs are URL
+        // data behind their Suspense boundary, so they are NOT asserted —
+        // an earlier version of this test asserted the h1 and silently
+        // depended on GITHUB_SKILL_PATH being the representative param
+        // `generateStaticParams` picked. It would have gone red on a healthy
+        // route the day the catalog shifted.
         //
-        // An earlier version asserted the h1 and the Compare button here,
-        // reasoning that they sit above the Suspense boundary. They do, but
-        // that only puts them in *this URL's own prerender*, not in the shell —
-        // so the assertion silently depended on GITHUB_SKILL_PATH happening to
-        // be the param `generateStaticParams` picked, which is the live
-        // top-popular GitHub skill and only falls back to this pinned one. It
-        // would have gone red on a healthy route the day the catalog shifted.
-        //
-        // These are the page's own section headings, which `SkillDetailPage`
-        // renders as real text in the skeleton rather than as placeholder bars:
-        // neither depends on the skill's data, so both are known before the
-        // body resolves. They replaced "Install" and "Overview", which were
-        // section labels the redesign removed — the install command now sits in
-        // the action bar with no label of its own, and the description is the
-        // masthead's lead rather than a section.
-        await expect(
-          page.locator("*:visible", { hasText: /^History$/ }).first(),
-        ).toBeVisible();
+        // Both strings are unique to the Overview segment's skeleton: the
+        // "Documentation" heading and its "SKILL.md" meta. The tab labels
+        // are deliberately NOT asserted here; they come from the masthead
+        // skeleton, which renders whether or not this segment's shell does.
         await expect(
           page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
+        ).toBeVisible();
+        await expect(
+          page.locator("*:visible", { hasText: /^SKILL\.md$/ }).first(),
         ).toBeVisible();
       },
       { baseURL },
     );
+  });
 
-    // History is server-rendered with the rest of the body rather than fetched
+  test("skill history tab serves its section server-rendered", async ({
+    page,
+  }) => {
+    // History is server-rendered with the rest of the tab rather than fetched
     // by the section itself. It used to defer behind an IntersectionObserver
     // and then open its own Convex subscription, which meant a second spinner
     // after the page had already loaded, plus layout shift as the section grew
     // from empty, to spinner, to list.
     //
     // The assertion that actually distinguishes the two: the section has real
-    // content *without scrolling to it*. Under the old approach the body was an
-    // empty placeholder until the observer fired. Matching either the populated
+    // content *without scrolling or clicking*. Matching either the populated
     // or the empty state keeps this independent of whether this particular
     // skill has recorded versions.
+    await page.goto(`${GITHUB_SKILL_PATH}/history`);
     await expect(page.locator("#history")).toContainText(
-      /No changes recorded yet|View changes|Earliest recorded version/,
+      /Nothing has changed yet|View changes|Earliest recorded version/,
     );
     await expect(page.getByText("Loading history")).toHaveCount(0);
   });
@@ -332,13 +328,12 @@ test.describe("client navigation", () => {
   });
 
   // The deepest hop of the primary traversal. A skill page's breadcrumb and
-  // title are both URL data, so there is nothing params-independent worth
-  // rendering in a shared shell — which is why this route keeps its
-  // `loading.tsx` and does NOT use the params-into-Suspense split the listing
-  // routes do. `loading.tsx` is its shell, and this asserts that shell commits
-  // with real structure (the "History" / "Documentation" section headings,
-  // which the skeleton renders as text because neither depends on the skill’s
-  // data) rather than the navigation blocking.
+  // title are URL data behind the layout's masthead Suspense boundary, so the
+  // shell a client navigation commits is the masthead skeleton (tab labels as
+  // real text) plus the Overview segment's `loading.tsx`. This asserts that
+  // shell commits with real structure — the "Documentation" heading and its
+  // "SKILL.md" meta, which only the Overview skeleton renders — rather than
+  // the navigation blocking.
   test("/[org]/[repo] -> skill detail commits its shell instantly", async ({
     page,
   }) => {
@@ -353,10 +348,39 @@ test.describe("client navigation", () => {
       await skill.click();
       await page.waitForURL((url) => url.pathname === href);
       await expect(
-        page.locator("*:visible", { hasText: /^History$/ }).first(),
+        page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
       await expect(
-        page.locator("*:visible", { hasText: /^Documentation$/ }).first(),
+        page.locator("*:visible", { hasText: /^SKILL\.md$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+    });
+  });
+
+  // Switching tabs must feel like tabs: the layout (masthead + strip) persists
+  // and only the region below the strip changes, with the tab segment's
+  // `loading.tsx` committing instantly. The History skeleton's section heading
+  // and provenance line are real text — neither depends on the skill's data.
+  test("skill overview -> history tab commits its shell instantly", async ({
+    page,
+  }) => {
+    await page.goto(GITHUB_SKILL_PATH);
+
+    // role=tab, not link: the strip is Base UI Tabs with each trigger rendered
+    // as a <Link>, so the anchor carries the tab role. That also keeps this
+    // from matching the record card's own "History" link in the sidebar.
+    const historyTab = page.getByRole("tab", { name: "History" });
+    await expect(historyTab).toBeVisible();
+
+    await instant(page, async () => {
+      await historyTab.click();
+      await page.waitForURL(
+        (url) => url.pathname === `${GITHUB_SKILL_PATH}/history`,
+      );
+      await expect(
+        page.locator("#history h2:visible", { hasText: /^History$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+      await expect(
+        page.getByText("Not written by the skill's author", { exact: false }),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
   });

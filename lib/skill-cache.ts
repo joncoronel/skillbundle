@@ -1,6 +1,6 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
-import { SKILL_CONTENT_TAG } from "./cache-tags";
+import { SKILL_CONTENT_TAG, SKILL_SYNC_TAG } from "./cache-tags";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 
@@ -114,4 +114,69 @@ export async function loadSkill(source: string, skillId: string) {
   cacheLife("weeks");
   cacheTag(SKILL_CONTENT_TAG);
   return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
+}
+
+// ── The per-skill loaders shared by the Overview and the tab routes ──────────
+//
+// `fetchQuery` forces `cache: "no-store"` on its underlying fetch, which would
+// block prerendering. Each loader is a `'use cache'` function: that isolates the
+// no-store fetch behind a cache boundary and keys the result by its args
+// (source, skillId), so every route prerenders a static shell and the
+// `generateMetadata` pass, the page body, and each tab share one entry.
+//
+// loadAudits deliberately stays on "days" and untagged. A weekly life plus a
+// dedicated "skill-audit" tag was tried and reverted: that tag's publish gate is
+// a catalog-wide OR over the whole day's audit drain (~1.3k skills), and
+// `auditsChanged` counts a provider re-stamping `auditedAt` under an identical
+// verdict — so the gate fires most days and the entry gets expired daily anyway,
+// exactly as this timer does. It bought no writes while replacing a guaranteed
+// 24h self-heal with a best-effort ping whose only signal lived in scheduler
+// args, and moving `expire` from 7 days to 30 on a security surface. Revisit
+// only alongside per-skill tags (TODO.md), which is what would make such a gate
+// selective enough to pay.
+
+export async function loadAudits(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  const row = await fetchQuery(api.audits.getBySourceAndSkillId, {
+    source,
+    skillId,
+  });
+  return row?.audits ?? null;
+}
+
+// Everything on the "skill-sync" cadence, in ONE cache entry:
+//
+//   insights — install count, installRank, snapshots (daily syncSkills). The
+//              faster-moving momentum fields (trending/hot) deliberately stay
+//              off this page; they live on the home rails, kept fresh by their
+//              own crons.
+//   copies   — duplicate/rename relationships: the live skill a renamed alias
+//              points to, plus aliases (same repo, other names) and forks
+//              (different repos, same content). Populated by
+//              resolveRepoIdentities on the weekly duplicate chain.
+//   versions — version history for the History tab, written on the
+//              content-refresh path.
+//
+// These were three separate `'use cache'` functions. They bought nothing:
+// SkillDetailBody awaits all of them in a single Promise.all inside a single
+// Suspense boundary, so there was never any independent streaming to gain, and
+// they share one tag so they were always invalidated together anyway. Three
+// entries meant three ISR writes per post-sync visit for one boundary's worth
+// of data. The History tab reading `versions` through the same loader is the
+// point, not a leak: the tab routes share this one cache entry with the
+// Overview instead of adding entries of their own. Only split them again if
+// one of them moves onto a different tag.
+//
+// The 24h cacheLife is the fallback if a revalidate ping is missed.
+export async function loadSkillSyncData(source: string, skillId: string) {
+  "use cache";
+  cacheLife("days");
+  cacheTag(SKILL_SYNC_TAG);
+  const [insights, copies, versions] = await Promise.all([
+    fetchQuery(api.skills.getInsights, { source, skillId }),
+    fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
+    fetchQuery(api.skillVersions.listForSkill, { source, skillId }),
+  ]);
+  return { insights, copies, versions };
 }

@@ -41,6 +41,13 @@ export function ownerHref(owner: string): string {
   return owner.includes(".") ? `/site/${owner}` : `/${owner}`;
 }
 
+/** Skills.sh's own page for a skill — the upstream record ours mirrors. */
+export function externalSkillUrl(source: string, skillId: string): string {
+  return isGitHubSource(source)
+    ? `https://skills.sh/${source}/${skillId}`
+    : `https://skills.sh/site/${source}/${skillId}`;
+}
+
 /** Skills.sh's external skill URL for a security audit detail. Used to
  *  link from our audit section to the upstream report. */
 export function externalAuditDetailUrl(
@@ -48,8 +55,5 @@ export function externalAuditDetailUrl(
   skillId: string,
   partnerSlug: string,
 ): string {
-  const base = isGitHubSource(source)
-    ? `https://skills.sh/${source}/${skillId}`
-    : `https://skills.sh/site/${source}/${skillId}`;
-  return `${base}/security/${partnerSlug}`;
+  return `${externalSkillUrl(source, skillId)}/security/${partnerSlug}`;
 }

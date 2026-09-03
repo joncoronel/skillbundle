@@ -425,8 +425,10 @@ export function RangeBrush({
    *
    * The scrim dims by laying the container's own colour over the strip, so it
    * must be exactly that colour. A fixed token cannot serve both hosts:
-   * `--surface-5` in the install dialog against `--card` in the compare card,
-   * a whole lightness step apart in dark mode (0.321 against 0.264).
+   * `--background` on the skill page's Stats tab against `--card` in the
+   * compare card (and `--surface-5` back when this lived in the install
+   * dialog — a whole lightness step apart from `--card` in dark mode, 0.321
+   * against 0.264).
    *
    * A token REFERENCE, not a resolved colour, so it follows a theme change.
    * Reading the computed colour off the DOM was tried and never re-ran.

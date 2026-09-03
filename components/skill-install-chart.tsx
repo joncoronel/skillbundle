@@ -376,7 +376,11 @@ export function InstallChart({ insights }: { insights: SkillInsights }) {
           <RangeBrush
             days={allRows}
             series={brushSeries}
-            surface="var(--surface-5)"
+            // The Stats tab puts this chart in normal page flow, so the scrim
+            // dims with the page tone. It was `--surface-5` when the chart
+            // lived in the record card's dialog — change it again if the chart
+            // is ever re-homed onto a raised surface.
+            surface="var(--background)"
             // The COMMITTED range: the live drag would reset D3's anchor.
             range={committedRange}
             onRangeChange={commitRange}

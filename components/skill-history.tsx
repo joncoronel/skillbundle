@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { SkillSection } from "@/components/skill-section";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
 
@@ -10,7 +11,7 @@ import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
  * highest-traffic route for a region most readers never scroll to — a real
  * problem, but deferring only moved it.
  *
- * The data is now loaded by `loadSkillSyncData` in skill-detail-page.tsx, in the
+ * The data is now loaded by `loadSkillSyncData` in lib/skill-cache.ts, in the
  * same `Promise.all` as the rest of the page and behind the same `'use cache'` +
  * `cacheTag("skill-sync")` treatment. That solves the original concern more
  * completely — there is no subscription at all now, deferred or otherwise — and
@@ -29,15 +30,21 @@ import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
  */
 export function SkillHistory({
   versions,
+  empty,
   className,
 }: {
   versions: VersionEntry[];
+  /** Rendered in place of the timeline when there are no versions. */
+  empty: ReactNode;
   className?: string;
 }) {
   return (
     <SkillSection
       id="history"
       title="History"
+      // This section renders as the History tab's whole pane; the tab strip's
+      // divider already rules its top.
+      rule={false}
       className={className}
       // Says out loud whose record this is. A reader landing mid-page had no
       // way to tell this timeline apart from something the skill's author
@@ -50,7 +57,7 @@ export function SkillHistory({
       }
     >
       {versions.length === 0 ? (
-        <EmptyHistory />
+        empty
       ) : (
         <ol className="relative">
           {/* The spine. Inset to run through the centre of the 7px markers, and
@@ -74,15 +81,5 @@ export function SkillHistory({
         </ol>
       )}
     </SkillSection>
-  );
-}
-
-function EmptyHistory() {
-  return (
-    <p className="max-w-prose text-sm text-muted-foreground">
-      No changes recorded yet. SkillBundle began tracking edits to skill files
-      in August 2026, so a skill that hasn&apos;t changed since then has nothing
-      here.
-    </p>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import NumberFlow from "@number-flow/react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
@@ -8,23 +9,12 @@ import {
   ArrowUpRight01Icon,
   StarIcon,
 } from "@hugeicons/core-free-icons";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogBody,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/cubby-ui/dialog";
 import { OfficialBadge } from "@/components/skill-badges";
 import {
-  AuditAccordion,
   AuditBadge,
   worstAuditStatus,
   type SkillAuditEntry,
 } from "@/components/skill-audit-section";
-import { InstallChart } from "@/components/skill-install-chart";
 import {
   InstallSparkline,
   InstallSparklineGhost,
@@ -121,8 +111,7 @@ export const RECORD_SURFACE =
  * it was the weaker of two numbers saying roughly the same thing.
  */
 export function SkillRecord({
-  source,
-  skillId,
+  detailBase,
   externalUrl,
   externalIcon,
   externalLabel,
@@ -136,8 +125,13 @@ export function SkillRecord({
   collapsed = false,
   className,
 }: {
-  source: string;
-  skillId: string;
+  /**
+   * The skill's own base path (`skillHref(source, skillId)`). The card's three
+   * drill-in controls — View trend, Verdicts, History — are links to the tab
+   * routes under it. They used to open dialogs; the tabs replaced those, and a
+   * link the router can prefetch beats a modal re-rendering the same data.
+   */
+  detailBase: string;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -173,7 +167,6 @@ export function SkillRecord({
   // installs block — the value rolls and the label becomes the date — so no
   // neighbouring row is left quietly describing a different day.
   const [hover, setHover] = useState<SparklineHoverState>(null);
-  const chartDialogRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div className={cn(RECORD_SURFACE, className)}>
@@ -260,17 +253,13 @@ export function SkillRecord({
               </dl>
 
               {hasChart ? (
-                <Dialog>
+                <>
                   <div className="mt-3">
                     <InstallSparkline points={sparkPoints} onHover={setHover} />
                   </div>
-                  <DialogTrigger
-                    render={
-                      <button
-                        type="button"
-                        className="mt-1.5 inline-flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
-                      />
-                    }
+                  <Link
+                    href={`${detailBase}/stats`}
+                    className="mt-1.5 inline-flex items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
                   >
                     View trend
                     <HugeiconsIcon
@@ -278,44 +267,8 @@ export function SkillRecord({
                       strokeWidth={2}
                       className="size-3"
                     />
-                  </DialogTrigger>
-                  {/* The chart's SVG is keyboard-navigable, so it is the first
-                      tabbable node in the popup and would otherwise take the
-                      dialog's opening focus — which selects a point and opens a
-                      tooltip before the reader has done anything. Focus the
-                      popup instead; Tab still reaches the chart. The popup is
-                      only a focus landing spot, so it draws no ring of its own;
-                      the dialog is already announced as one. */}
-                  {/* The scale is dropped from this dialog's transition on
-                      purpose, and it is load-bearing — do not restore it
-                      without reading docs/charts.md. TanStack Charts measures
-                      its container with `getBoundingClientRect`, which carries
-                      an ancestor transform: opened with the default
-                      `scale-95`, the chart lays its scene out at 95% of the
-                      real width, paints every scene unit 5% oversized, and has
-                      no way to notice (a transform fires no ResizeObserver).
-                      Translate and opacity leave a box's measured width alone,
-                      so this entrance is the one shape the chart can be
-                      measured through. It is also what lets the chart use the
-                      library's own entrance rather than a CSS stand-in; see
-                      `chartMotionEntrance`. */}
-                  <DialogContent
-                    className="focus-visible:outline-none data-ending-style:scale-100 data-starting-style:scale-100 sm:max-w-2xl"
-                    initialFocus={chartDialogRef}
-                    ref={chartDialogRef}
-                  >
-                    <DialogHeader>
-                      <DialogTitle>Installs over time</DialogTitle>
-                      <DialogDescription>
-                        Cumulative total and daily installs, recorded once a
-                        day.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogBody>
-                      <InstallChart insights={insights} />
-                    </DialogBody>
-                  </DialogContent>
-                </Dialog>
+                  </Link>
+                </>
               ) : (
                 // Pre-chart state: a ghost line fading into the history not yet
                 // recorded, so it reads as a placeholder rather than a flat trend.
@@ -396,39 +349,17 @@ export function SkillRecord({
                       ? audits[0].provider
                       : `${audits.length} providers`}
                   </span>
-                  <Dialog>
-                    <DialogTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
-                        />
-                      }
-                    >
-                      Verdicts
-                      <HugeiconsIcon
-                        icon={ArrowRight01Icon}
-                        strokeWidth={2}
-                        className="size-3"
-                      />
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-lg">
-                      <DialogHeader>
-                        <DialogTitle>Security audits</DialogTitle>
-                        <DialogDescription>
-                          Independent checks from skills.sh&apos;s audit
-                          partners.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <DialogBody>
-                        <AuditAccordion
-                          source={source}
-                          skillId={skillId}
-                          audits={audits}
-                        />
-                      </DialogBody>
-                    </DialogContent>
-                  </Dialog>
+                  <Link
+                    href={`${detailBase}/security`}
+                    className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                  >
+                    Verdicts
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      strokeWidth={2}
+                      className="size-3"
+                    />
+                  </Link>
                 </div>
               </div>
             )}
@@ -439,8 +370,8 @@ export function SkillRecord({
               </p>
               <div className="mt-1.5 flex items-center justify-between gap-3">
                 <span className="text-sm text-foreground">{updatedDate}</span>
-                <a
-                  href="#history"
+                <Link
+                  href={`${detailBase}/history`}
                   className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
                 >
                   History
@@ -449,7 +380,7 @@ export function SkillRecord({
                     strokeWidth={2}
                     className="size-3"
                   />
-                </a>
+                </Link>
               </div>
             </div>
           </div>
