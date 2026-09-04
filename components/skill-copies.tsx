@@ -129,7 +129,7 @@ function CopyRow({ copy, max }: { copy: CopyEntry; max: number }) {
           </span>
           {/* The kind rides beside the name on mobile, where its own column is
             hidden. Same words, same glyph, no background either way. */}
-          <span className="flex shrink-0 items-center gap-1 text-micro text-muted-foreground sm:hidden">
+          <span className="flex shrink-0 items-center gap-1 text-(length:--text-micro) text-muted-foreground sm:hidden">
             <HugeiconsIcon
               icon={kind.icon}
               strokeWidth={2}
@@ -145,7 +145,7 @@ function CopyRow({ copy, max }: { copy: CopyEntry; max: number }) {
           column entry for that row instead of as a badge on it. */}
         <span
           className={cn(
-            "hidden items-center gap-1.5 text-micro sm:flex",
+            "hidden items-center gap-1.5 text-(length:--text-micro) sm:flex",
             isSelf ? "text-foreground" : "text-muted-foreground",
           )}
         >

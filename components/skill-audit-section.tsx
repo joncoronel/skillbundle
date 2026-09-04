@@ -67,7 +67,7 @@ export function AuditBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded border px-2 py-0.5 text-micro font-medium",
+        "inline-flex items-center rounded border px-2 py-0.5 text-(length:--text-micro) font-medium",
         STATUS_PILL[status] ?? "border-border bg-muted text-muted-foreground",
         className,
       )}
@@ -265,7 +265,7 @@ export function AuditReportList({
                   {categories.map((category) => (
                     <li
                       key={category}
-                      className="rounded bg-muted px-2 py-0.5 text-micro font-medium text-muted-foreground"
+                      className="rounded bg-muted px-2 py-0.5 text-(length:--text-micro) font-medium text-muted-foreground"
                     >
                       {category}
                     </li>

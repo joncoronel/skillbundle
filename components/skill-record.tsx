@@ -313,7 +313,7 @@ export function SkillRecord({
                     nothing, because GitHub 301s the old name and the CLI
                     clones through the redirect. */}
                 {isRenamed && (
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-(length:--text-micro) font-medium text-muted-foreground">
                     Renamed
                   </span>
                 )}

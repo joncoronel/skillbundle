@@ -50,10 +50,6 @@ html {
   --text-display-sm--font-weight: 640;
   --text-display-sm--letter-spacing: -0.02em;
 
-  /* Typography — the one step below text-xs, for pills and dense chips.
-     Sentence case in the body face; there is no uppercase label role. */
-  --text-micro: 0.6875rem; /* 11px */
-
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -232,6 +228,24 @@ html {
 }
 
 :root {
+  /* Typography — the one step below text-xs, for pills and dense chips.
+     Sentence case in the body face; there is no uppercase label role.
+
+     Declared HERE rather than in `@theme`, and that is load-bearing. In
+     `@theme` it generated a `text-micro` utility, and a class merger only
+     knows the sizes in its own scale: anything else after `text-` it reads as
+     a text COLOUR. So `cn("text-micro", "text-danger-foreground")` treated the
+     two as one group and dropped the size before it reached the DOM. Eight of
+     the eleven call sites merged a colour that way, so most of them rendered at
+     the inherited size — the audit verdict pill painted "Fail" at 16px instead
+     of 11px.
+
+     As a plain custom property the only way to spell it is
+     `text-(length:--text-micro)`, which every merger classifies as a font size
+     because the `length:` label says so. No utility exists to reach for by
+     mistake, and nothing has to be configured in JS, so this survives swapping
+     the class-merge library (this project has swapped twice). */
+  --text-micro: 0.6875rem; /* 11px */
   --radius: 0.75rem;
   --neutral-hue: 270;
   --neutral-chroma: 0.004;

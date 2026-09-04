@@ -56,7 +56,7 @@ export function SignalChip({
           <span
             aria-label={label}
             className={cn(
-              "inline-flex shrink-0 items-center rounded-md border px-1 py-0.5 text-micro font-medium",
+              "inline-flex shrink-0 items-center rounded-md border px-1 py-0.5 text-(length:--text-micro) font-medium",
               SIGNAL_CHIP_TONE[tone],
               className,
             )}
@@ -149,7 +149,7 @@ export function HotMomentumChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-micro font-medium tabular-nums",
+        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-(length:--text-micro) font-medium tabular-nums",
         rising
           ? "border-success/20 bg-success/10 text-success-foreground"
           : "border-destructive/20 bg-destructive/10 text-destructive",

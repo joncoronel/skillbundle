@@ -65,7 +65,10 @@ export function BundleCard({
         <CardAction>
           <div className="flex items-center gap-1.5">
             {!isPublic ? (
-              <Badge variant="outline" className="px-1.5 py-0.5 text-micro">
+              <Badge
+                variant="outline"
+                className="px-1.5 py-0.5 text-(length:--text-micro)"
+              >
                 Private
               </Badge>
             ) : null}

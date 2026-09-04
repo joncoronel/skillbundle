@@ -348,7 +348,7 @@ export function HistoryRow({
               to be the latest OF, and the word would read as a claim about the
               skill rather than about the timeline. */}
           {isLatest && !isAnchor && (
-            <span className="text-micro font-medium text-primary [text-box:trim-both_cap_alphabetic]">
+            <span className="text-(length:--text-micro) font-medium text-primary [text-box:trim-both_cap_alphabetic]">
               Latest
             </span>
           )}
