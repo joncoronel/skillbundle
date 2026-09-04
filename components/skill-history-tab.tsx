@@ -72,6 +72,8 @@ export function SkillHistoryTabSkeleton() {
       <SkillSection
         id="history"
         title="History"
+        titleHidden
+        summary={<Skeleton className="h-4 w-44" />}
         rule={false}
         description="Edits SkillBundle has recorded to this file since it entered the catalog. Not written by the skill's author."
       >

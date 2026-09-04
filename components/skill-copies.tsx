@@ -62,10 +62,17 @@ export function SkillCopies({
     <SkillSection
       id="copies"
       title="Copies"
+      // The tab strip names this pane; the line below reports the split
+      // instead of repeating the word. See SkillSection.
+      titleHidden
+      summary={
+        <p className="text-sm font-medium text-foreground">
+          {formatInstalls(total)} installs across {ranked.length} places
+        </p>
+      }
       rule={false}
       className={className}
       description="The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works."
-      meta={`${formatInstalls(total)} installs across ${ranked.length} places`}
     >
       <ul>
         {ranked.map((copy) => (

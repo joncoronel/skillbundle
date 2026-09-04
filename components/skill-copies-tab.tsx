@@ -57,6 +57,8 @@ export function SkillCopiesTabSkeleton() {
     <SkillSection
       id="copies"
       title="Copies"
+      titleHidden
+      summary={<Skeleton className="h-4 w-52" />}
       rule={false}
       description="The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works."
       className="mt-8"

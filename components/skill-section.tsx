@@ -29,6 +29,8 @@ import { cn } from "@/lib/utils";
 export function SkillSection({
   id,
   title,
+  titleHidden = false,
+  summary,
   meta,
   description,
   rule = true,
@@ -38,6 +40,24 @@ export function SkillSection({
   /** Anchor target for the section nav. Always set on this page. */
   id: string;
   title: string;
+  /**
+   * Render the title for assistive tech only, and put `summary` on the line it
+   * would have occupied.
+   *
+   * The tab panes set this. Their title repeats the tab label sitting 30px
+   * above it with an active underline pointing at it, so as visible text it
+   * tells the reader something they just clicked, and it does it in the one
+   * position that should carry the answer they came for. The heading still
+   * exists in the DOM, because the document outline and screen-reader landmark
+   * navigation both depend on the pane being named.
+   */
+  titleHidden?: boolean;
+  /**
+   * The line that replaces a hidden title: a summary of what is below, not a
+   * label for it. "Warn, 3 providers, latest audit Aug 14, 2026" rather than
+   * "Security".
+   */
+  summary?: ReactNode;
   /** Right-aligned trailing content on the heading baseline. */
   meta?: ReactNode;
   /** One line under the heading, before the content. */
@@ -69,9 +89,16 @@ export function SkillSection({
           rule && "border-t border-border pt-4",
         )}
       >
-        <h2 className="text-base font-semibold tracking-tight text-foreground">
-          {title}
-        </h2>
+        {titleHidden ? (
+          <>
+            <h2 className="sr-only">{title}</h2>
+            {summary}
+          </>
+        ) : (
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
+            {title}
+          </h2>
+        )}
         {meta && <div className="text-xs text-muted-foreground">{meta}</div>}
       </div>
 

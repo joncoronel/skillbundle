@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SkillSection } from "@/components/skill-section";
+import { formatDate } from "@/lib/utils";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
 
 /**
@@ -38,10 +39,23 @@ export function SkillHistory({
   empty: ReactNode;
   className?: string;
 }) {
+  // Oldest entry last: the query returns newest first.
+  const earliest = versions.at(-1);
+
   return (
     <SkillSection
       id="history"
       title="History"
+      titleHidden
+      summary={
+        <p className="text-sm font-medium text-foreground">
+          {versions.length === 0
+            ? "No changes recorded"
+            : `${versions.length} ${
+                versions.length === 1 ? "change" : "changes"
+              }${earliest ? ` since ${formatDate(earliest.changedAt)}` : ""}`}
+        </p>
+      }
       // This section renders as the History tab's whole pane; the tab strip's
       // divider already rules its top.
       rule={false}
@@ -51,10 +65,6 @@ export function SkillHistory({
       // wrote — it is the one section on the page that exists only because
       // SkillBundle watches the file.
       description="Edits SkillBundle has recorded to this file since it entered the catalog. Not written by the skill's author."
-      meta={
-        versions.length > 0 &&
-        `${versions.length} ${versions.length === 1 ? "change" : "changes"}`
-      }
     >
       {versions.length === 0 ? (
         empty

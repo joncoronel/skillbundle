@@ -12,6 +12,7 @@ import {
   worstAuditStatus,
 } from "@/components/skill-audit-section";
 import { loadAudits, loadSkill } from "@/lib/skill-cache";
+import { formatDate } from "@/lib/utils";
 import { externalSkillUrl } from "@/lib/skill-urls";
 
 /**
@@ -41,6 +42,15 @@ export async function SkillSecurityTab({
   if (!skill) notFound();
 
   const hasAudits = audits !== null && audits.length > 0;
+  // Newest audit across providers. The date answers "did anyone look at the
+  // current file?", which is the second question after the verdict itself.
+  const latest = hasAudits
+    ? audits.reduce<number | null>((newest, a) => {
+        const ts = Date.parse(a.auditedAt);
+        if (Number.isNaN(ts)) return newest;
+        return newest === null || ts > newest ? ts : newest;
+      }, null)
+    : null;
 
   return (
     <SkillSection
@@ -48,13 +58,19 @@ export async function SkillSecurityTab({
       title="Security"
       rule={false}
       description="Independent checks from skills.sh's audit partners."
-      meta={
-        hasAudits && (
-          <span className="flex items-center gap-2">
-            {audits.length} {audits.length === 1 ? "provider" : "providers"}
+      // The verdict, not the word "Security": the tab strip already said that,
+      // and this is the line the reader came for. See SkillSection.
+      titleHidden
+      summary={
+        hasAudits ? (
+          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted-foreground">
             <AuditBadge status={worstAuditStatus(audits)} />
-          </span>
-        )
+            <span className="font-medium text-foreground">
+              {audits.length} {audits.length === 1 ? "provider" : "providers"}
+            </span>
+            {latest !== null && <span>latest audit {formatDate(latest)}</span>}
+          </p>
+        ) : undefined
       }
       className="mt-8"
     >
@@ -112,6 +128,8 @@ export function SkillSecurityTabSkeleton() {
     <SkillSection
       id="security"
       title="Security"
+      titleHidden
+      summary={<Skeleton className="h-4 w-56" />}
       rule={false}
       description="Independent checks from skills.sh's audit partners."
       className="mt-8"
