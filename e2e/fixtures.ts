@@ -54,10 +54,17 @@ export const BUNDLE_ID = process.env.E2E_BUNDLE_ID;
  * actually seen in the target deployment. `skill-history.spec.ts` skips itself
  * when the page has no expandable row rather than failing, so pointing this at
  * a thin deployment degrades instead of going red.
+ *
+ * That graceful skip is also how this pin went stale without anyone noticing.
+ * It pointed at `makieali/claude-code-engineer/architect`, which carries a
+ * single baseline row in production: the page loads, there is nothing to
+ * expand, and all three tests skip. A green run said the app's most
+ * interactive surface was covered when it was not being exercised at all.
+ * When changing this, check the target has at least THREE versions, and
+ * confirm the suite reports 3 passed rather than 3 skipped.
  */
 export const HISTORY_SKILL_PATH =
-  process.env.E2E_HISTORY_PATH ??
-  "/makieali/claude-code-engineer/architect/history";
+  process.env.E2E_HISTORY_PATH ?? "/pbakaus/impeccable/impeccable/history";
 
 /**
  * A skill with copies — aliases (the same repo under another name) or forks (a
