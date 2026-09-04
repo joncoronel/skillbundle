@@ -109,7 +109,8 @@ depends on how much of the page is params-independent:
   masthead also reads `loadSkillSyncData` there, because the Copies tab is
   conditional on the skill having aliases or forks; that is the same cached
   entry the tabs read, so it costs no extra Convex call. Each tab segment — Overview, `/history`,
-  `/stats`, `/security` — keeps `await params` at the top of its page and lets
+  `/stats`, `/security`, and `/copies` on skills that have any — keeps
+  `await params` at the top of its page and lets
   its own `loading.tsx` cover the tab body. The layout must stay synchronous:
   awaiting params there would suspend the whole frame and no tab's
   `loading.tsx` could commit instantly.

@@ -6,6 +6,7 @@ import {
   COPIES_SECTION,
   SkillCopies,
   type CopyEntry,
+  type CopyKind,
 } from "@/components/skill-copies";
 import {
   hasSkillCopies,
@@ -22,6 +23,11 @@ import {
  * Including the current skill is what makes the ranking answer a question:
  * without it the list shows ten numbers and no way to place your own.
  */
+/** Widens the literal to `CopyKind` so the entry list needs no cast. */
+function aliasKind(isLive: boolean): CopyKind {
+  return isLive ? "current-name" : "former-name";
+}
+
 export async function SkillCopiesTab({
   source,
   skillId,
@@ -51,7 +57,7 @@ export async function SkillCopiesTab({
       // `isLive` marks the repo's current name; every other alias is a name it
       // used to have. Both install fine, because GitHub 301s an old repo name
       // and the CLI clones through the redirect.
-      kind: (a.isLive ? "current-name" : "former-name") as CopyEntry["kind"],
+      kind: aliasKind(a.isLive),
     })),
     ...copies.forks.map((f) => ({
       source: f.source,
@@ -82,7 +88,7 @@ export function SkillCopiesTabSkeleton() {
             key={row}
             className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-2.5 py-3.5 sm:grid-cols-[minmax(0,17rem)_8.5rem_minmax(0,1fr)_auto]"
           >
-            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-5 w-48" />
             <Skeleton className="hidden h-3 w-20 sm:block" />
             <Skeleton className="order-last col-span-2 h-1.5 w-full rounded-full sm:order-none sm:col-span-1" />
             <Skeleton className="h-3 w-20 justify-self-end" />

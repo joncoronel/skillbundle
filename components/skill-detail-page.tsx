@@ -20,10 +20,15 @@ import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
-import { loadAudits, loadSkill, loadSkillSyncData } from "@/lib/skill-cache";
+import {
+  copyCount,
+  loadAudits,
+  loadSkill,
+  loadSkillSyncData,
+} from "@/lib/skill-cache";
 
 // The skill loaders (`loadSkill`, `loadAudits`, `loadSkillSyncData`) live in
-// lib/skill-cache.ts, shared by this Overview and the three tab routes. Only
+// lib/skill-cache.ts, shared by this Overview and the tab routes. Only
 // `loadStars` stays here: the Overview is its one caller.
 //
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
@@ -381,7 +386,7 @@ async function SkillDetailBody({
         externalIcon={externalIcon}
         externalLabel={externalLabel}
         curatedOwner={skill.curatedOwner}
-        copiesCount={copies.aliases.length + copies.forks.length}
+        copiesCount={copyCount(copies)}
         isRenamed={copies.renamedTo !== null}
         insights={insights}
         updatedKind={updatedKind}

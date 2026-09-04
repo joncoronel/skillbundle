@@ -6,8 +6,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
 
 /**
- * The skill page's tab strip: Overview, History, Stats, Security. Each tab is a
- * ROUTE (`/{source}/{skillId}`, `.../history`, `.../stats`, `.../security`),
+ * The skill page's tab strip: Overview, History, Stats, Security, and Copies
+ * on skills that have any. Each tab is a ROUTE (`/{source}/{skillId}`,
+ * `.../history`, `.../stats`, `.../security`, `.../copies`),
  * not client tab state — every tab keeps its own URL, static shell, and
  * metadata, and the layout above this strip persists across the navigation so
  * switching tabs never re-renders the masthead.

@@ -20,6 +20,17 @@ export type CopyEntry = {
   kind: CopyKind;
 };
 
+export const COPIES_SECTION = {
+  id: "copies",
+  title: "Copies",
+  // The tab strip names this pane; the summary line reports the split instead
+  // of repeating the word. See SkillSection.
+  titleHidden: true,
+  rule: false,
+  description:
+    "The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works.",
+} as const;
+
 /**
  * The Copies tab: every place this skill's content is published, ranked by
  * install count, with the page you are on sitting among them.
@@ -48,17 +59,6 @@ export type CopyEntry = {
  * cannot land on one and not the other. They stood as two identical
  * 180-character copies of the same description.
  */
-export const COPIES_SECTION = {
-  id: "copies",
-  title: "Copies",
-  // The tab strip names this pane; the summary line reports the split instead
-  // of repeating the word. See SkillSection.
-  titleHidden: true,
-  rule: false,
-  description:
-    "The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works.",
-} as const;
-
 export function SkillCopies({
   entries,
   className,

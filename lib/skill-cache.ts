@@ -125,16 +125,25 @@ export async function loadSkill(source: string, skillId: string) {
 export const SKILL_VERSION_LIMIT = 50;
 
 /**
- * Does this skill have copies? One spelling, because four call sites derive it
- * (both layouts' tab strips, the record card's count, and the Copies route's
- * own guard) and a site that spells it differently is a site that can disagree
- * with the tab strip about whether the route exists.
+ * Does this skill have copies? One spelling, because both layouts' tab strips
+ * and the Copies route's own guard all ask it, and a site that spells it
+ * differently is a site that can disagree with the tab strip about whether the
+ * route exists. The record card takes the COUNT rather than the predicate, so
+ * it reads `copyCount` below instead.
  */
 export function hasSkillCopies(copies: {
   aliases: unknown[];
   forks: unknown[];
 }): boolean {
   return copies.aliases.length > 0 || copies.forks.length > 0;
+}
+
+/** How many other places publish this content, for the record card's row. */
+export function copyCount(copies: {
+  aliases: unknown[];
+  forks: unknown[];
+}): number {
+  return copies.aliases.length + copies.forks.length;
 }
 
 // ── The per-skill loaders shared by the Overview and the tab routes ──────────
