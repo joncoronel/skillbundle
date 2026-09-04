@@ -58,3 +58,29 @@ export const BUNDLE_ID = process.env.E2E_BUNDLE_ID;
 export const HISTORY_SKILL_PATH =
   process.env.E2E_HISTORY_PATH ??
   "/makieali/claude-code-engineer/architect/history";
+
+/**
+ * A skill with copies — aliases (the same repo under another name) or forks (a
+ * different repo publishing identical content) — for the Copies tab.
+ *
+ * Env-only, with no pinned default, unlike every other fixture here. Copies are
+ * not a property of a skill, they are a property of the CATALOG: they exist
+ * only after the weekly duplicate chain has resolved repo identities, and most
+ * deployments have none at all. A pinned slug would go red on a fresh or
+ * dev-seeded deployment for a tab that is working correctly, and the tab itself
+ * only renders for skills that have copies — so `skill-copies.spec.ts` skips
+ * rather than fails when this is unset.
+ *
+ * Point it at the skill PAGE (no `/copies` suffix); the spec navigates.
+ *
+ * The leading slash is optional. Git Bash rewrites a leading `/` in an env
+ * value into a Windows path (`E2E_COPIES_PATH=/org/repo/skill` arrives as
+ * `C:/Program Files/Git/org/repo/skill`), so on Windows the natural way to
+ * write this is without one.
+ */
+const copiesPath = process.env.E2E_COPIES_PATH?.trim();
+export const COPIES_SKILL_PATH = copiesPath
+  ? copiesPath.startsWith("/")
+    ? copiesPath
+    : `/${copiesPath}`
+  : undefined;

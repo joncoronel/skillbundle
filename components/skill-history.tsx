@@ -87,14 +87,14 @@ export function SkillHistory({
       {versions.length === 0 ? (
         empty
       ) : (
-        <ol className="relative">
-          {/* The spine. Inset to run through the centre of the 7px markers, and
-              stopped short of the last row so the timeline reads as ending at
-              the earliest entry rather than trailing into nothing. */}
-          <span
-            aria-hidden
-            className="absolute top-2 bottom-8 left-0.75 w-px bg-border"
-          />
+        <ol>
+          {/* The spine is drawn per row now, not once over the list. One
+              absolute element could start at the first marker but had no way to
+              end at the last one, so it was pinned to a guessed `bottom-8` and
+              drifted whenever the earliest row changed height. Each row draws
+              its own segment down to the next marker instead, and the last row
+              draws none, so the timeline still ends at the earliest entry
+              rather than trailing off. See HistoryRow. */}
           {versions.map((version, i) => (
             <HistoryRow
               key={version.versionId}
@@ -104,6 +104,7 @@ export function SkillHistory({
               previous={versions[i + 1]}
               // Only the newest row offers a lookback range; see HistoryRow.
               olderVersions={i === 0 ? versions.slice(1) : undefined}
+              isLatest={i === 0}
             />
           ))}
         </ol>

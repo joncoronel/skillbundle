@@ -122,11 +122,14 @@ export function HistoryRow({
   version,
   previous,
   olderVersions,
+  isLatest,
 }: {
   version: VersionEntry;
   previous: VersionEntry | undefined;
   /** Present only on the newest row: everything it can be compared back to. */
   olderVersions: VersionEntry[] | undefined;
+  /** The newest row, which takes the accent marker and the "Latest" label. */
+  isLatest: boolean;
 }) {
   // Links the trigger to the panel it discloses. `aria-controls` is optional in
   // the APG disclosure pattern, but this row bypasses `CollapsibleTrigger` (it
@@ -319,11 +322,36 @@ export function HistoryRow({
 
   return (
     <li className="relative pl-6">
-      <Marker isAnchor={isAnchor} />
+      <Marker isAnchor={isAnchor} isLatest={isLatest} />
+      {/* The segment from this row's marker down to the next one. `previous` is
+          the older entry, so its absence means this is the earliest row and the
+          line stops here. The negative bottom carries the line past this row's
+          box and into the next marker's centre, which is what closes the gap a
+          per-row spine would otherwise leave between rows. */}
+      {previous && (
+        <span
+          aria-hidden
+          className="absolute top-[11px] -bottom-[11px] left-[4.5px] w-px bg-border"
+        />
+      )}
 
       <Collapsible open={open} onOpenChange={setOpen}>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-1">
           <VersionLabel version={version} isAnchor={isAnchor} />
+          {/* Sentence case, not the LATEST of the reference this came from:
+              globals.css states there is no uppercase label role in this
+              system, so shouting it would be the one place on the page that
+              does. The accent does the work the capitals were doing.
+
+              Withheld when the newest row is also the anchor. On a skill whose
+              only entry is the first recorded version there is nothing for it
+              to be the latest OF, and the word would read as a claim about the
+              skill rather than about the timeline. */}
+          {isLatest && !isAnchor && (
+            <span className="text-micro font-medium text-primary [text-box:trim-both_cap_alphabetic]">
+              Latest
+            </span>
+          )}
           {/* Absolute, via formatDate, and this is load-bearing rather than a
               style preference: `timeAgo` reads `Date.now()`, and these rows now
               render on the server (see the header of skill-history.tsx).
@@ -575,18 +603,34 @@ function rangeLabel(v: VersionEntry) {
     : formatDate(v.changedAt);
 }
 
-function Marker({ isAnchor }: { isAnchor: boolean }) {
+function Marker({
+  isAnchor,
+  isLatest,
+}: {
+  isAnchor: boolean;
+  isLatest: boolean;
+}) {
   return (
     <span
       aria-hidden
       className={cn(
-        "absolute top-1.75 left-0 size-1.75 rounded-full",
-        // Hollow for the anchor, filled for a real change: the shape carries the
-        // distinction so it survives greyscale and the spine still reads as
+        // 10px, up from 7px. At 7px the markers read as punctuation on a rule
+        // rather than as stations on a line, and the hollow anchor had barely
+        // a pixel of fill to be hollow with. Every marker keeps the SAME box so
+        // their centres stay on one axis and the spine cannot step; the newest
+        // one is distinguished by colour and a halo, both of which are free of
+        // layout.
+        "absolute top-1.5 left-0 size-2.5 rounded-full",
+        // Hollow for the anchor, filled for a real change: the shape carries
+        // the distinction so it survives greyscale and the spine still reads as
         // terminating in something rather than stopping mid-air.
         isAnchor
           ? "border border-muted-foreground bg-background"
           : "bg-foreground",
+        // The newest change takes the accent and a soft ring. `ring` draws
+        // outside the box without affecting layout, so the marker grows
+        // optically while its centre stays on the spine's axis.
+        isLatest && !isAnchor && "bg-primary ring-4 ring-primary/15",
       )}
     />
   );
