@@ -74,9 +74,6 @@ importers:
       cn:
         specifier: ^0.2.5
         version: 0.2.5
-      cnfast:
-        specifier: ^0.0.8
-        version: 0.0.8
       convex:
         specifier: ^1.38.0
         version: 1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@clerk/react@6.6.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
@@ -152,9 +149,6 @@ importers:
       svix:
         specifier: ^1.84.1
         version: 1.84.1
-      tailwind-merge:
-        specifier: ^3.4.0
-        version: 3.4.0
       use-debounce:
         specifier: ^10.1.1
         version: 10.1.1(react@19.2.8)
@@ -3140,10 +3134,6 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  cnfast@0.0.8:
-    resolution: {integrity: sha512-EjXKMfGfdwtV4AcNSQ6AwQaVzpC1B7IxeiwA3FlhTXz+YFlMKVi4c1JX9tgD2QOlahQXjB8KUXrBaYG+3v871Q==}
-    hasBin: true
-
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
     engines: {node: '>=7.0.0'}
@@ -5312,9 +5302,6 @@ packages:
     resolution: {integrity: sha512-bYd2lrhc+VarcpkgWclcUi92wYCpOgMws9Sd1hG1ntAu0NEy+14CbotuFjshBU2kt9rYj9TSmDcybpxpeTU1fg==}
     peerDependencies:
       react: ^16.11.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
-  tailwind-merge@3.4.0:
-    resolution: {integrity: sha512-uSaO4gnW+b3Y2aWoWfFpX62vn2sR3skfhbjsEnaBI81WD1wBLlHZe5sWf0AqjksNdYTbGBEd0UasQMT3SNV15g==}
 
   tailwind-merge@3.5.0:
     resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
@@ -8639,8 +8626,6 @@ snapshots:
 
   cn@0.2.5: {}
 
-  cnfast@0.0.8: {}
-
   color-convert@2.0.1:
     dependencies:
       color-name: 1.1.4
@@ -11299,8 +11284,6 @@ snapshots:
       react: 19.2.8
       use-sync-external-store: 1.6.0(react@19.2.8)
     optional: true
-
-  tailwind-merge@3.4.0: {}
 
   tailwind-merge@3.5.0: {}
 

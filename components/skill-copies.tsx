@@ -43,6 +43,22 @@ export type CopyEntry = {
  * its own column, where it reads as metadata rather than competing with the
  * repo name for the row's attention.
  */
+/**
+ * The section's identity, shared with the tab's skeleton so a wording change
+ * cannot land on one and not the other. They stood as two identical
+ * 180-character copies of the same description.
+ */
+export const COPIES_SECTION = {
+  id: "copies",
+  title: "Copies",
+  // The tab strip names this pane; the summary line reports the split instead
+  // of repeating the word. See SkillSection.
+  titleHidden: true,
+  rule: false,
+  description:
+    "The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works.",
+} as const;
+
 export function SkillCopies({
   entries,
   className,
@@ -60,19 +76,14 @@ export function SkillCopies({
 
   return (
     <SkillSection
-      id="copies"
-      title="Copies"
-      // The tab strip names this pane; the line below reports the split
-      // instead of repeating the word. See SkillSection.
-      titleHidden
+      {...COPIES_SECTION}
       summary={
         <p className="text-sm font-medium text-foreground">
-          {formatInstalls(total)} installs across {ranked.length} places
+          {formatInstalls(total)} installs across {ranked.length}{" "}
+          {ranked.length === 1 ? "place" : "places"}
         </p>
       }
-      rule={false}
       className={className}
-      description="The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works."
     >
       <ul>
         {ranked.map((copy) => (

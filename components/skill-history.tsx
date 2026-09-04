@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { SkillSection } from "@/components/skill-section";
 import { formatDate } from "@/lib/utils";
+import { SKILL_VERSION_LIMIT } from "@/lib/skill-cache";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
 
 /**
@@ -55,9 +56,16 @@ export function SkillHistory({
   // timeline showing five edits and a first-recorded row. This number has to
   // match what the reader can count on screen, so it comes from the same rule.
   const changes = Math.max(versions.length - 1, 0);
+  // The query returns at most SKILL_VERSION_LIMIT rows, newest first. At the
+  // cap the oldest row is the 50th newest change, NOT the start of tracking,
+  // so both statements below would be false: the count would stick at 49 and
+  // the date would name a day months after tracking actually began.
+  const capped = versions.length >= SKILL_VERSION_LIMIT;
   // Not "since it entered the catalog": the earliest row is when tracking
-  // started, and the two dates are different for most of the catalog.
-  const trackedSince = earliest ? formatDate(earliest.changedAt) : null;
+  // started, and the two dates differ for most of the catalog. Withheld
+  // entirely when capped, because there is no honest date to print.
+  const trackedSince =
+    earliest && !capped ? formatDate(earliest.changedAt) : null;
 
   return (
     <SkillSection
@@ -67,9 +75,11 @@ export function SkillHistory({
       summary={
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">
-            {changes === 0
-              ? "No changes"
-              : `${changes} ${changes === 1 ? "change" : "changes"}`}
+            {capped
+              ? `${versions.length}+ changes`
+              : changes === 0
+                ? "No changes"
+                : `${changes} ${changes === 1 ? "change" : "changes"}`}
           </span>
           {trackedSince && <> · tracked since {trackedSince}</>}
         </p>
@@ -104,7 +114,6 @@ export function SkillHistory({
               previous={versions[i + 1]}
               // Only the newest row offers a lookback range; see HistoryRow.
               olderVersions={i === 0 ? versions.slice(1) : undefined}
-              isLatest={i === 0}
             />
           ))}
         </ol>

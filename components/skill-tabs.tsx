@@ -38,19 +38,28 @@ const SKILL_TABS = [
   { slug: "history", label: "History" },
   { slug: "stats", label: "Stats" },
   { slug: "security", label: "Security" },
-  // Conditional: rendered only for skills that have aliases or forks. History,
-  // Stats and Security are dimensions every skill has, possibly empty. Copies
-  // is a condition most skills do not meet, so a permanent tab reading
-  // "published in one place" across the catalog would be chrome, and the tab
-  // appearing is itself information.
-  { slug: "copies", label: "Copies" },
 ] as const;
 
-type SkillTabSlug = (typeof SKILL_TABS)[number]["slug"];
+/**
+ * Appended for skills that have aliases or forks, never filtered back out.
+ * It lived inside `SKILL_TABS` and was removed again in two places, so the
+ * constant did not mean "the tabs" and a reader had to check both filters to
+ * know what renders.
+ *
+ * History, Stats and Security are dimensions every skill has, possibly empty.
+ * Copies is a condition most skills do not meet, so a permanent tab reading
+ * "published in one place" across the catalog would be chrome, and the tab
+ * appearing is itself information.
+ */
+const COPIES_TAB = { slug: "copies", label: "Copies" } as const;
+
+const ALL_TABS = [...SKILL_TABS, COPIES_TAB];
+
+type SkillTabSlug = (typeof ALL_TABS)[number]["slug"];
 
 /** The active tab for a selected layout segment: a known slug, else Overview. */
 function activeSkillTab(segment: string | null): SkillTabSlug {
-  return SKILL_TABS.find((t) => t.slug === segment)?.slug ?? "";
+  return ALL_TABS.find((t) => t.slug === segment)?.slug ?? "";
 }
 
 export function SkillTabs({
@@ -65,9 +74,7 @@ export function SkillTabs({
   className?: string;
 }) {
   const active = activeSkillTab(useSelectedLayoutSegment());
-  const tabs = hasCopies
-    ? SKILL_TABS
-    : SKILL_TABS.filter((t) => t.slug !== "copies");
+  const tabs = hasCopies ? ALL_TABS : SKILL_TABS;
 
   return (
     <SkillTabsFrame className={className}>
@@ -125,7 +132,7 @@ export function SkillTabsSkeleton({ className }: { className?: string }) {
       {/* The four tabs every skill has. Copies depends on the skill, so the
           skeleton cannot know about it and does not reserve a box for it. */}
       <div className="flex gap-x-1 pb-1">
-        {SKILL_TABS.filter((t) => t.slug !== "copies").map((tab) => (
+        {SKILL_TABS.map((tab) => (
           <span
             key={tab.slug}
             className="px-2.5 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground"

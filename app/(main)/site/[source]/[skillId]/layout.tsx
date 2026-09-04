@@ -13,7 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { skillHref } from "@/lib/skill-urls";
-import { loadSkillSyncData } from "@/lib/skill-cache";
+import { hasSkillCopies, loadSkillSyncData } from "@/lib/skill-cache";
 import { representativeWellKnownSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ source: string; skillId: string }>;
@@ -61,7 +61,7 @@ async function WellKnownSkillMasthead({ params }: { params: Params }) {
     <SkillMasthead
       skillId={skillId}
       base={skillHref(source, skillId)}
-      hasCopies={copies.aliases.length > 0 || copies.forks.length > 0}
+      hasCopies={hasSkillCopies(copies)}
       breadcrumb={
         <Breadcrumb size="sm" className="mb-6">
           <BreadcrumbList>

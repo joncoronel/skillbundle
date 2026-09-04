@@ -196,9 +196,6 @@ export function AuditReportList({
                 <h3 className="truncate text-sm font-medium text-foreground">
                   {audit.provider}
                 </h3>
-                <span className="sr-only">
-                  {STATUS_LABEL[audit.status] ?? audit.status}
-                </span>
               </div>
 
               <a

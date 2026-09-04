@@ -392,7 +392,7 @@ export function SkillRecord({
                 </p>
                 <div className="mt-1.5 flex items-center justify-between gap-3">
                   <span className="text-sm text-foreground">
-                    {copiesCount} other {copiesCount === 1 ? "repo" : "repos"}
+                    {copiesCount} other {copiesCount === 1 ? "place" : "places"}
                   </span>
                   <Link
                     href={`${detailBase}/copies`}

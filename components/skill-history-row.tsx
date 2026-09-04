@@ -122,15 +122,17 @@ export function HistoryRow({
   version,
   previous,
   olderVersions,
-  isLatest,
 }: {
   version: VersionEntry;
   previous: VersionEntry | undefined;
   /** Present only on the newest row: everything it can be compared back to. */
   olderVersions: VersionEntry[] | undefined;
-  /** The newest row, which takes the accent marker and the "Latest" label. */
-  isLatest: boolean;
 }) {
+  // Derived, not passed. `olderVersions` is already "only the newest row gets
+  // this", so a second prop saying the same thing is a second thing to keep in
+  // sync: set one without the other and the accent marker and "Latest" label
+  // land on a mid-timeline row while the range picker stays on the real newest.
+  const isLatest = olderVersions !== undefined;
   // Links the trigger to the panel it discloses. `aria-controls` is optional in
   // the APG disclosure pattern, but this row bypasses `CollapsibleTrigger` (it
   // needs a Button with its own busy state), which is what would otherwise wire
@@ -322,18 +324,23 @@ export function HistoryRow({
 
   return (
     <li className="relative pl-6">
-      <Marker isAnchor={isAnchor} isLatest={isLatest} />
       {/* The segment from this row's marker down to the next one. `previous` is
           the older entry, so its absence means this is the earliest row and the
           line stops here. The negative bottom carries the line past this row's
           box and into the next marker's centre, which is what closes the gap a
-          per-row spine would otherwise leave between rows. */}
+          per-row spine would otherwise leave between rows.
+
+          Rendered BEFORE the marker: both are absolutely positioned with no
+          stacking context, so the later sibling paints on top, and the line
+          starts on the marker's own centre line. After the marker it drew a
+          hairline across the lower half of every dot. */}
       {previous && (
         <span
           aria-hidden
           className="absolute top-[11px] -bottom-[11px] left-[4.5px] w-px bg-border"
         />
       )}
+      <Marker isAnchor={isAnchor} isLatest={isLatest} />
 
       <Collapsible open={open} onOpenChange={setOpen}>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-1">

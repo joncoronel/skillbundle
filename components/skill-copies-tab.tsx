@@ -2,8 +2,16 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SkillSection } from "@/components/skill-section";
-import { SkillCopies, type CopyEntry } from "@/components/skill-copies";
-import { loadSkill, loadSkillSyncData } from "@/lib/skill-cache";
+import {
+  COPIES_SECTION,
+  SkillCopies,
+  type CopyEntry,
+} from "@/components/skill-copies";
+import {
+  hasSkillCopies,
+  loadSkill,
+  loadSkillSyncData,
+} from "@/lib/skill-cache";
 
 /**
  * The Copies tab's body.
@@ -28,6 +36,11 @@ export async function SkillCopiesTab({
   if (!skill) notFound();
 
   const { copies, insights } = syncData;
+  // The TAB is conditional but the ROUTE was not, so every skill without
+  // copies still served this page: one row ranking the skill against itself,
+  // under a strip where no tab was marked current. Same predicate the strip
+  // uses, so the two cannot disagree.
+  if (!hasSkillCopies(copies)) notFound();
 
   const entries: CopyEntry[] = [
     { source, skillId, installs: insights.installs ?? 0, kind: "self" },
@@ -55,22 +68,24 @@ export async function SkillCopiesTab({
 export function SkillCopiesTabSkeleton() {
   return (
     <SkillSection
-      id="copies"
-      title="Copies"
-      titleHidden
+      {...COPIES_SECTION}
       summary={<Skeleton className="h-4 w-52" />}
-      rule={false}
-      description="The same skill content is published in more than one place. Installs are counted per repo, so no single number here is the whole picture. Any of these install commands works."
       className="mt-8"
     >
       <div>
+        {/* The same grid the real row uses, so the placeholder is one line
+            above `sm` rather than two. Stacked, each row stood ~14px taller
+            than what it stands in for and the page shifted when the pane
+            landed. */}
         {[0, 1, 2].map((row) => (
-          <div key={row} className="py-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-3 w-20" />
-            </div>
-            <Skeleton className="mt-2.5 h-1.5 w-full rounded-full" />
+          <div
+            key={row}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-5 gap-y-2.5 py-3.5 sm:grid-cols-[minmax(0,17rem)_8.5rem_minmax(0,1fr)_auto]"
+          >
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="hidden h-3 w-20 sm:block" />
+            <Skeleton className="order-last col-span-2 h-1.5 w-full rounded-full sm:order-none sm:col-span-1" />
+            <Skeleton className="h-3 w-20 justify-self-end" />
           </div>
         ))}
       </div>

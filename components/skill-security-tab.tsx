@@ -58,9 +58,11 @@ export async function SkillSecurityTab({
       title="Security"
       rule={false}
       description="Independent checks from skills.sh's audit partners."
-      // The verdict, not the word "Security": the tab strip already said that,
-      // and this is the line the reader came for. See SkillSection.
-      titleHidden
+      // The verdict replaces the word "Security" only when there IS one. With
+      // no audits there is nothing to summarise, and hiding the title left the
+      // pane with a zero-height header: no visible heading, and different top
+      // spacing from every other tab.
+      titleHidden={hasAudits}
       summary={
         hasAudits ? (
           <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted-foreground">
