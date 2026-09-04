@@ -116,6 +116,36 @@ export async function loadSkill(source: string, skillId: string) {
   return fetchQuery(api.skills.getBySourceAndSkillId, { source, skillId });
 }
 
+/**
+ * How many versions the History tab asks for. Passed explicitly rather than
+ * left to the query's own default, because the UI has to know when the list it
+ * received is capped: at the cap the oldest row is the 50th newest change, not
+ * the start of tracking, and a "tracked since" date read off it is wrong.
+ */
+export const SKILL_VERSION_LIMIT = 50;
+
+/**
+ * Does this skill have copies? One spelling, because both layouts' tab strips
+ * and the Copies route's own guard all ask it, and a site that spells it
+ * differently is a site that can disagree with the tab strip about whether the
+ * route exists. The record card takes the COUNT rather than the predicate, so
+ * it reads `copyCount` below instead.
+ */
+export function hasSkillCopies(copies: {
+  aliases: unknown[];
+  forks: unknown[];
+}): boolean {
+  return copies.aliases.length > 0 || copies.forks.length > 0;
+}
+
+/** How many other places publish this content, for the record card's row. */
+export function copyCount(copies: {
+  aliases: unknown[];
+  forks: unknown[];
+}): number {
+  return copies.aliases.length + copies.forks.length;
+}
+
 // ── The per-skill loaders shared by the Overview and the tab routes ──────────
 //
 // `fetchQuery` forces `cache: "no-store"` on its underlying fetch, which would
@@ -176,7 +206,11 @@ export async function loadSkillSyncData(source: string, skillId: string) {
   const [insights, copies, versions] = await Promise.all([
     fetchQuery(api.skills.getInsights, { source, skillId }),
     fetchQuery(api.duplicates.getSkillCopies, { source, skillId }),
-    fetchQuery(api.skillVersions.listForSkill, { source, skillId }),
+    fetchQuery(api.skillVersions.listForSkill, {
+      source,
+      skillId,
+      limit: SKILL_VERSION_LIMIT,
+    }),
   ]);
   return { insights, copies, versions };
 }

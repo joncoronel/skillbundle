@@ -600,7 +600,10 @@ function EmbeddingSkillRow({
       <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
         {formatInstalls(skill.installs)}
       </span>
-      <Badge variant={badge.variant} className="shrink-0 text-micro">
+      <Badge
+        variant={badge.variant}
+        className="shrink-0 text-(length:--text-micro)"
+      >
         {badge.label}
       </Badge>
     </div>

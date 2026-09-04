@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { SkillSection } from "@/components/skill-section";
+import { formatDate } from "@/lib/utils";
+import { SKILL_VERSION_LIMIT } from "@/lib/skill-cache";
 import { HistoryRow, type VersionEntry } from "@/components/skill-history-row";
 
 /**
@@ -38,10 +40,50 @@ export function SkillHistory({
   empty: ReactNode;
   className?: string;
 }) {
+  // Oldest entry last: the query returns newest first.
+  const earliest = versions.at(-1);
+  // The oldest row is a starting point, not an edit: it records the file as it
+  // stood when SkillBundle began watching it, which for a skill that entered
+  // the catalog before August 2026 is long after it was published. Counting it
+  // as a change produced "1 change since Aug 9" on a file that has never
+  // changed.
+  //
+  // Derived from the row count rather than from `isBaseline`, because that flag
+  // is NOT what decides how the row reads: `HistoryRow` renders an anchor when
+  // `version.isBaseline || !previous`, so the oldest row always displays as
+  // "First recorded" even when it carries no baseline flag (rows archived
+  // before baselines existed). Counting the flag alone said "6 changes" over a
+  // timeline showing five edits and a first-recorded row. This number has to
+  // match what the reader can count on screen, so it comes from the same rule.
+  const changes = Math.max(versions.length - 1, 0);
+  // The query returns at most SKILL_VERSION_LIMIT rows, newest first. At the
+  // cap the oldest row is the 50th newest change, NOT the start of tracking,
+  // so both statements below would be false: the count would stick at 49 and
+  // the date would name a day months after tracking actually began.
+  const capped = versions.length >= SKILL_VERSION_LIMIT;
+  // Not "since it entered the catalog": the earliest row is when tracking
+  // started, and the two dates differ for most of the catalog. Withheld
+  // entirely when capped, because there is no honest date to print.
+  const trackedSince =
+    earliest && !capped ? formatDate(earliest.changedAt) : null;
+
   return (
     <SkillSection
       id="history"
       title="History"
+      titleHidden
+      summary={
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {capped
+              ? `${versions.length}+ changes`
+              : changes === 0
+                ? "No changes"
+                : `${changes} ${changes === 1 ? "change" : "changes"}`}
+          </span>
+          {trackedSince && <> · tracked since {trackedSince}</>}
+        </p>
+      }
       // This section renders as the History tab's whole pane; the tab strip's
       // divider already rules its top.
       rule={false}
@@ -50,23 +92,19 @@ export function SkillHistory({
       // way to tell this timeline apart from something the skill's author
       // wrote — it is the one section on the page that exists only because
       // SkillBundle watches the file.
-      description="Edits SkillBundle has recorded to this file since it entered the catalog. Not written by the skill's author."
-      meta={
-        versions.length > 0 &&
-        `${versions.length} ${versions.length === 1 ? "change" : "changes"}`
-      }
+      description="Edits SkillBundle has recorded since it began tracking this file, which is not the same as when the skill was published. Not written by the skill's author."
     >
       {versions.length === 0 ? (
         empty
       ) : (
-        <ol className="relative">
-          {/* The spine. Inset to run through the centre of the 7px markers, and
-              stopped short of the last row so the timeline reads as ending at
-              the earliest entry rather than trailing into nothing. */}
-          <span
-            aria-hidden
-            className="absolute top-2 bottom-8 left-0.75 w-px bg-border"
-          />
+        <ol>
+          {/* The spine is drawn per row now, not once over the list. One
+              absolute element could start at the first marker but had no way to
+              end at the last one, so it was pinned to a guessed `bottom-8` and
+              drifted whenever the earliest row changed height. Each row draws
+              its own segment down to the next marker instead, and the last row
+              draws none, so the timeline still ends at the earliest entry
+              rather than trailing off. See HistoryRow. */}
           {versions.map((version, i) => (
             <HistoryRow
               key={version.versionId}

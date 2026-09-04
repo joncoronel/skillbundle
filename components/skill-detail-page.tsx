@@ -18,13 +18,17 @@ import { SkillSection } from "@/components/skill-section";
 import type { SectionNavItem } from "@/components/skill-section-nav";
 import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
-import { SkillCopies } from "@/components/skill-copies";
 import { skillHref } from "@/lib/skill-urls";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
-import { loadAudits, loadSkill, loadSkillSyncData } from "@/lib/skill-cache";
+import {
+  copyCount,
+  loadAudits,
+  loadSkill,
+  loadSkillSyncData,
+} from "@/lib/skill-cache";
 
 // The skill loaders (`loadSkill`, `loadAudits`, `loadSkillSyncData`) live in
-// lib/skill-cache.ts, shared by this Overview and the three tab routes. Only
+// lib/skill-cache.ts, shared by this Overview and the tab routes. Only
 // `loadStars` stays here: the Overview is its one caller.
 //
 // GitHub star count for the repo behind a skill. Fetched lazily (only for
@@ -228,8 +232,6 @@ async function SkillDetailBody({
   const updatedKind = skill.contentUpdatedAt ? "Updated" : "Added";
   const updatedDate = formatDate(skill.contentUpdatedAt ?? skill._creationTime);
 
-  const hasCopies = copies.aliases.length > 0 || copies.forks.length > 0;
-
   // The section nav is assembled here, on the server, so the whole outline is
   // in the prerendered HTML: the rail is part of the page's structure, not
   // something that appears once JS lands. Page sections sit at level 0; the
@@ -238,9 +240,6 @@ async function SkillDetailBody({
   // their file".
   const navItems: SectionNavItem[] = [
     { id: "overview", title: "Overview", level: 0 },
-    ...(hasCopies
-      ? [{ id: "copies", title: "Also available at", level: 0 }]
-      : []),
     { id: "documentation", title: "Documentation", level: 0 },
     ...(skill.content
       ? normalizeOutline(extractOutline(skill.content)).map((heading) => ({
@@ -321,19 +320,34 @@ async function SkillDetailBody({
             </div>
           )}
 
+          {/* NOT a callout. The three blocks above are warnings: something is
+              wrong and the install may not work. A rename is neither. GitHub
+              301s an old repo name and the CLI clones through the redirect, so
+              the command below works exactly as printed, and the content sweep
+              follows the same redirect, so change alerts keep firing
+              (convex/freshness.ts, convex/lib/github.ts).
+
+              What a rename does cost is the numbers: `reconcile.ts` skips dead
+              renamed aliases when refreshing install counts, because the v1
+              detail endpoint serves a stale, inflated count for an old name.
+              So this line says where the current name is and sends the reader
+              to the ranked split, rather than implying breakage in a blue box
+              that outweighed the description above it. */}
           {copies.renamedTo && (
-            <div className="rounded-lg border border-info-border bg-info px-4 py-3 text-sm text-info-foreground">
-              This repository was renamed. Live version:{" "}
+            <p className="text-sm text-muted-foreground">
+              This repo is now called{" "}
               <Link
                 href={skillHref(
                   copies.renamedTo.source,
                   copies.renamedTo.skillId,
                 )}
-                className="font-medium underline underline-offset-2 hover:no-underline"
+                className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
               >
-                {copies.renamedTo.source}/{copies.renamedTo.skillId}
+                {copies.renamedTo.source}
               </Link>
-            </div>
+              . Both names install the same content, but the install count here
+              only covers this one.
+            </p>
           )}
         </div>
 
@@ -372,6 +386,8 @@ async function SkillDetailBody({
         externalIcon={externalIcon}
         externalLabel={externalLabel}
         curatedOwner={skill.curatedOwner}
+        copiesCount={copyCount(copies)}
+        isRenamed={copies.renamedTo !== null}
         insights={insights}
         updatedKind={updatedKind}
         updatedDate={updatedDate}
@@ -413,8 +429,6 @@ async function SkillDetailBody({
       />
 
       <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
-        <SkillCopies aliases={copies.aliases} forks={copies.forks} />
-
         {skill.content && (
           <SkillSection
             id="documentation"

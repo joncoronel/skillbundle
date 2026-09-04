@@ -13,6 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { skillHref } from "@/lib/skill-urls";
+import { hasSkillCopies, loadSkillSyncData } from "@/lib/skill-cache";
 import { representativeWellKnownSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ source: string; skillId: string }>;
@@ -50,11 +51,17 @@ export default function WellKnownSkillLayout({
 
 async function WellKnownSkillMasthead({ params }: { params: Params }) {
   const { source, skillId } = await params;
+  // The tab strip needs to know whether this skill has copies. Loaded here,
+  // inside the boundary that already awaits `params`, and through the SAME
+  // `'use cache'` entry the Copies, History and Stats tabs read, so it costs
+  // no extra Convex call on any path.
+  const { copies } = await loadSkillSyncData(source, skillId);
 
   return (
     <SkillMasthead
       skillId={skillId}
       base={skillHref(source, skillId)}
+      hasCopies={hasSkillCopies(copies)}
       breadcrumb={
         <Breadcrumb size="sm" className="mb-6">
           <BreadcrumbList>

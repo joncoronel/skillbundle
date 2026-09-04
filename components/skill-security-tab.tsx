@@ -7,17 +7,20 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { SkillSection } from "@/components/skill-section";
 import { SkillTabEmpty } from "@/components/skill-tab-empty";
 import {
-  AuditAccordion,
   AuditBadge,
+  AuditReportList,
   worstAuditStatus,
 } from "@/components/skill-audit-section";
 import { loadAudits, loadSkill } from "@/lib/skill-cache";
+import { formatDate } from "@/lib/utils";
 import { externalSkillUrl } from "@/lib/skill-urls";
 
 /**
- * The Security tab's body: the per-provider audit accordion, promoted from the
- * dialog the record card used to open. The worst verdict rides the section
- * header as meta, same at-a-glance signal the card's Security row carries.
+ * The Security tab's body: every provider's verdict, fully visible. It was an
+ * accordion inside a dialog opened from the record card; the collapse earned
+ * its place in a modal and does not on a route (see AuditReportList). The
+ * worst verdict rides the section header as meta, the same at-a-glance signal
+ * the card's Security row carries.
  *
  * The tab renders even when there are no audits — hiding it would make the tab
  * strip differ per skill, which reads as breakage, and "no audits recorded" is
@@ -39,6 +42,15 @@ export async function SkillSecurityTab({
   if (!skill) notFound();
 
   const hasAudits = audits !== null && audits.length > 0;
+  // Newest audit across providers. The date answers "did anyone look at the
+  // current file?", which is the second question after the verdict itself.
+  const latest = hasAudits
+    ? audits.reduce<number | null>((newest, a) => {
+        const ts = Date.parse(a.auditedAt);
+        if (Number.isNaN(ts)) return newest;
+        return newest === null || ts > newest ? ts : newest;
+      }, null)
+    : null;
 
   return (
     <SkillSection
@@ -46,11 +58,26 @@ export async function SkillSecurityTab({
       title="Security"
       rule={false}
       description="Independent checks from skills.sh's audit partners."
-      meta={hasAudits && <AuditBadge status={worstAuditStatus(audits)} />}
+      // The verdict replaces the word "Security" only when there IS one. With
+      // no audits there is nothing to summarise, and hiding the title left the
+      // pane with a zero-height header: no visible heading, and different top
+      // spacing from every other tab.
+      titleHidden={hasAudits}
+      summary={
+        hasAudits ? (
+          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted-foreground">
+            <AuditBadge status={worstAuditStatus(audits)} />
+            <span className="font-medium text-foreground">
+              {audits.length} {audits.length === 1 ? "provider" : "providers"}
+            </span>
+            {latest !== null && <span>latest audit {formatDate(latest)}</span>}
+          </p>
+        ) : undefined
+      }
       className="mt-8"
     >
       {hasAudits ? (
-        <AuditAccordion source={source} skillId={skillId} audits={audits} />
+        <AuditReportList source={source} skillId={skillId} audits={audits} />
       ) : skill.isGitHubOnly ? (
         <SkillTabEmpty title="Not audited.">
           <p>
@@ -103,6 +130,8 @@ export function SkillSecurityTabSkeleton() {
     <SkillSection
       id="security"
       title="Security"
+      titleHidden
+      summary={<Skeleton className="h-4 w-56" />}
       rule={false}
       description="Independent checks from skills.sh's audit partners."
       className="mt-8"

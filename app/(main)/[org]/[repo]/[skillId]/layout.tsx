@@ -13,6 +13,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { skillHref } from "@/lib/skill-urls";
+import { hasSkillCopies, loadSkillSyncData } from "@/lib/skill-cache";
 import { representativeGitHubSkill } from "@/lib/representative-params";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
@@ -37,8 +38,9 @@ export async function generateStaticParams() {
  * params here would suspend the whole layout and nothing below it (including
  * each tab's `loading.tsx`) could commit instantly. The tab strip renders
  * inside that boundary too (its hrefs are built from params) and its skeleton
- * draws the same four labels as static text, so the shell keeps the strip's
- * structure while the links wait on the URL.
+ * draws the four always-present labels as static text, so the shell keeps the
+ * strip's structure while the links wait on the URL. A skill with copies gains
+ * a fifth tab at the end of the strip when the masthead resolves.
  */
 export default function SkillLayout({
   params,
@@ -63,11 +65,17 @@ export default function SkillLayout({
 async function GitHubSkillMasthead({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
+  // The tab strip needs to know whether this skill has copies. Loaded here,
+  // inside the boundary that already awaits `params`, and through the SAME
+  // `'use cache'` entry the Copies, History and Stats tabs read, so it costs
+  // no extra Convex call on any path.
+  const { copies } = await loadSkillSyncData(source, skillId);
 
   return (
     <SkillMasthead
       skillId={skillId}
       base={skillHref(source, skillId)}
+      hasCopies={hasSkillCopies(copies)}
       breadcrumb={
         <Breadcrumb size="sm" className="mb-6">
           <BreadcrumbList>

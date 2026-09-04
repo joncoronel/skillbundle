@@ -16,11 +16,14 @@ import { SkillTabs, SkillTabsSkeleton } from "@/components/skill-tabs";
 export function SkillMasthead({
   skillId,
   base,
+  hasCopies,
   breadcrumb,
 }: {
   skillId: string;
   /** The skill's own path (`skillHref(source, skillId)`), for the tab hrefs. */
   base: string;
+  /** Whether to render the conditional Copies tab; see skill-tabs.tsx. */
+  hasCopies: boolean;
   breadcrumb: ReactNode;
 }) {
   return (
@@ -43,7 +46,7 @@ export function SkillMasthead({
         {skillId}
       </h1>
 
-      <SkillTabs base={base} className="mt-6" />
+      <SkillTabs base={base} hasCopies={hasCopies} className="mt-6" />
     </div>
   );
 }

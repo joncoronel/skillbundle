@@ -6,8 +6,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
 
 /**
- * The skill page's tab strip: Overview, History, Stats, Security. Each tab is a
- * ROUTE (`/{source}/{skillId}`, `.../history`, `.../stats`, `.../security`),
+ * The skill page's tab strip: Overview, History, Stats, Security, and Copies
+ * on skills that have any. Each tab is a ROUTE (`/{source}/{skillId}`,
+ * `.../history`, `.../stats`, `.../security`, `.../copies`),
  * not client tab state — every tab keeps its own URL, static shell, and
  * metadata, and the layout above this strip persists across the navigation so
  * switching tabs never re-renders the masthead.
@@ -40,22 +41,41 @@ const SKILL_TABS = [
   { slug: "security", label: "Security" },
 ] as const;
 
-type SkillTabSlug = (typeof SKILL_TABS)[number]["slug"];
+/**
+ * Appended for skills that have aliases or forks, never filtered back out.
+ * It lived inside `SKILL_TABS` and was removed again in two places, so the
+ * constant did not mean "the tabs" and a reader had to check both filters to
+ * know what renders.
+ *
+ * History, Stats and Security are dimensions every skill has, possibly empty.
+ * Copies is a condition most skills do not meet, so a permanent tab reading
+ * "published in one place" across the catalog would be chrome, and the tab
+ * appearing is itself information.
+ */
+const COPIES_TAB = { slug: "copies", label: "Copies" } as const;
+
+const ALL_TABS = [...SKILL_TABS, COPIES_TAB];
+
+type SkillTabSlug = (typeof ALL_TABS)[number]["slug"];
 
 /** The active tab for a selected layout segment: a known slug, else Overview. */
 function activeSkillTab(segment: string | null): SkillTabSlug {
-  return SKILL_TABS.find((t) => t.slug === segment)?.slug ?? "";
+  return ALL_TABS.find((t) => t.slug === segment)?.slug ?? "";
 }
 
 export function SkillTabs({
   base,
+  hasCopies,
   className,
 }: {
   /** The skill's own path (`skillHref(source, skillId)`). */
   base: string;
+  /** Whether this skill has aliases or forks, which adds the Copies tab. */
+  hasCopies: boolean;
   className?: string;
 }) {
   const active = activeSkillTab(useSelectedLayoutSegment());
+  const tabs = hasCopies ? ALL_TABS : SKILL_TABS;
 
   return (
     <SkillTabsFrame className={className}>
@@ -69,7 +89,7 @@ export function SkillTabs({
           className="-mb-px [&_[data-slot=tabs-divider]]:hidden"
           aria-label="Skill sections"
         >
-          {SKILL_TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TabsTrigger
               key={tab.slug}
               value={tab.slug}
@@ -110,6 +130,8 @@ function SkillTabsFrame({
 export function SkillTabsSkeleton({ className }: { className?: string }) {
   return (
     <SkillTabsFrame className={className}>
+      {/* The four tabs every skill has. Copies depends on the skill, so the
+          skeleton cannot know about it and does not reserve a box for it. */}
       <div className="flex gap-x-1 pb-1">
         {SKILL_TABS.map((tab) => (
           <span
