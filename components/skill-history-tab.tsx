@@ -75,7 +75,7 @@ export function SkillHistoryTabSkeleton() {
         titleHidden
         summary={<Skeleton className="h-4 w-44" />}
         rule={false}
-        description="Edits SkillBundle has recorded to this file since it entered the catalog. Not written by the skill's author."
+        description="Edits SkillBundle has recorded since it began tracking this file, which is not the same as when the skill was published. Not written by the skill's author."
       >
         <div className="space-y-3">
           <Skeleton className="h-4 w-full max-w-md" />

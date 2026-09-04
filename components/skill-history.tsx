@@ -41,6 +41,23 @@ export function SkillHistory({
 }) {
   // Oldest entry last: the query returns newest first.
   const earliest = versions.at(-1);
+  // The oldest row is a starting point, not an edit: it records the file as it
+  // stood when SkillBundle began watching it, which for a skill that entered
+  // the catalog before August 2026 is long after it was published. Counting it
+  // as a change produced "1 change since Aug 9" on a file that has never
+  // changed.
+  //
+  // Derived from the row count rather than from `isBaseline`, because that flag
+  // is NOT what decides how the row reads: `HistoryRow` renders an anchor when
+  // `version.isBaseline || !previous`, so the oldest row always displays as
+  // "First recorded" even when it carries no baseline flag (rows archived
+  // before baselines existed). Counting the flag alone said "6 changes" over a
+  // timeline showing five edits and a first-recorded row. This number has to
+  // match what the reader can count on screen, so it comes from the same rule.
+  const changes = Math.max(versions.length - 1, 0);
+  // Not "since it entered the catalog": the earliest row is when tracking
+  // started, and the two dates are different for most of the catalog.
+  const trackedSince = earliest ? formatDate(earliest.changedAt) : null;
 
   return (
     <SkillSection
@@ -48,12 +65,13 @@ export function SkillHistory({
       title="History"
       titleHidden
       summary={
-        <p className="text-sm font-medium text-foreground">
-          {versions.length === 0
-            ? "No changes recorded"
-            : `${versions.length} ${
-                versions.length === 1 ? "change" : "changes"
-              }${earliest ? ` since ${formatDate(earliest.changedAt)}` : ""}`}
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {changes === 0
+              ? "No changes"
+              : `${changes} ${changes === 1 ? "change" : "changes"}`}
+          </span>
+          {trackedSince && <> · tracked since {trackedSince}</>}
         </p>
       }
       // This section renders as the History tab's whole pane; the tab strip's
@@ -64,7 +82,7 @@ export function SkillHistory({
       // way to tell this timeline apart from something the skill's author
       // wrote — it is the one section on the page that exists only because
       // SkillBundle watches the file.
-      description="Edits SkillBundle has recorded to this file since it entered the catalog. Not written by the skill's author."
+      description="Edits SkillBundle has recorded since it began tracking this file, which is not the same as when the skill was published. Not written by the skill's author."
     >
       {versions.length === 0 ? (
         empty
