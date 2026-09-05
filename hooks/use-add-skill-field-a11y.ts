@@ -45,12 +45,11 @@ type ButtonA11y = Pick<
  * For any button that goes unavailable while work is in flight — its own, or a
  * sibling's.
  *
- * Applied at eight sites: the two submits (through `submitProps`), two card
- * Confirms, two card Cancels and two audit controls, plus the three readout
- * example rows through `busyRowProps` below. Only the submits also need a
- * reason, which is what `useAddSkillFieldA11y` layers on top; splitting it this
- * way lets the other six share the rule without inventing a `reasonText` they have
- * no use for.
+ * Applied at the two submits (through `submitProps`), two card Confirms, two
+ * card Cancels, two audit controls, and the /add preview's three sample chips.
+ * Only the submits also need a reason, which is what `useAddSkillFieldA11y`
+ * layers on top; splitting it this way lets the rest share the rule without
+ * inventing a `reasonText` they have no use for.
  *
  * `inFlight` is deliberately NOT the same thing as `disabled`, and the two cases
  * where they part are the reason this takes a parameter at all:
@@ -66,31 +65,6 @@ export function busyButtonProps({
   inFlight: boolean;
 }): Pick<ButtonA11y, "focusableWhenDisabled" | "aria-busy"> {
   return { focusableWhenDisabled: true, "aria-busy": inFlight };
-}
-
-/**
- * The same rule for a control that is NOT the cubby `Button`.
- *
- * One caller: the /add readout's three example rows, which fill the field and
- * so must go unavailable while a request is in flight, exactly as the field
- * itself goes `readOnly`. They are raw `<button>`s because their two-column
- * truncating layout is not expressible through `Button` — its content wrappers
- * carry no `min-width: 0`, so a `truncate` child overflows the button instead
- * of ellipsising inside it.
- *
- * Rule 1 still applies and a raw button has to say it out loud: `aria-disabled`
- * rather than the native attribute, because a natively disabled element cannot
- * hold focus. Base UI derives that from `focusableWhenDisabled` above; here it
- * is explicit.
- *
- * `aria-disabled` is advisory to the browser, so THE CALLER MUST ALSO GUARD ITS
- * HANDLER. Returning props cannot do that part, which is why it is stated here
- * rather than left to be rediscovered.
- */
-export function busyRowProps({ unavailable }: { unavailable: boolean }): {
-  "aria-disabled": true | undefined;
-} {
-  return { "aria-disabled": unavailable || undefined };
 }
 
 export function useAddSkillFieldA11y({

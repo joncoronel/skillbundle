@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/cubby-ui/card";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
-import { InputReadout } from "@/components/add-skill/input-readout";
+import { EntryPreview } from "@/components/add-skill/entry-preview";
 
 // Derived from the server's return validator so the client can't drift from
 // what the action actually sends (the review's finding on hand-declared
@@ -252,8 +252,8 @@ export function AddSkillFlow({
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
 
-  // One writer for the field, shared by typing and by the readout's example
-  // rows. `changeInput`, never `setInput`, so a pending candidate is
+  // One writer for the field, shared by typing and by the preview's sample
+  // chips. `changeInput`, never `setInput`, so a pending candidate is
   // invalidated; and both displays are cleared for the reason the onChange
   // handler already cleared them — either one otherwise keeps reporting on the
   // previous skill inside the live region that is about to report on this one.
@@ -313,112 +313,116 @@ export function AddSkillFlow({
     await submit(trimmed);
   }
 
+  // The page mounts the flow inside an inset frame (the home page's composer
+  // language: a muted gutter with the field and the preview lifted inside it),
+  // the dialog mounts it bare on its own muted body. `variant` already names
+  // that substrate for the field; the frame follows it.
+  const framed = variant === "default";
+  // One button, two behaviours: signed out it routes to sign-in, signed in it
+  // submits. Everything about its size and placement is shared, so it is
+  // written once and only the behaviour forks.
+  const action = (
+    <Button
+      variant="neutral"
+      size="lg"
+      className="mt-3 w-full in-data-framed:mt-1 sm:col-start-2 sm:row-start-1 sm:mt-0"
+      {...(signedOut
+        ? {
+            type: "button" as const,
+            onClick: () => {
+              const path = window.location.pathname + window.location.search;
+              router.push(signInUrl(path));
+            },
+          }
+        : { type: "submit" as const, ...submitProps })}
+    >
+      {signedOut ? "Sign in to add" : (label ?? "Add skill")}
+    </Button>
+  );
+
   return (
     <div className="space-y-5">
       <form onSubmit={handleSubmit}>
-        <Label htmlFor="add-skill-input">Skill link or source</Label>
-        {/* Grid rather than a flex row, so the DOM order can be field → help →
-            action at every width while the action still sits BESIDE the field
-            from `sm` up. A flex row puts the button between the field and the
-            sentence describing the field once it wraps, which is what the
-            stacked mobile layout looked like: a full-width primary slab
-            cutting the field off from its own help text. Explicit placement
-            also keeps the help under the field's column only, instead of
-            running beneath the button. */}
-        {/* The action track is FIXED, not `auto`. Sized to the widest label the
-            button can hold (measured: "Checking GitHub…" at 145px), because an
-            auto track sizes to max-content and one submit walks through three
-            labels — so the field shrank and re-expanded mid-request,
-            re-truncating the URL under the user's cursor while they waited. It
-            also absorbs the signed-out → signed-in label swap on load. */}
-        <div className="mt-2 sm:grid sm:grid-cols-[minmax(0,1fr)_9.25rem] sm:gap-x-2">
-          <Input
-            id="add-skill-input"
-            type="text"
-            variant={variant}
-            // The skills.sh form, not the GitHub one, for length: a valid
-            // GitHub deep link needs `/tree/<branch>/` (without it the parser
-            // rightly refuses, having been handed a repo rather than a skill),
-            // which pushes it to 55 characters and truncates past its own
-            // point on a phone. This one is 39 and still carries the scheme,
-            // which is the part that matters. Both GitHub forms are one click
-            // away in the readout below.
-            placeholder="https://skills.sh/owner/repo/skill-name"
-            // Mono because the field's entire content is a machine string that
-            // was pasted, which is what mono is for. h-11/h-10 is one step up
-            // the shared Input/Button ramp and is matched by the button's `lg`
-            // size, so the page's one object carries weight without inventing
-            // a size outside the ramp.
-            className="h-11 font-mono sm:col-start-1 sm:row-start-1 sm:h-10"
-            value={input}
-            onChange={(e) => {
-              // writeInput also invalidates a pending candidate so its Confirm
-              // can't add the previous input.
-              writeInput(e.target.value);
-            }}
-            {...inputProps}
-            aria-invalid={notice?.tone === "error" || undefined}
-            // Both, space-separated: the help paragraph states what the field
-            // accepts and was previously associated with nothing, so anyone tabbing
-            // straight to the field never heard the one sentence explaining it.
-            aria-describedby="add-skill-help add-skill-notice"
-            autoFocus={autoFocus}
-          />
-          {/* Between the field and the action in source order, which is the
-              reading order on mobile and costs nothing in tab order because a
-              paragraph is not a stop: the submit below is still the first thing
-              reached after the field. */}
-          <p
-            id="add-skill-help"
-            className="mt-2 text-xs text-muted-foreground sm:col-start-1 sm:row-start-2"
-          >
-            A skills.sh URL, a GitHub link to the skill&apos;s folder, or the{" "}
-            <code className="font-mono">owner/repo/slug</code> short form.
-          </p>
-          {signedOut ? (
-            <Button
-              type="button"
-              size="lg"
-              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:text-sm"
-              onClick={() => {
-                const path = window.location.pathname + window.location.search;
-                router.push(signInUrl(path));
+        {/* Visually hidden: the page title and the frame already name the one
+            field, and a caption above the instrument read as a form label on
+            a form. Still a real label for the accessible name. */}
+        <Label htmlFor="add-skill-input" className="sr-only">
+          Skill link or source
+        </Label>
+        {/* Hidden too, and permanent, so `aria-describedby` below always
+            resolves. The preview's visible empty state says the same thing in
+            its own words but unmounts once something parses. */}
+        <p id="add-skill-help" className="sr-only">
+          A skills.sh URL, a GitHub link to the skill&apos;s folder, or the
+          owner/repo/slug short form.
+        </p>
+        <Frame framed={framed}>
+          {/* Grid rather than a flex row, so the action sits BESIDE the field
+              from `sm` up and under it below, in one gutter's width of gap
+              (`gap-1` = the frame's own 4px padding, so the seams match). */}
+          {/* The action track is FIXED, not `auto`. Sized to the widest label
+              the button can hold (measured: "Checking GitHub…" at 145px),
+              because an auto track sizes to max-content and one submit walks
+              through three labels, so the field shrank and re-expanded
+              mid-request, re-truncating the URL under the user's cursor. It
+              also absorbs the signed-out → signed-in label swap on load. */}
+          {/* Every "inside the frame" rule below is an `in-data-framed:`
+              variant keyed off the Frame's attribute, so a new child styles
+              itself and nothing threads a boolean. */}
+          <div className="sm:grid sm:grid-cols-[minmax(0,1fr)_9.25rem] sm:gap-x-2 in-data-framed:sm:gap-x-1">
+            <Input
+              id="add-skill-input"
+              type="text"
+              variant={variant}
+              // The skills.sh form, not the GitHub one, for length: a valid
+              // GitHub deep link needs `/tree/<branch>/` and truncates past
+              // its own point on a phone. This one is 39 characters and still
+              // carries the scheme, which is the part that matters. All three
+              // forms are one click away in the preview below.
+              placeholder="https://skills.sh/owner/repo/skill-name"
+              // Sans, like every other URL field in the app: an input is a
+              // control, and mono is for rendered identifiers, which the
+              // preview below sets in mono. h-11/h-10 is one step up the
+              // shared Input/Button ramp, matched by the button's `lg` size.
+              // Inside the frame the field drops its hairline for the surface
+              // shadow, as the home composer's field does: the muted gutter is
+              // the edge now.
+              className="h-11 in-data-framed:border-0 in-data-framed:shadow-[var(--surface-shadow-3),var(--surface-rim-3)] sm:col-start-1 sm:row-start-1 sm:h-10"
+              value={input}
+              onChange={(e) => {
+                // writeInput also invalidates a pending candidate so its
+                // Confirm can't add the previous input.
+                writeInput(e.target.value);
               }}
-            >
-              Sign in to add
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              size="lg"
-              {...submitProps}
-              className="mt-3 w-full sm:col-start-2 sm:row-start-1 sm:mt-0 sm:text-sm"
-            >
-              {label ?? "Add skill"}
-            </Button>
-          )}
-        </div>
-        <div className="mt-3">
-          <InputReadout
-            input={input}
-            pending={pending}
-            onUseExample={(value) => {
-              writeInput(value);
-              // The row that was just clicked unmounts with the examples state
-              // it lives in, so focus would fall to <body> — the same hazard
-              // every card exit in this file guards. The field is also simply
-              // where you want to be next, to edit what just landed.
-              focusInput();
-            }}
-          />
-        </div>
+              {...inputProps}
+              aria-invalid={notice?.tone === "error" || undefined}
+              // Both, space-separated: the help sentence states what the field
+              // accepts, so anyone tabbing straight to the field hears it.
+              aria-describedby="add-skill-help add-skill-notice"
+              autoFocus={autoFocus}
+            />
+            {action}
+          </div>
+          <div className="mt-3 in-data-framed:mt-1">
+            <EntryPreview
+              input={input}
+              pending={pending}
+              onUseExample={(value) => {
+                writeInput(value);
+                // The chip that was just clicked unmounts with the empty
+                // frame it lives in, so focus would fall to <body>, the same
+                // hazard every card exit in this file guards. The field is
+                // also simply where you want to be next.
+                focusInput();
+              }}
+            />
+          </div>
+        </Frame>
         {/* Why the button is unavailable, for the tab stop it now always is.
-            Outside the live region below on purpose — this is a description of
-            a control, not an event to announce. */}
-        {/* Only in the signed-in branch: the signed-out one renders a "Sign in to
-            add" button instead, which carries no `aria-describedby` — so this
-            would be a description nothing references, telling a visitor to paste
-            a link that the sign-in redirect ignores anyway. */}
+            Outside the live region below on purpose: this is a description of
+            a control, not an event to announce. Only in the signed-in branch:
+            the signed-out one renders a "Sign in to add" button that carries
+            no `aria-describedby`. */}
         {!signedOut && reasonProps && <p {...reasonProps} />}
       </form>
 
@@ -481,6 +485,28 @@ export function AddSkillFlow({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The instrument's body on the page: an inset Card, the same object the home
+ * page's search composer is. Its muted gutter is what separates the field and
+ * the preview from the page, so both drop their hairlines inside it (each
+ * child does that itself, via `in-data-framed:`). In the dialog there is no
+ * frame: the dialog's body is already the muted ground.
+ */
+function Frame({
+  framed,
+  children,
+}: {
+  framed: boolean;
+  children: React.ReactNode;
+}) {
+  if (!framed) return <>{children}</>;
+  return (
+    <Card variant="inset" data-framed="">
+      {children}
+    </Card>
   );
 }
 
