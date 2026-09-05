@@ -496,13 +496,15 @@ function ProCheckout({ cycle }: { cycle: Cycle }) {
  */
 function WhereYouLand() {
   const { isAuthenticated } = useConvexAuth();
-  const { limits } = useUserPlan();
+  const { limits, isPlanError } = useUserPlan();
   const watchedKeys = useQuery(
     api.bundles.listWatchedSkillKeys,
     isAuthenticated ? {} : "skip",
   );
 
-  if (!isAuthenticated) {
+  // A failed plan query leaves `limits` null for good, so without this branch
+  // the skeleton below would never resolve. The plain sentence is still true.
+  if (!isAuthenticated || isPlanError) {
     return (
       <p className="text-center text-sm text-muted-foreground">
         Most personal setups never reach {FREE_WATCHED_SKILLS} watched skills.
