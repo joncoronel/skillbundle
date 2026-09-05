@@ -13,7 +13,7 @@ related_targets: ["app/(main)/pricing/pricing-cards.tsx"]
 
 **Proof / content:** Prices and limits come only from `lib/plans.ts`, which mirrors `convex/lib/plans.ts`. Nothing is claimed here that is not gated there.
 
-**Direction (Sept 2026):** Two cards, Free first with its full list, Pro as "Everything in Free, plus" exactly the items Free lacks. Replaced a nine-row comparison plate whose rows were mostly two identical ticks. Both cards share one anatomy (name, price, action, list); Pro differs by one shadow level, the list heading, and the single blue action on the page.
+**Direction (Sept 2026):** Two cards, Free first with its full list, Pro as "Everything in Free, plus" exactly the items Free lacks. Replaced a nine-row comparison plate whose rows were mostly two identical ticks. Both cards share one anatomy (name, price, action, list); Pro differs by two shadow levels (shadow 3 vs 1), the list heading, and the single blue action on the page.
 
 **Memorable moment:** The billing toggle's indicator slides between labels, and the Pro price crossfades with a 2px blur when the cycle changes. One spring (0.2s, no bounce) for both. Reduced motion drops the movement and keeps the fade.
 

@@ -117,7 +117,7 @@ function BillingToggle({
           <label
             key={value}
             className={cn(
-              "relative cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-100 ease-out select-none",
+              "relative cursor-pointer rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 ease-out select-none sm:py-1.5",
               "has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring/50",
               active
                 ? "text-foreground"
@@ -164,15 +164,11 @@ function BillingToggle({
 }
 
 function FreeCard() {
-  const plan = PLANS.free;
   return (
     <PlanCard
-      name={plan.name}
-      description={plan.description}
+      plan="free"
       price={<Price amount={0} caption="forever" />}
       action={<FreeAction />}
-      listHeading={null}
-      features={plan.features}
       tone="quiet"
     />
   );
@@ -188,12 +184,10 @@ function ProCard({ cycle }: { cycle: Cycle }) {
 
   return (
     <PlanCard
-      name={plan.name}
-      description={plan.description}
-      price={<Price amount={amount} caption={caption} animated />}
+      plan="pro"
+      price={<CyclingPrice amount={amount} caption={caption} />}
       action={<ProAction cycle={cycle} />}
       listHeading="Everything in Free, plus"
-      features={plan.features}
       tone="lifted"
       footnote="Cancel anytime. Pro stays active to the end of the period, and nothing is deleted when it ends."
     />
@@ -203,30 +197,27 @@ function ProCard({ cycle }: { cycle: Cycle }) {
 /**
  * The card itself. Both plans share one anatomy so the eye lines them up:
  * name, price, action, list, in that order and at the same heights. The only
- * differences are the lift (Pro sits one shadow level higher), the list
+ * differences are the lift (Pro sits two shadow levels higher), the list
  * heading, and which action is blue.
  */
 function PlanCard({
-  name,
-  description,
+  plan,
   price,
   action,
-  listHeading,
-  features,
+  listHeading = "Includes",
   tone,
   footnote,
 }: {
-  name: string;
-  description: string;
+  plan: Plan;
   price: React.ReactNode;
   action: React.ReactNode;
-  listHeading: string | null;
-  features: string[];
+  listHeading?: string;
   tone: "quiet" | "lifted";
   /** Pinned to the card's bottom edge, under the list. */
   footnote?: string;
 }) {
-  const headingId = `plan-${name.toLowerCase()}`;
+  const info = PLANS[plan];
+  const headingId = `plan-${plan}`;
   return (
     <section
       aria-labelledby={headingId}
@@ -236,24 +227,20 @@ function PlanCard({
       )}
     >
       <h2 id={headingId} className="text-sm font-semibold">
-        {name}
+        {info.name}
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{info.description}</p>
 
       <div className="mt-5">{price}</div>
 
       <div className="mt-5">{action}</div>
 
       <div className="mt-6 border-t border-border pt-5">
-        {listHeading ? (
-          <p className="text-xs font-medium text-muted-foreground">
-            {listHeading}
-          </p>
-        ) : (
-          <p className="text-xs font-medium text-muted-foreground">Includes</p>
-        )}
+        <p className="text-xs font-medium text-muted-foreground">
+          {listHeading}
+        </p>
         <ul className="mt-3 flex flex-col gap-2.5">
-          {features.map((feature) => (
+          {info.features.map((feature) => (
             <li key={feature} className="flex items-start gap-2.5 text-sm">
               <HugeiconsIcon
                 icon={Tick02Icon}
@@ -279,37 +266,36 @@ function PlanCard({
   );
 }
 
+const FIGURE = "text-3xl font-semibold tracking-tight tabular-nums";
+
+/** A price that never changes. The free card. */
+function Price({ amount, caption }: { amount: number; caption: string }) {
+  return (
+    <p className="flex flex-col gap-1">
+      <span className={cn("leading-none", FIGURE)}>${amount}</span>
+      <span className="text-xs text-muted-foreground">{caption}</span>
+    </p>
+  );
+}
+
 /**
- * The price line. When `animated`, a cycle change crossfades the old figure
+ * A price that follows the billing cycle. A change crossfades the old figure
  * out upward and the new one in from below, with a touch of blur so the two
  * never read as overlapping. Height is fixed by the line itself, so nothing
- * below shifts. The free price never changes and renders plain.
+ * below shifts.
+ *
+ * The animated spans are decorative: during the swap both figures are in the
+ * DOM, which an atomic live region would read as "$5$4". A separate sr-only
+ * span carries the plain current value and is the only thing announced.
  */
-function Price({
+function CyclingPrice({
   amount,
   caption,
-  animated = false,
 }: {
   amount: number;
   caption: string;
-  animated?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
-  const figure = (
-    <span className="text-3xl font-semibold tracking-tight tabular-nums">
-      ${amount}
-    </span>
-  );
-
-  if (!animated) {
-    return (
-      <p className="flex flex-col gap-1">
-        <span className="leading-none">{figure}</span>
-        <span className="text-xs text-muted-foreground">{caption}</span>
-      </p>
-    );
-  }
-
   const hidden = reduceMotion
     ? { opacity: 0 }
     : { opacity: 0, y: 10, filter: "blur(2px)" };
@@ -320,12 +306,12 @@ function Price({
 
   return (
     <p className="flex flex-col gap-1">
-      {/* Live region so a screen reader hears the new price on toggle; the
-          visible swap is the sighted equivalent. */}
+      <span className="sr-only" aria-live="polite" aria-atomic>
+        ${amount} {caption}
+      </span>
       <span
+        aria-hidden
         className="relative block h-[1em] text-3xl leading-none"
-        aria-live="polite"
-        aria-atomic
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -334,13 +320,16 @@ function Price({
             animate={shown}
             exit={hiddenUp}
             transition={SWAP}
-            className="absolute inset-x-0 top-0 block"
+            className={cn("absolute inset-x-0 top-0 block", FIGURE)}
           >
-            {figure}
+            ${amount}
           </motion.span>
         </AnimatePresence>
       </span>
-      <span className="relative block h-4 text-xs text-muted-foreground">
+      <span
+        aria-hidden
+        className="relative block h-4 text-xs text-muted-foreground"
+      >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
             key={caption}
@@ -358,10 +347,41 @@ function Price({
   );
 }
 
-function FreeAction() {
+// Every action slot, button or not, holds the default Button's height so the
+// two cards keep a shared baseline while auth resolves. Button is one step
+// taller below `sm` (button.tsx), so this must be too.
+const ACTION_HEIGHT = "h-10 sm:h-9";
+
+function ActionSkeleton() {
+  return <Skeleton className={cn("w-full rounded-lg", ACTION_HEIGHT)} />;
+}
+
+/**
+ * The auth gate every action slot shares: a sign-up link for visitors, the
+ * plan-aware control for members, and a same-height placeholder in between.
+ */
+function PlanAction({
+  signedOut,
+  signedIn,
+}: {
+  signedOut: React.ReactNode;
+  signedIn: React.ReactNode;
+}) {
   return (
     <>
-      <Unauthenticated>
+      <Unauthenticated>{signedOut}</Unauthenticated>
+      <Authenticated>{signedIn}</Authenticated>
+      <AuthLoading>
+        <ActionSkeleton />
+      </AuthLoading>
+    </>
+  );
+}
+
+function FreeAction() {
+  return (
+    <PlanAction
+      signedOut={
         <Button
           nativeButton={false}
           variant="outline"
@@ -370,14 +390,9 @@ function FreeAction() {
         >
           {PLANS.free.cta.free}
         </Button>
-      </Unauthenticated>
-      <Authenticated>
-        <CurrentPlanNote plan="free" />
-      </Authenticated>
-      <AuthLoading>
-        <Skeleton className="h-9 w-full rounded-lg" />
-      </AuthLoading>
-    </>
+      }
+      signedIn={<CurrentPlanNote plan="free" />}
+    />
   );
 }
 
@@ -387,18 +402,28 @@ function FreeAction() {
  */
 function CurrentPlanNote({ plan }: { plan: Plan }) {
   const { plan: current, isLoading } = useUserPlan();
-  if (isLoading) return <Skeleton className="h-9 w-full rounded-lg" />;
+  if (isLoading) return <ActionSkeleton />;
   if (current !== plan) {
     // A Pro subscriber looking at the Free card: nothing to do here, but hold
     // the button's height so both cards keep their shared baseline.
     return (
-      <p className="inline-flex h-9 w-full items-center justify-center text-sm text-muted-foreground">
+      <p
+        className={cn(
+          "inline-flex w-full items-center justify-center text-sm text-muted-foreground",
+          ACTION_HEIGHT,
+        )}
+      >
         Included in Pro
       </p>
     );
   }
   return (
-    <p className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-muted text-sm text-muted-foreground">
+    <p
+      className={cn(
+        "inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-muted text-sm text-muted-foreground",
+        ACTION_HEIGHT,
+      )}
+    >
       <HugeiconsIcon
         icon={Tick02Icon}
         strokeWidth={2.5}
@@ -412,8 +437,8 @@ function CurrentPlanNote({ plan }: { plan: Plan }) {
 
 function ProAction({ cycle }: { cycle: Cycle }) {
   return (
-    <>
-      <Unauthenticated>
+    <PlanAction
+      signedOut={
         <Button
           nativeButton={false}
           variant="primary"
@@ -422,20 +447,15 @@ function ProAction({ cycle }: { cycle: Cycle }) {
         >
           {PLANS.pro.cta.free}
         </Button>
-      </Unauthenticated>
-      <Authenticated>
-        <ProCheckout cycle={cycle} />
-      </Authenticated>
-      <AuthLoading>
-        <Skeleton className="h-9 w-full rounded-lg" />
-      </AuthLoading>
-    </>
+      }
+      signedIn={<ProCheckout cycle={cycle} />}
+    />
   );
 }
 
 function ProCheckout({ cycle }: { cycle: Cycle }) {
   const { plan, isLoading } = useUserPlan();
-  if (isLoading) return <Skeleton className="h-9 w-full rounded-lg" />;
+  if (isLoading) return <ActionSkeleton />;
 
   if (plan === "pro") {
     return (
@@ -482,11 +502,27 @@ function WhereYouLand() {
     isAuthenticated ? {} : "skip",
   );
 
-  if (!isAuthenticated || watchedKeys === undefined || limits === null) {
+  if (!isAuthenticated) {
     return (
       <p className="text-center text-sm text-muted-foreground">
         Most personal setups never reach {FREE_WATCHED_SKILLS} watched skills.
       </p>
+    );
+  }
+
+  // Signed in but the websocket has not answered yet. Hold the usage block's
+  // height rather than flashing the signed-out sentence and then growing,
+  // which shoved the FAQ down once the data arrived.
+  if (watchedKeys === undefined || limits === null) {
+    return (
+      <div className="w-full max-w-sm" aria-busy>
+        <div className="flex items-baseline justify-between">
+          <Skeleton className="h-5 w-32 rounded-md" />
+          <Skeleton className="h-5 w-24 rounded-md" />
+        </div>
+        <Skeleton className="mt-2 h-1.5 w-full rounded-full" />
+        <Skeleton className="mt-2 h-4 w-56 rounded-md" />
+      </div>
     );
   }
 

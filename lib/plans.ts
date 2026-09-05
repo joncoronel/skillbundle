@@ -22,23 +22,22 @@ import { FREE_WATCHED_SKILLS } from "./bundle-limits";
 
 export interface PlanDisplayInfo {
   name: string;
-  tagline: string;
   description: string;
   priceMonthly: number | null;
   priceYearly: number | null;
   features: string[];
-  highlighted?: boolean;
   cta: {
+    /** Signed-out label; the action is always the sign-up link. */
     free: string;
-    upgrade: string;
-    manage: string;
+    /** Signed-in labels. Only a paid plan has an upgrade or a subscription. */
+    upgrade?: string;
+    manage?: string;
   };
 }
 
 export const PLANS: Record<Plan, PlanDisplayInfo> = {
   free: {
     name: "Free",
-    tagline: "Watch your setup",
     description: "The whole product, at personal scale.",
     priceMonthly: 0,
     priceYearly: 0,
@@ -52,17 +51,13 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
     ],
     cta: {
       free: "Start watching",
-      upgrade: "Start watching",
-      manage: "Current plan",
     },
   },
   pro: {
     name: "Pro",
-    tagline: "For a setup you depend on",
     description: "Unlimited watching, plus the expensive lookups.",
     priceMonthly: 5,
     priceYearly: 48,
-    highlighted: true,
     features: [
       "Watch unlimited skills",
       "Match skills to any GitHub repo",
