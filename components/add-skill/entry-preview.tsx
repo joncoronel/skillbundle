@@ -42,9 +42,8 @@ export function EntryPreview({
   onUseExample: (value: string) => void;
 }) {
   const reading = useMemo(() => readSkillInput(input), [input]);
-  // Both views stay mounted (the panel hides the inactive one), so the
-  // reference view renders under a parsed reading too and cannot narrow on
-  // `reading.frame` inline.
+  // Crossfade keeps both sides mounted, so the reference side renders under a
+  // parsed reading too and cannot narrow on `reading.frame` inline.
   const message = reading.frame === "reference" ? reading.message : undefined;
   // The row keeps showing the LAST parsed reading while it fades out. The
   // reading itself flips to `reference` the keystroke the input stops
@@ -73,25 +72,19 @@ export function EntryPreview({
         "in-data-framed:border-0 in-data-framed:shadow-[var(--surface-shadow-3),var(--surface-rim-3)]",
       )}
     >
-      {/* Keyed on the FRAME: the swap fires when the panel changes what kind
-          of thing it shows, not on every keystroke within one. `Crossfade` is
-          the house "placeholder resolves into a result" swap (the repo URL
-          input's status line, the change feed), which is exactly this: the
-          reference frame is the placeholder and the parsed row is the result.
-          It skips its entrance on first paint, which matters because this
-          markup is prerendered; a hand-rolled `@starting-style` on it faded
-          the centrepiece in on arrival. Both sides stay mounted, and the
-          inactive one is `hidden`, so the sample chips leave the tab order
+      {/* `Crossfade` is the house "placeholder resolves into a result" swap
+          (the repo URL input's status line, the change feed): the reference
+          side is the placeholder, the parsed row is the result, and the row
+          rises over it as the input resolves. It skips its entrance on first
+          paint, which matters because this markup is prerendered. The
+          inactive side is `hidden`, so the sample chips leave the tab order
           while the row is showing and nothing moves focus off the field. */}
       <Crossfade active={reading.frame === "parsed"}>
-        {/* Placeholder first, result second: `Crossfade` slides its first
-            child down on exit and its second child in from above, so the row
-            rises over the reference frame as the input resolves. */}
         <>
           {/* Foreground weight for a message, never `destructive`: the
-                readout guides while you type and the submit notice is what
-                judges. `break-words` because messages quote the pasted
-                string, and a pasted URL has no break opportunity in it. */}
+              readout guides while you type and the submit notice is what
+              judges. `break-words` because messages quote the pasted string,
+              and a pasted URL has no break opportunity in it. */}
           <p
             className={cn(
               "text-sm break-words",
@@ -101,11 +94,10 @@ export function EntryPreview({
             {message ?? "The entry you are adding appears here as you paste."}
           </p>
           {/* Kept under a message rather than replaced by it: an input the
-                parser cannot read is exactly when a working sample is worth
-                one click. */}
-          {/* The caption is its own line, not the first item in the chip
-                row: as a flex sibling it pushed the third chip onto a second
-                row at 390px, where all three fit on one. */}
+              parser cannot read is exactly when a working sample is worth one
+              click. The caption is its own line, not the first item in the
+              chip row: as a flex sibling it pushed the third chip onto a
+              second row at 390px, where all three fit on one. */}
           <p
             id="add-skill-samples"
             className="mt-3 mb-1.5 text-xs text-muted-foreground"
@@ -138,11 +130,9 @@ export function EntryPreview({
           {shown && (
             <>
               <div className="flex items-center gap-3">
-                {/* The source's glyph in the slot a catalog row keeps for its
-                  checkbox: GitHub for an `owner/repo`, a link for a well-known
-                  host. It is the only place the row says which kind of source
-                  it read, and `viaGitHub` also drives the footer sentence, so
-                  the glyph and the sentence can never disagree. */}
+                {/* GitHub for an `owner/repo` source, a link for a well-known
+                    host. `viaGitHub` also drives the footer sentence, so the
+                    glyph and the sentence cannot disagree. */}
                 <span
                   aria-hidden
                   className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground"
@@ -158,9 +148,10 @@ export function EntryPreview({
                     {shown.skillId}
                   </p>
                   {/* The file path rides the source line rather than taking a
-                    third, so the row is two lines for every input form and
-                    the panel's floor is one number. A GitHub deep link's path
-                    truncates on a phone; the confirm card prints it in full. */}
+                      third, so the row is two lines for every input form and
+                      the panel's floor is one number. A GitHub deep link's
+                      path truncates on a phone; the confirm card prints it in
+                      full. */}
                   <p className="truncate font-mono text-xs text-muted-foreground">
                     {shown.source}
                     {shown.path && (

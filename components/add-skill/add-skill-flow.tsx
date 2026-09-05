@@ -380,14 +380,13 @@ export function AddSkillFlow({
               // carries the scheme, which is the part that matters. All three
               // forms are one click away in the preview below.
               placeholder="https://skills.sh/owner/repo/skill-name"
-              // Sans, like every other URL field in the app (the home
-              // composer's repo field, the admin add form): an input is a
+              // Sans, like every other URL field in the app: an input is a
               // control, and mono is for rendered identifiers, which the
               // preview below sets in mono. h-11/h-10 is one step up the
-              // shared Input/Button ramp and is matched by the button's `lg`
-              // size. Inside the frame the field drops its hairline for the surface
-              // shadow, exactly as the home composer's field does: the muted
-              // gutter is the edge now.
+              // shared Input/Button ramp, matched by the button's `lg` size.
+              // Inside the frame the field drops its hairline for the surface
+              // shadow, as the home composer's field does: the muted gutter is
+              // the edge now.
               className="h-11 in-data-framed:border-0 in-data-framed:shadow-[var(--surface-shadow-3),var(--surface-rim-3)] sm:col-start-1 sm:row-start-1 sm:h-10"
               value={input}
               onChange={(e) => {
@@ -504,8 +503,6 @@ function Frame({
   children: React.ReactNode;
 }) {
   if (!framed) return <>{children}</>;
-  // `data-framed` is what the children key their `in-data-framed:` styles
-  // off; the Card itself carries no styling for them.
   return (
     <Card variant="inset" data-framed="">
       {children}
