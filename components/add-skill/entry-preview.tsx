@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon, Link04Icon } from "@hugeicons/core-free-icons";
 import { readSkillInput, SKILL_INPUT_EXAMPLES } from "@/lib/add-skill-reading";
 import { busyButtonProps } from "@/hooks/use-add-skill-field-a11y";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,27 +49,19 @@ export function EntryPreview({
   onUseExample: (value: string) => void;
 }) {
   const reading = useMemo(() => readSkillInput(input), [input]);
-
-  // Skip @starting-style on the first paint, following crossfade.tsx.
-  //
-  // This panel is in the prerendered HTML of a fully static route, and
-  // `@starting-style` DOES apply to the initial style resolution there.
-  // Measured on this panel's predecessor: it came up at opacity 0.59 with a
-  // 1.65px offset and settled over ~40ms, so the one route whose whole value
-  // is that its shell is already painted was fading its centrepiece in on
-  // arrival.
-  //
-  // Adding the classes after mount cannot itself animate: @starting-style
-  // supplies a before-change style only when an element is first styled, and
-  // this one already is. The keyed remount on a frame change is a new element,
-  // so that entrance still fires. Flipped inside a frame callback rather than
-  // synchronously in the effect, because a bare `setMounted(true)` in an
-  // effect is a cascading-render lint error in this file.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  // Both views stay mounted (the panel hides the inactive one), so the
+  // reference view renders under a parsed reading too and cannot narrow on
+  // `reading.frame` inline.
+  const message = reading.frame === "reference" ? reading.message : undefined;
+  // The row keeps showing the LAST parsed reading while it fades out. The
+  // reading itself flips to `reference` the keystroke the input stops
+  // parsing, and rendering the row from it directly emptied the row on that
+  // frame, so the exit animated a blank panel. Render-time derived state, per
+  // React's own pattern, rather than a ref written during render.
+  const [shown, setShown] = useState(
+    reading.frame === "parsed" ? reading : null,
+  );
+  if (reading.frame === "parsed" && reading !== shown) setShown(reading);
 
   return (
     <div
@@ -86,101 +79,106 @@ export function EntryPreview({
           : "border",
       )}
     >
-      {/* Keyed on the FRAME: the entrance fires when the panel changes what
-          kind of thing it shows, not on every keystroke within one. */}
-      <div
-        key={reading.frame}
-        className={cn(
-          "transition-[opacity,translate] duration-200 ease-out-cubic motion-reduce:transition-none",
-          mounted && "starting:translate-y-1 starting:opacity-0",
-        )}
-      >
-        {reading.frame === "parsed" ? (
-          <>
-            <div className="flex items-center gap-3">
-              {/* The source's glyph in the slot a catalog row keeps for its
+      {/* Keyed on the FRAME: the swap fires when the panel changes what kind
+          of thing it shows, not on every keystroke within one. `Crossfade` is
+          the house "placeholder resolves into a result" swap (the repo URL
+          input's status line, the change feed), which is exactly this: the
+          reference frame is the placeholder and the parsed row is the result.
+          It skips its entrance on first paint, which matters because this
+          markup is prerendered; a hand-rolled `@starting-style` on it faded
+          the centrepiece in on arrival. Both sides stay mounted, and the
+          inactive one is `hidden`, so the sample chips leave the tab order
+          while the row is showing and nothing moves focus off the field. */}
+      <Crossfade active={reading.frame === "parsed"}>
+        {/* Placeholder first, result second: `Crossfade` slides its first
+            child down on exit and its second child in from above, so the row
+            rises over the reference frame as the input resolves. */}
+        <>
+          {/* Foreground weight for a message, never `destructive`: the
+                readout guides while you type and the submit notice is what
+                judges. `break-words` because messages quote the pasted
+                string, and a pasted URL has no break opportunity in it. */}
+          <p
+            className={cn(
+              "text-sm break-words",
+              message ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {message ?? "The entry you are adding appears here as you paste."}
+          </p>
+          {/* Kept under a message rather than replaced by it: an input the
+                parser cannot read is exactly when a working sample is worth
+                one click. */}
+          {/* The caption is its own line, not the first item in the chip
+                row: as a flex sibling it pushed the third chip onto a second
+                row at 390px, where all three fit on one. */}
+          <p className="mt-3 mb-1.5 text-xs text-muted-foreground">
+            Try a sample
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {SKILL_INPUT_EXAMPLES.map((example) => (
+              <Button
+                key={example.label}
+                type="button"
+                variant="secondary"
+                size="xs"
+                disabled={pending}
+                {...busyButtonProps({ inFlight: false })}
+                onClick={() => onUseExample(example.value)}
+              >
+                {example.label}
+              </Button>
+            ))}
+          </div>
+        </>
+        <>
+          {shown && (
+            <>
+              <div className="flex items-center gap-3">
+                {/* The source's glyph in the slot a catalog row keeps for its
                   checkbox: GitHub for an `owner/repo`, a link for a well-known
                   host. It is the only place the row says which kind of source
                   it read, and `viaGitHub` also drives the footer sentence, so
                   the glyph and the sentence can never disagree. */}
-              <span
-                aria-hidden
-                className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground"
-              >
-                <HugeiconsIcon
-                  icon={reading.viaGitHub ? GithubIcon : Link04Icon}
-                  strokeWidth={2}
-                  className="size-4.5"
-                />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-foreground">
-                  {reading.skillId}
-                </p>
-                {/* The file path rides the source line rather than taking a
+                <span
+                  aria-hidden
+                  className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground"
+                >
+                  <HugeiconsIcon
+                    icon={shown.viaGitHub ? GithubIcon : Link04Icon}
+                    strokeWidth={2}
+                    className="size-4.5"
+                  />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {shown.skillId}
+                  </p>
+                  {/* The file path rides the source line rather than taking a
                     third, so the row is two lines for every input form and
                     the panel's floor is one number. A GitHub deep link's path
                     truncates on a phone; the confirm card prints it in full. */}
-                <p className="truncate font-mono text-xs text-muted-foreground">
-                  {reading.source}
-                  {reading.path && (
-                    <>
-                      <span aria-hidden> · </span>
-                      <span className="sr-only">, file </span>
-                      {reading.path}
-                    </>
-                  )}
-                </p>
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {shown.source}
+                    {shown.path && (
+                      <>
+                        <span aria-hidden> · </span>
+                        <span className="sr-only">, file </span>
+                        {shown.path}
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
-            </div>
-            <p className="mt-3 border-t border-border pt-2.5 text-xs text-muted-foreground">
-              {reading.viaGitHub
-                ? "We check skills.sh first, then the repo for its SKILL.md."
-                : "We check skills.sh. There is no GitHub repo to fall back to."}
-            </p>
-          </>
-        ) : (
-          <>
-            {/* Foreground weight for a message, never `destructive`: the
-                readout guides while you type and the submit notice is what
-                judges. `break-words` because messages quote the pasted
-                string, and a pasted URL has no break opportunity in it. */}
-            <p
-              className={cn(
-                "text-sm break-words",
-                reading.message ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {reading.message ??
-                "The entry you are adding appears here as you paste."}
-            </p>
-            {/* Kept under a message rather than replaced by it: an input the
-                parser cannot read is exactly when a working sample is worth
-                one click. */}
-            {/* The caption is its own line, not the first item in the chip
-                row: as a flex sibling it pushed the third chip onto a second
-                row at 390px, where all three fit on one. */}
-            <p className="mt-3 mb-1.5 text-xs text-muted-foreground">
-              Try a sample
-            </p>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {SKILL_INPUT_EXAMPLES.map((example) => (
-                <Button
-                  key={example.label}
-                  type="button"
-                  variant="secondary"
-                  size="xs"
-                  disabled={pending}
-                  {...busyButtonProps({ inFlight: false })}
-                  onClick={() => onUseExample(example.value)}
-                >
-                  {example.label}
-                </Button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+              <p className="mt-3 border-t border-border pt-2.5 text-xs text-muted-foreground">
+                {shown.viaGitHub
+                  ? "We check skills.sh first, then the repo for its SKILL.md."
+                  : "We check skills.sh. There is no GitHub repo to fall back to."}
+              </p>
+            </>
+          )}
+        </>
+      </Crossfade>
     </div>
   );
 }
