@@ -7,6 +7,11 @@
  * deleted with the social layer). A pricing page is the one surface where a
  * stale feature list is a lie rather than an oversight, so when the gates
  * change, this file changes in the same commit.
+ *
+ * The page renders `features` as-is, and Pro's list sits under an "Everything
+ * in Free, plus" heading, so Pro lists ONLY what Free does not have. Do not add
+ * a shared capability to Pro's list to make it look longer; the heading already
+ * says it.
  */
 export type Plan = "free" | "pro";
 
@@ -40,8 +45,9 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
     features: [
       `Watch up to ${FREE_WATCHED_SKILLS} skills`,
       "Every change, the day it happens",
-      "Security regressions included",
+      "Security regressions, never held back",
       "Full version history and diffs",
+      "Unlimited lists to organise them",
       "Browse, search and compare the catalog",
     ],
     cta: {
@@ -59,9 +65,8 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
     highlighted: true,
     features: [
       "Watch unlimited skills",
-      "Point it at a repo, get matched skills",
+      "Match skills to any GitHub repo",
       "Unlimited GitHub-only skill adds",
-      "Everything in Free",
     ],
     cta: {
       free: "Go Pro",
@@ -71,74 +76,16 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
   },
 };
 
-export type ComparisonValue = boolean | string;
-
-export interface ComparisonRow {
-  label: string;
-  free: ComparisonValue;
-  pro: ComparisonValue;
-  /** Shown under the label. For rows where the honest answer needs a caveat. */
-  note?: string;
-}
-
-export interface ComparisonGroup {
-  title: string;
-  rows: ComparisonRow[];
-}
-
-export const COMPARISON: ComparisonGroup[] = [
-  {
-    title: "Monitoring",
-    rows: [
-      {
-        label: "Skills watched",
-        free: `Up to ${FREE_WATCHED_SKILLS}`,
-        pro: "Unlimited",
-        note: "Counted once per skill, however many lists it sits in.",
-      },
-      { label: "Content and description changes", free: true, pro: true },
-      {
-        label: "Security verdict regressions",
-        free: true,
-        pro: true,
-        note: "Never held back by plan. Nobody should pay to hear this.",
-      },
-      { label: "Full version history and diffs", free: true, pro: true },
-      {
-        label: "Lists to organise them into",
-        free: "Unlimited",
-        pro: "Unlimited",
-      },
-    ],
-  },
-  {
-    title: "Discovery",
-    rows: [
-      { label: "Browse, search and compare", free: true, pro: true },
-      {
-        label: "Match skills to a GitHub repo",
-        free: "Demo repo only",
-        pro: true,
-        note: "Reads the repo's dependencies and matches against the catalog.",
-      },
-    ],
-  },
-  {
-    title: "Contributing",
-    rows: [
-      { label: "Add skills that are on skills.sh", free: true, pro: true },
-      {
-        label: "Add skills that only exist on GitHub",
-        free: "Up to 3",
-        pro: "Unlimited",
-      },
-    ],
-  },
-];
-
 export function yearlySavingsPercent(plan: PlanDisplayInfo): number | null {
   if (!plan.priceMonthly || !plan.priceYearly) return null;
   const fullYear = plan.priceMonthly * 12;
   if (fullYear <= 0) return null;
   return Math.round(((fullYear - plan.priceYearly) / fullYear) * 100);
+}
+
+/** Dollars saved by paying yearly instead of twelve monthly payments. */
+export function yearlySavingsDollars(plan: PlanDisplayInfo): number | null {
+  if (!plan.priceMonthly || !plan.priceYearly) return null;
+  const saved = plan.priceMonthly * 12 - plan.priceYearly;
+  return saved > 0 ? saved : null;
 }
