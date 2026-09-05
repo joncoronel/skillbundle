@@ -133,10 +133,10 @@ test.describe("initial load", () => {
       async () => {
         await page.goto("/pricing");
         await expect(page.locator("h1")).toContainText(
-          "Two plans. One product.",
+          "Watch for free. Pay for scale.",
         );
         await expect(
-          page.getByText("Both watch the skills you depend on"),
+          page.getByText("security warnings included"),
         ).toBeVisible();
       },
       { baseURL },

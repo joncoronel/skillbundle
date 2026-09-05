@@ -267,6 +267,9 @@ baseline`, which ignores audit regressions and delisting. That is a different
   cap is gone (it metered organisation, not dependence) and `maxBundles` is
   replaced by `maxWatchedSkills`, counted distinct across bundles. Security
   regressions are free on every plan, permanently.
+  Sept 2026: the plate was replaced by two cards
+  (`app/(main)/pricing/pricing-cards.tsx`, Pro as "Everything in Free, plus");
+  brief in `.impeccable/surfaces/app-main-pricing-page-tsx.md`.
 - Dashboard change panel (`app/(main)/dashboard/change-feed.tsx`). The feed
   query now carries audit regressions as first-class rows, ranks by consequence
   ahead of recency, drops baselines (no previous content = no diff to show), and
