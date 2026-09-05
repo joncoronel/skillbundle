@@ -116,10 +116,12 @@ test.describe("initial load", () => {
         ).toBeVisible();
         // The page's own content, not just its header. The two assertions above
         // predate the redesign and cover the one part that never had a reason
-        // to leave the shell, so they would stay green if the readout or the
-        // outcomes register were moved behind a hydration flag.
-        await expect(page.getByText("Any of these forms works")).toBeVisible();
-        await expect(page.getByText("It's on skills.sh")).toBeVisible();
+        // to leave the shell, so they would stay green if the entry preview or
+        // the outcomes list were moved behind a hydration flag.
+        await expect(page.getByText("appears here as you paste")).toBeVisible();
+        await expect(
+          page.getByText("On skills.sh", { exact: true }),
+        ).toBeVisible();
       },
       { baseURL },
     );
