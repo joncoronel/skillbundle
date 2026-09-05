@@ -40,7 +40,7 @@ allowance for a signed-in free user, inside the outcome it meters.
 
 **Direction (September 2026): the entry preview.** The field writes the catalog
 entry it would create, live. One inset frame (the home composer's object) holds
-the field, its action and the preview panel, all lifted on the frame's muted
+the field, its neutral (near-black) action and the preview panel, all lifted on the frame's muted
 gutter with no hairlines of their own; the panel is drawn in the catalog row's
 own vocabulary so what you preview is recognisably what you land on. This
 replaced a gray recessed readout that listed the accepted forms as URL rows and

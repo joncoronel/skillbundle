@@ -39,7 +39,6 @@ import {
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { SlugSwapNote } from "@/components/add-skill/slug-swap-note";
 import { EntryPreview } from "@/components/add-skill/entry-preview";
-import { cn } from "@/lib/utils";
 
 // Derived from the server's return validator so the client can't drift from
 // what the action actually sends (the review's finding on hand-declared
@@ -253,8 +252,8 @@ export function AddSkillFlow({
     onPendingChange?.(pending);
   }, [pending, onPendingChange]);
 
-  // One writer for the field, shared by typing and by the readout's example
-  // rows. `changeInput`, never `setInput`, so a pending candidate is
+  // One writer for the field, shared by typing and by the preview's sample
+  // chips. `changeInput`, never `setInput`, so a pending candidate is
   // invalidated; and both displays are cleared for the reason the onChange
   // handler already cleared them — either one otherwise keeps reporting on the
   // previous skill inside the live region that is about to report on this one.
@@ -319,28 +318,25 @@ export function AddSkillFlow({
   // the dialog mounts it bare on its own muted body. `variant` already names
   // that substrate for the field; the frame follows it.
   const framed = variant === "default";
-  const action = signedOut ? (
+  // One button, two behaviours: signed out it routes to sign-in, signed in it
+  // submits. Everything about its size and placement is shared, so it is
+  // written once and only the behaviour forks.
+  const action = (
     <Button
-      type="button"
       variant="neutral"
       size="lg"
-      className="mt-1 w-full sm:col-start-2 sm:row-start-1 sm:mt-0"
-      onClick={() => {
-        const path = window.location.pathname + window.location.search;
-        router.push(signInUrl(path));
-      }}
+      className="mt-3 w-full in-data-framed:mt-1 sm:col-start-2 sm:row-start-1 sm:mt-0"
+      {...(signedOut
+        ? {
+            type: "button" as const,
+            onClick: () => {
+              const path = window.location.pathname + window.location.search;
+              router.push(signInUrl(path));
+            },
+          }
+        : { type: "submit" as const, ...submitProps })}
     >
-      Sign in to add
-    </Button>
-  ) : (
-    <Button
-      type="submit"
-      variant="neutral"
-      size="lg"
-      {...submitProps}
-      className="mt-1 w-full sm:col-start-2 sm:row-start-1 sm:mt-0"
-    >
-      {label ?? "Add skill"}
+      {signedOut ? "Sign in to add" : (label ?? "Add skill")}
     </Button>
   );
 
@@ -370,12 +366,10 @@ export function AddSkillFlow({
               through three labels, so the field shrank and re-expanded
               mid-request, re-truncating the URL under the user's cursor. It
               also absorbs the signed-out → signed-in label swap on load. */}
-          <div
-            className={cn(
-              "sm:grid sm:grid-cols-[minmax(0,1fr)_9.25rem]",
-              framed ? "sm:gap-x-1" : "sm:gap-x-2",
-            )}
-          >
+          {/* Every "inside the frame" rule below is an `in-data-framed:`
+              variant keyed off the Frame's attribute, so a new child styles
+              itself and nothing threads a boolean. */}
+          <div className="sm:grid sm:grid-cols-[minmax(0,1fr)_9.25rem] sm:gap-x-2 in-data-framed:sm:gap-x-1">
             <Input
               id="add-skill-input"
               type="text"
@@ -386,17 +380,15 @@ export function AddSkillFlow({
               // carries the scheme, which is the part that matters. All three
               // forms are one click away in the preview below.
               placeholder="https://skills.sh/owner/repo/skill-name"
-              // Mono because the field's entire content is a machine string
-              // that was pasted. h-11/h-10 is one step up the shared
-              // Input/Button ramp and is matched by the button's `lg` size.
-              // Inside the frame the field drops its hairline for the surface
+              // Sans, like every other URL field in the app (the home
+              // composer's repo field, the admin add form): an input is a
+              // control, and mono is for rendered identifiers, which the
+              // preview below sets in mono. h-11/h-10 is one step up the
+              // shared Input/Button ramp and is matched by the button's `lg`
+              // size. Inside the frame the field drops its hairline for the surface
               // shadow, exactly as the home composer's field does: the muted
               // gutter is the edge now.
-              className={cn(
-                "h-11 font-mono sm:col-start-1 sm:row-start-1 sm:h-10",
-                framed &&
-                  "border-0 shadow-[var(--surface-shadow-3),var(--surface-rim-3)]",
-              )}
+              className="h-11 in-data-framed:border-0 in-data-framed:shadow-[var(--surface-shadow-3),var(--surface-rim-3)] sm:col-start-1 sm:row-start-1 sm:h-10"
               value={input}
               onChange={(e) => {
                 // writeInput also invalidates a pending candidate so its
@@ -412,11 +404,10 @@ export function AddSkillFlow({
             />
             {action}
           </div>
-          <div className={framed ? "mt-1" : "mt-3"}>
+          <div className="mt-3 in-data-framed:mt-1">
             <EntryPreview
               input={input}
               pending={pending}
-              framed={framed}
               onUseExample={(value) => {
                 writeInput(value);
                 // The chip that was just clicked unmounts with the empty
@@ -501,8 +492,9 @@ export function AddSkillFlow({
 /**
  * The instrument's body on the page: an inset Card, the same object the home
  * page's search composer is. Its muted gutter is what separates the field and
- * the preview from the page, so both drop their hairlines inside it. In the
- * dialog there is no frame: the dialog's body is already the muted ground.
+ * the preview from the page, so both drop their hairlines inside it (each
+ * child does that itself, via `in-data-framed:`). In the dialog there is no
+ * frame: the dialog's body is already the muted ground.
  */
 function Frame({
   framed,
@@ -512,7 +504,13 @@ function Frame({
   children: React.ReactNode;
 }) {
   if (!framed) return <>{children}</>;
-  return <Card variant="inset">{children}</Card>;
+  // `data-framed` is what the children key their `in-data-framed:` styles
+  // off; the Card itself carries no styling for them.
+  return (
+    <Card variant="inset" data-framed="">
+      {children}
+    </Card>
+  );
 }
 
 function GitHubCandidateCard({

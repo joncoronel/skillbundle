@@ -28,7 +28,6 @@ import { cn } from "@/lib/utils";
 export function EntryPreview({
   input,
   pending,
-  framed,
   onUseExample,
 }: {
   input: string;
@@ -38,12 +37,6 @@ export function EntryPreview({
    * that fills that same field is an edit by another route.
    */
   pending: boolean;
-  /**
-   * Mounted inside the page's inset frame (borderless, lifted by the surface
-   * shadow like the frame's field) rather than on a dialog's muted body
-   * (hairline border, no shadow). Same panel, two substrates.
-   */
-  framed: boolean;
   /** Fills the field. Goes through the flow's own setter, so a pending
    *  candidate is invalidated exactly as typing would invalidate it. */
   onUseExample: (value: string) => void;
@@ -73,10 +66,11 @@ export function EntryPreview({
         // file path shares the source line. It holds only while the strings
         // below stay short, which is why messages `break-words` and the
         // parser caps the input it echoes at 60 characters.
-        "min-h-[8.25rem] rounded-lg bg-card p-3 sm:min-h-27",
-        framed
-          ? "shadow-[var(--surface-shadow-3),var(--surface-rim-3)]"
-          : "border",
+        "min-h-[8.25rem] rounded-lg border bg-card p-3 sm:min-h-27",
+        // Inside the page's inset frame the hairline goes and the surface
+        // shadow lifts the panel, exactly as the frame's field does. On the
+        // dialog's muted body there is no frame, so the hairline stays.
+        "in-data-framed:border-0 in-data-framed:shadow-[var(--surface-shadow-3),var(--surface-rim-3)]",
       )}
     >
       {/* Keyed on the FRAME: the swap fires when the panel changes what kind
@@ -112,10 +106,19 @@ export function EntryPreview({
           {/* The caption is its own line, not the first item in the chip
                 row: as a flex sibling it pushed the third chip onto a second
                 row at 390px, where all three fit on one. */}
-          <p className="mt-3 mb-1.5 text-xs text-muted-foreground">
+          <p
+            id="add-skill-samples"
+            className="mt-3 mb-1.5 text-xs text-muted-foreground"
+          >
             Try a sample
           </p>
-          <div className="flex flex-wrap items-center gap-1.5">
+          {/* Named group, so a chip announces as "skills.sh link, button, Try
+              a sample" rather than as an unexplained button. */}
+          <div
+            role="group"
+            aria-labelledby="add-skill-samples"
+            className="flex flex-wrap items-center gap-1.5"
+          >
             {SKILL_INPUT_EXAMPLES.map((example) => (
               <Button
                 key={example.label}

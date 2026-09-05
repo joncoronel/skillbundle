@@ -17,7 +17,10 @@ export const metadata: Metadata = {
  * control among a label, a help line, a gray reference panel and a register.
  * OWN-WORLD: the house control panel. One inset frame (the home composer's
  * object) holds the field, its action, and the preview row on lifted white,
- * with the muted gutter as the only edge. Signal blue once, on the action.
+ * with the muted gutter as the only edge. The action is the neutral
+ * near-black button, not signal blue: blue would be the only saturated mark
+ * in a page that already has one object, and the header pill's sign-up
+ * button holds the page's one blue.
  * STORY: paste, watch the entry resolve, submit. Three outcomes named in one
  * line each underneath, never explained twice.
  * FIRST VIEWPORT: title and one sentence; the instrument at full measure with
