@@ -11,6 +11,19 @@ const CROSSFADE_BASE = cn(
 
 const CROSSFADE_STARTING = "starting:opacity-0 starting:blur-sm";
 
+// The starting slide sets `translate` directly rather than through Tailwind's
+// `translate-y-*`, which routes via the `@property`-registered `--tw-translate-y`.
+// `transition-panel.tsx` documents WebKit dropping an `@starting-style` value on a
+// registered custom property that holds a `var()` reference, falling back to
+// `initial-value: 0` and losing the slide.
+//
+// WebKit 26.5 animates both forms identically, so this was fixed upstream at some
+// point. That is not a reason to go back: Safari ships with the OS, so the installs
+// that still have the bug are exactly the ones that never update. The literal costs
+// nothing and works in every engine, so leave it. Do not "simplify" it back to
+// `translate-y-*` on the strength of a current-Safari test.
+// 0.75rem is `translate-y-3` on the default spacing scale.
+
 export function Crossfade({
   active,
   children,
@@ -50,7 +63,7 @@ export function Crossfade({
             "[grid-area:1/1]",
             CROSSFADE_BASE,
             hasToggled && CROSSFADE_STARTING,
-            hasToggled && "starting:translate-y-3",
+            hasToggled && "starting:[translate:0_0.75rem]",
             active
               ? "contain-[size] hidden opacity-0 blur-sm translate-y-3 pointer-events-none"
               : "opacity-100",
@@ -65,7 +78,7 @@ export function Crossfade({
             "[grid-area:1/1]",
             CROSSFADE_BASE,
             hasToggled && CROSSFADE_STARTING,
-            hasToggled && "starting:-translate-y-3",
+            hasToggled && "starting:[translate:0_-0.75rem]",
             active
               ? "opacity-100"
               : "contain-[size] hidden opacity-0 blur-sm -translate-y-3 pointer-events-none",

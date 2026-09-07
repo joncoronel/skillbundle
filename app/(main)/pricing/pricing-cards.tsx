@@ -205,7 +205,9 @@ function ProCard({ cycle }: { cycle: Cycle }) {
   // still claiming a saving.
   const amount = cycle === "monthly" ? monthly : yearly / 12;
   const caption =
-    cycle === "monthly" ? "per month" : `per month, $${yearly} billed yearly`;
+    cycle === "monthly"
+      ? "per month"
+      : `per month, $${formatPrice(yearly)} billed yearly`;
 
   return (
     <PlanCard
@@ -291,7 +293,8 @@ function PlanCard({
   );
 }
 
-const FIGURE = "text-3xl font-semibold tracking-tight tabular-nums";
+const FIGURE =
+  "h-[1em] text-3xl leading-none font-semibold tracking-tight tabular-nums";
 
 /**
  * A price that never changes. The free card.
@@ -303,9 +306,7 @@ const FIGURE = "text-3xl font-semibold tracking-tight tabular-nums";
 function Price({ amount, caption }: { amount: number; caption: string }) {
   return (
     <p className="flex flex-col gap-1">
-      <span className={cn("block h-[1em] leading-none", FIGURE)}>
-        ${formatPrice(amount)}
-      </span>
+      <span className={cn("block", FIGURE)}>${formatPrice(amount)}</span>
       <span className="text-xs text-muted-foreground">{caption}</span>
     </p>
   );
@@ -343,11 +344,12 @@ function CyclingPrice({
         ${formatPrice(amount)} {caption}
       </span>
       {/* The `$` stays outside AnimatePresence: it is the same symbol in both
-          cycles. The digits animate in a zero-width slot anchored to its right
-          edge, so they grow rightward without nudging it. */}
-      <span aria-hidden className={cn("flex h-[1em] leading-none", FIGURE)}>
+          cycles. It is also a preceding flex item, so nothing the digits do can
+          move it. The slot is only `relative` to give `popLayout` something to
+          pin the outgoing figure to. */}
+      <span aria-hidden className={cn("flex", FIGURE)}>
         <span>$</span>
-        <span className="relative block w-0">
+        <span className="relative block">
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.span
               key={amount}
@@ -355,7 +357,7 @@ function CyclingPrice({
               animate={shown}
               exit={hiddenUp}
               transition={SWAP}
-              className="absolute top-0 left-0 block"
+              className="block"
             >
               {formatPrice(amount)}
             </motion.span>
