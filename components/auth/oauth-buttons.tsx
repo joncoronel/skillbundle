@@ -2,18 +2,19 @@
 
 import { useSignIn, useSignUp } from "@clerk/nextjs";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { getSafeRedirectUrl } from "./shared";
+import { getSafeRedirectUrl, oauthProviderLabel } from "./shared";
 
 type OAuthStrategy = "oauth_google" | "oauth_github";
 
+// Labels come from `oauthProviderLabel`, so the settings list and these
+// buttons cannot drift apart. Only the icon is local, which is the half a
+// text-only consumer has no use for.
 const oauthProviders: {
   strategy: OAuthStrategy;
-  label: string;
   icon: React.ReactNode;
 }[] = [
   {
     strategy: "oauth_google",
-    label: "Google",
     icon: (
       <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
         <path
@@ -37,7 +38,6 @@ const oauthProviders: {
   },
   {
     strategy: "oauth_github",
-    label: "GitHub",
     icon: (
       <svg
         viewBox="0 0 24 24"
@@ -97,7 +97,7 @@ export function OAuthButtons({ mode }: OAuthButtonsProps) {
           {/* Accessible name keeps the verb and contains the visible text in
               order (WCAG 2.5.3). */}
           <span className="sr-only">Continue with </span>
-          {provider.label}
+          {oauthProviderLabel(provider.strategy)}
         </Button>
       ))}
     </div>

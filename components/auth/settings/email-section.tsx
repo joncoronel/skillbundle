@@ -4,12 +4,11 @@ import * as React from "react";
 import { useUser, useReverification } from "@clerk/nextjs";
 import { isReverificationCancelledError } from "@clerk/nextjs/errors";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { Badge } from "@/components/ui/cubby-ui/badge";
-import { Card, CardContent } from "@/components/ui/cubby-ui/card";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import {
   DropdownMenu,
@@ -17,6 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/cubby-ui/dropdown-menu";
+import { toastClerkError } from "@/components/auth/shared";
 import { CodeField } from "@/components/auth/code-field";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { useResendTimer } from "@/hooks/use-resend-timer";
@@ -131,8 +131,7 @@ export function EmailSection() {
       await destroyEmail(emailId);
       await user.reload();
     } catch (err) {
-      if (isReverificationCancelledError(err)) return;
-      console.error("Failed to remove email:", err);
+      toastClerkError(err, "Could not remove that email");
     }
   };
 
@@ -141,67 +140,76 @@ export function EmailSection() {
       await user.update({ primaryEmailAddressId: emailId });
       await user.reload();
     } catch (err) {
-      console.error("Failed to set primary email:", err);
+      toastClerkError(err, "Could not set that as your primary email");
     }
   };
 
   return (
     <div className="flex flex-col gap-3">
-      <Card className="py-3">
-        <CardContent className="flex flex-col gap-3">
-          {user.emailAddresses.map((email) => {
-            const isPrimary = email.id === user.primaryEmailAddressId;
-            const isVerified = email.verification?.status === "verified";
-            return (
-              <div key={email.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">{email.emailAddress}</span>
-                  {isPrimary && <Badge variant="secondary">Primary</Badge>}
-                  {!isVerified && <Badge variant="outline">Unverified</Badge>}
-                </div>
-                {!isPrimary && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="size-8 p-0"
-                        />
-                      }
-                    >
-                      <HugeiconsIcon icon={MoreHorizontalIcon} size={16} />
-                      <span className="sr-only">Actions</span>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {!isVerified && (
-                        <DropdownMenuItem
-                          onClick={() => handleStartVerify(email.id)}
-                        >
-                          Verify
-                        </DropdownMenuItem>
-                      )}
-                      {isVerified && (
-                        <DropdownMenuItem
-                          onClick={() => handleSetPrimary(email.id)}
-                        >
-                          Set primary
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => handleRemoveEmail(email.id)}
-                      >
-                        Remove email
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+      {/* One bordered row per address, matching the other three lists on this
+          page (sessions, connected accounts, billing periods). This list used
+          to be the only one wrapped in a `Card`.
+
+          `min-h-14` is what keeps the rows the same height: only non-primary
+          addresses get the `size-8` action button, so without it a row with a
+          menu is 12px taller than one without and a two-address list looks
+          ragged. */}
+      <div className="flex flex-col gap-3">
+        {user.emailAddresses.map((email) => {
+          const isPrimary = email.id === user.primaryEmailAddressId;
+          const isVerified = email.verification?.status === "verified";
+          return (
+            <div
+              key={email.id}
+              className="flex min-h-14 items-center justify-between gap-3 rounded-lg border p-3"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{email.emailAddress}</span>
+                {isPrimary && <Badge variant="secondary">Primary</Badge>}
+                {!isVerified && <Badge variant="outline">Unverified</Badge>}
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              {!isPrimary && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="size-8 p-0"
+                      />
+                    }
+                  >
+                    <HugeiconsIcon icon={MoreHorizontalIcon} size={16} />
+                    <span className="sr-only">Actions</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {!isVerified && (
+                      <DropdownMenuItem
+                        onClick={() => handleStartVerify(email.id)}
+                      >
+                        Verify
+                      </DropdownMenuItem>
+                    )}
+                    {isVerified && (
+                      <DropdownMenuItem
+                        onClick={() => handleSetPrimary(email.id)}
+                      >
+                        Set primary
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => handleRemoveEmail(email.id)}
+                    >
+                      Remove email
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       <Crossfade active={adding}>
         {/* Button */}
@@ -210,8 +218,15 @@ export function EmailSection() {
           size="sm"
           className="w-fit"
           onClick={() => setAdding(true)}
+          leadingIcon={
+            <HugeiconsIcon
+              icon={Add01Icon}
+              strokeWidth={2}
+              className="size-3.5"
+            />
+          }
         >
-          + Add email address
+          Add email address
         </Button>
 
         {/* Add email form */}

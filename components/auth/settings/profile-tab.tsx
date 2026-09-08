@@ -15,45 +15,71 @@ import { Label } from "@/components/ui/cubby-ui/label";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
+import { toastClerkError } from "@/components/auth/shared";
 import { SettingsSection } from "./settings-section";
 import { EmailSection } from "./email-section";
 import { ConnectedAccountsSection } from "./connected-accounts-section";
 import { getInitials } from "@/lib/utils";
 
+/**
+ * Mirrors the three sections `ProfileTab` actually renders — Profile, Email
+ * addresses, Connected accounts — in their resting shapes.
+ *
+ * Both halves of that are easy to get wrong and neither fails loudly. This
+ * skeleton previously drew two sections and gave the first one the *editing*
+ * layout (two name fields), so Clerk resolving grew the panel by a whole
+ * section and reshaped the one above it. The container writes its height from
+ * a ResizeObserver with no transition on this path, so that arrived as a hard
+ * jump rather than as a fade, reading like a second, different skeleton.
+ *
+ * Restructure the sections below and this has to move with them.
+ */
 function ProfileSkeleton() {
   return (
     <div className="flex flex-col gap-10">
+      {/* Profile: avatar, name, "Update profile" */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
         <div className="flex flex-col gap-1">
           <Skeleton className="h-4 w-20" />
           <Skeleton className="h-4 w-48" />
         </div>
-        <div className="flex flex-col gap-6 lg:col-span-2">
+        <div className="flex items-center justify-between lg:col-span-2">
           <div className="flex items-center gap-4">
             <Skeleton className="size-12 rounded-full" />
-            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-4 w-32" />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          </div>
+          <Skeleton className="h-9 w-32 sm:h-8" />
         </div>
       </div>
       <Separator />
+      {/* Email addresses: one address row, then "Add email address". `h-14`
+          tracks the `min-h-14` on the real rows in `email-section.tsx`. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
         <div className="flex flex-col gap-1">
           <Skeleton className="h-4 w-28" />
           <Skeleton className="h-4 w-40" />
         </div>
         <div className="flex flex-col gap-3 lg:col-span-2">
-          <Skeleton className="h-12 w-full rounded-lg" />
-          <Skeleton className="h-9 w-36" />
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Skeleton className="h-9 w-36 sm:h-8" />
+        </div>
+      </div>
+      <Separator />
+      {/* Connected accounts: one provider row, then the connect buttons */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
+        <div className="flex flex-col gap-1">
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-4 w-44" />
+        </div>
+        <div className="flex flex-col gap-4 lg:col-span-2">
+          <Skeleton className="h-14 w-full rounded-lg" />
+          <Separator />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-28" />
+            {/* One row + one remaining provider: the shape for a user who
+                signed in with Google or GitHub, which is most of them. */}
+            <Skeleton className="h-9 w-36 sm:h-8" />
+          </div>
         </div>
       </div>
     </div>
@@ -113,7 +139,10 @@ export function ProfileTab() {
       resetPendingAvatar();
       setEditing(false);
     } catch (err) {
-      console.error("Failed to update profile:", err);
+      // No matching success toast: on success the form crossfades back to the
+      // summary showing the new name and avatar, which is the confirmation.
+      // Only the failure needs saying, and it used to say nothing.
+      toastClerkError(err, "Could not save your profile");
     } finally {
       setSaving(false);
     }

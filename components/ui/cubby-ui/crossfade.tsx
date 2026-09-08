@@ -55,7 +55,11 @@ export function Crossfade({
   return (
     <div
       ref={outerRef}
-      className="transition-[height] duration-270 ease-[cubic-bezier(0.32,0.72,0,1)]"
+      // `motion-reduce` has to be repeated here, not just on `CROSSFADE_BASE`:
+      // the height lives on this wrapper, so without it the panels snap under
+      // reduced motion while the container carries on sliding for 270ms, which
+      // is the movement someone asking for reduced motion is asking to lose.
+      className="transition-[height] duration-270 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
     >
       <div ref={innerRef} className="grid">
         <div

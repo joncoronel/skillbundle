@@ -8,8 +8,46 @@ import { ViewIcon, ViewOffIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
+import { isReverificationCancelledError } from "@clerk/nextjs/errors";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { CodeField } from "./code-field";
-import { cn } from "@/lib/utils";
+import { cn, getClerkErrorMessage } from "@/lib/utils";
+
+/**
+ * Display names for the OAuth providers this app offers. Module-private:
+ * `oauthProviderLabel` is the only reader, and both call sites go through it.
+ */
+const OAUTH_PROVIDER_LABELS: Record<string, string> = {
+  google: "Google",
+  github: "GitHub",
+};
+
+/**
+ * Display name for an OAuth provider. Accepts either shape Clerk hands out, a
+ * bare provider id (`github`, from `externalAccount.provider`) or a strategy
+ * (`oauth_github`), because both are in play and a caller that forgot to strip
+ * the prefix rendered "Oauth_github". Unknown providers capitalize.
+ */
+export function oauthProviderLabel(provider: string): string {
+  const id = provider.replace(/^oauth_/, "");
+  return OAUTH_PROVIDER_LABELS[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+/**
+ * The one way this app reports a failed Clerk call.
+ *
+ * The early return is the point. A user who dismisses the reverification prompt
+ * lands here with a cancellation error, and that is not a failure to announce.
+ * That guard was hand-written at each of six call sites, which is exactly the
+ * kind of thing that gets left out of the seventh.
+ */
+export function toastClerkError(err: unknown, title: string) {
+  if (isReverificationCancelledError(err)) return;
+  toast.error({
+    title,
+    description: getClerkErrorMessage(err, "Please try again."),
+  });
+}
 
 /**
  * Validate the proxy-injected `redirect_url` query param is same-origin

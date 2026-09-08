@@ -25,7 +25,7 @@ export default function SettingsPage() {
           Account Settings
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Manage your profile, security, and sessions
+          Manage your profile, security, and billing
         </p>
       </div>
 

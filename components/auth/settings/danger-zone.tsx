@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useUser, useClerk, useReverification } from "@clerk/nextjs";
-import { isReverificationCancelledError } from "@clerk/nextjs/errors";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { DangerIcon } from "@hugeicons/core-free-icons";
@@ -18,9 +17,8 @@ import {
   AlertDialogClose,
 } from "@/components/ui/cubby-ui/alert-dialog";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useReverificationFlow } from "@/components/auth/reverification-provider";
-import { getClerkErrorMessage } from "@/lib/utils";
+import { toastClerkError } from "@/components/auth/shared";
 
 function DangerZoneSkeleton() {
   return <Skeleton className="h-9 w-32" />;
@@ -52,12 +50,7 @@ export function DangerZone() {
     try {
       await deleteAccount();
     } catch (err) {
-      if (!isReverificationCancelledError(err)) {
-        toast.error({
-          title: "Could not delete account",
-          description: getClerkErrorMessage(err, "Please try again."),
-        });
-      }
+      toastClerkError(err, "Could not delete account");
       setDeleting(false);
       return;
     }

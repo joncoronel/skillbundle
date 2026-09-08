@@ -2,12 +2,10 @@
 
 import * as React from "react";
 import { useUser, useReverification } from "@clerk/nextjs";
-import { isReverificationCancelledError } from "@clerk/nextjs/errors";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { useReverificationFlow } from "@/components/auth/reverification-provider";
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+import { oauthProviderLabel, toastClerkError } from "@/components/auth/shared";
 
 export function ConnectedAccountsSection() {
   const { user } = useUser();
@@ -41,8 +39,7 @@ export function ConnectedAccountsSection() {
       await disconnectAccount(accountId);
       await user.reload();
     } catch (err) {
-      if (isReverificationCancelledError(err)) return;
-      console.error("Failed to disconnect account:", err);
+      toastClerkError(err, "Could not disconnect that account");
     }
   };
 
@@ -55,8 +52,7 @@ export function ConnectedAccountsSection() {
         globalThis.location.assign(redirectUrl);
       }
     } catch (err) {
-      if (isReverificationCancelledError(err)) return;
-      console.error("Failed to connect account:", err);
+      toastClerkError(err, "Could not connect that account");
     }
   };
 
@@ -81,7 +77,7 @@ export function ConnectedAccountsSection() {
         >
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">
-              {capitalize(account.provider)}
+              {oauthProviderLabel(account.provider)}
             </span>
             <span className="text-xs text-muted-foreground">
               {account.emailAddress}
@@ -110,7 +106,7 @@ export function ConnectedAccountsSection() {
                   size="sm"
                   onClick={() => handleConnect(strategy)}
                 >
-                  Connect {capitalize(strategy.replace("oauth_", ""))}
+                  Connect {oauthProviderLabel(strategy)}
                 </Button>
               ))}
             </div>
