@@ -15,11 +15,11 @@ import { Label } from "@/components/ui/cubby-ui/label";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
-import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { toastClerkError } from "@/components/auth/shared";
 import { SettingsSection } from "./settings-section";
 import { EmailSection } from "./email-section";
 import { ConnectedAccountsSection } from "./connected-accounts-section";
-import { getClerkErrorMessage, getInitials } from "@/lib/utils";
+import { getInitials } from "@/lib/utils";
 
 /**
  * Mirrors the three sections `ProfileTab` actually renders — Profile, Email
@@ -48,7 +48,7 @@ function ProfileSkeleton() {
             <Skeleton className="size-12 rounded-full" />
             <Skeleton className="h-4 w-32" />
           </div>
-          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-9 w-32 sm:h-8" />
         </div>
       </div>
       <Separator />
@@ -61,7 +61,7 @@ function ProfileSkeleton() {
         </div>
         <div className="flex flex-col gap-3 lg:col-span-2">
           <Skeleton className="h-14 w-full rounded-lg" />
-          <Skeleton className="h-8 w-36" />
+          <Skeleton className="h-9 w-36 sm:h-8" />
         </div>
       </div>
       <Separator />
@@ -73,11 +73,12 @@ function ProfileSkeleton() {
         </div>
         <div className="flex flex-col gap-4 lg:col-span-2">
           <Skeleton className="h-14 w-full rounded-lg" />
+          <Separator />
           <div className="flex flex-col gap-2">
             <Skeleton className="h-4 w-28" />
             {/* One row + one remaining provider: the shape for a user who
                 signed in with Google or GitHub, which is most of them. */}
-            <Skeleton className="h-8 w-36" />
+            <Skeleton className="h-9 w-36 sm:h-8" />
           </div>
         </div>
       </div>
@@ -141,10 +142,7 @@ export function ProfileTab() {
       // No matching success toast: on success the form crossfades back to the
       // summary showing the new name and avatar, which is the confirmation.
       // Only the failure needs saying, and it used to say nothing.
-      toast.error({
-        title: "Could not save your profile",
-        description: getClerkErrorMessage(err, "Please try again."),
-      });
+      toastClerkError(err, "Could not save your profile");
     } finally {
       setSaving(false);
     }

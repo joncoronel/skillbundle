@@ -16,7 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/cubby-ui/dropdown-menu";
-import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { toastClerkError } from "@/components/auth/shared";
 import { CodeField } from "@/components/auth/code-field";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
 import { useResendTimer } from "@/hooks/use-resend-timer";
@@ -131,11 +131,7 @@ export function EmailSection() {
       await destroyEmail(emailId);
       await user.reload();
     } catch (err) {
-      if (isReverificationCancelledError(err)) return;
-      toast.error({
-        title: "Could not remove that email",
-        description: getClerkErrorMessage(err, "Please try again."),
-      });
+      toastClerkError(err, "Could not remove that email");
     }
   };
 
@@ -144,10 +140,7 @@ export function EmailSection() {
       await user.update({ primaryEmailAddressId: emailId });
       await user.reload();
     } catch (err) {
-      toast.error({
-        title: "Could not set that as your primary email",
-        description: getClerkErrorMessage(err, "Please try again."),
-      });
+      toastClerkError(err, "Could not set that as your primary email");
     }
   };
 

@@ -84,7 +84,7 @@ export function SecurityTab() {
         ) : sessions === undefined ? (
           <SessionsSkeleton />
         ) : (
-          <SessionsTab initialSessions={sessions} />
+          <SessionsTab sessions={sessions} />
         )}
       </SettingsSection>
 
