@@ -15,10 +15,11 @@ import { Label } from "@/components/ui/cubby-ui/label";
 import { Separator } from "@/components/ui/cubby-ui/separator";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { SettingsSection } from "./settings-section";
 import { EmailSection } from "./email-section";
 import { ConnectedAccountsSection } from "./connected-accounts-section";
-import { getInitials } from "@/lib/utils";
+import { getClerkErrorMessage, getInitials } from "@/lib/utils";
 
 /**
  * Mirrors the three sections `ProfileTab` actually renders — Profile, Email
@@ -51,14 +52,15 @@ function ProfileSkeleton() {
         </div>
       </div>
       <Separator />
-      {/* Email addresses: the card, then "Add email address" */}
+      {/* Email addresses: one address row, then "Add email address". `h-14`
+          tracks the `min-h-14` on the real rows in `email-section.tsx`. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
         <div className="flex flex-col gap-1">
           <Skeleton className="h-4 w-28" />
           <Skeleton className="h-4 w-40" />
         </div>
         <div className="flex flex-col gap-3 lg:col-span-2">
-          <Skeleton className="h-12 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-lg" />
           <Skeleton className="h-8 w-36" />
         </div>
       </div>
@@ -136,7 +138,13 @@ export function ProfileTab() {
       resetPendingAvatar();
       setEditing(false);
     } catch (err) {
-      console.error("Failed to update profile:", err);
+      // No matching success toast: on success the form crossfades back to the
+      // summary showing the new name and avatar, which is the confirmation.
+      // Only the failure needs saying, and it used to say nothing.
+      toast.error({
+        title: "Could not save your profile",
+        description: getClerkErrorMessage(err, "Please try again."),
+      });
     } finally {
       setSaving(false);
     }

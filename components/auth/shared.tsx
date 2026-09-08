@@ -12,6 +12,28 @@ import { CodeField } from "./code-field";
 import { cn } from "@/lib/utils";
 
 /**
+ * Display names for the OAuth providers this app offers, keyed by Clerk's bare
+ * provider id (`github`, not `oauth_github`).
+ *
+ * Lives here because two places need it and neither can borrow the other's:
+ * `oauth-buttons.tsx` pairs each label with an inline SVG for the sign-in
+ * buttons, while the settings list only ever renders text. The settings list
+ * used to `capitalize()` the provider id, which spells GitHub "Github".
+ */
+export const OAUTH_PROVIDER_LABELS: Record<string, string> = {
+  google: "Google",
+  github: "GitHub",
+};
+
+/** The label for a provider id, falling back to a capitalized id. */
+export function oauthProviderLabel(provider: string): string {
+  return (
+    OAUTH_PROVIDER_LABELS[provider] ??
+    provider.charAt(0).toUpperCase() + provider.slice(1)
+  );
+}
+
+/**
  * Validate the proxy-injected `redirect_url` query param is same-origin
  * before passing it to Clerk's auth flow. Prevents open-redirect / phishing
  * via crafted `?redirect_url=https://evil.com` links, while still honoring

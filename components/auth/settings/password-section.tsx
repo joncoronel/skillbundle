@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/cubby-ui/input";
 import { Label } from "@/components/ui/cubby-ui/label";
 import { Checkbox } from "@/components/ui/cubby-ui/checkbox";
 import { Crossfade } from "@/components/ui/cubby-ui/crossfade";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useReverificationFlow } from "@/components/auth/reverification-provider";
 import { getClerkErrorMessage } from "@/lib/utils";
 
@@ -19,7 +20,6 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
   const [signOutOthers, setSignOutOthers] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [success, setSuccess] = React.useState(false);
 
   const onNeedsReverification = useReverificationFlow();
 
@@ -47,15 +47,22 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
     }
     setSaving(true);
     setError("");
-    setSuccess(false);
     try {
       await updatePassword({
         newPassword,
         signOutOfOtherSessions: signOutOthers,
       });
-      setSuccess(true);
       resetForm();
-      setTimeout(() => setSuccess(false), 3000);
+      // Toast, not inline text on a timer. A password change leaves nothing on
+      // screen that looks different, so it needs its own confirmation — and the
+      // previous `setTimeout(…, 3000)` was never cleared, so switching tabs
+      // inside that window set state on an unmounted component.
+      toast.success({
+        title: "Password updated",
+        description: signOutOthers
+          ? "Your other devices have been signed out."
+          : undefined,
+      });
     } catch (err) {
       if (isReverificationCancelledError(err)) return;
       setError(getClerkErrorMessage(err, "Failed to update password"));
@@ -71,11 +78,6 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
         <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
           {hasPassword ? "Change password" : "Set password"}
         </Button>
-        {success && (
-          <span className="text-sm text-emerald-600 dark:text-emerald-400">
-            Password updated
-          </span>
-        )}
       </div>
 
       {/* Form */}

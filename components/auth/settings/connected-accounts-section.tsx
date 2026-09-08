@@ -5,9 +5,10 @@ import { useUser, useReverification } from "@clerk/nextjs";
 import { isReverificationCancelledError } from "@clerk/nextjs/errors";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useReverificationFlow } from "@/components/auth/reverification-provider";
-
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+import { oauthProviderLabel } from "@/components/auth/shared";
+import { getClerkErrorMessage } from "@/lib/utils";
 
 export function ConnectedAccountsSection() {
   const { user } = useUser();
@@ -42,7 +43,10 @@ export function ConnectedAccountsSection() {
       await user.reload();
     } catch (err) {
       if (isReverificationCancelledError(err)) return;
-      console.error("Failed to disconnect account:", err);
+      toast.error({
+        title: "Could not disconnect that account",
+        description: getClerkErrorMessage(err, "Please try again."),
+      });
     }
   };
 
@@ -56,7 +60,10 @@ export function ConnectedAccountsSection() {
       }
     } catch (err) {
       if (isReverificationCancelledError(err)) return;
-      console.error("Failed to connect account:", err);
+      toast.error({
+        title: "Could not connect that account",
+        description: getClerkErrorMessage(err, "Please try again."),
+      });
     }
   };
 
@@ -81,7 +88,7 @@ export function ConnectedAccountsSection() {
         >
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-medium">
-              {capitalize(account.provider)}
+              {oauthProviderLabel(account.provider)}
             </span>
             <span className="text-xs text-muted-foreground">
               {account.emailAddress}
@@ -110,7 +117,7 @@ export function ConnectedAccountsSection() {
                   size="sm"
                   onClick={() => handleConnect(strategy)}
                 >
-                  Connect {capitalize(strategy.replace("oauth_", ""))}
+                  Connect {oauthProviderLabel(strategy.replace("oauth_", ""))}
                 </Button>
               ))}
             </div>
