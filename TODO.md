@@ -1285,6 +1285,41 @@ defaults object the vendored file reads, would let an app set it once and retire
 the patch entirely. Less conventional for a copy-in registry, so it may be worth
 shipping the props first and seeing whether the repetition actually bites.
 
+### Upstream to cubby-ui: three `tabs.tsx` motion bugs (Sep 2026)
+
+Found reviewing the settings tabs. All three are in the vendored file, so none is
+patched here — settings works around them at the call site
+(`custom-settings-page.tsx`), which is where app taste belongs anyway. These are
+bugs, not taste, and belong upstream.
+
+1. **`TabsTrigger` hover makes an inactive tab fainter.**
+   `hover:text-muted-foreground/75` (`:200`). Measured: resting
+   `oklch(0.5 0.004 270)`, hovered the same colour at 75% alpha. Hover should
+   move a reachable tab toward `text-foreground`, not away. The active tab is
+   unaffected (`data-active` wins), so the whole effect is "the thing you can
+   click dims when you point at it". Affects `skill-tabs.tsx` too.
+
+2. **`TabsPanels`' height transition has no reduced-motion gate.**
+   `has-[>_*_>_[data-ending-style]]:transition-[height]` (`:251`) while
+   `TabsContent` carries `motion-reduce:transition-none` (`:291`). Under reduced
+   motion the panel snaps and the container keeps sliding. Note for whoever
+   fixes it: an unmarked `motion-reduce:transition-none` on the container does
+   NOT work, because the `:has()` outranks a plain class — measured, the
+   container still computed `transition-property: height`. The call-site
+   workaround uses the `!` modifier.
+
+3. **`activation-direction=none` slides the two panels through each other.**
+   Starting `translate-y-3` and ending `translate-y-3` (`:289-290`), so the
+   entering panel rises from below while the exiting one drops. Every
+   directional case is correctly co-directional; the ending value here should be
+   `-translate-y-3`. No consumer hits it today (settings passes
+   `disableAnimation`, `skill-tabs.tsx` has no panels), so this one is cosmetic
+   until someone uses the defaults.
+
+Also stale in that file: `:276` says the fade scales "via `--fade-duration`" and
+`:279` says the slide is "fixed 400ms". `--fade-duration` is read only by
+`transition-panel.tsx`, and nothing in `TabsContent` is 400ms.
+
 ### Proposal for cubby-ui: one `MenuSwitchIndicator` instead of four copies
 
 `dropdown-menu.tsx`, `context-menu.tsx`, `menubar.tsx` and `base-drawer.tsx` each
