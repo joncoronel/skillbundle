@@ -160,6 +160,16 @@ export function BundleBar() {
             // loading from localStorage right after hydration), there is no
             // prior frame and it pops in. @starting-style animates the
             // element's *insertion* itself, so that case slides in too.
+            //
+            // Keep these as `translate-y-*`, do NOT rewrite them as a literal
+            // `[translate:...]` the way crossfade.tsx does. That file has no
+            // horizontal transform, so a literal is equivalent there. Here
+            // `sm:-translate-x-1/2` above sets `--tw-translate-x`, and the two
+            // axes compose through the shared vars: a literal y would drop the
+            // centering for the starting frame and the bar would slide up from
+            // half its width off-centre. Hardcoding `-50%` into the literal
+            // would work and would silently disagree the day the centering
+            // changes.
             "starting:translate-y-full sm:starting:translate-y-[calc(100%+1rem)]",
           )}
         >
