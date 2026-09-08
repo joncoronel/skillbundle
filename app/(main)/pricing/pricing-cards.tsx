@@ -293,16 +293,14 @@ function PlanCard({
   );
 }
 
+// `h-[1em]` carries the line box, not `leading-none` alone: `text-3xl` ships its
+// own line-height and wins the cascade. It lives here rather than at the call
+// sites because the two price variants once disagreed, leaving the Free card's
+// caption 6px below Pro's while both figures sat on the same line.
 const FIGURE =
   "h-[1em] text-3xl leading-none font-semibold tracking-tight tabular-nums";
 
-/**
- * A price that never changes. The free card.
- *
- * `h-[1em]` rather than `leading-none` alone: `text-3xl` carries its own
- * line-height and wins the cascade, so the box was 36px against the cycling
- * price's pinned 30px and this card's caption sat 6px lower than Pro's.
- */
+/** A price that never changes. The free card. */
 function Price({ amount, caption }: { amount: number; caption: string }) {
   return (
     <p className="flex flex-col gap-1">
