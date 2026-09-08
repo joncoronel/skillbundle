@@ -56,7 +56,7 @@ type TransitionPanelContextValue = {
   transition: "slide" | "fade";
   enterFrom: string;
   exitTo: string;
-  mounted: boolean;
+  hasActivated: boolean;
   registerView: (
     key: string,
     el: HTMLElement,
@@ -280,15 +280,20 @@ function TransitionPanel({
 
   // Direction from registry order (not React.Children, so views can be wrapped
   // / conditional / Suspense-gated). On first render `orderedKeys` is empty and
-  // direction defaults to forward, but `mounted` is also false then so no slide
-  // observes the placeholder.
+  // direction defaults to forward, but `hasActivated` is also false then so no
+  // slide observes the placeholder.
   const currentIdx = orderedKeys.indexOf(activeKey);
   const previousIdx = orderedKeys.indexOf(previousKey);
   const direction = currentIdx >= previousIdx ? 1 : -1;
 
   // False only on initial render (both keys start equal); the first swap flips
   // it permanently. Gates `data-activation-direction` so consumers can tell
-  // "first paint" from a real swap.
+  // "first paint" from a real swap, and the views' `@starting-style` so the
+  // initial view doesn't animate in on mount. A swap is exactly when a view
+  // goes `display: none` to displayed, so deriving the flag here turns it on in
+  // the same commit as that change — which a mount effect cannot do reliably,
+  // even deferred through `requestAnimationFrame`. See `crossfade.tsx`, which
+  // carries the same guard and the reason in full.
   const hasActivated = activeKey !== previousKey;
 
   // Dev warning, gated on a populated registry (view layout effects run after
@@ -302,15 +307,6 @@ function TransitionPanel({
       );
     }
   }
-
-  // Skip `@starting-style` on first paint so the initial view doesn't animate
-  // in on mount. The `requestAnimationFrame` defer is required: without it,
-  // mobile Chrome still triggers `@starting-style` and slides the content in.
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => {
-    const id = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
 
   // Focus management for swaps. Views stay mounted, so "autoFocus on mount"
   // can't fire on re-activation. `useLayoutEffect` (not `useEffect`) runs the
@@ -346,10 +342,10 @@ function TransitionPanel({
       transition,
       enterFrom,
       exitTo,
-      mounted,
+      hasActivated,
       registerView,
     }),
-    [activeKey, transition, enterFrom, exitTo, mounted, registerView],
+    [activeKey, transition, enterFrom, exitTo, hasActivated, registerView],
   );
 
   // `data-activation-direction` matches Base UI's Tabs.Panel vocabulary:
@@ -479,8 +475,14 @@ function TransitionPanelView({
       "TransitionPanelView must be rendered inside a TransitionPanel.",
     );
   }
-  const { activeKey, transition, enterFrom, exitTo, mounted, registerView } =
-    ctx;
+  const {
+    activeKey,
+    transition,
+    enterFrom,
+    exitTo,
+    hasActivated,
+    registerView,
+  } = ctx;
   const isActive = viewKey === activeKey;
   const isFade = transition === "fade";
   const cssExit = useCssExitSupported();
@@ -569,7 +571,7 @@ function TransitionPanelView({
         : "duration-(--tp-duration) ease-(--tp-ease)",
       cssExit && "transition-discrete",
       "motion-reduce:transition-none",
-      mounted && "starting:opacity-0",
+      hasActivated && "starting:opacity-0",
       // Slide sets the `translate` property *directly* rather than via Tailwind's
       // `translate-x-*` (which routes through the `@property`-registered var
       // `--tw-translate-x`). WebKit drops an `@starting-style` value on a
@@ -578,7 +580,7 @@ function TransitionPanelView({
       // collapses to 0 and the entering view jumps in with no slide (only the
       // crossfade survives). Chrome resolves it fine. Setting `translate` directly
       // bypasses the registered var. Fade's `scale-*` is a literal, so it's safe.
-      mounted &&
+      hasActivated &&
         (isFade
           ? "starting:scale-[0.96]"
           : "starting:[translate:var(--tp-enter)_0]"),

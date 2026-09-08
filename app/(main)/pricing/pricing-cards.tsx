@@ -66,6 +66,27 @@ type Cycle = "monthly" | "yearly";
 // serious number.
 const SWAP = { type: "spring", duration: 0.2, bounce: 0 } as const;
 
+// `lib/plans.ts` holds whole dollars, but the yearly card shows the monthly
+// EQUIVALENT — a division, so the figure has to survive a yearly price that
+// isn't a multiple of twelve. Two formatters rather than
+// `trailingZeroDisplay: "stripIfInteger"`, which says it in one: where that
+// option isn't understood it is ignored rather than approximated, and every
+// whole price renders as "$4.00".
+const WHOLE_PRICE = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 0,
+});
+const CENTS_PRICE = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** `4` → "4", `4.5` → "4.50", `4.1666…` → "4.17". */
+function formatPrice(value: number): string {
+  return Number.isInteger(value)
+    ? WHOLE_PRICE.format(value)
+    : CENTS_PRICE.format(value);
+}
+
 export function PricingCards() {
   const [cycle, setCycle] = useState<Cycle>("monthly");
 
@@ -178,9 +199,15 @@ function ProCard({ cycle }: { cycle: Cycle }) {
   const plan = PLANS.pro;
   const monthly = plan.priceMonthly ?? 0;
   const yearly = plan.priceYearly ?? 0;
-  const amount = cycle === "monthly" ? monthly : Math.round(yearly / 12);
+  // Not `Math.round`: it agreed with the caption only while the yearly price
+  // was a multiple of twelve. At $54/yr it showed $5 — the monthly price
+  // exactly — so the toggle would have animated a figure that never moved while
+  // still claiming a saving.
+  const amount = cycle === "monthly" ? monthly : yearly / 12;
   const caption =
-    cycle === "monthly" ? "per month" : `per month, $${yearly} billed yearly`;
+    cycle === "monthly"
+      ? "per month"
+      : `per month, $${formatPrice(yearly)} billed yearly`;
 
   return (
     <PlanCard
@@ -266,13 +293,18 @@ function PlanCard({
   );
 }
 
-const FIGURE = "text-3xl font-semibold tracking-tight tabular-nums";
+// `h-[1em]` carries the line box, not `leading-none` alone: `text-3xl` ships its
+// own line-height and wins the cascade. It lives here rather than at the call
+// sites because the two price variants once disagreed, leaving the Free card's
+// caption 6px below Pro's while both figures sat on the same line.
+const FIGURE =
+  "h-[1em] text-3xl leading-none font-semibold tracking-tight tabular-nums";
 
 /** A price that never changes. The free card. */
 function Price({ amount, caption }: { amount: number; caption: string }) {
   return (
     <p className="flex flex-col gap-1">
-      <span className={cn("leading-none", FIGURE)}>${amount}</span>
+      <span className={cn("block", FIGURE)}>${formatPrice(amount)}</span>
       <span className="text-xs text-muted-foreground">{caption}</span>
     </p>
   );
@@ -307,24 +339,28 @@ function CyclingPrice({
   return (
     <p className="flex flex-col gap-1">
       <span className="sr-only" aria-live="polite" aria-atomic>
-        ${amount} {caption}
+        ${formatPrice(amount)} {caption}
       </span>
-      <span
-        aria-hidden
-        className="relative block h-[1em] text-3xl leading-none"
-      >
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.span
-            key={amount}
-            initial={hidden}
-            animate={shown}
-            exit={hiddenUp}
-            transition={SWAP}
-            className={cn("absolute inset-x-0 top-0 block", FIGURE)}
-          >
-            ${amount}
-          </motion.span>
-        </AnimatePresence>
+      {/* The `$` stays outside AnimatePresence: it is the same symbol in both
+          cycles. It is also a preceding flex item, so nothing the digits do can
+          move it. The slot is only `relative` to give `popLayout` something to
+          pin the outgoing figure to. */}
+      <span aria-hidden className={cn("flex", FIGURE)}>
+        <span>$</span>
+        <span className="relative block">
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.span
+              key={amount}
+              initial={hidden}
+              animate={shown}
+              exit={hiddenUp}
+              transition={SWAP}
+              className="block"
+            >
+              {formatPrice(amount)}
+            </motion.span>
+          </AnimatePresence>
+        </span>
       </span>
       <span
         aria-hidden

@@ -1188,7 +1188,7 @@ edits silently. Keep this list to exactly what is still local — everything tha
 gets upstreamed should be deleted from it, or the list becomes a to-do nobody
 trusts.
 
-**Currently two entries.** An earlier round of this list had nine; the other eight
+**Currently three entries.** An earlier round of this list had nine; the other eight
 were fixed upstream in cubby-ui and came back in the next `shadcn add`, which is
 the outcome to aim for. That round is worth copying: the Switch's `squash`
 variant, CopyButton's `display: contents` wrapper and the `sr-only` removal from
@@ -1211,6 +1211,29 @@ Button all landed upstream in better shape than the local patch had them.
   here uses `direction="left"|"right"`. Worth upstreaming: the intent is to stop
   scroll chaining out of the drawer, which the component already does on the
   scrolling element.
+
+- **`transition-panel.tsx` — `@starting-style` is gated on `hasActivated`, not
+  on a mount effect.** Upstream holds a separate `mounted` flag, flipped in a
+  `useEffect` deferred through one `requestAnimationFrame`. That defers around
+  the problem rather than removing it: React flushes pending passive effects
+  synchronously when another update arrives first, so the `starting:` classes
+  can be added before the browser has resolved style for the just-committed
+  subtree, and `@starting-style` still applies — a panel that mounts
+  mid-session (behind Suspense, or gated on data) plays its entrance once.
+  `hasActivated` is already computed two lines up, already documented as "the
+  first swap flips it permanently", and is the exact condition the starting
+  styles exist for: a view only goes `display: none` to displayed when
+  `activeKey` moves. Deriving it during render puts the flag in the same commit
+  as the `display` change, so there is no paint timing to schedule around.
+  **Re-apply by deleting the `mounted` state and its effect, and passing
+  `hasActivated` through the context in its place** (the context field and the
+  two `TransitionPanelView` call sites are renamed to match). Verified only
+  indirectly: nothing in this app renders `TransitionPanel`, so the measurement
+  behind it is from `components/ui/cubby-ui/crossfade.tsx` (ours, not vendored
+  — it just lives in that folder), which had the same bug in
+  the same shape — `transitionstart` for `opacity`, `filter` and `translate`
+  fired ~430ms into a `/settings` load, on both tabs, until the same change
+  landed. Worth upstreaming; if it does, this entry goes away.
 
 - **`button.tsx` — two default values.** `DEFAULT_LOADING_INDICATOR` and
   `DEFAULT_LOADING_LAYOUT`, both at the top of the file, both one line. The
