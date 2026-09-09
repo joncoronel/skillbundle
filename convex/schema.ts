@@ -153,7 +153,9 @@ export default defineSchema({
     // `schemaValidation` checks every existing document on push, so the
     // successful `npx convex deploy` of this narrowed schema is itself the
     // proof. Re-verified against prod after the fact: 300 rows sampled, 0 still
-    // carrying a momentum field.
+    // carrying a momentum field. The dev deployment needed the same pass and got
+    // it later, which is worth knowing: a one-shot data repair has to run once
+    // per deployment, and `--prod` only covers one of them.
     //
     // Worst audit verdict across all providers, denormalized so the cards
     // can render a badge without a join. Mirrors the value on `skillAudits`.
