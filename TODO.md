@@ -4,7 +4,68 @@ A running list of things to build, ideas, and parked decisions — so they don't
 lost in chat. Not a committed roadmap; a scratchpad. Move items to a "Done" note or
 delete them when shipped. Newest thinking near the top.
 
-## Under consideration
+## Launch checklist — Sep 2026
+
+What is left before a public launch. Shipped items are deleted from this list,
+not ticked, so what remains here is what remains to do.
+
+### Blocking
+
+- **Fill in `GOVERNING_LAW` in `lib/legal.ts`.** It is the literal string
+  `[YOUR STATE OR COUNTRY]` and renders that way in section 12 of `/terms`. It
+  is the ONLY placeholder in either legal document — everything else is already
+  true of the app.
+- **Move Clerk to a production instance.** Local is on `pk_test_`/`sk_test_`.
+  Needs, in order: DNS for `clerk.skillbundle.dev`; **your own Google and GitHub
+  OAuth apps** (a dev instance uses Clerk's shared credentials, which stop
+  working in production, and Google's verification wants the `/privacy` URL that
+  now exists); `pk_live` keys on Vercel; `CLERK_JWT_ISSUER_DOMAIN` repointed on
+  Convex prod; the webhook repointed at prod Convex.
+- **Polar go-live.** `docs/polar-launch-checklist.md` has the steps. Longest
+  lead time of anything here — ID verification takes up to a week, so start it
+  before it is on the critical path. Note that doc's price table is STALE: it
+  says $8/$72, `lib/plans.ts` says $5/$48, and `lib/plans.ts` is authoritative
+  (both `/pricing` and `/terms` read from it).
+- **Forgot password.** Still missing, fully specced below under "Forgot
+  password: no reset flow exists". A user who forgets their password and has no
+  OAuth connection cannot get back in.
+
+### Should do before announcing
+
+- **Real error monitoring.** `error_boundary_shown` (see `lib/analytics.ts`) is
+  a rate signal only: no stack traces, no grouping, no alerting, and
+  `app/global-error.tsx` cannot report at all because it replaces the document
+  and the OpenPanel script with it. Sentry or equivalent is the actual answer.
+- **Verify the analytics events fire in production.** They no-op outside
+  production by design (`window.op` is undefined), so a miswired event is
+  invisible locally. Check the OpenPanel dashboard after the first deploy.
+- **Two funnel gaps to know about.** OAuth sign-ups and sign-ins are NOT counted
+  (`AuthenticateWithRedirectCallback` exposes no success hook), so read
+  `signup_completed` as "password signups" and check the real total in Clerk.
+  And `checkout_started` is intent, not revenue — compare it against Polar's
+  `subscription.created` to get abandonment.
+- **Search Console and Bing verification.** `app/robots.ts` records that
+  Googlebot made ONE request in 24h. The sitemap is advertised but the property
+  is not verified.
+- **Report affordance + moderation view** for public adds — see "Public
+  add-skill: moderation / report queue" below. Deferred until abuse appears; a
+  launch spike is how abuse appears.
+- **Convex backup export cadence**, and uptime monitoring on the apex domain.
+
+### Parked, with reasons
+
+- **CSP.** `next.config.ts` now sets HSTS, `X-Content-Type-Options`,
+  `Referrer-Policy` and `Permissions-Policy`, and the header block there argues
+  why a Content-Security-Policy is deliberately NOT among them. Doing it
+  properly means nonces and a report-only rollout, which is its own change.
+- **Sign-up consent line.** "By creating an account you agree to…" now has real
+  documents to link. Not added yet because it changes the sign-up card's layout,
+  which was designed in PR #88 — worth doing with an eye on that.
+- **`<button>` inside `<a>` on the checkout path.** `CheckoutLink` renders an
+  anchor and `app/(main)/pricing/pricing-cards.tsx` puts a real `<button>`
+  inside it, which is invalid HTML (interactive content inside a link). It
+  works, and it is the payment path, so it was left alone rather than changed
+  in a launch-prep pass. Fix with `nativeButton={false}`, and test checkout.
 
 ### Google Sans Code is preloaded on every route, used on few — Sep 2026
 

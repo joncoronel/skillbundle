@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
+import { track } from "@/lib/analytics";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
@@ -88,6 +89,10 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
           skillId,
         })),
       });
+
+      // The activation event. `skillCount` only — never the bundle name or its
+      // contents, which are the user's (see lib/analytics.ts).
+      track("bundle_created", { skillCount: selectedSkills.length });
 
       clearAll();
       setName("");

@@ -5,6 +5,7 @@ import { useSignIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
+import { track } from "@/lib/analytics";
 import { AuthFrame } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
 import {
@@ -73,6 +74,11 @@ export function SignInForm() {
         // No session tasks are configured in this app; if one is ever pending,
         // Clerk keeps the session incomplete and we don't navigate.
         if (session?.currentTask) return;
+        // Inside `finalize`, so both entry paths are counted once each: a
+        // straight password sign-in, and one that had to clear the Client Trust
+        // email code first. Tracking at `submit` instead would count the second
+        // kind before it succeeded.
+        track("signin_completed");
         navigateAfterAuth(router, decorateUrl);
       },
     });

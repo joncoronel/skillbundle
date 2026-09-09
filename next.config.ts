@@ -72,6 +72,60 @@ const nextConfig: NextConfig = {
     "/bundle/[id]/og/[v]": ["./assets/og/**"],
   },
   allowedDevOrigins: ["192.168.1.128"],
+  // Security response headers, applied to every route.
+  //
+  // Deliberately NOT including a Content-Security-Policy. A useful CSP here
+  // would have to allow Clerk's scripts and frames, the Convex websocket, the
+  // Polar checkout redirect, Typesense's browser-direct search XHR, and the
+  // OpenPanel script — and `'unsafe-inline'` for styles either way, since
+  // Tailwind and next-themes both inject inline. A CSP that permissive buys
+  // little and breaks loudly and remotely the first time a provider moves a
+  // domain. Adding one properly means nonces and a report-only rollout, which
+  // is its own change; the headers below are the part that is unambiguously
+  // worth having and cannot break a provider.
+  //
+  // No `X-XSS-Protection`: it is a legacy IE/Chrome filter, removed from every
+  // current browser, and was itself exploitable. No `X-Frame-Options`: it is
+  // superseded by `frame-ancestors`, and Clerk's flows use frames — pick that
+  // fight in the CSP change, not here.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // Two years, preloadable. HSTS is the one header here that is hard to
+          // undo: browsers cache it for its full max-age, so a site that
+          // publishes this and later needs plain HTTP on a subdomain is stuck
+          // until it expires. That is fine for this app (Vercel terminates TLS
+          // on every domain we use) but it is the reason to read before
+          // copying.
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          // Stop browsers second-guessing our Content-Type. Relevant here
+          // because the app serves generated non-HTML from routes that look
+          // like pages: sitemap.xml, robots.txt, and ~16k OG images.
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // Send the full URL to ourselves, only the origin cross-site. The
+          // default in current browsers is already strict-origin-when-
+          // cross-origin, so this pins it rather than changing it.
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          // Deny the powerful APIs this app has no use for, so a compromised
+          // third-party script cannot reach for them. Kept to a short list of
+          // things we will genuinely never want, rather than an exhaustive
+          // denylist that has to be edited every time a feature is added.
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), payment=()",
+          },
+        ],
+      },
+    ];
+  },
   // Proxy OpenPanel through our own domain so requests aren't blocked by
   // ad-blockers. The layout's OpenPanelComponent points at these paths via
   // apiUrl/cdnUrl.

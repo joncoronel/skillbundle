@@ -28,6 +28,7 @@ import {
 } from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 type Params = Promise<{ org: string; repo: string }>;
 
@@ -58,7 +59,10 @@ export async function generateMetadata({
   };
 
   if (skills.length === 0) {
-    return { title: "Repository not found | SkillBundle" };
+    return {
+      title: "Repository not found | SkillBundle",
+      robots: NOT_FOUND_ROBOTS,
+    };
   }
 
   const title = `${source} — skills | SkillBundle`;

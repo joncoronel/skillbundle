@@ -31,6 +31,7 @@ import {
 import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
+import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 type Params = Promise<{ org: string }>;
 
@@ -74,7 +75,10 @@ export async function generateMetadata({
   const { repos, totalSkillCount } = org_ ?? { repos: [], totalSkillCount: 0 };
 
   if (repos.length === 0) {
-    return { title: "Organization not found | SkillBundle" };
+    return {
+      title: "Organization not found | SkillBundle",
+      robots: NOT_FOUND_ROBOTS,
+    };
   }
 
   const title = `${org} — ${repos.length} repo${

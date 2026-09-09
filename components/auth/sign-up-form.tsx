@@ -5,6 +5,7 @@ import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
+import { track } from "@/lib/analytics";
 import { AuthFrame, AuthPendingBody } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
 import {
@@ -104,6 +105,10 @@ export function SignUpForm() {
       await signUp.finalize({
         navigate: ({ session, decorateUrl }) => {
           if (session?.currentTask) return;
+          // After the email code is verified, so this counts accounts that
+          // actually exist rather than forms that were submitted. The gap
+          // between the two is the drop-off worth seeing.
+          track("signup_completed");
           navigateAfterAuth(router, decorateUrl);
         },
       });

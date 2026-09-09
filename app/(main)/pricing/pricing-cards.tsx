@@ -52,6 +52,7 @@ import { useUserPlan } from "@/hooks/use-user-plan";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
+import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 const PRO_MONTHLY_PRODUCT_ID =
@@ -516,7 +517,15 @@ function ProCheckout({ cycle }: { cycle: Cycle }) {
       embed={false}
       lazy
     >
-      <Button variant="primary" className="w-full">
+      {/* Fires on the press, before Polar's hosted checkout is reached. So this
+          counts INTENT, not revenue: the drop-off between it and a
+          subscription.created webhook is the checkout abandonment rate. Do not
+          read it as a conversion. */}
+      <Button
+        variant="primary"
+        className="w-full"
+        onClick={() => track("checkout_started", { cycle })}
+      >
         {PLANS.pro.cta.upgrade}
       </Button>
     </CheckoutLink>

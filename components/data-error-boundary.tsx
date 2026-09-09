@@ -2,6 +2,7 @@
 
 import { catchError, type ErrorInfo } from "next/error";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { useErrorReport } from "@/hooks/use-error-report";
 
 /**
  * Region-level error boundary for the Convex-backed data sections.
@@ -31,6 +32,17 @@ function DataErrorFallback(
     error instanceof Error
       ? (error as Error & { digest?: string }).digest
       : undefined;
+
+  // A hook here is legal despite the unusual `(props, errorInfo)` signature.
+  // `catchError` wraps this function in a real component
+  // (`const Fallback = ({props, errorInfo}) => fallback(props, errorInfo)` in
+  // next/dist/client/components/catch-error.js) and renders it as JSX, so this
+  // call happens during that component's render, in stable order.
+  //
+  // `label` is the boundary identity rather than the error text: it is a
+  // hard-coded string from the call site ("this skill's history"), so it is
+  // safe to send and tells you WHICH region broke.
+  useErrorReport(digest, label);
 
   return (
     // `role="alert"` because this swaps in *after* the page has committed,

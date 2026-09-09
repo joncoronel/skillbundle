@@ -19,6 +19,8 @@ const RESERVED_FIRST_SEGMENTS = new Set([
   "pricing",
   "dev",
   "test",
+  "privacy",
+  "terms",
 ]);
 
 function isBrowseRoute(pathname: string): boolean {

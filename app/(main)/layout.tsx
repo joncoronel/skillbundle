@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { AppHeader } from "@/components/app-header";
 import { GlobalBundleBar } from "@/components/global-bundle-bar";
+import { SiteFooter } from "@/components/site-footer";
 
 export default function MainLayout({
   children,
@@ -55,6 +56,15 @@ export default function MainLayout({
       >
         {children}
       </main>
+
+      {/* Outside <main> on purpose: `contentinfo` is its own landmark, and
+          nesting it inside the main landmark takes that away.
+          `e2e/landmarks.spec.ts` asserts exactly one <main>, which this must
+          not become part of. No <Suspense> needed — it is fully static, so it
+          ships in every route's prerendered shell rather than streaming in
+          after it, which is also what makes the legal links crawlable. */}
+      <SiteFooter />
+
       {/* Lives in the layout (not per page) so the same instance — and its
           open/collapsed state — persists across home ↔ compare navigations.
           GlobalBundleBar reads usePathname() to gate visibility, which suspends
