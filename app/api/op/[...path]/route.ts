@@ -20,7 +20,11 @@ import { createRouteHandler } from "@openpanel/nextjs/server";
  *
  * Nested at `/api/op` rather than the docs' `app/api/[...op]/route.ts`, which is
  * a catch-all at the `/api` root that would swallow every mistyped `/api/*`
- * path. The handler finds `/track` inside the pathname and matches the script on
- * an `/op1.js` suffix, so nesting costs nothing.
+ * path. The handler finds `/track` inside the pathname, so nesting costs
+ * nothing.
+ *
+ * Its script branch (keyed on an `/op1.js` suffix) is deliberately unused: that
+ * filename is on ad-blocker lists, so the script is served from the sibling
+ * `s/route.ts` instead. See there.
  */
 export const { GET, POST } = createRouteHandler();
