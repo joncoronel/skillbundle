@@ -137,38 +137,16 @@ export default defineSchema({
     // string from /skills/curated, e.g. "vercel-labs"). Undefined for
     // non-curated skills. Drives the "Official" badge on cards.
     curatedOwner: v.optional(v.string()),
-    // ── DEAD FIELDS on THIS table (Sep 2026). Do not read, do not write. ──
+    // NO MOMENTUM FIELDS HERE, deliberately (removed Sep 2026).
+    // `trendingRank`, `trendingInstalls`, `hotRank`, `hotChange` and
+    // `hotInstallsYesterday` live on `skillSummaries` ONLY. They used to be
+    // mirrored onto this table too, and the mirror was pure cost: Convex bills a
+    // patch against the whole document, so writing two small numbers rewrote a
+    // ~10 KB row — ~8x the bytes of the summary write that actually mattered —
+    // on two hourly crons, for a copy nothing ever read. Both leaderboard
+    // indices are on `skillSummaries`; see convex/leaderboards.ts for the
+    // measurement. Do not add them back.
     //
-    // The five momentum fields below are live on `skillSummaries` and dead
-    // here. `convex/leaderboards.ts` used to mirror every stamp onto this ~10 KB
-    // row as well as the ~1.3 KB summary; Convex bills a patch against the whole
-    // document, so that mirror cost ~8x the bytes of the write that mattered, on
-    // two hourly crons, for a copy nothing read. The header in that file has the
-    // measurement.
-    //
-    // They are still declared because documents still carry the values a schema
-    // push would have to validate. `convex/momentumFieldsRepair.ts` clears them;
-    // once it reports `cleared 0`, delete these five declarations along with it.
-    // The delist path in `skills.ts` may keep clearing them until then — that is
-    // free, since it is inside a patch the row is already taking.
-    //
-    // Trending leaderboard rank (1..N). Undefined when not on the trending
-    // leaderboard. Refreshed by syncTrending cron.
-    trendingRank: v.optional(v.number()),
-    // Installs over the trending window (~24h) from the v1 "trending" view —
-    // the metric that view is ranked by (NOT lifetime installs). Shown on the
-    // Trending tab. Set and cleared in lockstep with trendingRank.
-    trendingInstalls: v.optional(v.number()),
-    // Hot view: rank (1..N) in the v1 "hot" leaderboard, which orders by
-    // current-hour install volume. Undefined when not on the hot view.
-    // Refreshed by syncHot. `hotChange` is the day-over-day delta for the
-    // current hour — current-hour installs minus the same hour yesterday (per
-    // the v1 hot view), so it can be negative — used for the momentum chip;
-    // `hotInstallsYesterday` is that same-hour-yesterday count (so current-hour
-    // volume = hotChange + hotInstallsYesterday). Not the ranking key — hotRank is.
-    hotRank: v.optional(v.number()),
-    hotChange: v.optional(v.number()),
-    hotInstallsYesterday: v.optional(v.number()),
     // Worst audit verdict across all providers, denormalized so the cards
     // can render a badge without a join. Mirrors the value on `skillAudits`.
     // "pass" | "warn" | "fail" | "unknown". Undefined when audits never fetched.

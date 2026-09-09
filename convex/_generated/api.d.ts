@@ -47,7 +47,6 @@ import type * as lib_skillsAuth from "../lib/skillsAuth.js";
 import type * as lib_slugDecision from "../lib/slugDecision.js";
 import type * as lib_source from "../lib/source.js";
 import type * as lib_typesense from "../lib/typesense.js";
-import type * as momentumFieldsRepair from "../momentumFieldsRepair.js";
 import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
 import type * as recommendations from "../recommendations.js";
@@ -106,7 +105,6 @@ declare const fullApi: ApiFromModules<{
   "lib/slugDecision": typeof lib_slugDecision;
   "lib/source": typeof lib_source;
   "lib/typesense": typeof lib_typesense;
-  momentumFieldsRepair: typeof momentumFieldsRepair;
   plans: typeof plans;
   polar: typeof polar;
   recommendations: typeof recommendations;

@@ -2608,12 +2608,10 @@ export const delistSkillsBatch = internalMutation({
           needsEmbedding: false,
           // Mirrors the summary patch above — see the needsAudit note there.
           needsAudit: false,
-          // Mirror the leaderboard cleanup from skillSummaries above.
-          trendingRank: undefined,
-          trendingInstalls: undefined,
-          hotRank: undefined,
-          hotChange: undefined,
-          hotInstallsYesterday: undefined,
+          // No leaderboard cleanup here, unlike the summary patch above: the
+          // momentum fields (trendingRank / hotRank / …) exist on
+          // `skillSummaries` only. They were removed from this table in Sep
+          // 2026 because nothing read them here — see convex/leaderboards.ts.
         });
 
         // Delete the embedding row entirely — delisted skills are excluded

@@ -124,22 +124,6 @@ not ticked, so what remains here is what remains to do.
      rendered; a soft-404 or an empty shell is a 200 either way (see
      `lib/soft-404.ts` for why this app returns 200 on missing catalog rows).
 
-### Momentum fields on `skills`: finish the cleanup — Sep 2026
-
-Owns the deletion of `convex/momentumFieldsRepair.ts`, per the one-shot rule in
-AGENTS.md. Three steps, one done:
-
-1. ~~Stop writing `trendingRank` / `trendingInstalls` / `hotRank` / `hotChange` /
-   `hotInstallsYesterday` to the `skills` table.~~ Done — see
-   `convex/leaderboards.ts`.
-2. **Run the repair** to clear the values already stored:
-   `npx convex run momentumFieldsRepair:clearOnSkills --prod`. Costs one walk of
-   `skills` (~16k rows at ~10 KB = ~160 MB). Done when it logs `cleared 0`.
-3. **Then** delete the five field declarations from the `skills` table in
-   `convex/schema.ts` (they are flagged DEAD there) and delete the repair file.
-   Step 3 cannot precede step 2: a schema push validates existing documents, and
-   they still carry the values until the repair clears them.
-
 ### Parked, with reasons
 
 - **Sentry (or equivalent) error monitoring.** Deferred deliberately, Sep 2026.
