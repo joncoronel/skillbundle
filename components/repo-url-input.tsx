@@ -48,6 +48,7 @@ import {
   CollapsibleContent,
 } from "@/components/ui/cubby-ui/collapsible";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
 
 // Fingerprint languages arrive lowercased from the GitHub API mapping;
@@ -149,10 +150,18 @@ export function RepoAnalysisResults() {
 
   const { data, isPending, error } = useQuery<AnalyzeRepoResult>({
     queryKey: ["repo", "analyze", trimmedUrl],
-    queryFn: () =>
-      convex.action(api.recommendations.analyzeRepo, {
+    queryFn: () => {
+      // In `queryFn` rather than on the submit handler, so it counts runs that
+      // actually reach the server. A cache hit inside `staleTime` does not call
+      // this, which is correct: no GitHub walk happened, so no run happened.
+      // `isExample` separates the free demo from real usage — conflating them
+      // would make the paid feature look far more used than it is. The URL
+      // itself is never sent; it can name a private org.
+      track("repo_match_run", { demo: isExample });
+      return convex.action(api.recommendations.analyzeRepo, {
         repoUrl: trimmedUrl,
-      }),
+      });
+    },
     enabled: canFetch,
     staleTime: 10 * 60_000,
     gcTime: 10 * 60_000,

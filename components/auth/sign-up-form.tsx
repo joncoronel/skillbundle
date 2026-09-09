@@ -5,6 +5,7 @@ import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
+import { track } from "@/lib/analytics";
 import { AuthFrame, AuthPendingBody } from "./auth-frame";
 import { OAuthButtons } from "./oauth-buttons";
 import {
@@ -16,6 +17,7 @@ import {
   AuthFieldLabel,
   AuthFooterPrompt,
   AuthFormError,
+  AuthLegalConsent,
   AuthPasswordField,
   AuthSubmitButton,
   isExpiredCodeError,
@@ -104,6 +106,10 @@ export function SignUpForm() {
       await signUp.finalize({
         navigate: ({ session, decorateUrl }) => {
           if (session?.currentTask) return;
+          // After the email code is verified, so this counts accounts that
+          // actually exist rather than forms that were submitted. The gap
+          // between the two is the drop-off worth seeing.
+          track("signup_completed");
           navigateAfterAuth(router, decorateUrl);
         },
       });
@@ -209,6 +215,10 @@ export function SignUpForm() {
     <AuthFrame
       title="New account."
       description="Start building your stack. Takes a minute."
+      // Replaces the default Privacy · Terms links: this is the one screen
+      // where the documents start binding, so it states that rather than just
+      // linking them.
+      legal={<AuthLegalConsent />}
       footer={
         <AuthFooterPrompt prompt="Already have an account?">
           <AuthCrossLink href="/sign-in">Sign in</AuthCrossLink>

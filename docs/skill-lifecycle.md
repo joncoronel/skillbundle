@@ -347,10 +347,17 @@ so it trades robustness (against skills.sh outages, and against our own reconcil
 stalling) for a fresher catalog, to solve a population that doesn't exist. It's
 deferred, not rejected.
 
-**Trigger to revisit (surfaced where you actually look — not buried in logs).** The
-daily stats recalc counts this population (`syncStats.deadButInstallable`: healthy +
+**Trigger to revisit (surfaced where you actually look — not buried in logs).** A
+stats recalc counts this population (`syncStats.deadButInstallable`: healthy +
 unseen >7 days) and the **`/dev` dashboard shows it as a stat card** that flips to a
-warning badge when it climbs (>20). That's the primary signal — it's ~0 in steady
+warning badge when it climbs (>20).
+
+**That recalc is MANUAL as of Sep 2026** — it was chained off the daily sync and was
+unchained because it full-scans `skillSummaries` to feed a page only an admin opens
+(see `convex/leaderboards.ts` for the bandwidth argument). So the card is only as
+fresh as the last press of "Recalculate stats"; `/dev` states its age and flags it
+stale after 48h. Press it before reading this number, or the tripwire reads 0
+because nobody asked, not because the population is 0. That's the primary signal — it's ~0 in steady
 state, so a non-zero card means skills.sh dropped a batch of skills whose repos are
 still alive. (Secondary breadcrumb: `reconcile` also `console.warn`s when a run's
 `gone` crosses `RECONCILE_GONE_WARN` (50), for anyone streaming logs to alerting.)

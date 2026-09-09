@@ -57,6 +57,24 @@ export function timeAgo(timestamp: number): string {
 }
 
 /**
+ * Is `timestamp` older than `maxAgeMs`?
+ *
+ * Carries the same clock-reading caveat as `timeAgo` above — it is only safe
+ * where that one is, i.e. after hydration in a client component, never in a
+ * server render.
+ *
+ * It exists as a helper rather than an inline `Date.now() - ts > max` because
+ * the lint rule that guards React Compiler purity rejects a bare `Date.now()`
+ * in a component body ("Cannot call impure function during render"). Both
+ * functions are impure in exactly the same way; keeping the call behind a
+ * named helper puts the caveat somewhere it can be documented once instead of
+ * re-argued at each call site.
+ */
+export function isOlderThan(timestamp: number, maxAgeMs: number): boolean {
+  return Date.now() - timestamp > maxAgeMs;
+}
+
+/**
  * Absolute date like "May 30, 2026", formatted in UTC. Deterministic (no
  * `Date.now()`, no client/server timezone drift), so it prerenders into the
  * static shell without a `'use cache'` wrapper or a hydration mismatch — unlike

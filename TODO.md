@@ -4,7 +4,158 @@ A running list of things to build, ideas, and parked decisions — so they don't
 lost in chat. Not a committed roadmap; a scratchpad. Move items to a "Done" note or
 delete them when shipped. Newest thinking near the top.
 
-## Under consideration
+## Launch checklist — Sep 2026
+
+What is left before a public launch. Shipped items are deleted from this list,
+not ticked, so what remains here is what remains to do.
+
+### Blocking
+
+- ~~Move Clerk to a production instance.~~ **Already done** — verified Sep 2026
+  against the live site: `/sign-in` loads `clerk.skillbundle.dev` and ships a
+  `pk_live_` key, so the production instance, its DNS, and its own OAuth
+  credentials all exist. `.env.local` holding `pk_test_` describes the dev
+  machine only and is not evidence about production. Left here as a note
+  because it was briefly written up as a blocker on exactly that bad inference.
+  Google and GitHub sign-in were confirmed working on production (Sep 2026),
+  so the OAuth apps are correctly configured.
+- ~~Polar go-live.~~ **Done** — ID verification approved, and the environment
+  switch verified end to end (Sep 2026), not just assumed:
+  `npx convex env list --prod` shows `POLAR_SERVER=production`, a `polar_`
+  organization token and webhook secret, and both production product ids; and
+  the LIVE site's JS bundle inlines those same two ids, which is what proves
+  the `NEXT_PUBLIC_` mirrors on Vercel match Convex. All four locations in
+  `docs/polar-launch-checklist.md` §3 therefore agree.
+  One thing still unproven: a real checkout completing. See the note under
+  "Should do" — the pricing CTA's markup changed in the launch-prep branch.
+
+- ~~Forgot password.~~ **Shipped** — `/sign-in/reset`
+  (`components/auth/reset-password-form.tsx`), entered from a "Forgot?" link
+  beside the sign-in password label. Verified end to end against a Clerk test
+  account: reset the password, then signed in with the new one.
+
+### Should do before announcing
+
+- **Verify the analytics events fire in production.** They no-op outside
+  production by design (`window.op` is undefined), so a miswired event is
+  invisible locally. Check the OpenPanel dashboard after the first deploy.
+- **Two funnel gaps to know about.** OAuth sign-ups and sign-ins are NOT counted
+  (`AuthenticateWithRedirectCallback` exposes no success hook), so read
+  `signup_completed` as "password signups" and check the real total in Clerk.
+  And `checkout_started` is intent, not revenue — compare it against Polar's
+  `subscription.created` to get abandonment.
+- **Search Console and Bing verification.** `app/robots.ts` records that
+  Googlebot made ONE request in 24h. The sitemap is advertised but the property
+  is not verified.
+- **Moderation: correctly scoped down, Sep 2026.** SkillBundle hosts nothing.
+  It indexes metadata, and `npx skills add owner/repo` installs from GitHub, not
+  from us — so for anything synced from skills.sh, moderation is theirs and the
+  install path never touches our infrastructure. The ONLY user-injected surface
+  is a GitHub-only add (`convex/githubOnly.ts`): a skill that is not on
+  skills.sh at all, so nobody else has looked at it. The risk is not that we
+  serve malware, it is that we lend a malicious repo the credibility of
+  appearing in a catalog.
+  That is already bounded: the add must resolve to a real public repo with a
+  real SKILL.md, GitHub-only rows are excluded from the leaderboards, every row
+  carries an immutable `addedBy`, and terms §5 disclaims the catalog. One gap
+  worth knowing: the free cap is 3 GitHub-only adds but **Pro is unlimited**, so
+  the cheap version of this attack costs $5.
+  Not building a queue before launch. What is genuinely missing is not a report
+  button, it is a REMOVAL path — there is no admin mutation to pull a skill, so
+  today it is a hand-run `npx convex run` or a dashboard edit. That is fine for
+  the first bad row and bad at the tenth.
+- **Backups: turn on WEEKLY, not daily.** Settled against the docs, Sep 2026:
+  "Backups uses database bandwidth to read all documents." So a backup costs
+  one full read of the database — 4.85 GB today — against the same Database I/O
+  line the app already spends. Measured that month: 15.84 GB used of 50 GB
+  included, 15 days into a 31-day cycle, projecting ~33 GB. On top of that:
+  daily backups add ~145 GB/cycle (3.5x over the plan), weekly add ~21 GB
+  (~54 GB total, just over), a one-off adds ~4.85 GB (fits).
+  Retention is not the constraint — backups bill like file storage and that
+  line is at 240 MB of 100 GB. Including file storage in the backup adds only
+  ~240 MB per run. The database read is the entire cost and cannot be avoided.
+  Revisit the frequency when the database grows, since the per-backup cost is
+  simply its size.
+
+- **Cron database bandwidth is the real budget risk, not backups.** With ZERO
+  users the deployment projects ~65% of its 50 GB Database I/O allowance, and
+  the breakdown is almost entirely scheduled work. Investigated Sep 2026; two
+  concrete causes found, neither fixed yet.
+
+  **(a) The hourly leaderboard jobs patched the wrong table — FIXED.**
+  `applyTrending` and `applyHot` (both hourly) mirrored every stamp and clear
+  onto the ~10 KB `skills` row as well as the ~1.3 KB `skillSummaries` row.
+  Convex bills a patch against the whole document, so two small numbers cost
+  ~8x the bytes of the write that mattered, 24 times a day. Five mirror-writes
+  removed across the two jobs plus `clearStaleHotFieldsBatch`; the header in
+  `convex/leaderboards.ts` carries the argument. Confirmed first that no read
+  of those five fields from a `skills` row exists anywhere in `convex/`,
+  `lib/`, `app/` or `components/` — both leaderboard indices are on
+  `skillSummaries`.
+  Still open, and NOT done: the frequency question. Hourly may simply be more
+  often than trending moves; every 3-6h would cut it further. That is a
+  freshness call, not a correctness one.
+
+  **(b) `devStats.recalculateStats` ran on every sync, for an admin-only page — FIXED.**
+  It full-scans `skillSummaries` (~16k rows, paginated 500 at a time) to compute
+  eight counters and writes one `syncStats` row. `syncStats` is read by exactly
+  ONE consumer: `app/(main)/dev/dev-dashboard-content.tsx`. So the daily sync
+  spends bandwidth keeping an admin dashboard warm.
+  It is NOT scheduled from `crons.ts` — it is chained off the sync in
+  `skills.ts:2490` (detail fetch) and `skills.ts:1656` (content backfill), which
+  is why grepping `crons.ts` for it finds nothing. An earlier note here claimed
+  it was admin-triggered only; that was wrong.
+  Both automatic `runAfter(..., recalculateStats)` calls are gone; it now runs
+  only from `devStats.triggerRecalculateStats` on `/dev`. Because the numbers
+  can now age, `/dev` shows "Counts as of X ago" and flags them stale after 48h
+  (`StatsFreshness` in `dev-dashboard-content.tsx`).
+
+- **Uptime monitoring: Better Stack (chosen Sep 2026), not yet set up.**
+  Nothing pings the site today, so an outage is discovered by a user telling
+  you — Vercel does not alert on a deployed app that has started erroring.
+  Two monitors, not one, and the second is the one that matters:
+  1. `https://skillbundle.dev/` every 5 minutes, alert after two consecutive
+     failures (one failure is usually a blip, not an outage).
+  2. A **Convex-backed** page, e.g. a skill detail URL. The home page's shell
+     is prerendered and served from the CDN, so it stays up and returns 200
+     while the data layer is completely down — a monitor pointed only at `/`
+     would report all-clear through exactly the outage worth paging for.
+     Watch the status code AND expect body text that only appears when real data
+     rendered; a soft-404 or an empty shell is a 200 either way (see
+     `lib/soft-404.ts` for why this app returns 200 on missing catalog rows).
+
+### Parked, with reasons
+
+- **Sentry (or equivalent) error monitoring.** Deferred deliberately, Sep 2026.
+  What exists is `error_boundary_shown` (`lib/analytics.ts`), which reports a
+  COUNT and a `digest` and nothing else: no stack trace, no grouping, no
+  alerting, and `app/global-error.tsx` cannot report at all because it replaces
+  the document and takes the OpenPanel script with it. So today a production
+  error tells you THAT something broke, and you find out WHAT from the Vercel
+  logs by grepping the digest. That is workable at launch traffic and stops
+  being workable quickly. Cost when picked up: a dependency, env vars, and
+  source-map upload wiring.
+- **Analytics proxy costs function invocations, and that is the deliberate
+  trade (Sep 2026).** `/api/op/*` (`app/api/op/[...path]/route.ts`) is
+  OpenPanel's `createRouteHandler`. It replaced two `rewrites()` entries, which
+  Vercel served from the routing layer at no invocation cost. Every analytics
+  beacon is now a function call, which scales with traffic and runs against the
+  general rule of pushing load to the CDN. The script half is hard-cached (ETag
+  plus a day of revalidate) so the CDN absorbs most of it; the per-event beacon
+  is the part that costs.
+  It was not optional. A rewrite forwards the incoming request headers as-is,
+  verified against an echo server, so the same-origin path was shipping Clerk's
+  `__session` JWT to the vendor on every event. A rewrite cannot strip a header.
+  Three-way trade, and the third option is live if the invocation count ever
+  bothers you: point the SDK straight at `api.openpanel.dev`. That is zero
+  functions and zero leak, because a cross-origin request carries no cookies.
+  What it gives up is the ad-blocker resistance the proxy exists for. Two-line
+  change in `app/layout.tsx`.
+  Worth a look at Vercel's function usage about a week after launch.
+- **CSP.** `next.config.ts` sets HSTS, `X-Content-Type-Options`,
+  `Referrer-Policy` and `Permissions-Policy`; the header block there argues why
+  a Content-Security-Policy is deliberately NOT among them. Doing it properly
+  means nonces and a report-only rollout, which is its own change.
 
 ### Google Sans Code is preloaded on every route, used on few — Sep 2026
 
@@ -989,40 +1140,20 @@ pipeline previously never pinged the tag itself; publishing relied on `reconcile
 when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
 `internal.skills.publishSkillUpdate` at their terminals.
 
-### Forgot password: no reset flow exists (Sep 2026)
+### Forgot password: shipped, and one correction to keep (Sep 2026)
 
-Password sign-in has no recovery path. A user who forgets their password
-cannot get back in, and the only other route is an OAuth provider they may
-never have connected. Noticed during the sign-in/sign-up redesign, where the
-reference design carried a "Forgot password?" link and we deliberately shipped
-without one rather than add a dead link.
+Built as `/sign-in/reset`. The spec that used to live here was accurate about
+the four-call sequence and about which primitives to reuse, and wrong about one
+thing that is worth keeping written down:
 
-The API is on the same `useSignIn()` actions surface the forms already use, so
-this is UI work rather than an integration (verified against
-`@clerk/shared@4.27.1`, `dist/types/signInFuture.d.ts:379-470`):
-
-1. `signIn.create({ identifier })` with the email.
-2. `signIn.resetPasswordEmailCode.sendCode()`.
-3. `signIn.resetPasswordEmailCode.verifyCode({ code })` — moves
-   `signIn.status` to `'needs_new_password'`.
-4. `signIn.resetPasswordEmailCode.submitPassword({ password })` — moves it to
-   `'complete'`, then the existing `finalize({ navigate })` path.
-
-Nearly every piece already exists: `AuthFrame` for the shell, `AuthCodeGroup`
-for step 3, `AuthPasswordField` for step 4, `AuthFooterPrompt` /
-`AuthCrossLink` for the way back, `useResendTimer` for the cooldown, and
-`resolveClerkErrorMessage` for the errors. What has to be decided is the shape:
-a fourth step inside `components/auth/sign-in-form.tsx` (which already carries
-password + second-factor branches and would grow a third), or its own
-`/sign-in/reset` route reusing the same pieces. The route is probably right —
-the form is already the largest file in `components/auth/`.
-
-Two things not to miss. `signIn.resetPasswordMfa` exists
-(`signInFuture.d.ts:470`) because an account with a second factor still has to
-clear it after the reset, and this app's Client Trust setup produces exactly
-that second factor on a new device. And the link belongs beside the password
-field's label in the card, not in the tray footer, which already holds the
-sign-up cross-link.
+**`signIn.resetPasswordMfa` does not exist.** The old note cited
+`signInFuture.d.ts:470` for it; that line is the closing brace of
+`resetPasswordEmailCode`. The only `resetPasswordMfa` in `@clerk/shared` is a
+key in `localization.d.ts`, which types the strings for Clerk's PREBUILT
+components and has no runtime surface on the actions API. The post-reset second
+factor goes through the ordinary `signIn.mfa` surface instead, the same one
+`sign-in-form.tsx` uses for Client Trust. The lesson generalises: a symbol found
+by grepping a `.d.ts` is not necessarily on the surface you are calling.
 
 ### Sign-in second factor: real MFA (future)
 
@@ -1486,3 +1617,23 @@ true` — that half had already been repaired by the earlier one-shot, so
   `next.config.ts` traces `assets/og/**` as a glob, so the renamed files travel without
   a config change. The reads stay at module scope in `lib/og/fonts.ts` — that is what
   keeps those routes prerendering static.
+
+### Duplicate DOM ids across the auth routes (Sep 2026)
+
+Noticed while driving the reset flow in a browser, and **pre-existing** — not
+introduced by it. Visit `/sign-up` then `/sign-in` in one session and the
+document holds **two** `id="email"` inputs: Cache Components keeps the first
+route mounted via React Activity, so both forms are in the DOM at once. A
+Playwright `#email` locator fails strict mode on it, which is how it surfaced.
+
+Both forms hard-code their field ids (`email`, `password`, `code`), so any two
+co-mounted auth routes collide. Impact is low but real: duplicate ids are
+invalid HTML, and `<label for>` / `aria-describedby` resolve to the first match
+in document order, which may be the hidden route's field rather than the visible
+one.
+
+The reset flow sidesteps it deliberately — its fields are `reset-email` and
+`new-password`, and its second-factor step is kept OUT of the `TransitionPanel`
+precisely because `AuthCodeGroup` hard-codes `id="code"` and all panel views
+stay mounted. The general fix is to prefix ids per form, or give
+`AuthCodeGroup` an `id` prop; do it if the labels ever misbehave.

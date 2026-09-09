@@ -123,6 +123,8 @@ export const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
   "official",
   "bundle",
   "site",
+  "privacy",
+  "terms",
 ]);
 
 /**
@@ -132,7 +134,13 @@ export const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
  * deploy. `/compare` appears in its bare form only, never with the `?skills=`
  * query `app/robots.ts` disallows.
  */
-const STATIC_PATHS = ["/add", "/pricing", "/compare"] as const;
+const STATIC_PATHS = [
+  "/add",
+  "/pricing",
+  "/compare",
+  "/privacy",
+  "/terms",
+] as const;
 
 /**
  * Listing pages whose content IS the catalog, so they inherit its newest

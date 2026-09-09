@@ -334,6 +334,8 @@ describe("empty catalog", () => {
       `${BASE}/add`,
       `${BASE}/pricing`,
       `${BASE}/compare`,
+      `${BASE}/privacy`,
+      `${BASE}/terms`,
     ]);
     expect(result.every((e) => e.lastModified === undefined)).toBe(true);
   });

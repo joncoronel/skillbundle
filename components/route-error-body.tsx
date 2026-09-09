@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/cubby-ui/button";
+import { useErrorReport } from "@/hooks/use-error-report";
 
 /** Stable ref callback — see the note on the element below. */
 function focusOnMount(node: HTMLElement | null) {
@@ -39,6 +40,14 @@ export function RouteErrorBody({
   /** One sentence naming what failed and the way out. */
   description: string;
 }) {
+  // Both segment boundaries route through here, so one call covers `(main)`
+  // and `(auth)`. `app/global-error.tsx` deliberately does NOT report: it
+  // replaces the whole document, taking the OpenPanel script with it, so there
+  // is nothing left to report through. Its `digest` in the Vercel logs is the
+  // only trace of those, which is one reason the analytics note calls this a
+  // rate signal rather than monitoring.
+  useErrorReport(error.digest, "route");
+
   return (
     <div
       // A stable callback, not an inline arrow: an inline one is a new function

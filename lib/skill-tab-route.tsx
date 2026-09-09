@@ -20,6 +20,7 @@ import {
 } from "@/components/skill-copies-tab";
 import { loadSkill } from "@/lib/skill-cache";
 import { skillHref } from "@/lib/skill-urls";
+import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 /**
  * Everything the eight skill route files (four tabs x two route trees) have
@@ -74,7 +75,13 @@ export async function skillTabMetadata(
   skillId: string,
 ): Promise<Metadata> {
   const skill = await loadSkill(source, skillId);
-  if (!skill) return { title: "Skill Not Found | SkillBundle" };
+  // `noindex` here covers all ten skill-tab routes at once (five tabs across
+  // both the GitHub and well-known namespaces), which is the bulk of the
+  // catalog's ~16k pages. See lib/soft-404.ts for why the status code itself
+  // cannot be 404 on these routes and why the meta tag is the fix.
+  if (!skill) {
+    return { title: "Skill Not Found | SkillBundle", robots: NOT_FOUND_ROBOTS };
+  }
 
   const title =
     tab === "overview"

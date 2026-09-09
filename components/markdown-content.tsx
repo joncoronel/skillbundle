@@ -17,6 +17,7 @@ import {
 } from "@/lib/highlight-markdown-code";
 import { rawToBlobUrl } from "@/lib/github-urls";
 import { docHeadingId } from "@/lib/markdown-outline";
+import { PROSE_LINK_CLASSES, PROSE_TOKEN_CLASSES } from "@/lib/prose-classes";
 import { cn } from "@/lib/utils";
 
 type StreamdownComponents = NonNullable<
@@ -472,24 +473,12 @@ export function MarkdownContent({
         measured &&
           "[--doc-measure:74ch] [&>*>h2]:max-w-[var(--doc-measure)] [&>*>h3]:max-w-[var(--doc-measure)] [&>*>h4]:max-w-[var(--doc-measure)] [&>*>h5]:max-w-[var(--doc-measure)] [&>*>h6]:max-w-[var(--doc-measure)] [&>*>hr]:max-w-[var(--doc-measure)] [&>*>ol]:max-w-[var(--doc-measure)] [&>*>p]:max-w-[var(--doc-measure)] [&>*>p:has(>a>img)]:max-w-none [&>*>p:has(>img)]:max-w-none [&>*>ul]:max-w-[var(--doc-measure)]",
         // Links use the single signal accent, underlined for affordance.
-        "prose-a:font-medium prose-a:text-primary prose-a:underline prose-a:decoration-primary/40 prose-a:underline-offset-2 hover:prose-a:decoration-primary",
+        PROSE_LINK_CLASSES,
         // Align prose colors with the app's semantic tokens instead of
         // Tailwind Typography's default gray palette (which has a different
-        // hue than our OKLCH neutrals and reads slightly blue).
-        "[--tw-prose-body:var(--color-foreground)]",
-        "[--tw-prose-invert-body:var(--color-foreground)]",
-        "[--tw-prose-headings:var(--color-foreground)]",
-        "[--tw-prose-invert-headings:var(--color-foreground)]",
-        "[--tw-prose-bold:var(--color-foreground)]",
-        "[--tw-prose-invert-bold:var(--color-foreground)]",
-        "[--tw-prose-counters:var(--color-muted-foreground)]",
-        "[--tw-prose-invert-counters:var(--color-muted-foreground)]",
-        "[--tw-prose-bullets:var(--color-muted-foreground)]",
-        "[--tw-prose-invert-bullets:var(--color-muted-foreground)]",
-        "[--tw-prose-quotes:var(--color-foreground)]",
-        "[--tw-prose-invert-quotes:var(--color-foreground)]",
-        "[--tw-prose-quote-borders:var(--color-border)]",
-        "[--tw-prose-invert-quote-borders:var(--color-border)]",
+        // hue than our OKLCH neutrals and reads slightly blue). Shared with the
+        // legal documents — see lib/prose-classes.ts for why it lives there.
+        PROSE_TOKEN_CLASSES,
       )}
     >
       <Streamdown

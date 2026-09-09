@@ -137,23 +137,24 @@ export default defineSchema({
     // string from /skills/curated, e.g. "vercel-labs"). Undefined for
     // non-curated skills. Drives the "Official" badge on cards.
     curatedOwner: v.optional(v.string()),
-    // Trending leaderboard rank (1..N). Undefined when not on the trending
-    // leaderboard. Refreshed by syncTrending cron.
-    trendingRank: v.optional(v.number()),
-    // Installs over the trending window (~24h) from the v1 "trending" view —
-    // the metric that view is ranked by (NOT lifetime installs). Shown on the
-    // Trending tab. Set and cleared in lockstep with trendingRank.
-    trendingInstalls: v.optional(v.number()),
-    // Hot view: rank (1..N) in the v1 "hot" leaderboard, which orders by
-    // current-hour install volume. Undefined when not on the hot view.
-    // Refreshed by syncHot. `hotChange` is the day-over-day delta for the
-    // current hour — current-hour installs minus the same hour yesterday (per
-    // the v1 hot view), so it can be negative — used for the momentum chip;
-    // `hotInstallsYesterday` is that same-hour-yesterday count (so current-hour
-    // volume = hotChange + hotInstallsYesterday). Not the ranking key — hotRank is.
-    hotRank: v.optional(v.number()),
-    hotChange: v.optional(v.number()),
-    hotInstallsYesterday: v.optional(v.number()),
+    // NO MOMENTUM FIELDS HERE, deliberately (removed Sep 2026).
+    // `trendingRank`, `trendingInstalls`, `hotRank`, `hotChange` and
+    // `hotInstallsYesterday` live on `skillSummaries` ONLY. They used to be
+    // mirrored onto this table too, and the mirror was pure cost: Convex bills a
+    // patch against the whole document, so writing two small numbers rewrote a
+    // ~10 KB row — ~8x the bytes of the summary write that actually mattered —
+    // on two hourly crons, for a copy nothing ever read. Both leaderboard
+    // indices are on `skillSummaries`; see convex/leaderboards.ts for the
+    // measurement. Do not add them back.
+    //
+    // The stored values were cleared before these declarations were dropped, by
+    // a one-shot `momentumFieldsRepair` that has since been deleted. Recorded
+    // here because that is the only lasting evidence the data step happened:
+    // `schemaValidation` checks every existing document on push, so the
+    // successful `npx convex deploy` of this narrowed schema is itself the
+    // proof. Re-verified against prod after the fact: 300 rows sampled, 0 still
+    // carrying a momentum field.
+    //
     // Worst audit verdict across all providers, denormalized so the cards
     // can render a badge without a join. Mirrors the value on `skillAudits`.
     // "pass" | "warn" | "fail" | "unknown". Undefined when audits never fetched.

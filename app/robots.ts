@@ -60,9 +60,10 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: "/",
         disallow: [
-          // The two route handlers under /api/: `revalidate` (secret-gated, see
-          // app/api/revalidate/route.ts) and `skills-token` (mints a skills.sh
-          // token). Neither is a crawl target.
+          // The three route handlers under /api/: `revalidate` (secret-gated,
+          // see app/api/revalidate/route.ts), `skills-token` (mints a skills.sh
+          // token), and `op` (the OpenPanel analytics proxy, see
+          // app/api/op/[...path]/route.ts). None is a crawl target.
           //
           // This rule is NOT purely a prefix, contrary to what this comment
           // used to claim. `/[org]` is a root-level catch-all and the catalog
