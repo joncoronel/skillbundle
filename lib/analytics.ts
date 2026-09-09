@@ -50,6 +50,14 @@ export type AnalyticsEvent =
   /** A skill was contributed to the public catalog. */
   | "skill_submitted"
   /**
+   * A password reset finished and the session was established.
+   *
+   * Worth watching in its own right: this is the recovery path for people who
+   * would otherwise be locked out permanently, so a flat zero after launch
+   * means the entry point is not being found, not that nobody forgets.
+   */
+  | "password_reset_completed"
+  /**
    * An error boundary rendered instead of the content it was guarding.
    *
    * THIS IS NOT ERROR MONITORING, and should not be mistaken for it. It gives

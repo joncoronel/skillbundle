@@ -15,20 +15,24 @@ not ticked, so what remains here is what remains to do.
   `[YOUR STATE OR COUNTRY]` and renders that way in section 12 of `/terms`. It
   is the ONLY placeholder in either legal document — everything else is already
   true of the app.
-- **Move Clerk to a production instance.** Local is on `pk_test_`/`sk_test_`.
-  Needs, in order: DNS for `clerk.skillbundle.dev`; **your own Google and GitHub
-  OAuth apps** (a dev instance uses Clerk's shared credentials, which stop
-  working in production, and Google's verification wants the `/privacy` URL that
-  now exists); `pk_live` keys on Vercel; `CLERK_JWT_ISSUER_DOMAIN` repointed on
-  Convex prod; the webhook repointed at prod Convex.
+- ~~Move Clerk to a production instance.~~ **Already done** — verified Sep 2026
+  against the live site: `/sign-in` loads `clerk.skillbundle.dev` and ships a
+  `pk_live_` key, so the production instance, its DNS, and its own OAuth
+  credentials all exist. `.env.local` holding `pk_test_` describes the dev
+  machine only and is not evidence about production. Left here as a note
+  because it was briefly written up as a blocker on exactly that bad inference.
+  The one thing still worth a spot-check is signing in with Google and with
+  GitHub on the live site, since a production instance needs your own OAuth
+  apps and a misconfigured one fails only at the moment a user tries it.
 - **Polar go-live.** `docs/polar-launch-checklist.md` has the steps. Longest
   lead time of anything here — ID verification takes up to a week, so start it
   before it is on the critical path. Note that doc's price table is STALE: it
   says $8/$72, `lib/plans.ts` says $5/$48, and `lib/plans.ts` is authoritative
   (both `/pricing` and `/terms` read from it).
-- **Forgot password.** Still missing, fully specced below under "Forgot
-  password: no reset flow exists". A user who forgets their password and has no
-  OAuth connection cannot get back in.
+- ~~Forgot password.~~ **Shipped** — `/sign-in/reset`
+  (`components/auth/reset-password-form.tsx`), entered from a "Forgot?" link
+  beside the sign-in password label. Verified end to end against a Clerk test
+  account: reset the password, then signed in with the new one.
 
 ### Should do before announcing
 
@@ -1050,40 +1054,20 @@ pipeline previously never pinged the tag itself; publishing relied on `reconcile
 when content is ready. `backfillFetchContent` and `fetchSkillDetailBatch` now ping
 `internal.skills.publishSkillUpdate` at their terminals.
 
-### Forgot password: no reset flow exists (Sep 2026)
+### Forgot password: shipped, and one correction to keep (Sep 2026)
 
-Password sign-in has no recovery path. A user who forgets their password
-cannot get back in, and the only other route is an OAuth provider they may
-never have connected. Noticed during the sign-in/sign-up redesign, where the
-reference design carried a "Forgot password?" link and we deliberately shipped
-without one rather than add a dead link.
+Built as `/sign-in/reset`. The spec that used to live here was accurate about
+the four-call sequence and about which primitives to reuse, and wrong about one
+thing that is worth keeping written down:
 
-The API is on the same `useSignIn()` actions surface the forms already use, so
-this is UI work rather than an integration (verified against
-`@clerk/shared@4.27.1`, `dist/types/signInFuture.d.ts:379-470`):
-
-1. `signIn.create({ identifier })` with the email.
-2. `signIn.resetPasswordEmailCode.sendCode()`.
-3. `signIn.resetPasswordEmailCode.verifyCode({ code })` — moves
-   `signIn.status` to `'needs_new_password'`.
-4. `signIn.resetPasswordEmailCode.submitPassword({ password })` — moves it to
-   `'complete'`, then the existing `finalize({ navigate })` path.
-
-Nearly every piece already exists: `AuthFrame` for the shell, `AuthCodeGroup`
-for step 3, `AuthPasswordField` for step 4, `AuthFooterPrompt` /
-`AuthCrossLink` for the way back, `useResendTimer` for the cooldown, and
-`resolveClerkErrorMessage` for the errors. What has to be decided is the shape:
-a fourth step inside `components/auth/sign-in-form.tsx` (which already carries
-password + second-factor branches and would grow a third), or its own
-`/sign-in/reset` route reusing the same pieces. The route is probably right —
-the form is already the largest file in `components/auth/`.
-
-Two things not to miss. `signIn.resetPasswordMfa` exists
-(`signInFuture.d.ts:470`) because an account with a second factor still has to
-clear it after the reset, and this app's Client Trust setup produces exactly
-that second factor on a new device. And the link belongs beside the password
-field's label in the card, not in the tray footer, which already holds the
-sign-up cross-link.
+**`signIn.resetPasswordMfa` does not exist.** The old note cited
+`signInFuture.d.ts:470` for it; that line is the closing brace of
+`resetPasswordEmailCode`. The only `resetPasswordMfa` in `@clerk/shared` is a
+key in `localization.d.ts`, which types the strings for Clerk's PREBUILT
+components and has no runtime surface on the actions API. The post-reset second
+factor goes through the ordinary `signIn.mfa` surface instead, the same one
+`sign-in-form.tsx` uses for Client Trust. The lesson generalises: a symbol found
+by grepping a `.d.ts` is not necessarily on the surface you are calling.
 
 ### Sign-in second factor: real MFA (future)
 
@@ -1547,3 +1531,23 @@ true` — that half had already been repaired by the earlier one-shot, so
   `next.config.ts` traces `assets/og/**` as a glob, so the renamed files travel without
   a config change. The reads stay at module scope in `lib/og/fonts.ts` — that is what
   keeps those routes prerendering static.
+
+### Duplicate DOM ids across the auth routes (Sep 2026)
+
+Noticed while driving the reset flow in a browser, and **pre-existing** — not
+introduced by it. Visit `/sign-up` then `/sign-in` in one session and the
+document holds **two** `id="email"` inputs: Cache Components keeps the first
+route mounted via React Activity, so both forms are in the DOM at once. A
+Playwright `#email` locator fails strict mode on it, which is how it surfaced.
+
+Both forms hard-code their field ids (`email`, `password`, `code`), so any two
+co-mounted auth routes collide. Impact is low but real: duplicate ids are
+invalid HTML, and `<label for>` / `aria-describedby` resolve to the first match
+in document order, which may be the hidden route's field rather than the visible
+one.
+
+The reset flow sidesteps it deliberately — its fields are `reset-email` and
+`new-password`, and its second-factor step is kept OUT of the `TransitionPanel`
+precisely because `AuthCodeGroup` hard-codes `id="code"` and all panel views
+stay mounted. The general fix is to prefix ids per form, or give
+`AuthCodeGroup` an `id` prop; do it if the labels ever misbehave.

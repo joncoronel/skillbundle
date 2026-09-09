@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useSignIn } from "@clerk/nextjs";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { useResendTimer } from "@/hooks/use-resend-timer";
@@ -258,7 +259,29 @@ export function SignInForm() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <AuthFieldLabel htmlFor="password">Password</AuthFieldLabel>
+            {/* The recovery link sits beside the label it concerns, not in the
+                tray footer, which already carries the sign-up cross-link — two
+                cross-links down there would make neither read as the way out of
+                the problem you actually have.
+
+                `justify-between` on the label row rather than absolute
+                positioning, so a translated label that wraps pushes the link
+                rather than colliding with it.
+
+                The visible text is "Forgot?" because it sits directly after the
+                word Password and repeating it reads as filler; `aria-label`
+                restores the full phrase for anyone listing links out of
+                context, where "Forgot?" alone says nothing. */}
+            <div className="flex items-baseline justify-between gap-3">
+              <AuthFieldLabel htmlFor="password">Password</AuthFieldLabel>
+              <Link
+                href="/sign-in/reset"
+                aria-label="Forgot your password?"
+                className="text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60"
+              >
+                Forgot?
+              </Link>
+            </div>
             <AuthPasswordField
               id="password"
               value={password}

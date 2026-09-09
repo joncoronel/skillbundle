@@ -13,7 +13,24 @@ const isPrivateRoute = createRouteMatcher([
   "/dev(.*)",
 ]);
 
-const isAuthRoute = createRouteMatcher(["/sign-in", "/sign-up"]);
+// Exact paths, NOT `/sign-in(.*)`, and that is the whole design of this list.
+//
+// `/sign-in/sso-callback` must NOT be here. It is the landing point of the
+// OAuth round trip, and the session is established there — so a rule that
+// bounces authenticated requests off it would fight Clerk's own callback
+// handling on exactly the request that completes a social sign-in.
+//
+// Which means every new page under `/sign-in` has to opt in BY NAME. That is
+// easy to forget: `/sign-in/reset` shipped without it and so let a signed-in
+// user reach a password-reset form, where Clerk refused `signIn.create()` with
+// "You're already signed in" and left them on a screen with nowhere to go. The
+// redirect is the right layer for this — it happens before render, so there is
+// no flash of a form the user was never allowed to use.
+const isAuthRoute = createRouteMatcher([
+  "/sign-in",
+  "/sign-up",
+  "/sign-in/reset",
+]);
 
 export default clerkMiddleware(async (auth, request) => {
   const { isAuthenticated } = await auth();

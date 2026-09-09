@@ -5,10 +5,47 @@ import { Card, CardContent, CardFooter } from "@/components/ui/cubby-ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
 interface AuthFrameProps {
-  title: string;
-  description: string;
+  /**
+   * The step's heading and subheading.
+   *
+   * Optional as a pair, and only one caller omits them: the password reset
+   * flow, which animates between steps. `TransitionPanel` requires every view
+   * to be a sibling, so a heading rendered here — outside the panel — would
+   * hard-swap while the body under it slid, which reads as a rendering fault
+   * rather than as one card changing. That flow renders `AuthStepHeader`
+   * inside each view instead, so the whole step moves as one thing.
+   *
+   * The logo badge deliberately does NOT move with it. It is the fixed anchor
+   * the changing content travels under.
+   */
+  title?: string;
+  description?: string;
   footer?: React.ReactNode;
   children: React.ReactNode;
+}
+
+/**
+ * A step's heading and subheading, at the exact metrics `AuthFrame` used when
+ * it owned them. Extracted so the animated reset flow can render the same
+ * header inside each of its views without the two drifting apart.
+ */
+export function AuthStepHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <>
+      <h1 className="text-center text-2xl font-semibold tracking-tight text-balance">
+        {title}
+      </h1>
+      <p className="mx-auto mt-2.5 max-w-[19rem] text-center text-sm text-pretty text-muted-foreground">
+        {description}
+      </p>
+    </>
+  );
 }
 
 /**
@@ -49,14 +86,20 @@ export function AuthFrame({
               <LogoMark className="h-[18px]" />
             </Link>
 
-            <h1 className="mt-6 text-center text-2xl font-semibold tracking-tight text-balance">
-              {title}
-            </h1>
-            <p className="mx-auto mt-2.5 max-w-[19rem] text-center text-sm text-pretty text-muted-foreground">
-              {description}
-            </p>
+            {title !== undefined && description !== undefined ? (
+              <div className="mt-6">
+                <AuthStepHeader title={title} description={description} />
+              </div>
+            ) : null}
 
-            <div className="mt-8">{children}</div>
+            {/* `mt-8` under a header, `mt-6` without one — which is the header's
+                own top margin, so a view that renders its own heading puts it
+                at exactly the y the shared header occupied. Without the second
+                case the animated flow's headings sat 8px lower than every other
+                auth screen's. */}
+            <div className={title === undefined ? "mt-6" : "mt-8"}>
+              {children}
+            </div>
           </CardContent>
 
           {footer ? (
