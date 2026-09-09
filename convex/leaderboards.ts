@@ -2,13 +2,34 @@
  * Trending + Hot leaderboard sync.
  *
  * Refreshes the `trendingRank` field (1..N) and the hot-view fields
- * (`hotChange`, `hotInstallsYesterday`) on `skills` and `skillSummaries`
- * from the v1 listing endpoint. Cards on the home page render directly
- * from the denormalized fields — no second query at render time.
+ * (`hotChange`, `hotInstallsYesterday`) on `skillSummaries` from the v1
+ * listing endpoint. Cards on the home page render directly from the
+ * denormalized fields — no second query at render time.
  *
  * Reconciliation strategy: walk what the API returned and stamp ranks
  * onto matching rows; for rows that previously had a rank/hot value but
  * are no longer in the leaderboard, clear the field.
+ *
+ * ── SUMMARIES ONLY. Do not mirror these onto `skills`. ────────────────────
+ *
+ * Every stamp and clear here used to write twice — once to the ~1.3 KB
+ * `skillSummaries` row and once to the ~10 KB `skills` row via
+ * `summary.skillDocId`. Convex bills a patch against the WHOLE document, so
+ * mirroring two small numbers onto the big row cost ~8x the bytes of the write
+ * that mattered, on two hourly crons. Measured Sep 2026: `applyTrending` alone
+ * accounted for 2.03 GB of database bandwidth in 15 days, on a deployment with
+ * no users, against a 50 GB monthly allowance.
+ *
+ * The mirror bought nothing. Both leaderboard indices
+ * (`by_isDelisted_trendingRank`, `by_isDelisted_hotRank`) live on
+ * `skillSummaries`, the home rails read summaries, and `skills.ts` notes that
+ * these momentum fields deliberately do not ride the skill-page cache. A
+ * search across `convex/`, `lib/`, `app/` and `components/` for all five field
+ * names found no read of them from a `skills` row.
+ *
+ * The delist path in `skills.ts` still CLEARS them on the `skills` row, which
+ * is correct and free: it is one field group inside a patch that row is already
+ * taking.
  */
 
 import { internalAction, internalMutation, query } from "./_generated/server";
@@ -105,7 +126,6 @@ export const applyTrending = internalMutation({
           trendingInstalls: entry.trendingInstalls,
         };
         await ctx.db.patch(summary._id, fields);
-        await ctx.db.patch(summary.skillDocId, fields);
         stamped++;
       }
     }
@@ -129,7 +149,6 @@ export const applyTrending = internalMutation({
           trendingInstalls: undefined,
         };
         await ctx.db.patch(summary._id, clearedFields);
-        await ctx.db.patch(summary.skillDocId, clearedFields);
         cleared++;
       }
     }
@@ -225,7 +244,6 @@ export const applyHot = internalMutation({
           hotInstallsYesterday: entry.hotInstallsYesterday,
         };
         await ctx.db.patch(summary._id, fields);
-        await ctx.db.patch(summary.skillDocId, fields);
         stamped++;
       }
     }
@@ -250,7 +268,6 @@ export const applyHot = internalMutation({
           hotInstallsYesterday: undefined,
         };
         await ctx.db.patch(summary._id, clearedFields);
-        await ctx.db.patch(summary.skillDocId, clearedFields);
         cleared++;
       }
     }
@@ -332,7 +349,6 @@ export const clearStaleHotFieldsBatch = internalMutation({
           hotInstallsYesterday: undefined,
         };
         await ctx.db.patch(s._id, clearedFields);
-        await ctx.db.patch(s.skillDocId, clearedFields);
         cleared++;
       }
     }

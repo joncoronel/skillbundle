@@ -82,26 +82,21 @@ not ticked, so what remains here is what remains to do.
   the breakdown is almost entirely scheduled work. Investigated Sep 2026; two
   concrete causes found, neither fixed yet.
 
-  **(a) The hourly leaderboard jobs patch the wrong table.**
-  `leaderboards.applyTrending` (hourly) and `applyHot` (hourly) each do, per
-  ranked entry:
+  **(a) The hourly leaderboard jobs patched the wrong table — FIXED.**
+  `applyTrending` and `applyHot` (both hourly) mirrored every stamp and clear
+  onto the ~10 KB `skills` row as well as the ~1.3 KB `skillSummaries` row.
+  Convex bills a patch against the whole document, so two small numbers cost
+  ~8x the bytes of the write that mattered, 24 times a day. Five mirror-writes
+  removed across the two jobs plus `clearStaleHotFieldsBatch`; the header in
+  `convex/leaderboards.ts` carries the argument. Confirmed first that no read
+  of those five fields from a `skills` row exists anywhere in `convex/`,
+  `lib/`, `app/` or `components/` — both leaderboard indices are on
+  `skillSummaries`.
+  Still open, and NOT done: the frequency question. Hourly may simply be more
+  often than trending moves; every 3-6h would cut it further. That is a
+  freshness call, not a correctness one.
 
-  ```
-  await ctx.db.patch(summary._id, fields);        // skillSummaries, ~1.3 KB
-  await ctx.db.patch(summary.skillDocId, fields); // skills,        ~10 KB
-  ```
-
-  So storing two small numbers rewrites a ~10 KB document, ~8x the bytes of the
-  summary write, 24 times a day, for ~200 ranked rows each. That is the shape of
-  the measured 2.03 GB for `applyTrending` alone.
-  **The `skills` copy looks unread.** The trending index
-  (`by_isDelisted_trendingRank`) exists only on `skillSummaries`; the home rails
-  read summaries; and `skills.ts` (~line 3390) explicitly notes that the
-  momentum fields deliberately do NOT ride the skill-page cache. Confirm no
-  query reads `skills.trendingRank` / `hotRank`, then drop the second patch.
-  Secondary lever: hourly may simply be more often than trending moves.
-
-  **(b) `devStats.recalculateStats` runs on every sync, for an admin-only page.**
+  **(b) `devStats.recalculateStats` ran on every sync, for an admin-only page — FIXED.**
   It full-scans `skillSummaries` (~16k rows, paginated 500 at a time) to compute
   eight counters and writes one `syncStats` row. `syncStats` is read by exactly
   ONE consumer: `app/(main)/dev/dev-dashboard-content.tsx`. So the daily sync
@@ -110,9 +105,10 @@ not ticked, so what remains here is what remains to do.
   `skills.ts:2490` (detail fetch) and `skills.ts:1656` (content backfill), which
   is why grepping `crons.ts` for it finds nothing. An earlier note here claimed
   it was admin-triggered only; that was wrong.
-  Fix: delete the two automatic `runAfter(..., recalculateStats)` calls and rely
-  on the existing admin action `devStats.triggerRecalculateStats`. Surface the
-  computed-at time on `/dev` so the numbers cannot silently go stale.
+  Both automatic `runAfter(..., recalculateStats)` calls are gone; it now runs
+  only from `devStats.triggerRecalculateStats` on `/dev`. Because the numbers
+  can now age, `/dev` shows "Counts as of X ago" and flags them stale after 48h
+  (`StatsFreshness` in `dev-dashboard-content.tsx`).
 
 - **Uptime monitoring: Better Stack (chosen Sep 2026), not yet set up.**
   Nothing pings the site today, so an outage is discovered by a user telling
@@ -127,6 +123,22 @@ not ticked, so what remains here is what remains to do.
      Watch the status code AND expect body text that only appears when real data
      rendered; a soft-404 or an empty shell is a 200 either way (see
      `lib/soft-404.ts` for why this app returns 200 on missing catalog rows).
+
+### Momentum fields on `skills`: finish the cleanup — Sep 2026
+
+Owns the deletion of `convex/momentumFieldsRepair.ts`, per the one-shot rule in
+AGENTS.md. Three steps, one done:
+
+1. ~~Stop writing `trendingRank` / `trendingInstalls` / `hotRank` / `hotChange` /
+   `hotInstallsYesterday` to the `skills` table.~~ Done — see
+   `convex/leaderboards.ts`.
+2. **Run the repair** to clear the values already stored:
+   `npx convex run momentumFieldsRepair:clearOnSkills --prod`. Costs one walk of
+   `skills` (~16k rows at ~10 KB = ~160 MB). Done when it logs `cleared 0`.
+3. **Then** delete the five field declarations from the `skills` table in
+   `convex/schema.ts` (they are flagged DEAD there) and delete the repair file.
+   Step 3 cannot precede step 2: a schema push validates existing documents, and
+   they still carry the values until the repair clears them.
 
 ### Parked, with reasons
 

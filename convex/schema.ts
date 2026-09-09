@@ -137,6 +137,21 @@ export default defineSchema({
     // string from /skills/curated, e.g. "vercel-labs"). Undefined for
     // non-curated skills. Drives the "Official" badge on cards.
     curatedOwner: v.optional(v.string()),
+    // ── DEAD FIELDS on THIS table (Sep 2026). Do not read, do not write. ──
+    //
+    // The five momentum fields below are live on `skillSummaries` and dead
+    // here. `convex/leaderboards.ts` used to mirror every stamp onto this ~10 KB
+    // row as well as the ~1.3 KB summary; Convex bills a patch against the whole
+    // document, so that mirror cost ~8x the bytes of the write that mattered, on
+    // two hourly crons, for a copy nothing read. The header in that file has the
+    // measurement.
+    //
+    // They are still declared because documents still carry the values a schema
+    // push would have to validate. `convex/momentumFieldsRepair.ts` clears them;
+    // once it reports `cleared 0`, delete these five declarations along with it.
+    // The delist path in `skills.ts` may keep clearing them until then — that is
+    // free, since it is inside a patch the row is already taking.
+    //
     // Trending leaderboard rank (1..N). Undefined when not on the trending
     // leaderboard. Refreshed by syncTrending cron.
     trendingRank: v.optional(v.number()),
