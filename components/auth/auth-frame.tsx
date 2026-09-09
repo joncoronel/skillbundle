@@ -84,17 +84,10 @@ export function AuthFrame({
 
   return (
     <div className="flex min-h-svh flex-col px-4 py-10">
-      {/* `m-auto` moved from <main> to this wrapper so the card and the legal
-          line centre as ONE group. It has to stay an auto margin rather than
-          `justify-center` for the reason the old note gave: auto margins do not
-          clip an overflowing child, so a tall step still scrolls to its top on
-          a short viewport.
-
-          Deliberately NOT pinned to the bottom of the viewport. Clerk's own
-          auth pages put their legal line there, but on a tall screen that
-          strands a consent notice hundreds of pixels from the button it
-          describes. Centred with the card keeps it close to the action while
-          still reading as page-level fine print rather than card content. */}
+      {/* `m-auto` on the wrapper, not `justify-center`, so the card and legal
+          line centre as one group without clipping a tall step on a short
+          viewport. Deliberately not pinned to the viewport bottom as Clerk's own
+          pages do: that strands the consent notice far from the button. */}
       <div className="m-auto flex w-full flex-col items-center gap-6">
         <main className="w-full max-w-[25rem]">
           <Card variant="inset" className="rounded-5xl p-1.5">
@@ -120,19 +113,10 @@ export function AuthFrame({
                 </div>
               ) : null}
 
-              {/* `mt-8` under a header, `mt-6` without one — which is the header's
-                own top margin, so a view that renders its own heading puts it
-                at exactly the y the shared header occupied. Without the second
-                case the animated flow's headings sat 8px lower than every other
-                auth screen's.
-
-                Keyed off the SAME `hasHeader` the render above uses. These were
-                two separate conditions, and they disagreed: the header needed
-                both props, the spacing tested only `title`. A caller passing
-                `title` alone got `mt-8` and no heading, so the card opened with
-                a gap where the title should be, and nothing errored. The union
-                in `AuthFrameProps` now makes that call unrepresentable; this
-                keeps the two in step even if the type is ever loosened. */}
+              {/* `mt-6` without a header is the header's own top margin, so a
+                view rendering its own heading lands at the y the shared header
+                occupied. Keyed off the same `hasHeader` as the render above:
+                two conditions here can disagree, and did. */}
               <div className={hasHeader ? "mt-8" : "mt-6"}>{children}</div>
             </CardContent>
 

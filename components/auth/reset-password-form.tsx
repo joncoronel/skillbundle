@@ -29,56 +29,32 @@ import {
 /**
  * Password reset: email, emailed code, new password.
  *
- * ── Why this is its own route and not a branch of the sign-in form ────────
- *
- * `sign-in-form.tsx` already carries a password step and a Client Trust
- * second-factor step and is the largest file in this directory. A third and
- * fourth branch inside it would have made the file the flow rather than the
- * form. Recovery is also a genuinely separate errand: you arrive at it having
- * already failed at signing in, and being able to link straight to it matters.
+ * Its own route rather than a fourth branch of `sign-in-form.tsx`, which already
+ * carries password and Client Trust steps and is the largest file here.
  *
  * ── The Clerk API, verified against the installed package ─────────────────
  *
- * All four calls are on the same `useSignIn()` actions surface the other forms
- * use (`@clerk/shared@4.27.1`, `dist/types/signInFuture.d.ts:451-470`):
+ * All on the `useSignIn()` actions surface (`@clerk/shared@4.27.1`,
+ * `dist/types/signInFuture.d.ts:451-470`): `create({ identifier })`,
+ * `resetPasswordEmailCode.sendCode()`, `.verifyCode({ code })` which moves
+ * `status` to `'needs_new_password'`, then `.submitPassword({ password })`.
  *
- *   1. `signIn.create({ identifier })`
- *   2. `signIn.resetPasswordEmailCode.sendCode()`
- *   3. `resetPasswordEmailCode.verifyCode({ code })` → `'needs_new_password'`
- *   4. `resetPasswordEmailCode.submitPassword({ password })` → `'complete'`
+ * **There is no `signIn.resetPasswordMfa`**, despite a TODO.md note that cited
+ * `signInFuture.d.ts:470` for it. That line closes `resetPasswordEmailCode`. The
+ * only `resetPasswordMfa` in the package is a `localization.d.ts` key, which
+ * types strings for Clerk's prebuilt components. The post-reset second factor
+ * goes through the ordinary `signIn.mfa` surface, in `SecondFactorStep` below.
  *
- * **There is no `signIn.resetPasswordMfa`.** A note in TODO.md said there was,
- * citing `signInFuture.d.ts:470` — that line is the closing brace of
- * `resetPasswordEmailCode`. The only `resetPasswordMfa` in the package is a key
- * in `localization.d.ts`, which types the strings for Clerk's PREBUILT
- * components and has no runtime surface here. So the post-reset second factor
- * is handled through the ordinary `signIn.mfa` surface, exactly as
- * `sign-in-form.tsx` handles Client Trust, in `SecondFactorStep` below.
+ * ── Motion, and what keeping the views mounted forbids ────────────────────
  *
- * ── Motion ───────────────────────────────────────────────────────────────
+ * `TransitionPanel` slides between steps and animates the card height. The
+ * heading travels WITH its form, which is why `AuthFrame` gets no `title` here
+ * and each view renders its own `AuthStepHeader`. Only the logo stays fixed.
  *
- * `TransitionPanel` in `slide` mode: forward steps enter from the right, a
- * corrected email slides back from the left, and the card's height animates
- * between steps rather than jumping. It also owns focus-on-swap and the
- * reduced-motion path.
- *
- * Everything moves as ONE unit — the step's heading travels with its form,
- * which is why `AuthFrame` is given no `title` here and each view renders its
- * own `AuthStepHeader`. Only the logo badge stays fixed, as the anchor the
- * content moves under. Nothing inside a view animates on its own: one entrance
- * per container, so the fields are simply present when the step arrives.
- *
- * This flow is rare enough to afford that. Do not copy the pattern onto
- * sign-in, which people do constantly and which should stay instant.
- *
- * ── Why all three views stay mounted, and what it forbids ─────────────────
- *
- * `TransitionPanel` keeps every view in the DOM and marks the inactive ones
- * `inert` + `aria-hidden`. That is why the second-factor step is NOT a fourth
- * view: `AuthCodeGroup` hard-codes `id="code"`, so a second code step as a
- * sibling would put a duplicate id in the document. It renders as its own
- * terminal frame instead — the same shape `sign-in-form.tsx` uses, and a path
- * reached only by an account with a second factor on a new device.
+ * Every view stays in the DOM (`inert` + `aria-hidden` when inactive). That is
+ * why the second-factor step is NOT a fourth view: `AuthCodeGroup` hard-codes
+ * `id="code"`, so a second code step as a sibling would duplicate that id. It
+ * renders as its own terminal frame instead.
  */
 
 type Step = "email" | "code" | "password";

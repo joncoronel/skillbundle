@@ -3,40 +3,26 @@
 /**
  * Product analytics events, and the only place they are named.
  *
- * ── Why a wrapper instead of calling `track()` directly ───────────────────
+ * OpenPanel creates an event the first time it sees a name, so a typo makes a
+ * second event in the dashboard with no way to merge the two afterwards. The
+ * union below turns that into a compile error.
  *
- * OpenPanel creates an event the first time it sees a name, so `"bundle_saved"`
- * and `"bundle_save"` become two events in the dashboard with no warning and no
- * way to merge them after the fact. A typo is not a bug you find, it is a
- * funnel that silently reads half as high as it should. The union type below
- * turns that into a compile error.
+ * `properties` must carry nothing that identifies a person: no email, user id,
+ * bundle name, or search query. Counts, plan names and enum-ish strings only.
+ * The privacy policy's "not tied to your account" depends on it.
  *
- * ── What is safe to put in `properties` ───────────────────────────────────
- *
- * Nothing that identifies a person. No email, no user id, no bundle name, no
- * search query. The privacy policy says analytics are not tied to your account,
- * and that sentence is only true if this stays true. Counts, plan names, and
- * enum-ish strings are fine; free text the user typed is not.
- *
- * ── Behaviour outside production ──────────────────────────────────────────
- *
- * `OpenPanelComponent` is only mounted when `NODE_ENV === "production"`
- * (app/layout.tsx), so in dev `window.op` is undefined. The SDK calls it
- * optionally (`window.op?.(...)`), so every call here is a silent no-op in dev
- * rather than a crash. That means a miswired event will NOT show up as an error
- * locally — verify new events against the OpenPanel dashboard after deploying,
- * not against the console.
+ * `OpenPanelComponent` mounts only in production (app/layout.tsx), so `window.op`
+ * is undefined in dev and every call here is a silent no-op. A miswired event
+ * will not surface locally; check the OpenPanel dashboard after deploying.
  */
 export type AnalyticsEvent =
   /**
-   * A new account was created and the session finalized. Top of the funnel.
+   * A new account was created and the session finalized.
    *
-   * KNOWN GAP: email/password sign-ups only. OAuth (Google, GitHub) completes
-   * inside Clerk's `<AuthenticateWithRedirectCallback>` on the sso-callback
-   * route, which exposes no success hook for us to fire from, so those accounts
-   * are not counted. Read this number as "password signups", not "signups", and
-   * compare it against the real total in the Clerk dashboard before concluding
-   * anything about conversion. Same caveat applies to `signin_completed`.
+   * KNOWN GAP: password sign-ups only. OAuth completes inside Clerk's
+   * `<AuthenticateWithRedirectCallback>`, which exposes no success hook, so
+   * those are uncounted. Read it as "password signups" and cross-check the real
+   * total in the Clerk dashboard. Same caveat on `signin_completed`.
    */
   | "signup_completed"
   /** An existing user finished signing in. Same OAuth gap as above. */
@@ -50,24 +36,18 @@ export type AnalyticsEvent =
   /** A skill was contributed to the public catalog. */
   | "skill_submitted"
   /**
-   * A password reset finished and the session was established.
-   *
-   * Worth watching in its own right: this is the recovery path for people who
-   * would otherwise be locked out permanently, so a flat zero after launch
-   * means the entry point is not being found, not that nobody forgets.
+   * A password reset finished and the session was established. A flat zero
+   * after launch means the entry point is not being found, not that nobody
+   * forgets their password.
    */
   | "password_reset_completed"
   /**
    * An error boundary rendered instead of the content it was guarding.
    *
-   * THIS IS NOT ERROR MONITORING, and should not be mistaken for it. It gives
-   * you a count and a `digest` you can grep the Vercel logs for. It gives you
-   * no stack trace, no grouping, no alerting, and no server-side or unhandled-
-   * rejection coverage — `app/global-error.tsx` cannot report at all, because
-   * it replaces the whole document and the OpenPanel script goes with it.
-   *
-   * What it is good for: noticing that the error rate moved. If it ever does,
-   * the real tool for the job is Sentry or an equivalent.
+   * NOT error monitoring: a count and a `digest` to grep the Vercel logs for,
+   * with no stack trace, grouping, or alerting. `app/global-error.tsx` cannot
+   * report at all, since it replaces the document and the OpenPanel script with
+   * it. Good for noticing the error rate moved; Sentry is the real tool.
    */
   | "error_boundary_shown";
 

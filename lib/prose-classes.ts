@@ -9,12 +9,6 @@
  * (`components/markdown-content.tsx`) and the legal documents
  * (`components/legal-document.tsx`).
  *
- * It lives here, as a plain string, rather than in either of them because the
- * two surfaces have nothing else in common — one is a client component wrapping
- * Streamdown, the other is static server-rendered JSX — and a shared token map
- * is exactly the thing that goes stale when it is copied. A string constant is
- * importable from both without dragging either graph into the other.
- *
  * Both `--tw-prose-*` and `--tw-prose-invert-*` are set for each token, because
  * the surfaces apply `dark:prose-invert` and the invert variant reads the second
  * set. Setting only the first leaves dark mode on the plugin's defaults.

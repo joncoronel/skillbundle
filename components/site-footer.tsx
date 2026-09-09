@@ -5,20 +5,14 @@ import { SUPPORT_EMAIL } from "@/lib/legal";
 /**
  * The site footer, mounted once from `app/(main)/layout.tsx`.
  *
- * It exists primarily so the legal pages have somewhere to be linked from —
- * a privacy policy nobody can reach is not a privacy policy. Clerk, Polar and
- * Google's OAuth verification all expect these links to be discoverable from
- * the site root, not just to resolve when typed.
+ * A Server Component with no client state, so its links ship in every route's
+ * prerendered HTML and stay crawlable. That matters: Clerk, Polar and Google's
+ * OAuth verification all expect the legal pages to be reachable from the site
+ * root, not merely to resolve when typed.
  *
- * Deliberately a Server Component with no client state. The nav links are
- * plain `next/link`, so they prefetch and appear in the prerendered HTML of
- * every route in this group, which is also what makes them crawlable.
- *
- * `pb-28` rather than a smaller pad: `GlobalBundleBar` floats at `bottom-4`
- * over the viewport on browse routes, so a footer that ends flush would have
- * its last row sitting under the bar whenever a selection is active. The pad
- * is what keeps the legal links clickable in that state. It is not spacing
- * taste — shrink it and the links go under the bar.
+ * `pb-28` is not spacing taste. `GlobalBundleBar` floats at `bottom-4` on browse
+ * routes, so a flush footer puts its last row under the bar whenever a selection
+ * is active. Shrink the pad and the legal links stop being clickable.
  */
 
 const PRODUCT_LINKS = [
@@ -111,15 +105,11 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          {/* A literal year, NOT `new Date().getFullYear()`. Reading the clock
-              here is uncached dynamic IO under Cache Components, and this
-              component is mounted from the (main) layout — so it would take
-              every route in the group out of its static shell to render a
-              number that changes once a year. Bump it by hand each January. */}
+          {/* Literal, not `new Date().getFullYear()`: reading the clock is
+              uncached dynamic IO under Cache Components, and this renders in the
+              (main) layout, so it would pull every route out of its static
+              shell. Bump it by hand each January. */}
           <p>© 2026 SkillBundle</p>
-          {/* Attribution, not decoration. The catalog is other people's work,
-              indexed from a third-party registry, and saying so on every page
-              is part of what the terms promise. */}
           <p>
             Skill metadata from{" "}
             <a
