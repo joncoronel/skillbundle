@@ -17,14 +17,9 @@ export const OPERATOR = "Jonathan Coronel";
 
 /**
  * The jurisdiction whose law governs the terms, and whose courts hear a
- * dispute. Phrased as "the State of X, United States" or "England and Wales".
- *
- * PLACEHOLDER — fill this in before launch. A governing-law clause naming
- * nowhere is worse than no clause: it reads as boilerplate that was never
- * reviewed, which is the impression it exists to prevent. This is the only
- * value in either document that is not already true of the app.
+ * dispute. Reads into the sentence as "governed by the laws of {this}".
  */
-export const GOVERNING_LAW = "[YOUR STATE OR COUNTRY]";
+export const GOVERNING_LAW = "the State of California, United States";
 
 /**
  * Last substantive revision, shown at the top of each document.

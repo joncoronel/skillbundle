@@ -11,24 +11,24 @@ not ticked, so what remains here is what remains to do.
 
 ### Blocking
 
-- **Fill in `GOVERNING_LAW` in `lib/legal.ts`.** It is the literal string
-  `[YOUR STATE OR COUNTRY]` and renders that way in section 12 of `/terms`. It
-  is the ONLY placeholder in either legal document — everything else is already
-  true of the app.
 - ~~Move Clerk to a production instance.~~ **Already done** — verified Sep 2026
   against the live site: `/sign-in` loads `clerk.skillbundle.dev` and ships a
   `pk_live_` key, so the production instance, its DNS, and its own OAuth
   credentials all exist. `.env.local` holding `pk_test_` describes the dev
   machine only and is not evidence about production. Left here as a note
   because it was briefly written up as a blocker on exactly that bad inference.
-  The one thing still worth a spot-check is signing in with Google and with
-  GitHub on the live site, since a production instance needs your own OAuth
-  apps and a misconfigured one fails only at the moment a user tries it.
-- **Polar go-live.** `docs/polar-launch-checklist.md` has the steps. Longest
-  lead time of anything here — ID verification takes up to a week, so start it
-  before it is on the critical path. Note that doc's price table is STALE: it
-  says $8/$72, `lib/plans.ts` says $5/$48, and `lib/plans.ts` is authoritative
-  (both `/pricing` and `/terms` read from it).
+  Google and GitHub sign-in were confirmed working on production (Sep 2026),
+  so the OAuth apps are correctly configured.
+- ~~Polar go-live.~~ **Done** — ID verification approved, and the environment
+  switch verified end to end (Sep 2026), not just assumed:
+  `npx convex env list --prod` shows `POLAR_SERVER=production`, a `polar_`
+  organization token and webhook secret, and both production product ids; and
+  the LIVE site's JS bundle inlines those same two ids, which is what proves
+  the `NEXT_PUBLIC_` mirrors on Vercel match Convex. All four locations in
+  `docs/polar-launch-checklist.md` §3 therefore agree.
+  One thing still unproven: a real checkout completing. See the note under
+  "Should do" — the pricing CTA's markup changed in the launch-prep branch.
+
 - ~~Forgot password.~~ **Shipped** — `/sign-in/reset`
   (`components/auth/reset-password-form.tsx`), entered from a "Forgot?" link
   beside the sign-in password label. Verified end to end against a Clerk test
@@ -36,10 +36,6 @@ not ticked, so what remains here is what remains to do.
 
 ### Should do before announcing
 
-- **Real error monitoring.** `error_boundary_shown` (see `lib/analytics.ts`) is
-  a rate signal only: no stack traces, no grouping, no alerting, and
-  `app/global-error.tsx` cannot report at all because it replaces the document
-  and the OpenPanel script with it. Sentry or equivalent is the actual answer.
 - **Verify the analytics events fire in production.** They no-op outside
   production by design (`window.op` is undefined), so a miswired event is
   invisible locally. Check the OpenPanel dashboard after the first deploy.
@@ -51,25 +47,65 @@ not ticked, so what remains here is what remains to do.
 - **Search Console and Bing verification.** `app/robots.ts` records that
   Googlebot made ONE request in 24h. The sitemap is advertised but the property
   is not verified.
-- **Report affordance + moderation view** for public adds — see "Public
-  add-skill: moderation / report queue" below. Deferred until abuse appears; a
-  launch spike is how abuse appears.
-- **Convex backup export cadence**, and uptime monitoring on the apex domain.
+- **Moderation: correctly scoped down, Sep 2026.** SkillBundle hosts nothing.
+  It indexes metadata, and `npx skills add owner/repo` installs from GitHub, not
+  from us — so for anything synced from skills.sh, moderation is theirs and the
+  install path never touches our infrastructure. The ONLY user-injected surface
+  is a GitHub-only add (`convex/githubOnly.ts`): a skill that is not on
+  skills.sh at all, so nobody else has looked at it. The risk is not that we
+  serve malware, it is that we lend a malicious repo the credibility of
+  appearing in a catalog.
+  That is already bounded: the add must resolve to a real public repo with a
+  real SKILL.md, GitHub-only rows are excluded from the leaderboards, every row
+  carries an immutable `addedBy`, and terms §5 disclaims the catalog. One gap
+  worth knowing: the free cap is 3 GitHub-only adds but **Pro is unlimited**, so
+  the cheap version of this attack costs $5.
+  Not building a queue before launch. What is genuinely missing is not a report
+  button, it is a REMOVAL path — there is no admin mutation to pull a skill, so
+  today it is a hand-run `npx convex run` or a dashboard edit. That is fine for
+  the first bad row and bad at the tenth.
+- **Backups: unresolved, and the CLI cannot answer it.** `npx convex --help`
+  exposes only `export` (a manual ZIP of the whole deployment); there is no
+  command that reports whether SCHEDULED backups are enabled. That is a
+  dashboard setting, so it has to be checked at
+  dashboard.convex.dev → the production deployment → Backups. Two ways to
+  land it: turn on Convex's own periodic backups if the plan offers them, or
+  schedule `npx convex export --prod` somewhere that keeps the artifact off
+  this machine. The thing worth deciding is the restore story, not the backup one:
+  the catalog is re-derivable (a sync rebuilds it from skills.sh and GitHub),
+  but `users`, `bundles` and `skillVersions` are NOT — version history is
+  months of change records that cannot be reconstructed once gone. So the
+  question to answer is "how much bundle and history loss is acceptable", and
+  that sets the cadence.
+- **Uptime monitoring: Better Stack (chosen Sep 2026), not yet set up.**
+  Nothing pings the site today, so an outage is discovered by a user telling
+  you — Vercel does not alert on a deployed app that has started erroring.
+  Two monitors, not one, and the second is the one that matters:
+  1. `https://skillbundle.dev/` every 5 minutes, alert after two consecutive
+     failures (one failure is usually a blip, not an outage).
+  2. A **Convex-backed** page, e.g. a skill detail URL. The home page's shell
+     is prerendered and served from the CDN, so it stays up and returns 200
+     while the data layer is completely down — a monitor pointed only at `/`
+     would report all-clear through exactly the outage worth paging for.
+     Watch the status code AND expect body text that only appears when real data
+     rendered; a soft-404 or an empty shell is a 200 either way (see
+     `lib/soft-404.ts` for why this app returns 200 on missing catalog rows).
 
 ### Parked, with reasons
 
-- **CSP.** `next.config.ts` now sets HSTS, `X-Content-Type-Options`,
-  `Referrer-Policy` and `Permissions-Policy`, and the header block there argues
-  why a Content-Security-Policy is deliberately NOT among them. Doing it
-  properly means nonces and a report-only rollout, which is its own change.
-- **Sign-up consent line.** "By creating an account you agree to…" now has real
-  documents to link. Not added yet because it changes the sign-up card's layout,
-  which was designed in PR #88 — worth doing with an eye on that.
-- **`<button>` inside `<a>` on the checkout path.** `CheckoutLink` renders an
-  anchor and `app/(main)/pricing/pricing-cards.tsx` puts a real `<button>`
-  inside it, which is invalid HTML (interactive content inside a link). It
-  works, and it is the payment path, so it was left alone rather than changed
-  in a launch-prep pass. Fix with `nativeButton={false}`, and test checkout.
+- **Sentry (or equivalent) error monitoring.** Deferred deliberately, Sep 2026.
+  What exists is `error_boundary_shown` (`lib/analytics.ts`), which reports a
+  COUNT and a `digest` and nothing else: no stack trace, no grouping, no
+  alerting, and `app/global-error.tsx` cannot report at all because it replaces
+  the document and takes the OpenPanel script with it. So today a production
+  error tells you THAT something broke, and you find out WHAT from the Vercel
+  logs by grepping the digest. That is workable at launch traffic and stops
+  being workable quickly. Cost when picked up: a dependency, env vars, and
+  source-map upload wiring.
+- **CSP.** `next.config.ts` sets HSTS, `X-Content-Type-Options`,
+  `Referrer-Policy` and `Permissions-Policy`; the header block there argues why
+  a Content-Security-Policy is deliberately NOT among them. Doing it properly
+  means nonces and a report-only rollout, which is its own change.
 
 ### Google Sans Code is preloaded on every route, used on few — Sep 2026
 
