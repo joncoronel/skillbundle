@@ -147,6 +147,14 @@ export default defineSchema({
     // indices are on `skillSummaries`; see convex/leaderboards.ts for the
     // measurement. Do not add them back.
     //
+    // The stored values were cleared before these declarations were dropped, by
+    // a one-shot `momentumFieldsRepair` that has since been deleted. Recorded
+    // here because that is the only lasting evidence the data step happened:
+    // `schemaValidation` checks every existing document on push, so the
+    // successful `npx convex deploy` of this narrowed schema is itself the
+    // proof. Re-verified against prod after the fact: 300 rows sampled, 0 still
+    // carrying a momentum field.
+    //
     // Worst audit verdict across all providers, denormalized so the cards
     // can render a badge without a join. Mirrors the value on `skillAudits`.
     // "pass" | "warn" | "fail" | "unknown". Undefined when audits never fetched.

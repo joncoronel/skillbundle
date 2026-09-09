@@ -28,11 +28,17 @@ import { track } from "@/lib/analytics";
  * a fresh object on every render, changing the dependency identity every time
  * and re-firing the report in a loop. A string cannot do that.
  *
- * ── Why the ref ──────────────────────────────────────────────────────────
+ * ── What the ref does and does not cover ─────────────────────────────────
  *
- * A failed `retry()` re-renders this tree, and React may re-render it for
- * unrelated reasons too. The ref means one broken page under a retry loop
- * reports once rather than looking like a spike of distinct failures.
+ * It dedupes re-renders of a MOUNTED fallback, which is what stops one error
+ * reporting twice because React re-rendered the tree.
+ *
+ * It does NOT dedupe across `retry()`. That calls `setState` to clear the error
+ * (`next/dist/client/components/catch-error.js`), which unmounts the fallback,
+ * so the next throw mounts a fresh one with a fresh ref and reports again. That
+ * is the intended reading: each failed retry is a real, separate failure, and
+ * the count should say so. Do not "fix" it with a module-scope set without
+ * deciding you want retries to be invisible.
  */
 export function useErrorReport(
   digest: string | undefined,

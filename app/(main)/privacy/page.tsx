@@ -74,7 +74,9 @@ export default function PrivacyPage() {
           <strong>Usage analytics.</strong> We record which pages are viewed,
           using a privacy-focused analytics service that sets no cookies and
           does not build cross-site profiles of you. This is not tied to your
-          account.
+          account. These requests pass through our own servers, which strip your
+          session before forwarding them, so the analytics provider receives the
+          page and your IP address and nothing that identifies your account.
         </p>
         <p>
           <strong>Repositories you point us at.</strong> If you use repository
@@ -116,8 +118,8 @@ export default function PrivacyPage() {
         <ul>
           {SUBPROCESSORS.map((processor) => (
             <li key={processor.name}>
-              <a href={processor.href}>{processor.name}</a> —{" "}
-              {processor.purpose}.
+              <a href={processor.href}>{processor.name}</a>: {processor.purpose}
+              .
             </li>
           ))}
         </ul>

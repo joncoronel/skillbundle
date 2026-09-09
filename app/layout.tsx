@@ -120,8 +120,8 @@ export default function RootLayout({
           <OpenPanelComponent
             clientId={process.env.NEXT_PUBLIC_OPENPANEL_CLIENT_ID!}
             trackScreenViews={true}
-            apiUrl="/op/analytics"
-            scriptUrl="/op1.js"
+            apiUrl="/api/op"
+            scriptUrl="/api/op/op1.js"
           />
         )}
       </body>

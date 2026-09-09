@@ -126,21 +126,19 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // Proxy OpenPanel through our own domain so requests aren't blocked by
-  // ad-blockers. The layout's OpenPanelComponent points at these paths via
-  // apiUrl/cdnUrl.
-  async rewrites() {
-    return [
-      {
-        source: "/op/analytics/:path*",
-        destination: "https://api.openpanel.dev/:path*",
-      },
-      {
-        source: "/op1.js",
-        destination: "https://openpanel.dev/op1.js",
-      },
-    ];
-  },
+  // NO OpenPanel rewrites here, deliberately (removed Sep 2026).
+  //
+  // `/op/analytics/*` and `/op1.js` used to be `rewrites()` to
+  // api.openpanel.dev and openpanel.dev. A Next rewrite to an absolute external
+  // URL forwards the incoming request headers as-is, and these paths are
+  // same-origin by design, so the browser attached this site's cookies to them.
+  // That shipped Clerk's `__session` JWT to a third-party analytics vendor on
+  // every event. Verified against a local echo server, not assumed.
+  //
+  // A rewrite cannot strip a header, so both now go through OpenPanel's own
+  // `createRouteHandler` at `app/api/op/[...path]/route.ts`, which forwards an
+  // allowlist of five headers and nothing else. Do not "simplify" it back into
+  // a rewrite.
 };
 
 export default nextConfig;

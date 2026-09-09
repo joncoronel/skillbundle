@@ -99,6 +99,10 @@ export function ResetPasswordForm() {
   const [sendFailed, setSendFailed] = React.useState(false);
   // The reset succeeded but Clerk wants a second factor before it will finish.
   const [needsSecondFactor, setNeedsSecondFactor] = React.useState(false);
+  // Announced in a polite live region. A successful resend silently wipes the
+  // typed digits and disables the button, so a non-sighted user got no signal
+  // that anything happened, only a field that emptied itself.
+  const [resendNotice, setResendNotice] = React.useState("");
   const { countdown, startTimer, resetTimer } = useResendTimer();
 
   // Cache Components keeps this route mounted via React Activity, so state
@@ -113,6 +117,7 @@ export function ResetPasswordForm() {
       setFlowError(null);
       setSendFailed(false);
       setNeedsSecondFactor(false);
+      setResendNotice("");
       resetTimer();
     };
   }, [resetTimer]);
@@ -251,6 +256,7 @@ export function ResetPasswordForm() {
       // Keep the cooldown off and any typed digits intact so the user can retry
       // now. Don't touch `sendFailed`: if the first send worked, an earlier code
       // is still valid and "we sent a code" is still true.
+      setResendNotice("");
       setFlowError(
         resolveClerkErrorMessage(error) ||
           "Couldn't resend the code. Try again in a moment.",
@@ -259,6 +265,7 @@ export function ResetPasswordForm() {
     }
     setCode("");
     setSendFailed(false);
+    setResendNotice(`New code sent to ${email}. The field has been cleared.`);
     startTimer();
   };
 
@@ -276,6 +283,7 @@ export function ResetPasswordForm() {
         globalErrorMessages={globalErrorMessages}
         countdown={countdown}
         onResend={handleResend}
+        notice={resendNotice}
         onVerify={async (value) => {
           setFlowError(null);
           const { error } = await signIn.mfa.verifyEmailCode({ code: value });
@@ -301,6 +309,7 @@ export function ResetPasswordForm() {
           step={step}
           countdown={countdown}
           onResend={handleResend}
+          notice={resendNotice}
         />
       }
     >
@@ -456,6 +465,45 @@ export function ResetPasswordForm() {
 }
 
 /**
+ * The "didn't get it? resend" footer, shared by the code step and the
+ * second-factor step. It existed twice with the same countdown label and
+ * disabled rule, which is how those two steps drift apart.
+ *
+ * `aria-disabled` rather than `disabled` during the cooldown: several screen
+ * readers drop a genuinely disabled control from the tree, so a non-sighted
+ * user who pressed Resend lost the button and got no explanation. It stays
+ * focusable and announced, and the handler no-ops while the timer runs (it
+ * already guards on `countdown > 0`).
+ */
+function ResendPrompt({
+  countdown,
+  onResend,
+  notice,
+}: {
+  countdown: number;
+  onResend: () => void;
+  notice: string;
+}) {
+  const cooling = countdown > 0;
+  return (
+    <AuthFooterPrompt prompt="Didn't get it?">
+      {/* Visually redundant (the countdown already shows), so it is sr-only.
+          `polite` so it waits for a pause rather than interrupting. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {notice}
+      </span>
+      <AuthCrossButton
+        onClick={onResend}
+        aria-disabled={cooling || undefined}
+        className={cooling ? "opacity-50" : undefined}
+      >
+        {cooling ? `Resend code (${countdown})` : "Resend code"}
+      </AuthCrossButton>
+    </AuthFooterPrompt>
+  );
+}
+
+/**
  * The footer swaps content but never shape: a prompt plus one action, on one
  * line, at every step. It sits outside the panel (it is `CardFooter`, below the
  * card's inner surface) so it changes without sliding — which only reads right
@@ -465,18 +513,16 @@ function ResetFooter({
   step,
   countdown,
   onResend,
+  notice,
 }: {
   step: Step;
   countdown: number;
   onResend: () => void;
+  notice: string;
 }) {
   if (step === "code") {
     return (
-      <AuthFooterPrompt prompt="Didn't get it?">
-        <AuthCrossButton onClick={onResend} disabled={countdown > 0}>
-          {countdown > 0 ? `Resend code (${countdown})` : "Resend code"}
-        </AuthCrossButton>
-      </AuthFooterPrompt>
+      <ResendPrompt countdown={countdown} onResend={onResend} notice={notice} />
     );
   }
   return (
@@ -502,6 +548,7 @@ function SecondFactorStep({
   globalErrorMessages,
   countdown,
   onResend,
+  notice,
   onVerify,
 }: {
   email: string;
@@ -512,6 +559,7 @@ function SecondFactorStep({
   globalErrorMessages: string[];
   countdown: number;
   onResend: () => void;
+  notice: string;
   onVerify: (value: string) => void;
 }) {
   return (
@@ -519,15 +567,15 @@ function SecondFactorStep({
       title="One more code."
       description={
         sendFailed
-          ? "Your password is set. We couldn't send the code to finish signing you in — use resend."
+          ? "Your password is set. We couldn't send the code to finish signing you in. Use resend."
           : `Your password is set. This is a new device, so we sent a code to ${email} to finish signing you in.`
       }
       footer={
-        <AuthFooterPrompt prompt="Didn't get it?">
-          <AuthCrossButton onClick={onResend} disabled={countdown > 0}>
-            {countdown > 0 ? `Resend code (${countdown})` : "Resend code"}
-          </AuthCrossButton>
-        </AuthFooterPrompt>
+        <ResendPrompt
+          countdown={countdown}
+          onResend={onResend}
+          notice={notice}
+        />
       }
     >
       <form

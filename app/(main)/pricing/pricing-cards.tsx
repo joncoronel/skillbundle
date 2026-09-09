@@ -518,7 +518,15 @@ function ProCheckout({ cycle }: { cycle: Cycle }) {
     // webhook is the abandonment rate. Do not read it as a conversion.
     <div
       className="w-full"
-      onClick={() => track("checkout_started", { cycle })}
+      // Gated on the anchor, not on the wrapper. A bare wrapper handler also
+      // counted clicks that landed on its padding and repeat clicks fired while
+      // `CheckoutLink` was still minting the URL (its lazy handler returns early
+      // while loading), both of which inflate an intent number meant to be
+      // compared against Polar's subscription.created.
+      onClick={(event) => {
+        if (!(event.target as HTMLElement).closest("a")) return;
+        track("checkout_started", { cycle });
+      }}
     >
       <CheckoutLink
         polarApi={{ generateCheckoutLink: api.polar.generateCheckoutLink }}

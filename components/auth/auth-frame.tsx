@@ -4,22 +4,7 @@ import { LogoMark } from "@/components/brand-mark";
 import { Card, CardContent, CardFooter } from "@/components/ui/cubby-ui/card";
 import { Spinner } from "@/components/ui/spinner";
 
-interface AuthFrameProps {
-  /**
-   * The step's heading and subheading.
-   *
-   * Optional as a pair, and only one caller omits them: the password reset
-   * flow, which animates between steps. `TransitionPanel` requires every view
-   * to be a sibling, so a heading rendered here — outside the panel — would
-   * hard-swap while the body under it slid, which reads as a rendering fault
-   * rather than as one card changing. That flow renders `AuthStepHeader`
-   * inside each view instead, so the whole step moves as one thing.
-   *
-   * The logo badge deliberately does NOT move with it. It is the fixed anchor
-   * the changing content travels under.
-   */
-  title?: string;
-  description?: string;
+type AuthFrameProps = AuthFrameHeader & {
   footer?: React.ReactNode;
   /**
    * The page-level line BELOW the card. Defaults to `AuthLegalLinks` (plain
@@ -32,7 +17,24 @@ interface AuthFrameProps {
    */
   legal?: React.ReactNode;
   children: React.ReactNode;
-}
+};
+
+/**
+ * The step's heading and subheading. They travel together or not at all, and
+ * the union enforces that rather than a comment: passing `title` alone used to
+ * compile and render a card with header spacing and no header.
+ *
+ * Only one caller omits them, the password reset flow, which animates between
+ * steps. `TransitionPanel` requires every view to be a sibling, so a heading
+ * rendered outside the panel would hard-swap while the body under it slid,
+ * reading as a rendering fault rather than as one card changing. That flow
+ * renders `AuthStepHeader` inside each view instead, so the whole step moves as
+ * one thing. The logo badge deliberately does not move with it: it is the fixed
+ * anchor the changing content travels under.
+ */
+type AuthFrameHeader =
+  | { title: string; description: string }
+  | { title?: undefined; description?: undefined };
 
 /**
  * A step's heading and subheading, at the exact metrics `AuthFrame` used when
@@ -78,6 +80,8 @@ export function AuthFrame({
   legal,
   children,
 }: AuthFrameProps) {
+  const hasHeader = title !== undefined && description !== undefined;
+
   return (
     <div className="flex min-h-svh flex-col px-4 py-10">
       {/* `m-auto` moved from <main> to this wrapper so the card and the legal
@@ -110,7 +114,7 @@ export function AuthFrame({
                 <LogoMark className="h-[18px]" />
               </Link>
 
-              {title !== undefined && description !== undefined ? (
+              {hasHeader ? (
                 <div className="mt-6">
                   <AuthStepHeader title={title} description={description} />
                 </div>
@@ -120,10 +124,16 @@ export function AuthFrame({
                 own top margin, so a view that renders its own heading puts it
                 at exactly the y the shared header occupied. Without the second
                 case the animated flow's headings sat 8px lower than every other
-                auth screen's. */}
-              <div className={title === undefined ? "mt-6" : "mt-8"}>
-                {children}
-              </div>
+                auth screen's.
+
+                Keyed off the SAME `hasHeader` the render above uses. These were
+                two separate conditions, and they disagreed: the header needed
+                both props, the spacing tested only `title`. A caller passing
+                `title` alone got `mt-8` and no heading, so the card opened with
+                a gap where the title should be, and nothing errored. The union
+                in `AuthFrameProps` now makes that call unrepresentable; this
+                keeps the two in step even if the type is ever loosened. */}
+              <div className={hasHeader ? "mt-8" : "mt-6"}>{children}</div>
             </CardContent>
 
             {footer ? (
