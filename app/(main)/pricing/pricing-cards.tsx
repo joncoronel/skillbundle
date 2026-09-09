@@ -518,11 +518,12 @@ function ProCheckout({ cycle }: { cycle: Cycle }) {
     // webhook is the abandonment rate. Do not read it as a conversion.
     <div
       className="w-full"
-      // Gated on the anchor, not on the wrapper. A bare wrapper handler also
-      // counted clicks that landed on its padding and repeat clicks fired while
-      // `CheckoutLink` was still minting the URL (its lazy handler returns early
-      // while loading), both of which inflate an intent number meant to be
-      // compared against Polar's subscription.created.
+      // Gated on the anchor so clicks landing on the wrapper's padding do not
+      // count. It does NOT dedupe repeat clicks: `CheckoutLink`'s lazy handler
+      // returns early while it is still minting the URL, but the click still
+      // bubbles here, so an impatient double-click tracks twice. Read this as
+      // intent with some slop, not as a count of distinct people, and compare
+      // the trend against Polar's subscription.created rather than the ratio.
       onClick={(event) => {
         if (!(event.target as HTMLElement).closest("a")) return;
         track("checkout_started", { cycle });

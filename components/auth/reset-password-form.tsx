@@ -99,10 +99,11 @@ export function ResetPasswordForm() {
   const [sendFailed, setSendFailed] = React.useState(false);
   // The reset succeeded but Clerk wants a second factor before it will finish.
   const [needsSecondFactor, setNeedsSecondFactor] = React.useState(false);
-  // Announced in a polite live region. A successful resend silently wipes the
-  // typed digits and disables the button, so a non-sighted user got no signal
-  // that anything happened, only a field that emptied itself.
-  const [resendNotice, setResendNotice] = React.useState("");
+  // Drives the polite live region. A successful resend silently wipes the typed
+  // digits and disables the button, so a non-sighted user got no signal that
+  // anything happened, only a field that emptied itself. Counted rather than
+  // stored as a string so repeat resends each announce; see `handleResend`.
+  const [resendCount, setResendCount] = React.useState(0);
   const { countdown, startTimer, resetTimer } = useResendTimer();
 
   // Cache Components keeps this route mounted via React Activity, so state
@@ -117,7 +118,7 @@ export function ResetPasswordForm() {
       setFlowError(null);
       setSendFailed(false);
       setNeedsSecondFactor(false);
-      setResendNotice("");
+      setResendCount(0);
       resetTimer();
     };
   }, [resetTimer]);
@@ -256,7 +257,6 @@ export function ResetPasswordForm() {
       // Keep the cooldown off and any typed digits intact so the user can retry
       // now. Don't touch `sendFailed`: if the first send worked, an earlier code
       // is still valid and "we sent a code" is still true.
-      setResendNotice("");
       setFlowError(
         resolveClerkErrorMessage(error) ||
           "Couldn't resend the code. Try again in a moment.",
@@ -265,7 +265,11 @@ export function ResetPasswordForm() {
     }
     setCode("");
     setSendFailed(false);
-    setResendNotice(`New code sent to ${email}. The field has been cleared.`);
+    // Counter-suffixed, and that is the whole reason it exists. A live region
+    // announces on CHANGE, so setting the same string twice is a no-op in React
+    // and the second resend was silent. The count is the announcement's own
+    // ordinal, which is also the more useful thing to hear.
+    setResendCount((n) => n + 1);
     startTimer();
   };
 
@@ -283,7 +287,7 @@ export function ResetPasswordForm() {
         globalErrorMessages={globalErrorMessages}
         countdown={countdown}
         onResend={handleResend}
-        notice={resendNotice}
+        resendCount={resendCount}
         onVerify={async (value) => {
           setFlowError(null);
           const { error } = await signIn.mfa.verifyEmailCode({ code: value });
@@ -309,7 +313,7 @@ export function ResetPasswordForm() {
           step={step}
           countdown={countdown}
           onResend={handleResend}
-          notice={resendNotice}
+          resendCount={resendCount}
         />
       }
     >
@@ -478,11 +482,11 @@ export function ResetPasswordForm() {
 function ResendPrompt({
   countdown,
   onResend,
-  notice,
+  resendCount,
 }: {
   countdown: number;
   onResend: () => void;
-  notice: string;
+  resendCount: number;
 }) {
   const cooling = countdown > 0;
   return (
@@ -490,7 +494,9 @@ function ResendPrompt({
       {/* Visually redundant (the countdown already shows), so it is sr-only.
           `polite` so it waits for a pause rather than interrupting. */}
       <span role="status" aria-live="polite" className="sr-only">
-        {notice}
+        {resendCount > 0
+          ? `New code sent. The code field has been cleared. (${resendCount})`
+          : ""}
       </span>
       <AuthCrossButton
         onClick={onResend}
@@ -513,16 +519,20 @@ function ResetFooter({
   step,
   countdown,
   onResend,
-  notice,
+  resendCount,
 }: {
   step: Step;
   countdown: number;
   onResend: () => void;
-  notice: string;
+  resendCount: number;
 }) {
   if (step === "code") {
     return (
-      <ResendPrompt countdown={countdown} onResend={onResend} notice={notice} />
+      <ResendPrompt
+        countdown={countdown}
+        onResend={onResend}
+        resendCount={resendCount}
+      />
     );
   }
   return (
@@ -548,7 +558,7 @@ function SecondFactorStep({
   globalErrorMessages,
   countdown,
   onResend,
-  notice,
+  resendCount,
   onVerify,
 }: {
   email: string;
@@ -559,7 +569,7 @@ function SecondFactorStep({
   globalErrorMessages: string[];
   countdown: number;
   onResend: () => void;
-  notice: string;
+  resendCount: number;
   onVerify: (value: string) => void;
 }) {
   return (
@@ -574,7 +584,7 @@ function SecondFactorStep({
         <ResendPrompt
           countdown={countdown}
           onResend={onResend}
-          notice={notice}
+          resendCount={resendCount}
         />
       }
     >

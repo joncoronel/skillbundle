@@ -135,6 +135,23 @@ not ticked, so what remains here is what remains to do.
   logs by grepping the digest. That is workable at launch traffic and stops
   being workable quickly. Cost when picked up: a dependency, env vars, and
   source-map upload wiring.
+- **Analytics proxy costs function invocations, and that is the deliberate
+  trade (Sep 2026).** `/api/op/*` (`app/api/op/[...path]/route.ts`) is
+  OpenPanel's `createRouteHandler`. It replaced two `rewrites()` entries, which
+  Vercel served from the routing layer at no invocation cost. Every analytics
+  beacon is now a function call, which scales with traffic and runs against the
+  general rule of pushing load to the CDN. The script half is hard-cached (ETag
+  plus a day of revalidate) so the CDN absorbs most of it; the per-event beacon
+  is the part that costs.
+  It was not optional. A rewrite forwards the incoming request headers as-is,
+  verified against an echo server, so the same-origin path was shipping Clerk's
+  `__session` JWT to the vendor on every event. A rewrite cannot strip a header.
+  Three-way trade, and the third option is live if the invocation count ever
+  bothers you: point the SDK straight at `api.openpanel.dev`. That is zero
+  functions and zero leak, because a cross-origin request carries no cookies.
+  What it gives up is the ad-blocker resistance the proxy exists for. Two-line
+  change in `app/layout.tsx`.
+  Worth a look at Vercel's function usage about a week after launch.
 - **CSP.** `next.config.ts` sets HSTS, `X-Content-Type-Options`,
   `Referrer-Policy` and `Permissions-Policy`; the header block there argues why
   a Content-Security-Policy is deliberately NOT among them. Doing it properly
