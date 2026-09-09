@@ -64,19 +64,56 @@ not ticked, so what remains here is what remains to do.
   button, it is a REMOVAL path — there is no admin mutation to pull a skill, so
   today it is a hand-run `npx convex run` or a dashboard edit. That is fine for
   the first bad row and bad at the tenth.
-- **Backups: unresolved, and the CLI cannot answer it.** `npx convex --help`
-  exposes only `export` (a manual ZIP of the whole deployment); there is no
-  command that reports whether SCHEDULED backups are enabled. That is a
-  dashboard setting, so it has to be checked at
-  dashboard.convex.dev → the production deployment → Backups. Two ways to
-  land it: turn on Convex's own periodic backups if the plan offers them, or
-  schedule `npx convex export --prod` somewhere that keeps the artifact off
-  this machine. The thing worth deciding is the restore story, not the backup one:
-  the catalog is re-derivable (a sync rebuilds it from skills.sh and GitHub),
-  but `users`, `bundles` and `skillVersions` are NOT — version history is
-  months of change records that cannot be reconstructed once gone. So the
-  question to answer is "how much bundle and history loss is acceptable", and
-  that sets the cadence.
+- **Backups: turn on WEEKLY, not daily.** Settled against the docs, Sep 2026:
+  "Backups uses database bandwidth to read all documents." So a backup costs
+  one full read of the database — 4.85 GB today — against the same Database I/O
+  line the app already spends. Measured that month: 15.84 GB used of 50 GB
+  included, 15 days into a 31-day cycle, projecting ~33 GB. On top of that:
+  daily backups add ~145 GB/cycle (3.5x over the plan), weekly add ~21 GB
+  (~54 GB total, just over), a one-off adds ~4.85 GB (fits).
+  Retention is not the constraint — backups bill like file storage and that
+  line is at 240 MB of 100 GB. Including file storage in the backup adds only
+  ~240 MB per run. The database read is the entire cost and cannot be avoided.
+  Revisit the frequency when the database grows, since the per-backup cost is
+  simply its size.
+
+- **Cron database bandwidth is the real budget risk, not backups.** With ZERO
+  users the deployment projects ~65% of its 50 GB Database I/O allowance, and
+  the breakdown is almost entirely scheduled work. Investigated Sep 2026; two
+  concrete causes found, neither fixed yet.
+
+  **(a) The hourly leaderboard jobs patch the wrong table.**
+  `leaderboards.applyTrending` (hourly) and `applyHot` (hourly) each do, per
+  ranked entry:
+
+  ```
+  await ctx.db.patch(summary._id, fields);        // skillSummaries, ~1.3 KB
+  await ctx.db.patch(summary.skillDocId, fields); // skills,        ~10 KB
+  ```
+
+  So storing two small numbers rewrites a ~10 KB document, ~8x the bytes of the
+  summary write, 24 times a day, for ~200 ranked rows each. That is the shape of
+  the measured 2.03 GB for `applyTrending` alone.
+  **The `skills` copy looks unread.** The trending index
+  (`by_isDelisted_trendingRank`) exists only on `skillSummaries`; the home rails
+  read summaries; and `skills.ts` (~line 3390) explicitly notes that the
+  momentum fields deliberately do NOT ride the skill-page cache. Confirm no
+  query reads `skills.trendingRank` / `hotRank`, then drop the second patch.
+  Secondary lever: hourly may simply be more often than trending moves.
+
+  **(b) `devStats.recalculateStats` runs on every sync, for an admin-only page.**
+  It full-scans `skillSummaries` (~16k rows, paginated 500 at a time) to compute
+  eight counters and writes one `syncStats` row. `syncStats` is read by exactly
+  ONE consumer: `app/(main)/dev/dev-dashboard-content.tsx`. So the daily sync
+  spends bandwidth keeping an admin dashboard warm.
+  It is NOT scheduled from `crons.ts` — it is chained off the sync in
+  `skills.ts:2490` (detail fetch) and `skills.ts:1656` (content backfill), which
+  is why grepping `crons.ts` for it finds nothing. An earlier note here claimed
+  it was admin-triggered only; that was wrong.
+  Fix: delete the two automatic `runAfter(..., recalculateStats)` calls and rely
+  on the existing admin action `devStats.triggerRecalculateStats`. Surface the
+  computed-at time on `/dev` so the numbers cannot silently go stale.
+
 - **Uptime monitoring: Better Stack (chosen Sep 2026), not yet set up.**
   Nothing pings the site today, so an outage is discovered by a user telling
   you — Vercel does not alert on a deployed app that has started erroring.

@@ -1649,13 +1649,14 @@ export const backfillFetchContent = internalAction({
     } else {
       const finalDelay = result.skills.length * STAGGER_MS + 30_000;
       console.log(
-        `Raw content backfill complete — recalculating stats in ${Math.round(finalDelay / 1000)}s`,
+        `Raw content backfill complete — embedding in ${Math.round(finalDelay / 1000)}s`,
       );
-      await ctx.scheduler.runAfter(
-        finalDelay,
-        internal.devStats.recalculateStats,
-        {},
-      );
+      // Deliberately does NOT chain devStats.recalculateStats. That job
+      // full-scans skillSummaries to compute counters whose only consumer is
+      // the admin `/dev` dashboard, so running it automatically spent database
+      // bandwidth keeping an admin page warm whether or not anyone opened it.
+      // Run it by hand from /dev (devStats.triggerRecalculateStats); the
+      // dashboard shows how stale the numbers are.
       await ctx.scheduler.runAfter(
         finalDelay + 5_000,
         internal.skills.embedSkillsBatch,
@@ -2484,12 +2485,9 @@ export const fetchSkillDetailBatch = internalAction({
         { cursor: result.nextCursor },
       );
     } else {
-      console.log("Detail fetch complete — kicking off stats + embeddings");
-      await ctx.scheduler.runAfter(
-        5_000,
-        internal.devStats.recalculateStats,
-        {},
-      );
+      console.log("Detail fetch complete — kicking off embeddings");
+      // See the note in backfillFetchContent: devStats.recalculateStats is no
+      // longer chained here. It is admin-triggered from /dev only.
       await ctx.scheduler.runAfter(
         10_000,
         internal.skills.embedSkillsBatch,

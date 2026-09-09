@@ -34,7 +34,7 @@ import {
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
-import { formatInstalls, timeAgo } from "@/lib/utils";
+import { formatInstalls, isOlderThan, timeAgo } from "@/lib/utils";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import {
   Tooltip,
@@ -116,6 +116,14 @@ export function DevDashboardContent() {
 
   return (
     <div className="space-y-8">
+      {/* These counters are NO LONGER recomputed by the daily sync — that walked
+          all ~16k summaries to feed a page only an admin opens. They now update
+          only when "Recalculate stats" is pressed, so the age has to be visible
+          or the numbers quietly become fiction. */}
+      <StatsFreshness
+        recalculatedAt={syncStats?.recalculatedAt}
+        loading={loading}
+      />
       <StatsCards stats={stats} loading={loading} />
       <ErrorSkillsList
         activeFilter={activeFilter}
@@ -133,6 +141,58 @@ export function DevDashboardContent() {
 // ---------------------------------------------------------------------------
 // Stats Cards
 // ---------------------------------------------------------------------------
+
+/**
+ * How old the counters below are.
+ *
+ * Exists because the recalculation stopped being automatic: it used to be
+ * chained off the daily sync, which meant a full walk of ~16k summaries every
+ * day to feed a page only an admin ever opens. Now it runs when pressed, and a
+ * number with no date on it is worse than no number — so the age is stated, and
+ * stated loudly once it is old enough to mislead.
+ *
+ * `STALE_AFTER_MS` is two days rather than one: the counters track a daily sync,
+ * so anything under ~24h is simply current, and a threshold at 24h would flag
+ * healthy states every morning until it got ignored.
+ */
+const STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+
+function StatsFreshness({
+  recalculatedAt,
+  loading,
+}: {
+  recalculatedAt?: number;
+  loading?: boolean;
+}) {
+  if (loading) return <Skeleton className="h-4 w-52" />;
+
+  // `getSyncStats` returns 0 when the row has never been written, which is a
+  // different statement from "computed at the epoch".
+  if (!recalculatedAt) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Counts have never been calculated. Use{" "}
+        <span className="font-medium text-foreground">Recalculate stats</span>{" "}
+        below.
+      </p>
+    );
+  }
+
+  const stale = isOlderThan(recalculatedAt, STALE_AFTER_MS);
+
+  return (
+    <p className="text-sm text-muted-foreground">
+      Counts as of {timeAgo(recalculatedAt)}
+      {stale ? (
+        // Not colour alone — PRODUCT.md's accessibility rules — so the state is
+        // carried by the words too.
+        <span className="ml-2 font-medium text-warning-foreground">
+          Stale. Recalculate to refresh.
+        </span>
+      ) : null}
+    </p>
+  );
+}
 
 function StatsCards({
   stats,
