@@ -280,6 +280,49 @@ export function AuthFooterPrompt({
 }
 
 /**
+ * The "by creating an account you agree to…" line on sign-up.
+ *
+ * Passed to `AuthFrame`'s `legal` slot, so it renders BELOW the card rather
+ * than inside it. Two reasons it sits outside: it covers every way into an
+ * account (the password form AND the OAuth buttons), so it cannot sit beside
+ * either one without appearing to qualify only that one; and it is page-level
+ * fine print, which reads wrong stacked inside a card among the controls.
+ *
+ * Not a checkbox. Nothing here is opt-in — you cannot use the product while
+ * refusing its terms — and a required checkbox that can only be ticked is a
+ * click that communicates nothing. Notice at the point of action is the
+ * standard, and it is what the documents themselves assume ("By using
+ * skillbundle.dev you accept them").
+ *
+ * Links are real `next/link` (both routes are ours and prerendered), and they
+ * carry an underline rather than colour alone — DESIGN.md reserves the blue
+ * signal for the primary action, and this is the quietest text on the page.
+ *
+ * No margin of its own: `AuthFrame`'s wrapper owns the gap below the card.
+ */
+export function AuthLegalConsent() {
+  return (
+    <p className="text-center text-xs text-pretty text-muted-foreground">
+      By creating an account you agree to our{" "}
+      <Link
+        href="/terms"
+        className="underline underline-offset-2 transition-colors hover:text-foreground"
+      >
+        Terms
+      </Link>{" "}
+      and{" "}
+      <Link
+        href="/privacy"
+        className="underline underline-offset-2 transition-colors hover:text-foreground"
+      >
+        Privacy Policy
+      </Link>
+      .
+    </p>
+  );
+}
+
+/**
  * The labelled six-digit code field, shared by sign-in's second factor and
  * sign-up's email verification. Centred, unlike the full-width email/password
  * groups, because the six slots are a fixed 280px in a wider column.

@@ -17,6 +17,7 @@ import {
   AuthFieldLabel,
   AuthFooterPrompt,
   AuthFormError,
+  AuthLegalConsent,
   AuthPasswordField,
   AuthSubmitButton,
   isExpiredCodeError,
@@ -214,6 +215,10 @@ export function SignUpForm() {
     <AuthFrame
       title="New account."
       description="Start building your stack. Takes a minute."
+      // Replaces the default Privacy · Terms links: this is the one screen
+      // where the documents start binding, so it states that rather than just
+      // linking them.
+      legal={<AuthLegalConsent />}
       footer={
         <AuthFooterPrompt prompt="Already have an account?">
           <AuthCrossLink href="/sign-in">Sign in</AuthCrossLink>

@@ -49,7 +49,7 @@ import {
   type Plan,
 } from "@/lib/plans";
 import { useUserPlan } from "@/hooks/use-user-plan";
-import { Button } from "@/components/ui/cubby-ui/button";
+import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { track } from "@/lib/analytics";
@@ -508,27 +508,40 @@ function ProCheckout({ cycle }: { cycle: Cycle }) {
   }
 
   return (
-    <CheckoutLink
-      polarApi={{ generateCheckoutLink: api.polar.generateCheckoutLink }}
-      productIds={[
-        cycle === "yearly" ? PRO_YEARLY_PRODUCT_ID : PRO_MONTHLY_PRODUCT_ID,
-      ]}
+    // The tracking sits on a wrapper, not on the link, because `CheckoutLink`
+    // declares an explicit prop list with no `...rest` — it does not forward an
+    // `onClick`, and it needs its own to mint the checkout URL. A click on the
+    // anchor (mouse or keyboard) bubbles to here either way.
+    //
+    // Fires on the press, before Polar's hosted checkout is reached, so it
+    // counts INTENT, not revenue: the gap between it and a subscription.created
+    // webhook is the abandonment rate. Do not read it as a conversion.
+    <div
       className="w-full"
-      embed={false}
-      lazy
+      onClick={() => track("checkout_started", { cycle })}
     >
-      {/* Fires on the press, before Polar's hosted checkout is reached. So this
-          counts INTENT, not revenue: the drop-off between it and a
-          subscription.created webhook is the checkout abandonment rate. Do not
-          read it as a conversion. */}
-      <Button
-        variant="primary"
-        className="w-full"
-        onClick={() => track("checkout_started", { cycle })}
+      <CheckoutLink
+        polarApi={{ generateCheckoutLink: api.polar.generateCheckoutLink }}
+        productIds={[
+          cycle === "yearly" ? PRO_YEARLY_PRODUCT_ID : PRO_MONTHLY_PRODUCT_ID,
+        ]}
+        // The button recipe goes on the ANCHOR rather than on a `<Button>`
+        // inside it. `CheckoutLink` renders an `<a>`, so a real `<button>` as
+        // its child was interactive content nested in a link — invalid HTML,
+        // and it put the focus ring on the inner element while the anchor was
+        // the thing actually focused. `buttonVariants` is built to be applied
+        // to flat elements for exactly this (see button.tsx), so the anchor now
+        // carries the paint, the press behaviour and the ring itself.
+        //
+        // `nativeButton={false}` would NOT have fixed it: Base UI still renders
+        // a focusable `role="button"` element, so the nesting problem stands.
+        className={cn(buttonVariants({ variant: "primary" }), "w-full")}
+        embed={false}
+        lazy
       >
         {PLANS.pro.cta.upgrade}
-      </Button>
-    </CheckoutLink>
+      </CheckoutLink>
+    </div>
   );
 }
 
