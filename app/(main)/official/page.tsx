@@ -16,6 +16,8 @@ export const metadata: Metadata = {
   title: "Official skills | SkillBundle",
   description:
     "First-party skills curated by the makers: companies and orgs publishing skills for the technology they build.",
+  alternates: { canonical: "/official" },
+  openGraph: { type: "website", url: "/official" },
 };
 
 // Tagged "skill-sync" so the curated list busts in lockstep with the catalog

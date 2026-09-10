@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { SkillExplorer } from "@/components/skill-explorer";
 import { HomeFallback } from "./home-content";
 import { HOME_POPULAR_TAG } from "@/lib/cache-tags";
+import { SITE_OG_IMAGE } from "@/lib/og/theme";
 
 // The page is static. <SkillExplorer> reads search params via nuqs' Next
 // adapter, which suspends during prerendering — the Suspense fallback below
@@ -35,21 +36,16 @@ const HOME_DESCRIPTION =
 export const metadata: Metadata = {
   title: HOME_TITLE,
   description: HOME_DESCRIPTION,
+  alternates: { canonical: "/" },
   openGraph: {
     title: HOME_TITLE,
     description: HOME_DESCRIPTION,
     type: "website",
+    url: "/",
     // Defining openGraph here detaches the auto-injected image from the root
     // app/opengraph-image.tsx file, so point at it explicitly. (It also feeds
     // the Twitter card, which falls back to og:image.)
-    images: [
-      {
-        url: "/opengraph-image",
-        width: 1200,
-        height: 630,
-        alt: "SkillBundle: discover, compare, and bundle AI coding skills",
-      },
-    ],
+    images: [SITE_OG_IMAGE],
   },
 };
 

@@ -57,10 +57,12 @@ export async function generateMetadata({
   return {
     title: `${bundle.name} | SkillBundle`,
     description,
+    alternates: { canonical: `/bundle/${id}` },
     openGraph: {
       title: bundle.name,
       description,
       type: "website",
+      url: `/bundle/${id}`,
       images: [{ url: ogImage, width: 1200, height: 630, alt: bundle.name }],
     },
     // A closed bundle only resolves for its owner; never index it.

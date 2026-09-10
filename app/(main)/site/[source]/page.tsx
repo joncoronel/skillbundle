@@ -29,6 +29,7 @@ import {
 import { SourceSkillList } from "@/components/source-skill-list";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
+import { sourceHref } from "@/lib/skill-urls";
 
 type Params = Promise<{ source: string }>;
 
@@ -70,10 +71,12 @@ export async function generateMetadata({
     skills.length === 1 ? "" : "s"
   } published by ${source}.`;
 
+  // No `images`: see the org route.
   return {
     title,
     description,
-    openGraph: { title, description, type: "website" },
+    alternates: { canonical: sourceHref(source) },
+    openGraph: { title, description, type: "website", url: sourceHref(source) },
   };
 }
 

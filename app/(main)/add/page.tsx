@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SITE_OG_IMAGE } from "@/lib/og/theme";
 
 import { AddSkillFlow } from "@/components/add-skill/add-skill-flow";
 import { AddOutcomes } from "@/components/add-skill/add-outcomes";
@@ -7,6 +8,8 @@ export const metadata: Metadata = {
   title: "Add a skill",
   description:
     "Add an AI coding skill to SkillBundle from skills.sh or straight from a GitHub repo.",
+  alternates: { canonical: "/add" },
+  openGraph: { type: "website", url: "/add", images: [SITE_OG_IMAGE] },
 };
 
 /*

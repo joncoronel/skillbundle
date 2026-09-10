@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { PLANS } from "@/lib/plans";
 import { GOVERNING_LAW, OPERATOR, SUPPORT_EMAIL } from "@/lib/legal";
+import { SITE_OG_IMAGE } from "@/lib/og/theme";
 
 /**
  * The terms of service.
@@ -27,6 +28,8 @@ export const metadata: Metadata = {
   title: "Terms of Service - SkillBundle",
   description:
     "The rules for using SkillBundle, what we promise about the catalog, and how subscriptions work.",
+  alternates: { canonical: "/terms" },
+  openGraph: { type: "website", url: "/terms", images: [SITE_OG_IMAGE] },
 };
 
 export default function TermsPage() {
