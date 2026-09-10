@@ -25,26 +25,41 @@ import {
  * localhost:3000, never this test server. Only the path is requested.
  */
 
+/**
+ * `[name, page path, image folder]`. The folder is where the page's card must
+ * come from: its own `opengraph-image`, a parent's, or `""` for the site-wide
+ * card. A 200 PNG alone is not enough, because a page that lost its own image
+ * would still inherit a parent's and load fine.
+ */
 const ROUTES = [
-  ["home", "/"],
-  ["org", GITHUB_ORG_PATH],
-  ["repo", GITHUB_REPO_PATH],
-  ["skill", GITHUB_SKILL_PATH],
+  ["home", "/", ""],
+  ["org", GITHUB_ORG_PATH, GITHUB_ORG_PATH],
+  ["repo", GITHUB_REPO_PATH, GITHUB_REPO_PATH],
+  ["skill", GITHUB_SKILL_PATH, GITHUB_SKILL_PATH],
   // A tab is a deeper segment than the image file, which is the case that broke.
-  ["skill tab", `${GITHUB_SKILL_PATH}/history`],
-  ["site", WELL_KNOWN_SOURCE_PATH],
-  ["official", "/official"],
-  ["compare", "/compare"],
-  ["pricing", "/pricing"],
-  ["add", "/add"],
-  ["privacy", "/privacy"],
+  ["skill tab", `${GITHUB_SKILL_PATH}/history`, GITHUB_SKILL_PATH],
+  ["site", WELL_KNOWN_SOURCE_PATH, WELL_KNOWN_SOURCE_PATH],
+  ["official", "/official", "/official"],
+  ["compare", "/compare", "/compare"],
+  ["pricing", "/pricing", "/pricing"],
+  ["add", "/add", ""],
+  ["privacy", "/privacy", ""],
+  ["terms", "/terms", ""],
 ] as const;
 
 function tag(html: string, pattern: RegExp): string | undefined {
   return html.match(pattern)?.[1];
 }
 
-async function assertShareMetadata(request: APIRequestContext, path: string) {
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function assertShareMetadata(
+  request: APIRequestContext,
+  path: string,
+  imageFolder: string,
+) {
   const response = await request.get(path);
   expect(response.status()).toBe(200);
   const html = await response.text();
@@ -60,17 +75,21 @@ async function assertShareMetadata(request: APIRequestContext, path: string) {
   expect(ogImage, "og:image").toBeDefined();
 
   const { pathname, search } = new URL(ogImage!);
+  // The hash suffix appears when the folder sits inside a route group.
+  expect(pathname).toMatch(
+    new RegExp(`^${escapeRegExp(imageFolder)}/opengraph-image(-[a-z0-9]+)?$`),
+  );
   const image = await request.get(pathname + search);
   expect(image.status(), `og:image ${pathname}`).toBe(200);
   expect(image.headers()["content-type"]).toBe("image/png");
 }
 
 test.describe("share metadata", () => {
-  for (const [name, path] of ROUTES) {
+  for (const [name, path, imageFolder] of ROUTES) {
     test(`${name}: og:image loads, canonical and og:url name the page`, async ({
       request,
     }) => {
-      await assertShareMetadata(request, path);
+      await assertShareMetadata(request, path, imageFolder);
     });
   }
 
@@ -82,9 +101,9 @@ test.describe("share metadata", () => {
     const listing = await (await request.get(WELL_KNOWN_SOURCE_PATH)).text();
     const path = tag(
       listing,
-      new RegExp(`href="(${WELL_KNOWN_SOURCE_PATH}/[^"/?#]+)"`),
+      new RegExp(`href="(${escapeRegExp(WELL_KNOWN_SOURCE_PATH)}/[^"/?#]+)"`),
     );
     expect(path, "a skill link on the source page").toBeDefined();
-    await assertShareMetadata(request, path!);
+    await assertShareMetadata(request, path!, path!);
   });
 });

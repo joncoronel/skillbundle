@@ -19,7 +19,7 @@ import {
   SkillCopiesTabSkeleton,
 } from "@/components/skill-copies-tab";
 import { loadSkill } from "@/lib/skill-cache";
-import { skillHref } from "@/lib/skill-urls";
+import { skillHref, skillTabHref, type SkillTab } from "@/lib/skill-urls";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 /**
@@ -28,7 +28,6 @@ import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
  * call these. The trees differ only in how `params` becomes a source and in
  * the external-link props the Overview needs.
  */
-export type SkillTab = "overview" | "history" | "stats" | "security" | "copies";
 
 const TAB_COPY: Record<
   Exclude<SkillTab, "overview">,
@@ -100,10 +99,7 @@ export async function skillTabMetadata(
       : TAB_COPY[tab].description(skill.name);
   // Each tab is its own canonical page, not a duplicate of the Overview: the
   // content differs. The sitemap lists only Overviews; tabs are found by links.
-  const path =
-    tab === "overview"
-      ? skillHref(source, skillId)
-      : `${skillHref(source, skillId)}/${tab}`;
+  const path = skillTabHref(skillHref(source, skillId), tab);
   const alt = `${skill.name} on SkillBundle`;
   const images = ((await parent).openGraph?.images ?? []).map((image) =>
     typeof image === "string" || image instanceof URL
