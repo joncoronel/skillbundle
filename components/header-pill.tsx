@@ -115,8 +115,15 @@ export function HeaderPill() {
               same silent failure the `sm`→`md` note above describes. The
               wordmark is ~99px of that (90px of letters plus the 8px gap) and
               it is the one part a phone can lose: the mark still identifies
-              the app, and it is still a link home. */}
-          <span className="text-lg font-semibold tracking-tight max-md:hidden">
+              the app, and it is still a link home.
+
+              `sr-only` and NOT `hidden`, which is what it used to be. `LogoMark`
+              is `aria-hidden`, so hiding the wordmark outright left the link
+              with no accessible name at all below `md` — a mobile-only failure,
+              which is why Lighthouse (mobile by default) caught it and desktop
+              testing never would. `sr-only` is absolutely positioned, so it
+              leaves flow and the 320px measurement above still holds. */}
+          <span className="text-lg font-semibold tracking-tight max-md:sr-only">
             skillbundle
           </span>
         </Link>

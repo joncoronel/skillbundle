@@ -1,0 +1,41 @@
+# SkillBundle
+
+> A catalog of AI coding-assistant skills, and a monitor for the ones you depend on. SkillBundle indexes the public skills.sh ecosystem and public GitHub repositories, then tells developers when a skill they installed changes, breaks, or becomes unsafe.
+
+Skills are dependencies that nobody versions. Once installed, a skill file is decoupled from its source: no repo, no install command, often no version. It can change upstream silently, and its *description* can change too, which is what decides when an agent invokes it. SkillBundle exists to track that.
+
+Skills themselves are not hosted here. They are installed from their own repositories with `npx skills add owner/repo --skill <name>`. This site is a directory and a monitoring tool.
+
+## Browse
+
+- [Home](https://skillbundle.dev/): full catalog ranked by all-time installs, with trending and hot leaderboards.
+- [Official](https://skillbundle.dev/official): curated directory of skills from verified publishers.
+- [Compare](https://skillbundle.dev/compare): view several skills side by side.
+- [Add a skill](https://skillbundle.dev/add): submit a skill from a public GitHub repository.
+- [Pricing](https://skillbundle.dev/pricing): free tier covers 25 watched skills; Pro adds unlimited watching and repo matching.
+
+## How pages are addressed
+
+- Publisher: `https://skillbundle.dev/{owner}` (example: `/anthropics`)
+- Repository: `https://skillbundle.dev/{owner}/{repo}` (example: `/anthropics/skills`)
+- Skill: `https://skillbundle.dev/{owner}/{repo}/{skill}` (example: `/anthropics/skills/frontend-design`)
+- Skills from well-known non-GitHub sources live under `https://skillbundle.dev/site/{source}/{skill}`.
+
+Each skill page carries the rendered SKILL.md, install count and rank, install history, security audit verdicts, a copyable install command, and a full change history with diffs between any two versions.
+
+## What the data means
+
+- Install counts and ranks come from skills.sh and are refreshed daily.
+- Security verdicts are automated and advisory. They are not a professional audit, and a skill showing no problems may still be harmful.
+- Change monitoring is best effort. Not every change is guaranteed to be detected.
+
+## Full index
+
+- [Sitemap](https://skillbundle.dev/sitemap.xml): every publisher, repository, and skill page.
+
+## Policies
+
+- [Privacy Policy](https://skillbundle.dev/privacy)
+- [Terms of Service](https://skillbundle.dev/terms)
+- Crawling rules: [robots.txt](https://skillbundle.dev/robots.txt)
+- Contact: support@skillbundle.dev

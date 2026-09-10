@@ -138,6 +138,47 @@ not ticked, so what remains here is what remains to do.
   The keyword is current hero copy. Reword the homepage headline and the monitor
   starts paging about an outage that is not one.
 
+### PageSpeed Insights findings: measured, three rejected — Sep 2026
+
+Run against the live home page. Each was tested, not reasoned about.
+
+- **Render-blocking CSS (~390 ms, 7 files).** `experimental.inlineCss` was built
+  and measured: home page HTML went from **34.7 KB compressed / 310 KB raw** to
+  **201.9 KB / 1.5 MB**, a 5.8x increase compressed, because the stylesheet is
+  embedded per streamed boundary rather than once. Trading 390 ms of CSS
+  requests for 167 KB of extra HTML on every load is the wrong direction, and it
+  would hurt LCP rather than help it. Rejected.
+  `experimental.cssChunking` is already at its default `true`, which merges; the
+  Turbopack alternative `graph` trades FEWER bytes for MORE requests, which is
+  backwards here.
+  The real number underneath is the main stylesheet: **381 KB raw, 52.6 KB
+  compressed**, from Tailwind plus the design system. Shrinking that is a real
+  project (auditing generated utilities), not a config flag.
+
+- **Legacy JavaScript (~15 KB polyfills).** Not fixable from userland. The chunk
+  is Next's own polyfill bundle (`String.prototype.trimStart`, `Object.hasOwn`,
+  `Symbol.description`, ...), emitted by Turbopack and loaded `async` with NO
+  `noModule`, so every modern browser downloads it. Adding a `browserslist` to
+  `package.json` changed the total build output by **0 bytes** — measured twice,
+  with and without. Reverted rather than left as config that does nothing.
+  Worth noting the app's real floor is set by CSS, not JS: the shipped
+  stylesheet uses `@property` (127x), `color-mix()` (367x) and `:has()` (162x),
+  so Chrome 111+ / Firefox 128+ / Safari 16.4+ already. Those polyfills serve
+  browsers that cannot render the site anyway.
+
+- **Cache lifetime on `/api/op/s` (1 day).** Deliberate, keep it. OpenPanel
+  version-stamps a script URL only when it ends in `.js`
+  (`dist/index.js`: ``endsWith(".js")?`${t}?v=1.5.1`:t``), and ours does not, by
+  design, because `op1.js` is the string ad-blockers match. With no version in
+  the URL, a long `max-age` pins every visitor to whatever SDK build they first
+  received. The audit values the change at 2 KB; a stale analytics SDK forever
+  is not worth 2 KB.
+
+- **Unused JavaScript (~206 KB).** The largest single item is Clerk at 78 KB
+  transferred, 58.7 KB unused, which is a vendor bundle we do not control. The
+  rest is spread across app chunks. Not actioned; revisit only if a real user
+  complains about load time.
+
 ### Parked, with reasons
 
 - **Sentry (or equivalent) error monitoring.** Deferred deliberately, Sep 2026.

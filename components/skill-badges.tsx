@@ -54,6 +54,10 @@ export function SignalChip({
       <TooltipTrigger
         render={
           <span
+            // `role="img"`, not a bare span: a span's implicit role is
+            // `generic`, which PROHIBITS aria-label, so the name was silently
+            // dropped and the chip announced as nothing.
+            role="img"
             aria-label={label}
             className={cn(
               "inline-flex shrink-0 items-center rounded-md border px-1 py-0.5 text-(length:--text-micro) font-medium",
@@ -95,6 +99,9 @@ export function OfficialBadge({
 }) {
   return (
     <span
+      // See the note on the signal chip above: aria-label is prohibited on a
+      // span's implicit `generic` role, so this needs an explicit one.
+      role="img"
       title={`Official skill from ${owner}`}
       aria-label={`Official skill from ${owner}`}
       className={cn(

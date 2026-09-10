@@ -233,6 +233,10 @@ export function SkillRecord({
                   // a wrong number reads as fact, in the accessible name as much as
                   // on screen.
                   <span
+                    // `role="img"` so the aria-label is allowed to stand in for
+                    // the dash. On a bare span the role is `generic`, which
+                    // prohibits aria-label, and AT read out the raw character.
+                    role="img"
                     className="text-2xl leading-none font-semibold text-muted-foreground"
                     aria-label="Install count unavailable"
                   >
