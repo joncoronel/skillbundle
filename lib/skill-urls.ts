@@ -28,6 +28,15 @@ export function skillHref(source: string, skillId: string): string {
     : `/site/${source}/${skillId}`;
 }
 
+/** A skill page's tabs. Each is a route, not client state. */
+export type SkillTab = "overview" | "history" | "stats" | "security" | "copies";
+
+/** href for one tab of a skill page, given the skill's own `skillHref`. The
+ *  Overview is that path itself; every other tab is a child segment. */
+export function skillTabHref(skillPath: string, tab: SkillTab): string {
+  return tab === "overview" ? skillPath : `${skillPath}/${tab}`;
+}
+
 /** href for a source's browse page (org for GitHub, all-skills-from-domain
  *  for well-known). */
 export function sourceHref(source: string): string {

@@ -96,8 +96,9 @@ export const metadata: Metadata = {
   title: "SkillBundle",
   description:
     "Discover, compare, and bundle AI coding assistant skills for your tech stack",
-  // X/Twitter renders large-format cards; the generated twitter-image files
-  // supply the actual artwork.
+  // X/Twitter renders large-format cards. There are no twitter-image files:
+  // Next copies each page's `openGraph.images` into the card when
+  // `twitter.images` is unset, so the OG image is the artwork.
   twitter: {
     card: "summary_large_image",
   },

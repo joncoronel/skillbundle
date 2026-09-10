@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 import { notFound } from "next/navigation";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { SkillDetailPage } from "@/components/skill-detail-page";
@@ -14,14 +14,13 @@ type Params = Promise<{ org: string; repo: string; skillId: string }>;
 // (docs/architecture.md §1, "pick one, not both"). `generateStaticParams`,
 // `layout.tsx` and `opengraph-image.tsx` stay at `[skillId]`.
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Params;
-}): Promise<Metadata> {
+export async function generateMetadata(
+  { params }: { params: Params },
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
-  return skillTabMetadata("overview", source, skillId);
+  return skillTabMetadata("overview", source, skillId, parent);
 }
 
 export default async function SkillPage({ params }: { params: Params }) {

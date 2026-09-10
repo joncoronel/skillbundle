@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { OPERATOR, SUBPROCESSORS, SUPPORT_EMAIL } from "@/lib/legal";
+import { SITE_OG_IMAGE } from "@/lib/og/theme";
 
 /**
  * The privacy policy.
@@ -24,6 +25,8 @@ export const metadata: Metadata = {
   title: "Privacy Policy - SkillBundle",
   description:
     "What SkillBundle collects, why, who processes it, and how to get it deleted.",
+  alternates: { canonical: "/privacy" },
+  openGraph: { type: "website", url: "/privacy", images: [SITE_OG_IMAGE] },
 };
 
 export default function PrivacyPage() {

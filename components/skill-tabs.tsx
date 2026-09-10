@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
+import { skillTabHref } from "@/lib/skill-urls";
 
 /**
  * The skill page's tab strip: Overview, History, Stats, Security, and Copies
@@ -35,7 +36,7 @@ import { cn } from "@/lib/utils";
  * `<Suspense>` is a blocking route.
  */
 const SKILL_TABS = [
-  { slug: "", label: "Overview" },
+  { slug: "overview", label: "Overview" },
   { slug: "history", label: "History" },
   { slug: "stats", label: "Stats" },
   { slug: "security", label: "Security" },
@@ -58,9 +59,10 @@ const ALL_TABS = [...SKILL_TABS, COPIES_TAB];
 
 type SkillTabSlug = (typeof ALL_TABS)[number]["slug"];
 
-/** The active tab for a selected layout segment: a known slug, else Overview. */
+/** The active tab for a selected layout segment: a known slug, else Overview,
+ *  whose segment never matches one. */
 function activeSkillTab(segment: string | null): SkillTabSlug {
-  return ALL_TABS.find((t) => t.slug === segment)?.slug ?? "";
+  return ALL_TABS.find((t) => t.slug === segment)?.slug ?? "overview";
 }
 
 export function SkillTabs({
@@ -94,7 +96,7 @@ export function SkillTabs({
               key={tab.slug}
               value={tab.slug}
               nativeButton={false}
-              render={<Link href={tab.slug ? `${base}/${tab.slug}` : base} />}
+              render={<Link href={skillTabHref(base, tab.slug)} />}
             >
               {tab.label}
             </TabsTrigger>

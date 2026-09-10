@@ -90,10 +90,13 @@ export async function generateMetadata({
     repos.length === 1 ? "y" : "ies"
   } published by ${org}.`;
 
+  // No `images`: this segment's own opengraph-image.tsx attaches only when the
+  // openGraph set here leaves the key out.
   return {
     title,
     description,
-    openGraph: { title, description, type: "website" },
+    alternates: { canonical: `/${org}` },
+    openGraph: { title, description, type: "website", url: `/${org}` },
   };
 }
 

@@ -1,18 +1,17 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 import { notFound } from "next/navigation";
 import { SkillTabPage, skillTabMetadata } from "@/lib/skill-tab-route";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Params;
-}): Promise<Metadata> {
+export async function generateMetadata(
+  { params }: { params: Params },
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
-  return skillTabMetadata("history", source, skillId);
+  return skillTabMetadata("history", source, skillId, parent);
 }
 
 export default async function Page({ params }: { params: Params }) {

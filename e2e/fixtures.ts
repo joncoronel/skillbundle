@@ -1,6 +1,6 @@
 /**
  * Shared route params for the signed-out e2e suites (instant-navigation,
- * landmarks, skill-history).
+ * landmarks, share-metadata, skill-history, skill-copies).
  *
  * Two strategies, deliberately:
  *

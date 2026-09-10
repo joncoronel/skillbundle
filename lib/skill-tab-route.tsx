@@ -1,5 +1,5 @@
 import "server-only";
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 import { Suspense } from "react";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import {
@@ -19,16 +19,15 @@ import {
   SkillCopiesTabSkeleton,
 } from "@/components/skill-copies-tab";
 import { loadSkill } from "@/lib/skill-cache";
-import { skillHref } from "@/lib/skill-urls";
+import { skillHref, skillTabHref, type SkillTab } from "@/lib/skill-urls";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 /**
- * Everything the eight skill route files (four tabs x two route trees) have
+ * Everything the ten skill route files (five tabs x two route trees) have
  * in common, so each of them is a few lines: resolve `params` into a source,
  * call these. The trees differ only in how `params` becomes a source and in
  * the external-link props the Overview needs.
  */
-export type SkillTab = "overview" | "history" | "stats" | "security" | "copies";
 
 const TAB_COPY: Record<
   Exclude<SkillTab, "overview">,
@@ -61,18 +60,25 @@ const TAB_COPY: Record<
 };
 
 /**
- * Metadata for any skill tab. Sets `openGraph.images` explicitly, and that is
- * the reason this is one function: `openGraph` is replaced whole by the
- * deepest segment that sets it, and the file-convention image in
+ * Metadata for any skill tab. Carries `openGraph.images` over from `parent`,
+ * and that is the reason this is one function: `openGraph` is replaced whole by
+ * the deepest segment that sets it, and the file-convention image in
  * `[skillId]/opengraph-image.tsx` only auto-merges at its own segment. Every
- * tab page, and the Overview once it moved into the `(overview)` group, is a
- * deeper segment, so without this line their share links carry no image.
- * app/(main)/page.tsx documents the same trap for the root image.
+ * tab page, and the Overview in its `(overview)` group, is a deeper segment,
+ * so without this their share links carry no image.
+ *
+ * Inherited, never written out. Next suffixes a metadata route's URL with a
+ * hash of its folder path whenever that path contains a route group, so this
+ * image is served at `.../opengraph-image-1ak9wt`, not `.../opengraph-image`
+ * (`getMetadataRouteSuffix` in next/dist/lib/metadata/get-metadata-route.js).
+ * A hand-built URL here 404'd on every skill page from Sep 3 to Sep 10 2026,
+ * and nothing failed: the page renders either way, only the unfurl breaks.
  */
 export async function skillTabMetadata(
   tab: SkillTab,
   source: string,
   skillId: string,
+  parent: ResolvingMetadata,
 ): Promise<Metadata> {
   const skill = await loadSkill(source, skillId);
   // `noindex` here covers all ten skill-tab routes at once (five tabs across
@@ -91,23 +97,21 @@ export async function skillTabMetadata(
     tab === "overview"
       ? (skill.description ?? `${skill.name} — a skill from ${source}`)
       : TAB_COPY[tab].description(skill.name);
+  // Each tab is its own canonical page, not a duplicate of the Overview: the
+  // content differs. The sitemap lists only Overviews; tabs are found by links.
+  const path = skillTabHref(skillHref(source, skillId), tab);
+  const alt = `${skill.name} on SkillBundle`;
+  const images = ((await parent).openGraph?.images ?? []).map((image) =>
+    typeof image === "string" || image instanceof URL
+      ? image
+      : { ...image, alt },
+  );
 
   return {
     title,
     description,
-    openGraph: {
-      title,
-      description,
-      type: "article",
-      images: [
-        {
-          url: `${skillHref(source, skillId)}/opengraph-image`,
-          width: 1200,
-          height: 630,
-          alt: `${skill.name} on SkillBundle`,
-        },
-      ],
-    },
+    alternates: { canonical: path },
+    openGraph: { title, description, type: "article", url: path, images },
   };
 }
 

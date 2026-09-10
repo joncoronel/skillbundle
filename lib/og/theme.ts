@@ -14,6 +14,22 @@
 export const OG_SIZE = { width: 1200, height: 630 } as const;
 export const OG_CONTENT_TYPE = "image/png";
 
+/**
+ * The site-wide card from `app/opengraph-image.tsx`, for a page that sets
+ * `openGraph` but has no image file of its own. A page's `openGraph` replaces
+ * the inherited one whole, image included, so such a page must point back here
+ * or it unfurls with no image.
+ *
+ * Writing this URL out is safe only because the root file sits outside every
+ * route group. Image files inside one get a hashed URL; see
+ * `skillTabMetadata` in `lib/skill-tab-route.tsx`.
+ */
+export const SITE_OG_IMAGE = {
+  url: "/opengraph-image",
+  ...OG_SIZE,
+  alt: "SkillBundle: discover, compare, and bundle AI coding skills",
+};
+
 export const og = {
   /** Page background — `--surface-1` dark, pushed slightly deeper. */
   bg: "#0a0b0d",

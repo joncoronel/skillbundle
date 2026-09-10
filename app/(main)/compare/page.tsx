@@ -22,6 +22,7 @@ export const metadata: Metadata = {
   // Every `?skills=` variant serves this same shell — point crawlers at the
   // bare route so comparison links don't index as thin duplicate pages.
   alternates: { canonical: "/compare" },
+  openGraph: { type: "website", url: "/compare" },
 };
 
 // State-neutral fallback: the columns depend entirely on the search param
