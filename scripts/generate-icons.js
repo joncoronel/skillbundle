@@ -8,17 +8,25 @@
  */
 const fs = require("fs");
 const path = require("path");
-// sharp ships as a transitive (pnpm) dependency, so resolve it from the store.
+// sharp ships as a transitive (pnpm) dependency, so it is not resolvable by
+// name from here. Glob the store rather than hard-coding a version: the path
+// was pinned to sharp@0.34.5 and silently broke when the dependency moved to
+// 0.35.3, which is a stale-path failure nobody notices until they regenerate.
+const sharpDir = fs
+  .readdirSync(path.join(__dirname, "..", "node_modules", ".pnpm"))
+  .find((d) => d.startsWith("sharp@"));
+if (!sharpDir) {
+  throw new Error("sharp not found in node_modules/.pnpm — run `pnpm install`");
+}
 const sharp = require(
-  "sharp@0.34.5/node_modules/sharp".replace(
-    "sharp@0.34.5",
-    require("path").join(
-      __dirname,
-      "..",
-      "node_modules",
-      ".pnpm",
-      "sharp@0.34.5",
-    ),
+  path.join(
+    __dirname,
+    "..",
+    "node_modules",
+    ".pnpm",
+    sharpDir,
+    "node_modules",
+    "sharp",
   ),
 );
 
@@ -80,6 +88,25 @@ function buildIco(images) {
   return Buffer.concat([header, ...entries, ...images.map((i) => i.data)]);
 }
 
+
+/**
+ * Transparent-background mark for uploading to third parties that ask for a
+ * "logo for light background" and a "logo for dark background": status pages,
+ * directories, OAuth consent screens.
+ *
+ * Deliberately NOT the tile above. A tile carries its own dark square, which
+ * reads as an app icon dropped into a page rather than as a logo, and looks
+ * wrong the moment the host puts it on its own surface. This is the bare mark
+ * on transparency, so the host's background shows through.
+ *
+ * Rendered at 2x the usual display size, because these uploads are shown at
+ * arbitrary sizes on retina screens and none of these hosts vectorise a PNG.
+ */
+function markSvg(color) {
+  const paths = LOGO_PATHS.map((d) => `<path d="${d}" />`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 69.7 44"><g fill="${color}">${paths}</g></svg>`;
+}
+
 async function main() {
   // favicon.ico — 16/32/48 from the rounded tile
   const icoSizes = [16, 32, 48];
@@ -105,6 +132,24 @@ async function main() {
       await png(SQUARE, size),
     );
     console.log(`wrote public/icons/icon-${size}.png`);
+  }
+
+  // Brand marks for third-party uploads. `-on-light` is the ink mark for a
+  // white surface; `-on-dark` is the near-white mark for a dark one. Named for
+  // the BACKGROUND they sit on, not their own colour, because that is the
+  // question the upload form actually asks.
+  const logosDir = path.join(ROOT, "public", "logos");
+  fs.mkdirSync(logosDir, { recursive: true });
+  for (const [name, color] of [
+    ["on-light", "#0a0b0d"],
+    ["on-dark", "#fafafa"],
+  ]) {
+    const buf = await sharp(Buffer.from(markSvg(color)))
+      .resize({ width: 1024 })
+      .png()
+      .toBuffer();
+    fs.writeFileSync(path.join(logosDir, `skillbundle-mark-${name}.png`), buf);
+    console.log(`wrote public/logos/skillbundle-mark-${name}.png`);
   }
 }
 
