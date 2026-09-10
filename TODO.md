@@ -26,8 +26,9 @@ not ticked, so what remains here is what remains to do.
   the LIVE site's JS bundle inlines those same two ids, which is what proves
   the `NEXT_PUBLIC_` mirrors on Vercel match Convex. All four locations in
   `docs/polar-launch-checklist.md` §3 therefore agree.
-  One thing still unproven: a real checkout completing. See the note under
-  "Should do" — the pricing CTA's markup changed in the launch-prep branch.
+  A real checkout was completed with a 100% discount code (Sep 2026), so the
+  full path is proven: hosted checkout, `subscription.created` webhook, and the
+  plan flipping to pro.
 
 - ~~Forgot password.~~ **Shipped** — `/sign-in/reset`
   (`components/auth/reset-password-form.tsx`), entered from a "Forgot?" link
@@ -36,17 +37,33 @@ not ticked, so what remains here is what remains to do.
 
 ### Should do before announcing
 
-- **Verify the analytics events fire in production.** They no-op outside
-  production by design (`window.op` is undefined), so a miswired event is
-  invisible locally. Check the OpenPanel dashboard after the first deploy.
+- ~~Verify the analytics events fire in production.~~ **Done** — `screen_view`
+  and a real `repo_match_run` both returned 200 from `/api/op/track` on the live
+  site.
+  One trap found doing it, worth keeping: the SDK script was blocked by an
+  ordinary ad-blocker at `/api/op/op1.js`, because blocklists match the FILENAME
+  and `op1.js` is OpenPanel's well-known one. Proxying through our own domain
+  defeats the host rule, not the path rule. A blocked script means `window.op`
+  never exists, so every later `track()` is a silent no-op and NOTHING is
+  recorded, not even screen views. It now serves from `/api/op/s`. Do not put
+  `op1.js` back in a URL, and test analytics in a browser that has a blocker,
+  because a clean browser cannot see this class of bug.
 - **Two funnel gaps to know about.** OAuth sign-ups and sign-ins are NOT counted
   (`AuthenticateWithRedirectCallback` exposes no success hook), so read
   `signup_completed` as "password signups" and check the real total in Clerk.
   And `checkout_started` is intent, not revenue — compare it against Polar's
   `subscription.created` to get abandonment.
-- **Search Console and Bing verification.** `app/robots.ts` records that
-  Googlebot made ONE request in 24h. The sitemap is advertised but the property
-  is not verified.
+- **Search Console: done. Bing: still to do.** The property is verified and
+  `sitemap.xml` submitted, reporting ~18.6k discovered pages (Sep 2026). Bing is
+  a one-step "Import from Google Search Console" at bing.com/webmasters, which
+  copies both the verification and the sitemap.
+  Reading the reports later: "Discovered/Crawled - currently not indexed" in
+  bulk is expected at this catalog size and is not a defect. The number worth
+  watching is **Soft 404**. The catalog routes answer 200 with not-found content
+  by design (see `lib/soft-404.ts`), and carry `noindex, nofollow` so they should
+  be excluded cleanly. Soft 404s climbing into the hundreds means the sitemap is
+  advertising URLs that no longer resolve.
+
 - **Moderation: correctly scoped down, Sep 2026.** SkillBundle hosts nothing.
   It indexes metadata, and `npx skills add owner/repo` installs from GitHub, not
   from us — so for anything synced from skills.sh, moderation is theirs and the
