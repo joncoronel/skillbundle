@@ -88,7 +88,6 @@ function buildIco(images) {
   return Buffer.concat([header, ...entries, ...images.map((i) => i.data)]);
 }
 
-
 /**
  * Transparent-background mark for uploading to third parties that ask for a
  * "logo for light background" and a "logo for dark background": status pages,

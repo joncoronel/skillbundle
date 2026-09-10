@@ -127,19 +127,16 @@ not ticked, so what remains here is what remains to do.
   can now age, `/dev` shows "Counts as of X ago" and flags them stale after 48h
   (`StatsFreshness` in `dev-dashboard-content.tsx`).
 
-- **Uptime monitoring: Better Stack (chosen Sep 2026), not yet set up.**
-  Nothing pings the site today, so an outage is discovered by a user telling
-  you — Vercel does not alert on a deployed app that has started erroring.
-  Two monitors, not one, and the second is the one that matters:
-  1. `https://skillbundle.dev/` every 5 minutes, alert after two consecutive
-     failures (one failure is usually a blip, not an outage).
-  2. A **Convex-backed** page, e.g. a skill detail URL. The home page's shell
-     is prerendered and served from the CDN, so it stays up and returns 200
-     while the data layer is completely down — a monitor pointed only at `/`
-     would report all-clear through exactly the outage worth paging for.
-     Watch the status code AND expect body text that only appears when real data
-     rendered; a soft-404 or an empty shell is a 200 either way (see
-     `lib/soft-404.ts` for why this app returns 200 on missing catalog rows).
+- ~~Uptime monitoring.~~ **Done** — Better Stack, two monitors: skillbundle.dev
+  on a keyword check (`Pick skills`, so a 200 serving a broken page still
+  alerts), and the production Convex deployment on plain availability.
+  The second one exists because of a trap worth remembering: monitoring one of
+  OUR pages does NOT detect a Convex outage. Catalog routes are `cacheLife
+("days")` and `("weeks")`, so they keep serving cached HTML with real content
+  and return 200 for days into a backend outage. Only hitting Convex directly
+  fails when Convex does.
+  The keyword is current hero copy. Reword the homepage headline and the monitor
+  starts paging about an outage that is not one.
 
 ### Parked, with reasons
 
