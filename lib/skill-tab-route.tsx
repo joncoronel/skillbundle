@@ -23,7 +23,7 @@ import { skillHref, skillTabHref, type SkillTab } from "@/lib/skill-urls";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 /**
- * Everything the eight skill route files (four tabs x two route trees) have
+ * Everything the ten skill route files (five tabs x two route trees) have
  * in common, so each of them is a few lines: resolve `params` into a source,
  * call these. The trees differ only in how `params` becomes a source and in
  * the external-link props the Overview needs.

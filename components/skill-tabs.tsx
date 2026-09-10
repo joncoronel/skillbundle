@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/cubby-ui/tabs";
 import { cn } from "@/lib/utils";
-import { skillTabHref, type SkillTab } from "@/lib/skill-urls";
+import { skillTabHref } from "@/lib/skill-urls";
 
 /**
  * The skill page's tab strip: Overview, History, Stats, Security, and Copies
@@ -40,7 +40,7 @@ const SKILL_TABS = [
   { slug: "history", label: "History" },
   { slug: "stats", label: "Stats" },
   { slug: "security", label: "Security" },
-] as const satisfies readonly { slug: SkillTab; label: string }[];
+] as const;
 
 /**
  * Appended for skills that have aliases or forks, never filtered back out.
