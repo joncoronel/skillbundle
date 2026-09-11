@@ -10,9 +10,10 @@ import { SUPPORT_EMAIL } from "@/lib/legal";
  * OAuth verification all expect the legal pages to be reachable from the site
  * root, not merely to resolve when typed.
  *
- * `pb-28` is not spacing taste. `GlobalBundleBar` floats at `bottom-4` on browse
- * routes, so a flush footer puts its last row under the bar whenever a selection
- * is active. Shrink the pad and the legal links stop being clickable.
+ * The bottom pad is only the footer's own. Clearance for the floating bundle bar
+ * is a spacer `BundleBar` renders after this footer while it is showing, so the
+ * last row never sits under the bar and routes without a selection don't carry
+ * 112px of dead space below the footer.
  */
 
 const PRODUCT_LINKS = [
@@ -58,7 +59,7 @@ function FooterColumn({
 export function SiteFooter() {
   return (
     <footer className="mt-24 border-t border-border">
-      <div className="mx-auto max-w-6xl px-4 pt-12 pb-28">
+      <div className="mx-auto max-w-6xl px-4 pt-12 pb-10">
         <div className="flex flex-col gap-10 sm:flex-row sm:justify-between">
           <div className="max-w-xs">
             <Link
