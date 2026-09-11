@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   ArrowDown02Icon,
@@ -12,6 +12,38 @@ import {
   TooltipTrigger,
 } from "@/components/ui/cubby-ui/tooltip";
 import { cn, formatInstalls } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Row hint — the one hover tooltip for anything in a skill row
+// ---------------------------------------------------------------------------
+
+/**
+ * Chrome hover tooltip for a non-focusable element in a skill row: the signal
+ * icons, the Hot momentum chip, the windowed install count. Every hint in a
+ * row goes through here, so none falls back to the browser's native `title`
+ * tooltip beside a styled one. `children` is the element itself; Base UI
+ * clones it as the trigger and keeps its own children.
+ *
+ * Hover-only, like the `title` it replaces, so the text reaches sighted
+ * pointer users only. Anything a screen reader needs goes in the element's own
+ * accessible name or an `sr-only` span.
+ */
+export function RowHint({
+  hint,
+  children,
+}: {
+  hint: ReactNode;
+  children: ReactElement<Record<string, unknown>>;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent variant="chrome" className="max-w-56 leading-snug">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Signal icon — shared vocabulary for row-level skill signals
@@ -28,10 +60,9 @@ const SIGNAL_TONE: Record<SignalTone, string> = {
 /**
  * Bare icon for a row-level skill signal (official, status, copies,
  * GitHub-only). The icon carries the meaning — never color alone — and `label`
- * is the accessible name, announced as part of the row. A chrome tooltip adds
- * the fuller explanation on hover, matching the search bar's scope toggles.
- * One component for all of them, so no icon in a row falls back to the
- * browser's native `title` tooltip beside a styled one.
+ * is the accessible name, announced as part of the row. A `RowHint` adds the
+ * fuller explanation on hover, on the chrome surface the search bar's scope
+ * toggles use.
  *
  * No tinted box around the glyph. It sits beside the install-count icon, a
  * bare 16px glyph, and a box was the one shape in the row that differed. It
@@ -57,22 +88,18 @@ export function SignalIcon({
   className?: string;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            // `role="img"`, not a bare span: a span's implicit role is
-            // `generic`, which PROHIBITS aria-label, so the name was silently
-            // dropped and the icon announced as nothing.
-            role="img"
-            aria-label={label}
-            className={cn(
-              "inline-flex shrink-0 items-center",
-              SIGNAL_TONE[tone],
-              className,
-            )}
-          />
-        }
+    <RowHint hint={tooltip}>
+      <span
+        // `role="img"`, not a bare span: a span's implicit role is `generic`,
+        // which PROHIBITS aria-label, so the name was silently dropped and the
+        // icon announced as nothing.
+        role="img"
+        aria-label={label}
+        className={cn(
+          "inline-flex shrink-0 items-center",
+          SIGNAL_TONE[tone],
+          className,
+        )}
       >
         <HugeiconsIcon
           icon={icon}
@@ -80,11 +107,8 @@ export function SignalIcon({
           className="size-4"
           aria-hidden="true"
         />
-      </TooltipTrigger>
-      <TooltipContent variant="chrome" className="max-w-56 leading-snug">
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
+      </span>
+    </RowHint>
   );
 }
 
@@ -152,24 +176,28 @@ export function HotMomentumChip({
   const rising = change > 0;
   const sign = rising ? "+" : "−";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-(length:--text-micro) font-medium tabular-nums",
-        rising
-          ? "border-success/20 bg-success/10 text-success-foreground"
-          : "border-destructive/20 bg-destructive/10 text-destructive",
-        className,
-      )}
-      title={`${sign}${Math.abs(change).toLocaleString()} installs vs same hour yesterday`}
+    <RowHint
+      hint={`${sign}${Math.abs(change).toLocaleString()} installs vs same hour yesterday`}
     >
-      <HugeiconsIcon
-        icon={rising ? ArrowUp02Icon : ArrowDown02Icon}
-        strokeWidth={2}
-        className="size-2.5"
-        aria-hidden="true"
-      />
-      {sign}
-      {formatInstalls(Math.abs(change))}
-    </span>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-(length:--text-micro) font-medium tabular-nums",
+          rising
+            ? "border-success/20 bg-success/10 text-success-foreground"
+            : "border-destructive/20 bg-destructive/10 text-destructive",
+          className,
+        )}
+      >
+        <HugeiconsIcon
+          icon={rising ? ArrowUp02Icon : ArrowDown02Icon}
+          strokeWidth={2}
+          className="size-2.5"
+          aria-hidden="true"
+        />
+        {sign}
+        {formatInstalls(Math.abs(change))}
+        <span className="sr-only"> installs vs same hour yesterday</span>
+      </span>
+    </RowHint>
   );
 }

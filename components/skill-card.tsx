@@ -22,6 +22,7 @@ import {
   HotMomentumChip,
   OfficialBadge,
   GitHubOnlyBadge,
+  RowHint,
   SignalIcon,
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
@@ -159,6 +160,19 @@ function SkillMeta({
   const display = metric ? METRIC_DISPLAY[metric] : undefined;
   const windowed = display?.value(skill);
   const installCount = windowed ?? skill.installs;
+  // Only a windowed count needs its window named.
+  const countWindow = windowed !== undefined ? display : undefined;
+  const count = (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+      <HugeiconsIcon icon={Download04Icon} strokeWidth={2} className="size-4" />
+      {formatInstalls(installCount)}
+      {showLabel && (countWindow ? countWindow.suffix : " installs")}
+      {/* The hover hint names the window, and a screen reader never gets it. */}
+      {!showLabel && countWindow && (
+        <span className="sr-only"> installs{countWindow.suffix}</span>
+      )}
+    </span>
+  );
   // Signal icons sit to the left; the install count is always the last (right-
   // most) element so it reads as a stable anchor down the list. The Hot momentum
   // chip stays adjacent to the count it annotates.
@@ -179,18 +193,11 @@ function SkillMeta({
       {metric === "hot" &&
         skill.hotChange !== undefined &&
         skill.hotChange !== 0 && <HotMomentumChip change={skill.hotChange} />}
-      <span
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums"
-        title={windowed !== undefined ? display?.title : undefined}
-      >
-        <HugeiconsIcon
-          icon={Download04Icon}
-          strokeWidth={2}
-          className="size-4"
-        />
-        {formatInstalls(installCount)}
-        {showLabel && (windowed !== undefined ? display?.suffix : " installs")}
-      </span>
+      {countWindow ? (
+        <RowHint hint={countWindow.title}>{count}</RowHint>
+      ) : (
+        count
+      )}
     </div>
   );
 }
