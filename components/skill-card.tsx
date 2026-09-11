@@ -212,10 +212,13 @@ function CopiesBadge({ count }: { count: number }) {
   // Icon only; the count lives in the accessible label and the tooltip, not
   // the visible glyph (kept consistent with the status icons). The tooltip has
   // to carry it too, or a sighted reader has no way to see it at all.
-  const shown = count > 9 ? "9+" : String(count);
-  const label = count === 1 ? "1 copy" : `${shown} copies`;
+  const capped = count > 9;
+  const label = count === 1 ? "1 copy" : `${capped ? "9+" : count} copies`;
+  // Spelled out in the sentence: "under 9+ other names" reads as a typo.
   const others =
-    count === 1 ? "1 other name or fork" : `${shown} other names or forks`;
+    count === 1
+      ? "1 other name or fork"
+      : `${capped ? "more than 9" : count} other names or forks`;
   return (
     <SignalIcon
       icon={Copy01Icon}
