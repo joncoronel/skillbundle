@@ -4,7 +4,7 @@ import {
   RefreshIcon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
-import { SignalChip, type SignalChipTone } from "@/components/skill-badges";
+import { SignalIcon, type SignalTone } from "@/components/skill-badges";
 
 export type SkillStatus = "delisted" | "fetch-error" | "updated" | null;
 
@@ -19,13 +19,13 @@ export function deriveSkillStatus(props: {
   return null;
 }
 
-const STATUS_CHIP_CONFIG: Record<
+const STATUS_ICON_CONFIG: Record<
   Exclude<SkillStatus, null>,
   {
     icon: IconSvgElement;
     label: string;
-    // Status chips only ever use these two of SignalChip's tones (never "muted").
-    tone: Extract<SignalChipTone, "warning" | "info">;
+    // Status icons only ever use these two of SignalIcon's tones (never "muted").
+    tone: Extract<SignalTone, "warning" | "info">;
     tooltip: string;
   }
 > = {
@@ -52,6 +52,6 @@ const STATUS_CHIP_CONFIG: Record<
 
 export function SkillStatusBadge({ status }: { status: SkillStatus }) {
   if (!status) return null;
-  const { icon, label, tone, tooltip } = STATUS_CHIP_CONFIG[status];
-  return <SignalChip icon={icon} label={label} tone={tone} tooltip={tooltip} />;
+  const { icon, label, tone, tooltip } = STATUS_ICON_CONFIG[status];
+  return <SignalIcon icon={icon} label={label} tone={tone} tooltip={tooltip} />;
 }

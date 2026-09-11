@@ -22,7 +22,8 @@ import {
   HotMomentumChip,
   OfficialBadge,
   GitHubOnlyBadge,
-  SignalChip,
+  RowHint,
+  SignalIcon,
 } from "@/components/skill-badges";
 import { skillHref } from "@/lib/skill-urls";
 import { renderHighlight } from "@/lib/search/highlight";
@@ -159,11 +160,28 @@ function SkillMeta({
   const display = metric ? METRIC_DISPLAY[metric] : undefined;
   const windowed = display?.value(skill);
   const installCount = windowed ?? skill.installs;
-  // Signal chips sit to the left; the install count is always the last (right-
+  // Only a windowed count needs its window named.
+  const countWindow = windowed !== undefined ? display : undefined;
+  const count = (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+      <HugeiconsIcon icon={Download04Icon} strokeWidth={2} className="size-4" />
+      {formatInstalls(installCount)}
+      {showLabel && (countWindow ? countWindow.suffix : " installs")}
+      {/* The hover hint names the window, and a screen reader never gets it. */}
+      {!showLabel && countWindow && (
+        <span className="sr-only"> installs{countWindow.suffix}</span>
+      )}
+    </span>
+  );
+  // Signal icons sit to the left; the install count is always the last (right-
   // most) element so it reads as a stable anchor down the list. The Hot momentum
   // chip stays adjacent to the count it annotates.
+  //
+  // gap-2, twice the count's own icon-to-number gap-1: the signals are bare
+  // glyphs like the download icon, and at gap-1.5 a warning icon read as a
+  // second icon on the count rather than a separate fact.
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2">
       <SkillStatusBadge
         status={deriveSkillStatus({
           isDelisted: skill.isDelisted,
@@ -175,18 +193,11 @@ function SkillMeta({
       {metric === "hot" &&
         skill.hotChange !== undefined &&
         skill.hotChange !== 0 && <HotMomentumChip change={skill.hotChange} />}
-      <span
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums"
-        title={windowed !== undefined ? display?.title : undefined}
-      >
-        <HugeiconsIcon
-          icon={Download04Icon}
-          strokeWidth={2}
-          className="size-4"
-        />
-        {formatInstalls(installCount)}
-        {showLabel && (windowed !== undefined ? display?.suffix : " installs")}
-      </span>
+      {countWindow ? (
+        <RowHint hint={countWindow.title}>{count}</RowHint>
+      ) : (
+        count
+      )}
     </div>
   );
 }
@@ -198,14 +209,21 @@ function SkillMeta({
  * upstream, so render "9+" past the cap rather than an exact large number.
  */
 function CopiesBadge({ count }: { count: number }) {
-  // Icon-only chip; the count lives in the accessible label + tooltip, not the
-  // visible glyph (kept consistent with the status chips).
-  const label = count === 1 ? "1 copy" : `${count > 9 ? "9+" : count} copies`;
+  // Icon only; the count lives in the accessible label and the tooltip, not
+  // the visible glyph (kept consistent with the status icons). The tooltip has
+  // to carry it too, or a sighted reader has no way to see it at all.
+  const capped = count > 9;
+  const label = count === 1 ? "1 copy" : `${capped ? "9+" : count} copies`;
+  // Spelled out in the sentence: "under 9+ other names" reads as a typo.
+  const others =
+    count === 1
+      ? "1 other name or fork"
+      : `${capped ? "more than 9" : count} other names or forks`;
   return (
-    <SignalChip
+    <SignalIcon
       icon={Copy01Icon}
       label={label}
-      tooltip="The same content is published under other names or forks. Open the skill to compare them."
+      tooltip={`The same content is also published under ${others}. Open the skill to compare them.`}
     />
   );
 }

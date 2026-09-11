@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   ArrowDown02Icon,
@@ -14,29 +14,67 @@ import {
 import { cn, formatInstalls } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// Signal chip — shared icon-chip vocabulary for row-level skill signals
+// Row hint — the one hover tooltip for anything in a skill row
 // ---------------------------------------------------------------------------
 
-export type SignalChipTone = "warning" | "info" | "muted";
+/**
+ * Chrome hover tooltip for a non-focusable element in a skill row: the signal
+ * icons, the Hot momentum chip, the windowed install count. Every hint in a
+ * row goes through here, so none falls back to the browser's native `title`
+ * tooltip beside a styled one. `children` is the element itself; Base UI
+ * clones it as the trigger and keeps its own children.
+ *
+ * Hover-only, like the `title` it replaces, so the text reaches sighted
+ * pointer users only. Anything a screen reader needs goes in the element's own
+ * accessible name or an `sr-only` span.
+ */
+export function RowHint({
+  hint,
+  children,
+}: {
+  hint: ReactNode;
+  children: ReactElement<Record<string, unknown>>;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent variant="chrome" className="max-w-56 leading-snug">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
-const SIGNAL_CHIP_TONE: Record<SignalChipTone, string> = {
-  warning: "bg-warning/10 text-warning-foreground border-warning/25",
-  info: "bg-info/10 text-info-foreground border-info/25",
-  muted: "bg-muted text-muted-foreground border-transparent",
+// ---------------------------------------------------------------------------
+// Signal icon — shared vocabulary for row-level skill signals
+// ---------------------------------------------------------------------------
+
+export type SignalTone = "warning" | "info" | "muted";
+
+const SIGNAL_TONE: Record<SignalTone, string> = {
+  warning: "text-warning-foreground",
+  info: "text-info-foreground",
+  muted: "text-muted-foreground",
 };
 
 /**
- * Compact icon chip for a row-level skill signal (status, copies). The icon
- * carries the meaning — never color alone — and `label` is the accessible name,
- * announced as part of the row. A styled tooltip adds the fuller explanation on
- * hover/pointer.
+ * Bare icon for a row-level skill signal (official, status, copies,
+ * GitHub-only). The icon carries the meaning — never color alone — and `label`
+ * is the accessible name, announced as part of the row. A `RowHint` adds the
+ * fuller explanation on hover, on the chrome surface the search bar's scope
+ * toggles use.
  *
- * Deliberately NOT focusable: in a 60-row list, making every chip a tab stop
+ * No tinted box around the glyph. It sits beside the install-count icon, a
+ * bare 16px glyph, and a box was the one shape in the row that differed. It
+ * also had to shrink the glyph to 12px to fit a row-height pill, which
+ * rendered 22 x 18 and read as a squashed oval rather than a square.
+ *
+ * Deliberately NOT focusable: in a 60-row list, making every icon a tab stop
  * would wreck keyboard navigation, and the row itself is the interactive element
  * that links to the detail page carrying the full text. This mirrors the prior
  * native-`title` behavior (hover-only), just styled and consistent.
  */
-export function SignalChip({
+export function SignalIcon({
   icon,
   label,
   tone = "muted",
@@ -45,39 +83,32 @@ export function SignalChip({
 }: {
   icon: IconSvgElement;
   label: string;
-  tone?: SignalChipTone;
+  tone?: SignalTone;
   tooltip: ReactNode;
   className?: string;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            // `role="img"`, not a bare span: a span's implicit role is
-            // `generic`, which PROHIBITS aria-label, so the name was silently
-            // dropped and the chip announced as nothing.
-            role="img"
-            aria-label={label}
-            className={cn(
-              "inline-flex shrink-0 items-center rounded-md border px-1 py-0.5 text-(length:--text-micro) font-medium",
-              SIGNAL_CHIP_TONE[tone],
-              className,
-            )}
-          />
-        }
+    <RowHint hint={tooltip}>
+      <span
+        // `role="img"`, not a bare span: a span's implicit role is `generic`,
+        // which PROHIBITS aria-label, so the name was silently dropped and the
+        // icon announced as nothing.
+        role="img"
+        aria-label={label}
+        className={cn(
+          "inline-flex shrink-0 items-center",
+          SIGNAL_TONE[tone],
+          className,
+        )}
       >
         <HugeiconsIcon
           icon={icon}
           strokeWidth={2}
-          className="size-3"
+          className="size-4"
           aria-hidden="true"
         />
-      </TooltipTrigger>
-      <TooltipContent className="max-w-56 leading-snug">
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
+      </span>
+    </RowHint>
   );
 }
 
@@ -87,7 +118,7 @@ export function SignalChip({
 
 /**
  * "Official" verified mark for skills curated by skills.sh as first-party.
- * Just the checkmark-badge icon — no pill, no label. Tooltip identifies the
+ * Just the checkmark-badge icon, no pill, no label. Tooltip identifies the
  * curated owner.
  */
 export function OfficialBadge({
@@ -97,36 +128,27 @@ export function OfficialBadge({
   owner: string;
   className?: string;
 }) {
+  const label = `Official skill from ${owner}`;
   return (
-    <span
-      // See the note on the signal chip above: aria-label is prohibited on a
-      // span's implicit `generic` role, so this needs an explicit one.
-      role="img"
-      title={`Official skill from ${owner}`}
-      aria-label={`Official skill from ${owner}`}
-      className={cn(
-        "inline-flex shrink-0 items-center text-info-foreground",
-        className,
-      )}
-    >
-      <HugeiconsIcon
-        icon={CheckmarkBadge02Icon}
-        strokeWidth={2}
-        className="size-4"
-      />
-    </span>
+    <SignalIcon
+      icon={CheckmarkBadge02Icon}
+      label={label}
+      tone="info"
+      tooltip={label}
+      className={className}
+    />
   );
 }
 
 /**
  * Marks a skill that exists only on GitHub, not through the skills.sh API.
- * Uses the muted signal chip (icon carries the meaning, never color alone); the
+ * Uses the muted signal icon (icon carries the meaning, never color alone); the
  * tooltip explains the reduced-data consequence. Auto-disappears the moment the
  * skill is adopted onto skills.sh (isGitHubOnly clears in the sync).
  */
 export function GitHubOnlyBadge({ className }: { className?: string }) {
   return (
-    <SignalChip
+    <SignalIcon
       icon={GithubIcon}
       label="GitHub-only skill"
       tone="muted"
@@ -154,24 +176,28 @@ export function HotMomentumChip({
   const rising = change > 0;
   const sign = rising ? "+" : "−";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-(length:--text-micro) font-medium tabular-nums",
-        rising
-          ? "border-success/20 bg-success/10 text-success-foreground"
-          : "border-destructive/20 bg-destructive/10 text-destructive",
-        className,
-      )}
-      title={`${sign}${Math.abs(change).toLocaleString()} installs vs same hour yesterday`}
+    <RowHint
+      hint={`${sign}${Math.abs(change).toLocaleString()} installs vs same hour yesterday`}
     >
-      <HugeiconsIcon
-        icon={rising ? ArrowUp02Icon : ArrowDown02Icon}
-        strokeWidth={2}
-        className="size-2.5"
-        aria-hidden="true"
-      />
-      {sign}
-      {formatInstalls(Math.abs(change))}
-    </span>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-(length:--text-micro) font-medium tabular-nums",
+          rising
+            ? "border-success/20 bg-success/10 text-success-foreground"
+            : "border-destructive/20 bg-destructive/10 text-destructive",
+          className,
+        )}
+      >
+        <HugeiconsIcon
+          icon={rising ? ArrowUp02Icon : ArrowDown02Icon}
+          strokeWidth={2}
+          className="size-2.5"
+          aria-hidden="true"
+        />
+        {sign}
+        {formatInstalls(Math.abs(change))}
+        <span className="sr-only"> installs vs same hour yesterday</span>
+      </span>
+    </RowHint>
   );
 }
