@@ -10,9 +10,21 @@ import { SUPPORT_EMAIL } from "@/lib/legal";
  * OAuth verification all expect the legal pages to be reachable from the site
  * root, not merely to resolve when typed.
  *
- * `pb-28` is not spacing taste. `GlobalBundleBar` floats at `bottom-4` on browse
- * routes, so a flush footer puts its last row under the bar whenever a selection
- * is active. Shrink the pad and the legal links stop being clickable.
+ * The bottom pad grows from 40px to 112px while a floating bottom bar is open,
+ * and only then. `BundleBar` and `BundleEditBar` float over the bottom of the
+ * viewport, so a 40px pad leaves the last row under them at scroll-bottom; a
+ * permanent 112px left dead space below the footer on every route without one.
+ *
+ * The footer watches for the bar, rather than the bar reserving the space,
+ * because the bars live in different places (the layout, and inside the bundle
+ * page's `<main>`) and only one position is after the footer. Any bar that
+ * floats over the bottom edge opts in by putting `data-floating-bar` on its
+ * SheetContent. Keying on `[data-open]` rather than on the popup's presence
+ * starts the pad shrinking the moment a bar starts closing, and the transition
+ * matches the Sheet's own 400ms curve, so at scroll-bottom the footer settles
+ * with the bar instead of dropping 72px when the popup unmounts.
+ *
+ * `mt-24` is also counted in `<main>`'s min-height in app/(main)/layout.tsx.
  */
 
 const PRODUCT_LINKS = [
@@ -58,7 +70,7 @@ function FooterColumn({
 export function SiteFooter() {
   return (
     <footer className="mt-24 border-t border-border">
-      <div className="mx-auto max-w-6xl px-4 pt-12 pb-28">
+      <div className="mx-auto max-w-6xl px-4 pt-12 pb-10 transition-[padding-bottom] duration-400 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none [body:has([data-floating-bar][data-open])_&]:pb-28">
         <div className="flex flex-col gap-10 sm:flex-row sm:justify-between">
           <div className="max-w-xs">
             <Link

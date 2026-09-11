@@ -48,11 +48,20 @@ export default function MainLayout({
           at y=48 behind a header whose bottom is 72 — the link left you worse
           off than not using it. At 96px the target clamps to 0, so activating
           it scrolls nothing and only moves focus, which is what it should
-          do. */}
+          do.
+
+          The min-height keeps the footer below the fold on short pages (an
+          empty dashboard, a loading skeleton): the header's height (68px, 72px
+          from `sm`, see app-header.tsx) plus the footer's 96px `mt-24`, so at
+          scroll-top the footer's top border sits exactly at the bottom of the
+          viewport. Change either and this has to follow. `svh` rather than
+          `dvh` because the small viewport is the one showing at scroll-top on
+          mobile, and it doesn't change as the URL bar collapses, so nothing
+          relayouts mid-scroll. */}
       <main
         id="main-content"
         tabIndex={-1}
-        className="scroll-mt-24 focus:outline-none"
+        className="min-h-[calc(100svh-10.25rem)] scroll-mt-24 focus:outline-none sm:min-h-[calc(100svh-10.5rem)]"
       >
         {children}
       </main>

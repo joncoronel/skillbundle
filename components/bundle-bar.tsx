@@ -138,6 +138,9 @@ export function BundleBar() {
           side="bottom"
           variant="default"
           showCloseButton={false}
+          // SiteFooter pads itself while a marked bar is open, so its last
+          // row can scroll clear of this one (see site-footer.tsx).
+          data-floating-bar=""
           // A non-modal status surface must never take focus: stealing it on
           // open breaks Space-Space-Space row selection (the sheet mounts on
           // the first selection) and on reload-with-stored-selection it would

@@ -135,9 +135,15 @@ export function SkillRowGrid({
           className={cn(
             // These lists are unbounded (infinite scroll): content-visibility
             // skips layout/paint for off-screen rows. The intrinsic-size
-            // `auto` keyword remembers each row's real height once rendered
-            // — 76px is only the pre-render estimate for scrollbar math.
-            "[contain-intrinsic-size:auto_76px] [content-visibility:auto]",
+            // `auto` keyword remembers each row's real height once rendered;
+            // the length is the estimate for rows that haven't rendered yet,
+            // and it is the CONTENT box (padding and border are added on
+            // top). It has to match the row's real line count: 2 lines stacked
+            // below `sm`, 1 line above (see SkillRowContent). A stale 76px
+            // laid each freshly appended page out at ~100px a row against a
+            // real 44.6px, so the rows collapsed as they scrolled into render
+            // range and dragged the sentinel and footer up toward the reader.
+            "[contain-intrinsic-size:auto_40px] [content-visibility:auto] sm:[contain-intrinsic-size:auto_20px]",
             ground === "raised" && LIST_ROW_ON_RAISED,
             rowPositionClassName(i, skills.length),
           )}

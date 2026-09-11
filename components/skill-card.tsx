@@ -333,7 +333,9 @@ const SkillRowContent = memo(function SkillRowContent({
           `sm`, one non-wrapping line above it, each part truncating inside its
           own line. `flex-wrap` here instead let the source drop below the name
           whenever THAT row's name ran long, which on a phone is most rows but
-          not all, so the list scrolled at two alternating heights. */}
+          not all, so the list scrolled at two alternating heights. The
+          infinite lists' unrendered-row estimate (`contain-intrinsic-size` in
+          default-skills-list.tsx) assumes these line counts. */}
       <div className="flex min-w-0 flex-col sm:flex-row sm:flex-nowrap sm:items-baseline sm:gap-x-2">
         <span className="inline-flex max-w-full min-w-0 items-center gap-1 text-sm font-semibold">
           <SkillName skill={skill} className="min-w-0 truncate" />
