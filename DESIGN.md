@@ -290,7 +290,9 @@ never the one a floating bottom bar covers; the footer's is. The footer pads
 itself while such a bar is open, and a bar opts into that by putting
 `data-floating-bar` on its SheetContent (see `components/site-footer.tsx`). A
 new bar that floats over the bottom edge without the attribute puts the footer's
-last row under it at scroll-bottom.
+last row under it at scroll-bottom. `e2e/floating-bar-clearance.spec.ts` guards
+the mechanism for the bars that exist, but it cannot know about a bar that
+never opted in.
 
 Between sections, `mt-10` is the standard gap and `mt-12 lg:mt-14` marks a
 harder break (the skill page uses the larger step before Documentation). Inside

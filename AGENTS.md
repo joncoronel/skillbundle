@@ -21,8 +21,8 @@ ideas get lost in chat.
 - `pnpm lint` — Run ESLint
 - `pnpm test` — Unit tests (vitest, `tests/**/*.test.ts` — Convex backend logic)
 - `pnpm e2e` / `pnpm e2e:ui` — Playwright (`e2e/**/*.spec.ts`): instant-navigation,
-  landmark, share-metadata and skill-page guards signed out, plus signed-in
-  functional coverage in `e2e/authenticated/`
+  landmark, share-metadata, floating-bar-clearance and skill-page guards signed
+  out, plus signed-in functional coverage in `e2e/authenticated/`
 - `npx convex dev` — Start Convex dev server (runs alongside Next.js dev)
 - `npx convex deploy` — Deploy Convex functions to production
 
