@@ -29,7 +29,9 @@ import { HeaderPill } from "@/components/header-pill";
  *
  * Height: this ends at 72px (the old bar was 56px). Sticky offsets elsewhere
  * (the skill page's rail and record card, `scroll-mt` on anchor targets) are set
- * clear of that, so changing the pill's top padding means re-checking them.
+ * clear of that, and `<main>`'s min-height in app/(main)/layout.tsx subtracts
+ * the exact `h-17 sm:h-18`, so changing the pill's top padding means
+ * re-checking them.
  *
  * The pill's own colour rules live in globals.css (`--chrome*`) and
  * header-pill.tsx, not here.

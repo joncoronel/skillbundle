@@ -66,6 +66,9 @@ export function BundleEditBar({
         side="bottom"
         variant="default"
         showCloseButton={false}
+        // SiteFooter pads itself while a marked bar is open, so its last row
+        // can scroll clear of this one (see site-footer.tsx).
+        data-floating-bar=""
         className={cn(
           "flex flex-col overflow-hidden",
           // Mobile: the `default` (flush) variant already provides a

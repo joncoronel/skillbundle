@@ -284,9 +284,13 @@ lg:px-8`) but stays flat at `px-4` on page bodies. Match the page bodies.
 
 ### Vertical rhythm
 
-`pt-12` above the first element and `pb-20`/`pb-24` below the last. The generous
-tail is intentional: the global bundle bar floats over the bottom of the
-viewport, and a short page with a tight `pb` puts its last row under the bar.
+`pt-12` above the first element and `pb-20`/`pb-24` below the last. The tail is
+rhythm only. The site footer always follows `<main>`, so a page's last row is
+never the one a floating bottom bar covers; the footer's is. The footer pads
+itself while such a bar is open, and a bar opts into that by putting
+`data-floating-bar` on its SheetContent (see `components/site-footer.tsx`). A
+new bar that floats over the bottom edge without the attribute puts the footer's
+last row under it at scroll-bottom.
 
 Between sections, `mt-10` is the standard gap and `mt-12 lg:mt-14` marks a
 harder break (the skill page uses the larger step before Documentation). Inside
