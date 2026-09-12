@@ -107,18 +107,33 @@ export function BrandHero() {
   );
 }
 
+/**
+ * CDN lifetimes for the rendered PNG, in seconds.
+ *
+ * `s-maxage` is a TIME header and nothing tag-invalidates it. `cacheTag` busts
+ * the DATA a card was built from; the PNG sitting on the CDN never hears about
+ * it. So this value is the window in which a card is allowed to disagree with
+ * the skill it describes, and it has to be read as a correctness bound rather
+ * than a cost knob.
+ *
+ * `DAY` is therefore the ceiling for any card built from Convex data. `YEAR` is
+ * only sound for a card whose every input comes from the URL, where a change is
+ * a DIFFERENT url with its own cache entry and nothing can go stale at all.
+ */
+export const OG_CACHE = { DAY: 86400, YEAR: 31536000 } as const;
+
 /** Build the final PNG with the brand fonts attached. */
 export async function renderOg(
   node: ReactElement,
-  // `cache: true` adds a daily CDN cache header. Use it for the data-backed,
-  // dynamic (`ƒ`) OG routes (skill/org/repo/source/bundle), which carry
-  // `await params` and so can't be statically optimized at build — Cache
-  // Components forbids the route-level `revalidate` they used to carry, so we
-  // cache the rendered PNG at the CDN instead (render once, serve for a day,
-  // revalidate in the background; the data loaders are daily too). The static
-  // section cards (`/compare`, etc.) omit it and keep Next's
+  // `cache` adds a CDN cache header, in seconds, and picking the value is the
+  // whole decision — see OG_CACHE above. Use it for the data-backed, dynamic
+  // (`ƒ`) OG routes (skill/org/repo/source/bundle), which carry `await params`
+  // and so can't be statically optimized at build — Cache Components forbids
+  // the route-level `revalidate` they used to carry, so we cache the rendered
+  // PNG at the CDN instead (render once, serve, revalidate in the background).
+  // The static section cards (`/compare`, etc.) omit it and keep Next's
   // build-time static optimization.
-  opts?: { cache?: boolean },
+  opts?: { cache?: number },
 ): Promise<ImageResponse> {
   const fonts = await loadOgFonts();
   return new ImageResponse(node, {
@@ -128,8 +143,7 @@ export async function renderOg(
     ...(opts?.cache
       ? {
           headers: {
-            "Cache-Control":
-              "public, max-age=0, s-maxage=86400, stale-while-revalidate=86400",
+            "Cache-Control": `public, max-age=0, s-maxage=${opts.cache}, stale-while-revalidate=${opts.cache}`,
           },
         }
       : {}),
