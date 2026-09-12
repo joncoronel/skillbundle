@@ -3322,28 +3322,6 @@ export const getBySourceAndSkillId = query({
 const INSIGHTS_HISTORY_DAYS = 90;
 
 /**
- * Just the install count. The OG card renders one integer, and `getInsights`
- * would make it collect every skillSnapshots row inside INSIGHTS_HISTORY_DAYS
- * (90) to get there. Reads the ~1.3 KB summary and stops.
- *
- * `null` rather than 0 when there is no summary row — same orphaned-skill-row
- * reasoning as getInsights; a dash beats a confident zero.
- */
-export const getInstallCount = query({
-  args: { source: v.string(), skillId: v.string() },
-  returns: v.union(v.number(), v.null()),
-  handler: async (ctx, { source, skillId }) => {
-    const summary = await ctx.db
-      .query("skillSummaries")
-      .withIndex("by_source_skillId", (q) =>
-        q.eq("source", source).eq("skillId", skillId),
-      )
-      .unique();
-    return summary?.installs ?? null;
-  },
-});
-
-/**
  * Analytics for one skill's detail page: the daily install time series plus the
  * count and all-time rank. Reads entirely from the cheap `skillSummaries` +
  * `skillSnapshots` tables — never the heavy `skills` row. The history is empty

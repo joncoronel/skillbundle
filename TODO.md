@@ -179,6 +179,72 @@ Run against the live home page. Each was tested, not reasoned about.
   rest is spread across app chunks. Not actioned; revisit only if a real user
   complains about load time.
 
+### Vercel cost spike: measured, mostly crawl — Sep 2026
+
+The bill went from ~$0.60/day to **$6.01 on Sep 10** and $3.61 on Sep 11. Not a
+regression: `sitemap.xml` was submitted to Search Console on **Sep 10 02:15 UTC**
+(~18.6k URLs) and crawlers started walking the catalog. Every request-driven line
+item rose 10-30x on that one day, and it is already decaying.
+
+Billed split for Sep 1-12 from `vercel usage`. These sum to the amount due; the
+Pro seat ($7.10) and Build CPU ($0.27) bill at $0.
+
+| Line                     | Billed | Share |
+| ------------------------ | ------ | ----- |
+| ISR Writes               | $4.44  | 59%   |
+| Drains Volume            | $1.30  | 17%   |
+| Fluid Active CPU         | $0.54  | 7%    |
+| Fast Origin Transfer     | $0.45  | 6%    |
+| Fluid Provisioned Memory | $0.34  | 4%    |
+| Function Invocations     | $0.24  | 3%    |
+| ISR Reads                | $0.23  | 3%    |
+
+Drains Volume is already fixed (the log drain was removed). What the code
+contributed everywhere else was MULTIPLIERS, not traffic: `<Link>` prefetch fans
+one page view out across every link in the DOM, and the Clerk proxy ran before
+the CDN so even a `cache=HIT` paid a JWT verification. Shipped on `optimize`: the
+matcher is now an allowlist (574k middleware invocations/day, a projected ~102k after; replace with the measured figure), footer
+links stopped prefetching, and skill OG cards derive from the URL so the PNG
+caches for a year instead of a day. Merge order: deploy this branch to Vercel BEFORE running `npx convex deploy`, because the production site it replaces still calls the `getInstallCount` query this branch deletes.
+
+Three things left.
+
+- **Skill tab prefetch — the 59% line, and the one real decision here.** Each
+  skill page renders its four tab routes as `<Link>`s, so a single crawler hit on
+  a skill writes four ISR entries instead of one, across ~16k skills. One prop
+  fixes it. The cost is real and is why it is not already done: in App Router
+  `prefetch={false}` disables hover prefetch TOO, so tab switches stop being
+  instant, which cuts against what `e2e/instant-navigation.spec.ts` exists to
+  protect. Deliberately parked rather than forgotten — three changes shipped with
+  none of their effect measured yet, and the crawl baseline is still falling, so
+  the branch needs a clean read before a fourth change muddies attribution.
+  Decide on a week of post-merge `vercel usage --breakdown daily`.
+  Worth doing regardless of how the deploy question below comes out. Writes are
+  billed per write, not per lifetime, so a cache that resets on deploy makes the
+  prefetched tabs get rebuilt and re-saved after EVERY deploy, whereas without
+  prefetch a tab is only built when someone opens it. Frequent resets make this
+  fix worth more, not less.
+
+- **Crawler shaping — blocked on a fresh measurement, not on a decision.**
+  `app/robots.ts` already blocks Amazonbot and SemrushBot on exactly this
+  reasoning, but its numbers are from 2026-08-12, BEFORE the sitemap went in, so
+  they no longer describe the traffic. Its closing note already prescribes the
+  fix: per-user-agent throttling on the OG routes rather than a blanket disallow,
+  which would break link previews. Re-measure per-agent volume first. Note that
+  Vercel log retention is 24h, so this has to be taken live.
+
+- **Does a deploy invalidate the route cache?** Unresolved, and it bounds what
+  the OG change above is worth: a year-long `s-maxage` buys little if every
+  deploy hands crawlers a cold catalog, and we deploy several times a day. Cheap
+  to answer — after the next deploy, curl an OG URL that was cached beforehand
+  and check whether it comes back `MISS`.
+  If it does, stop deploying commits that change nothing a visitor sees. Of the
+  11 production deploys on Sep 9-11, three were `TODO.md` or comment-only
+  (`c4ada18`, `b524395`, `63ed877`), and each one would have thrown away every
+  saved page for no visible change. Vercel's Ignored Build Step can skip a
+  deploy when only markdown files changed. Keep the rule to `*.md` and nothing
+  cleverer, so a real change can never be skipped by mistake.
+
 ### Parked, with reasons
 
 - **Sentry (or equivalent) error monitoring.** Deferred deliberately, Sep 2026.

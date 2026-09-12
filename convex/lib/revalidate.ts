@@ -19,8 +19,7 @@
  *       churns the whole catalog every morning by design.
  *   "skill-content"
  *       The skill row read by `loadSkill`: SKILL.md content, description, name,
- *       isDelisted, curatedOwner, isGitHubOnly, and the denormalized audit
- *       verdict (worstAuditStatus / worstAuditRiskLevel). Long-lived
+ *       isDelisted, curatedOwner, and isGitHubOnly. Long-lived
  *       (`cacheLife("weeks")`), so it depends on these pings for freshness
  *       rather than on a timer — if you add a field to this list, find its
  *       writer and give it a ping.

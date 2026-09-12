@@ -1,10 +1,9 @@
 import "server-only";
-import { cacheLife, cacheTag } from "next/cache";
+import { cacheLife } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
 import { buildSkillInstallCommand } from "@/lib/install-commands";
-import { loadSkill, SKILL_SYNC_TAG } from "@/lib/skill-cache";
 import { og } from "./theme";
 import { FONT } from "./fonts";
 import {
@@ -14,10 +13,10 @@ import {
   Lede,
   MetaLine,
   StatStrip,
-  Tag,
   Title,
   WordHero,
   renderOg,
+  OG_CACHE,
   truncate,
 } from "./templates";
 
@@ -29,6 +28,11 @@ import {
  * `renderOg` (lib/og/templates.tsx) — that's what keeps images from
  * regenerating on every link, independent of these data loaders.
  *
+ * The skill card is the exception and the cheapest surface here BECAUSE it is:
+ * it reads nothing, so its PNG is not pinned to the lifetime of any row and
+ * caches for a year rather than a day. It is also by far the most requested,
+ * at ~16k URLs. See `skillOgImage` for what that cost and why.
+ *
  * Identity rule: one family, with the display end built from weight and
  * tracking. Section words, the wordmark and every figure are set at 700 and
  * tracked hard so the card reads at a glance; variable-length names and prose
@@ -37,29 +41,9 @@ import {
 
 // ── Cached loaders ──────────────────────────────────────────────────────────
 
-// `loadSkill` is imported from lib/skill-cache.ts rather than redeclared here.
-// It used to be a local copy, which meant every OG render wrote a second cache
-// entry for a row the detail page had already cached (`'use cache'` keys on
-// function identity, so identical bodies are still separate entries) — and,
-// being untagged, rewrote it every 24h instead of when the content changed.
-//
-// The loaders below stay local: each is specific to one OG surface, and none of
-// them has a second consumer to share with.
-
-// Install count for the skill card, kept OUT of the shared `loadSkill` entry on
-// purpose. `loadSkill` is "skill-content"-tagged and now lives for weeks; the
-// install number moves daily, so reading `skill.installs` off that row would
-// freeze the figure on every social card for up to 7 days. This mirrors what
-// components/skill-sidebar.tsx does for the page itself — the invariant is that
-// a daily-cadence number is only ever read from a "skill-sync"-tagged entry.
-async function loadSkillInstalls(source: string, skillId: string) {
-  "use cache";
-  cacheLife("days");
-  cacheTag(SKILL_SYNC_TAG);
-  // `getInstallCount`, not `getInsights` — the card shows one integer, and
-  // getInsights would collect 90 days of snapshot rows to produce it.
-  return fetchQuery(api.skills.getInstallCount, { source, skillId });
-}
+// The loaders below are local: each is specific to one OG surface, and none has
+// a second consumer to share with. The skill card has none at all any more — it
+// draws from the URL, which is what buys it OG_CACHE.YEAR. See skillOgImage.
 
 // Keyed by (urlId, version): `version` is the bundle's updatedAt, passed only
 // so it becomes part of the cache key (`'use cache'` keys on the args). A new
@@ -173,20 +157,40 @@ export function sectionOgImage({
 }
 
 /** Skill detail card. */
-export async function skillOgImage(source: string, skillId: string) {
-  const [skill, installs] = await Promise.all([
-    loadSkill(source, skillId),
-    loadSkillInstalls(source, skillId),
-  ]);
-
-  if (!skill) {
-    return sectionOgImage({
-      word: "404",
-      subtitle: "This skill may have been delisted or moved.",
-    });
-  }
-
+/**
+ * Skill card: name and repo from the URL, and nothing else.
+ *
+ * Every element here is derived from the params, which is what lets the PNG
+ * cache for a year (`OG_CACHE.YEAR`) instead of a day. The card used to carry
+ * the skill's description, install count, curated-owner tag and audit verdict,
+ * all read from Convex. Two reasons they went, Sep 2026:
+ *
+ *   - The description was already duplicated. `skillTabMetadata` in
+ *     lib/skill-tab-route.tsx sets `openGraph.description`, and every unfurler
+ *     prints that as text beside the image, so the card was spending a satori
+ *     pass redrawing a sentence Slack and X were about to show anyway.
+ *   - Anything read from Convex caps the PNG at `OG_CACHE.DAY`, because
+ *     `s-maxage` cannot be tag-invalidated (see `OG_CACHE`). The install count
+ *     moved daily and so pinned the whole card to a daily re-render: ~16k
+ *     skills, each re-rendered every day, with no end state.
+ *
+ * What was genuinely lost is the "Official" and audit tags, the only two things
+ * on the card not already in `og:title` / `og:description`. If either needs to
+ * come back it brings the DAY ceiling back with it, so bring back the tag AND
+ * the shorter lifetime together or the card will quietly lie for a year.
+ *
+ * The title is also now the URL slug, not the stored name. They differ for
+ * ~2% of skills (432 of 20,000 in dev, Sep 2026), mostly namespaced names such
+ * as `pinecone:docs` under the slug `pineconedocs`, and on those the card and
+ * the `og:title` beside it disagree. Accepted as a known loss.
+ */
+export function skillOgImage(source: string, skillId: string) {
   const command = buildSkillInstallCommand(source, skillId);
+  // A malformed source, NOT a missing skill. Existence is deliberately no
+  // longer checked: the 404 branch renders a card too, so the lookup never
+  // saved a render, it only chose which one to draw — and a Convex read that
+  // picks between two equally expensive draws is not worth being a data
+  // dependency that would drag the lifetime back down to a day.
   if (command === null) {
     return sectionOgImage({
       word: "404",
@@ -194,55 +198,16 @@ export async function skillOgImage(source: string, skillId: string) {
     });
   }
 
-  const name = skill.name || skillId;
-  const audit = auditTag(skill.worstAuditStatus, skill.worstAuditRiskLevel);
-
   return renderOg(
     <Frame category="Skill">
-      <Title text={name} size={Math.min(nameSize(name), 54)} />
+      <Title text={skillId} size={Math.min(nameSize(skillId), 54)} />
       <MetaLine text={source} />
-      {skill.description ? (
-        <Lede text={truncate(skill.description, 92)} top={16} />
-      ) : null}
 
       <div style={{ display: "flex", marginTop: 26 }}>
         <CommandRow command={command} />
       </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "space-between",
-          marginTop: 30,
-        }}
-      >
-        <StatStrip
-          top={0}
-          stats={[
-            {
-              // null = orphaned skill row; a dash beats a confident "0".
-              value: installs == null ? "—" : formatInstalls(installs),
-              label: "installs",
-            },
-          ]}
-        />
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            alignItems: "flex-end",
-          }}
-        >
-          {skill.curatedOwner ? (
-            <Tag label={`Official · ${skill.curatedOwner}`} tone="accent" />
-          ) : null}
-          {audit ? <Tag label={audit.label} tone={audit.tone} /> : null}
-        </div>
-      </div>
     </Frame>,
-    { cache: true },
+    { cache: OG_CACHE.YEAR },
   );
 }
 
@@ -275,7 +240,7 @@ export async function bundleOgImage(urlId: string, version: string) {
       />
       <StatStrip stats={stats} />
     </Frame>,
-    { cache: true },
+    { cache: OG_CACHE.DAY },
   );
 }
 
@@ -302,7 +267,7 @@ export async function sourceOgImage(source: string, category = "Source") {
         ]}
       />
     </Frame>,
-    { cache: true },
+    { cache: OG_CACHE.DAY },
   );
 }
 
@@ -336,27 +301,6 @@ export async function orgOgImage(org: string) {
         ]}
       />
     </Frame>,
-    { cache: true },
+    { cache: OG_CACHE.DAY },
   );
-}
-
-// ── helpers ──────────────────────────────────────────────────────────────
-
-function auditTag(
-  status: string | undefined,
-  risk: string | undefined,
-): { label: string; tone: "warning" | "danger" } | null {
-  if (status === "fail") {
-    return {
-      label: risk ? `Risk · ${risk.toUpperCase()}` : "Audit · Fail",
-      tone: "danger",
-    };
-  }
-  if (status === "warn") {
-    return {
-      label: risk ? `Review · ${risk.toUpperCase()}` : "Audit · Review",
-      tone: "warning",
-    };
-  }
-  return null;
 }

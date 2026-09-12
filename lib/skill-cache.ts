@@ -17,9 +17,9 @@ import { api } from "@/convex/_generated/api";
  *                     syncSkills rewrites the ENTIRE leaderboard (~16k rows)
  *                     every morning, so this tag genuinely churns daily.
  *   "skill-content" — the skill row itself: SKILL.md content, description,
- *                     name, isDelisted, curatedOwner, isGitHubOnly, and the
- *                     denormalized audit verdict (worstAuditStatus /
- *                     worstAuditRiskLevel). Changes per-skill rarely — most
+ *                     name, isDelisted, curatedOwner, isGitHubOnly. (Not the
+ *                     denormalized audit verdict: nothing cached under this
+ *                     tag reads it since Sep 2026.) Changes per-skill rarely — most
  *                     SKILL.md files sit still for weeks. Note that DETECTION
  *                     is daily, not weekly: freshness.sweepRepoFreshness asks
  *                     GitHub's Tree API at 04:00 UTC which blob SHAs moved and
@@ -29,7 +29,7 @@ import { api } from "@/convex/_generated/api";
  *                     Every writer of one of those fields pings this
  *                     tag: the content chain's publishSkillUpdate, syncSkills
  *                     (gated on a changed-field count), markDelistedSkills,
- *                     syncCurated, the audit chain terminal, kickPostAddChain.
+ *                     syncCurated, kickPostAddChain.
  *                     Add a field to this list and you owe it a publisher.
  *
  * Both used to be one tag, which meant the daily install-count refresh
@@ -79,20 +79,16 @@ export { SKILL_SYNC_TAG, SKILL_CONTENT_TAG } from "./cache-tags";
 
 /**
  * The skill row. Lives here rather than beside the detail page's other loaders
- * because THREE separate surfaces need it, and `'use cache'` keys on function
+ * because TWO separate passes need it, and `'use cache'` keys on function
  * identity + args — so two textually identical loaders are two cache entries,
  * each written and expired independently. The consumers:
  *
  *   1. the detail page body (components/skill-detail-page.tsx),
- *   2. that route's `generateMetadata` pass,
- *   3. the OG card (lib/og/images.tsx).
+ *   2. that route's `generateMetadata` pass (lib/skill-tab-route.tsx).
  *
- * (3) used to keep its own untagged copy, so every OG render wrote a second
- * entry for data the page had already cached, and — being untagged on a 1-day
- * life — rewrote it daily forever instead of when the content actually changed.
- * Same reasoning as the shared loader in lib/source-skills.ts. Importing the
- * detail-page module into an OG route would have worked too, but it would drag
- * that component's whole graph (markdown, shiki, icons) into the image route.
+ * The skill OG card used to be a third consumer. It no longer reads the row at
+ * all (see `skillOgImage` in lib/og/images.tsx). Same reasoning as the shared
+ * loader in lib/source-skills.ts.
  *
  * `'use cache'` also isolates `fetchQuery`'s forced `no-store` behind a cache
  * boundary, which is what lets these routes prerender a static shell at all.
