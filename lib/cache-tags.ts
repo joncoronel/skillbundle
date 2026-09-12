@@ -33,8 +33,7 @@ export const SKILL_SYNC_TAG = "skill-sync";
 
 /**
  * The skill row read by `loadSkill`: SKILL.md content, description, name,
- * isDelisted, curatedOwner, isGitHubOnly, and the denormalized audit verdict
- * (worstAuditStatus / worstAuditRiskLevel). Long-lived, so it depends on
+ * isDelisted, curatedOwner, and isGitHubOnly. Long-lived, so it depends on
  * on-demand pings rather than a timer for freshness — every writer of those
  * fields must ping this tag.
  */

@@ -23,7 +23,6 @@ import {
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { dequal } from "dequal";
-import { revalidateSiteTag } from "./lib/revalidate";
 import {
   getSkillAudits,
   SkillsApiNotFoundError,
@@ -238,26 +237,28 @@ export const writeAuditResult = internalMutation({
       });
     }
 
-    // Reported so the chain terminal can publish. `worstAuditStatus` /
-    // `worstAuditRiskLevel` live on the skill row, which `loadSkill` reads under
-    // the long-lived "skill-content" tag (lib/skill-cache.ts) — the OG card's
-    // audit badge comes off exactly these. Nothing else in the app pings that
-    // tag for audits, so without this the badge on every social card would go
-    // stale for a full cacheLife("weeks") window.
+    // Reported so the chain can log how many verdicts actually moved this run.
+    // Diagnostic only since Sep 2026: this used to gate a "skill-content" ping
+    // for the OG card's audit badge, and the card no longer shows a verdict. No
+    // cached surface reads `worstAuditStatus` / `worstAuditRiskLevel` off the
+    // skill row; the Security tab reads `loadAudits`, which expires daily.
     //
     // `isFirstRecord` distinguishes "this verdict moved" from "we had never
     // recorded one". Every *Changed flag above is `!existing || ...`, so a first
     // write reports denormChanged: true even when nothing a reader can see
-    // differs. The 404 caller uses this to avoid publishing an invisible
-    // absent -> "unknown" transition; the success caller deliberately does not,
-    // because a first audit coming back fail/warn makes a badge APPEAR.
+    // differs. The 404 caller uses this to keep an invisible absent -> "unknown"
+    // transition out of the count; the success caller deliberately does not,
+    // because a first audit coming back fail/warn is a real new verdict.
     return { denormChanged, isFirstRecord: !existing };
   },
 });
 
 export const fetchAuditBatch = internalAction({
   // `denormChanges` accumulates across the self-chaining recursion so the
-  // terminal knows whether any audit verdict actually moved this run.
+  // terminal's drained log can report how many audit verdicts moved this run.
+  // Kept as an arg even though nothing gates on it now: batches already sitting
+  // in the scheduler carry it, and dropping it from the validator would fail
+  // them on the first run after deploy.
   args: {
     cursor: v.optional(v.string()),
     denormChanges: v.optional(v.number()),
@@ -323,12 +324,10 @@ export const fetchAuditBatch = internalAction({
               // set inside writeAuditResult, so the 7-day refresh window
               // applies and we won't immediately re-fetch.
               //
-              // Counts toward the publish, with one exclusion the success arm
-              // doesn't need (below). A row going fail/warn -> unknown IS a
-              // denorm move (writeAuditResult patches it), and it is the only
-              // transition that makes a badge DISAPPEAR — so without this the
-              // OG card keeps a stale "Risk · HIGH" for a cacheLife("weeks")
-              // window after the verdict was withdrawn upstream.
+              // Counts toward the drained log, with one exclusion the success
+              // arm doesn't need (below). A row going fail/warn -> unknown IS a
+              // denorm move (writeAuditResult patches it): the verdict was
+              // withdrawn upstream.
               const { denormChanged, isFirstRecord } = await ctx.runMutation(
                 internal.audits.writeAuditResult,
                 {
@@ -342,9 +341,8 @@ export const fetchAuditBatch = internalAction({
               // Not `isFirstRecord`: a never-audited row 404ing writes
               // "unknown" over an absent field, and the bundle register's
               // `AuditCell` renders the same "Not audited" dash for either, so
-              // there is no badge to refresh. New skills arrive
-              // daily, so counting those would pass the terminal's gate on most
-              // days for no visible reason.
+              // nothing visible moved. New skills arrive daily, so counting
+              // them would inflate the verdict-change figure every day.
               if (denormChanged && !isFirstRecord) denormChangeCount++;
               unknownCount++;
               return;
@@ -384,20 +382,11 @@ export const fetchAuditBatch = internalAction({
       console.log(
         `Audit fetch chain drained (${denormChangeCount} verdict change(s))`,
       );
-      // Publish the badge. The audit chain is the only writer of
-      // `worstAuditStatus` / `worstAuditRiskLevel` on the skill row, and that
-      // row is `loadSkill`'s long-lived "skill-content" entry — so this is the
-      // only thing that can refresh the OG card's audit badge. It also drains
-      // well after the content chain's own publish (scheduled +10s vs +15s in
-      // syncSkills, then spread over AUDIT_CHAIN_DELAY_MS-spaced batches), so
-      // riding on that ping was never an option even before it gets gated.
-      //
-      // Gated on a real verdict change — `writeAuditResult` already skips the
-      // denorm patch when the rolled-up status is unchanged, which on a weekly
-      // poll is the overwhelmingly common case.
-      if (denormChangeCount > 0) {
-        await revalidateSiteTag("skill-content");
-      }
+      // No site ping. This terminal used to expire "skill-content" when a
+      // verdict moved, for the OG card's audit badge. The card no longer shows
+      // one and nothing else cached under that tag reads the verdict (Sep
+      // 2026), so expiring it would rebuild every visited skill page for no
+      // visible change. The Security tab's `loadAudits` expires daily instead.
     }
   },
 });

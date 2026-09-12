@@ -17,9 +17,9 @@ import { api } from "@/convex/_generated/api";
  *                     syncSkills rewrites the ENTIRE leaderboard (~16k rows)
  *                     every morning, so this tag genuinely churns daily.
  *   "skill-content" — the skill row itself: SKILL.md content, description,
- *                     name, isDelisted, curatedOwner, isGitHubOnly, and the
- *                     denormalized audit verdict (worstAuditStatus /
- *                     worstAuditRiskLevel). Changes per-skill rarely — most
+ *                     name, isDelisted, curatedOwner, isGitHubOnly. (Not the
+ *                     denormalized audit verdict: nothing cached under this
+ *                     tag reads it since Sep 2026.) Changes per-skill rarely — most
  *                     SKILL.md files sit still for weeks. Note that DETECTION
  *                     is daily, not weekly: freshness.sweepRepoFreshness asks
  *                     GitHub's Tree API at 04:00 UTC which blob SHAs moved and
@@ -29,7 +29,7 @@ import { api } from "@/convex/_generated/api";
  *                     Every writer of one of those fields pings this
  *                     tag: the content chain's publishSkillUpdate, syncSkills
  *                     (gated on a changed-field count), markDelistedSkills,
- *                     syncCurated, the audit chain terminal, kickPostAddChain.
+ *                     syncCurated, kickPostAddChain.
  *                     Add a field to this list and you owe it a publisher.
  *
  * Both used to be one tag, which meant the daily install-count refresh

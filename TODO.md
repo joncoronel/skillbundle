@@ -205,7 +205,7 @@ one page view out across every link in the DOM, and the Clerk proxy ran before
 the CDN so even a `cache=HIT` paid a JWT verification. Shipped on `optimize`: the
 matcher is now an allowlist (574k middleware invocations/day, a projected ~102k after; replace with the measured figure), footer
 links stopped prefetching, and skill OG cards derive from the URL so the PNG
-caches for a year instead of a day.
+caches for a year instead of a day. Merge order: deploy this branch to Vercel BEFORE running `npx convex deploy`, because the production site it replaces still calls the `getInstallCount` query this branch deletes.
 
 Three things left.
 
