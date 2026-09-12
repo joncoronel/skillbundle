@@ -219,6 +219,11 @@ Three things left.
   none of their effect measured yet, and the crawl baseline is still falling, so
   the branch needs a clean read before a fourth change muddies attribution.
   Decide on a week of post-merge `vercel usage --breakdown daily`.
+  Worth doing regardless of how the deploy question below comes out. Writes are
+  billed per write, not per lifetime, so a cache that resets on deploy makes the
+  prefetched tabs get rebuilt and re-saved after EVERY deploy, whereas without
+  prefetch a tab is only built when someone opens it. Frequent resets make this
+  fix worth more, not less.
 
 - **Crawler shaping — blocked on a fresh measurement, not on a decision.**
   `app/robots.ts` already blocks Amazonbot and SemrushBot on exactly this
@@ -233,6 +238,12 @@ Three things left.
   deploy hands crawlers a cold catalog, and we deploy several times a day. Cheap
   to answer — after the next deploy, curl an OG URL that was cached beforehand
   and check whether it comes back `MISS`.
+  If it does, stop deploying commits that change nothing a visitor sees. Of the
+  11 production deploys on Sep 9-11, three were `TODO.md` or comment-only
+  (`c4ada18`, `b524395`, `63ed877`), and each one would have thrown away every
+  saved page for no visible change. Vercel's Ignored Build Step can skip a
+  deploy when only markdown files changed. Keep the rule to `*.md` and nothing
+  cleverer, so a real change can never be skipped by mistake.
 
 ### Parked, with reasons
 
