@@ -52,11 +52,50 @@ export default clerkMiddleware(async (auth, request) => {
   }
 });
 
+// An ALLOWLIST, not "everything except static assets".
+//
+// Clerk's quickstart matcher matches every non-asset path, which is the right
+// default when `auth()` might be called from anywhere. Here it can't be:
+// server-side Clerk (`@clerk/nextjs/server`) is reachable from exactly two
+// modules, `lib/auth.ts` and `app/(main)/settings/actions.ts`, and between them
+// they only cover the paths below. Everything else reads auth on the CLIENT
+// through ClerkProvider — see the comment in components/header-auth-client.tsx,
+// which explains that this is deliberate so the catalog routes stay static.
+//
+// The broad matcher cost ~574k Node middleware invocations a day against ~56k
+// actual renders (measured Sep 2026). The proxy runs BEFORE the CDN, so even a
+// fully cached static page paid a `await auth()` JWT verification on every hit:
+// the logs read `cache=HIT ... serverless-middleware`. Link prefetch is what
+// made that expensive rather than merely wasteful — one skill page view fans
+// out across its four tab routes and two breadcrumbs before the visitor clicks
+// anything, so the multiplier was roughly 10x.
+//
+// A new route that calls `auth()`, `auth.protect()` or `currentUser()` on the
+// server has to be added HERE as well. Forgetting throws at request time rather
+// than failing the build: "auth() was called but Clerk can't detect usage of
+// clerkMiddleware()". https://clerk.com/err/auth-middleware
+//
+// `/sign-in(.*)` and `/sign-up(.*)` are PREFIXES here, even though
+// `isAuthRoute` above is a list of exact paths. Those two lists answer
+// different questions: this one is "does the proxy run", `isAuthRoute` is "does
+// it redirect". Keeping the prefix means `/sign-in/sso-callback` still gets the
+// proxy, while `isAuthRoute` still refuses to bounce it — which is the
+// behaviour the comment on `isAuthRoute` describes and relies on.
+//
+// Narrowing this to the exact paths would have been free volume (the callback
+// sees a handful of requests a day) in exchange for changing what runs on the
+// landing point of every OAuth round trip. Not a trade worth making.
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // API routes
+    "/dashboard(.*)",
+    "/settings(.*)",
+    "/dev(.*)",
+    // `getAuthToken()` runs in the page itself, before any `preloadQuery`.
+    "/bundle/(.*)",
+    "/sign-in(.*)",
+    "/sign-up(.*)",
+    // No API route reads Clerk today — they gate on shared secrets — but these
+    // are a few dozen requests a day and one that did would fail confusingly.
     "/(api|trpc)(.*)",
     // Clerk-specific frontend API routes (per Clerk v7 docs)
     "/__clerk/(.*)",

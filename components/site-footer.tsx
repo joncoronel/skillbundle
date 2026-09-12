@@ -54,8 +54,16 @@ function FooterColumn({
       <ul className="mt-3 flex flex-col gap-2">
         {links.map((link) => (
           <li key={link.href}>
+            {/*
+              `prefetch={false}` because the footer is on EVERY route, and in
+              App Router this means no viewport prefetch and no hover prefetch
+              either. These six links were ~130k proxy invocations a day
+              between them — /privacy alone hit 36k — for destinations almost
+              nobody navigates to. A legal page is worth a normal navigation.
+            */}
             <Link
               href={link.href}
+              prefetch={false}
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               {link.label}
