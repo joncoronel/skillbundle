@@ -57,9 +57,13 @@ function FooterColumn({
             {/*
               `prefetch={false}` because the footer is on EVERY route, and in
               App Router this means no viewport prefetch and no hover prefetch
-              either. These six links were ~130k proxy invocations a day
-              between them — /privacy alone hit 36k — for destinations almost
-              nobody navigates to. A legal page is worth a normal navigation.
+              either. Measured Sep 2026, before the proxy matcher became an
+              allowlist: /privacy alone took 36k prefetch requests a day and
+              /terms 31k, each an edge request plus a cache read, for pages
+              almost nobody reaches from here. /official, /add and /pricing
+              are also in the header nav, which still prefetches them, so
+              the saving here is mostly those two. A footer link is worth a
+              normal navigation.
             */}
             <Link
               href={link.href}

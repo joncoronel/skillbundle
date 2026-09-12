@@ -7,6 +7,11 @@ import { NextResponse } from "next/server";
 // /dashboard to the right PAGE, but createRouteMatcher only does pattern
 // matching, not routing precedence. Listing private routes explicitly avoids
 // that pitfall.
+//
+// Every entry here must ALSO appear in `config.matcher` at the bottom of this
+// file. If one doesn't, the proxy never runs on that route, `auth.protect()`
+// never fires, and the route is silently public: no error and no failed build.
+// tests/proxy-matcher.test.ts fails when the two lists drift.
 const isPrivateRoute = createRouteMatcher([
   "/dashboard(.*)",
   "/settings(.*)",

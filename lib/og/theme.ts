@@ -52,7 +52,5 @@ export const og = {
   primaryBright: "#39a3ff",
   /** Semantic foregrounds (dark theme audit pills). */
   success: "#61bd67",
-  warning: "#dbb155",
-  danger: "#ff847d",
   info: "#49a9ff",
 } as const;

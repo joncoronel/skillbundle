@@ -340,8 +340,9 @@ export const fetchAuditBatch = internalAction({
                 },
               );
               // Not `isFirstRecord`: a never-audited row 404ing writes
-              // "unknown" over an absent field, and `auditTag` renders nothing
-              // for either, so there is no badge to refresh. New skills arrive
+              // "unknown" over an absent field, and the bundle register's
+              // `AuditCell` renders the same "Not audited" dash for either, so
+              // there is no badge to refresh. New skills arrive
               // daily, so counting those would pass the terminal's gate on most
               // days for no visible reason.
               if (denormChanged && !isFirstRecord) denormChangeCount++;

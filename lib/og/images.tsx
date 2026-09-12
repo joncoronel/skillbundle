@@ -178,6 +178,11 @@ export function sectionOgImage({
  * on the card not already in `og:title` / `og:description`. If either needs to
  * come back it brings the DAY ceiling back with it, so bring back the tag AND
  * the shorter lifetime together or the card will quietly lie for a year.
+ *
+ * The title is also now the URL slug, not the stored name. They differ for
+ * ~2% of skills (432 of 20,000 in dev, Sep 2026), mostly namespaced names such
+ * as `pinecone:docs` under the slug `pineconedocs`, and on those the card and
+ * the `og:title` beside it disagree. Accepted as a known loss.
  */
 export function skillOgImage(source: string, skillId: string) {
   const command = buildSkillInstallCommand(source, skillId);
