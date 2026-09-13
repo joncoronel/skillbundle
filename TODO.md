@@ -279,6 +279,20 @@ Three things left.
   `Referrer-Policy` and `Permissions-Policy`; the header block there argues why
   a Content-Security-Policy is deliberately NOT among them. Doing it properly
   means nonces and a report-only rollout, which is its own change.
+- **Separate GitHub token for user-triggered requests (Sep 2026).** Today one
+  `GITHUB_TOKEN` (5,000 REST calls an hour) serves both the daily sync and
+  user requests: GitHub-only add previews and confirms (`githubOnly.ts`) and
+  uncached repo analyses (`recommendations.ts`). So heavy user traffic can use
+  up the sync's budget, and a big sync can make user requests fail with "could
+  not fetch". A second token used only for user requests isolates the two.
+  An app-wide rate limit was tried for this instead (`sharedGitHub` in
+  `convex/rateLimits.ts`) and removed before launch: a limit everyone shares
+  lets one account at its per-user ceiling lock every paying user out, which is
+  worse than the problem it guards against. See that file's header. Pick this
+  up if the Convex logs show the sync or user requests hitting GitHub's limit
+  (search for "GitHub rate limit hit", logged by `fetchRepoTree` in
+  `convex/lib/github.ts`). Related: the GitHub App migration under "Match repo"
+  below would also give user requests their own budget.
 
 ### Google Sans Code is preloaded on every route, used on few — Sep 2026
 

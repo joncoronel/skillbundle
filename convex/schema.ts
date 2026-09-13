@@ -9,16 +9,10 @@ export default defineSchema({
     externalId: v.string(),
   }).index("byExternalId", ["externalId"]),
 
-  // Fixed-window per-user throttles for public actions that fan out to
-  // external APIs (currently one key: the add-skill flow, whose preview can
-  // cost dozens of GitHub calls). One row per (user, key); the enforcing
-  // mutation resets `count` when the window has elapsed. See throttle.ts.
-  userThrottles: defineTable({
-    userId: v.id("users"),
-    key: v.string(),
-    windowStart: v.number(),
-    count: v.number(),
-  }).index("by_user_key", ["userId", "key"]),
+  // REMOVED: `userThrottles` (per-user fixed-window counters for the add flow,
+  // Sep 2026). Replaced by @convex-dev/rate-limiter, which keeps its state in
+  // the component's own tables; see convex/rateLimits.ts. Rows left over from
+  // the old table are inert, since nothing reads them.
 
   // ROW SIZE — authoritative, same reason the `skillSummaries` block below is.
   // Every "read summaries, not skills" argument in the repo divides by this.

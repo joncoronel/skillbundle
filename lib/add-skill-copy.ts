@@ -17,6 +17,7 @@ import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
+import { convexErrorMessage } from "@/lib/convex-error";
 
 /**
  * Every preview outcome except `ok`. The admin and public actions return the
@@ -165,10 +166,7 @@ export function addSkillErrorText(err: unknown): string {
 /** The message a Convex failure actually carries, `data` before `message`. */
 function convexErrorText(err: unknown): string {
   if (err instanceof ConvexError) {
-    return typeof err.data === "string"
-      ? err.data
-      : ((err.data as { message?: string })?.message ??
-          "Something went wrong.");
+    return convexErrorMessage(err) ?? "Something went wrong.";
   }
   return err instanceof Error ? err.message : String(err);
 }

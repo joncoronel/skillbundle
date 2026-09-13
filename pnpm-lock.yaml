@@ -23,6 +23,9 @@ importers:
       '@convex-dev/polar':
         specifier: ^0.8.1
         version: 0.8.1(@polar-sh/checkout@0.2.0(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@stripe/stripe-js@7.9.0)(@types/react-dom@19.2.3(@types/react@19.2.13))(@types/react@19.2.13)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1))(@polar-sh/sdk@0.46.6)(@standard-schema/spec@1.1.0)(convex@1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@clerk/react@6.6.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3)(zod@4.4.3)
+      '@convex-dev/rate-limiter':
+        specifier: ^0.3.2
+        version: 0.3.2(convex@1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@clerk/react@6.6.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react@19.3.0)
       '@convex-dev/react-query':
         specifier: ^0.1.0
         version: 0.1.0(@tanstack/react-query@5.90.21(react@19.3.0))(convex@1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@clerk/react@6.6.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
@@ -433,6 +436,15 @@ packages:
       convex: ^1.29.0
       react: ^18 || ^19
       react-dom: ^18 || ^19
+
+  '@convex-dev/rate-limiter@0.3.2':
+    resolution: {integrity: sha512-+oBPsBfFbzdxiF/9XaaTQmVnvDlvEfg/c69/v8LxTbw4VLuiflIKlfnPQL8OS0azXQQ11hcPWHmU8ytFmHKDXA==}
+    peerDependencies:
+      convex: ^1.24.8
+      react: ^18.2.0 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   '@convex-dev/react-query@0.1.0':
     resolution: {integrity: sha512-ULmBZCtAQDUePdBhUv7hj1Yy4QiCelhi6uEIOtMpjW8db6W9CFKvQwLt9heLngccFyMFfAZdOfSrT+cP4AH0Jw==}
@@ -5940,6 +5952,12 @@ snapshots:
       - hono
       - typescript
       - zod
+
+  '@convex-dev/rate-limiter@0.3.2(convex@1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@clerk/react@6.6.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      convex: 1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@clerk/react@6.6.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+    optionalDependencies:
+      react: 19.3.0
 
   '@convex-dev/react-query@0.1.0(@tanstack/react-query@5.90.21(react@19.3.0))(convex@1.38.0(@clerk/clerk-react@5.60.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@clerk/react@6.6.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))':
     dependencies:

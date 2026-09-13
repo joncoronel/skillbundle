@@ -10,12 +10,23 @@ Thanks for taking an interest in SkillBundle.
 
 ## Running it locally
 
-Setup is in the [README](./README.md#getting-started). The full app depends on several hosted services, so expect to create a few free accounts:
+The full app depends on several hosted services, so expect to create a few free accounts:
 
 - **Required:** Convex, Clerk, and Typesense.
 - **Only for the features that use them:** Polar (billing), Voyage AI (repo matching), and a skills.sh API key (syncing the catalog).
 
-Development deployments don't run the scheduled sync. Populate one with `npx convex run skills:syncSkills` once your skills.sh key is set.
+You need [pnpm](https://pnpm.io). Then:
+
+```bash
+pnpm install
+cp .env.example .env.local   # fill in the frontend values
+npx convex dev               # Convex dev server; set backend values with `npx convex env set`
+pnpm dev                     # Next.js, in a second terminal
+```
+
+Both dev servers have to be running. Open [http://localhost:3000](http://localhost:3000). Every variable, frontend and Convex, is listed in [docs/environment.md](./docs/environment.md).
+
+Development deployments don't run the scheduled sync. Populate one with `npx convex run skills:syncSkills` once your skills.sh key is set. `pnpm build` also needs a reachable Convex deployment, because prerendering reads from it.
 
 ## Checks
 

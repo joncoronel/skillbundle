@@ -1,6 +1,6 @@
 /**
- * Invariant tests for the GitHub-only add quota and the add-flow throttle —
- * the billing-adjacent rules behind the public add feature:
+ * Invariant tests for the GitHub-only add quota — the billing-adjacent rules
+ * behind the public add feature (its rate limits are in rate-limits.test.ts):
  *
  *   1. The atomic gate in upsertSkillsBatch blocks the (limit+1)th genuine
  *      GitHub-only insert for a capped user.
@@ -10,22 +10,16 @@
  *      but does NOT free a quota slot: the immutable leaderboard tag keeps
  *      counting, so the quota is a stable lifetime allowance.
  *   4. Without enforceGitHubQuotaFor (admin / Pro callers) there is no cap.
- *   5. The fixed-window throttle rejects the 31st call in an hour and
- *      resets after the window elapses.
  *
- * Exercised at the mutation layer (upsertSkillsBatch / bumpAddSkillThrottle)
- * rather than through the public actions: the actions' GitHub/skills.sh
- * resolution is network I/O the invariants don't depend on, and the gate
- * deliberately lives in the mutation so it shares the insert's transaction.
+ * Exercised at the mutation layer (upsertSkillsBatch) rather than through the
+ * public actions: the actions' GitHub/skills.sh resolution is network I/O the
+ * invariants don't depend on, and the gate deliberately lives in the mutation
+ * so it shares the insert's transaction.
  */
-import { vi, test, expect, afterEach } from "vitest";
+import { test, expect } from "vitest";
 import { internal } from "../convex/_generated/api";
 import { makeTest } from "./_setup";
 import type { Id } from "../convex/_generated/dataModel";
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 const LIMIT = 3;
 
@@ -216,37 +210,5 @@ test("no enforceGitHubQuotaFor (admin / Pro) means no cap", async () => {
       )
       .collect();
     expect(rows).toHaveLength(LIMIT + 2);
-  });
-});
-
-test("throttle: 30 bumps pass, the 31st throws, and the window resets", async () => {
-  // Fake only Date so convex-test's internal async machinery is untouched.
-  vi.useFakeTimers({ toFake: ["Date"] });
-  const t0 = new Date("2026-07-22T12:00:00Z");
-  vi.setSystemTime(t0);
-
-  const t = makeTest();
-  const userId = await seedUser(t);
-
-  for (let i = 0; i < 30; i++) {
-    await t.mutation(internal.throttle.bumpAddSkillThrottle, { userId });
-  }
-
-  await expect(
-    t.mutation(internal.throttle.bumpAddSkillThrottle, { userId }),
-  ).rejects.toMatchObject({ data: { code: "rate_limited" } });
-
-  // One hour later the fixed window resets and counting starts over.
-  vi.setSystemTime(new Date(t0.getTime() + 60 * 60 * 1000));
-  await t.mutation(internal.throttle.bumpAddSkillThrottle, { userId });
-
-  await t.run(async (ctx) => {
-    const row = await ctx.db
-      .query("userThrottles")
-      .withIndex("by_user_key", (q) =>
-        q.eq("userId", userId).eq("key", "add-skill"),
-      )
-      .unique();
-    expect(row!.count).toBe(1);
   });
 });

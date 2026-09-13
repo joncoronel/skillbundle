@@ -447,6 +447,21 @@ async function runAnalysis(
   let scan: TreeScanResult | null = null;
   let branch: string | undefined;
 
+  // Rate limit charge for a rebuild (rateLimits.ts). Only the rebuild paths
+  // call this, so an analysis served from cache costs the caller nothing.
+  // Called BEFORE any cache write on those paths: if it threw after the new
+  // tree ETag was stored, the next request would see a 304, trust the old
+  // fingerprint, and serve stale results for a repo that changed.
+  let charged = false;
+  const chargeRebuild = async (): Promise<void> => {
+    if (charged) return;
+    charged = true;
+    const identity = await ctx.auth.getUserIdentity();
+    await ctx.runMutation(internal.rateLimits.enforce, {
+      checks: [{ name: "repoAnalysis", key: identity?.subject ?? "anonymous" }],
+    });
+  };
+
   if (treeCache) {
     const treeRaw = await fetchRepoTree(owner, repo, [treeCache.branch], {
       etag: treeCache.etag,
@@ -469,6 +484,7 @@ async function runAnalysis(
     } else if (treeResult) {
       // Repo changed — rebuild fingerprint even if cached
       debugLog(`[analyzeRepo] ⟳ Tree cache STALE — repo changed, rebuilding`);
+      await chargeRebuild();
       treeChanged = true;
       branch = treeResult.branch;
       scan = scanTree(treeResult.entries);
@@ -535,6 +551,7 @@ async function runAnalysis(
     // ------------------------------------------------------------------
     // Step 3: Fetch metadata + tree (if not already done)
     // ------------------------------------------------------------------
+    await chargeRebuild();
     const meta = await fetchRepoMetadata(owner, repo, token);
     if (!branch) branch = meta?.defaultBranch ?? "main";
     mark("GitHub metadata fetch");

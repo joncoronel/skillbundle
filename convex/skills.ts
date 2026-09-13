@@ -4441,16 +4441,20 @@ export const addSkillManuallyPublic = action({
   args: { input: v.string() },
   returns: manualAddReturns,
   handler: async (ctx, { input }): Promise<ManualAddResult> => {
-    const userId: Id<"users"> = await ctx.runQuery(
-      internal.skills.getAuthedUserId,
-      {},
-    );
-    // Same per-user throttle as the GitHub-only branch (throttle.ts): this
+    // Doubles as the auth gate. No quota applies on this branch; the query is
+    // here so the add limits get the same `capped` answer the GitHub-only
+    // branch uses, from one query instead of two.
+    const quota: { userId: Id<"users">; limit: number | null } =
+      await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
+    // Same per-user add limits as the GitHub-only branch (rateLimits.ts): this
     // branch hits the skills.sh detail endpoint per call, and the client
     // cascades from here into the GitHub fallback, so both share one budget.
-    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, { userId });
+    await ctx.runMutation(internal.rateLimits.enforceAddSkill, {
+      userId: quota.userId,
+      capped: quota.limit !== null,
+    });
     try {
-      return await manualAddCore(ctx, input, userId);
+      return await manualAddCore(ctx, input, quota.userId);
     } catch (err) {
       // Prod redacts non-ConvexError throws to "Server Error"; keep transient
       // upstream failures actionable for the user (logged server-side).
@@ -4459,20 +4463,6 @@ export const addSkillManuallyPublic = action({
         "Something went wrong talking to skills.sh. Try again in a minute.",
       );
     }
-  },
-});
-
-/**
- * Resolve the signed-in user's id, or throw a clean ConvexError. Used by the
- * public add actions (which run as actions and can't touch the db directly).
- */
-export const getAuthedUserId = internalQuery({
-  args: {},
-  returns: v.id("users"),
-  handler: async (ctx) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) throw new ConvexError("Sign in to add a skill.");
-    return user._id;
   },
 });
 

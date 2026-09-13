@@ -131,7 +131,7 @@ Modules, grouped by concern:
 - **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
 - **Version archive & monitoring:** `skillVersions.ts` (read + write API over the change archive; `freshness.ts` decides which SKILL.mds to re-check).
 - **Bundles & social:** `bundles.ts`.
-- **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts` (+ `convex.config.ts` registers the `@convex-dev/polar` component).
+- **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts`, `rateLimits.ts` (per-user limits on public actions that spend money or GitHub budget; read its header before changing a number or adding an app-wide limit) (+ `convex.config.ts` registers the `@convex-dev/polar` and `@convex-dev/rate-limiter` components).
 - **Admin / dev:** `devStats.ts` (the `/dev` dashboard stats), `devSeed.ts`,
   `githubOnly.ts` (admin add of skills that exist only on GitHub, not on
   skills.sh — see docs/skill-lifecycle.md "GitHub-only skills"),

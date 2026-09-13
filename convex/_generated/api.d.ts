@@ -27,6 +27,7 @@ import type * as githubOnlyAudit from "../githubOnlyAudit.js";
 import type * as http from "../http.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_appDay from "../lib/appDay.js";
+import type * as lib_checkout from "../lib/checkout.js";
 import type * as lib_clerkGithub from "../lib/clerkGithub.js";
 import type * as lib_detailRefresh from "../lib/detailRefresh.js";
 import type * as lib_devOnly from "../lib/devOnly.js";
@@ -49,13 +50,13 @@ import type * as lib_source from "../lib/source.js";
 import type * as lib_typesense from "../lib/typesense.js";
 import type * as plans from "../plans.js";
 import type * as polar from "../polar.js";
+import type * as rateLimits from "../rateLimits.js";
 import type * as recommendations from "../recommendations.js";
 import type * as reconcile from "../reconcile.js";
 import type * as skillVersions from "../skillVersions.js";
 import type * as skills from "../skills.js";
 import type * as skillsAuth from "../skillsAuth.js";
 import type * as subscriptions from "../subscriptions.js";
-import type * as throttle from "../throttle.js";
 import type * as typesense from "../typesense.js";
 import type * as users from "../users.js";
 
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   leaderboards: typeof leaderboards;
   "lib/appDay": typeof lib_appDay;
+  "lib/checkout": typeof lib_checkout;
   "lib/clerkGithub": typeof lib_clerkGithub;
   "lib/detailRefresh": typeof lib_detailRefresh;
   "lib/devOnly": typeof lib_devOnly;
@@ -107,13 +109,13 @@ declare const fullApi: ApiFromModules<{
   "lib/typesense": typeof lib_typesense;
   plans: typeof plans;
   polar: typeof polar;
+  rateLimits: typeof rateLimits;
   recommendations: typeof recommendations;
   reconcile: typeof reconcile;
   skillVersions: typeof skillVersions;
   skills: typeof skills;
   skillsAuth: typeof skillsAuth;
   subscriptions: typeof subscriptions;
-  throttle: typeof throttle;
   typesense: typeof typesense;
   users: typeof users;
 }>;
@@ -146,4 +148,5 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   polar: import("@convex-dev/polar/_generated/component.js").ComponentApi<"polar">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useConvex, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
 import Link from "next/link";
+import { convexErrorMessage } from "@/lib/convex-error";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowDown01Icon,
@@ -211,7 +212,8 @@ export function RepoAnalysisResults() {
     : invalidUrl
       ? "Invalid GitHub URL"
       : error
-        ? error.message ||
+        ? convexErrorMessage(error) ||
+          error.message ||
           "Something went wrong analyzing this repository. Please try again."
         : (data?.error ?? null);
 

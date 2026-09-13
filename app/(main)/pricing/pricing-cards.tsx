@@ -33,10 +33,10 @@ import {
   Authenticated,
   AuthLoading,
   Unauthenticated,
+  useAction,
   useConvexAuth,
   useQuery,
 } from "convex/react";
-import { CheckoutLink } from "@convex-dev/polar/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -49,7 +49,9 @@ import {
   type Plan,
 } from "@/lib/plans";
 import { useUserPlan } from "@/hooks/use-user-plan";
-import { Button, buttonVariants } from "@/components/ui/cubby-ui/button";
+import { Button } from "@/components/ui/cubby-ui/button";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
+import { convexErrorMessage } from "@/lib/convex-error";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { track } from "@/lib/analytics";
@@ -507,50 +509,59 @@ function ProCheckout({ cycle }: { cycle: Cycle }) {
     );
   }
 
-  return (
-    // The tracking sits on a wrapper, not on the link, because `CheckoutLink`
-    // declares an explicit prop list with no `...rest` — it does not forward an
-    // `onClick`, and it needs its own to mint the checkout URL. A click on the
-    // anchor (mouse or keyboard) bubbles to here either way.
-    //
-    // Fires on the press, before Polar's hosted checkout is reached, so it
-    // counts INTENT, not revenue: the gap between it and a subscription.created
-    // webhook is the abandonment rate. Do not read it as a conversion.
-    <div
-      className="w-full"
-      // Gated on the anchor so clicks landing on the wrapper's padding do not
-      // count. It does NOT dedupe repeat clicks: `CheckoutLink`'s lazy handler
-      // returns early while it is still minting the URL, but the click still
-      // bubbles here, so an impatient double-click tracks twice. Read this as
-      // intent with some slop, not as a count of distinct people, and compare
-      // the trend against Polar's subscription.created rather than the ratio.
-      onClick={(event) => {
-        if (!(event.target as HTMLElement).closest("a")) return;
-        track("checkout_started", { cycle });
-      }}
-    >
-      <CheckoutLink
-        polarApi={{ generateCheckoutLink: api.polar.generateCheckoutLink }}
-        productIds={[
+  return <ProCheckoutButton cycle={cycle} />;
+}
+
+/**
+ * The upgrade button. Calls `api.polar.generateCheckoutLink` itself instead of
+ * going through `@convex-dev/polar/react`'s `CheckoutLink`, because that
+ * component has no error path: a refused checkout (the NEXT_PUBLIC_ product ids
+ * not matching the Convex ones, or the billing rate limit) did nothing on
+ * click. A separate component so its hooks sit above ProCheckout's early
+ * returns.
+ */
+function ProCheckoutButton({ cycle }: { cycle: Cycle }) {
+  const generateCheckoutLink = useAction(api.polar.generateCheckoutLink);
+  const [pending, setPending] = useState(false);
+
+  async function handleClick() {
+    if (pending) return;
+    // Counts INTENT, not revenue: it fires before Polar's hosted checkout is
+    // reached, so the gap between it and a subscription.created webhook is the
+    // abandonment rate. Presses while a URL is being minted are ignored, so a
+    // double-click tracks once.
+    track("checkout_started", { cycle });
+    setPending(true);
+    try {
+      const { url } = await generateCheckoutLink({
+        productIds: [
           cycle === "yearly" ? PRO_YEARLY_PRODUCT_ID : PRO_MONTHLY_PRODUCT_ID,
-        ]}
-        // The button recipe goes on the ANCHOR rather than on a `<Button>`
-        // inside it. `CheckoutLink` renders an `<a>`, so a real `<button>` as
-        // its child was interactive content nested in a link — invalid HTML,
-        // and it put the focus ring on the inner element while the anchor was
-        // the thing actually focused. `buttonVariants` is built to be applied
-        // to flat elements for exactly this (see button.tsx), so the anchor now
-        // carries the paint, the press behaviour and the ring itself.
-        //
-        // `nativeButton={false}` would NOT have fixed it: Base UI still renders
-        // a focusable `role="button"` element, so the nesting problem stands.
-        className={cn(buttonVariants({ variant: "primary" }), "w-full")}
-        embed={false}
-        lazy
-      >
-        {PLANS.pro.cta.upgrade}
-      </CheckoutLink>
-    </div>
+        ],
+        origin: window.location.origin,
+        successUrl: window.location.href,
+      });
+      window.open(url, "_blank");
+    } catch (err) {
+      toast.error({
+        title: "Couldn't start checkout",
+        description:
+          convexErrorMessage(err) ??
+          "Something went wrong. Try again in a minute.",
+      });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="primary"
+      className="w-full"
+      onClick={handleClick}
+      loading={pending}
+    >
+      {PLANS.pro.cta.upgrade}
+    </Button>
   );
 }
 
