@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "SkillBundle",
     short_name: "SkillBundle",
     description:
-      "Discover, compare, and bundle AI coding assistant skills for your tech stack",
+      "Find the right AI coding skills and stay on top of the ones you use",
     start_url: "/",
     display: "standalone",
     background_color: "#0a0b0d",

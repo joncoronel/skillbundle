@@ -134,13 +134,13 @@ export function SkillExplorerView({
           {/* Hero — constant, scrolls away (never collapses). */}
           <section className="pt-10 pb-6 sm:pt-12">
             <h1 className="text-display">
-              Pick skills.{" "}
-              <span className="text-primary">Ship one install command.</span>
+              Find the right skills.{" "}
+              <span className="text-primary">Stay on top of them.</span>
             </h1>
             <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-              Search and compare skills for Cursor, Claude Code, and other
-              coding agents. Bundle the ones you want and share the whole set
-              with a link.
+              Search, filter, and compare skills for Cursor, Claude Code, and
+              other coding agents, or match them to your GitHub repo. Save the
+              ones you use to a bundle and see what changed in each update.
             </p>
           </section>
 
