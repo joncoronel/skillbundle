@@ -45,7 +45,7 @@ Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to
 **Capabilities:**
 
 - Browse leaderboards (Popular / Trending / Hot), owner and repo catalog pages, and a curated `/official` directory.
-- Full-text search over skill names, with an "Official only" filter.
+- Search over skill names and descriptions, with filters for publisher, official skills, install count, audit status, and skills whose install may fail.
 - GitHub repo analysis: paste a repo, get matched skills (Pro-gated; free demo allowlist so anyone can try it on `shadcn-ui/ui`).
 - Side-by-side skill comparison (`/compare`).
 - Skill detail: rendered SKILL.md, install count + rank, installs-over-time chart with momentum, security audit panel, copyable install command, variants across forks/aliases.
@@ -55,7 +55,7 @@ Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to
 
 **Constraints / undecided:**
 
-- Search is currently single-field Convex full-text (prefix, no typo tolerance). A move to a faceted engine is under consideration, weighed against sync-pipeline and hosting cost. Not decided.
+- Search runs on Typesense (self-hosted, queried browser-direct with a search-only key) and is mirrored from Convex by a daily sync. That move is decided and shipped; `docs/search-overhaul.md` tracks what shipped and what is still open.
 - Billing is Polar (Merchant of Record) via `@convex-dev/polar`, gated behind a master `FEATURE_GATING_ENABLED` switch. Free covers 25 watched skills; Pro is $5/month or $48/year for unlimited watching, GitHub repo matching, and unlimited GitHub-only skill adds. Two rules the tiers are built on: **safety is never a tier** (every plan is told about a security regression at the same time — an earlier draft here proposed selling "immediate alerts", which prices the news that someone's dependency became unsafe and is not something this product can do and stay trustworthy), and **the meter is scale of dependence, not organisation** (distinct skills watched, so filing one skill in three lists still costs one). A weekly-digest tier was also considered here and is impossible: there is no email.
 - Removed deliberately: the public `/explore` directory of community bundles, and with it stars, forks, copy counts, and featured placement. Half-dead social signal reads as abandonment, so it is gone rather than dormant.
 - Explicitly out of scope: skill generation/editing, automatic compatibility detection between skills, team workspaces / shared team lists, reading a user's locally installed skills, and a native mobile app.

@@ -139,8 +139,8 @@ export function SkillExplorerView({
             </h1>
             <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
               Search, filter, and compare skills for Cursor, Claude Code, and
-              other coding agents, or match them to your GitHub repo. Save the
-              ones you use to a bundle and see what changed in each update.
+              other coding agents. Save the ones you use to a bundle to watch
+              them for updates.
             </p>
           </section>
 

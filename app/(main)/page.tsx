@@ -29,9 +29,9 @@ import { SITE_OG_IMAGE } from "@/lib/og/theme";
 // fetches the tab it is showing; see `useLeaderboard` in
 // components/leaderboard-sheet.tsx.
 
-const HOME_TITLE = "SkillBundle: Find and manage AI coding skills";
+const HOME_TITLE = "SkillBundle: Find and track AI coding skills";
 const HOME_DESCRIPTION =
-  "Search, filter, and compare AI coding skills for Cursor, Claude Code, and other agents. Save the ones you use to a bundle and see what changed in each update.";
+  "Search, filter, and compare AI coding skills for Cursor, Claude Code, and other agents. Save the ones you use to a bundle to watch them for updates.";
 
 export const metadata: Metadata = {
   title: HOME_TITLE,

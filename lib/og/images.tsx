@@ -135,7 +135,7 @@ export function brandOgImage() {
         }}
       >
         Search and compare skills for Cursor, Claude Code, and other agents.
-        Save the ones you use and see what changed in each update.
+        Save the ones you use to a bundle to watch them for updates.
       </div>
     </div>,
   );
