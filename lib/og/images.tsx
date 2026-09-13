@@ -114,9 +114,15 @@ export function brandOgImage() {
           lineHeight: 1.08,
           color: og.fg,
           maxWidth: 940,
+          // One sentence per line, like the hero on narrow screens. Left to
+          // wrap on its own at this size, "them." fell onto a line alone.
+          flexDirection: "column",
         }}
       >
-        Skills for your AI coding stack.
+        <div style={{ display: "flex" }}>Find the right skills.</div>
+        <div style={{ display: "flex", color: og.primaryBright }}>
+          Stay on top of them.
+        </div>
       </div>
       <div
         style={{
@@ -128,8 +134,8 @@ export function brandOgImage() {
           maxWidth: 900,
         }}
       >
-        Discover, compare, and bundle skills for Cursor, Claude Code, and other
-        agents. Share a curated set with one install command.
+        Search and compare skills for Cursor, Claude Code, and other agents.
+        Save the ones you use to a bundle to watch them for updates.
       </div>
     </div>,
   );

@@ -1,27 +1,43 @@
 # SkillBundle
 
-SkillBundle helps developers discover, compare, and bundle AI coding-assistant skills for their tech stack. Pick your technologies, get matched with relevant skills from the [skills.sh](https://skills.sh) ecosystem, then save and share curated bundles with ready-to-run install commands.
+Find the right AI coding skills, and stay on top of the ones you use.
 
-**🔗 Live at [skillbundle.dev](https://skillbundle.dev)**
+**Live at [skillbundle.dev](https://skillbundle.dev)**
+
+SkillBundle is built on the [skills.sh](https://skills.sh) API. The skill catalog and install counts come from skills.sh, and SkillBundle adds search, comparison, bundles, and update tracking on top.
 
 ## Features
 
-- **Discovery:** browse skills by technology, popularity, trending, and "hot" leaderboards.
-- **Bundles:** curate skills into reusable bundles and share them with a link.
-- **Install commands:** copy a single command to install a whole bundle.
-- **Auth & billing:** account sync via Clerk, optional Pro plan via Polar.
+**Finding skills**
+
+- Search the catalog and filter by publisher, description, official skills, install count, and skills whose install may fail.
+- Browse the Popular, Trending, and Hot leaderboards, and a directory of official skills.
+- Paste a GitHub repo to find skills that fit that codebase (Pro).
+- Compare skills side by side.
+- Add a skill that isn't on skills.sh yet.
+
+**Keeping up with them**
+
+- An update history for each skill, with a diff of what changed.
+- Bundles: save skills into a set you can share with a link, with install commands ready to copy.
+- A change feed for the skills in your bundles.
+- Install counts over time, and security audit results from skills.sh's audit partners.
 
 ## Tech Stack
 
-- **Framework:** Next.js (App Router) + React
+- **Framework:** Next.js 16 (App Router) + React 19
 - **Backend:** [Convex](https://convex.dev) (database, serverless functions, cron jobs)
 - **Auth:** [Clerk](https://clerk.com) (JWT, synced to Convex via webhooks)
 - **Billing:** [Polar](https://polar.sh) (merchant of record)
-- **Styling:** Tailwind CSS v4
+- **Search:** [Typesense](https://typesense.org)
+- **Embeddings:** [Voyage AI](https://voyageai.com), for repo matching
+- **UI:** Tailwind CSS v4, components built on [Base UI](https://base-ui.com) and Radix primitives, [TanStack Charts](https://tanstack.com)
 - **Package manager:** pnpm
 - **Hosting:** Vercel
 
 ## Getting Started
+
+SkillBundle is a hosted app. The code is open so you can see how it works, but it isn't packaged for self-hosting: it depends on the skills.sh API and several hosted services (Convex, Clerk, Typesense, Voyage AI, Polar). The setup below is for development and contributing.
 
 You need [pnpm](https://pnpm.io) and a [Convex](https://convex.dev) account.
 
@@ -76,14 +92,20 @@ Convex (set with `npx convex env set …`):
 ## Scripts
 
 - `pnpm dev`: Next.js dev server
-- `pnpm build`: production build
-- `pnpm lint`: ESLint
-- `pnpm test`: Vitest
+- `pnpm build`: production build (needs a reachable Convex deployment)
+- `pnpm check`: format check, lint, typecheck, and unit tests
+- `pnpm format`: format with Prettier
+- `pnpm test`: Vitest unit tests
+- `pnpm e2e`: Playwright tests against a production build
 - `npx convex dev` / `npx convex deploy`: Convex dev / deploy
 
 ## Contributing
 
-Contributions are welcome. Please read the [Code of Conduct](./CODE_OF_CONDUCT.md) before participating.
+Bug reports and ideas are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request, and the [Code of Conduct](./CODE_OF_CONDUCT.md) before participating. To report a security issue, follow [SECURITY.md](./SECURITY.md) instead of opening an issue.
+
+## Acknowledgements
+
+Skill data, install counts, and audit results come from the [skills.sh](https://skills.sh) API.
 
 ## License
 

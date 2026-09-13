@@ -27,7 +27,7 @@ export const OG_CONTENT_TYPE = "image/png";
 export const SITE_OG_IMAGE = {
   url: "/opengraph-image",
   ...OG_SIZE,
-  alt: "SkillBundle: discover, compare, and bundle AI coding skills",
+  alt: "SkillBundle: find the right AI coding skills and stay on top of them",
 };
 
 export const og = {

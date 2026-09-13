@@ -95,7 +95,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "SkillBundle",
   description:
-    "Discover, compare, and bundle AI coding assistant skills for your tech stack",
+    "Find the right AI coding skills and stay on top of the ones you use",
   // X/Twitter renders large-format cards. There are no twitter-image files:
   // Next copies each page's `openGraph.images` into the card when
   // `twitter.images` is unset, so the OG image is the artwork.

@@ -59,7 +59,7 @@ test.describe("initial load", () => {
         // (see docs/architecture.md §2), so the hero is prerendered HTML
         // rather than a skeleton.
         await expect(page.locator("h1")).toContainText(
-          "Pick skills. Ship one install command.",
+          "Find the right skills. Stay on top of them.",
         );
       },
       { baseURL },

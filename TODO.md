@@ -128,7 +128,7 @@ not ticked, so what remains here is what remains to do.
   (`StatsFreshness` in `dev-dashboard-content.tsx`).
 
 - ~~Uptime monitoring.~~ **Done** — Better Stack, two monitors: skillbundle.dev
-  on a keyword check (`Pick skills`, so a 200 serving a broken page still
+  on a keyword check (`Find the right skills`, so a 200 serving a broken page still
   alerts), and the production Convex deployment on plain availability.
   The second one exists because of a trap worth remembering: monitoring one of
   OUR pages does NOT detect a Convex outage. Catalog routes are `cacheLife
@@ -136,7 +136,9 @@ not ticked, so what remains here is what remains to do.
   and return 200 for days into a backend outage. Only hitting Convex directly
   fails when Convex does.
   The keyword is current hero copy. Reword the homepage headline and the monitor
-  starts paging about an outage that is not one.
+  starts paging about an outage that is not one. It was `Pick skills` until the
+  Sep 2026 headline change (PR #97): switch it to `Find the right skills` in
+  Better Stack when that deploys.
 
 ### PageSpeed Insights findings: measured, three rejected — Sep 2026
 

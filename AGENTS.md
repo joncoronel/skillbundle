@@ -6,7 +6,7 @@ imports this file.
 
 ## Project Overview
 
-SkillBundle is a web app that helps developers discover, compare, and bundle AI coding assistant skills for their tech stack. Users select technologies, get matched with relevant skills from the skills.sh ecosystem, and save/share curated bundles with install commands. See SPEC.md for the full product specification.
+SkillBundle is a web app for finding AI coding assistant skills and keeping track of the ones you use. It syncs the skills.sh catalog, adds search, filters, comparison, and GitHub repo matching on top, and lets users save skills into shareable bundles and follow changes to them. See PRODUCT.md for the product context, positioning, and pricing rules, and docs/architecture.md for the routes.
 
 ## Roadmap & ideas
 

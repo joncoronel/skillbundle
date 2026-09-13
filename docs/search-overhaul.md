@@ -8,7 +8,7 @@ Living checklist for reworking search onto a faceted engine (Typesense). Tracks
   "Open decisions."
 
 Related: [TODO.md](../TODO.md) (the original "Search & discovery overhaul" note),
-[SPEC.md](../SPEC.md) ("Under consideration"), [docs/architecture.md](architecture.md)
+[PRODUCT.md](../PRODUCT.md) ("Constraints / undecided"), [docs/architecture.md](architecture.md)
 (rendering/caching + the "push load off Vercel" constraint),
 [docs/skill-lifecycle.md](skill-lifecycle.md) (the daily sync a Typesense sync would hang off).
 

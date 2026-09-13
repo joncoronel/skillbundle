@@ -1,6 +1,6 @@
 ---
 name: SkillBundle
-description: Discover, compare, and bundle AI coding assistant skills for your tech stack
+description: Find the right AI coding skills and stay on top of the ones you use
 colors:
   signal-blue: "oklch(0.6 0.2 250)"
   signal-blue-ring: "oklch(0.55 0.2 250)"
