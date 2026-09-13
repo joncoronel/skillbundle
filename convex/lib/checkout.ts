@@ -10,7 +10,7 @@
  * `active_trial_interval: "year"`, `count: 5`, `trial_end` five years out.
  *
  * So the checkout args are an allowlist, not a pass-through. Only a product id
- * and the two URLs `CheckoutLink` sends are accepted; trial, metadata and
+ * and the two URLs the pricing page sends are accepted; trial, metadata and
  * subscription fields are rejected by the action's validator before this runs.
  */
 
@@ -31,8 +31,10 @@ export function parseCheckoutRequest(
 
   const origin = parseSiteUrl(args.origin);
   const successUrl = parseSiteUrl(args.successUrl);
-  // The success URL has to be on the page that asked for the checkout, so
-  // Polar never redirects a paying customer somewhere else.
+  // Both URLs come from the caller, so this only keeps the success URL on the
+  // same origin the call claims to come from; it does not prove that origin is
+  // this site. That is acceptable because a checkout session belongs to the
+  // caller's own Polar customer: a forged origin can only redirect the caller.
   if (!origin || !successUrl || successUrl.origin !== origin.origin) {
     throw new ConvexError(INVALID_CHECKOUT);
   }

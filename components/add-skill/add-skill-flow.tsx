@@ -7,6 +7,7 @@ import { useAction, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import { parseSkillInput } from "@/lib/parse-skill-input";
+import { convexErrorMessage } from "@/lib/convex-error";
 import {
   addSkillErrorText,
   aliasRetryNote,
@@ -659,12 +660,8 @@ function isQuotaError(err: unknown): boolean {
 }
 
 function quotaErrorText(err: unknown): string {
-  const msg =
-    err instanceof ConvexError && typeof err.data === "object"
-      ? (err.data as { message?: string })?.message
-      : undefined;
   return (
-    msg ??
+    convexErrorMessage(err) ??
     "You've used all your free GitHub-only adds. Upgrade to Pro for unlimited."
   );
 }

@@ -714,7 +714,7 @@ The `@convex-dev/polar` component is registered in `convex/convex.config.ts` and
 
 ```text
 User clicks "Upgrade to Pro"
-       ├──► CheckoutLink generates Polar checkout URL
+       ├──► api.polar.generateCheckoutLink creates the Polar checkout URL
        │    User completes payment on Polar
        │              ├──► Polar webhook → /polar/events
        │              │    @convex-dev/polar stores subscription in Convex
@@ -724,6 +724,7 @@ getUserPlan() returns "pro"
 
 - `convex/lib/plans.ts` — `getUserPlan(ctx)` (maps Polar `productKey` → plan), `getPlanLimits(plan)`, `FEATURE_GATING_ENABLED` master switch (when `false`, all users get full access).
 - `convex/plans.ts` — `currentPlan` query for the frontend; `hooks/use-user-plan.ts` on the client.
+- `convex/polar.ts` — the two public billing actions, `generateCheckoutLink` and `generateCustomerPortalUrl`, written out by hand. Nothing is exported from `polar.api()`: its checkout action let the caller choose a free trial. Checkout arguments are allowlisted in `convex/lib/checkout.ts` (one of the two Pro product ids, no trial or metadata fields), and both actions count against the `billing` limit in `convex/rateLimits.ts`. The pricing page calls the action directly (`ProCheckoutButton`) rather than through `@convex-dev/polar/react`'s `CheckoutLink`, which has no error path.
 - Enforcement is two-layer: Convex mutations check limits server-side; UI disables controls / shows upgrade prompts client-side.
 - Webhooks in `convex/http.ts`: `POST /clerk-users-webhook` (Svix) and `POST /polar/events` (`polar.registerRoutes()`).
 
@@ -955,7 +956,9 @@ hooks/
   use-debounced-query-value.ts  # shared search debounce + cache bypass + spinner derivation
 
 convex/
-  convex.config.ts          # registers @convex-dev/polar
+  convex.config.ts          # registers @convex-dev/polar + @convex-dev/rate-limiter
+  polar.ts                  # the two billing actions (checkout, portal), allowlisted + rate-limited
+  rateLimits.ts             # per-user limits on actions that spend money or GitHub budget
   auth.config.ts            # Clerk JWT issuer
   http.ts                   # Clerk + Polar webhooks
   schema.ts / users.ts / bundles.ts / skills.ts / plans.ts / crons.ts

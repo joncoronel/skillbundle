@@ -18,6 +18,9 @@ environment running, start with [CONTRIBUTING.md](../CONTRIBUTING.md).
 ## Convex (`npx convex env set …`)
 
 - `CLERK_JWT_ISSUER_DOMAIN`, `CLERK_WEBHOOK_SECRET`
+- `CLERK_SECRET_KEY`: the same value as the frontend one. Convex uses it to
+  read a user's GitHub OAuth token from Clerk for the repo picker and private
+  repo matching (`convex/lib/clerkGithub.ts`).
 - `POLAR_ORGANIZATION_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SERVER`
 - `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID`
 - `SKILLS_SH_API_KEY`, `VOYAGE_API_KEY`

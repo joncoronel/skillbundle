@@ -56,10 +56,10 @@ export const polar: Polar<DataModel, typeof products> = new Polar(
 // limit is org-wide, so a loop on either could block everyone's checkout.
 type UserInfo = { userId: Id<"users">; email: string };
 
-// Replaces the component's `generateCheckoutLink`, under the same name so
-// `CheckoutLink` in app/(main)/pricing/pricing-cards.tsx keeps working. The
-// validator lists only the arguments that component actually sends; a caller
-// adding `trialInterval`, `metadata` or `subscriptionId` fails validation.
+// Replaces the component's `generateCheckoutLink`; called from
+// `ProCheckoutButton` in app/(main)/pricing/pricing-cards.tsx. The validator
+// takes only a product id and the two URLs, so a caller adding `trialInterval`,
+// `metadata` or `subscriptionId` fails validation.
 export const generateCheckoutLink = action({
   args: {
     productIds: v.array(v.string()),

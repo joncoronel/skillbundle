@@ -8,6 +8,8 @@ import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@/convex/_generated/api";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { PLANS } from "@/lib/plans";
+import { convexErrorMessage } from "@/lib/convex-error";
+import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { Badge } from "@/components/ui/cubby-ui/badge";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Separator } from "@/components/ui/cubby-ui/separator";
@@ -168,6 +170,13 @@ function ManageSubscriptionButton() {
       if (result?.url) {
         window.open(result.url, "_blank");
       }
+    } catch (err) {
+      toast.error({
+        title: "Couldn't open billing",
+        description:
+          convexErrorMessage(err) ??
+          "Something went wrong. Try again in a minute.",
+      });
     } finally {
       setLoading(false);
     }
