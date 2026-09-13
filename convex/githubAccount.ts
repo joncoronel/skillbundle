@@ -88,6 +88,11 @@ export const listMyRepos = action({
       throw new ConvexError({ code: PRO_REQUIRED });
     }
 
+    // Each call is a Clerk Backend API request plus paginated GitHub reads.
+    await ctx.runMutation(internal.rateLimits.enforce, {
+      checks: [{ name: "githubRepoList", key: identity.subject }],
+    });
+
     const tokenResult = await getGithubOauthToken(identity.subject);
     if (tokenResult === null) return { status: "error" };
     if (tokenResult.status === "not_connected")

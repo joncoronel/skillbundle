@@ -211,7 +211,11 @@ export function RepoAnalysisResults() {
     : invalidUrl
       ? "Invalid GitHub URL"
       : error
-        ? error.message ||
+        ? // A structured ConvexError (e.g. a rate limit) carries its readable
+          // text in `data.message`; `error.message` is the serialized payload.
+          (error instanceof ConvexError &&
+            (error.data as { message?: string } | undefined)?.message) ||
+          error.message ||
           "Something went wrong analyzing this repository. Please try again."
         : (data?.error ?? null);
 

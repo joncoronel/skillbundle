@@ -4445,10 +4445,17 @@ export const addSkillManuallyPublic = action({
       internal.skills.getAuthedUserId,
       {},
     );
-    // Same per-user throttle as the GitHub-only branch (throttle.ts): this
+    // Same per-user add limits as the GitHub-only branch (rateLimits.ts): this
     // branch hits the skills.sh detail endpoint per call, and the client
     // cascades from here into the GitHub fallback, so both share one budget.
-    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, { userId });
+    const { limits } = await ctx.runQuery(
+      internal.plans.internalCurrentPlan,
+      {},
+    );
+    await ctx.runMutation(internal.rateLimits.enforceAddSkill, {
+      userId,
+      capped: Number.isFinite(limits.maxGitHubOnlyAdds),
+    });
     try {
       return await manualAddCore(ctx, input, userId);
     } catch (err) {

@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   test: {
     environment: "edge-runtime",
-    server: { deps: { inline: ["convex-test"] } },
+    // `@convex-dev/rate-limiter/test` ships as TypeScript using
+    // `import.meta.glob`, so it has to be transformed rather than externalized.
+    server: { deps: { inline: ["convex-test", "@convex-dev/rate-limiter"] } },
     include: ["tests/**/*.test.ts"],
   },
   // Mirror the `@/*` path alias from tsconfig. Vitest doesn't read tsconfig

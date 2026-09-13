@@ -23,6 +23,7 @@
     "@clerk/nextjs": "^7.3.3",
     "@conform-to/react": "^1.16.0",
     "@convex-dev/polar": "^0.8.1",
+    "@convex-dev/rate-limiter": "^0.3.2",
     "@convex-dev/react-query": "^0.1.0",
     "@hugeicons/core-free-icons": "^4.2.3",
     "@hugeicons/react": "^1.1.9",

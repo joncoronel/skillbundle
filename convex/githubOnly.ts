@@ -964,10 +964,10 @@ export const listGitHubOnlyRows = internalQuery({
 // Branch 1 (a skill that IS on skills.sh) is skills.addSkillManuallyPublic;
 // the client tries that first and falls through here on `not_on_skills_sh`.
 // Both actions gate on auth by calling skills.getGitHubAddQuota, which throws
-// a clean ConvexError when signed out, and both count against the shared
-// per-user add-flow throttle (throttle.ts) — repo resolution is dozens of
-// GitHub calls against the pipeline's shared token budget, so it can't be
-// free-for-all even though only this branch is quota-limited.
+// a clean ConvexError when signed out, and both count against the per-user
+// add-flow rate limits (rateLimits.ts) — repo resolution runs on the
+// pipeline's shared GitHub token, so it can't be free-for-all even though only
+// this branch is quota-limited.
 // ---------------------------------------------------------------------------
 
 const PUBLIC_ADD_FALLBACK_ERROR =
@@ -995,8 +995,9 @@ export const previewGitHubSkillPublic = action({
   handler: async (ctx, { input }): Promise<GitHubPreviewPublic> => {
     // Doubles as the auth gate: getGitHubAddQuota throws if not signed in.
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
-    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
+    await ctx.runMutation(internal.rateLimits.enforceAddSkill, {
       userId: quota.userId,
+      capped: quota.limit !== null,
     });
     try {
       const preview = await previewGitHubCore(ctx, input);
@@ -1031,8 +1032,9 @@ export const addSkillFromGitHubPublic = action({
   returns: gitHubAddReturns,
   handler: async (ctx, { input }): Promise<GitHubAddResult> => {
     const quota = await ctx.runQuery(internal.skills.getGitHubAddQuota, {});
-    await ctx.runMutation(internal.throttle.bumpAddSkillThrottle, {
+    await ctx.runMutation(internal.rateLimits.enforceAddSkill, {
       userId: quota.userId,
+      capped: quota.limit !== null,
     });
     try {
       return await addGitHubCore(ctx, input, {
