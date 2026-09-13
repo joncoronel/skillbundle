@@ -179,7 +179,7 @@ const command = isGitHubSource(source)
 - `components/install-commands.tsx` — the UI keeps rendering whatever the
   lib returns; the lib is the boundary.
 - The command formats themselves (`npx skills add <owner/repo> --skill <id>`
-  and `npx skills add <domain>/<id>`) — they match skills.sh and the format recorded in PRODUCT.md.
+  and `npx skills add <domain>/<id>`) — they match skills.sh and what `lib/install-commands.ts` builds.
 
 ## Git workflow
 

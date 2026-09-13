@@ -19,7 +19,7 @@ Development deployments don't run the scheduled sync. Populate one with `npx con
 
 ## Checks
 
-Run `pnpm format` before you commit, then `pnpm check`, which runs the format check, lint, typecheck, and unit tests. CI runs lint, typecheck, and tests on every pull request. If you change rendering, navigation, or auth, also run `pnpm e2e`.
+Run `pnpm format` before you commit, then `pnpm check`, which runs the format check, lint, typecheck, and unit tests. CI runs lint, typecheck, and unit tests on every pull request. The Playwright e2e suite, which is also the only job that runs a production build, runs only for branches in this repository, because GitHub doesn't give repository secrets to pull requests from forks. If you're working from a fork and your change touches rendering, navigation, or auth, run `pnpm build` and, if you can, `pnpm e2e` before opening the pull request.
 
 ## Conventions
 
