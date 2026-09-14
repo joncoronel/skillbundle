@@ -1,5 +1,5 @@
 import { Polar } from "@convex-dev/polar";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { api, components, internal } from "./_generated/api";
 import { action, internalAction, query } from "./_generated/server";
 import { DataModel, Id } from "./_generated/dataModel";
@@ -14,6 +14,12 @@ const products = {
   proYearly: process.env.POLAR_PRO_YEARLY_PRODUCT_ID!,
 };
 
+// The email comes from the caller's token, not the `users` row, and only when
+// Clerk marks it verified. Polar reuses any existing customer with a matching
+// email and binds it to this user, so an unverified address here would let
+// someone claim another person's Polar customer. The stored row can't be trusted
+// for this: rows written before `verifiedPrimaryEmail` (convex/users.ts) may
+// still hold an unverified fallback until Clerk next sends `user.updated`.
 export const getUserInfo = query({
   args: {},
   handler: async (ctx) => {
@@ -28,10 +34,12 @@ export const getUserInfo = query({
     if (!user) {
       throw new Error("User not found");
     }
-    if (!user.email) {
-      throw new Error("User email is required for billing");
+    if (!identity.email || identity.emailVerified !== true) {
+      throw new ConvexError(
+        "Verify your email address before managing billing.",
+      );
     }
-    return { userId: user._id, email: user.email };
+    return { userId: user._id, email: identity.email };
   },
 });
 

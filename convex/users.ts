@@ -33,13 +33,13 @@ export const upsertFromClerk = internalMutation({
 /**
  * The primary email, and only if Clerk has verified it.
  *
- * This value is trusted downstream: `getByUrlId` checks it against
- * ADMIN_EMAILS, and billing hands it to Polar, which reuses any existing
- * customer with that email. There used to be a fallback to
- * `email_addresses[0]`, which can be an address the user added but never
- * verified, so someone could claim another person's email and inherit their
- * Polar customer. No verified primary means no email; billing then refuses
- * rather than guessing.
+ * There used to be a fallback to `email_addresses[0]`, which can be an address
+ * the user added but never verified. Nothing security-relevant reads the stored
+ * value any more: billing (`convex/polar.ts` `getUserInfo`) and the admin
+ * checks (`convex/devStats.ts`) read the verified email from the caller's token
+ * instead, because rows written before this change keep their old value until
+ * Clerk next sends `user.updated`. Storing only a verified address keeps the
+ * column honest for anything that reads it later.
  */
 export function verifiedPrimaryEmail(data: UserJSON): string | undefined {
   const primary = data.email_addresses?.find(

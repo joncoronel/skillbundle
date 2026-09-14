@@ -91,6 +91,20 @@ const PRO_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The plan a subscription grants. Split out of `getUserPlan` so the rule can be
+ * tested without a Polar component in convex-test (tests/plans.test.ts).
+ */
+export function planForSubscription(
+  subscription: { status: string; productKey?: string } | null,
+): Plan {
+  if (!subscription || !PRO_STATUSES.has(subscription.status)) return "free";
+  const { productKey } = subscription;
+  return productKey === "proMonthly" || productKey === "proYearly"
+    ? "pro"
+    : "free";
+}
+
+/**
  * Resolve the current user's plan from their active Polar subscription.
  * Returns "free" if no active subscription exists.
  */
@@ -99,17 +113,9 @@ export async function getUserPlan(ctx: QueryCtx): Promise<Plan> {
   if (!user) return "free";
 
   try {
-    const subscription = await polar.getCurrentSubscription(ctx, {
-      userId: user._id,
-    });
-
-    if (!subscription) return "free";
-    if (!PRO_STATUSES.has(subscription.status)) return "free";
-
-    const productKey = subscription.productKey;
-    if (productKey === "proMonthly" || productKey === "proYearly") return "pro";
-
-    return "free";
+    return planForSubscription(
+      await polar.getCurrentSubscription(ctx, { userId: user._id }),
+    );
   } catch {
     return "free";
   }
