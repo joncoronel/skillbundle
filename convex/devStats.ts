@@ -35,7 +35,7 @@ export async function checkIsAdmin(ctx: {
   auth: QueryCtx["auth"];
 }): Promise<boolean> {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.email) return false;
+  if (!identity?.email || identity.emailVerified !== true) return false;
   return ADMIN_EMAILS.includes(identity.email);
 }
 
@@ -47,9 +47,14 @@ export function checkIsAdminByEmail(email: string | undefined): boolean {
   return ADMIN_EMAILS.includes(email);
 }
 
+// Both checks require `emailVerified`, from the `email_verified` claim in the
+// Clerk "convex" JWT template (confirmed present, Sep 2026). An admin grant by
+// email is only as strong as proof the caller owns that address; if the claim
+// is ever dropped from the template, admin access fails closed.
 export async function assertAdmin(ctx: { auth: QueryCtx["auth"] }) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity?.email) throw new Error("Not authenticated");
+  if (identity.emailVerified !== true) throw new Error("Not authorized");
   if (ADMIN_EMAILS.length === 0) throw new Error("ADMIN_EMAILS not configured");
   if (!ADMIN_EMAILS.includes(identity.email)) throw new Error("Not authorized");
 }

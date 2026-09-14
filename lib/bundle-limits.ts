@@ -8,6 +8,13 @@
 export const MAX_BUNDLE_DESCRIPTION_LENGTH = 500;
 
 /**
+ * Bundle names show up in page titles, share metadata and OG images, where a
+ * multi-kilobyte name breaks the layout or bloats every render. 100 is well past
+ * any name a person types.
+ */
+export const MAX_BUNDLE_NAME_LENGTH = 100;
+
+/**
  * Hard cap on the number of skills a single bundle can hold. Enforced by
  * `createBundle` and `updateBundleSkills` before they hit the catalog
  * validator, so a pathological payload (10k skill refs) fails with a

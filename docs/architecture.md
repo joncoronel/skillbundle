@@ -722,7 +722,7 @@ User clicks "Upgrade to Pro"
 getUserPlan() returns "pro"
 ```
 
-- `convex/lib/plans.ts` — `getUserPlan(ctx)` (maps Polar `productKey` → plan), `getPlanLimits(plan)`, `FEATURE_GATING_ENABLED` master switch (when `false`, all users get full access).
+- `convex/lib/plans.ts` — `getUserPlan(ctx)` (maps Polar `productKey` → plan; only `active`, `trialing` and `past_due` subscriptions count, since the component returns any subscription that hasn't ended), `getPlanLimits(plan)`, `FEATURE_GATING_ENABLED` master switch (when `false`, all users get full access).
 - `convex/plans.ts` — `currentPlan` query for the frontend; `hooks/use-user-plan.ts` on the client.
 - `convex/polar.ts` — the two public billing actions, `generateCheckoutLink` and `generateCustomerPortalUrl`, written out by hand. Nothing is exported from `polar.api()`: its checkout action let the caller choose a free trial. Checkout arguments are allowlisted in `convex/lib/checkout.ts` (one of the two Pro product ids, no trial or metadata fields), and both actions count against the `billing` limit in `convex/rateLimits.ts`. The pricing page calls the action directly (`ProCheckoutButton`) rather than through `@convex-dev/polar/react`'s `CheckoutLink`, which has no error path.
 - Enforcement is two-layer: Convex mutations check limits server-side; UI disables controls / shows upgrade prompts client-side.

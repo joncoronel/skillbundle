@@ -10,6 +10,7 @@ import { getCurrentUser, getCurrentUserOrThrow } from "./users";
 import { getUserPlanWithLimits } from "./lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
+  MAX_BUNDLE_NAME_LENGTH,
   MAX_BUNDLE_SKILLS,
   MAX_BUNDLES_PER_USER,
   watchKey,
@@ -179,6 +180,11 @@ export const createBundle = mutation({
     if (!trimmedName) {
       throw new ConvexError("Name cannot be empty");
     }
+    if (trimmedName.length > MAX_BUNDLE_NAME_LENGTH) {
+      throw new ConvexError(
+        `Name must be ${MAX_BUNDLE_NAME_LENGTH} characters or fewer.`,
+      );
+    }
 
     const trimmedDescription = description?.trim();
     if (
@@ -299,6 +305,11 @@ export const updateBundleName = mutation({
     const trimmed = name.trim();
     if (!trimmed) {
       throw new ConvexError("Name cannot be empty");
+    }
+    if (trimmed.length > MAX_BUNDLE_NAME_LENGTH) {
+      throw new ConvexError(
+        `Name must be ${MAX_BUNDLE_NAME_LENGTH} characters or fewer.`,
+      );
     }
 
     await ctx.db.patch(bundleId, { name: trimmed, updatedAt: Date.now() });
@@ -631,7 +642,15 @@ export const getByUrlId = query({
       bundle.forkedFrom
         ? (async () => {
             const parent = await ctx.db.get(bundle.forkedFrom!);
-            if (!parent) return undefined;
+            // A private parent stays private: its name, link and owner are
+            // exactly what making it private hid. Same rule as this query's
+            // own gate above.
+            if (
+              !parent ||
+              (!parent.isPublic && parent.userId !== currentUser?._id)
+            ) {
+              return undefined;
+            }
             const parentCreator = await ctx.db.get(parent.userId);
             return {
               urlId: parent.urlId,

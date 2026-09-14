@@ -75,6 +75,22 @@ export function getPlanLimits(plan: Plan): PlanLimits {
 }
 
 /**
+ * Subscription statuses that count as paying.
+ *
+ * `polar.getCurrentSubscription` returns any subscription that hasn't ended,
+ * whatever its status (it only filters out an expired trial), so without this
+ * `incomplete` and `unpaid` subscriptions were Pro. `past_due` stays in on
+ * purpose: Polar is still retrying the renewal, and taking features away from
+ * someone whose card failed once is worse than a few days of grace. If the
+ * retries fail, Polar moves the subscription on and it drops out here.
+ */
+const PRO_STATUSES: ReadonlySet<string> = new Set([
+  "active",
+  "trialing",
+  "past_due",
+]);
+
+/**
  * Resolve the current user's plan from their active Polar subscription.
  * Returns "free" if no active subscription exists.
  */
@@ -88,6 +104,7 @@ export async function getUserPlan(ctx: QueryCtx): Promise<Plan> {
     });
 
     if (!subscription) return "free";
+    if (!PRO_STATUSES.has(subscription.status)) return "free";
 
     const productKey = subscription.productKey;
     if (productKey === "proMonthly" || productKey === "proYearly") return "pro";

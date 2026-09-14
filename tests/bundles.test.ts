@@ -19,6 +19,7 @@ import { makeTest } from "./_setup";
 import { FREE_WATCHED_SKILLS } from "../convex/lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
+  MAX_BUNDLE_NAME_LENGTH,
   MAX_BUNDLE_SKILLS,
 } from "../lib/bundle-limits";
 
@@ -139,6 +140,29 @@ describe("createBundle", () => {
         skills: [{ source: "owner/repo", skillId: "skill-a" }],
       }),
     ).rejects.toThrow(/Name cannot be empty/i);
+  });
+
+  test("rejects a name over the length cap, on create and on rename", async () => {
+    const { asUser } = await setup();
+    const tooLong = "x".repeat(MAX_BUNDLE_NAME_LENGTH + 1);
+    await expect(
+      asUser.mutation(api.bundles.createBundle, {
+        name: tooLong,
+        skills: [{ source: "owner/repo", skillId: "skill-a" }],
+      }),
+    ).rejects.toThrow(/Name must be/i);
+
+    // Exactly at the cap is fine, and trimming happens before the count.
+    const { bundleId } = await asUser.mutation(api.bundles.createBundle, {
+      name: `  ${"x".repeat(MAX_BUNDLE_NAME_LENGTH)}  `,
+      skills: [],
+    });
+    await expect(
+      asUser.mutation(api.bundles.updateBundleName, {
+        bundleId,
+        name: tooLong,
+      }),
+    ).rejects.toThrow(/Name must be/i);
   });
 
   test("rejects description over the length cap", async () => {
@@ -588,6 +612,43 @@ describe("getByUrlId access", () => {
 
     const anonymous = await t.query(api.bundles.getByUrlId, { urlId });
     expect(anonymous!.lastViewedAt).toBeUndefined();
+  });
+
+  test("a public fork does not reveal a closed parent, except to its owner", async () => {
+    const { t, userId } = await setup();
+    const parentOwner = await seedUser(t, "user-2");
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const parentId = await ctx.db.insert("bundles", {
+        userId: parentOwner,
+        isPublic: false,
+        name: "Closed parent",
+        urlId: "parent-closed",
+        skills: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("bundles", {
+        userId,
+        isPublic: true,
+        name: "Open fork",
+        urlId: "fork-open",
+        forkedFrom: parentId,
+        skills: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const anonymous = await t.query(api.bundles.getByUrlId, {
+      urlId: "fork-open",
+    });
+    expect(anonymous!.forkedFrom).toBeUndefined();
+
+    const asParentOwner = await t
+      .withIdentity({ subject: "user-2" })
+      .query(api.bundles.getByUrlId, { urlId: "fork-open" });
+    expect(asParentOwner!.forkedFrom?.name).toBe("Closed parent");
   });
 });
 
