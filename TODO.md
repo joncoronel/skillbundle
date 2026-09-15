@@ -1136,7 +1136,11 @@ pt-{12,16,20,24} pb-{20,24}`, copy-pasted across every route, with drift
 The public add flow (`/add`, search empty-state) lets any signed-in user add a
 GitHub-only skill. Abuse is bounded by hard validation (must be a real repo with
 a resolvable SKILL.md), the free-tier cap (`maxGitHubOnlyAdds`), leaderboard
-exclusion, and `addedBy` attribution for targeted removal. Not yet built: a
+exclusion, the add-flow rate limits (`convex/rateLimits.ts`), and `addedBy`
+attribution for targeted removal. Until skills.sh lists them, GitHub-only skills
+are also kept out of the sitemap (`listSitemapEntries`) and marked `noindex`
+(`skillTabMetadata`), so a throwaway repo gets no search traffic from being
+added (Sep 2026). They stay in in-app search on purpose. Not yet built: a
 report affordance on skill pages + an admin moderation view keyed on `addedBy`
 (e.g. list a user's adds, bulk-remove). Build when the first abuse actually shows
 up — attribution is already in place to support it.

@@ -3585,7 +3585,11 @@ export const listSitemapEntries = query({
     return {
       ...result,
       page: result.page
-        .filter((s) => !s.isDuplicate)
+        // GitHub-only skills stay out until skills.sh lists them. Any signed-in
+        // user can add one, nobody reviews it (TODO.md, "moderation / report
+        // queue"), and a sitemap entry is what would make a throwaway repo
+        // worth publishing for search traffic. Adoption clears the flag.
+        .filter((s) => !s.isDuplicate && !s.isGitHubOnly)
         .map((s) => ({
           source: s.source,
           skillId: s.skillId,

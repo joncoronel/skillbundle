@@ -1,7 +1,13 @@
 import { Polar } from "@convex-dev/polar";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { api, components, internal } from "./_generated/api";
-import { action, internalAction, query } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalQuery,
+  query,
+  type QueryCtx,
+} from "./_generated/server";
 import { DataModel, Id } from "./_generated/dataModel";
 import { parseCheckoutRequest } from "./lib/checkout";
 
@@ -14,25 +20,49 @@ const products = {
   proYearly: process.env.POLAR_PRO_YEARLY_PRODUCT_ID!,
 };
 
+async function requireBillingUser(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("User must be logged in to manage subscriptions");
+  }
+  const user = await ctx.db
+    .query("users")
+    .withIndex("byExternalId", (q) => q.eq("externalId", identity.subject))
+    .unique();
+  if (!user) {
+    throw new Error("User not found");
+  }
+  return { identity, userId: user._id };
+}
+
+// The email comes from the caller's token, not the `users` row, and only when
+// Clerk marks it verified. Polar reuses any existing customer with a matching
+// email and binds it to this user, so an unverified address here would let
+// someone claim another person's Polar customer. The stored row can't be trusted
+// for this: rows written before `verifiedPrimaryEmail` (convex/users.ts) may
+// still hold an unverified fallback until Clerk next sends `user.updated`.
 export const getUserInfo = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("User must be logged in to manage subscriptions");
+    const { identity, userId } = await requireBillingUser(ctx);
+    if (!identity.email || identity.emailVerified !== true) {
+      throw new ConvexError(
+        "Verify your email address before managing billing.",
+      );
     }
-    const user = await ctx.db
-      .query("users")
-      .withIndex("byExternalId", (q) => q.eq("externalId", identity.subject))
-      .unique();
-    if (!user) {
-      throw new Error("User not found");
-    }
-    if (!user.email) {
-      throw new Error("User email is required for billing");
-    }
-    return { userId: user._id, email: user.email };
+    return { userId, email: identity.email };
   },
+});
+
+// The customer portal needs only the user id: the portal session is for the
+// Polar customer already bound to this user, and no email is sent or matched.
+// Deliberately NOT gated on a verified email like `getUserInfo`. That gate
+// protects the email match at checkout; applied here it would only stop an
+// existing subscriber from opening the portal to cancel or fix their card.
+export const getBillingUserId = internalQuery({
+  args: {},
+  returns: v.id("users"),
+  handler: async (ctx) => (await requireBillingUser(ctx)).userId,
 });
 
 export const polar: Polar<DataModel, typeof products> = new Polar(
@@ -94,7 +124,9 @@ export const generateCustomerPortalUrl = action({
   args: {},
   returns: v.object({ url: v.string() }),
   handler: async (ctx): Promise<{ url: string }> => {
-    const { userId }: UserInfo = await ctx.runQuery(api.polar.getUserInfo);
+    const userId: Id<"users"> = await ctx.runQuery(
+      internal.polar.getBillingUserId,
+    );
     await ctx.runMutation(internal.rateLimits.enforce, {
       checks: [{ name: "billing", key: userId }],
     });

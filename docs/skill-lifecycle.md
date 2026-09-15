@@ -119,7 +119,7 @@ slug silently bind to the wrong SKILL.md.
 `addSkillFromGitHubPublic` (Branch 2, githubOnly.ts), fronted by
 `components/add-skill/add-skill-flow.tsx` (the `/add` page + the search
 empty-state dialog). The public actions share the admin cores — they only swap
-`assertAdmin` for auth and add two things:
+`assertAdmin` for auth and add the following:
 
 - **Attribution.** `addedBy` (a `users` id) is stamped on the genuine-insert
   path only (never relist/adoption, preserving the original adder). It threads
@@ -134,6 +134,15 @@ empty-state dialog). The public actions share the admin cores — they only swap
   (`enforceGitHubQuotaFor`), so a double-submit can't race past the cap; the
   action also pre-checks via `getGitHubAddQuota` for a clean early error and the
   preview's "N of M used" indicator.
+- **Rate limits.** Every public add call counts against the per-user limits in
+  `convex/rateLimits.ts` (a per-minute ceiling for everyone, plus an hourly one
+  for capped plans).
+- **Kept out of search engines until adopted.** A row with `isGitHubOnly` is
+  excluded from `listSitemapEntries` and its pages carry `noindex`
+  (`skillTabMetadata` in `lib/skill-tab-route.tsx`). Nobody reviews public adds,
+  so this removes the search-traffic payoff of publishing a throwaway repo.
+  Adoption clears the flag, and the skill becomes indexable with no extra step.
+  In-app search still includes them.
 
 **Slug aliasing (folder name vs frontmatter name).** skills.sh derives a skill's
 slug from its SKILL.md frontmatter `name`, but a pasted GitHub deep link only

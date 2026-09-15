@@ -21,35 +21,34 @@ export const MAX_DISCOVERY_FAILURES = 3;
 // Admin guard — checks caller's email against ADMIN_EMAILS env var
 // ---------------------------------------------------------------------------
 
-// Parsed once per Convex deployment / cold start. Worth caching since
-// `checkIsAdmin` runs on every reactive re-evaluation of `getByUrlId`, and
-// re-splitting the env var per call is wasted work.
+// Parsed once per Convex deployment / cold start, so re-splitting the env var
+// isn't repeated on every `isAdmin` re-evaluation.
 const ADMIN_EMAILS: readonly string[] = (process.env.ADMIN_EMAILS ?? "")
   .split(",")
   .map((e) => e.trim())
   .filter(Boolean);
 
-// Non-throwing admin check. Use when you need a boolean without short-circuiting
-// the surrounding query (e.g. folding `viewerIsAdmin` into a public bundle query).
+// Both admin checks read the email from the caller's token and require
+// `emailVerified`, from the `email_verified` claim in the Clerk "convex" JWT
+// template (confirmed present, Sep 2026). An admin grant by email is only as
+// strong as proof the caller owns that address; if the claim is ever dropped
+// from the template, admin access fails closed. Never check the stored
+// `users.email` here: it isn't proof of anything at request time.
+
+// Non-throwing admin check, for when a boolean is needed (the `/dev` gate goes
+// through `isAdmin` below).
 export async function checkIsAdmin(ctx: {
   auth: QueryCtx["auth"];
 }): Promise<boolean> {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.email) return false;
+  if (!identity?.email || identity.emailVerified !== true) return false;
   return ADMIN_EMAILS.includes(identity.email);
-}
-
-// Synchronous overload for callers that already have the user's email in scope
-// (e.g. after `getCurrentUser`). Avoids a second `ctx.auth.getUserIdentity()`
-// call in hot paths like `getByUrlId` that reactively re-runs on every bundle update.
-export function checkIsAdminByEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(email);
 }
 
 export async function assertAdmin(ctx: { auth: QueryCtx["auth"] }) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity?.email) throw new Error("Not authenticated");
+  if (identity.emailVerified !== true) throw new Error("Not authorized");
   if (ADMIN_EMAILS.length === 0) throw new Error("ADMIN_EMAILS not configured");
   if (!ADMIN_EMAILS.includes(identity.email)) throw new Error("Not authorized");
 }

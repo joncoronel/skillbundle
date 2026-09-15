@@ -55,7 +55,10 @@ import { generateInstallCommands } from "@/lib/install-commands";
 import { cn, formatDate } from "@/lib/utils";
 import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
 import { useBundleEditSession } from "@/hooks/use-bundle-edit-session";
-import { MAX_BUNDLE_DESCRIPTION_LENGTH } from "@/lib/bundle-limits";
+import {
+  MAX_BUNDLE_DESCRIPTION_LENGTH,
+  MAX_BUNDLE_NAME_LENGTH,
+} from "@/lib/bundle-limits";
 
 interface BundleViewProps {
   preloadedBundle: Preloaded<typeof api.bundles.getByUrlId>;
@@ -711,6 +714,7 @@ function RenameBundleDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My React stack"
+              maxLength={MAX_BUNDLE_NAME_LENGTH}
               required
             />
           </DialogBody>

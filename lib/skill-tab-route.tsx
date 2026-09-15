@@ -112,6 +112,11 @@ export async function skillTabMetadata(
     description,
     alternates: { canonical: path },
     openGraph: { title, description, type: "article", url: path, images },
+    // A GitHub-only skill was added by a user and nobody has reviewed it, so
+    // it isn't offered to search engines until skills.sh lists it (adoption
+    // clears the flag). Same rule as `listSitemapEntries`; see TODO.md,
+    // "moderation / report queue". Links are still followed.
+    ...(skill.isGitHubOnly && { robots: { index: false, follow: true } }),
   };
 }
 

@@ -10,6 +10,7 @@ import { getCurrentUser, getCurrentUserOrThrow } from "./users";
 import { getUserPlanWithLimits } from "./lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
+  MAX_BUNDLE_NAME_LENGTH,
   MAX_BUNDLE_SKILLS,
   MAX_BUNDLES_PER_USER,
   watchKey,
@@ -150,6 +151,25 @@ async function assertSkillsExist(
   }
 }
 
+/**
+ * The one set of rules for a bundle name, shared by `createBundle` and
+ * `updateBundleName`: trimmed, not empty, and within MAX_BUNDLE_NAME_LENGTH.
+ * The client forms check the same things first, but a direct call from the
+ * Convex dashboard or a custom client skips them, so the server has to as well.
+ */
+function normalizeBundleName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new ConvexError("Name cannot be empty");
+  }
+  if (trimmed.length > MAX_BUNDLE_NAME_LENGTH) {
+    throw new ConvexError(
+      `Name must be ${MAX_BUNDLE_NAME_LENGTH} characters or fewer.`,
+    );
+  }
+  return trimmed;
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -171,14 +191,7 @@ export const createBundle = mutation({
   handler: async (ctx, { name, description, skills }) => {
     const user = await getCurrentUserOrThrow(ctx);
 
-    // Defense-in-depth: the client form gates on `name.trim()` before
-    // submitting, but the server has to defend too — a direct call via
-    // the Convex dashboard or a custom client would otherwise be able to
-    // insert empty/whitespace-only names. Matches updateBundleName.
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      throw new ConvexError("Name cannot be empty");
-    }
+    const trimmedName = normalizeBundleName(name);
 
     const trimmedDescription = description?.trim();
     if (
@@ -296,10 +309,7 @@ export const updateBundleName = mutation({
       throw new ConvexError("Bundle not found or unauthorized");
     }
 
-    const trimmed = name.trim();
-    if (!trimmed) {
-      throw new ConvexError("Name cannot be empty");
-    }
+    const trimmed = normalizeBundleName(name);
 
     await ctx.db.patch(bundleId, { name: trimmed, updatedAt: Date.now() });
   },
@@ -631,7 +641,15 @@ export const getByUrlId = query({
       bundle.forkedFrom
         ? (async () => {
             const parent = await ctx.db.get(bundle.forkedFrom!);
-            if (!parent) return undefined;
+            // A private parent stays private: its name, link and owner are
+            // exactly what making it private hid. Same rule as this query's
+            // own gate above.
+            if (
+              !parent ||
+              (!parent.isPublic && parent.userId !== currentUser?._id)
+            ) {
+              return undefined;
+            }
             const parentCreator = await ctx.db.get(parent.userId);
             return {
               urlId: parent.urlId,

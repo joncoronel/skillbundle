@@ -26,6 +26,7 @@ import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import {
   FREE_WATCHED_SKILLS,
   MAX_BUNDLE_DESCRIPTION_LENGTH,
+  MAX_BUNDLE_NAME_LENGTH,
   watchKey,
 } from "@/lib/bundle-limits";
 
@@ -137,6 +138,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                   variant="elevated"
                   placeholder="My React stack"
                   value={name}
+                  maxLength={MAX_BUNDLE_NAME_LENGTH}
                   onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleSave();
