@@ -3,9 +3,13 @@
  * (`devStats.isAdmin` / `assertAdmin`) and billing identity
  * (`polar.getUserInfo`, whose email Polar uses to match an existing customer).
  * Both must read the email from the token and require `emailVerified`.
+ *
+ * And the one billing path that must NOT require it: the customer portal
+ * (`polar.getBillingUserId`), which matches no email and is how a subscriber
+ * cancels.
  */
 import { beforeAll, describe, expect, test } from "vitest";
-import { api } from "../convex/_generated/api";
+import { api, internal } from "../convex/_generated/api";
 import { makeTest } from "./_setup";
 
 const ADMIN = "admin@example.com";
@@ -44,7 +48,7 @@ describe("isAdmin", () => {
   });
 });
 
-describe("polar.getUserInfo", () => {
+describe("polar billing identity", () => {
   async function setup(storedEmail?: string) {
     const t = makeTest();
     const userId = await t.run((ctx) =>
@@ -71,7 +75,7 @@ describe("polar.getUserInfo", () => {
     expect(info).toEqual({ userId, email: "me@example.com" });
   });
 
-  test("refuses when the token email is not verified", async () => {
+  test("refuses checkout identity when the token email is not verified", async () => {
     const { t } = await setup("me@example.com");
     await expect(
       t
@@ -82,5 +86,13 @@ describe("polar.getUserInfo", () => {
         })
         .query(api.polar.getUserInfo),
     ).rejects.toThrow(/Verify your email/);
+  });
+
+  test("the portal lookup still works without a verified email", async () => {
+    const { t, userId } = await setup();
+    const result = await t
+      .withIdentity({ subject: "user_billing", emailVerified: false })
+      .query(internal.polar.getBillingUserId);
+    expect(result).toBe(userId);
   });
 });
