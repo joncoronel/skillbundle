@@ -6,8 +6,10 @@ import { InstallCommandBlock } from "@/components/install-command-block";
 import {
   generateInstallCommands,
   generateAllCommandsText,
+  uncoveredSkills,
   type BundleSkill,
 } from "@/lib/install-commands";
+import { useWellKnownIndexes } from "@/hooks/use-well-known-indexes";
 
 interface InstallCommandsProps {
   skills: BundleSkill[];
@@ -17,9 +19,10 @@ interface InstallCommandsProps {
 // "Install" title (the page owns that row) while the copy state stays here.
 export function CopyAllCommandsButton({ skills }: InstallCommandsProps) {
   const [copiedAll, setCopiedAll] = useState(false);
+  const wellKnown = useWellKnownIndexes(skills);
 
   async function handleCopyAll() {
-    const text = generateAllCommandsText(skills);
+    const text = generateAllCommandsText(skills, wellKnown);
     await navigator.clipboard.writeText(text);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
@@ -33,9 +36,15 @@ export function CopyAllCommandsButton({ skills }: InstallCommandsProps) {
 }
 
 export function InstallCommands({ skills }: InstallCommandsProps) {
-  const commands = generateInstallCommands(skills);
+  const wellKnown = useWellKnownIndexes(skills);
+  const commands = generateInstallCommands(skills, wellKnown);
+  // Skills no command covers — almost always a well-known skill whose domain
+  // publishes no root index for the CLI to read. Named out loud, because the
+  // alternative is a panel that silently lists fewer skills than the reader put
+  // in the bundle.
+  const uncovered = uncoveredSkills(skills, wellKnown);
 
-  if (commands.length === 0) return null;
+  if (commands.length === 0 && uncovered.length === 0) return null;
 
   return (
     <div className="space-y-3">
@@ -56,6 +65,16 @@ export function InstallCommands({ skills }: InstallCommandsProps) {
           )}
         </div>
       ))}
+
+      {uncovered.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          No install command for {uncovered.map((s) => s.skillId).join(", ")}.{" "}
+          {uncovered.length === 1
+            ? "Its source doesn't"
+            : "Their sources don't"}{" "}
+          publish a skills index the CLI can read.
+        </p>
+      )}
     </div>
   );
 }

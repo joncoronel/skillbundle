@@ -52,6 +52,7 @@ import {
   LockIcon,
 } from "@hugeicons/core-free-icons";
 import { generateInstallCommands } from "@/lib/install-commands";
+import { useWellKnownIndexes } from "@/hooks/use-well-known-indexes";
 import { cn, formatDate } from "@/lib/utils";
 import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
 import { useBundleEditSession } from "@/hooks/use-bundle-edit-session";
@@ -202,9 +203,12 @@ export function BundleView({
     () => buildRegister(skills, changes.items),
     [skills, changes],
   );
+  // Counted with the same map InstallCommands renders from, or the header
+  // would advertise a command count the panel below it doesn't produce.
+  const wellKnown = useWellKnownIndexes(skills);
   const commandCount = useMemo(
-    () => generateInstallCommands(skills).length,
-    [skills],
+    () => generateInstallCommands(skills, wellKnown).length,
+    [skills, wellKnown],
   );
 
   // The staging state lives HERE, not inside the edit chrome, so one register

@@ -154,7 +154,7 @@ const LAYOUT_VARS = {
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
-  installCommand: string;
+  installCommand: string | null;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -207,7 +207,7 @@ async function SkillDetailBody({
 }: {
   source: string;
   skillId: string;
-  installCommand: string;
+  installCommand: string | null;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -356,8 +356,14 @@ async function SkillDetailBody({
             a copy button is already the most legible thing on the page. The
             primary action is not beside it — it sits at the top of the sidebar,
             where the old design had it and where it does not have to share a
-            row with a string the reader is meant to read. */}
-        <InstallCommandBlock command={installCommand} className="mt-7" />
+            row with a string the reader is meant to read.
+
+            Absent for a well-known skill whose domain publishes no root index:
+            there is no command the CLI would accept, and the page says nothing
+            rather than printing one that fails (convex/wellKnown.ts). */}
+        {installCommand && (
+          <InstallCommandBlock command={installCommand} className="mt-7" />
+        )}
       </div>
 
       {/* The sidebar spans both content rows so its sticky child has the whole
@@ -471,7 +477,7 @@ async function SkillDetailBody({
 export function SkillDetailPageSkeleton({
   installCommand,
 }: {
-  installCommand: string;
+  installCommand: string | null;
 }) {
   return (
     <div
@@ -484,14 +490,17 @@ export function SkillDetailPageSkeleton({
           <Skeleton className="h-4 w-4/5" />
         </div>
 
-        <div className="mt-7 w-fit max-w-full rounded-xl bg-muted">
-          {/* The real command, hidden: it reserves the exact width the resolved
-              block will take, so nothing resizes under the reader when the body
-              lands. */}
-          <pre className="invisible overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-            {installCommand}
-          </pre>
-        </div>
+        {installCommand && (
+          <div className="mt-7 w-fit max-w-full rounded-xl bg-muted">
+            {/* The real command, hidden: it reserves the exact width the
+                resolved block will take, so nothing resizes under the reader
+                when the body lands. Skipped entirely when there is no command,
+                so the skeleton doesn't reserve a block the page won't draw. */}
+            <pre className="invisible overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
+              {installCommand}
+            </pre>
+          </div>
+        )}
       </div>
 
       <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">

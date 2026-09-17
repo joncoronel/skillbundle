@@ -11,6 +11,8 @@ import {
   generateAllCommandsText,
   buildSkillInstallCommand,
   buildSourceInstallCommand,
+  isSafeSkillRef,
+  uncoveredSkills,
   isSafeCommandSource,
   isSafeCommandSkillId,
 } from "../lib/install-commands";
@@ -33,13 +35,65 @@ describe("generateInstallCommands — happy path", () => {
   });
 
   test("generateAllCommandsText joins multiple sources with ' && '", () => {
-    const text = generateAllCommandsText([
-      { source: "owner/repo", skillId: "a" },
-      { source: "example.com", skillId: "b" },
-    ]);
-    expect(text).toBe(
-      "npx skills add owner/repo --skill a && npx skills add example.com --skill b",
+    const text = generateAllCommandsText(
+      [
+        { source: "owner/repo", skillId: "a" },
+        { source: "example.com", skillId: "b" },
+      ],
+      { "example.com": ["b"] },
     );
+    expect(text).toBe(
+      "npx skills add owner/repo --skill a && npx skills add https://example.com --skill b",
+    );
+  });
+
+  test("well-known skills group under the absolute-URL base", () => {
+    const result = generateInstallCommands(
+      [
+        { source: "example.com", skillId: "a" },
+        { source: "example.com", skillId: "b" },
+      ],
+      { "example.com": ["a", "b"] },
+    );
+    expect(result).toEqual([
+      {
+        source: "example.com",
+        skills: ["a", "b"],
+        command: "npx skills add https://example.com --skill a --skill b",
+        hasWarning: false,
+        excludedSkills: [],
+      },
+    ]);
+  });
+});
+
+describe("well-known skills with no usable index", () => {
+  test("are excluded from the command and reported as uncovered", () => {
+    const skills = [
+      { source: "owner/repo", skillId: "a" },
+      { source: "bun.sh", skillId: "bun" },
+    ];
+    // No map entry for bun.sh: its domain serves no root index, so there is no
+    // command shape that would work.
+    expect(generateInstallCommands(skills)).toEqual([
+      {
+        source: "owner/repo",
+        skills: ["a"],
+        command: "npx skills add owner/repo --skill a",
+        hasWarning: false,
+        excludedSkills: [],
+      },
+    ]);
+    expect(uncoveredSkills(skills)).toEqual([
+      { source: "bun.sh", skillId: "bun" },
+    ]);
+    expect(uncoveredSkills(skills, { "bun.sh": ["bun"] })).toEqual([]);
+  });
+
+  test("a source whose skills are all uncovered emits no command group", () => {
+    const skills = [{ source: "bun.sh", skillId: "bun" }];
+    expect(generateInstallCommands(skills)).toEqual([]);
+    expect(uncoveredSkills(skills)).toHaveLength(1);
   });
 });
 
@@ -144,6 +198,22 @@ describe("isSafeCommandSource / isSafeCommandSkillId", () => {
   });
 });
 
+describe("isSafeSkillRef", () => {
+  // The skill routes' 404 guard. It has to stay independent of whether a
+  // command exists: a well-known skill with no installable index still has a
+  // page, and this used to be spelled "buildSkillInstallCommand returned null".
+  test("accepts a well-known ref that has no install command", () => {
+    expect(isSafeSkillRef("bun.sh", "bun")).toBe(true);
+    expect(buildSkillInstallCommand("bun.sh", "bun")).toBeNull();
+  });
+
+  test("rejects malformed refs", () => {
+    expect(isSafeSkillRef("owner/repo/extra", "a")).toBe(false);
+    expect(isSafeSkillRef("owner/repo", "has space")).toBe(false);
+    expect(isSafeSkillRef("owner/..", "a")).toBe(false);
+  });
+});
+
 describe("buildSkillInstallCommand", () => {
   test("GitHub source uses the --skill flag form", () => {
     expect(buildSkillInstallCommand("owner/repo", "my-skill")).toBe(
@@ -151,10 +221,22 @@ describe("buildSkillInstallCommand", () => {
     );
   });
 
-  test("domain source uses the source/skillId form", () => {
-    expect(buildSkillInstallCommand("example.com", "my-skill")).toBe(
-      "npx skills add example.com/my-skill",
-    );
+  // `npx skills add example.com/my-skill` is what this used to emit, and the
+  // CLI reads it as the GitHub repo `github.com/example.com/my-skill`. The
+  // well-known form needs an absolute URL, and only works when the domain's
+  // index sits at its root — which is what the map argument answers.
+  test("well-known source needs its index, and uses the absolute-URL form", () => {
+    expect(buildSkillInstallCommand("example.com", "my-skill")).toBeNull();
+    expect(
+      buildSkillInstallCommand("example.com", "my-skill", {
+        "example.com": ["other-skill"],
+      }),
+    ).toBeNull();
+    expect(
+      buildSkillInstallCommand("example.com", "my-skill", {
+        "example.com": ["my-skill"],
+      }),
+    ).toBe("npx skills add https://example.com --skill my-skill");
   });
 
   test("skillId with a space returns null", () => {
@@ -173,12 +255,17 @@ describe("buildSourceInstallCommand", () => {
     );
   });
 
-  test("a well-known source gets no command", () => {
-    // `npx skills add bun.sh` parses as a git remote, not a well-known
-    // source, and the absolute URL that would work is not derivable from the
-    // domain. No command beats a broken one.
+  test("a well-known source needs a root index to get one", () => {
+    // `npx skills add bun.sh` parses as a git remote, not a well-known source,
+    // so the command has to be the absolute URL — and that only reaches
+    // anything when the domain serves its index at the root. bun.sh does not.
     expect(buildSourceInstallCommand("bun.sh")).toBeNull();
-    expect(buildSourceInstallCommand("open.feishu.cn")).toBeNull();
+    expect(buildSourceInstallCommand("bun.sh", { "bun.sh": [] })).toBeNull();
+    expect(
+      buildSourceInstallCommand("open.feishu.cn", {
+        "open.feishu.cn": ["lark-approval"],
+      }),
+    ).toBe("npx skills add https://open.feishu.cn");
   });
 
   test("unsafe or malformed sources get no command", () => {

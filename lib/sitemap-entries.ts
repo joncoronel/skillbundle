@@ -35,8 +35,8 @@ import {
  * as "Submitted URL not found (404)" against the whole file, so an entry that
  * cannot resolve is worse than a missing one. Two classes cannot:
  *
- *   1. **Slugs the routes reject.** Both skill pages call
- *      `buildSkillInstallCommand` and `notFound()` on null
+ *   1. **Slugs the routes reject.** Both skill pages call `isSafeSkillRef` and
+ *      `notFound()` when it fails
  *      (`app/(main)/[org]/[repo]/[skillId]/page.tsx`), so
  *      `isSafeCommandSource` + `isSafeCommandSkillId` ARE the routing
  *      predicate, not merely a shell-safety one. The catalog really carries

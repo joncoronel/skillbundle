@@ -27,6 +27,12 @@ import {
   rowPositionClassName,
 } from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
+import {
+  InstallCommandBlock,
+  INSTALL_COMMAND_BLOCK_HEIGHT,
+} from "@/components/install-command-block";
+import { buildSourceInstallCommand } from "@/lib/install-commands";
+import { loadWellKnownIndexes } from "@/lib/well-known-index";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 import { sourceHref } from "@/lib/skill-urls";
@@ -102,6 +108,10 @@ export default function WellKnownSourcePage({ params }: { params: Params }) {
 
 async function SourceHeader({ params }: { params: Params }) {
   const { source } = await params;
+  const installCommand = buildSourceInstallCommand(
+    source,
+    await loadWellKnownIndexes(source),
+  );
 
   return (
     <>
@@ -118,6 +128,14 @@ async function SourceHeader({ params }: { params: Params }) {
       </Breadcrumb>
 
       <h1 className={cn(LISTING_TITLE_SCALE, "mb-6")}>{source}</h1>
+
+      {/* The whole-source command, in the same place the repo page puts it.
+          Absent for a domain that serves no skills index at its root — 7 of our
+          26 do not, and `npx skills add https://{domain}` reaches nothing for
+          them. See convex/wellKnown.ts. */}
+      {installCommand && (
+        <InstallCommandBlock command={installCommand} className="mb-8" />
+      )}
     </>
   );
 }
@@ -143,6 +161,17 @@ function SourceHeaderSkeleton() {
       <div className={cn("mb-6", LISTING_TITLE_SCALE)}>
         <Skeleton className="h-[1em] w-64 max-w-full" />
       </div>
+      {/* The install command's box, at its resolved height — the repo page's
+          note applies. Reserved even though ~a quarter of domains end up with
+          no command: reserving is right for the majority and a shell that
+          reserves nothing would drop the list 76px on every navigation into the
+          other three quarters. */}
+      <div
+        className={cn(
+          "mb-8 w-72 max-w-full rounded-xl bg-muted",
+          INSTALL_COMMAND_BLOCK_HEIGHT,
+        )}
+      />
     </>
   );
 }

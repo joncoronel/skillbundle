@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, use } from "react";
+import { createContext, use, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
@@ -31,7 +31,8 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useCopyToClipboard } from "@/components/ui/cubby-ui/copy-button/hooks/use-copy-to-clipboard";
 import { useBundleActions, useIsSkillSelected } from "@/lib/bundle-selection";
-import { generateInstallCommands } from "@/lib/install-commands";
+import { buildSkillInstallCommand } from "@/lib/install-commands";
+import { useWellKnownIndexes } from "@/hooks/use-well-known-indexes";
 import { compareHref } from "@/lib/compare";
 import { formatInstalls } from "@/lib/utils";
 import type { SkillData } from "@/components/skill-card";
@@ -312,12 +313,19 @@ function BundleToggleButton({ skill }: { skill: SkillData }) {
 }
 
 function CopyInstallButton({ skill }: { skill: SkillData }) {
-  // Defer to the canonical install-command generator so the format stays
-  // in lockstep with the bundle-level install commands (single source of
-  // truth for `npx skills add ...`).
-  const command = generateInstallCommands([
-    { source: skill.source, skillId: skill.skillId },
-  ])[0]?.command;
+  // Defer to the canonical install-command builder so the format stays in
+  // lockstep with the detail page and the bundle-level commands (single source
+  // of truth for `npx skills add ...`). Null for a well-known skill whose
+  // domain publishes no root index — the button hides rather than copying a
+  // line that fails (convex/wellKnown.ts).
+  // Memoized so the hook's query args don't churn on every sheet render.
+  const sources = useMemo(() => [{ source: skill.source }], [skill.source]);
+  const wellKnown = useWellKnownIndexes(sources);
+  const command = buildSkillInstallCommand(
+    skill.source,
+    skill.skillId,
+    wellKnown,
+  );
   // useCopyToClipboard owns the 2s `isCopied` reset and its unmount
   // cleanup — covers the case where the sheet closes during the window
   // (which would otherwise schedule setState on a torn-down component).
@@ -337,6 +345,10 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
       });
     }
   }
+
+  // Nothing to copy — the footer keeps its other two actions rather than
+  // offering a button that would put a failing command on the clipboard.
+  if (!command) return null;
 
   return (
     <Button

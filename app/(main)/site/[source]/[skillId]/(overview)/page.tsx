@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 import { GlobalSearchIcon } from "@hugeicons/core-free-icons";
 import { SkillDetailPage } from "@/components/skill-detail-page";
 import { skillTabMetadata } from "@/lib/skill-tab-route";
-import { buildSkillInstallCommand } from "@/lib/install-commands";
+import {
+  buildSkillInstallCommand,
+  isSafeSkillRef,
+} from "@/lib/install-commands";
+import { loadWellKnownIndexes } from "@/lib/well-known-index";
 
 type Params = Promise<{ source: string; skillId: string }>;
 
@@ -28,8 +32,17 @@ export default async function WellKnownSkillPage({
   params: Params;
 }) {
   const { source, skillId } = await params;
-  const installCommand = buildSkillInstallCommand(source, skillId);
-  if (installCommand === null) notFound();
+  if (!isSafeSkillRef(source, skillId)) notFound();
+
+  // Null here is a page that renders without a command, NOT a 404: a
+  // well-known skill whose domain serves no root index (or doesn't name this
+  // skill in it) cannot be installed by slug, but it still has a record worth
+  // showing. See convex/wellKnown.ts.
+  const installCommand = buildSkillInstallCommand(
+    source,
+    skillId,
+    await loadWellKnownIndexes(source),
+  );
 
   return (
     <SkillDetailPage

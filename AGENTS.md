@@ -121,7 +121,7 @@ ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`
 Tables (`schema.ts`), grouped by concern:
 
 - **Skills catalog:** `skills` (full ~10 KB rows), `skillSummaries` (slim ~1.3 KB denormalized rows that lists/search/cards read), `skillEmbeddings` (vector search), `skillAudits` + `skillSnapshots` (security verdicts + install-count history), `syncStats`.
-- **Sync / dedup support:** `curatedOwnerSummaries`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`.
+- **Sync / dedup support:** `curatedOwnerSummaries`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`, `wellKnownIndexes` (per-domain skills-index probe results; what decides whether a site page can show an install command).
 - **Version archive:** `skillVersions` (one row per detected SKILL.md change, raw file in `_storage`; `isBaseline` marks a starting point rather than an edit).
 - **Users & bundles:** `users`, `bundles`. (`bundleStats` and `bundleStars` were removed — see the note at the end of `schema.ts`.)
 
@@ -129,6 +129,7 @@ Modules, grouped by concern:
 
 - **Skill sync & lifecycle:** `skills.ts` (sync pipeline + catalog queries), `reconcile.ts`, `curated.ts` / `curatedRefresh.ts`, `duplicates.ts`, `audits.ts`, `crons.ts`, plus `lib/*` helpers (`detailRefresh`, `skillHealth`, `source`, `appDay`, `pagination`, `github`, `skillsApi`, `embeddings`). Documented in docs/skill-lifecycle.md.
 - **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
+- **Well-known sources:** `wellKnown.ts` (weekly probe of each well-known domain's root skills index). Read its header before touching any `npx skills add` string — the command for a well-known source is not derivable from the source, and the obvious form is one the CLI resolves to a GitHub repo.
 - **Version archive & monitoring:** `skillVersions.ts` (read + write API over the change archive; `freshness.ts` decides which SKILL.mds to re-check).
 - **Bundles & social:** `bundles.ts`.
 - **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts`, `rateLimits.ts` (per-user limits on public actions that spend money or GitHub budget; read its header before changing a number or adding an app-wide limit) (+ `convex.config.ts` registers the `@convex-dev/polar` and `@convex-dev/rate-limiter` components).
@@ -146,7 +147,7 @@ NAMES should exist. It has twice pointed at files that had been deleted.
 
 ### Crons (`crons.ts`)
 
-Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06:45 → `reconcileUnseenSkills` 07:00, with the discovery/content/audit/embedding pipeline chained off the sync), hourly + 30-min leaderboard refreshes (trending / hot), daily cache cleanups, and a weekly Sunday duplicate chain (resolve repo identities 08:00 → curated refresh 09:00 → re-resolve stale identities 10:00). Production-only (gated by `CRONS_ENABLED`).
+Daily sync chain (`syncSkills` 06:00 UTC → curated 06:30 → snapshot prune 06:45 → `reconcileUnseenSkills` 07:00, with the discovery/content/audit/embedding pipeline chained off the sync), hourly + 30-min leaderboard refreshes (trending / hot), daily cache cleanups, and a weekly Sunday chain (resolve repo identities 08:00 → curated refresh 09:00 → re-resolve stale identities 10:00 → well-known index probe 11:00). Production-only (gated by `CRONS_ENABLED`).
 
 ### Charts
 
