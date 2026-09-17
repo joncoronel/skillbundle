@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
+import { InstallCommandBlock } from "@/components/install-command-block";
 import {
   generateInstallCommands,
   generateAllCommandsText,
@@ -47,14 +47,7 @@ export function InstallCommands({ skills }: InstallCommandsProps) {
               ({cmd.skills.length} skill{cmd.skills.length !== 1 ? "s" : ""})
             </span>
           </p>
-          <div className="group relative w-fit max-w-full rounded-xl bg-muted">
-            <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-              {cmd.command}
-            </pre>
-            <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
-              <CopyButton content={cmd.command} className="backdrop-blur-sm" />
-            </div>
-          </div>
+          <InstallCommandBlock command={cmd.command} />
           {cmd.hasWarning && (
             <p className="mt-1.5 text-xs text-warning-foreground">
               Some skills in this command may not be installable: their source

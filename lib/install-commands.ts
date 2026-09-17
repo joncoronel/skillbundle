@@ -61,6 +61,25 @@ export function buildSkillInstallCommand(
     : `npx skills add ${source}/${skillId}`;
 }
 
+/**
+ * The source-level install command shown on a repo's directory page. Running
+ * `npx skills add owner/repo` with no `--skill` flag lets the CLI list every
+ * skill in the repo and prompt for a selection, which is the whole point of
+ * offering it beside the per-skill commands.
+ *
+ * GitHub sources only, and not for lack of trying: the CLI parses a bare
+ * `domain.com` as a git remote, and reaches a well-known source only from an
+ * absolute URL (`npx skills add https://bun.sh/docs`). That URL is not the
+ * domain — bun.sh and mintlify.com both serve their index under a base path —
+ * and the skills.sh API returns `installUrl: null` for every well-known skill,
+ * so we have nothing to build it from. Returns null there instead of emitting
+ * a command that fails.
+ */
+export function buildSourceInstallCommand(source: string): string | null {
+  if (!isSafeCommandSource(source) || !isGitHubSource(source)) return null;
+  return `npx skills add ${source}`;
+}
+
 export function generateInstallCommands(
   skills: BundleSkill[],
 ): InstallCommand[] {

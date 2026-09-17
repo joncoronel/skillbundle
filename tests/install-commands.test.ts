@@ -10,6 +10,7 @@ import {
   generateInstallCommands,
   generateAllCommandsText,
   buildSkillInstallCommand,
+  buildSourceInstallCommand,
   isSafeCommandSource,
   isSafeCommandSkillId,
 } from "../lib/install-commands";
@@ -162,5 +163,28 @@ describe("buildSkillInstallCommand", () => {
 
   test("source containing a percent-sign returns null", () => {
     expect(buildSkillInstallCommand("owner/re%20po", "my-skill")).toBeNull();
+  });
+});
+
+describe("buildSourceInstallCommand", () => {
+  test("a GitHub source becomes the flagless whole-repo command", () => {
+    expect(buildSourceInstallCommand("vercel-labs/skills")).toBe(
+      "npx skills add vercel-labs/skills",
+    );
+  });
+
+  test("a well-known source gets no command", () => {
+    // `npx skills add bun.sh` parses as a git remote, not a well-known
+    // source, and the absolute URL that would work is not derivable from the
+    // domain. No command beats a broken one.
+    expect(buildSourceInstallCommand("bun.sh")).toBeNull();
+    expect(buildSourceInstallCommand("open.feishu.cn")).toBeNull();
+  });
+
+  test("unsafe or malformed sources get no command", () => {
+    expect(buildSourceInstallCommand("owner/repo; rm -rf /")).toBeNull();
+    expect(buildSourceInstallCommand("owner/repo/extra")).toBeNull();
+    expect(buildSourceInstallCommand("owner/..")).toBeNull();
+    expect(buildSourceInstallCommand("")).toBeNull();
   });
 });

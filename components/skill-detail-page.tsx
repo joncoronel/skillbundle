@@ -6,7 +6,7 @@ import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { GitCompareIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
+import { InstallCommandBlock } from "@/components/install-command-block";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
@@ -357,19 +357,7 @@ async function SkillDetailBody({
             primary action is not beside it — it sits at the top of the sidebar,
             where the old design had it and where it does not have to share a
             row with a string the reader is meant to read. */}
-        {/* `w-fit`, not full width. The command is a fixed string a reader
-            copies, so the block shrink-wraps to it; stretched across the whole
-            column the fill became a band of empty grey with a few words at the
-            left end. `max-w-full` keeps a long command scrollable instead of
-            widening the column. */}
-        <div className="group relative mt-7 w-fit max-w-full rounded-xl bg-muted">
-          <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-            {installCommand}
-          </pre>
-          <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
-            <CopyButton content={installCommand} className="backdrop-blur-sm" />
-          </div>
-        </div>
+        <InstallCommandBlock command={installCommand} className="mt-7" />
       </div>
 
       {/* The sidebar spans both content rows so its sticky child has the whole
