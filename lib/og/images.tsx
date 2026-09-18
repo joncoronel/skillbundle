@@ -3,7 +3,10 @@ import { cacheLife } from "next/cache";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { formatInstalls } from "@/lib/utils";
-import { buildSkillInstallCommand } from "@/lib/install-commands";
+import {
+  buildSkillInstallCommand,
+  isSafeSkillRef,
+} from "@/lib/install-commands";
 import { og } from "./theme";
 import { FONT } from "./fonts";
 import {
@@ -191,27 +194,38 @@ export function sectionOgImage({
  * the `og:title` beside it disagree. Accepted as a known loss.
  */
 export function skillOgImage(source: string, skillId: string) {
-  const command = buildSkillInstallCommand(source, skillId);
   // A malformed source, NOT a missing skill. Existence is deliberately no
   // longer checked: the 404 branch renders a card too, so the lookup never
   // saved a render, it only chose which one to draw — and a Convex read that
   // picks between two equally expensive draws is not worth being a data
   // dependency that would drag the lifetime back down to a day.
-  if (command === null) {
+  if (!isSafeSkillRef(source, skillId)) {
     return sectionOgImage({
       word: "404",
       subtitle: "This skill may have been delisted or moved.",
     });
   }
 
+  // Null for every well-known skill: their command depends on where the domain
+  // publishes its index, and that answer lives in Convex — exactly
+  // the data dependency the paragraph above refuses to take on for a card
+  // cached for a year. So those cards carry the title and source and no command
+  // row, rather than the `{domain}/{id}` line that used to sit here and that
+  // the CLI reads as a GitHub repo (convex/wellKnown.ts).
+  // `{}` rather than a default: every caller states whether it has the
+  // well-known map, and this one cannot have it (see above).
+  const command = buildSkillInstallCommand(source, skillId, {});
+
   return renderOg(
     <Frame category="Skill">
       <Title text={skillId} size={Math.min(nameSize(skillId), 54)} />
       <MetaLine text={source} />
 
-      <div style={{ display: "flex", marginTop: 26 }}>
-        <CommandRow command={command} />
-      </div>
+      {command && (
+        <div style={{ display: "flex", marginTop: 26 }}>
+          <CommandRow command={command} />
+        </div>
+      )}
     </Frame>,
     { cache: OG_CACHE.YEAR },
   );

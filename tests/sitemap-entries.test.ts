@@ -70,7 +70,7 @@ describe("URL shapes", () => {
 });
 
 describe("unroutable rows are dropped, not escaped", () => {
-  // The skill routes call buildSkillInstallCommand and notFound() on null, so
+  // The skill routes call isSafeSkillRef and notFound() when it fails, so
   // these slugs 404 whether they arrive raw or percent-encoded. Real catalog
   // shapes: 126 rows as of Aug 2026.
   test.each([

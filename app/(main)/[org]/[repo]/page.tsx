@@ -27,6 +27,11 @@ import {
   rowPositionClassName,
 } from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
+import {
+  InstallCommandBlock,
+  InstallCommandBlockSkeleton,
+} from "@/components/install-command-block";
+import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 import { sourceHref } from "@/lib/skill-urls";
@@ -102,6 +107,7 @@ export default function RepoPage({ params }: { params: Params }) {
 
 async function RepoHeader({ params }: { params: Params }) {
   const { org, repo } = await params;
+  const installCommand = buildSourceInstallCommand(`${org}/${repo}`, {});
 
   return (
     <>
@@ -128,6 +134,17 @@ async function RepoHeader({ params }: { params: Params }) {
         <wbr />
         <span>{repo}</span>
       </h1>
+
+      {/* The whole-repo command, which is what the CLI does when `--skill` is
+          omitted: it lists every skill in the repo and asks which to install.
+          It lives here, in the params-only boundary, rather than beside the
+          list — it depends on the URL alone, so it resolves with the title
+          instead of waiting on Convex. `installCommand` is null only for a
+          source that cannot be a GitHub repo, which is a URL the list below
+          notFound()s on anyway. */}
+      {installCommand && (
+        <InstallCommandBlock command={installCommand} className="mb-8" />
+      )}
     </>
   );
 }
@@ -157,6 +174,11 @@ function RepoHeaderSkeleton() {
       <div className={cn("mb-6", LISTING_TITLE_SCALE)}>
         <Skeleton className="h-[1em] w-80 max-w-full" />
       </div>
+      {/* The install command's box, at its resolved height. The string is
+          URL-derived so the shell cannot draw it, but leaving the box out
+          dropped the meta row and the whole list 76px on every navigation
+          into this route. */}
+      <InstallCommandBlockSkeleton className="mb-8" />
     </>
   );
 }

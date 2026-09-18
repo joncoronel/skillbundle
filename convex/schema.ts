@@ -654,6 +654,39 @@ export default defineSchema({
     repoCount: v.number(),
   }),
 
+  // One row per well-known source (a domain like "open.feishu.cn"), recording
+  // whether that domain still publishes a skills index the CLI can reach, at
+  // the root or under one of the prober's fixed base paths, and which skill
+  // names that index advertises. Written weekly by
+  // wellKnown.refreshWellKnownIndexes; read by the site pages to decide whether
+  // they can show an install command at all.
+  //
+  // It exists because a well-known source's install command is not derivable
+  // from the source string, only from what its domain serves. The argument, the
+  // CLI behaviour behind it and the measured coverage are in the header of
+  // convex/wellKnown.ts; don't restate them here, a copy of that paragraph
+  // lived in this comment and had already drifted from it.
+  //
+  // `basePath` is which of the prober's own fixed base paths answered: "" for
+  // the domain root, or a single segment such as "docs". Every command is built
+  // by joining it onto the source, so the only values it can hold are the ones
+  // in `BASE_PATHS`. `indexUrl` is the URL that actually answered, after
+  // redirects, and is diagnostics only: a third party controls it, so nothing
+  // copyable may be derived from it.
+  //
+  // A row exists for every well-known source we have reached. `basePath`
+  // undefined means the domain answered with no usable index (`skillNames` is
+  // empty too), or the row predates the field; either way readers show no
+  // command. A source we have never reached has no row at all, which is a
+  // different state on purpose.
+  wellKnownIndexes: defineTable({
+    source: v.string(),
+    basePath: v.optional(v.string()),
+    indexUrl: v.union(v.string(), v.null()),
+    skillNames: v.array(v.string()),
+    checkedAt: v.number(),
+  }).index("by_source", ["source"]),
+
   githubTreeCache: defineTable({
     repo: v.string(),
     branch: v.string(),

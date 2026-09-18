@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { SkillDetailPage } from "@/components/skill-detail-page";
 import { skillTabMetadata } from "@/lib/skill-tab-route";
-import { buildSkillInstallCommand } from "@/lib/install-commands";
+import { isSafeSkillRef } from "@/lib/install-commands";
 
 type Params = Promise<{ org: string; repo: string; skillId: string }>;
 
@@ -26,14 +26,13 @@ export async function generateMetadata(
 export default async function SkillPage({ params }: { params: Params }) {
   const { org, repo, skillId } = await params;
   const source = `${org}/${repo}`;
-  const installCommand = buildSkillInstallCommand(source, skillId);
-  if (installCommand === null) notFound();
+  if (!isSafeSkillRef(source, skillId)) notFound();
 
   return (
     <SkillDetailPage
       source={source}
       skillId={skillId}
-      installCommand={installCommand}
+      wellKnown={{}}
       externalUrl={`https://github.com/${source}`}
       externalIcon={GithubIcon}
       externalLabel={source}

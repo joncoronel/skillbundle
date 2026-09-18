@@ -59,6 +59,7 @@ import type * as skillsAuth from "../skillsAuth.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as typesense from "../typesense.js";
 import type * as users from "../users.js";
+import type * as wellKnown from "../wellKnown.js";
 
 import type {
   ApiFromModules,
@@ -118,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   subscriptions: typeof subscriptions;
   typesense: typeof typesense;
   users: typeof users;
+  wellKnown: typeof wellKnown;
 }>;
 
 /**

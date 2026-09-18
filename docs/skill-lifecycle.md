@@ -79,6 +79,7 @@ stale set is existing summaries), and the tag is set-on-insert only — so
 | `resolveRepoIdentities`        | weekly Sun 08:00                             | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto **never-resolved** summaries, cached per repo.                                                                                              |
 | `refreshCuratedSkills`         | weekly Sun 09:00                             | Detail-refresh **curated-only** skills (never on the leaderboard) so their count + chart aren't frozen.                                                                                                   |
 | `reresolveStaleRepoIdentities` | weekly Sun 10:00                             | Re-check **already-resolved** repos past their TTL against GitHub; re-stamp summaries when a repo renamed after it was first stamped.                                                                     |
+| `refreshWellKnownIndexes`      | weekly Sun 11:00                             | Re-probe every well-known domain's skills index, at the root and under `BASE_PATHS`; record which skills it advertises. Decides whether the site pages can print an install command at all. See below.    |
 
 ## "Seen" and delisting
 
@@ -701,6 +702,60 @@ the live repo; off-board ones simply delist.
   flips to the live name, reconcile skips it and it delists on the 30-day track.
   Detection cadence is ~2-3 weeks (TTL paired with the weekly cron), acceptable
   for a rare event whose only symptom is a single dead-alias page.
+
+## Well-known install commands (`refreshWellKnownIndexes`)
+
+A GitHub skill's install command is a string: `npx skills add owner/repo --skill
+id`. A well-known skill's is not derivable at all, and the pages used to print
+`npx skills add domain.com/id`, which the CLI parses as the GitHub repo
+`github.com/domain.com/id` and fails on.
+
+Reading the CLI's parser (`skills@1.7.0`, `parseSource`), the only shape it
+accepts for a well-known source is an **absolute URL** — `npx skills add
+https://bun.sh/docs`. It then looks for the index under that URL's path first
+and the domain root second. We can build `https://{source}` but never a base
+path, and skills.sh's API returns `installUrl: null` for every well-known skill,
+so there is nothing to copy from upstream either.
+
+So `convex/wellKnown.ts` asks the domains directly, weekly, and records the
+answer in `wellKnownIndexes`:
+
+- probe `.well-known/agent-skills/index.json` and `.../skills/index.json` (the
+  CLI's two paths, in its order) under the domain root, then under `/docs` and
+  `/skills`. The CLI accepts any base path and several sources use one:
+  mintlify.com publishes under `/docs`, and nothing in the skills.sh API records
+  that, so the only way to find it is to look. Those two bases recover four
+  domains and 19 skills; `/doc` and `/ai` recover none. The chosen base is built
+  from that fixed list, never from a response, because it ends up in a copyable
+  shell command;
+- a 200 only counts if it parses as JSON with a `skills` array — modelscope.cn
+  serves its SPA's HTML and skills.volces.com a JSON error envelope, both with
+  a 200, and a status-code-only check recorded both as installable;
+- store the `name` of every entry. The CLI matches `--skill` against those, so
+  a skill absent from its own domain's index gets no command either;
+- distinguish "answered, with nothing usable" from "never answered". A 404 is a
+  real answer and clears the row. A timeout, a TLS or DNS failure, a 5xx, a 429
+  or a CDN's 403 is not: the previous row and its `checkedAt` are left alone, so
+  one blip cannot cost a domain its commands until the next weekly run. A stale
+  `checkedAt` beside a live index is the signal that this happened.
+
+Measured against production Sep 2026: **20 of 26 domains** answer, covering
+**128 of 161 well-known skills**. The gaps are real and the silence is the
+point. bun.sh's index is gone entirely (its skills.sh entry is stale),
+modelscope.cn serves its SPA at every path, and smithery.ai's index names one of
+the eight skills we list for it.
+
+Weekly rather than daily because the expensive half is a full walk of
+`skillSummaries` to find the ~26 well-known sources — there is no index that
+isolates them — while the cheap half (at most 26 x 3 bases x 2 paths = 156
+requests) watches files that publishers change on the order of months. A site skill added mid-week has no
+command until the job runs; `npx convex run wellKnown:refreshWellKnownIndexes`
+is the manual path.
+
+Readers: `lib/well-known-index.ts` (server pages, `'use cache'`) and
+`hooks/use-well-known-indexes.ts` (the bundle page and quick-look sheet, over
+the websocket). Both feed `lib/install-commands.ts`, where an absent entry means
+"render no command" everywhere.
 
 ## Tuning constants
 

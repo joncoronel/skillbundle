@@ -6,7 +6,11 @@ import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { GitCompareIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
+import {
+  InstallCommandBlock,
+  InstallCommandBlockSkeleton,
+  InstallCommandUnavailable,
+} from "@/components/install-command-block";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
@@ -19,6 +23,12 @@ import type { SectionNavItem } from "@/components/skill-section-nav";
 import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { skillHref } from "@/lib/skill-urls";
+import {
+  buildSkillInstallCommand,
+  uncoveredReason,
+  type UncoveredReason,
+  type WellKnownIndexes,
+} from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import {
   copyCount,
@@ -154,7 +164,9 @@ const LAYOUT_VARS = {
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
-  installCommand: string;
+  // The map, not a finished command: this component needs it twice, once for
+  // the command and once for the reason there isn't one.
+  wellKnown: WellKnownIndexes;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -169,11 +181,12 @@ type SkillDetailPageProps = {
 export function SkillDetailPage({
   source,
   skillId,
-  installCommand,
+  wellKnown,
   externalUrl,
   externalIcon,
   externalLabel,
 }: SkillDetailPageProps) {
+  const installCommand = buildSkillInstallCommand(source, skillId, wellKnown);
   return (
     <div className="mt-8" style={LAYOUT_VARS}>
       {/* Boundary sits around the Suspense, not inside it, so it covers the
@@ -187,6 +200,7 @@ export function SkillDetailPage({
             source={source}
             skillId={skillId}
             installCommand={installCommand}
+            noCommandReason={uncoveredReason(source, wellKnown)}
             externalUrl={externalUrl}
             externalIcon={externalIcon}
             externalLabel={externalLabel}
@@ -201,13 +215,15 @@ async function SkillDetailBody({
   source,
   skillId,
   installCommand,
+  noCommandReason,
   externalUrl,
   externalIcon,
   externalLabel,
 }: {
   source: string;
   skillId: string;
-  installCommand: string;
+  installCommand: string | null;
+  noCommandReason: UncoveredReason;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -356,20 +372,23 @@ async function SkillDetailBody({
             a copy button is already the most legible thing on the page. The
             primary action is not beside it — it sits at the top of the sidebar,
             where the old design had it and where it does not have to share a
-            row with a string the reader is meant to read. */}
-        {/* `w-fit`, not full width. The command is a fixed string a reader
-            copies, so the block shrink-wraps to it; stretched across the whole
-            column the fill became a band of empty grey with a few words at the
-            left end. `max-w-full` keeps a long command scrollable instead of
-            widening the column. */}
-        <div className="group relative mt-7 w-fit max-w-full rounded-xl bg-muted">
-          <pre className="overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-            {installCommand}
-          </pre>
-          <div className="absolute top-1/2 right-1.5 -translate-y-1/2">
-            <CopyButton content={installCommand} className="backdrop-blur-sm" />
-          </div>
-        </div>
+            row with a string the reader is meant to read.
+
+            A well-known skill with no reachable index, or whose index does
+            not name it, gets the note instead. There is no command the CLI would accept for it
+            (convex/wellKnown.ts), and an empty slot reads as a missing feature
+            rather than an unavailable one. Never reached by a GitHub skill:
+            those always have a command, and a malformed ref 404s upstream. */}
+        {installCommand ? (
+          <InstallCommandBlock command={installCommand} className="mt-7" />
+        ) : (
+          <InstallCommandUnavailable
+            source={source}
+            skillId={skillId}
+            reason={noCommandReason}
+            className="mt-7"
+          />
+        )}
       </div>
 
       {/* The sidebar spans both content rows so its sticky child has the whole
@@ -483,7 +502,7 @@ async function SkillDetailBody({
 export function SkillDetailPageSkeleton({
   installCommand,
 }: {
-  installCommand: string;
+  installCommand: string | null;
 }) {
   return (
     <div
@@ -496,14 +515,13 @@ export function SkillDetailPageSkeleton({
           <Skeleton className="h-4 w-4/5" />
         </div>
 
-        <div className="mt-7 w-fit max-w-full rounded-xl bg-muted">
-          {/* The real command, hidden: it reserves the exact width the resolved
-              block will take, so nothing resizes under the reader when the body
-              lands. */}
-          <pre className="invisible overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-            {installCommand}
-          </pre>
-        </div>
+        {/* Always reserved. The body fills this slot either way, with the
+            command or with the note explaining its absence, and both are the
+            same 44px box. */}
+        <InstallCommandBlockSkeleton
+          command={installCommand ?? undefined}
+          className="mt-7"
+        />
       </div>
 
       <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
@@ -602,6 +620,11 @@ export function SkillDetailPageSkeleton({
 // rendered on-demand; once ISR caches the page, repeat visits serve the
 // finished HTML and never hit this. The masthead's own skeleton lives with the
 // layout (SkillMastheadSkeleton) — this covers only the tab body.
+//
+// The placeholder command is a stand-in, not a claim. `loading.tsx` takes no
+// params, so this cannot know which skill it is covering, only that the slot
+// will hold a 44px box: a command for every GitHub skill and for 128 of 161
+// well-known ones, and the note explaining its absence for the other 33.
 export function SkillDetailPageLoading() {
   return (
     <div className="mt-8">

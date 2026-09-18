@@ -27,6 +27,16 @@ import {
   rowPositionClassName,
 } from "@/lib/listing-styles";
 import { SourceSkillList } from "@/components/source-skill-list";
+import {
+  InstallCommandBlock,
+  InstallCommandBlockSkeleton,
+  InstallCommandUnavailable,
+} from "@/components/install-command-block";
+import {
+  buildSourceInstallCommand,
+  uncoveredReason,
+} from "@/lib/install-commands";
+import { loadWellKnownIndexes } from "@/lib/well-known-index";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 import { sourceHref } from "@/lib/skill-urls";
@@ -118,7 +128,33 @@ async function SourceHeader({ params }: { params: Params }) {
       </Breadcrumb>
 
       <h1 className={cn(LISTING_TITLE_SCALE, "mb-6")}>{source}</h1>
+
+      {/* Its own boundary, because it is the only part of this header that
+          needs Convex. The repo page builds its command from the URL alone and
+          says so; putting this read above the title would have made the
+          breadcrumb and the title wait on it too. */}
+      <Suspense fallback={<InstallCommandBlockSkeleton className="mb-8" />}>
+        <SourceInstallCommand source={source} />
+      </Suspense>
     </>
+  );
+}
+
+async function SourceInstallCommand({ source }: { source: string }) {
+  const wellKnown = await loadWellKnownIndexes(source);
+  const installCommand = buildSourceInstallCommand(source, wellKnown);
+
+  // 6 of our 26 domains serve no skills index the CLI can reach, at the root or
+  // under the base paths we probe, and they get the note instead. See
+  // convex/wellKnown.ts.
+  return installCommand ? (
+    <InstallCommandBlock command={installCommand} className="mb-8" />
+  ) : (
+    <InstallCommandUnavailable
+      source={source}
+      reason={uncoveredReason(source, wellKnown)}
+      className="mb-8"
+    />
   );
 }
 
@@ -143,6 +179,12 @@ function SourceHeaderSkeleton() {
       <div className={cn("mb-6", LISTING_TITLE_SCALE)}>
         <Skeleton className="h-[1em] w-64 max-w-full" />
       </div>
+      {/* The install slot, at the 44px both branches take: a command, or the
+          note explaining its absence. Measured exact down to 768px. Below
+          ~440px the note wraps to two lines and the list shifts 20px when the
+          header lands, which is the price of a sentence whose length depends on
+          the domain name. */}
+      <InstallCommandBlockSkeleton className="mb-8" />
     </>
   );
 }

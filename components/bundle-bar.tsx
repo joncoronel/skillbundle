@@ -26,6 +26,7 @@ import {
 import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
 import { compareHref } from "@/lib/compare";
 import { generateAllCommandsText } from "@/lib/install-commands";
+import { useWellKnownIndexes } from "@/hooks/use-well-known-indexes";
 import {
   SaveBundleDialog,
   createSaveBundleDialogHandle,
@@ -42,6 +43,11 @@ export function BundleBar() {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // A selection can hold well-known skills, whose command depends on what
+  // their domain publishes. Without this the builder falls back to its empty
+  // default and writes nothing for them.
+  const { indexes: wellKnown, pending: wellKnownPending } =
+    useWellKnownIndexes(selectedSkills);
 
   // Hold the sheet closed until two painted frames after mount. On reload
   // with a stored selection, the open would otherwise land inside the brief
@@ -88,7 +94,17 @@ export function BundleBar() {
   }, []);
 
   async function handleCopy() {
-    const text = generateAllCommandsText(selectedSkills);
+    const text = generateAllCommandsText(selectedSkills, wellKnown);
+    // Nothing in this selection has a command. Say so instead of flipping the
+    // button to "Copied!" over an empty clipboard.
+    if (text === "") {
+      toast({
+        title: "No install command",
+        description:
+          "These skills' sources don't publish a skills index the CLI can read.",
+      });
+      return;
+    }
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -316,6 +332,7 @@ export function BundleBar() {
               <Button
                 variant="outline"
                 size="sm"
+                disabled={wellKnownPending}
                 onClick={handleCopy}
                 leadingIcon={
                   <HugeiconsIcon
