@@ -13,6 +13,7 @@ import {
   type SitemapSkillRow,
 } from "../lib/sitemap-entries";
 import robots from "../app/robots";
+import { SKILL_TAB_IDS } from "../lib/skill-urls";
 
 const BASE = "https://skillbundle.dev";
 
@@ -312,7 +313,10 @@ describe("agreement with robots.txt", () => {
   });
 
   test("skill tabs are blocked and Overviews are not, even one named like a tab", () => {
-    for (const tab of ["history", "stats", "security", "copies"]) {
+    // From the route list itself, so a new tab is tested without editing this.
+    const tabs = SKILL_TAB_IDS.filter((tab) => tab !== "overview");
+    expect(tabs.length).toBeGreaterThan(0);
+    for (const tab of tabs) {
       expect(blocked(`/owner/repo/my-skill/${tab}`)).toBe(true);
       expect(blocked(`/site/open.feishu.cn/my-skill/${tab}`)).toBe(true);
       // The catalog really has skills with the id `security`.

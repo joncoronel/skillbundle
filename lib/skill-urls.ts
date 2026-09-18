@@ -28,8 +28,17 @@ export function skillHref(source: string, skillId: string): string {
     : `/site/${source}/${skillId}`;
 }
 
-/** A skill page's tabs. Each is a route, not client state. */
-export type SkillTab = "overview" | "history" | "stats" | "security" | "copies";
+/** A skill page's tabs. Each is a route, not client state. A runtime list, not
+ *  just a type, so app/robots.ts can block every non-Overview tab and a new
+ *  tab can't silently stay crawlable. */
+export const SKILL_TAB_IDS = [
+  "overview",
+  "history",
+  "stats",
+  "security",
+  "copies",
+] as const;
+export type SkillTab = (typeof SKILL_TAB_IDS)[number];
 
 /** href for one tab of a skill page, given the skill's own `skillHref`. The
  *  Overview is that path itself; every other tab is a child segment. */

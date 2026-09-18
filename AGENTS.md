@@ -34,6 +34,13 @@ paths runs the `'use cache'` loaders. A fresh clone without `.env.local` cannot
 build. The hardcoded fallbacks in `representative-params.ts` harden _param
 selection_, not the render.
 
+**Markdown-only pushes do not deploy.** `vercel.json` runs
+`scripts/vercel-ignore-build.mjs`, which skips the Vercel build when every file
+changed since the last successful deploy is `*.md`. Each deploy resets the ISR
+cache, so this saves real money. If the app ever reads a `.md` file at build or
+run time, narrow that script's match first, or edits to that file will never
+ship.
+
 **Two test suites, deliberately non-overlapping.** `pnpm test` is vitest over
 `tests/**/*.test.ts`; `pnpm e2e` is Playwright over `e2e/**/*.spec.ts`, against a
 production build on port 3100. Don't put one kind of test in the other's

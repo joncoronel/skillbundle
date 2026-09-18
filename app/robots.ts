@@ -1,14 +1,9 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site-url";
-import type { SkillTab } from "@/lib/skill-urls";
+import { SKILL_TAB_IDS } from "@/lib/skill-urls";
 
-/** Every non-Overview skill tab. Typed so a new tab can't be spelled wrong. */
-const SKILL_TAB_SEGMENTS: readonly Exclude<SkillTab, "overview">[] = [
-  "history",
-  "stats",
-  "security",
-  "copies",
-];
+/** Every non-Overview skill tab, derived so a new tab is blocked on arrival. */
+const SKILL_TAB_SEGMENTS = SKILL_TAB_IDS.filter((tab) => tab !== "overview");
 
 /**
  * Crawler guidance. The site had none before this, which matters more here than
@@ -107,7 +102,7 @@ export default function robots(): MetadataRoute.Robots {
           // crawlable on purpose so shared comparison links still resolve for
           // preview fetchers that consult robots.txt.
           "/compare?",
-          // The skill tabs (history, stats, security, copies). Measured
+          // Every non-Overview skill tab (see SKILL_TAB_SEGMENTS). Measured
           // 2026-09-18: tab routes were ~60% of the sampled requests that wrote
           // a Vercel ISR entry. The sitemap lists only Overviews, so crawlers
           // reach the tabs by following each skill's tab strip, which turns
