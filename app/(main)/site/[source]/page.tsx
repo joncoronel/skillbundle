@@ -30,6 +30,7 @@ import { SourceSkillList } from "@/components/source-skill-list";
 import {
   InstallCommandBlock,
   InstallCommandBlockSkeleton,
+  InstallCommandUnavailable,
 } from "@/components/install-command-block";
 import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { loadWellKnownIndexes } from "@/lib/well-known-index";
@@ -130,11 +131,13 @@ async function SourceHeader({ params }: { params: Params }) {
       <h1 className={cn(LISTING_TITLE_SCALE, "mb-6")}>{source}</h1>
 
       {/* The whole-source command, in the same place the repo page puts it.
-          Absent for a domain that serves no skills index at its root — 7 of our
-          26 do not, and `npx skills add https://{domain}` reaches nothing for
-          them. See convex/wellKnown.ts. */}
-      {installCommand && (
+          10 of our 26 domains serve no skills index at their root, so
+          `npx skills add https://{domain}` reaches nothing for them and they
+          get the note instead. See convex/wellKnown.ts. */}
+      {installCommand ? (
         <InstallCommandBlock command={installCommand} className="mb-8" />
+      ) : (
+        <InstallCommandUnavailable source={source} className="mb-8" />
       )}
     </>
   );
@@ -161,11 +164,9 @@ function SourceHeaderSkeleton() {
       <div className={cn("mb-6", LISTING_TITLE_SCALE)}>
         <Skeleton className="h-[1em] w-64 max-w-full" />
       </div>
-      {/* The install command's box, at its resolved height — the repo page's
-          note applies. Reserved even though ~a quarter of domains end up with
-          no command: reserving is right for the majority and a shell that
-          reserves nothing would drop the list 76px on every navigation into the
-          other three quarters. */}
+      {/* The install slot, at its resolved height. Correct for both branches
+          now that a domain with no command gets the note in the same box, so
+          nothing below moves whichever one lands. */}
       <InstallCommandBlockSkeleton className="mb-8" />
     </>
   );

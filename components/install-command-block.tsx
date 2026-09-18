@@ -48,6 +48,36 @@ export function InstallCommandBlock({
 }
 
 /**
+ * What stands in the block's place when a well-known source has no command.
+ *
+ * It keeps the install slot occupied rather than leaving a hole: silence there
+ * reads as a missing feature, and 52 of 161 site skills are in this state. Same
+ * surface and box as the block, so the skeleton's reserved height stays honest
+ * and nothing shifts. Not mono and with no copy button, so it cannot be
+ * mistaken for a command.
+ */
+export function InstallCommandUnavailable({
+  source,
+  className,
+}: {
+  source: string;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cn(
+        SURFACE,
+        "px-4 py-3 text-sm text-pretty text-muted-foreground",
+        className,
+      )}
+    >
+      No install command: {source} doesn&apos;t publish a skills index the CLI
+      can read.
+    </p>
+  );
+}
+
+/**
  * The block's placeholder, for skeletons and Suspense fallbacks.
  *
  * Pass `command` where the caller knows the string (the skill pages do, from

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/cubby-ui/button";
 import {
   InstallCommandBlock,
   InstallCommandBlockSkeleton,
+  InstallCommandUnavailable,
 } from "@/components/install-command-block";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
@@ -361,11 +362,15 @@ async function SkillDetailBody({
             where the old design had it and where it does not have to share a
             row with a string the reader is meant to read.
 
-            Absent for a well-known skill whose domain publishes no root index:
-            there is no command the CLI would accept, and the page says nothing
-            rather than printing one that fails (convex/wellKnown.ts). */}
-        {installCommand && (
+            A well-known skill whose domain publishes no root index gets the
+            note instead. There is no command the CLI would accept for it
+            (convex/wellKnown.ts), and an empty slot reads as a missing feature
+            rather than an unavailable one. Never reached by a GitHub skill:
+            those always have a command, and a malformed ref 404s upstream. */}
+        {installCommand ? (
           <InstallCommandBlock command={installCommand} className="mt-7" />
+        ) : (
+          <InstallCommandUnavailable source={source} className="mt-7" />
         )}
       </div>
 
