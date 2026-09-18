@@ -209,10 +209,12 @@ matcher is now an allowlist (574k middleware invocations/day, a projected ~102k 
 links stopped prefetching, and skill OG cards derive from the URL so the PNG
 caches for a year instead of a day. Merge order: deploy this branch to Vercel BEFORE running `npx convex deploy`, because the production site it replaces still calls the `getInstallCount` query this branch deletes.
 
-**Sep 18 re-measure, and two fixes shipped.** Sep 1-18 overage was $7.49 for
-this project, ISR Writes still the largest line. On the no-deploy days after the
-crawl (Sep 14-17) usage ran ~$1.23/day at list price, which is over the $20
-credit. A sample of 1,150 unique production requests (hourly 10-minute windows;
+**Sep 18 re-measure, and two fixes shipped.** The billing cycle runs from the
+12th to the 12th, so pass `--from` to `vercel usage` (its default is the
+calendar month). The cycle starting Sep 12 had used ~$15 of the $20 credit by
+Sep 18, with ISR Writes ($6.51) still the largest line. On the no-deploy days
+after the crawl (Sep 14-17) usage ran ~$1.23/day at list price, a pace that runs
+through the credit early in the cycle. A sample of 1,150 unique production requests (hourly 10-minute windows;
 `vercel logs --json` repeats rows past ~100, so dedupe by `id`) showed about half
 of page requests writing (`PRERENDER` / `REVALIDATED` / `STALE`), and ~60% of
 those writes were skill tabs. Shipped:
