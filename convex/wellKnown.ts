@@ -363,21 +363,47 @@ export const refreshWellKnownIndexes = internalAction({
       cursor = page.nextCursor;
     }
 
-    const queue = [...sources];
-    const results: ProbeResult[] = [];
     // A fixed pool pulling off one shared list, rather than fixed chunks: a
     // chunk waits on its slowest domain before the next one starts, and a
     // domain burning the whole timeout is the common case here, not the rare
     // one.
-    await Promise.all(
-      Array.from({ length: PROBE_CONCURRENCY }, async () => {
-        for (;;) {
-          const source = queue.pop();
-          if (source === undefined) return;
-          results.push(await probeSource(source));
-        }
-      }),
-    );
+    const probeAll = async (list: string[]): Promise<ProbeResult[]> => {
+      const queue = [...list];
+      const out: ProbeResult[] = [];
+      await Promise.all(
+        Array.from({ length: PROBE_CONCURRENCY }, async () => {
+          for (;;) {
+            const source = queue.pop();
+            if (source === undefined) return;
+            out.push(await probeSource(source));
+          }
+        }),
+      );
+      return out;
+    };
+
+    const results = await probeAll([...sources]);
+
+    // One retry for the domains that never answered, because this job runs
+    // weekly and nobody watches it: a domain that flakes on Sunday would
+    // otherwise stay dark for seven days. Measured against production Sep 2026,
+    // a second pass recovered apifox.com and cdn-cmm-ai-open.chanmama.com both
+    // times they were asked, so the flake is transient and one retry clears it.
+    // Only "error" retries; "empty" is a real answer and re-asking it would
+    // just double the requests.
+    const unreachable = results.filter((r) => r.status === "error");
+    if (unreachable.length > 0) {
+      const retried = new Map(
+        (await probeAll(unreachable.map((r) => r.source))).map((r) => [
+          r.source,
+          r,
+        ]),
+      );
+      for (let i = 0; i < results.length; i++) {
+        const second = retried.get(results[i].source);
+        if (second && second.status !== "error") results[i] = second;
+      }
+    }
 
     for (let i = 0; i < results.length; i += WRITE_BATCH) {
       await ctx.runMutation(internal.wellKnown.applyWellKnownIndexes, {
