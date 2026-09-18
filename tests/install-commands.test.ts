@@ -85,7 +85,7 @@ describe("well-known skills with no usable index", () => {
       },
     ]);
     expect(uncoveredSkills(skills)).toEqual([
-      { source: "bun.sh", skillId: "bun" },
+      { source: "bun.sh", skillIds: ["bun"] },
     ]);
     expect(uncoveredSkills(skills, { "bun.sh": ["bun"] })).toEqual([]);
   });
@@ -94,6 +94,56 @@ describe("well-known skills with no usable index", () => {
     const skills = [{ source: "bun.sh", skillId: "bun" }];
     expect(generateInstallCommands(skills)).toEqual([]);
     expect(uncoveredSkills(skills)).toHaveLength(1);
+  });
+
+  test("an index miss raises no content-fetch warning on its source's command", () => {
+    // hasWarning drives "their source files could not be found", which is not
+    // why this skill has no command. The uncovered list states the real reason.
+    const skills = [
+      { source: "example.com", skillId: "listed" },
+      { source: "example.com", skillId: "unlisted" },
+    ];
+    const result = generateInstallCommands(skills, {
+      "example.com": ["listed"],
+    });
+    expect(result).toEqual([
+      {
+        source: "example.com",
+        skills: ["listed"],
+        command: "npx skills add https://example.com --skill listed",
+        hasWarning: false,
+        excludedSkills: [],
+      },
+    ]);
+    expect(uncoveredSkills(skills, { "example.com": ["listed"] })).toEqual([
+      { source: "example.com", skillIds: ["unlisted"] },
+    ]);
+  });
+
+  test("unsafe identifiers stay a warning, and stay out of the uncovered list", () => {
+    const skills = [
+      { source: "example.com", skillId: "listed" },
+      { source: "example.com", skillId: "not safe" },
+    ];
+    const wellKnown = { "example.com": ["listed"] };
+    const result = generateInstallCommands(skills, wellKnown);
+    expect(result[0].hasWarning).toBe(true);
+    expect(result[0].excludedSkills).toEqual(["not safe"]);
+    expect(uncoveredSkills(skills, wellKnown)).toEqual([]);
+  });
+
+  test("uncovered groups by source", () => {
+    expect(
+      uncoveredSkills([
+        { source: "bun.sh", skillId: "bun" },
+        { source: "mintlify.com", skillId: "a" },
+        { source: "mintlify.com", skillId: "b" },
+        { source: "owner/repo", skillId: "fine" },
+      ]),
+    ).toEqual([
+      { source: "bun.sh", skillIds: ["bun"] },
+      { source: "mintlify.com", skillIds: ["a", "b"] },
+    ]);
   });
 });
 

@@ -6,7 +6,10 @@ import { cacheLife } from "next/cache";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { GitCompareIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
-import { InstallCommandBlock } from "@/components/install-command-block";
+import {
+  InstallCommandBlock,
+  InstallCommandBlockSkeleton,
+} from "@/components/install-command-block";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { highlightMarkdownCode } from "@/lib/highlight-markdown-code";
 import { compareHref } from "@/lib/compare";
@@ -491,15 +494,10 @@ export function SkillDetailPageSkeleton({
         </div>
 
         {installCommand && (
-          <div className="mt-7 w-fit max-w-full rounded-xl bg-muted">
-            {/* The real command, hidden: it reserves the exact width the
-                resolved block will take, so nothing resizes under the reader
-                when the body lands. Skipped entirely when there is no command,
-                so the skeleton doesn't reserve a block the page won't draw. */}
-            <pre className="invisible overflow-x-auto px-4 py-3 pr-16 font-mono text-sm">
-              {installCommand}
-            </pre>
-          </div>
+          <InstallCommandBlockSkeleton
+            command={installCommand}
+            className="mt-7"
+          />
         )}
       </div>
 
@@ -599,6 +597,13 @@ export function SkillDetailPageSkeleton({
 // rendered on-demand; once ISR caches the page, repeat visits serve the
 // finished HTML and never hit this. The masthead's own skeleton lives with the
 // layout (SkillMastheadSkeleton) — this covers only the tab body.
+//
+// The placeholder command is a stand-in, not a claim. `loading.tsx` takes no
+// params, so this cannot know whether the skill it is covering has a command:
+// every GitHub skill does, and about two thirds of well-known skills do. It
+// reserves the block for all of them, which means the ~56 well-known skills
+// with no usable index lose a grey box when the body lands. Reserving nothing
+// would instead shift the document down for everyone else.
 export function SkillDetailPageLoading() {
   return (
     <div className="mt-8">

@@ -29,7 +29,7 @@ import {
 import { SourceSkillList } from "@/components/source-skill-list";
 import {
   InstallCommandBlock,
-  INSTALL_COMMAND_BLOCK_HEIGHT,
+  InstallCommandBlockSkeleton,
 } from "@/components/install-command-block";
 import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
@@ -178,12 +178,7 @@ function RepoHeaderSkeleton() {
           URL-derived so the shell cannot draw it, but leaving the box out
           dropped the meta row and the whole list 76px on every navigation
           into this route. */}
-      <div
-        className={cn(
-          "mb-8 w-72 max-w-full rounded-xl bg-muted",
-          INSTALL_COMMAND_BLOCK_HEIGHT,
-        )}
-      />
+      <InstallCommandBlockSkeleton className="mb-8" />
     </>
   );
 }

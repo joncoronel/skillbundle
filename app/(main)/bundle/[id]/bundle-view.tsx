@@ -51,7 +51,10 @@ import {
   PencilEdit02Icon,
   LockIcon,
 } from "@hugeicons/core-free-icons";
-import { generateInstallCommands } from "@/lib/install-commands";
+import {
+  generateInstallCommands,
+  uncoveredSkills,
+} from "@/lib/install-commands";
 import { useWellKnownIndexes } from "@/hooks/use-well-known-indexes";
 import { cn, formatDate } from "@/lib/utils";
 import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
@@ -205,11 +208,20 @@ export function BundleView({
   );
   // Counted with the same map InstallCommands renders from, or the header
   // would advertise a command count the panel below it doesn't produce.
-  const wellKnown = useWellKnownIndexes(skills);
+  const { indexes: wellKnown } = useWellKnownIndexes(skills);
   const commandCount = useMemo(
     () => generateInstallCommands(skills, wellKnown).length,
     [skills, wellKnown],
   );
+  // The panel also explains the skills it CANNOT write a command for, and that
+  // explanation lives inside the disclosure. Gating the trigger on commands
+  // alone hid it in the one case it exists for: a bundle where nothing has a
+  // command.
+  const uncoveredCount = useMemo(
+    () => uncoveredSkills(skills, wellKnown).length,
+    [skills, wellKnown],
+  );
+  const installPanelHasContent = commandCount > 0 || uncoveredCount > 0;
 
   // The staging state lives HERE, not inside the edit chrome, so one register
   // can serve both modes. Two instances meant toggling edit mode unmounted one
@@ -311,7 +323,7 @@ export function BundleView({
             count={skillCount}
             action={
               <div className="flex items-center gap-2">
-                {commandCount > 0 && !editing ? (
+                {installPanelHasContent && !editing ? (
                   <Button
                     variant="outline"
                     size="sm"

@@ -320,11 +320,11 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
   // line that fails (convex/wellKnown.ts).
   // Memoized so the hook's query args don't churn on every sheet render.
   const sources = useMemo(() => [{ source: skill.source }], [skill.source]);
-  const wellKnown = useWellKnownIndexes(sources);
+  const { indexes, pending } = useWellKnownIndexes(sources);
   const command = buildSkillInstallCommand(
     skill.source,
     skill.skillId,
-    wellKnown,
+    indexes,
   );
   // useCopyToClipboard owns the 2s `isCopied` reset and its unmount
   // cleanup — covers the case where the sheet closes during the window
@@ -346,14 +346,17 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
     }
   }
 
-  // Nothing to copy — the footer keeps its other two actions rather than
-  // offering a button that would put a failing command on the clipboard.
-  if (!command) return null;
+  // Nothing to copy: the footer keeps its other two actions rather than
+  // offering a button that would put a failing command on the clipboard. While
+  // the lookup is in flight the button stays, disabled, so the footer does not
+  // reflow a moment after it opens.
+  if (!command && !pending) return null;
 
   return (
     <Button
       variant="primary"
       size="sm"
+      disabled={pending}
       onClick={handleCopy}
       leadingIcon={
         <HugeiconsIcon

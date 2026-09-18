@@ -61,6 +61,16 @@ const PROBE_CONCURRENCY = 4;
 // queries, small enough to stay well inside a query's read limit.
 const SOURCE_SCAN_PAGE = 1_000;
 
+// Caps on what a third party's index can put in our row. The largest real one
+// holds 28 names; these exist so a huge or hostile `index.json` cannot push a
+// document past Convex's size limit and fail the write.
+const MAX_INDEX_SKILLS = 500;
+const MAX_SKILL_NAME_LENGTH = 200;
+
+// Results per mutation. One call for the whole run meant a single rejected
+// write discarded every other domain's fresh result.
+const WRITE_BATCH = 10;
+
 /**
  * One page of the well-known-source walk.
  *
@@ -96,27 +106,49 @@ export const listWellKnownSourcePage = internalQuery({
   },
 });
 
-/** Replace the whole table with this run's results. */
+/**
+ * Write one batch of probe results.
+ *
+ * `status: "error"` means the probe never got an answer (DNS, TLS, timeout). It
+ * leaves an existing row alone, because overwriting it with an empty index
+ * would delete every install command for that domain until the next weekly run
+ * over one blip. Only "empty" — the domain answered, with nothing usable — is
+ * allowed to clear a row.
+ */
 export const applyWellKnownIndexes = internalMutation({
   args: {
     results: v.array(
       v.object({
         source: v.string(),
+        status: v.union(
+          v.literal("ok"),
+          v.literal("empty"),
+          v.literal("error"),
+        ),
         indexUrl: v.union(v.string(), v.null()),
         skillNames: v.array(v.string()),
       }),
     ),
   },
-  returns: v.object({ written: v.number(), removed: v.number() }),
+  returns: v.object({ written: v.number(), kept: v.number() }),
   handler: async (ctx, { results }) => {
     const checkedAt = Date.now();
-    const keep = new Set(results.map((r) => r.source));
+    let written = 0;
+    let kept = 0;
 
     for (const result of results) {
       const existing = await ctx.db
         .query("wellKnownIndexes")
         .withIndex("by_source", (q) => q.eq("source", result.source))
         .unique();
+
+      if (result.status === "error" && existing) {
+        // `checkedAt` deliberately not bumped: a stale timestamp beside a live
+        // index is what says "we have not reached this domain lately".
+        kept++;
+        continue;
+      }
+
       const fields = {
         source: result.source,
         indexUrl: result.indexUrl,
@@ -125,21 +157,58 @@ export const applyWellKnownIndexes = internalMutation({
       };
       if (existing) await ctx.db.patch(existing._id, fields);
       else await ctx.db.insert("wellKnownIndexes", fields);
+      written++;
     }
 
-    // A domain whose last skill was delisted has left the catalog. Dropping its
-    // row keeps this table readable as "the well-known sources that exist",
-    // which is how the source count below and any later panel will read it.
+    return { written, kept };
+  },
+});
+
+/**
+ * Drop rows for sources that are no longer in the catalog, so the table stays
+ * readable as "the well-known sources that exist". Separate from the writes
+ * above because it runs once per run, after every batch has landed.
+ */
+export const pruneWellKnownIndexes = internalMutation({
+  args: { sources: v.array(v.string()) },
+  returns: v.number(),
+  handler: async (ctx, { sources }) => {
+    const keep = new Set(sources);
     let removed = 0;
     for (const row of await ctx.db.query("wellKnownIndexes").collect()) {
       if (keep.has(row.source)) continue;
       await ctx.db.delete(row._id);
       removed++;
     }
-
-    return { written: results.length, removed };
+    return removed;
   },
 });
+
+type ProbeResult = {
+  source: string;
+  status: "ok" | "empty" | "error";
+  indexUrl: string | null;
+  skillNames: string[];
+};
+
+/**
+ * Is this source safe to interpolate into the probe URL?
+ *
+ * `isGitHubSource` is shape-only and says so in its own header: anything that
+ * builds a URL out of a `source` has to validate separately. Catalog sources
+ * come from the skills.sh API, so a value carrying `@`, `:`, `/`, `?` or `#`
+ * would retarget the host or the path. Parsing the result back and demanding
+ * the host equal the source is the check that cannot be reasoned around.
+ */
+function isProbeableHost(source: string): boolean {
+  if (!/^[a-z0-9.-]+$/i.test(source)) return false;
+  if (!source.includes(".")) return false;
+  try {
+    return new URL(`https://${source}/`).host === source.toLowerCase();
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Fetch one domain's index, trying both well-known paths at the root.
@@ -149,10 +218,25 @@ export const applyWellKnownIndexes = internalMutation({
  * modelscope.cn serves its SPA's HTML for any path and skills.volces.com serves
  * a JSON error envelope, and both return 200 doing it. A parser that only
  * checked the status code recorded them as installable.
+ *
+ * Redirects are followed. Measured Sep 2026: evlog.dev answers 307 to
+ * www.evlog.dev, so refusing them would drop a source that works, and the CLI
+ * follows them too.
  */
-async function probeSource(
-  source: string,
-): Promise<{ indexUrl: string | null; skillNames: string[] }> {
+async function probeSource(source: string): Promise<ProbeResult> {
+  const miss = (status: "empty" | "error"): ProbeResult => ({
+    source,
+    status,
+    indexUrl: null,
+    skillNames: [],
+  });
+
+  if (!isProbeableHost(source)) return miss("empty");
+
+  // Only "we never got an answer" should preserve a stored index, so one
+  // unreachable candidate is enough to make the whole probe inconclusive.
+  let unreachable = false;
+
   for (const path of WELL_KNOWN_PATHS) {
     const indexUrl = `https://${source}/${path}/index.json`;
     try {
@@ -160,28 +244,53 @@ async function probeSource(
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         headers: { Accept: "application/json", "User-Agent": "SkillBundle" },
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        // 404 is a real answer: this domain does not publish here. A 5xx, a
+        // 429, or the 403 a CDN hands a datacenter IP with a non-browser
+        // User-Agent is not, and treating those as "publishes nothing" wipes
+        // the domain's commands for a week.
+        if (res.status >= 500 || res.status === 429 || res.status === 403) {
+          unreachable = true;
+        }
+        continue;
+      }
       const body: unknown = await res.json();
       if (typeof body !== "object" || body === null) continue;
       const skills = (body as { skills?: unknown }).skills;
       if (!Array.isArray(skills)) continue;
 
       const skillNames = skills
+        .slice(0, MAX_INDEX_SKILLS)
         .map((entry) =>
           typeof entry === "object" && entry !== null
             ? (entry as { name?: unknown }).name
             : undefined,
         )
-        .filter((name): name is string => typeof name === "string");
+        .filter(
+          (name): name is string =>
+            typeof name === "string" &&
+            name.length > 0 &&
+            name.length <= MAX_SKILL_NAME_LENGTH,
+        );
       if (skillNames.length === 0) continue;
 
-      return { indexUrl, skillNames };
+      // `res.url`, not the requested URL: after a redirect those differ, and
+      // the row should name where the index actually came from.
+      return {
+        source,
+        status: "ok",
+        indexUrl: res.url || indexUrl,
+        skillNames,
+      };
     } catch {
-      // Timeout, DNS failure, TLS error, unparseable body — same answer to all.
+      // Timeout, DNS failure, TLS error, or a body that would not parse. We
+      // cannot tell those apart, and treating them as "publishes nothing" is
+      // the one mistake that costs a working domain its commands.
+      unreachable = true;
       continue;
     }
   }
-  return { indexUrl: null, skillNames: [] };
+  return miss(unreachable ? "error" : "empty");
 }
 
 export const refreshWellKnownIndexes = internalAction({
@@ -189,11 +298,17 @@ export const refreshWellKnownIndexes = internalAction({
   returns: v.object({
     sources: v.number(),
     withIndex: v.number(),
+    unreachable: v.number(),
     removed: v.number(),
   }),
   handler: async (
     ctx,
-  ): Promise<{ sources: number; withIndex: number; removed: number }> => {
+  ): Promise<{
+    sources: number;
+    withIndex: number;
+    unreachable: number;
+    removed: number;
+  }> => {
     const sources = new Set<string>();
     let cursor: string | undefined = undefined;
     for (;;) {
@@ -209,12 +324,8 @@ export const refreshWellKnownIndexes = internalAction({
       cursor = page.nextCursor;
     }
 
-    const pending = [...sources];
-    const results: {
-      source: string;
-      indexUrl: string | null;
-      skillNames: string[];
-    }[] = [];
+    const queue = [...sources];
+    const results: ProbeResult[] = [];
     // A fixed pool pulling off one shared list, rather than fixed chunks: a
     // chunk waits on its slowest domain before the next one starts, and a
     // domain burning the whole timeout is the common case here, not the rare
@@ -222,21 +333,29 @@ export const refreshWellKnownIndexes = internalAction({
     await Promise.all(
       Array.from({ length: PROBE_CONCURRENCY }, async () => {
         for (;;) {
-          const source = pending.pop();
+          const source = queue.pop();
           if (source === undefined) return;
-          results.push({ source, ...(await probeSource(source)) });
+          results.push(await probeSource(source));
         }
       }),
     );
 
-    const { removed } = await ctx.runMutation(
-      internal.wellKnown.applyWellKnownIndexes,
-      { results },
+    for (let i = 0; i < results.length; i += WRITE_BATCH) {
+      await ctx.runMutation(internal.wellKnown.applyWellKnownIndexes, {
+        results: results.slice(i, i + WRITE_BATCH),
+      });
+    }
+    const removed: number = await ctx.runMutation(
+      internal.wellKnown.pruneWellKnownIndexes,
+      { sources: [...sources] },
     );
 
     return {
       sources: results.length,
-      withIndex: results.filter((r) => r.indexUrl !== null).length,
+      withIndex: results.filter((r) => r.status === "ok").length,
+      // Probed but never answered. Their stored rows were left as they were,
+      // so a non-zero count here is not the same as a loss of coverage.
+      unreachable: results.filter((r) => r.status === "error").length,
       removed,
     };
   },

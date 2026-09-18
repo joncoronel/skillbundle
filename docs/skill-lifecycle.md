@@ -726,7 +726,12 @@ answer in `wellKnownIndexes`:
   serves its SPA's HTML and skills.volces.com a JSON error envelope, both with
   a 200, and a status-code-only check recorded both as installable;
 - store the `name` of every entry. The CLI matches `--skill` against those, so
-  a skill absent from its own domain's index gets no command either.
+  a skill absent from its own domain's index gets no command either;
+- distinguish "answered, with nothing usable" from "never answered". A 404 is a
+  real answer and clears the row. A timeout, a TLS or DNS failure, a 5xx, a 429
+  or a CDN's 403 is not: the previous row and its `checkedAt` are left alone, so
+  one blip cannot cost a domain its commands until the next weekly run. A stale
+  `checkedAt` beside a live index is the signal that this happened.
 
 Measured Sep 2026: **19 of 26 domains** answer at the root, covering **109 of
 165 well-known skills**. The gaps are real and the silence is the point —

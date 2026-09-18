@@ -69,16 +69,37 @@ export function isSafeSkillRef(source: string, skillId: string): boolean {
 }
 
 /**
- * The single-skill install command (detail pages, OG images), or null when
- * there isn't one to give.
+ * What `npx skills add` takes for this source, or null when it takes nothing.
  *
- * GitHub sources always have one. Well-known sources have one only when their
- * domain serves a skills index at its root AND that index names this skill:
- * `npx skills add https://{domain} --skill {id}` is the only shape the CLI
- * understands for them (the header of convex/wellKnown.ts has why the obvious
- * `{domain}/{id}` is not it), and the CLI matches `--skill` against the names
- * in that index. Null is a real answer here, not an error — callers render
- * nothing rather than 404.
+ * The one place the GitHub / well-known split is decided. A GitHub source is
+ * its own `owner/repo` shorthand. A well-known source is only reachable through
+ * an absolute URL, and only when its domain serves a skills index at its root:
+ * `https://mintlify.com` reaches nothing because mintlify.com publishes under a
+ * base path we cannot derive, and `https://bun.sh` reaches nothing because
+ * bun.sh stopped publishing an index at all. See convex/wellKnown.ts.
+ *
+ * `skillId` narrows the well-known case further: the CLI matches `--skill`
+ * against the names in that index, so a skill the index does not name has no
+ * command even when its domain does. Pass it for a single-skill command, omit
+ * it for a whole-source one.
+ */
+export function installBase(
+  source: string,
+  wellKnown: WellKnownIndexes = {},
+  skillId?: string,
+): string | null {
+  if (!isSafeCommandSource(source)) return null;
+  if (isGitHubSource(source)) return source;
+  const names = wellKnown[source];
+  if (!names || names.length === 0) return null;
+  if (skillId !== undefined && !names.includes(skillId)) return null;
+  return `https://${source}`;
+}
+
+/**
+ * The single-skill install command (detail pages, OG images), or null when
+ * there isn't one to give. Null is a real answer here, not an error: callers
+ * render nothing rather than 404.
  */
 export function buildSkillInstallCommand(
   source: string,
@@ -86,12 +107,8 @@ export function buildSkillInstallCommand(
   wellKnown: WellKnownIndexes = {},
 ): string | null {
   if (!isSafeSkillRef(source, skillId)) return null;
-  if (isGitHubSource(source)) {
-    return `npx skills add ${source} --skill ${skillId}`;
-  }
-  return wellKnown[source]?.includes(skillId)
-    ? `npx skills add https://${source} --skill ${skillId}`
-    : null;
+  const base = installBase(source, wellKnown, skillId);
+  return base === null ? null : `npx skills add ${base} --skill ${skillId}`;
 }
 
 /**
@@ -101,19 +118,14 @@ export function buildSkillInstallCommand(
  * commands.
  *
  * A well-known source gets one only when its domain serves an index at its
- * root. `https://mintlify.com` reaches nothing, because mintlify.com publishes
- * under a base path that cannot be derived from the domain, and
- * `https://bun.sh` reaches nothing because bun.sh stopped publishing an index
- * at all while its skills.sh entry stayed up. See convex/wellKnown.ts.
+ * root; see `installBase`.
  */
 export function buildSourceInstallCommand(
   source: string,
   wellKnown: WellKnownIndexes = {},
 ): string | null {
-  if (!isSafeCommandSource(source)) return null;
-  if (isGitHubSource(source)) return `npx skills add ${source}`;
-  const names = wellKnown[source];
-  return names && names.length > 0 ? `npx skills add https://${source}` : null;
+  const base = installBase(source, wellKnown);
+  return base === null ? null : `npx skills add ${base}`;
 }
 
 export function generateInstallCommands(
@@ -131,15 +143,19 @@ export function generateInstallCommands(
       hasWarning: false,
       excludedSkills: [],
     };
-    if (buildSkillInstallCommand(skill.source, skill.skillId, wellKnown)) {
-      existing.skillIds.push(skill.skillId);
-      if (skill.hasContentFetchError) existing.hasWarning = true;
-    } else {
-      // Either the identifiers failed the allowlist, or this is a well-known
-      // skill its domain's index does not name. Both mean "no command can be
-      // written for this one", which is what excludedSkills records.
+    if (!isSafeSkillRef(skill.source, skill.skillId)) {
+      // An identifier we refuse to put in a shell command. `hasWarning` is the
+      // amber "source files could not be found" line, which is only ever about
+      // a skill we cannot fetch, so it stays scoped to that plus the two cases
+      // below. A well-known skill its index does not name is neither; it falls
+      // to `uncoveredSkills`, which states the real reason.
       existing.excludedSkills.push(skill.skillId);
       existing.hasWarning = true;
+    } else if (
+      buildSkillInstallCommand(skill.source, skill.skillId, wellKnown)
+    ) {
+      existing.skillIds.push(skill.skillId);
+      if (skill.hasContentFetchError) existing.hasWarning = true;
     }
     grouped.set(skill.source, existing);
   }
@@ -147,11 +163,9 @@ export function generateInstallCommands(
   const commands: InstallCommand[] = [];
   for (const [source, { skillIds, hasWarning, excludedSkills }] of grouped) {
     if (skillIds.length === 0) continue;
+    const base = installBase(source, wellKnown);
+    if (base === null) continue;
     const skillFlags = skillIds.map((id) => `--skill ${id}`).join(" ");
-    // The base differs by source type for the same reason the single-skill
-    // command's does: the CLI only reaches a well-known source through an
-    // absolute URL.
-    const base = isGitHubSource(source) ? source : `https://${source}`;
     commands.push({
       source,
       skills: skillIds,
@@ -173,15 +187,27 @@ export function generateAllCommandsText(
 }
 
 /**
- * The skills no generated command covers — unsafe identifiers, and well-known
- * skills whose domain publishes no usable index. The bundle page says so out
- * loud instead of quietly listing fewer skills than the reader added.
+ * Well-known skills whose domain publishes no usable index, grouped by source.
+ * The bundle page names them instead of quietly listing fewer skills than the
+ * reader added.
+ *
+ * Scoped to that one reason on purpose. Unsafe identifiers are excluded from a
+ * command too, but they already surface as their source's `excludedSkills`, and
+ * folding them in here would attach them to a sentence about missing indexes
+ * that is not true of them.
  */
 export function uncoveredSkills(
   skills: BundleSkill[],
   wellKnown: WellKnownIndexes = {},
-): BundleSkill[] {
-  return skills.filter(
-    (s) => buildSkillInstallCommand(s.source, s.skillId, wellKnown) === null,
-  );
+): { source: string; skillIds: string[] }[] {
+  const bySource = new Map<string, string[]>();
+  for (const skill of skills) {
+    if (isGitHubSource(skill.source)) continue;
+    if (!isSafeSkillRef(skill.source, skill.skillId)) continue;
+    if (installBase(skill.source, wellKnown, skill.skillId) !== null) continue;
+    const ids = bySource.get(skill.source) ?? [];
+    ids.push(skill.skillId);
+    bySource.set(skill.source, ids);
+  }
+  return [...bySource].map(([source, skillIds]) => ({ source, skillIds }));
 }

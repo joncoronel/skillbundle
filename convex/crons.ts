@@ -195,6 +195,13 @@ if (process.env.CRONS_ENABLED === "true") {
   // id changed, two full-catalog recomputes would overlap — wasted, not wrong
   // (computeCopyCounts is idempotent). The ~12.5k-row pass drains in minutes, so
   // a 2h gap is ample; if the catalog grows enough that it doesn't, widen the gap.
+  crons.weekly(
+    "re-resolve stale repo identities",
+    { dayOfWeek: "sunday", hourUTC: 10, minuteUTC: 0 },
+    internal.duplicates.reresolveStaleRepoIdentities,
+    {},
+  );
+
   // Weekly Sunday 11:00 UTC: re-probe every well-known domain's root skills
   // index (convex/wellKnown.ts). Decides whether the site pages can print an
   // install command at all, and which skills it may name.
@@ -211,13 +218,6 @@ if (process.env.CRONS_ENABLED === "true") {
     "refresh well-known indexes",
     { dayOfWeek: "sunday", hourUTC: 11, minuteUTC: 0 },
     internal.wellKnown.refreshWellKnownIndexes,
-    {},
-  );
-
-  crons.weekly(
-    "re-resolve stale repo identities",
-    { dayOfWeek: "sunday", hourUTC: 10, minuteUTC: 0 },
-    internal.duplicates.reresolveStaleRepoIdentities,
     {},
   );
 }

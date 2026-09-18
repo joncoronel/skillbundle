@@ -17,13 +17,16 @@ const EMPTY: WellKnownIndexes = {};
  *
  * Skips the query entirely when the set contains no well-known source, which is
  * the overwhelmingly common case (~98% of the catalog is GitHub) — a bundle of
- * GitHub skills costs nothing. Returns an empty map while the query is in
- * flight, so a well-known command appears when its answer lands rather than
- * being guessed at and corrected.
+ * GitHub skills costs nothing, and `pending` is false immediately.
+ *
+ * `pending` exists because an in-flight query and a domain with no index are
+ * both an empty map, and callers that state the second out loud would otherwise
+ * assert it during the first. Hold any such claim until `pending` clears.
  */
-export function useWellKnownIndexes(
-  skills: readonly { source: string }[],
-): WellKnownIndexes {
+export function useWellKnownIndexes(skills: readonly { source: string }[]): {
+  indexes: WellKnownIndexes;
+  pending: boolean;
+} {
   const sources = useMemo(() => {
     const distinct = new Set<string>();
     for (const skill of skills) {
@@ -38,5 +41,8 @@ export function useWellKnownIndexes(
     sources.length > 0 ? { sources } : "skip",
   );
 
-  return indexes ?? EMPTY;
+  return {
+    indexes: indexes ?? EMPTY,
+    pending: sources.length > 0 && indexes === undefined,
+  };
 }

@@ -29,7 +29,7 @@ import {
 import { SourceSkillList } from "@/components/source-skill-list";
 import {
   InstallCommandBlock,
-  INSTALL_COMMAND_BLOCK_HEIGHT,
+  InstallCommandBlockSkeleton,
 } from "@/components/install-command-block";
 import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { loadWellKnownIndexes } from "@/lib/well-known-index";
@@ -166,12 +166,7 @@ function SourceHeaderSkeleton() {
           no command: reserving is right for the majority and a shell that
           reserves nothing would drop the list 76px on every navigation into the
           other three quarters. */}
-      <div
-        className={cn(
-          "mb-8 w-72 max-w-full rounded-xl bg-muted",
-          INSTALL_COMMAND_BLOCK_HEIGHT,
-        )}
-      />
+      <InstallCommandBlockSkeleton className="mb-8" />
     </>
   );
 }
