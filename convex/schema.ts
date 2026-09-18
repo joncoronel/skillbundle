@@ -666,11 +666,20 @@ export default defineSchema({
   // convex/wellKnown.ts; don't restate them here, a copy of that paragraph
   // lived in this comment and had already drifted from it.
   //
-  // `indexUrl` is the URL that answered (diagnostics — paste it to see what we
-  // saw), null when none did. `skillNames` is empty in that case, and empty is
-  // the signal every reader checks.
+  // `baseUrl` is what `npx skills add` takes, built by the prober from the
+  // source plus one of its own fixed base paths. Every command is built from
+  // THIS. `indexUrl` is the URL that actually answered, after redirects, and is
+  // diagnostics only: a third party controls it, so nothing copyable may be
+  // derived from it. Both null when the domain serves no index, and
+  // `skillNames` is empty in that case, which is the signal every reader
+  // checks.
+  //
+  // `baseUrl` is optional only because it arrived after the table did. A row
+  // written before it has none, and readers treat that as "no command" until
+  // the next probe fills it in.
   wellKnownIndexes: defineTable({
     source: v.string(),
+    baseUrl: v.optional(v.string()),
     indexUrl: v.union(v.string(), v.null()),
     skillNames: v.array(v.string()),
     checkedAt: v.number(),

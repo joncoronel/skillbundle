@@ -131,9 +131,9 @@ async function SourceHeader({ params }: { params: Params }) {
       <h1 className={cn(LISTING_TITLE_SCALE, "mb-6")}>{source}</h1>
 
       {/* The whole-source command, in the same place the repo page puts it.
-          10 of our 26 domains serve no skills index at their root, so
-          `npx skills add https://{domain}` reaches nothing for them and they
-          get the note instead. See convex/wellKnown.ts. */}
+          6 of our 26 domains serve no skills index the CLI can reach, at the
+          root or under the base paths we probe, and they get the note instead.
+          See convex/wellKnown.ts. */}
       {installCommand ? (
         <InstallCommandBlock command={installCommand} className="mb-8" />
       ) : (

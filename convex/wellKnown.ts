@@ -22,10 +22,11 @@
  * We can build `https://{source}` but never the base path, and skills.sh's API
  * returns `installUrl: null` for every well-known skill, so there is nothing to
  * copy either. Probing the root is the only thing left, and it is enough for
- * most of the catalog — measured against production Sep 2026: 16 of 26 domains
- * answer at the root, covering 109 of 161 well-known skills. The other ten stay
- * silent, which is the point: bun.sh's index is gone entirely and mintlify.com
- * publishes under a base path, so any command we printed for them would fail.
+ * most of the catalog — measured against production Sep 2026: 20 of 26 domains
+ * answer at one of BASE_PATHS, covering 128 of 161 well-known skills. The other
+ * six stay silent, which is the point: bun.sh's index is gone entirely and
+ * modelscope.cn serves its SPA at every path, so any command we printed for
+ * them would fail.
  *
  * Cadence is weekly, not daily. The inputs are a publisher's own index file and
  * the set of domains in the catalog; both change on the order of months, and
@@ -46,6 +47,18 @@ import { isGitHubSource } from "./lib/source";
 // The two paths the CLI tries, in its order. First one to answer with a
 // parseable index wins, which mirrors what the CLI itself would pick.
 const WELL_KNOWN_PATHS = [".well-known/agent-skills", ".well-known/skills"];
+
+// Where on the domain to look, in order. The root is where most publishers put
+// it, but the CLI accepts any base path and several sources use one: skills.sh
+// installs mintlify.com from `https://mintlify.com/docs`, and its index really
+// does live there. We cannot read their base path from anywhere (their API
+// returns `installUrl: null` for well-known skills), so the only way to find it
+// is to look. Measured Sep 2026, these two recover four domains and 19 skills;
+// `doc` and `ai` recover none.
+//
+// A fixed list, never a value from a response: the chosen base is interpolated
+// into a copyable shell command, so it has to come from this file.
+const BASE_PATHS = ["", "docs", "skills"];
 
 // Per-request ceiling. A domain that cannot answer in this long would time the
 // CLI's own discovery out as well, so a slow domain is a miss rather than
@@ -125,6 +138,7 @@ export const applyWellKnownIndexes = internalMutation({
           v.literal("empty"),
           v.literal("error"),
         ),
+        baseUrl: v.union(v.string(), v.null()),
         indexUrl: v.union(v.string(), v.null()),
         skillNames: v.array(v.string()),
       }),
@@ -151,6 +165,7 @@ export const applyWellKnownIndexes = internalMutation({
 
       const fields = {
         source: result.source,
+        baseUrl: result.baseUrl ?? undefined,
         indexUrl: result.indexUrl,
         skillNames: result.skillNames,
         checkedAt,
@@ -187,6 +202,11 @@ export const pruneWellKnownIndexes = internalMutation({
 type ProbeResult = {
   source: string;
   status: "ok" | "empty" | "error";
+  // What `npx skills add` takes for this source, built from `source` and one
+  // of BASE_PATHS. The command is built from THIS, never from `indexUrl`.
+  baseUrl: string | null;
+  // The URL that answered, after redirects. Diagnostics only: a third party
+  // controls it, so nothing user-facing may be derived from it.
   indexUrl: string | null;
   skillNames: string[];
 };
@@ -211,7 +231,8 @@ function isProbeableHost(source: string): boolean {
 }
 
 /**
- * Fetch one domain's index, trying both well-known paths at the root.
+ * Find one domain's index, trying each base in BASE_PATHS and both well-known
+ * paths under it. First to answer with a parseable index wins.
  *
  * Deliberately strict about what counts as an answer: a 200 that isn't JSON, or
  * JSON without a `skills` array, is a miss. Both happen in the real catalog —
@@ -227,6 +248,7 @@ async function probeSource(source: string): Promise<ProbeResult> {
   const miss = (status: "empty" | "error"): ProbeResult => ({
     source,
     status,
+    baseUrl: null,
     indexUrl: null,
     skillNames: [],
   });
@@ -237,66 +259,75 @@ async function probeSource(source: string): Promise<ProbeResult> {
   // unreachable candidate is enough to make the whole probe inconclusive.
   let unreachable = false;
 
-  for (const path of WELL_KNOWN_PATHS) {
-    const indexUrl = `https://${source}/${path}/index.json`;
+  for (const base of BASE_PATHS) {
+    const baseUrl = base ? `https://${source}/${base}` : `https://${source}`;
+    for (const path of WELL_KNOWN_PATHS) {
+      const indexUrl = `${baseUrl}/${path}/index.json`;
 
-    // The request, and only the request. A throw here is a timeout, a DNS or
-    // TLS failure: we never reached the domain, so nothing it said before can
-    // be contradicted.
-    let res: Response;
-    try {
-      res = await fetch(indexUrl, {
-        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-        headers: { Accept: "application/json", "User-Agent": "SkillBundle" },
-      });
-    } catch {
-      unreachable = true;
-      continue;
-    }
-
-    if (!res.ok) {
-      // 404 is a real answer: this domain does not publish here. A 5xx, a 429,
-      // or the 403 a CDN hands a datacenter IP with a non-browser User-Agent
-      // is not, and treating those as "publishes nothing" wipes the domain's
-      // commands until the next run.
-      if (res.status >= 500 || res.status === 429 || res.status === 403) {
+      // The request, and only the request. A throw here is a timeout, a DNS or
+      // TLS failure: we never reached the domain, so nothing it said before can
+      // be contradicted.
+      let res: Response;
+      try {
+        res = await fetch(indexUrl, {
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+          headers: { Accept: "application/json", "User-Agent": "SkillBundle" },
+        });
+      } catch {
         unreachable = true;
+        continue;
       }
-      continue;
+
+      if (!res.ok) {
+        // 404 is a real answer: this domain does not publish here. A 5xx, a 429,
+        // or the 403 a CDN hands a datacenter IP with a non-browser User-Agent
+        // is not, and treating those as "publishes nothing" wipes the domain's
+        // commands until the next run.
+        if (res.status >= 500 || res.status === 429 || res.status === 403) {
+          unreachable = true;
+        }
+        continue;
+      }
+
+      // Everything past here is the domain answering with something we can't
+      // use, which IS an answer. `continue` without setting `unreachable`, so a
+      // domain that starts serving its SPA at this path clears its stale row
+      // rather than keeping it forever.
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch {
+        continue;
+      }
+      if (typeof body !== "object" || body === null) continue;
+      const skills = (body as { skills?: unknown }).skills;
+      if (!Array.isArray(skills)) continue;
+
+      const skillNames = skills
+        .slice(0, MAX_INDEX_SKILLS)
+        .map((entry) =>
+          typeof entry === "object" && entry !== null
+            ? (entry as { name?: unknown }).name
+            : undefined,
+        )
+        .filter(
+          (name): name is string =>
+            typeof name === "string" &&
+            name.length > 0 &&
+            name.length <= MAX_SKILL_NAME_LENGTH,
+        );
+      if (skillNames.length === 0) continue;
+
+      // `baseUrl` is ours; `indexUrl` records where the bytes actually came
+      // from, which differs after a redirect and is diagnostics only.
+      return {
+        source,
+        status: "ok",
+        baseUrl,
+        indexUrl: res.url || indexUrl,
+        skillNames,
+      };
     }
-
-    // Everything past here is the domain answering with something we can't
-    // use, which IS an answer. `continue` without setting `unreachable`, so a
-    // domain that starts serving its SPA at this path clears its stale row
-    // rather than keeping it forever.
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      continue;
-    }
-    if (typeof body !== "object" || body === null) continue;
-    const skills = (body as { skills?: unknown }).skills;
-    if (!Array.isArray(skills)) continue;
-
-    const skillNames = skills
-      .slice(0, MAX_INDEX_SKILLS)
-      .map((entry) =>
-        typeof entry === "object" && entry !== null
-          ? (entry as { name?: unknown }).name
-          : undefined,
-      )
-      .filter(
-        (name): name is string =>
-          typeof name === "string" &&
-          name.length > 0 &&
-          name.length <= MAX_SKILL_NAME_LENGTH,
-      );
-    if (skillNames.length === 0) continue;
-
-    // `res.url`, not the requested URL: after a redirect those differ, and the
-    // row should name where the index actually came from.
-    return { source, status: "ok", indexUrl: res.url || indexUrl, skillNames };
   }
   return miss(unreachable ? "error" : "empty");
 }
@@ -370,9 +401,9 @@ export const refreshWellKnownIndexes = internalAction({
 });
 
 /**
- * The skill names each well-known source's root index advertises, for the
- * callers that build install commands. A source is absent from the result when
- * it serves no root index or has never been checked, and absent means "show no
+ * What each well-known source can be installed from: the base `npx skills add`
+ * takes, and the skill names its index advertises. A source is absent when it
+ * serves no index or has never been checked, and absent means "show no
  * command" — every reader treats it that way.
  *
  * Public because the bundle page and the quick-look sheet are client islands
@@ -382,9 +413,12 @@ export const refreshWellKnownIndexes = internalAction({
  */
 export const wellKnownSkillNames = query({
   args: { sources: v.array(v.string()) },
-  returns: v.record(v.string(), v.array(v.string())),
+  returns: v.record(
+    v.string(),
+    v.object({ base: v.string(), skills: v.array(v.string()) }),
+  ),
   handler: async (ctx, { sources }) => {
-    const out: Record<string, string[]> = {};
+    const out: Record<string, { base: string; skills: string[] }> = {};
     // Bounded so a crafted argument can't turn one websocket message into an
     // unbounded fan-out of indexed reads. The whole catalog holds ~26
     // well-known sources, and a bundle can hold far fewer distinct ones.
@@ -394,7 +428,8 @@ export const wellKnownSkillNames = query({
         .query("wellKnownIndexes")
         .withIndex("by_source", (q) => q.eq("source", source))
         .unique();
-      if (row && row.indexUrl !== null) out[source] = row.skillNames;
+      if (row?.baseUrl)
+        out[source] = { base: row.baseUrl, skills: row.skillNames };
     }
     return out;
   },

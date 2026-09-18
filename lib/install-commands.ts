@@ -7,16 +7,24 @@ export interface BundleSkill {
 }
 
 /**
- * Which skill names each well-known source's root index advertises, keyed by
- * source. Comes from `wellKnown.wellKnownSkillNames` (convex/wellKnown.ts); a
- * source absent from the map has no usable index, and an id absent from its
- * array is not installable through it.
+ * What each well-known source can be installed from, keyed by source: the base
+ * `npx skills add` takes, and the skill names its index advertises. Comes from
+ * `wellKnown.wellKnownSkillNames` (convex/wellKnown.ts). A source absent from
+ * the map has no usable index, and an id absent from `skills` is not
+ * installable through it.
+ *
+ * The base is carried rather than rebuilt from the source, because it is not
+ * always `https://{source}`: mintlify.com publishes under `/docs`. The prober
+ * builds it from a fixed list of base paths, never from a response.
  *
  * Every builder below takes this and defaults it to empty, which is the safe
  * direction: with no map, well-known sources get no command rather than a
  * guessed one. GitHub sources ignore it entirely.
  */
-export type WellKnownIndexes = Record<string, string[]>;
+export type WellKnownIndexes = Record<
+  string,
+  { base: string; skills: string[] }
+>;
 
 export interface InstallCommand {
   source: string;
@@ -88,10 +96,19 @@ export function installBase(
 ): string | null {
   if (!isSafeCommandSource(source)) return null;
   if (isGitHubSource(source)) return source;
-  const names = wellKnown[source];
-  if (!names || names.length === 0) return null;
-  if (skillId !== undefined && !names.includes(skillId)) return null;
-  return `https://${source}`;
+  const entry = wellKnown[source];
+  if (!entry || entry.skills.length === 0) return null;
+  if (skillId !== undefined && !entry.skills.includes(skillId)) return null;
+  // The base is built by the prober, but it ends up in a command the reader
+  // pastes into a shell, so it gets the same allowlist treatment as every other
+  // identifier here rather than being trusted for its provenance. The whole
+  // grammar the prober can produce is `https://{source}` plus at most one path
+  // segment, so that is all this accepts.
+  const root = `https://${source}`;
+  if (entry.base === root) return root;
+  if (!entry.base.startsWith(`${root}/`)) return null;
+  const segment = entry.base.slice(root.length + 1);
+  return SAFE_SEGMENT.test(segment) ? entry.base : null;
 }
 
 /**

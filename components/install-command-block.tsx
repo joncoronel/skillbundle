@@ -51,7 +51,7 @@ export function InstallCommandBlock({
  * What stands in the block's place when a well-known source has no command.
  *
  * It keeps the install slot occupied rather than leaving a hole: silence there
- * reads as a missing feature, and 52 of 161 site skills are in this state. Same
+ * reads as a missing feature, and 33 of 161 site skills are in this state. Same
  * surface and box as the block, so the skeleton's reserved height stays honest
  * and nothing shifts. Not mono and with no copy button, so it cannot be
  * mistaken for a command.

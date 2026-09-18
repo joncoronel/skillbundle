@@ -720,8 +720,14 @@ so there is nothing to copy from upstream either.
 So `convex/wellKnown.ts` asks the domains directly, weekly, and records the
 answer in `wellKnownIndexes`:
 
-- probe `https://{source}/.well-known/agent-skills/index.json` and
-  `.../skills/index.json` (the CLI's two paths, in its order);
+- probe `.well-known/agent-skills/index.json` and `.../skills/index.json` (the
+  CLI's two paths, in its order) under the domain root, then under `/docs` and
+  `/skills`. The CLI accepts any base path and several sources use one:
+  mintlify.com publishes under `/docs`, and nothing in the skills.sh API records
+  that, so the only way to find it is to look. Those two bases recover four
+  domains and 19 skills; `/doc` and `/ai` recover none. The chosen base is built
+  from that fixed list, never from a response, because it ends up in a copyable
+  shell command;
 - a 200 only counts if it parses as JSON with a `skills` array — modelscope.cn
   serves its SPA's HTML and skills.volces.com a JSON error envelope, both with
   a 200, and a status-code-only check recorded both as installable;
@@ -733,11 +739,11 @@ answer in `wellKnownIndexes`:
   one blip cannot cost a domain its commands until the next weekly run. A stale
   `checkedAt` beside a live index is the signal that this happened.
 
-Measured against production Sep 2026: **16 of 26 domains** answer at the root,
-covering **109 of 161 well-known skills**. The gaps are real and the silence is the point —
-bun.sh's index is gone entirely (its skills.sh entry is stale), mintlify.com
-publishes under a base path, and smithery.ai's index names one of the eight
-skills we list for it.
+Measured against production Sep 2026: **20 of 26 domains** answer, covering
+**128 of 161 well-known skills**. The gaps are real and the silence is the
+point. bun.sh's index is gone entirely (its skills.sh entry is stale),
+modelscope.cn serves its SPA at every path, and smithery.ai's index names one of
+the eight skills we list for it.
 
 Weekly rather than daily because the expensive half is a full walk of
 `skillSummaries` to find the ~26 well-known sources — there is no index that
