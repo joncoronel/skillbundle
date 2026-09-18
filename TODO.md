@@ -11,7 +11,7 @@ delete them when shipped. Newest thinking near the top.
 The new `wellKnownIndexes` table (convex/wellKnown.ts) is what lets a site page
 print an install command, and it starts empty. Its cron is weekly (Sunday 11:00
 UTC), so without this every `/site/...` page shows no command for up to a week
-after the deploy — correct, but silent where 109 of 165 of them should have one.
+after the deploy — correct, but silent where 109 of 161 of them should have one.
 
 Delete this entry once the run has happened. Expected output, against the Sep
 2026 catalog: roughly `{ sources: 26, withIndex: 19, removed: 0 }`.

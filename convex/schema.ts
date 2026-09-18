@@ -664,8 +664,9 @@ export default defineSchema({
   // NOT derivable from the source string. The CLI parses a bare domain as a git
   // remote and only reaches a well-known source from an absolute URL, so the
   // command has to be `npx skills add https://{source}` — and that only works
-  // when the index sits at the root. Measured Sep 2026: 19 of our 26 domains
-  // serve one there, and 109 of 165 well-known skills appear in it. bun.sh and
+  // when the index sits at the root. Measured against production Sep 2026: 16
+  // of our 26 domains
+  // serve one there, and 109 of 161 well-known skills appear in it. bun.sh and
   // mintlify.com publish under a base path we cannot guess; smithery.ai lists
   // one of its eight skills. The rest of the catalog is exactly the set this
   // table lets us stay quiet about instead of printing a command that fails.

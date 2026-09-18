@@ -733,8 +733,8 @@ answer in `wellKnownIndexes`:
   one blip cannot cost a domain its commands until the next weekly run. A stale
   `checkedAt` beside a live index is the signal that this happened.
 
-Measured Sep 2026: **19 of 26 domains** answer at the root, covering **109 of
-165 well-known skills**. The gaps are real and the silence is the point —
+Measured against production Sep 2026: **16 of 26 domains** answer at the root,
+covering **109 of 161 well-known skills**. The gaps are real and the silence is the point —
 bun.sh's index is gone entirely (its skills.sh entry is stale), mintlify.com
 publishes under a base path, and smithery.ai's index names one of the eight
 skills we list for it.

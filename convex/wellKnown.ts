@@ -22,10 +22,10 @@
  * We can build `https://{source}` but never the base path, and skills.sh's API
  * returns `installUrl: null` for every well-known skill, so there is nothing to
  * copy either. Probing the root is the only thing left, and it is enough for
- * most of the catalog — measured Sep 2026: 19 of 26 domains answer at the root,
- * covering 109 of 165 well-known skills. The other seven stay silent, which is
- * the point: bun.sh's index is gone entirely and mintlify.com publishes under a
- * base path, so any command we printed for them would fail.
+ * most of the catalog — measured against production Sep 2026: 16 of 26 domains
+ * answer at the root, covering 109 of 161 well-known skills. The other ten stay
+ * silent, which is the point: bun.sh's index is gone entirely and mintlify.com
+ * publishes under a base path, so any command we printed for them would fail.
  *
  * Cadence is weekly, not daily. The inputs are a publisher's own index file and
  * the set of domains in the catalog; both change on the order of months, and
@@ -239,56 +239,64 @@ async function probeSource(source: string): Promise<ProbeResult> {
 
   for (const path of WELL_KNOWN_PATHS) {
     const indexUrl = `https://${source}/${path}/index.json`;
+
+    // The request, and only the request. A throw here is a timeout, a DNS or
+    // TLS failure: we never reached the domain, so nothing it said before can
+    // be contradicted.
+    let res: Response;
     try {
-      const res = await fetch(indexUrl, {
+      res = await fetch(indexUrl, {
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         headers: { Accept: "application/json", "User-Agent": "SkillBundle" },
       });
-      if (!res.ok) {
-        // 404 is a real answer: this domain does not publish here. A 5xx, a
-        // 429, or the 403 a CDN hands a datacenter IP with a non-browser
-        // User-Agent is not, and treating those as "publishes nothing" wipes
-        // the domain's commands for a week.
-        if (res.status >= 500 || res.status === 429 || res.status === 403) {
-          unreachable = true;
-        }
-        continue;
-      }
-      const body: unknown = await res.json();
-      if (typeof body !== "object" || body === null) continue;
-      const skills = (body as { skills?: unknown }).skills;
-      if (!Array.isArray(skills)) continue;
-
-      const skillNames = skills
-        .slice(0, MAX_INDEX_SKILLS)
-        .map((entry) =>
-          typeof entry === "object" && entry !== null
-            ? (entry as { name?: unknown }).name
-            : undefined,
-        )
-        .filter(
-          (name): name is string =>
-            typeof name === "string" &&
-            name.length > 0 &&
-            name.length <= MAX_SKILL_NAME_LENGTH,
-        );
-      if (skillNames.length === 0) continue;
-
-      // `res.url`, not the requested URL: after a redirect those differ, and
-      // the row should name where the index actually came from.
-      return {
-        source,
-        status: "ok",
-        indexUrl: res.url || indexUrl,
-        skillNames,
-      };
     } catch {
-      // Timeout, DNS failure, TLS error, or a body that would not parse. We
-      // cannot tell those apart, and treating them as "publishes nothing" is
-      // the one mistake that costs a working domain its commands.
       unreachable = true;
       continue;
     }
+
+    if (!res.ok) {
+      // 404 is a real answer: this domain does not publish here. A 5xx, a 429,
+      // or the 403 a CDN hands a datacenter IP with a non-browser User-Agent
+      // is not, and treating those as "publishes nothing" wipes the domain's
+      // commands until the next run.
+      if (res.status >= 500 || res.status === 429 || res.status === 403) {
+        unreachable = true;
+      }
+      continue;
+    }
+
+    // Everything past here is the domain answering with something we can't
+    // use, which IS an answer. `continue` without setting `unreachable`, so a
+    // domain that starts serving its SPA at this path clears its stale row
+    // rather than keeping it forever.
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      continue;
+    }
+    if (typeof body !== "object" || body === null) continue;
+    const skills = (body as { skills?: unknown }).skills;
+    if (!Array.isArray(skills)) continue;
+
+    const skillNames = skills
+      .slice(0, MAX_INDEX_SKILLS)
+      .map((entry) =>
+        typeof entry === "object" && entry !== null
+          ? (entry as { name?: unknown }).name
+          : undefined,
+      )
+      .filter(
+        (name): name is string =>
+          typeof name === "string" &&
+          name.length > 0 &&
+          name.length <= MAX_SKILL_NAME_LENGTH,
+      );
+    if (skillNames.length === 0) continue;
+
+    // `res.url`, not the requested URL: after a redirect those differ, and the
+    // row should name where the index actually came from.
+    return { source, status: "ok", indexUrl: res.url || indexUrl, skillNames };
   }
   return miss(unreachable ? "error" : "empty");
 }
