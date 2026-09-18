@@ -73,10 +73,8 @@ export function isSafeSkillRef(source: string, skillId: string): boolean {
  *
  * The one place the GitHub / well-known split is decided. A GitHub source is
  * its own `owner/repo` shorthand. A well-known source is only reachable through
- * an absolute URL, and only when its domain serves a skills index at its root:
- * `https://mintlify.com` reaches nothing because mintlify.com publishes under a
- * base path we cannot derive, and `https://bun.sh` reaches nothing because
- * bun.sh stopped publishing an index at all. See convex/wellKnown.ts.
+ * an absolute URL, and only when its domain serves a skills index at its root,
+ * which is what the map records. Why, and what it costs: convex/wellKnown.ts.
  *
  * `skillId` narrows the well-known case further: the CLI matches `--skill`
  * against the names in that index, so a skill the index does not name has no

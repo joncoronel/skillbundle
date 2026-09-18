@@ -660,20 +660,15 @@ export default defineSchema({
   // wellKnown.refreshWellKnownIndexes; read by the site pages to decide whether
   // they can show an install command at all.
   //
-  // It exists because the `npx skills add` command for a well-known source is
-  // NOT derivable from the source string. The CLI parses a bare domain as a git
-  // remote and only reaches a well-known source from an absolute URL, so the
-  // command has to be `npx skills add https://{source}` — and that only works
-  // when the index sits at the root. Measured against production Sep 2026: 16
-  // of our 26 domains
-  // serve one there, and 109 of 161 well-known skills appear in it. bun.sh and
-  // mintlify.com publish under a base path we cannot guess; smithery.ai lists
-  // one of its eight skills. The rest of the catalog is exactly the set this
-  // table lets us stay quiet about instead of printing a command that fails.
+  // It exists because a well-known source's install command is not derivable
+  // from the source string, only from what its domain serves. The argument, the
+  // CLI behaviour behind it and the measured coverage are in the header of
+  // convex/wellKnown.ts; don't restate them here, a copy of that paragraph
+  // lived in this comment and had already drifted from it.
   //
-  // `indexUrl` is the candidate that answered (diagnostics — paste it to see
-  // what we saw), null when neither did. `skillNames` is empty in that case,
-  // and empty is the signal every reader checks.
+  // `indexUrl` is the URL that answered (diagnostics — paste it to see what we
+  // saw), null when none did. `skillNames` is empty in that case, and empty is
+  // the signal every reader checks.
   wellKnownIndexes: defineTable({
     source: v.string(),
     indexUrl: v.union(v.string(), v.null()),
