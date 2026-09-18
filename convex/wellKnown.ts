@@ -382,27 +382,19 @@ export const refreshWellKnownIndexes = internalAction({
       return out;
     };
 
-    const results = await probeAll([...sources]);
+    let results = await probeAll([...sources]);
 
-    // One retry for the domains that never answered, because this job runs
-    // weekly and nobody watches it: a domain that flakes on Sunday would
-    // otherwise stay dark for seven days. Measured against production Sep 2026,
-    // a second pass recovered apifox.com and cdn-cmm-ai-open.chanmama.com both
-    // times they were asked, so the flake is transient and one retry clears it.
-    // Only "error" retries; "empty" is a real answer and re-asking it would
-    // just double the requests.
+    // One retry for the domains that never answered. The job runs weekly and
+    // unattended, so a domain that flakes on Sunday is dark for seven days;
+    // apifox.com and cdn-cmm-ai-open.chanmama.com each answered on the second
+    // ask in production (Sep 2026). Only "error" retries: "empty" is a real
+    // answer, and re-asking it would double the requests for nothing.
     const unreachable = results.filter((r) => r.status === "error");
     if (unreachable.length > 0) {
-      const retried = new Map(
-        (await probeAll(unreachable.map((r) => r.source))).map((r) => [
-          r.source,
-          r,
-        ]),
-      );
-      for (let i = 0; i < results.length; i++) {
-        const second = retried.get(results[i].source);
-        if (second && second.status !== "error") results[i] = second;
-      }
+      results = [
+        ...results.filter((r) => r.status !== "error"),
+        ...(await probeAll(unreachable.map((r) => r.source))),
+      ];
     }
 
     for (let i = 0; i < results.length; i += WRITE_BATCH) {
