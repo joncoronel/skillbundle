@@ -208,7 +208,8 @@ export function BundleView({
   );
   // Counted with the same map InstallCommands renders from, or the header
   // would advertise a command count the panel below it doesn't produce.
-  const { indexes: wellKnown } = useWellKnownIndexes(skills);
+  const { indexes: wellKnown, pending: wellKnownPending } =
+    useWellKnownIndexes(skills);
   const commandCount = useMemo(
     () => generateInstallCommands(skills, wellKnown).length,
     [skills, wellKnown],
@@ -217,9 +218,12 @@ export function BundleView({
   // explanation lives inside the disclosure. Gating the trigger on commands
   // alone hid it in the one case it exists for: a bundle where nothing has a
   // command.
+  // Gated on `pending` exactly as the panel is: while the query is in flight
+  // every site skill looks uncovered, and counting them here would open the
+  // disclosure over a panel that is deliberately rendering nothing yet.
   const uncoveredCount = useMemo(
-    () => uncoveredSkills(skills, wellKnown).length,
-    [skills, wellKnown],
+    () => (wellKnownPending ? 0 : uncoveredSkills(skills, wellKnown).length),
+    [skills, wellKnown, wellKnownPending],
   );
   const installPanelHasContent = commandCount > 0 || uncoveredCount > 0;
 

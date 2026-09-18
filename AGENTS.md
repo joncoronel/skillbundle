@@ -129,7 +129,7 @@ Modules, grouped by concern:
 
 - **Skill sync & lifecycle:** `skills.ts` (sync pipeline + catalog queries), `reconcile.ts`, `curated.ts` / `curatedRefresh.ts`, `duplicates.ts`, `audits.ts`, `crons.ts`, plus `lib/*` helpers (`detailRefresh`, `skillHealth`, `source`, `appDay`, `pagination`, `github`, `skillsApi`, `embeddings`). Documented in docs/skill-lifecycle.md.
 - **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
-- **Well-known sources:** `wellKnown.ts` (weekly probe of each well-known domain's root skills index). Read its header before touching any `npx skills add` string — the command for a well-known source is not derivable from the source, and the obvious form is one the CLI resolves to a GitHub repo.
+- **Well-known sources:** `wellKnown.ts` (weekly probe of each well-known domain's skills index, at the root and under a fixed set of base paths). Read its header before touching any `npx skills add` string — the command for a well-known source is not derivable from the source, and the obvious form is one the CLI resolves to a GitHub repo.
 - **Version archive & monitoring:** `skillVersions.ts` (read + write API over the change archive; `freshness.ts` decides which SKILL.mds to re-check).
 - **Bundles & social:** `bundles.ts`.
 - **Users, auth & billing:** `users.ts`, `http.ts` (Clerk + Polar webhooks, Svix-validated), `auth.config.ts`, `subscriptions.ts` / `plans.ts` / `polar.ts`, `rateLimits.ts` (per-user limits on public actions that spend money or GitHub budget; read its header before changing a number or adding an app-wide limit) (+ `convex.config.ts` registers the `@convex-dev/polar` and `@convex-dev/rate-limiter` components).

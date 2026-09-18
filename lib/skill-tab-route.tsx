@@ -1,7 +1,9 @@
 import "server-only";
 import type { Metadata, ResolvingMetadata } from "next";
 import { Suspense } from "react";
+import { notFound } from "next/navigation";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { isSafeSkillRef } from "@/lib/install-commands";
 import {
   SkillHistoryTab,
   SkillHistoryTabSkeleton,
@@ -135,7 +137,13 @@ const TAB_PARTS: Record<
   copies: [SkillCopiesTab, SkillCopiesTabSkeleton],
 };
 
-/** The body of a non-Overview tab page: boundary, skeleton, and the tab. */
+/**
+ * The body of a non-Overview tab page: boundary, skeleton, and the tab.
+ *
+ * Owns the 404 guard too. Every tab route reaches the catalog through here, so
+ * one call covers all eight of them; the eight copies it replaced had to be
+ * edited in lockstep, and a ninth tab could have been added without one.
+ */
 export function SkillTabPage({
   tab,
   source,
@@ -145,6 +153,7 @@ export function SkillTabPage({
   source: string;
   skillId: string;
 }) {
+  if (!isSafeSkillRef(source, skillId)) notFound();
   const [Tab, Skeleton] = TAB_PARTS[tab];
 
   return (

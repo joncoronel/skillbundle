@@ -19,10 +19,13 @@ import {
 
 describe("generateInstallCommands — happy path", () => {
   test("two skills from the same source group into one --skill-flagged command", () => {
-    const result = generateInstallCommands([
-      { source: "owner/repo", skillId: "a" },
-      { source: "owner/repo", skillId: "b" },
-    ]);
+    const result = generateInstallCommands(
+      [
+        { source: "owner/repo", skillId: "a" },
+        { source: "owner/repo", skillId: "b" },
+      ],
+      {},
+    );
     expect(result).toEqual([
       {
         source: "owner/repo",
@@ -40,7 +43,7 @@ describe("generateInstallCommands — happy path", () => {
         { source: "owner/repo", skillId: "a" },
         { source: "example.com", skillId: "b" },
       ],
-      { "example.com": { base: "https://example.com", skills: ["b"] } },
+      { "example.com": { basePath: "", skills: ["b"] } },
     );
     expect(text).toBe(
       "npx skills add owner/repo --skill a && npx skills add https://example.com --skill b",
@@ -53,7 +56,7 @@ describe("generateInstallCommands — happy path", () => {
         { source: "example.com", skillId: "a" },
         { source: "example.com", skillId: "b" },
       ],
-      { "example.com": { base: "https://example.com", skills: ["a", "b"] } },
+      { "example.com": { basePath: "", skills: ["a", "b"] } },
     );
     expect(result).toEqual([
       {
@@ -75,7 +78,7 @@ describe("well-known skills with no usable index", () => {
     ];
     // No map entry for bun.sh: its domain serves no root index, so there is no
     // command shape that would work.
-    expect(generateInstallCommands(skills)).toEqual([
+    expect(generateInstallCommands(skills, {})).toEqual([
       {
         source: "owner/repo",
         skills: ["a"],
@@ -84,20 +87,20 @@ describe("well-known skills with no usable index", () => {
         excludedSkills: [],
       },
     ]);
-    expect(uncoveredSkills(skills)).toEqual([
-      { source: "bun.sh", skillIds: ["bun"] },
+    expect(uncoveredSkills(skills, {})).toEqual([
+      { source: "bun.sh", skillIds: ["bun"], reason: "no-index" },
     ]);
     expect(
       uncoveredSkills(skills, {
-        "bun.sh": { base: "https://bun.sh", skills: ["bun"] },
+        "bun.sh": { basePath: "", skills: ["bun"] },
       }),
     ).toEqual([]);
   });
 
   test("a source whose skills are all uncovered emits no command group", () => {
     const skills = [{ source: "bun.sh", skillId: "bun" }];
-    expect(generateInstallCommands(skills)).toEqual([]);
-    expect(uncoveredSkills(skills)).toHaveLength(1);
+    expect(generateInstallCommands(skills, {})).toEqual([]);
+    expect(uncoveredSkills(skills, {})).toHaveLength(1);
   });
 
   test("an index miss raises no content-fetch warning on its source's command", () => {
@@ -108,7 +111,7 @@ describe("well-known skills with no usable index", () => {
       { source: "example.com", skillId: "unlisted" },
     ];
     const result = generateInstallCommands(skills, {
-      "example.com": { base: "https://example.com", skills: ["listed"] },
+      "example.com": { basePath: "", skills: ["listed"] },
     });
     expect(result).toEqual([
       {
@@ -121,9 +124,17 @@ describe("well-known skills with no usable index", () => {
     ]);
     expect(
       uncoveredSkills(skills, {
-        "example.com": { base: "https://example.com", skills: ["listed"] },
+        "example.com": { basePath: "", skills: ["listed"] },
       }),
-    ).toEqual([{ source: "example.com", skillIds: ["unlisted"] }]);
+      // "not-in-index", not "no-index": example.com has an index, it just does
+      // not name this skill. The two get different sentences in the UI.
+    ).toEqual([
+      {
+        source: "example.com",
+        skillIds: ["unlisted"],
+        reason: "not-in-index",
+      },
+    ]);
   });
 
   test("unsafe identifiers stay a warning, and stay out of the uncovered list", () => {
@@ -132,7 +143,7 @@ describe("well-known skills with no usable index", () => {
       { source: "example.com", skillId: "not safe" },
     ];
     const wellKnown = {
-      "example.com": { base: "https://example.com", skills: ["listed"] },
+      "example.com": { basePath: "", skills: ["listed"] },
     };
     const result = generateInstallCommands(skills, wellKnown);
     expect(result[0].hasWarning).toBe(true);
@@ -142,24 +153,28 @@ describe("well-known skills with no usable index", () => {
 
   test("uncovered groups by source", () => {
     expect(
-      uncoveredSkills([
-        { source: "bun.sh", skillId: "bun" },
-        { source: "mintlify.com", skillId: "a" },
-        { source: "mintlify.com", skillId: "b" },
-        { source: "owner/repo", skillId: "fine" },
-      ]),
+      uncoveredSkills(
+        [
+          { source: "bun.sh", skillId: "bun" },
+          { source: "mintlify.com", skillId: "a" },
+          { source: "mintlify.com", skillId: "b" },
+          { source: "owner/repo", skillId: "fine" },
+        ],
+        {},
+      ),
     ).toEqual([
-      { source: "bun.sh", skillIds: ["bun"] },
-      { source: "mintlify.com", skillIds: ["a", "b"] },
+      { source: "bun.sh", skillIds: ["bun"], reason: "no-index" },
+      { source: "mintlify.com", skillIds: ["a", "b"], reason: "no-index" },
     ]);
   });
 });
 
 describe("generateInstallCommands — content-fetch warnings", () => {
   test("hasContentFetchError still sets hasWarning", () => {
-    const result = generateInstallCommands([
-      { source: "owner/repo", skillId: "a", hasContentFetchError: true },
-    ]);
+    const result = generateInstallCommands(
+      [{ source: "owner/repo", skillId: "a", hasContentFetchError: true }],
+      {},
+    );
     expect(result[0].hasWarning).toBe(true);
     expect(result[0].excludedSkills).toEqual([]);
   });
@@ -167,10 +182,13 @@ describe("generateInstallCommands — content-fetch warnings", () => {
 
 describe("generateInstallCommands — unsafe identifier exclusion", () => {
   test("skillId with a space is excluded; safe sibling still emits", () => {
-    const result = generateInstallCommands([
-      { source: "owner/repo", skillId: "safe" },
-      { source: "owner/repo", skillId: "not safe" },
-    ]);
+    const result = generateInstallCommands(
+      [
+        { source: "owner/repo", skillId: "safe" },
+        { source: "owner/repo", skillId: "not safe" },
+      ],
+      {},
+    );
     expect(result).toHaveLength(1);
     expect(result[0].command).toBe("npx skills add owner/repo --skill safe");
     expect(result[0].excludedSkills).toEqual(["not safe"]);
@@ -178,36 +196,42 @@ describe("generateInstallCommands — unsafe identifier exclusion", () => {
   });
 
   test("skillIds with ;, $, backtick, or empty string are all excluded", () => {
-    const result = generateInstallCommands([
-      { source: "owner/repo", skillId: "safe" },
-      { source: "owner/repo", skillId: "a;b" },
-      { source: "owner/repo", skillId: "a$b" },
-      { source: "owner/repo", skillId: "a`b" },
-      { source: "owner/repo", skillId: "" },
-    ]);
+    const result = generateInstallCommands(
+      [
+        { source: "owner/repo", skillId: "safe" },
+        { source: "owner/repo", skillId: "a;b" },
+        { source: "owner/repo", skillId: "a$b" },
+        { source: "owner/repo", skillId: "a`b" },
+        { source: "owner/repo", skillId: "" },
+      ],
+      {},
+    );
     expect(result).toHaveLength(1);
     expect(result[0].skills).toEqual(["safe"]);
     expect(result[0].excludedSkills).toEqual(["a;b", "a$b", "a`b", ""]);
   });
 
   test("source with three slash segments emits no command for that group", () => {
-    const result = generateInstallCommands([
-      { source: "owner/repo/extra", skillId: "a" },
-    ]);
+    const result = generateInstallCommands(
+      [{ source: "owner/repo/extra", skillId: "a" }],
+      {},
+    );
     expect(result).toEqual([]);
   });
 
   test("source with a charset-failing segment emits no command for that group", () => {
-    const result = generateInstallCommands([
-      { source: "owner/re;po", skillId: "a" },
-    ]);
+    const result = generateInstallCommands(
+      [{ source: "owner/re;po", skillId: "a" }],
+      {},
+    );
     expect(result).toEqual([]);
   });
 
   test("safe punctuation (dots, underscores, hyphens) survives", () => {
-    const result = generateInstallCommands([
-      { source: "owner/repo.name-x", skillId: "my_skill.v2" },
-    ]);
+    const result = generateInstallCommands(
+      [{ source: "owner/repo.name-x", skillId: "my_skill.v2" }],
+      {},
+    );
     expect(result).toEqual([
       {
         source: "owner/repo.name-x",
@@ -262,7 +286,7 @@ describe("base paths", () => {
   test("a base with a path segment is used verbatim", () => {
     const wellKnown = {
       "mintlify.com": {
-        base: "https://mintlify.com/docs",
+        basePath: "docs",
         skills: ["mintlify"],
       },
     };
@@ -274,19 +298,14 @@ describe("base paths", () => {
     ).toBe("npx skills add https://mintlify.com/docs --skill mintlify");
   });
 
-  test("a base that is not this source, or not one safe segment, is refused", () => {
-    const cases = [
-      "https://evil.com",
-      "https://example.com.evil.com",
-      "https://example.com/a/b",
-      "https://example.com/a b",
-      "http://example.com",
-      "https://example.com/",
-    ];
-    for (const base of cases) {
+  test("a base path that is not one safe segment is refused", () => {
+    // The prober can only ever store "", "docs" or "skills", but the value
+    // reaches a shell command, so the builder re-checks rather than trusting it.
+    const cases = ["a/b", "a b", "..", "a;rm -rf /", "/docs", "docs/"];
+    for (const basePath of cases) {
       expect(
         buildSourceInstallCommand("example.com", {
-          "example.com": { base, skills: ["a"] },
+          "example.com": { basePath, skills: ["a"] },
         }),
       ).toBeNull();
     }
@@ -299,7 +318,7 @@ describe("isSafeSkillRef", () => {
   // page, and this used to be spelled "buildSkillInstallCommand returned null".
   test("accepts a well-known ref that has no install command", () => {
     expect(isSafeSkillRef("bun.sh", "bun")).toBe(true);
-    expect(buildSkillInstallCommand("bun.sh", "bun")).toBeNull();
+    expect(buildSkillInstallCommand("bun.sh", "bun", {})).toBeNull();
   });
 
   test("rejects malformed refs", () => {
@@ -311,7 +330,7 @@ describe("isSafeSkillRef", () => {
 
 describe("buildSkillInstallCommand", () => {
   test("GitHub source uses the --skill flag form", () => {
-    expect(buildSkillInstallCommand("owner/repo", "my-skill")).toBe(
+    expect(buildSkillInstallCommand("owner/repo", "my-skill", {})).toBe(
       "npx skills add owner/repo --skill my-skill",
     );
   });
@@ -321,11 +340,11 @@ describe("buildSkillInstallCommand", () => {
   // well-known form needs an absolute URL, and only works when the domain's
   // index sits at its root — which is what the map argument answers.
   test("well-known source needs its index, and uses the absolute-URL form", () => {
-    expect(buildSkillInstallCommand("example.com", "my-skill")).toBeNull();
+    expect(buildSkillInstallCommand("example.com", "my-skill", {})).toBeNull();
     expect(
       buildSkillInstallCommand("example.com", "my-skill", {
         "example.com": {
-          base: "https://example.com",
+          basePath: "",
           skills: ["other-skill"],
         },
       }),
@@ -333,7 +352,7 @@ describe("buildSkillInstallCommand", () => {
     expect(
       buildSkillInstallCommand("example.com", "my-skill", {
         "example.com": {
-          base: "https://example.com",
+          basePath: "",
           skills: ["my-skill"],
         },
       }),
@@ -341,17 +360,19 @@ describe("buildSkillInstallCommand", () => {
   });
 
   test("skillId with a space returns null", () => {
-    expect(buildSkillInstallCommand("owner/repo", "my skill")).toBeNull();
+    expect(buildSkillInstallCommand("owner/repo", "my skill", {})).toBeNull();
   });
 
   test("source containing a percent-sign returns null", () => {
-    expect(buildSkillInstallCommand("owner/re%20po", "my-skill")).toBeNull();
+    expect(
+      buildSkillInstallCommand("owner/re%20po", "my-skill", {}),
+    ).toBeNull();
   });
 });
 
 describe("buildSourceInstallCommand", () => {
   test("a GitHub source becomes the flagless whole-repo command", () => {
-    expect(buildSourceInstallCommand("vercel-labs/skills")).toBe(
+    expect(buildSourceInstallCommand("vercel-labs/skills", {})).toBe(
       "npx skills add vercel-labs/skills",
     );
   });
@@ -360,16 +381,16 @@ describe("buildSourceInstallCommand", () => {
     // `npx skills add bun.sh` parses as a git remote, not a well-known source,
     // so the command has to be the absolute URL — and that only reaches
     // anything when the domain serves its index at the root. bun.sh does not.
-    expect(buildSourceInstallCommand("bun.sh")).toBeNull();
+    expect(buildSourceInstallCommand("bun.sh", {})).toBeNull();
     expect(
       buildSourceInstallCommand("bun.sh", {
-        "bun.sh": { base: "https://bun.sh", skills: [] },
+        "bun.sh": { basePath: "", skills: [] },
       }),
     ).toBeNull();
     expect(
       buildSourceInstallCommand("open.feishu.cn", {
         "open.feishu.cn": {
-          base: "https://open.feishu.cn",
+          basePath: "",
           skills: ["lark-approval"],
         },
       }),
@@ -377,9 +398,9 @@ describe("buildSourceInstallCommand", () => {
   });
 
   test("unsafe or malformed sources get no command", () => {
-    expect(buildSourceInstallCommand("owner/repo; rm -rf /")).toBeNull();
-    expect(buildSourceInstallCommand("owner/repo/extra")).toBeNull();
-    expect(buildSourceInstallCommand("owner/..")).toBeNull();
-    expect(buildSourceInstallCommand("")).toBeNull();
+    expect(buildSourceInstallCommand("owner/repo; rm -rf /", {})).toBeNull();
+    expect(buildSourceInstallCommand("owner/repo/extra", {})).toBeNull();
+    expect(buildSourceInstallCommand("owner/..", {})).toBeNull();
+    expect(buildSourceInstallCommand("", {})).toBeNull();
   });
 });

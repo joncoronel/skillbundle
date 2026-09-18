@@ -84,6 +84,22 @@ const MAX_SKILL_NAME_LENGTH = 200;
 // write discarded every other domain's fresh result.
 const WRITE_BATCH = 10;
 
+// Wall-clock budget for the probing, well inside Convex's 10-minute action
+// limit. Worst case without it: 3 bases x 2 paths x 8s = 48s for a fully dead
+// domain, ceil(26/4) waves x 48s = 336s, doubled by the retry = 672s, which
+// overruns and loses the whole run. Sources not reached before the deadline
+// keep the row they already had, exactly like an unreachable one.
+const PROBE_BUDGET_MS = 240_000;
+
+// Largest index body we will parse. The biggest real one is ~40 KB; this is the
+// guard against a domain that answers 200 with something enormous, checked
+// before `res.json()` rather than after.
+const MAX_INDEX_BYTES = 2_000_000;
+
+// Ceiling on one `wellKnownSkillNames` call. The catalog holds ~26 well-known
+// sources in total, so nothing legitimate comes close.
+const MAX_QUERY_SOURCES = 50;
+
 /**
  * One page of the well-known-source walk.
  *
@@ -138,7 +154,7 @@ export const applyWellKnownIndexes = internalMutation({
           v.literal("empty"),
           v.literal("error"),
         ),
-        baseUrl: v.union(v.string(), v.null()),
+        basePath: v.union(v.string(), v.null()),
         indexUrl: v.union(v.string(), v.null()),
         skillNames: v.array(v.string()),
       }),
@@ -156,16 +172,18 @@ export const applyWellKnownIndexes = internalMutation({
         .withIndex("by_source", (q) => q.eq("source", result.source))
         .unique();
 
-      if (result.status === "error" && existing) {
-        // `checkedAt` deliberately not bumped: a stale timestamp beside a live
-        // index is what says "we have not reached this domain lately".
+      if (result.status === "error") {
+        // Never written, with or without an existing row. Preserving keeps a
+        // live index alive through a blip; skipping the insert keeps a domain
+        // we have only ever failed to reach out of the table, so "no row" and
+        // "answered with nothing" stay different states.
         kept++;
         continue;
       }
 
       const fields = {
         source: result.source,
-        baseUrl: result.baseUrl ?? undefined,
+        basePath: result.basePath ?? undefined,
         indexUrl: result.indexUrl,
         skillNames: result.skillNames,
         checkedAt,
@@ -202,9 +220,9 @@ export const pruneWellKnownIndexes = internalMutation({
 type ProbeResult = {
   source: string;
   status: "ok" | "empty" | "error";
-  // What `npx skills add` takes for this source, built from `source` and one
-  // of BASE_PATHS. The command is built from THIS, never from `indexUrl`.
-  baseUrl: string | null;
+  // Which of BASE_PATHS answered: "" for the root, "docs", "skills". The
+  // command is built by joining this onto the source, never from `indexUrl`.
+  basePath: string | null;
   // The URL that answered, after redirects. Diagnostics only: a third party
   // controls it, so nothing user-facing may be derived from it.
   indexUrl: string | null;
@@ -223,8 +241,22 @@ type ProbeResult = {
 function isProbeableHost(source: string): boolean {
   if (!/^[a-z0-9.-]+$/i.test(source)) return false;
   if (!source.includes(".")) return false;
+
+  // Public names only. Catalog sources are upstream data from skills.sh, and
+  // this action runs inside Convex with whatever egress that has, so a source
+  // of `169.254.169.254` or `metadata.google.internal` would point the probe at
+  // an internal endpoint. Any body shaped `{skills:[{name}]}` would then have
+  // its names echoed by the public query below.
+  const host = source.toLowerCase();
+  const labels = host.split(".");
+  const last = labels[labels.length - 1];
+  if (/^[0-9]+$/.test(last)) return false; // IPv4 literal, or an invalid TLD
+  if (["internal", "local", "localhost", "home", "lan"].includes(last)) {
+    return false;
+  }
+
   try {
-    return new URL(`https://${source}/`).host === source.toLowerCase();
+    return new URL(`https://${host}/`).host === host;
   } catch {
     return false;
   }
@@ -248,7 +280,7 @@ async function probeSource(source: string): Promise<ProbeResult> {
   const miss = (status: "empty" | "error"): ProbeResult => ({
     source,
     status,
-    baseUrl: null,
+    basePath: null,
     indexUrl: null,
     skillNames: [],
   });
@@ -295,7 +327,9 @@ async function probeSource(source: string): Promise<ProbeResult> {
       // rather than keeping it forever.
       let body: unknown;
       try {
-        body = await res.json();
+        const text = await res.text();
+        if (text.length > MAX_INDEX_BYTES) continue;
+        body = JSON.parse(text);
       } catch {
         continue;
       }
@@ -318,12 +352,12 @@ async function probeSource(source: string): Promise<ProbeResult> {
         );
       if (skillNames.length === 0) continue;
 
-      // `baseUrl` is ours; `indexUrl` records where the bytes actually came
+      // `basePath` is ours; `indexUrl` records where the bytes actually came
       // from, which differs after a redirect and is diagnostics only.
       return {
         source,
         status: "ok",
-        baseUrl,
+        basePath: base,
         indexUrl: res.url || indexUrl,
         skillNames,
       };
@@ -363,26 +397,49 @@ export const refreshWellKnownIndexes = internalAction({
       cursor = page.nextCursor;
     }
 
+    const deadline = Date.now() + PROBE_BUDGET_MS;
+    const all: ProbeResult[] = [];
+
     // A fixed pool pulling off one shared list, rather than fixed chunks: a
     // chunk waits on its slowest domain before the next one starts, and a
     // domain burning the whole timeout is the common case here, not the rare
     // one.
+    //
+    // Results are written as they accumulate rather than at the end, so a
+    // failure late in the run keeps everything that already answered. Workers
+    // stop pulling once the budget is spent; an unprobed source is simply not
+    // written, which leaves its existing row alone.
     const probeAll = async (list: string[]): Promise<ProbeResult[]> => {
       const queue = [...list];
-      const out: ProbeResult[] = [];
+      const done: ProbeResult[] = [];
+      let buffer: ProbeResult[] = [];
+      const flush = async () => {
+        if (buffer.length === 0) return;
+        const batch = buffer;
+        buffer = [];
+        await ctx.runMutation(internal.wellKnown.applyWellKnownIndexes, {
+          results: batch,
+        });
+      };
+
       await Promise.all(
         Array.from({ length: PROBE_CONCURRENCY }, async () => {
           for (;;) {
             const source = queue.pop();
-            if (source === undefined) return;
-            out.push(await probeSource(source));
+            if (source === undefined || Date.now() > deadline) return;
+            const result = await probeSource(source);
+            done.push(result);
+            all.push(result);
+            buffer.push(result);
+            if (buffer.length >= WRITE_BATCH) await flush();
           }
         }),
       );
-      return out;
+      await flush();
+      return done;
     };
 
-    let results = await probeAll([...sources]);
+    const results = await probeAll([...sources]);
 
     // One retry for the domains that never answered. The job runs weekly and
     // unattended, so a domain that flakes on Sunday is dark for seven days;
@@ -391,28 +448,26 @@ export const refreshWellKnownIndexes = internalAction({
     // answer, and re-asking it would double the requests for nothing.
     const unreachable = results.filter((r) => r.status === "error");
     if (unreachable.length > 0) {
-      results = [
-        ...results.filter((r) => r.status !== "error"),
-        ...(await probeAll(unreachable.map((r) => r.source))),
-      ];
-    }
-
-    for (let i = 0; i < results.length; i += WRITE_BATCH) {
-      await ctx.runMutation(internal.wellKnown.applyWellKnownIndexes, {
-        results: results.slice(i, i + WRITE_BATCH),
-      });
+      await probeAll(unreachable.map((r) => r.source));
     }
     const removed: number = await ctx.runMutation(
       internal.wellKnown.pruneWellKnownIndexes,
       { sources: [...sources] },
     );
 
+    // Counted over the retry's answer where there was one, so a domain that
+    // failed then succeeded reads as one success.
+    const final = new Map(all.map((r) => [r.source, r]));
+    for (const r of all) {
+      if (r.status !== "error") final.set(r.source, r);
+    }
+    const settled = [...final.values()];
     return {
-      sources: results.length,
-      withIndex: results.filter((r) => r.status === "ok").length,
+      sources: settled.length,
+      withIndex: settled.filter((r) => r.status === "ok").length,
       // Probed but never answered. Their stored rows were left as they were,
       // so a non-zero count here is not the same as a loss of coverage.
-      unreachable: results.filter((r) => r.status === "error").length,
+      unreachable: settled.filter((r) => r.status === "error").length,
       removed,
     };
   },
@@ -433,21 +488,29 @@ export const wellKnownSkillNames = query({
   args: { sources: v.array(v.string()) },
   returns: v.record(
     v.string(),
-    v.object({ base: v.string(), skills: v.array(v.string()) }),
+    v.object({ basePath: v.string(), skills: v.array(v.string()) }),
   ),
   handler: async (ctx, { sources }) => {
-    const out: Record<string, { base: string; skills: string[] }> = {};
+    const out: Record<string, { basePath: string; skills: string[] }> = {};
+    const distinct = [...new Set(sources)];
     // Bounded so a crafted argument can't turn one websocket message into an
-    // unbounded fan-out of indexed reads. The whole catalog holds ~26
-    // well-known sources, and a bundle can hold far fewer distinct ones.
-    for (const source of [...new Set(sources)].slice(0, 50)) {
+    // unbounded fan-out of indexed reads. Throwing rather than truncating: a
+    // dropped source reads back as "publishes no index", so a silent cap would
+    // make the UI state something false the day the catalog outgrows it.
+    if (distinct.length > MAX_QUERY_SOURCES) {
+      throw new Error(
+        `wellKnownSkillNames: ${distinct.length} sources exceeds ${MAX_QUERY_SOURCES}; chunk the call`,
+      );
+    }
+    for (const source of distinct) {
       if (isGitHubSource(source)) continue;
       const row = await ctx.db
         .query("wellKnownIndexes")
         .withIndex("by_source", (q) => q.eq("source", source))
         .unique();
-      if (row?.baseUrl)
-        out[source] = { base: row.baseUrl, skills: row.skillNames };
+      if (row?.basePath !== undefined) {
+        out[source] = { basePath: row.basePath, skills: row.skillNames };
+      }
     }
     return out;
   },

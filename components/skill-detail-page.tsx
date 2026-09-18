@@ -23,6 +23,12 @@ import type { SectionNavItem } from "@/components/skill-section-nav";
 import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { skillHref } from "@/lib/skill-urls";
+import {
+  buildSkillInstallCommand,
+  uncoveredReason,
+  type UncoveredReason,
+  type WellKnownIndexes,
+} from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import {
   copyCount,
@@ -158,7 +164,9 @@ const LAYOUT_VARS = {
 type SkillDetailPageProps = {
   source: string;
   skillId: string;
-  installCommand: string | null;
+  // The map, not a finished command: this component needs it twice, once for
+  // the command and once for the reason there isn't one.
+  wellKnown: WellKnownIndexes;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -173,11 +181,12 @@ type SkillDetailPageProps = {
 export function SkillDetailPage({
   source,
   skillId,
-  installCommand,
+  wellKnown,
   externalUrl,
   externalIcon,
   externalLabel,
 }: SkillDetailPageProps) {
+  const installCommand = buildSkillInstallCommand(source, skillId, wellKnown);
   return (
     <div className="mt-8" style={LAYOUT_VARS}>
       {/* Boundary sits around the Suspense, not inside it, so it covers the
@@ -191,6 +200,7 @@ export function SkillDetailPage({
             source={source}
             skillId={skillId}
             installCommand={installCommand}
+            noCommandReason={uncoveredReason(source, wellKnown)}
             externalUrl={externalUrl}
             externalIcon={externalIcon}
             externalLabel={externalLabel}
@@ -205,6 +215,7 @@ async function SkillDetailBody({
   source,
   skillId,
   installCommand,
+  noCommandReason,
   externalUrl,
   externalIcon,
   externalLabel,
@@ -212,6 +223,7 @@ async function SkillDetailBody({
   source: string;
   skillId: string;
   installCommand: string | null;
+  noCommandReason: UncoveredReason;
   externalUrl: string;
   externalIcon: IconSvgElement;
   externalLabel: string;
@@ -370,7 +382,12 @@ async function SkillDetailBody({
         {installCommand ? (
           <InstallCommandBlock command={installCommand} className="mt-7" />
         ) : (
-          <InstallCommandUnavailable source={source} className="mt-7" />
+          <InstallCommandUnavailable
+            source={source}
+            skillId={skillId}
+            reason={noCommandReason}
+            className="mt-7"
+          />
         )}
       </div>
 
@@ -498,12 +515,13 @@ export function SkillDetailPageSkeleton({
           <Skeleton className="h-4 w-4/5" />
         </div>
 
-        {installCommand && (
-          <InstallCommandBlockSkeleton
-            command={installCommand}
-            className="mt-7"
-          />
-        )}
+        {/* Always reserved. The body fills this slot either way, with the
+            command or with the note explaining its absence, and both are the
+            same 44px box. */}
+        <InstallCommandBlockSkeleton
+          command={installCommand ?? undefined}
+          className="mt-7"
+        />
       </div>
 
       <SkillSidebarShell className="mt-10 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
@@ -604,11 +622,9 @@ export function SkillDetailPageSkeleton({
 // layout (SkillMastheadSkeleton) — this covers only the tab body.
 //
 // The placeholder command is a stand-in, not a claim. `loading.tsx` takes no
-// params, so this cannot know whether the skill it is covering has a command:
-// every GitHub skill does, and about two thirds of well-known skills do. It
-// reserves the block for all of them, which means the ~56 well-known skills
-// with no usable index lose a grey box when the body lands. Reserving nothing
-// would instead shift the document down for everyone else.
+// params, so this cannot know which skill it is covering, only that the slot
+// will hold a 44px box: a command for every GitHub skill and for 128 of 161
+// well-known ones, and the note explaining its absence for the other 33.
 export function SkillDetailPageLoading() {
   return (
     <div className="mt-8">

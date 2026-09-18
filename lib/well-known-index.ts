@@ -7,9 +7,9 @@ import { isGitHubSource } from "@/lib/skill-urls";
 import type { WellKnownIndexes } from "@/lib/install-commands";
 
 /**
- * Which skills a well-known source's root index advertises, for the site pages
- * that build install commands. See convex/wellKnown.ts for what fills the table
- * and why the answer can't be derived from the domain.
+ * Which skills a well-known source's index advertises, and where that index
+ * lives, for the site pages that build install commands. See convex/wellKnown.ts
+ * for what fills the table and why the answer can't be derived from the domain.
  *
  * Returns an empty map for GitHub sources WITHOUT calling Convex — ~98% of the
  * catalog is GitHub, and the builders ignore the map for those anyway, so a

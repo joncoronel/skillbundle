@@ -212,7 +212,9 @@ export function skillOgImage(source: string, skillId: string) {
   // cached for a year. So those cards carry the title and source and no command
   // row, rather than the `{domain}/{id}` line that used to sit here and that
   // the CLI reads as a GitHub repo (convex/wellKnown.ts).
-  const command = buildSkillInstallCommand(source, skillId);
+  // `{}` rather than a default: every caller states whether it has the
+  // well-known map, and this one cannot have it (see above).
+  const command = buildSkillInstallCommand(source, skillId, {});
 
   return renderOg(
     <Frame category="Skill">

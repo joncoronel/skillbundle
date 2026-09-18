@@ -320,7 +320,7 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
   // line that fails (convex/wellKnown.ts).
   // Memoized so the hook's query args don't churn on every sheet render.
   const sources = useMemo(() => [{ source: skill.source }], [skill.source]);
-  const { indexes, pending } = useWellKnownIndexes(sources);
+  const { indexes } = useWellKnownIndexes(sources);
   const command = buildSkillInstallCommand(
     skill.source,
     skill.skillId,
@@ -347,16 +347,16 @@ function CopyInstallButton({ skill }: { skill: SkillData }) {
   }
 
   // Nothing to copy: the footer keeps its other two actions rather than
-  // offering a button that would put a failing command on the clipboard. While
-  // the lookup is in flight the button stays, disabled, so the footer does not
-  // reflow a moment after it opens.
-  if (!command && !pending) return null;
+  // offering a button that would put a failing command on the clipboard. That
+  // covers the in-flight moment too, so the button appears once and works,
+  // rather than painting disabled and then vanishing for a site skill that
+  // turns out to have no command.
+  if (!command) return null;
 
   return (
     <Button
       variant="primary"
       size="sm"
-      disabled={pending}
       onClick={handleCopy}
       leadingIcon={
         <HugeiconsIcon

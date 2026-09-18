@@ -655,8 +655,9 @@ export default defineSchema({
   }),
 
   // One row per well-known source (a domain like "open.feishu.cn"), recording
-  // whether that domain still publishes a skills index at its ROOT and which
-  // skill names the index advertises. Written weekly by
+  // whether that domain still publishes a skills index the CLI can reach, at
+  // the root or under one of the prober's fixed base paths, and which skill
+  // names that index advertises. Written weekly by
   // wellKnown.refreshWellKnownIndexes; read by the site pages to decide whether
   // they can show an install command at all.
   //
@@ -666,20 +667,21 @@ export default defineSchema({
   // convex/wellKnown.ts; don't restate them here, a copy of that paragraph
   // lived in this comment and had already drifted from it.
   //
-  // `baseUrl` is what `npx skills add` takes, built by the prober from the
-  // source plus one of its own fixed base paths. Every command is built from
-  // THIS. `indexUrl` is the URL that actually answered, after redirects, and is
-  // diagnostics only: a third party controls it, so nothing copyable may be
-  // derived from it. Both null when the domain serves no index, and
-  // `skillNames` is empty in that case, which is the signal every reader
-  // checks.
+  // `basePath` is which of the prober's own fixed base paths answered: "" for
+  // the domain root, or a single segment such as "docs". Every command is built
+  // by joining it onto the source, so the only values it can hold are the ones
+  // in `BASE_PATHS`. `indexUrl` is the URL that actually answered, after
+  // redirects, and is diagnostics only: a third party controls it, so nothing
+  // copyable may be derived from it.
   //
-  // `baseUrl` is optional only because it arrived after the table did. A row
-  // written before it has none, and readers treat that as "no command" until
-  // the next probe fills it in.
+  // A row exists for every well-known source we have reached. `basePath`
+  // undefined means the domain answered with no usable index (`skillNames` is
+  // empty too), or the row predates the field; either way readers show no
+  // command. A source we have never reached has no row at all, which is a
+  // different state on purpose.
   wellKnownIndexes: defineTable({
     source: v.string(),
-    baseUrl: v.optional(v.string()),
+    basePath: v.optional(v.string()),
     indexUrl: v.union(v.string(), v.null()),
     skillNames: v.array(v.string()),
     checkedAt: v.number(),

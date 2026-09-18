@@ -107,7 +107,7 @@ export default function RepoPage({ params }: { params: Params }) {
 
 async function RepoHeader({ params }: { params: Params }) {
   const { org, repo } = await params;
-  const installCommand = buildSourceInstallCommand(`${org}/${repo}`);
+  const installCommand = buildSourceInstallCommand(`${org}/${repo}`, {});
 
   return (
     <>

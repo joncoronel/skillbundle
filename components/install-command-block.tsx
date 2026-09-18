@@ -1,5 +1,6 @@
 import { CopyButton } from "@/components/ui/cubby-ui/copy-button/copy-button";
 import { cn } from "@/lib/utils";
+import type { UncoveredReason } from "@/lib/install-commands";
 
 const SURFACE = "w-fit max-w-full rounded-xl bg-muted";
 const LINE = "overflow-x-auto px-4 py-3 pr-16 font-mono text-sm";
@@ -48,19 +49,28 @@ export function InstallCommandBlock({
 }
 
 /**
- * What stands in the block's place when a well-known source has no command.
+ * What stands in the block's place when a well-known skill has no command.
  *
  * It keeps the install slot occupied rather than leaving a hole: silence there
  * reads as a missing feature, and 33 of 161 site skills are in this state. Same
  * surface and box as the block, so the skeleton's reserved height stays honest
- * and nothing shifts. Not mono and with no copy button, so it cannot be
- * mistaken for a command.
+ * on a viewport where the sentence fits one line. Not mono and with no copy
+ * button, so it cannot be mistaken for a command.
+ *
+ * The two reasons are different facts and are worded differently. Saying "no
+ * index" about a domain that has one is checkable and wrong: smithery.ai's
+ * index names 1 of the 8 skills we list, and its source page shows a working
+ * command built from that same index.
  */
 export function InstallCommandUnavailable({
   source,
+  skillId,
+  reason,
   className,
 }: {
   source: string;
+  skillId?: string;
+  reason: UncoveredReason;
   className?: string;
 }) {
   return (
@@ -71,8 +81,11 @@ export function InstallCommandUnavailable({
         className,
       )}
     >
-      No install command: {source} doesn&apos;t publish a skills index the CLI
-      can read.
+      {reason === "no-index"
+        ? `No install command: ${source} publishes no skills index the CLI can read.`
+        : skillId
+          ? `No install command: ${source}'s skills index doesn't list ${skillId}.`
+          : `No install command: ${source}'s skills index lists nothing we track.`}
     </p>
   );
 }

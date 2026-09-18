@@ -79,7 +79,7 @@ stale set is existing summaries), and the tag is set-on-insert only — so
 | `resolveRepoIdentities`        | weekly Sun 08:00                             | Stamp `githubRepoId` + `repoLiveName` (rename detection) onto **never-resolved** summaries, cached per repo.                                                                                              |
 | `refreshCuratedSkills`         | weekly Sun 09:00                             | Detail-refresh **curated-only** skills (never on the leaderboard) so their count + chart aren't frozen.                                                                                                   |
 | `reresolveStaleRepoIdentities` | weekly Sun 10:00                             | Re-check **already-resolved** repos past their TTL against GitHub; re-stamp summaries when a repo renamed after it was first stamped.                                                                     |
-| `refreshWellKnownIndexes`      | weekly Sun 11:00                             | Re-probe every well-known domain's ROOT skills index; record which skills it advertises. Decides whether the site pages can print an install command at all. See below.                                   |
+| `refreshWellKnownIndexes`      | weekly Sun 11:00                             | Re-probe every well-known domain's skills index, at the root and under `BASE_PATHS`; record which skills it advertises. Decides whether the site pages can print an install command at all. See below.    |
 
 ## "Seen" and delisting
 
@@ -747,8 +747,8 @@ the eight skills we list for it.
 
 Weekly rather than daily because the expensive half is a full walk of
 `skillSummaries` to find the ~26 well-known sources — there is no index that
-isolates them — while the cheap half (52 HTTP requests) watches files that
-publishers change on the order of months. A site skill added mid-week has no
+isolates them — while the cheap half (at most 26 x 3 bases x 2 paths = 156
+requests) watches files that publishers change on the order of months. A site skill added mid-week has no
 command until the job runs; `npx convex run wellKnown:refreshWellKnownIndexes`
 is the manual path.
 

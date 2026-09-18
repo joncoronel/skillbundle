@@ -13,17 +13,18 @@ export interface BundleSkill {
  * the map has no usable index, and an id absent from `skills` is not
  * installable through it.
  *
- * The base is carried rather than rebuilt from the source, because it is not
- * always `https://{source}`: mintlify.com publishes under `/docs`. The prober
- * builds it from a fixed list of base paths, never from a response.
+ * `basePath` is carried because the install base is not always
+ * `https://{source}`: mintlify.com publishes under `/docs`. It is one segment
+ * or empty, chosen by the prober from a fixed list, never from a response.
  *
- * Every builder below takes this and defaults it to empty, which is the safe
- * direction: with no map, well-known sources get no command rather than a
- * guessed one. GitHub sources ignore it entirely.
+ * Required on every builder below, not defaulted. A caller that forgets it
+ * would silently get no command for every site skill, which shipped twice on
+ * this branch before the parameter was made explicit. GitHub-only callers pass
+ * `{}`.
  */
 export type WellKnownIndexes = Record<
   string,
-  { base: string; skills: string[] }
+  { basePath: string; skills: string[] }
 >;
 
 export interface InstallCommand {
@@ -69,8 +70,8 @@ export function isSafeCommandSkillId(id: string): boolean {
  *
  * The skill routes use this as their 404 guard. It used to be spelled
  * "`buildSkillInstallCommand` returned null", which stopped working the moment
- * a command could be legitimately absent — a well-known skill whose domain
- * publishes no root index still has a page, it just has nothing to copy.
+ * a command could be legitimately absent — a well-known skill with no reachable
+ * index still has a page, it just has nothing to copy.
  */
 export function isSafeSkillRef(source: string, skillId: string): boolean {
   return isSafeCommandSource(source) && isSafeCommandSkillId(skillId);
@@ -81,8 +82,8 @@ export function isSafeSkillRef(source: string, skillId: string): boolean {
  *
  * The one place the GitHub / well-known split is decided. A GitHub source is
  * its own `owner/repo` shorthand. A well-known source is only reachable through
- * an absolute URL, and only when its domain serves a skills index at its root,
- * which is what the map records. Why, and what it costs: convex/wellKnown.ts.
+ * an absolute URL, and only when its domain serves a skills index the prober
+ * could reach, which is what the map records. Why, and what it costs: convex/wellKnown.ts.
  *
  * `skillId` narrows the well-known case further: the CLI matches `--skill`
  * against the names in that index, so a skill the index does not name has no
@@ -91,7 +92,7 @@ export function isSafeSkillRef(source: string, skillId: string): boolean {
  */
 export function installBase(
   source: string,
-  wellKnown: WellKnownIndexes = {},
+  wellKnown: WellKnownIndexes,
   skillId?: string,
 ): string | null {
   if (!isSafeCommandSource(source)) return null;
@@ -99,16 +100,12 @@ export function installBase(
   const entry = wellKnown[source];
   if (!entry || entry.skills.length === 0) return null;
   if (skillId !== undefined && !entry.skills.includes(skillId)) return null;
-  // The base is built by the prober, but it ends up in a command the reader
-  // pastes into a shell, so it gets the same allowlist treatment as every other
-  // identifier here rather than being trusted for its provenance. The whole
-  // grammar the prober can produce is `https://{source}` plus at most one path
-  // segment, so that is all this accepts.
-  const root = `https://${source}`;
-  if (entry.base === root) return root;
-  if (!entry.base.startsWith(`${root}/`)) return null;
-  const segment = entry.base.slice(root.length + 1);
-  return SAFE_SEGMENT.test(segment) ? entry.base : null;
+  if (entry.basePath === "") return `https://${source}`;
+  // The segment goes into a command the reader pastes into a shell, so it gets
+  // the same allowlist treatment as every other identifier here rather than
+  // being trusted for its provenance.
+  if (!SAFE_SEGMENT.test(entry.basePath)) return null;
+  return `https://${source}/${entry.basePath}`;
 }
 
 /**
@@ -119,7 +116,7 @@ export function installBase(
 export function buildSkillInstallCommand(
   source: string,
   skillId: string,
-  wellKnown: WellKnownIndexes = {},
+  wellKnown: WellKnownIndexes,
 ): string | null {
   if (!isSafeSkillRef(source, skillId)) return null;
   const base = installBase(source, wellKnown, skillId);
@@ -132,12 +129,12 @@ export function buildSkillInstallCommand(
  * a selection, which is the whole point of offering it beside the per-skill
  * commands.
  *
- * A well-known source gets one only when its domain serves an index at its
- * root; see `installBase`.
+ * A well-known source gets one only when the prober reached its index; see
+ * `installBase`.
  */
 export function buildSourceInstallCommand(
   source: string,
-  wellKnown: WellKnownIndexes = {},
+  wellKnown: WellKnownIndexes,
 ): string | null {
   const base = installBase(source, wellKnown);
   return base === null ? null : `npx skills add ${base}`;
@@ -145,7 +142,7 @@ export function buildSourceInstallCommand(
 
 export function generateInstallCommands(
   skills: BundleSkill[],
-  wellKnown: WellKnownIndexes = {},
+  wellKnown: WellKnownIndexes,
 ): InstallCommand[] {
   const grouped = new Map<
     string,
@@ -194,15 +191,25 @@ export function generateInstallCommands(
 
 export function generateAllCommandsText(
   skills: BundleSkill[],
-  wellKnown: WellKnownIndexes = {},
+  wellKnown: WellKnownIndexes,
 ): string {
   return generateInstallCommands(skills, wellKnown)
     .map((cmd) => cmd.command)
     .join(" && ");
 }
 
+/** "no-index": the domain serves none we can reach. "not-in-index": it does,
+ *  and this skill is not named in it. */
+export type UncoveredReason = "no-index" | "not-in-index";
+
+export interface UncoveredGroup {
+  source: string;
+  skillIds: string[];
+  reason: UncoveredReason;
+}
+
 /**
- * Well-known skills whose domain publishes no usable index, grouped by source.
+ * Well-known skills with no install command, grouped by source and reason.
  * The bundle page names them instead of quietly listing fewer skills than the
  * reader added.
  *
@@ -213,16 +220,35 @@ export function generateAllCommandsText(
  */
 export function uncoveredSkills(
   skills: BundleSkill[],
-  wellKnown: WellKnownIndexes = {},
-): { source: string; skillIds: string[] }[] {
-  const bySource = new Map<string, string[]>();
+  wellKnown: WellKnownIndexes,
+): UncoveredGroup[] {
+  const bySource = new Map<string, UncoveredGroup>();
   for (const skill of skills) {
     if (isGitHubSource(skill.source)) continue;
     if (!isSafeSkillRef(skill.source, skill.skillId)) continue;
     if (installBase(skill.source, wellKnown, skill.skillId) !== null) continue;
-    const ids = bySource.get(skill.source) ?? [];
-    ids.push(skill.skillId);
-    bySource.set(skill.source, ids);
+    const group = bySource.get(skill.source) ?? {
+      source: skill.source,
+      skillIds: [],
+      reason: uncoveredReason(skill.source, wellKnown),
+    };
+    group.skillIds.push(skill.skillId);
+    bySource.set(skill.source, group);
   }
-  return [...bySource].map(([source, skillIds]) => ({ source, skillIds }));
+  return [...bySource.values()];
+}
+
+/**
+ * Why a well-known source cannot install this skill.
+ *
+ * Two different facts, and saying the first when the second is true is a lie
+ * the reader can check: smithery.ai's index names 1 of the 8 skills we list,
+ * and its source page prints a working command from that same index.
+ */
+export function uncoveredReason(
+  source: string,
+  wellKnown: WellKnownIndexes,
+): UncoveredReason {
+  const entry = wellKnown[source];
+  return entry && entry.skills.length > 0 ? "not-in-index" : "no-index";
 }

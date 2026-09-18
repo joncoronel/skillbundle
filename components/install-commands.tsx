@@ -95,9 +95,9 @@ export function InstallCommands({ skills }: InstallCommandsProps) {
 
       {uncovered.map((group) => (
         <p key={group.source} className="text-xs text-muted-foreground">
-          {group.source} doesn&apos;t publish a skills index the CLI can read,
-          so {summarizeIds(group.skillIds)}{" "}
-          {group.skillIds.length === 1 ? "has" : "have"} no install command.
+          {group.reason === "no-index"
+            ? `${group.source} publishes no skills index the CLI can read, so ${summarizeIds(group.skillIds)} ${group.skillIds.length === 1 ? "has" : "have"} no install command.`
+            : `${group.source}'s skills index doesn't list ${summarizeIds(group.skillIds)}, so there is no command for ${group.skillIds.length === 1 ? "it" : "them"}.`}
         </p>
       ))}
     </div>

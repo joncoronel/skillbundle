@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
 import { api } from "@/convex/_generated/api";
 import { isGitHubSource } from "@/lib/skill-urls";
 import type { WellKnownIndexes } from "@/lib/install-commands";
@@ -15,9 +16,15 @@ const EMPTY: WellKnownIndexes = {};
  * `buildSkillInstallCommand` and friends. Server pages use
  * `lib/well-known-index.ts` instead; this is the websocket half.
  *
- * Skips the query entirely when the set contains no well-known source, which is
- * the overwhelmingly common case (~98% of the catalog is GitHub) — a bundle of
- * GitHub skills costs nothing, and `pending` is false immediately.
+ * Through TanStack Query rather than `convex/react`'s `useQuery`, which throws
+ * on a failed query. One of the callers is the floating bundle bar, which lives
+ * in the `(main)` layout: a throw there would take every route to the error
+ * screen over a missing install command. Here a failure is a value, and the
+ * empty map it falls back to means "no command", which is the safe reading.
+ *
+ * Disabled entirely when the set holds no well-known source, the overwhelmingly
+ * common case (~98% of the catalog is GitHub): a bundle of GitHub skills costs
+ * nothing and reports `pending: false` immediately.
  *
  * `pending` exists because an in-flight query and a domain with no index are
  * both an empty map, and callers that state the second out loud would otherwise
@@ -36,13 +43,14 @@ export function useWellKnownIndexes(skills: readonly { source: string }[]): {
     return [...distinct].sort();
   }, [skills]);
 
-  const indexes = useQuery(
-    api.wellKnown.wellKnownSkillNames,
-    sources.length > 0 ? { sources } : "skip",
-  );
+  const enabled = sources.length > 0;
+  const { data, isPending } = useQuery({
+    ...convexQuery(api.wellKnown.wellKnownSkillNames, { sources }),
+    enabled,
+  });
 
   return {
-    indexes: indexes ?? EMPTY,
-    pending: sources.length > 0 && indexes === undefined,
+    indexes: data ?? EMPTY,
+    pending: enabled && isPending,
   };
 }

@@ -208,8 +208,8 @@ if (process.env.CRONS_ENABLED === "true") {
   //
   // Weekly rather than daily because the expensive half is a full walk of
   // skillSummaries to find the ~26 well-known sources — there is no index that
-  // isolates them — while the cheap half (52 HTTP requests) watches files that
-  // publishers change on the order of months. A site skill added mid-week shows
+  // isolates them — while the cheap half (at most 26 x 3 bases x 2 paths = 156
+  // requests) watches files that publishers change on the order of months. A site skill added mid-week shows
   // no command until this runs; run it by hand if that matters.
   //
   // Scheduled after the Sunday duplicate chain so it is not competing with the
