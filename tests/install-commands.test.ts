@@ -76,8 +76,8 @@ describe("well-known skills with no usable index", () => {
       { source: "owner/repo", skillId: "a" },
       { source: "bun.sh", skillId: "bun" },
     ];
-    // No map entry for bun.sh: its domain serves no root index, so there is no
-    // command shape that would work.
+    // No map entry for bun.sh: the prober reached no index for it, so there is
+    // no command shape that would work.
     expect(generateInstallCommands(skills, {})).toEqual([
       {
         source: "owner/repo",
@@ -337,8 +337,8 @@ describe("buildSkillInstallCommand", () => {
 
   // `npx skills add example.com/my-skill` is what this used to emit, and the
   // CLI reads it as the GitHub repo `github.com/example.com/my-skill`. The
-  // well-known form needs an absolute URL, and only works when the domain's
-  // index sits at its root — which is what the map argument answers.
+  // well-known form needs an absolute URL, and only works when the prober
+  // reached the domain's index — which is what the map argument answers.
   test("well-known source needs its index, and uses the absolute-URL form", () => {
     expect(buildSkillInstallCommand("example.com", "my-skill", {})).toBeNull();
     expect(
@@ -377,10 +377,10 @@ describe("buildSourceInstallCommand", () => {
     );
   });
 
-  test("a well-known source needs a root index to get one", () => {
+  test("a well-known source needs a reachable index to get one", () => {
     // `npx skills add bun.sh` parses as a git remote, not a well-known source,
     // so the command has to be the absolute URL — and that only reaches
-    // anything when the domain serves its index at the root. bun.sh does not.
+    // anything when the prober found an index. bun.sh serves none.
     expect(buildSourceInstallCommand("bun.sh", {})).toBeNull();
     expect(
       buildSourceInstallCommand("bun.sh", {

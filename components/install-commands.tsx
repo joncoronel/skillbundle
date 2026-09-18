@@ -64,9 +64,10 @@ export function CopyAllCommandsButton({ skills }: InstallCommandsProps) {
 export function InstallCommands({ skills }: InstallCommandsProps) {
   const { indexes, pending } = useWellKnownIndexes(skills);
   const commands = generateInstallCommands(skills, indexes);
-  // Skills with no command: a well-known skill whose domain publishes no root
-  // index for the CLI to read. Named out loud, because the alternative is a
-  // panel that silently lists fewer skills than the reader put in the bundle.
+  // Skills with no command: a well-known skill whose domain publishes no index
+  // the CLI can reach, or whose index does not name it. Named out loud, because
+  // the alternative is a panel that silently lists fewer skills than the reader
+  // put in the bundle.
   // Held while the query is in flight, when every well-known skill looks
   // uncovered and the sentence would be false for most of them.
   const uncovered = pending ? [] : uncoveredSkills(skills, indexes);

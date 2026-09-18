@@ -315,9 +315,9 @@ function BundleToggleButton({ skill }: { skill: SkillData }) {
 function CopyInstallButton({ skill }: { skill: SkillData }) {
   // Defer to the canonical install-command builder so the format stays in
   // lockstep with the detail page and the bundle-level commands (single source
-  // of truth for `npx skills add ...`). Null for a well-known skill whose
-  // domain publishes no root index — the button hides rather than copying a
-  // line that fails (convex/wellKnown.ts).
+  // of truth for `npx skills add ...`). Null for a well-known skill with no
+  // reachable index — the button hides rather than copying a line that fails
+  // (convex/wellKnown.ts).
   // Memoized so the hook's query args don't churn on every sheet render.
   const sources = useMemo(() => [{ source: skill.source }], [skill.source]);
   const { indexes } = useWellKnownIndexes(sources);

@@ -374,8 +374,8 @@ async function SkillDetailBody({
             where the old design had it and where it does not have to share a
             row with a string the reader is meant to read.
 
-            A well-known skill whose domain publishes no root index gets the
-            note instead. There is no command the CLI would accept for it
+            A well-known skill with no reachable index, or whose index does
+            not name it, gets the note instead. There is no command the CLI would accept for it
             (convex/wellKnown.ts), and an empty slot reads as a missing feature
             rather than an unavailable one. Never reached by a GitHub skill:
             those always have a command, and a malformed ref 404s upstream. */}

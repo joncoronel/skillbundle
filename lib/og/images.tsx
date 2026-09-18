@@ -206,8 +206,8 @@ export function skillOgImage(source: string, skillId: string) {
     });
   }
 
-  // Null for every well-known skill: their command depends on whether the
-  // domain publishes a root index, and that answer lives in Convex — exactly
+  // Null for every well-known skill: their command depends on where the domain
+  // publishes its index, and that answer lives in Convex — exactly
   // the data dependency the paragraph above refuses to take on for a card
   // cached for a year. So those cards carry the title and source and no command
   // row, rather than the `{domain}/{id}` line that used to sit here and that
