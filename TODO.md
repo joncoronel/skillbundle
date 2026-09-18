@@ -209,7 +209,25 @@ matcher is now an allowlist (574k middleware invocations/day, a projected ~102k 
 links stopped prefetching, and skill OG cards derive from the URL so the PNG
 caches for a year instead of a day. Merge order: deploy this branch to Vercel BEFORE running `npx convex deploy`, because the production site it replaces still calls the `getInstallCount` query this branch deletes.
 
-Three things left.
+**Sep 18 re-measure, and two fixes shipped.** Sep 1-18 overage was $7.49 for
+this project, ISR Writes still the largest line. On the no-deploy days after the
+crawl (Sep 14-17) usage ran ~$1.23/day at list price, which is over the $20
+credit. A sample of 1,150 unique production requests (hourly 10-minute windows;
+`vercel logs --json` repeats rows past ~100, so dedupe by `id`) showed about half
+of page requests writing (`PRERENDER` / `REVALIDATED` / `STALE`), and ~60% of
+those writes were skill tabs. Shipped:
+
+1. `app/robots.ts` disallows the four skill tabs (`/*/*/*/<tab>$`,
+   depth-anchored because some skills are named `security`). Tabs were never in
+   the sitemap; crawlers reached them through the tab strip.
+2. `vercel.json` + `scripts/vercel-ignore-build.mjs`: Ignored Build Step skips a
+   deploy when only `*.md` changed since the last successful deploy.
+
+Measure with a week of `vercel usage --breakdown daily` before the next change.
+Google can take days to re-read robots.txt, so do not judge fix 1 on day one.
+Observability Plus is off, so per-route writes are not queryable; sample logs.
+
+Remaining:
 
 - **Skill tab prefetch — the 59% line, and the one real decision here.** Each
   skill page renders its four tab routes as `<Link>`s, so a single crawler hit on
@@ -225,9 +243,13 @@ Three things left.
   billed per write, not per lifetime, so a cache that resets on deploy makes the
   prefetched tabs get rebuilt and re-saved after EVERY deploy, whereas without
   prefetch a tab is only built when someone opens it. Frequent resets make this
-  fix worth more, not less.
+  fix worth more, not less. Sep 18: the robots.txt rule now keeps well-behaved
+  crawlers from fetching the tab URLs directly. What is left for this prop is the
+  prefetch traffic from real browsers (and any JS-rendering crawler). Check how
+  far tab writes fell before deciding it.
 
-- **Crawler shaping — blocked on a fresh measurement, not on a decision.**
+- **Crawler shaping — the tab half is done (Sep 18, above); the OG half is
+  blocked on a fresh measurement, not on a decision.**
   `app/robots.ts` already blocks Amazonbot and SemrushBot on exactly this
   reasoning, but its numbers are from 2026-08-12, BEFORE the sitemap went in, so
   they no longer describe the traffic. Its closing note already prescribes the
@@ -243,9 +265,10 @@ Three things left.
   If it does, stop deploying commits that change nothing a visitor sees. Of the
   11 production deploys on Sep 9-11, three were `TODO.md` or comment-only
   (`c4ada18`, `b524395`, `63ed877`), and each one would have thrown away every
-  saved page for no visible change. Vercel's Ignored Build Step can skip a
-  deploy when only markdown files changed. Keep the rule to `*.md` and nothing
-  cleverer, so a real change can never be skipped by mistake.
+  saved page for no visible change. The Markdown-only half of that is now
+  handled by the Ignored Build Step (Sep 18, above); comment-only code commits
+  still deploy, by design, since telling them apart safely is not worth it. The
+  OG `MISS` question itself is still open.
 
 ### Parked, with reasons
 

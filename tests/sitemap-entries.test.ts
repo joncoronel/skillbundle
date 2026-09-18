@@ -282,21 +282,47 @@ describe("agreement with robots.txt", () => {
     const list = Array.isArray(rules) ? rules : [rules];
     const wildcard = list.find((r) => r.userAgent === "*");
     const disallow = wildcard?.disallow ?? [];
-    return (
-      (Array.isArray(disallow) ? disallow : [disallow])
-        // `/compare?` bans the query form, not the page; the sitemap never emits
-        // a query string, asserted separately below.
-        .filter((p) => !p.includes("?"))
-        .map((p) => p.replace(/\$$/, ""))
-    );
+    return Array.isArray(disallow) ? disallow : [disallow];
   })();
 
+  // Google's matching rules: a prefix match where `*` is any run of characters
+  // (slashes included) and a trailing `$` anchors the end of the URL.
+  const blocks = (pattern: string, path: string) => {
+    const anchored = pattern.endsWith("$");
+    const body = (anchored ? pattern.slice(0, -1) : pattern)
+      .split("*")
+      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*");
+    return new RegExp(`^${body}${anchored ? "$" : ""}`).test(path);
+  };
+  const blocked = (path: string) =>
+    wildcardDisallows.some((pattern) => blocks(pattern, path));
+
   test("every disallowed root segment is one the sitemap refuses to emit", () => {
-    expect(wildcardDisallows.length).toBeGreaterThan(0);
-    for (const prefix of wildcardDisallows) {
+    // Only the literal root prefixes name a segment. `/compare?` bans the query
+    // form, not the page, and the `*` tab patterns are checked by URL below.
+    const rootPrefixes = wildcardDisallows
+      .filter((p) => !p.includes("?") && !p.includes("*"))
+      .map((p) => p.replace(/\$$/, ""));
+    expect(rootPrefixes.length).toBeGreaterThan(0);
+    for (const prefix of rootPrefixes) {
       const segment = prefix.replace(/^\//, "").replace(/\/$/, "");
       expect(RESERVED_ROOT_SEGMENTS.has(segment)).toBe(true);
     }
+  });
+
+  test("skill tabs are blocked and Overviews are not, even one named like a tab", () => {
+    for (const tab of ["history", "stats", "security", "copies"]) {
+      expect(blocked(`/owner/repo/my-skill/${tab}`)).toBe(true);
+      expect(blocked(`/site/open.feishu.cn/my-skill/${tab}`)).toBe(true);
+      // The catalog really has skills with the id `security`.
+      expect(blocked(`/owner/repo/${tab}`)).toBe(false);
+      expect(blocked(`/site/open.feishu.cn/${tab}`)).toBe(false);
+      expect(blocked(`/owner/repo/${tab}-helper`)).toBe(false);
+    }
+    expect(blocked("/owner/repo/my-skill")).toBe(false);
+    expect(blocked("/owner")).toBe(false);
+    expect(blocked("/owner/repo")).toBe(false);
   });
 
   test("a real colliding org (there is one named `api`) is dropped", () => {
@@ -314,12 +340,12 @@ describe("agreement with robots.txt", () => {
       { source: "open.feishu.cn", skillId: "b" },
       { source: "dev/tools", skillId: "c" },
       { source: "settings/x", skillId: "d" },
+      { source: "owner/repo", skillId: "security" },
     ]);
+    expect(result).toContain(`${BASE}/owner/repo/security`);
     for (const url of result) {
       const path = url.slice(BASE.length);
-      for (const prefix of wildcardDisallows) {
-        expect(path.startsWith(prefix)).toBe(false);
-      }
+      expect(blocked(path)).toBe(false);
       expect(path).not.toContain("?");
     }
   });

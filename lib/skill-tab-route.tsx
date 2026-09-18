@@ -100,7 +100,8 @@ export async function skillTabMetadata(
       ? (skill.description ?? `${skill.name} — a skill from ${source}`)
       : TAB_COPY[tab].description(skill.name);
   // Each tab is its own canonical page, not a duplicate of the Overview: the
-  // content differs. The sitemap lists only Overviews; tabs are found by links.
+  // content differs. The sitemap lists only Overviews, and app/robots.ts keeps
+  // well-behaved crawlers off the tabs for cost reasons.
   const path = skillTabHref(skillHref(source, skillId), tab);
   const alt = `${skill.name} on SkillBundle`;
   const images = ((await parent).openGraph?.images ?? []).map((image) =>

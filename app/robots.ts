@@ -1,5 +1,14 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site-url";
+import type { SkillTab } from "@/lib/skill-urls";
+
+/** Every non-Overview skill tab. Typed so a new tab can't be spelled wrong. */
+const SKILL_TAB_SEGMENTS: readonly Exclude<SkillTab, "overview">[] = [
+  "history",
+  "stats",
+  "security",
+  "copies",
+];
 
 /**
  * Crawler guidance. The site had none before this, which matters more here than
@@ -9,8 +18,9 @@ import { SITE_URL } from "@/lib/site-url";
  *
  * Deliberately still permissive on the catalog itself. Organic search is the
  * discovery path for this product, so `/[org]`, `/[org]/[repo]` and the skill
- * pages stay fully crawlable. What's blocked is the stuff that is either
- * private, useless to index, or unbounded.
+ * Overviews stay fully crawlable. What's blocked is the stuff that is either
+ * private, useless to index, or unbounded, plus the skill tabs, which cost far
+ * more to crawl than they are worth in search (see the rule itself).
  *
  * **Every private route below is anchored, and that is load-bearing.**
  * robots.txt paths are PREFIX matches — only `*` and `$` are special — and
@@ -97,6 +107,24 @@ export default function robots(): MetadataRoute.Robots {
           // crawlable on purpose so shared comparison links still resolve for
           // preview fetchers that consult robots.txt.
           "/compare?",
+          // The skill tabs (history, stats, security, copies). Measured
+          // 2026-09-18: tab routes were ~60% of the sampled requests that wrote
+          // a Vercel ISR entry. The sitemap lists only Overviews, so crawlers
+          // reach the tabs by following each skill's tab strip, which turns
+          // ~16k skills into ~64k crawled URLs. Every one of them rewrites
+          // daily, because the morning sync changes the install count they all
+          // render. The tabs add little to search that the Overview doesn't
+          // already carry.
+          //
+          // Depth-anchored, because a skill can be NAMED like a tab: the
+          // catalog has skills with the id `security`, whose Overview is
+          // `/org/repo/security` (three segments). A tab is always four:
+          // `/[org]/[repo]/[skillId]/<tab>` or `/site/[source]/[skillId]/<tab>`.
+          // `*` can also match `/`, but four literal slashes still require at
+          // least four segments, so the three-segment Overview never matches.
+          // `$` stops `/org/repo/history-skill/...` style prefixes from
+          // matching.
+          ...SKILL_TAB_SEGMENTS.map((tab) => `/*/*/*/${tab}$`),
         ],
         crawlDelay: 10,
       },
