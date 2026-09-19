@@ -75,14 +75,16 @@ const categorizationValidator = v.object({
   model: v.string(),
 });
 
-/** The only writer of tags. Patches the skill and mirrors `tags` to its
- *  summary in one transaction. */
+/** The only writer of tagging results. Patches each skill and mirrors `tags`
+ *  to its summary in one transaction. An entry without `result` is a skill
+ *  Jev refused (400/422): it is parked with `tagSkipReason` and keeps any
+ *  tags it had. */
 export const writeTagsBatch = internalMutation({
   args: {
     entries: v.array(
       v.object({
         skillId: v.id("skills"),
-        result: categorizationValidator,
+        result: v.optional(categorizationValidator),
         /** The row's contentUpdatedAt when it was read for tagging. */
         contentUpdatedAt: v.optional(v.number()),
       }),
@@ -93,16 +95,24 @@ export const writeTagsBatch = internalMutation({
     for (const { skillId, result, contentUpdatedAt } of entries) {
       const skill = await ctx.db.get(skillId);
       if (!skill) continue;
+      // The file changed while Jev was answering (a content fetch landed
+      // between the read and this write). Keep the flag so the new content
+      // gets its own attempt, whatever happened to the old one.
+      const needsTagging = skill.contentUpdatedAt !== contentUpdatedAt;
+      if (!result) {
+        await ctx.db.patch(skillId, {
+          needsTagging,
+          tagSkipReason: "input_rejected",
+        });
+        continue;
+      }
       const tags = deriveTags(
         result.scores,
         result.primary,
         result.primaryConfidence,
       );
       await ctx.db.patch(skillId, {
-        // The file changed while Jev was answering (a content fetch landed
-        // between the read and this write). Store these tags, better than
-        // none, but keep the flag so the new content gets tagged too.
-        needsTagging: skill.contentUpdatedAt !== contentUpdatedAt,
+        needsTagging,
         tags,
         tagScores: result.scores,
         primaryCategory: result.primary,
@@ -120,18 +130,6 @@ export const writeTagsBatch = internalMutation({
         .unique();
       if (summary) await ctx.db.patch(summary._id, { tags });
     }
-  },
-});
-
-/** Stop retrying a skill Jev refuses. Its previous tags, if any, stay. */
-export const markSkillUntaggable = internalMutation({
-  args: { skillId: v.id("skills") },
-  handler: async (ctx, { skillId }) => {
-    if (!(await ctx.db.get(skillId))) return;
-    await ctx.db.patch(skillId, {
-      needsTagging: false,
-      tagSkipReason: "input_rejected",
-    });
   },
 });
 
@@ -165,11 +163,13 @@ export const tagSkillsBatch = internalAction({
       result.skills.map((s) => categorizeSkill(s)),
     );
 
+    // A rejected skill is an entry without `result` (see writeTagsBatch).
     const entries: Array<{
       skillId: Id<"skills">;
-      result: SkillCategorization;
+      result?: SkillCategorization;
       contentUpdatedAt?: number;
     }> = [];
+    let rejected = 0;
     const failures: unknown[] = [];
     for (let i = 0; i < settled.length; i++) {
       const outcome = settled[i];
@@ -184,9 +184,11 @@ export const tagSkillsBatch = internalAction({
         console.warn(
           `Jev rejected skill ${skill.id}, marking untaggable: ${outcome.reason.message}`,
         );
-        await ctx.runMutation(internal.tags.markSkillUntaggable, {
+        entries.push({
           skillId: skill.id,
+          contentUpdatedAt: skill.contentUpdatedAt,
         });
+        rejected++;
       } else {
         failures.push(outcome.reason);
       }
@@ -194,7 +196,9 @@ export const tagSkillsBatch = internalAction({
 
     if (entries.length > 0) {
       await ctx.runMutation(internal.tags.writeTagsBatch, { entries });
-      console.log(`Tagged ${entries.length}/${result.skills.length} skills`);
+      console.log(
+        `Tagged ${entries.length - rejected}/${result.skills.length} skills (${rejected} rejected)`,
+      );
     }
 
     // Other errors have already been retried by the SDK (429/529, timeouts).

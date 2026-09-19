@@ -218,6 +218,25 @@ test("content that changes while Jev answers stays flagged", async () => {
   });
 });
 
+test("a rejected skill whose content changed mid-request stays flagged", async () => {
+  const t = makeTest();
+  const id = await seedSkill(t, "moving-rejected", true);
+
+  vi.mocked(categorizeSkill).mockImplementation(async () => {
+    await t.run((ctx) => ctx.db.patch(id, { contentUpdatedAt: 456 }));
+    throw new TaggingInputRejectedError("422");
+  });
+
+  await t.action(internal.tags.tagSkillsBatch, {});
+
+  await t.run(async (ctx) => {
+    const row = await ctx.db.get(id);
+    expect(row!.tagSkipReason).toBe("input_rejected");
+    // The new content gets its own attempt.
+    expect(row!.needsTagging).toBe(true);
+  });
+});
+
 test("tagSkillsBatch does nothing without an API key", async () => {
   const t = makeTest();
   const id = await seedSkill(t, "unkeyed", true);

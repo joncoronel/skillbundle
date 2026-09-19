@@ -1016,17 +1016,26 @@ it runs in a Convex action with the key server-side.
 2026): 28 categories, a Category filter on the home page, and a Categories
 block in the skill page sidebar. Tuned on a 150-skill sample over three runs;
 the tuning lessons are in `convex/lib/categoryDefinitions.ts`. Prod rollout,
-once, in order:
+once, in this order. Steps 1 to 3 happen **before merging**: merging ships the
+Category picker, and until the prod search index has the `tags` field, the
+picker's count request and any `?cat=` search fail outright.
 
-1. `npx convex env set TYPESAFE_API_KEY <key> --prod`, then deploy.
-2. `npx convex run tags:markAllForTagging --prod` (~16k skills, ~30 minutes,
-   ~$3.60). Watch for "Tagging batch failed" in the logs and re-run
-   `tags:tagSkillsBatch --prod` if the chain stops.
-3. `npx convex run typesense:resetCollection --prod`, then immediately
-   `typesense:syncCatalog --prod` (the `tags` field is new to the collection;
-   brief empty index in between).
-4. `npx convex run skills:publishSkillUpdate --prod` so cached skill pages
-   pick up their tags.
+1. From the `category-tags` branch: `npx convex env set TYPESAFE_API_KEY
+<key> --prod`, then `npx convex deploy`. The live site keeps working
+   against it; the new fields are all optional.
+2. `npx convex run typesense:resetCollection --prod`, then immediately
+   `npx convex run typesense:syncCatalog --prod`. This adds the `tags`
+   field; the index is briefly empty in between.
+3. `npx convex run tags:markAllForTagging --prod` (~16k skills, ~30 minutes,
+   ~$3.60). If the logs show "Tagging failed for N/N skills" (every skill in
+   a batch failed), the chain has stopped: re-run
+   `npx convex run tags:tagSkillsBatch --prod`. A partial count like 1/25 is
+   normal; those skills are retried on later runs.
+4. Merge the PR.
+5. Once tagging finishes: `npx convex run typesense:syncCatalog --prod` so
+   search has every skill's tags (otherwise the 07:00 daily sync catches up),
+   then `npx convex run skills:publishSkillUpdate --prod` so cached skill
+   pages show their categories.
 
 Follow-up worth doing: **technology tags** (Next.js, Supabase, Playwright…).
 Code finds technology names mentioned in the SKILL.md from a hand-kept list

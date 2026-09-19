@@ -6,13 +6,13 @@ import {
   Combobox,
   ComboboxItem,
   ComboboxList,
-  ComboboxPopup,
   ComboboxStatus,
   ComboboxTrigger,
 } from "@/components/ui/cubby-ui/combobox/combobox";
 import { Spinner } from "@/components/ui/spinner";
 import {
   FilterPickerClear,
+  FilterPickerPopup,
   FilterPickerSearch,
   FilterPickerTrigger,
   PICKER_ITEM_COLUMNS,
@@ -161,15 +161,7 @@ export function PublisherSelect({
           />
         )}
       />
-      <ComboboxPopup
-        level={inSheet ? 7 : 5}
-        align="start"
-        // Same floor as the Category picker beside it, so the pair reads as
-        // one set. Medium-length domain publishers fit on one line; only the
-        // longest wrap (see the item below). Growing to fit was rejected: the
-        // results change per keystroke, so the popup would jump in width.
-        className="flex min-w-80 flex-col p-0"
-      >
+      <FilterPickerPopup inSheet={inSheet}>
         <FilterPickerSearch
           placeholder="Search publishers…"
           busy={showLoading}
@@ -208,7 +200,7 @@ export function PublisherSelect({
             Clear publishers
           </FilterPickerClear>
         ) : null}
-      </ComboboxPopup>
+      </FilterPickerPopup>
     </Combobox>
   );
 }

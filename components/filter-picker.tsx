@@ -6,7 +6,10 @@ import {
   Search01Icon,
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
-import { ComboboxInput } from "@/components/ui/cubby-ui/combobox/combobox";
+import {
+  ComboboxInput,
+  ComboboxPopup,
+} from "@/components/ui/cubby-ui/combobox/combobox";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { cn } from "@/lib/utils";
 
@@ -99,6 +102,31 @@ export function FilterPickerTrigger({
         {selectionLabel ?? name}
       </span>
     </Button>
+  );
+}
+
+/**
+ * The popup shell. One width for every picker, so the Category and Publisher
+ * popups beside each other match: wide enough for the longest category name
+ * with its count and check on one line. Longer publisher domains wrap (see
+ * PICKER_ITEM_COLUMNS) rather than the popup growing to fit, because the
+ * results change per keystroke and a fitted popup would jump in width.
+ */
+export function FilterPickerPopup({
+  inSheet,
+  children,
+}: {
+  inSheet: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <ComboboxPopup
+      level={inSheet ? 7 : 5}
+      align="start"
+      className="flex min-w-80 flex-col p-0"
+    >
+      {children}
+    </ComboboxPopup>
   );
 }
 

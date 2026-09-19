@@ -7,12 +7,12 @@ import {
   ComboboxEmpty,
   ComboboxItem,
   ComboboxList,
-  ComboboxPopup,
   ComboboxTrigger,
 } from "@/components/ui/cubby-ui/combobox/combobox";
 import { ItemCount } from "@/components/item-count";
 import {
   FilterPickerClear,
+  FilterPickerPopup,
   FilterPickerSearch,
   FilterPickerTrigger,
   PICKER_ITEM_COLUMNS,
@@ -115,13 +115,7 @@ export function CategorySelect({
           />
         )}
       />
-      <ComboboxPopup
-        level={inSheet ? 7 : 5}
-        align="start"
-        // Fits the longest row ("Browser Automation & Scraping", its count and
-        // the check) so no category name is ever cut off.
-        className="flex min-w-80 flex-col p-0"
-      >
+      <FilterPickerPopup inSheet={inSheet}>
         <FilterPickerSearch placeholder="Search categories…" />
         <ComboboxEmpty>
           No categories match “{inputValue.trim()}”.
@@ -147,7 +141,7 @@ export function CategorySelect({
             Clear categories
           </FilterPickerClear>
         ) : null}
-      </ComboboxPopup>
+      </FilterPickerPopup>
     </Combobox>
   );
 }
