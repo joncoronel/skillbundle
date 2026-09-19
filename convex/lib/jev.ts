@@ -1,18 +1,9 @@
 /**
- * Skill categorization via TypeSafe's Jev model (docs.typesafe.ai).
- *
- * Jev doesn't write text. It reads a `state` and answers typed questions, so
- * one request per skill carries every question at once, answered in parallel:
- *   - one yes/no ("noul") per category: is this a significant part of what
- *     the skill does? Returns a probability.
- *   - one "pick one" (choice) over all categories plus "Other": the main
- *     category, with a confidence.
- * Code turns those into tags (`deriveTags` in categories.ts); nothing here
- * decides what counts as a tag.
- *
- * Billed on input tokens only (~5k per skill, so the whole catalog is a few
- * dollars). Runs in Convex's default runtime: the SDK is dependency-free and
- * built on fetch, and it retries 429/529 with backoff itself.
+ * Skill categorization via TypeSafe's Jev model (docs.typesafe.ai). One
+ * request per skill: a yes/no per category plus a "pick one" main category.
+ * `deriveTags` turns the answers into tags. About 8k input tokens (~$0.0003)
+ * per skill. The SDK is fetch-based, runs in Convex's default runtime and
+ * retries 429/529 itself.
  */
 import {
   BadRequestError,
@@ -30,17 +21,13 @@ import {
 } from "./categories";
 import { CATEGORY_DEFINITIONS } from "./categoryDefinitions";
 
-/** How much of a SKILL.md body to send. Jev's accuracy drops as state fills
- *  with material irrelevant to the question, and the opening of a SKILL.md
- *  says what the skill is for. Applied by the caller's query, so the whole
- *  body never leaves the database. */
+/** Jev's accuracy drops as state fills with irrelevant text; the opening of
+ *  a SKILL.md says what the skill is for. */
 export const SKILL_CONTENT_CHARS = 6000;
 
 const OTHER = "Other";
 
-// Option keys are the labels, not our internal keys: option names are part of
-// what the model reads, and "Code Review & Refactoring" says more than
-// "codeReview". `LABEL_TO_KEY` maps the answer back.
+// Option names are part of what Jev reads, so options are labels, not keys.
 const LABEL_TO_KEY = new Map<string, CategoryKey>(
   CATEGORY_KEYS.map((key) => [CATEGORY_LABELS[key], key]),
 );
@@ -49,9 +36,8 @@ const QUESTIONS: Record<string, Question> = {
   primary: choice(
     "Which one category best describes what the skill in `skill` mainly helps with?",
     {
-      // Both halves of each definition, not just `counts`. With only the
-      // positive text, the pick-one kept choosing categories the yes/no
-      // questions had already ruled out.
+      // Both halves: with `counts` alone, the pick-one chose categories the
+      // yes/no questions had ruled out.
       ...Object.fromEntries(
         CATEGORY_KEYS.map((key) => [
           CATEGORY_LABELS[key],
@@ -77,16 +63,14 @@ const QUESTIONS: Record<string, Question> = {
 };
 
 export type SkillCategorization = {
-  /** Probability per category key that it applies. */
   scores: Record<CategoryKey, number>;
-  /** Main category key, or undefined when the answer was "Other". */
+  /** Undefined when the answer was "Other". */
   primary: CategoryKey | undefined;
   primaryConfidence: number;
-  /** The versioned model that answered, e.g. "jev-1.13.0". */
   model: string;
 };
 
-/** Jev refused the input itself (400/422). Retrying the same skill won't help. */
+/** Jev refused the input (400/422); retrying won't help. */
 export class TaggingInputRejectedError extends Error {}
 
 let client: TypeSafeClient | undefined;

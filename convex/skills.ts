@@ -1665,7 +1665,6 @@ export const backfillFetchContent = internalAction({
         internal.skills.embedSkillsBatch,
         {},
       );
-      // Tagging reads the same content, so it starts with embeddings.
       await ctx.scheduler.runAfter(
         finalDelay + 5_000,
         internal.tags.tagSkillsBatch,
@@ -1872,8 +1871,7 @@ export const updateDescription = internalMutation({
       contentUpdatedAt: now,
       // Still gated, and correctly so: the embedding is built from name +
       // description + body, so a version bump has no business forcing a re-embed
-      // and paying for a Voyage call. Tagging reads the same fields, so the
-      // same gate applies.
+      // and paying for a Voyage call. Tagging reads the same fields.
       ...(hasActualChange && { needsEmbedding: true, needsTagging: true }),
       needsContentFetch: false,
       contentFetchFailCount: 0,
@@ -2304,8 +2302,8 @@ export const updateSkillFromDetail = internalMutation({
       syncHash,
       contentFetchedAt: now,
       // See the matching comment in updateDescription: unconditional because the
-      // hash moved, while needsEmbedding/needsTagging stay gated on the parsed
-      // fields.
+      // hash moved, while needsEmbedding and needsTagging stay gated on the
+      // parsed fields.
       contentUpdatedAt: now,
       ...(hasActualChange && { needsEmbedding: true, needsTagging: true }),
       needsContentFetch: false,

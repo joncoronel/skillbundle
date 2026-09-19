@@ -13,31 +13,18 @@ import {
 import { Button } from "@/components/ui/cubby-ui/button";
 import { cn } from "@/lib/utils";
 
-/**
- * The pieces the catalog's combobox filters (Publisher, Category) share, so a
- * styling fix lands in both pickers at once. Each picker still owns its
- * Combobox, items and list: those differ (server-side search vs. a fixed
- * local list).
- */
+/** Shared pieces of the catalog's combobox filters (Publisher, Category). */
 
 /**
- * Column override for ComboboxItem rows. The vendored item lays out as
- * `grid-cols-[1fr_1rem]`, and a bare `1fr` track can't shrink below its
- * content's min-content width, so one unbreakable name widened its row past
- * the popup and the list scrolled sideways. `minmax(0,1fr)` lets the track
- * shrink so the name wraps (or fits) inside the popup instead.
+ * For ComboboxItem rows. The vendored `1fr` track can't shrink below its
+ * content, so one unbreakable name made the list scroll sideways. Rows also
+ * need their own flex wrapper: the item puts children in a plain block, so
+ * ItemCount's `ml-auto` has nothing to push against.
  */
 export const PICKER_ITEM_COLUMNS = "grid-cols-[minmax(0,1fr)_1rem]";
 
-/**
- * The trigger button. Pass it the `triggerProps` from ComboboxTrigger's
- * render prop.
- *
- * `name` is the filter's name ("Category"). With nothing selected it is the
- * visible label; with a selection the visible label is the selection, and the
- * accessible name carries both, so a screen reader hears what is selected
- * rather than only what the control is for.
- */
+/** Shows `name` when empty, the selection otherwise; the accessible name
+ *  always includes the selection. */
 export function FilterPickerTrigger({
   triggerProps,
   name,
@@ -47,7 +34,7 @@ export function FilterPickerTrigger({
 }: {
   triggerProps: React.ComponentProps<"button">;
   name: string;
-  /** What is selected ("Testing & QA", "3 categories"), or null for none. */
+  /** e.g. "Testing & QA", "3 categories"; null when nothing is selected. */
   selectionLabel: string | null;
   inSheet: boolean;
   className?: string;
@@ -75,10 +62,8 @@ export function FilterPickerTrigger({
         // second `hover:bg-surface-hover` read as double-strength hover.
         // tailwind-merge can't catch it either: it has no way to know
         // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
-        // Ghost already supplies the hover fill and text colour in the chin.
-        // The chin's first control also needs `-ms-2` (see CatalogControlsBar);
-        // that belongs to the row's layout, not to this trigger, or every
-        // picker after the first overlaps its left neighbour.
+        // The chin's `-ms-2` belongs to its first control only (see
+        // CatalogControlsBar); here it made later pickers overlap.
         inSheet
           ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
           : "text-muted-foreground",
@@ -106,11 +91,9 @@ export function FilterPickerTrigger({
 }
 
 /**
- * The popup shell. One width for every picker, so the Category and Publisher
- * popups beside each other match: wide enough for the longest category name
- * with its count and check on one line. Longer publisher domains wrap (see
- * PICKER_ITEM_COLUMNS) rather than the popup growing to fit, because the
- * results change per keystroke and a fitted popup would jump in width.
+ * One width for every picker, fitting the longest category name. Longer
+ * publisher domains wrap instead of the popup growing to fit, which would
+ * jump in width as results change per keystroke.
  */
 export function FilterPickerPopup({
   inSheet,
@@ -130,7 +113,6 @@ export function FilterPickerPopup({
   );
 }
 
-/** The search input pinned to the top of the popup. */
 export function FilterPickerSearch({
   placeholder,
   busy,
@@ -138,7 +120,6 @@ export function FilterPickerSearch({
 }: {
   placeholder: string;
   busy?: boolean;
-  /** Trailing slot, e.g. a spinner while a server-side search runs. */
   end?: React.ReactNode;
 }) {
   return (
@@ -162,7 +143,6 @@ export function FilterPickerSearch({
   );
 }
 
-/** The "Clear …" footer, shown only while something is selected. */
 export function FilterPickerClear({
   onClick,
   children,

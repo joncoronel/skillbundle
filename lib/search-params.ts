@@ -65,9 +65,8 @@ export const minInstallsParser = parseAsInteger;
 export const publisherParser = parseAsArrayOf(parseAsString)
   .withDefault([])
   .withOptions({ clearOnDefault: true });
-// Category narrowing — any-of a set of category keys (?cat=testing,security).
-// Unknown keys are dropped at parse, so a stale or hand-edited URL can't send
-// a filter that matches nothing.
+// Any-of category keys (?cat=testing,security). Unknown keys are dropped at
+// parse, so a stale URL can't send a filter that matches nothing.
 export const categoryParser = parseAsArrayOf(
   parseAsStringLiteral(CATEGORY_KEYS),
 )
@@ -123,7 +122,6 @@ export const homeParamUrlKeys = {
 
 export type HomeParams = inferParserType<typeof homeParamParsers>;
 
-/** The catalog filtered to one category, from the URL key above. */
 export const categoryHref = (key: CategoryKey) =>
   `/?${homeParamUrlKeys.category}=${key}`;
 

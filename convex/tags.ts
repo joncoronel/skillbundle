@@ -1,23 +1,8 @@
 /**
  * Category tagging: the `needsTagging` work-set, drained by `tagSkillsBatch`.
- *
- * Same shape as the embedding worker in skills.ts, and flagged in the same
- * places (insert, relist, a real description/body change; cleared on delist).
- * It's scheduled next to `embedSkillsBatch` at the end of both content chains.
- *
- * Tags are written a few seconds after the chain that changed the content, so
- * they usually land before that chain's `publishSkillUpdate` ping and the 07:00
- * Typesense sync. A large batch can miss both. Those tags then reach the skill
- * page and search one day late, which is fine for tags; this chain adds no
- * cache ping of its own.
- *
- * Only re-tagged when content changes (or `markAllForTagging` is run after a
- * definitions change). Jev's scores move by about ±0.02 between identical
- * requests, so re-tagging unchanged skills would make borderline tags flicker.
- *
- * Two chains can overlap (the raw-content and well-known chains each start
- * one). The worst case is a skill tagged twice, which costs a fraction of a
- * cent, so there is no lock.
+ * Flagged and scheduled alongside embeddings; see docs/skill-lifecycle.md
+ * "Category tagging". Two chains can overlap and tag a skill twice, which
+ * costs a fraction of a cent, so there is no lock.
  */
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -36,12 +21,9 @@ import {
   type SkillCategorization,
 } from "./lib/jev";
 
-// Constants, not args, for the reason given on EMBED_BATCH_SIZE in skills.ts:
-// scheduled calls capture their args, so an arg would outlive a deploy.
-//
-// The limit that matters is Jev's 1,200 requests/minute. A batch of 25 runs
-// in parallel in well under a second (~0.2s per request), then waits the
-// chain delay, so the chain peaks around 750 requests/minute.
+// Constants, not args: scheduled calls capture their args (see
+// EMBED_BATCH_SIZE in skills.ts). 25 parallel requests per 1.5s stays under
+// Jev's 1,200 requests/minute.
 const TAG_BATCH_SIZE = 25;
 const TAG_CHAIN_DELAY_MS = 1_500;
 
@@ -57,8 +39,7 @@ export const listSkillsNeedingTagging = internalQuery({
         id: s._id,
         name: s.name,
         description: s.description,
-        // Cut here, not in the action, so a batch doesn't ship 25 whole
-        // SKILL.md bodies to keep the first few KB of each.
+        // Cut here so a batch doesn't ship 25 whole SKILL.md bodies.
         content: s.content?.slice(0, SKILL_CONTENT_CHARS),
         contentUpdatedAt: s.contentUpdatedAt,
       })),
@@ -75,17 +56,14 @@ const categorizationValidator = v.object({
   model: v.string(),
 });
 
-/** The only writer of tagging results. Patches each skill and mirrors `tags`
- *  to its summary in one transaction. An entry without `result` is a skill
- *  Jev refused (400/422): it is parked with `tagSkipReason` and keeps any
- *  tags it had. */
+/** The only writer of tagging results. An entry without `result` is a skill
+ *  Jev refused (400/422): parked with `tagSkipReason`, old tags kept. */
 export const writeTagsBatch = internalMutation({
   args: {
     entries: v.array(
       v.object({
         skillId: v.id("skills"),
         result: v.optional(categorizationValidator),
-        /** The row's contentUpdatedAt when it was read for tagging. */
         contentUpdatedAt: v.optional(v.number()),
       }),
     ),
@@ -95,9 +73,8 @@ export const writeTagsBatch = internalMutation({
     for (const { skillId, result, contentUpdatedAt } of entries) {
       const skill = await ctx.db.get(skillId);
       if (!skill) continue;
-      // The file changed while Jev was answering (a content fetch landed
-      // between the read and this write). Keep the flag so the new content
-      // gets its own attempt, whatever happened to the old one.
+      // Content changed while Jev was answering: keep the flag so the new
+      // content gets its own attempt.
       const needsTagging = skill.contentUpdatedAt !== contentUpdatedAt;
       if (!result) {
         await ctx.db.patch(skillId, {
@@ -136,9 +113,8 @@ export const writeTagsBatch = internalMutation({
 export const tagSkillsBatch = internalAction({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }): Promise<void> => {
-    // Dev deployments without a key must not fail the content chain that
-    // scheduled this. The flags stay set, so adding the key later picks the
-    // backlog up on the next run.
+    // No key (e.g. a dev deployment): skip without failing the content chain.
+    // Flags stay set, so a key added later picks up the backlog.
     if (!hasTypeSafeKey()) {
       console.log("tagSkillsBatch: TYPESAFE_API_KEY not set, skipping");
       return;
@@ -163,7 +139,6 @@ export const tagSkillsBatch = internalAction({
       result.skills.map((s) => categorizeSkill(s)),
     );
 
-    // A rejected skill is an entry without `result` (see writeTagsBatch).
     const entries: Array<{
       skillId: Id<"skills">;
       result?: SkillCategorization;
@@ -201,11 +176,9 @@ export const tagSkillsBatch = internalAction({
       );
     }
 
-    // Other errors have already been retried by the SDK (429/529, timeouts).
-    // A whole batch failing means the service is down: stop, and let the next
-    // content chain resume. A partial failure keeps going, or one skill that
-    // always errors would sit at the head of the index and stop every chain
-    // after one batch. Its flag stays set, so later chains retry it.
+    // The SDK has already retried these. Only a fully failed batch (service
+    // down) stops the chain; stopping on a partial one would let a single
+    // always-failing skill at the head of the index stall every run.
     if (failures.length > 0) {
       console.error(
         `Tagging failed for ${failures.length}/${result.skills.length} skills:`,
@@ -224,29 +197,18 @@ export const tagSkillsBatch = internalAction({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Re-tagging after a definitions change. Permanent, not a one-shot repair:
-// the definitions will keep being tuned, and each bump of CATEGORIES_VERSION
-// needs the same two commands.
-//
-//   npx convex run tags:markAllForTagging [--prod]
-//   npx convex run tags:tagSkillsBatch [--prod]
-//
-// The first flags every live skill, one page per scheduled call, and starts
-// the tagging chain itself when it reaches the end. The second is only needed
-// to restart a chain that stopped on an error. The first run of the first
-// command on each deployment is also the initial backfill.
-// ---------------------------------------------------------------------------
+// Backfill and re-tag after a definitions change (permanent, not a one-shot
+// repair): `npx convex run tags:markAllForTagging [--prod]` flags every live
+// skill, then starts the tagging chain. `tags:tagSkillsBatch` restarts a
+// chain that stopped.
 
-// Skills rows average ~10 KB (schema.ts), so a page is ~2 MB of reads, well
-// inside one mutation's read limit.
+// ~10 KB skills rows, so ~2 MB per page: inside one mutation's read limit.
 const MARK_PAGE_SIZE = 200;
 
 export const markAllForTagging = internalMutation({
   args: {
     cursor: v.optional(v.string()),
-    // Flag only this many skills, to try a definitions change on a sample
-    // before paying for the whole catalog: '{"limit": 200}'.
+    // Flag only this many, to try a definitions change on a sample first.
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { cursor, limit }) => {

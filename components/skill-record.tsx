@@ -150,8 +150,8 @@ export function SkillRecord({
   updatedDate: string;
   audits: SkillAuditEntry[] | null;
   stars: number | null;
-  /** Category keys, main category first (`skills.tags`). Empty hides the
-   *  block: an untagged skill says nothing rather than "Uncategorized". */
+  /** Main category first. Empty hides the block rather than saying
+   *  "Uncategorized". */
   categories: CategoryKey[];
   /** The primary action, rendered as the card's first block. */
   action?: React.ReactNode;
@@ -362,11 +362,8 @@ export function SkillRecord({
               )}
             </div>
 
-            {/* What the skill is, beside where it comes from, and ahead of the
-                status rows. Each chip opens the catalog filtered to that
-                category, which is also how people find the Category filter.
-                A filled shape rather than plain text, so a row of short words
-                reads as controls. */}
+            {/* Chips link to the filtered catalog, which is also how people
+                find the Category filter. Filled so they read as controls. */}
             {categories.length > 0 && (
               <div className="px-4 py-3">
                 <p

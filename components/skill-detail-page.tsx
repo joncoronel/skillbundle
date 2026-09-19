@@ -561,8 +561,7 @@ export function SkillDetailPageSkeleton({
               <Skeleton className="h-3 w-10" />
             </div>
           </div>
-          {/* Categories: label and two chips, the common case once the
-                catalog is tagged. */}
+          {/* Categories: label and two chips, the common case. */}
           <div className="px-4 py-3">
             <Skeleton className="h-3 w-16" />
             <div className="mt-2 flex gap-1.5">

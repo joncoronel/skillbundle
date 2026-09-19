@@ -68,15 +68,12 @@ export function PublisherSelect({
     queryKey: ownersQueryKey(effectiveQuery),
     queryFn: ({ signal }) => listOwners({ query: effectiveQuery, signal }),
     enabled: effectiveQuery.length > 0,
-    // Keep the previous query's rows (dimmed) while a refinement fetches, so
-    // the list never flashes empty between keystrokes. Only for a related
-    // search ("a" → "ab", or back): this observer outlives a cleared input,
-    // so a plain keepPreviousData would dim "a"'s rows under an unrelated
-    // "b" instead of saying "Searching…".
+    // Keep the previous rows (dimmed) only for a related search ("a" → "ab"
+    // or back). This observer outlives a cleared input, so plain
+    // keepPreviousData showed "a"'s rows under an unrelated "b".
+    // `previousQuery` is the last query that had data.
     placeholderData: (previous, previousQuery) => {
       const before = previousQuery?.queryKey[1];
-      // `previousQuery` is the last query that had data, so after
-      // "a" → clear → "b" this compares "b" with "a", not with "".
       const related =
         typeof before === "string" &&
         before.length > 0 &&
@@ -183,11 +180,7 @@ export function PublisherSelect({
         >
           {(o: OwnerItem) => (
             <ComboboxItem key={o.id} value={o} className={PICKER_ITEM_COLUMNS}>
-              {/* The item wraps children in a plain block, so the row needs
-                  its own flex for ItemCount's ml-auto to right-align. Long
-                  well-known domains (arkdocs-en.tos-ap-southeast-1.volces.com)
-                  wrap rather than truncate: a cut-off publisher has nowhere
-                  else to be read. */}
+              {/* Long domains wrap: a cut-off publisher has nowhere else to be read. */}
               <span className="flex min-w-0 items-center">
                 <span className="min-w-0 break-all">{o.id}</span>
                 {o.count > 0 ? <ItemCount count={o.count} /> : null}

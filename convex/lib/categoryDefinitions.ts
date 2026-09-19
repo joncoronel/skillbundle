@@ -1,13 +1,7 @@
 /**
- * What each category means, in the words Jev reads. Server-only: the frontend
- * needs labels, not this text (see `categories.ts`).
- *
- * `counts` is what makes a skill belong; `doesNotCount` names the nearby
- * things that don't. Almost every accuracy fix during tuning was a better
- * `doesNotCount` line, because Jev reads literally: "collecting data from
- * websites" caught a skill that only looks up crate versions on docs.rs until
- * the lookup case was excluded by name. Edit these, re-run the sample, and
- * bump CATEGORIES_VERSION if the change should reach already-tagged skills.
+ * What each category means, in the words Jev reads (server-only). Jev reads
+ * literally, so most accuracy fixes are a sharper `doesNotCount` naming the
+ * near miss. Try a change on a sample before bumping CATEGORIES_VERSION.
  */
 import type { CategoryKey } from "./categories";
 

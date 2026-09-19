@@ -1,11 +1,4 @@
-/**
- * Integration test: tagSkillsBatch.
- *
- * Seeds skills flagged needsTagging=true, mocks the Jev client (no real
- * TypeSafe calls), runs the chain, drains, and checks that tags land on the
- * skill and its summary, the flag clears, and a rejected skill is parked
- * instead of retried.
- */
+/** tagSkillsBatch against a mocked Jev client. */
 import { vi, test, expect, beforeEach, afterEach } from "vitest";
 import { internal } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -110,8 +103,7 @@ test("tagSkillsBatch writes tags to the skill and its summary", async () => {
   await t.run(async (ctx) => {
     const skill = await ctx.db.get(testingSkill);
     expect(skill!.needsTagging).toBe(false);
-    // Main category first, then extras at or above the cutoff; frontend's
-    // 0.55 falls short of it.
+    // frontend's 0.55 is under the extra-tag cutoff.
     expect(skill!.tags).toEqual(["testing", "browser"]);
     expect(skill!.tagScores!.testing).toBe(0.95);
     expect(skill!.primaryCategory).toBe("testing");
@@ -187,7 +179,6 @@ test("one failing skill doesn't stop the rest of the batch or the chain", async 
 
   expect(await summaryTags(t, fine)).toEqual(["security"]);
   await t.run(async (ctx) => {
-    // Still flagged for a later chain, not parked.
     expect((await ctx.db.get(flaky))!.needsTagging).toBe(true);
   });
 });
@@ -207,8 +198,7 @@ test("content that changes while Jev answers stays flagged", async () => {
     };
   });
 
-  // Run one batch directly; the flag left set would otherwise be picked up
-  // again by the chain's own continuation.
+  // No drain: the chain would pick the still-set flag up again.
   await t.action(internal.tags.tagSkillsBatch, {});
 
   await t.run(async (ctx) => {
@@ -232,7 +222,6 @@ test("a rejected skill whose content changed mid-request stays flagged", async (
   await t.run(async (ctx) => {
     const row = await ctx.db.get(id);
     expect(row!.tagSkipReason).toBe("input_rejected");
-    // The new content gets its own attempt.
     expect(row!.needsTagging).toBe(true);
   });
 });
@@ -272,8 +261,7 @@ test("markAllForTagging flags live skills and starts the chain", async () => {
     model: "jev-1.13.0",
   });
 
-  // The marker schedules the tagging chain at 0ms; fake timers let
-  // finishAllScheduledFunctions run it to completion.
+  // Fake timers let finishAllScheduledFunctions run the 0ms chain.
   vi.useFakeTimers();
   await t.mutation(internal.tags.markAllForTagging, {});
   await t.finishAllScheduledFunctions(vi.runAllTimers);

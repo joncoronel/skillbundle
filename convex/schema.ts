@@ -170,13 +170,10 @@ export default defineSchema({
     // a future migration can re-flag these by reason and try a smarter
     // truncation/chunking strategy.
     embeddingSkipReason: v.optional(v.string()),
-    // Category tagging (convex/tags.ts). Flagged wherever needsEmbedding is,
-    // since both are built from name + description + body. The flag lives on
-    // this row only: the worker reads these rows anyway for the content.
+    // Category tagging (convex/tags.ts), flagged wherever needsEmbedding is.
     needsTagging: v.optional(v.boolean()),
-    // `tags` is derived: category keys, main category first. Mirrored to the
-    // summary. The raw answers are kept so a threshold change can be
-    // re-applied with `deriveTags` instead of another model call.
+    // `tags` is derived (main category first) and mirrored to the summary.
+    // Raw answers are kept so a threshold change needs no model call.
     tags: v.optional(v.array(v.string())),
     tagScores: v.optional(v.record(v.string(), v.number())),
     primaryCategory: v.optional(v.string()),
@@ -184,8 +181,7 @@ export default defineSchema({
     tagsModel: v.optional(v.string()),
     tagsVersion: v.optional(v.number()),
     taggedAt: v.optional(v.number()),
-    // Set when Jev rejects the input itself (400/422), so the worker stops
-    // retrying it. Cleared by the next successful tag.
+    // Jev rejected the input (400/422); cleared by the next successful tag.
     tagSkipReason: v.optional(v.string()),
   })
     .index("by_source_skillId", ["source", "skillId"])
@@ -324,8 +320,7 @@ export default defineSchema({
     // rows themselves. Optional because legacy summaries (from before the
     // table split) won't have it set until the backfill runs.
     skillEmbeddingId: v.optional(v.id("skillEmbeddings")),
-    // Category keys mirrored from the skills row, main category first. Read by
-    // the Typesense sync (the `tags` facet) and anything listing summaries.
+    // Mirrored from the skills row for the Typesense sync.
     tags: v.optional(v.array(v.string())),
     // Mirrored from skills row. Used for default-filtering forks/copies out
     // of listing and search queries.

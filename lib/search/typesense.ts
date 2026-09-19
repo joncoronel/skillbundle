@@ -143,7 +143,7 @@ export interface SkillFilters {
   source?: string;
   /** Restrict to any of these publisher owners (slug before "/" in source). */
   owners?: string[];
-  /** Restrict to skills tagged with any of these category keys. */
+  /** Any of these category keys. */
   categories?: string[];
   /**
    * Hide GitHub-only skills (show only skills.sh-backed ones). Backed by the
@@ -225,7 +225,6 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
     clauses.push(`${field("owner")}:=[${filters.owners.map(quote).join(",")}]`);
   }
   if (filters.categories && filters.categories.length > 0) {
-    // Any-of on the string[] field: a skill matches if any tag is listed.
     clauses.push(
       `${field("tags")}:=[${filters.categories.map(quote).join(",")}]`,
     );
@@ -573,10 +572,9 @@ export async function listOwners(
 }
 
 /**
- * Skills per category across the whole catalog, for the Category picker.
- * Catalog-wide like `listOwners`, not scoped to the current results: counts
- * scoped to a category filter would shrink every other category to its
- * overlap with the selected one, which reads as the catalog, not the filter.
+ * Catalog-wide counts per category, like `listOwners`. Scoped to the current
+ * results, every other category would shrink to its overlap with the selected
+ * one.
  */
 export async function listCategoryCounts(
   opts: { signal?: AbortSignal } = {},

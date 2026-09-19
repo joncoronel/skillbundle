@@ -32,16 +32,13 @@ const ITEMS: CategoryItem[] = CATEGORY_KEYS.map((id) => ({
   label: CATEGORY_LABELS[id],
 }));
 
-// Counts move once a day (the catalog sync), so an hour is plenty.
+// Counts change once a day with the catalog sync.
 const COUNTS_STALE_MS = 60 * 60_000;
 
 /**
- * Category filter, any-of. The same combobox and shared pieces
- * (`filter-picker.tsx`) as PublisherSelect, so the two pickers side by side
- * behave alike, but the list is the fixed 28 categories
- * and the input filters them locally: there is nothing to fetch per keystroke.
- * Listed in definition order (related categories sit together) rather than by
- * count, so the list never reshuffles when the counts arrive.
+ * Category filter, any-of, built from the same pieces as PublisherSelect but
+ * filtered locally. Definition order, not count order, so the list doesn't
+ * reshuffle when counts arrive.
  */
 export function CategorySelect({
   value,
@@ -56,8 +53,7 @@ export function CategorySelect({
 }) {
   const inSheet = surface === "sheet";
   const [inputValue, setInputValue] = useState("");
-  // Counts are fetched on first open only, so the home page doesn't spend a
-  // Typesense request per visit on a picker most visitors never open.
+  // Fetch counts on first open, not on every home page visit.
   const [opened, setOpened] = useState(false);
   const counts = useQuery({
     queryKey: ["typesense-category-counts"],
@@ -84,8 +80,7 @@ export function CategorySelect({
       multiple
       items={ITEMS}
       value={selected}
-      // Kept in definition order whatever order they were checked in, so the
-      // URL for a given selection is always the same.
+      // Definition order, so a given selection always gives the same URL.
       onValueChange={(next: CategoryItem[]) =>
         onChange(
           CATEGORY_KEYS.filter((key) => next.some((item) => item.id === key)),
@@ -99,7 +94,6 @@ export function CategorySelect({
         if (open) setOpened(true);
       }}
       onOpenChangeComplete={(open: boolean) => {
-        // Reset the search on close (the trigger label carries the selection).
         if (!open) setInputValue("");
       }}
       modal={inSheet ? false : undefined}
@@ -127,8 +121,6 @@ export function CategorySelect({
               value={item}
               className={PICKER_ITEM_COLUMNS}
             >
-              {/* The item wraps children in a plain block, so the row needs
-                  its own flex for ItemCount's ml-auto to right-align. */}
               <span className="flex items-center">
                 <span className="whitespace-nowrap">{item.label}</span>
                 <ItemCount count={counts.data?.[item.id]} />
