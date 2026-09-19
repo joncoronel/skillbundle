@@ -39,8 +39,8 @@ export const SKILL_CONTENT_CHARS = 6000;
 const OTHER = "Other";
 
 // Option keys are the labels, not our internal keys: option names are part of
-// what the model reads, and "Code quality & architecture" says more than
-// "codeQuality". `LABEL_TO_KEY` maps the answer back.
+// what the model reads, and "Code Review & Refactoring" says more than
+// "codeReview". `LABEL_TO_KEY` maps the answer back.
 const LABEL_TO_KEY = new Map<string, CategoryKey>(
   CATEGORY_KEYS.map((key) => [CATEGORY_LABELS[key], key]),
 );

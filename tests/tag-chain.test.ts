@@ -97,8 +97,8 @@ test("tagSkillsBatch writes tags to the skill and its summary", async () => {
           model: "jev-1.13.0",
         }
       : {
-          scores: scores({ infra: 0.2 }),
-          primary: "infra",
+          scores: scores({ cloud: 0.2 }),
+          primary: "cloud",
           primaryConfidence: 0.8,
           model: "jev-1.13.0",
         },
@@ -120,7 +120,7 @@ test("tagSkillsBatch writes tags to the skill and its summary", async () => {
   });
   expect(await summaryTags(t, testingSkill)).toEqual(["testing", "browser"]);
   // The main category is tagged even though its own yes/no scored low.
-  expect(await summaryTags(t, deploySkill)).toEqual(["infra"]);
+  expect(await summaryTags(t, deploySkill)).toEqual(["cloud"]);
   expect(categorizeSkill).toHaveBeenCalledTimes(2);
 });
 

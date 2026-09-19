@@ -12,11 +12,11 @@ const low = Object.fromEntries(CATEGORY_KEYS.map((k) => [k, 0.1]));
 test("main category comes first, extras follow by score", () => {
   expect(
     deriveTags(
-      { ...low, security: 0.7, infra: 0.9, docs: 0.95 },
+      { ...low, security: 0.7, cloud: 0.9, docs: 0.95 },
       "security",
       0.8,
     ),
-  ).toEqual(["security", "docs", "infra"]);
+  ).toEqual(["security", "docs", "cloud"]);
 });
 
 test("a confident main category is tagged even when its own yes/no is low", () => {

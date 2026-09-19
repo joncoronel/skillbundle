@@ -16,18 +16,23 @@ export const CATEGORY_LABELS = {
   mobile: "Mobile & Desktop Apps",
   backend: "Backend & APIs",
   databases: "Databases & Storage",
-  infra: "Cloud, Infra & DevOps",
+  cloud: "Cloud & Infrastructure",
+  cicd: "CI/CD & Build Tooling",
   testing: "Testing & QA",
   debugging: "Debugging & Performance",
   security: "Security",
-  codeQuality: "Code Quality & Architecture",
+  codeReview: "Code Review & Refactoring",
+  architecture: "Architecture & Patterns",
+  languages: "Programming Languages",
   gitWorkflow: "Git & Project Workflow",
   planning: "Planning & Specs",
   aiApps: "Building AI Apps & Agents",
   agentTooling: "Agent Behavior & Skill Tooling",
   media: "Image, Video & Audio",
   browser: "Browser Automation & Scraping",
-  data: "Data, Analytics & ML",
+  dataAnalysis: "Data Analysis & Visualization",
+  dataEngineering: "Data Engineering",
+  ml: "Machine Learning",
   docs: "Docs & Writing",
   workplace: "Workplace & Productivity Apps",
   marketing: "Marketing & Growth",
@@ -49,7 +54,7 @@ export function isCategoryKey(value: string): value is CategoryKey {
  * re-tagging, then run `tags:markAllForTagging`. Stored on each row as
  * `tagsVersion`, so a partial re-tag is visible.
  */
-export const CATEGORIES_VERSION = 2;
+export const CATEGORIES_VERSION = 3;
 
 /**
  * The model version is pinned rather than `jev-latest`, so an upstream release

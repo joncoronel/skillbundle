@@ -38,7 +38,7 @@ const COUNTS_STALE_MS = 60 * 60_000;
 /**
  * Category filter, any-of. The same combobox and shared pieces
  * (`filter-picker.tsx`) as PublisherSelect, so the two pickers side by side
- * behave alike, but the list is the fixed 23 categories
+ * behave alike, but the list is the fixed 28 categories
  * and the input filters them locally: there is nothing to fetch per keystroke.
  * Listed in definition order (related categories sit together) rather than by
  * count, so the list never reshuffles when the counts arrive.

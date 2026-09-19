@@ -176,7 +176,7 @@ that moves.
 
 ### Category and technology tagging
 
-**Categories are implemented.** Every skill gets tags from a fixed list of 23
+**Categories are implemented.** Every skill gets tags from a fixed list of 28
 categories (Frontend, UI & Design, Testing & QA, …), assigned by TypeSafe's Jev model
 in `convex/tags.ts` and documented in docs/skill-lifecycle.md "Category
 tagging". They drive the home page's Category filter and the Categories block
