@@ -1013,7 +1013,7 @@ text written to steer it can move its answers. The JS SDK is `fetch`-based, so
 it runs in a Convex action with the key server-side.
 
 **Category tags are built** (`convex/tags.ts`, branch `category-tags`, Sep
-2026): 22 categories, a Category filter on the home page, and a Categories
+2026): 23 categories, a Category filter on the home page, and a Categories
 block in the skill page sidebar. Tuned on a 150-skill sample over three runs;
 the tuning lessons are in `convex/lib/categoryDefinitions.ts`. Prod rollout,
 once, in order:

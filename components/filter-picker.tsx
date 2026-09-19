@@ -18,6 +18,15 @@ import { cn } from "@/lib/utils";
  */
 
 /**
+ * Column override for ComboboxItem rows. The vendored item lays out as
+ * `grid-cols-[1fr_1rem]`, and a bare `1fr` track can't shrink below its
+ * content's min-content width, so one unbreakable name widened its row past
+ * the popup and the list scrolled sideways. `minmax(0,1fr)` lets the track
+ * shrink so the name wraps (or fits) inside the popup instead.
+ */
+export const PICKER_ITEM_COLUMNS = "grid-cols-[minmax(0,1fr)_1rem]";
+
+/**
  * The trigger button. Pass it the `triggerProps` from ComboboxTrigger's
  * render prop.
  *
@@ -63,12 +72,13 @@ export function FilterPickerTrigger({
         // second `hover:bg-surface-hover` read as double-strength hover.
         // tailwind-merge can't catch it either: it has no way to know
         // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
+        // Ghost already supplies the hover fill and text colour in the chin.
+        // The chin's first control also needs `-ms-2` (see CatalogControlsBar);
+        // that belongs to the row's layout, not to this trigger, or every
+        // picker after the first overlaps its left neighbour.
         inSheet
           ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
-          : // -ms pulls the ghost trigger's TEXT onto the chin's 12px
-            // optical line (its invisible box overhangs the gutter).
-            // Ghost already supplies the hover fill and text colour.
-            "-ms-2 text-muted-foreground",
+          : "text-muted-foreground",
         selectionLabel !== null && "text-foreground",
         className,
       )}

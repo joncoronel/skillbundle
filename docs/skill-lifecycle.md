@@ -578,7 +578,7 @@ and leaving chart gaps. 23h leaves buffer for cron jitter while staying under 24
 
 ## Category tagging (`tags.tagSkillsBatch`)
 
-Every skill carries category tags from a fixed list of 22
+Every skill carries category tags from a fixed list of 23
 (`convex/lib/categories.ts`), assigned by TypeSafe's Jev model. Jev returns
 probabilities, not text: one request per skill asks a yes/no per category plus
 a "pick one" main category, and `deriveTags` turns the answers into tags (the

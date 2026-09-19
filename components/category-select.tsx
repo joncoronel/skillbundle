@@ -15,6 +15,7 @@ import {
   FilterPickerClear,
   FilterPickerSearch,
   FilterPickerTrigger,
+  PICKER_ITEM_COLUMNS,
 } from "@/components/filter-picker";
 import type { ControlSurface } from "@/components/catalog-controls";
 import {
@@ -37,7 +38,7 @@ const COUNTS_STALE_MS = 60 * 60_000;
 /**
  * Category filter, any-of. The same combobox and shared pieces
  * (`filter-picker.tsx`) as PublisherSelect, so the two pickers side by side
- * behave alike, but the list is the fixed 22 categories
+ * behave alike, but the list is the fixed 23 categories
  * and the input filters them locally: there is nothing to fetch per keystroke.
  * Listed in definition order (related categories sit together) rather than by
  * count, so the list never reshuffles when the counts arrive.
@@ -117,7 +118,7 @@ export function CategorySelect({
       <ComboboxPopup
         level={inSheet ? 7 : 5}
         align="start"
-        // Fits the longest row ("Browser automation & scraping", its count and
+        // Fits the longest row ("Browser Automation & Scraping", its count and
         // the check) so no category name is ever cut off.
         className="flex min-w-80 flex-col p-0"
       >
@@ -127,7 +128,11 @@ export function CategorySelect({
         </ComboboxEmpty>
         <ComboboxList>
           {(item: CategoryItem) => (
-            <ComboboxItem key={item.id} value={item}>
+            <ComboboxItem
+              key={item.id}
+              value={item}
+              className={PICKER_ITEM_COLUMNS}
+            >
               {/* The item wraps children in a plain block, so the row needs
                   its own flex for ItemCount's ml-auto to right-align. */}
               <span className="flex items-center">

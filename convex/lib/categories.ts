@@ -11,28 +11,29 @@
  */
 
 export const CATEGORY_LABELS = {
-  frontend: "Frontend & UI",
-  mobile: "Mobile & desktop apps",
+  frontend: "Frontend",
+  design: "UI & Design",
+  mobile: "Mobile & Desktop Apps",
   backend: "Backend & APIs",
-  databases: "Databases & storage",
-  infra: "Cloud, infra & DevOps",
+  databases: "Databases & Storage",
+  infra: "Cloud, Infra & DevOps",
   testing: "Testing & QA",
-  debugging: "Debugging & performance",
+  debugging: "Debugging & Performance",
   security: "Security",
-  codeQuality: "Code quality & architecture",
-  gitWorkflow: "Git & project workflow",
-  planning: "Planning & specs",
-  aiApps: "Building AI apps & agents",
-  agentTooling: "Agent behavior & skill tooling",
-  media: "Image, video & audio",
-  browser: "Browser automation & scraping",
-  data: "Data, analytics & ML",
-  docs: "Docs & writing",
-  workplace: "Workplace & productivity apps",
-  marketing: "Marketing & growth",
-  finance: "Finance & business",
-  science: "Science & research",
-  gameDev: "Game development",
+  codeQuality: "Code Quality & Architecture",
+  gitWorkflow: "Git & Project Workflow",
+  planning: "Planning & Specs",
+  aiApps: "Building AI Apps & Agents",
+  agentTooling: "Agent Behavior & Skill Tooling",
+  media: "Image, Video & Audio",
+  browser: "Browser Automation & Scraping",
+  data: "Data, Analytics & ML",
+  docs: "Docs & Writing",
+  workplace: "Workplace & Productivity Apps",
+  marketing: "Marketing & Growth",
+  finance: "Finance & Business",
+  science: "Science & Research",
+  gameDev: "Game Development",
 } as const;
 
 export type CategoryKey = keyof typeof CATEGORY_LABELS;
@@ -48,7 +49,7 @@ export function isCategoryKey(value: string): value is CategoryKey {
  * re-tagging, then run `tags:markAllForTagging`. Stored on each row as
  * `tagsVersion`, so a partial re-tag is visible.
  */
-export const CATEGORIES_VERSION = 1;
+export const CATEGORIES_VERSION = 2;
 
 /**
  * The model version is pinned rather than `jev-latest`, so an upstream release

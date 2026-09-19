@@ -17,9 +17,15 @@ export const CATEGORY_DEFINITIONS: Record<
 > = {
   frontend: {
     counts:
-      "Building or improving web user interfaces: components, layout, styling, CSS, animation, design systems, UI design, accessibility, frontend frameworks like React or Vue.",
+      "Building web frontends in code: frontend frameworks like React, Vue, Svelte or Next.js, components and their logic, state management, routing, data fetching in the browser, client-side performance, bundling and build setup for web apps.",
     doesNotCount:
-      "Not frontend if it only generates images or videos, or only works on server code, or only mentions a web page in passing.",
+      "Not frontend if it is only about how an interface looks or feels (visual design, design systems, UX, accessibility, animation) with no frontend code; that is UI & Design. Not frontend if it only generates images or videos, or only works on server code.",
+  },
+  design: {
+    counts:
+      "How a software interface looks and feels: visual design, layout, typography, color, design systems and tokens, UX and interaction design, accessibility, animation and motion, design review, turning designs into polished UI.",
+    doesNotCount:
+      "Not this if it only builds frontend logic such as state, routing or data fetching with no attention to how the interface looks. Not this if it designs slides, marketing images, logos or brand strategy rather than a software interface.",
   },
   mobile: {
     counts:

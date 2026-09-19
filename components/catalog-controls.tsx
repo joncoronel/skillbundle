@@ -281,6 +281,9 @@ export function CatalogControlsBar() {
         value={category}
         onChange={(v) => setParams({ category: v })}
         surface="chin"
+        // First control only: pulls the ghost trigger's TEXT onto the chin's
+        // 12px optical line (its invisible box overhangs the gutter).
+        className="-ms-2"
       />
       <PublisherSelect
         value={publisher}

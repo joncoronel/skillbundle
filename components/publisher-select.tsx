@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Combobox,
   ComboboxItem,
@@ -15,6 +15,7 @@ import {
   FilterPickerClear,
   FilterPickerSearch,
   FilterPickerTrigger,
+  PICKER_ITEM_COLUMNS,
 } from "@/components/filter-picker";
 import { ItemCount } from "@/components/item-count";
 import type { ControlSurface } from "@/components/catalog-controls";
@@ -39,7 +40,7 @@ const toItem = (o: OwnerCount): OwnerItem => ({ id: o.value, count: o.count });
  * debounce + cache-bypass primitive as every other search input
  * (useDebouncedQueryValue → React Query → deriveInputLoading): cached retypes
  * render on the first frame with zero loading UI, uncached queries debounce
- * then fetch with the previous rows dimmed (keepPreviousData), and superseded
+ * then fetch with a related search's rows dimmed, and superseded
  * keystrokes abort. Multi-select (any-of); the trigger shows a summary, the
  * popup a checkable list. Type-to-search only — the catalog has too many
  * publishers to browse.
@@ -68,8 +69,22 @@ export function PublisherSelect({
     queryFn: ({ signal }) => listOwners({ query: effectiveQuery, signal }),
     enabled: effectiveQuery.length > 0,
     // Keep the previous query's rows (dimmed) while a refinement fetches, so
-    // the list never flashes empty between keystrokes.
-    placeholderData: keepPreviousData,
+    // the list never flashes empty between keystrokes. Only for a related
+    // search ("a" → "ab", or back): this observer outlives a cleared input,
+    // so a plain keepPreviousData would dim "a"'s rows under an unrelated
+    // "b" instead of saying "Searching…".
+    placeholderData: (previous, previousQuery) => {
+      const before = previousQuery?.queryKey[1];
+      // `previousQuery` is the last query that had data, so after
+      // "a" → clear → "b" this compares "b" with "a", not with "".
+      const related =
+        typeof before === "string" &&
+        before.length > 0 &&
+        effectiveQuery.length > 0 &&
+        (effectiveQuery.startsWith(before) ||
+          before.startsWith(effectiveQuery));
+      return related ? previous : undefined;
+    },
     staleTime: OWNERS_STALE_MS,
     gcTime: OWNERS_STALE_MS,
   });
@@ -171,12 +186,14 @@ export function PublisherSelect({
           )}
         >
           {(o: OwnerItem) => (
-            <ComboboxItem key={o.id} value={o}>
+            <ComboboxItem key={o.id} value={o} className={PICKER_ITEM_COLUMNS}>
               {/* The item wraps children in a plain block, so the row needs
-                  its own flex for ItemCount's ml-auto to right-align (and
-                  min-w-0 for the slug's truncate to engage). */}
+                  its own flex for ItemCount's ml-auto to right-align. Long
+                  well-known domains (arkdocs-en.tos-ap-southeast-1.volces.com)
+                  wrap rather than truncate: a cut-off publisher has nowhere
+                  else to be read. */}
               <span className="flex min-w-0 items-center">
-                <span className="truncate">{o.id}</span>
+                <span className="min-w-0 break-all">{o.id}</span>
                 {o.count > 0 ? <ItemCount count={o.count} /> : null}
               </span>
             </ComboboxItem>
