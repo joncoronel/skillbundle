@@ -154,12 +154,6 @@ export interface SkillFilters {
   hideGitHubOnly?: boolean;
 }
 
-/** A publisher (owner) and how many skills it has, for the Publisher picker. */
-export interface OwnerCount {
-  value: string;
-  count: number;
-}
-
 export interface SkillSearchArgs {
   /** Text query; "" (or omitted) = browse the whole catalog. */
   query?: string;
@@ -242,7 +236,7 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
  * explorer-state.tsx), so it belongs on BOTH sides of the hidden-by-filters
  * comparison rather than triggering probes by itself.
  */
-function activeNarrowingKeys(
+export function activeNarrowingKeys(
   filters: SkillFilters = {},
 ): (keyof SkillFilters)[] {
   const keys: (keyof SkillFilters)[] = [];
@@ -403,6 +397,23 @@ async function tsMultiSearch(
 }
 
 /**
+ * The text-matching half of a catalog search, shared with the facet counts so
+ * a picker's counts match the results list exactly.
+ */
+function matchParams(query: string, searchDescriptions?: boolean): TsParams {
+  const params: TsParams = { q: query || "*" }; // "*" = match-all for browse
+  if (searchDescriptions) {
+    params.query_by = "name,description";
+    // Name matches outrank description matches (see docs/search-overhaul.md).
+    params.query_by_weights = "3,1";
+  } else {
+    // Default: names only — tighter, more precise matches.
+    params.query_by = "name";
+  }
+  return params;
+}
+
+/**
  * Run a catalog search / browse against Typesense. Throws if the engine isn't
  * configured or the request fails — callers (a React Query queryFn) surface it.
  */
@@ -413,17 +424,7 @@ export async function searchSkills(
   const hasQuery = query.length > 0;
   const page = args.page ?? 1;
 
-  const params: TsParams = {
-    q: hasQuery ? query : "*", // "*" = match-all for browse
-  };
-  if (args.searchDescriptions) {
-    params.query_by = "name,description";
-    // Name matches outrank description matches (see docs/search-overhaul.md).
-    params.query_by_weights = "3,1";
-  } else {
-    // Default: names only — tighter, more precise matches.
-    params.query_by = "name";
-  }
+  const params = matchParams(query, args.searchDescriptions);
   if (hasQuery) {
     // Highlight the full `name` (it's short, so no snippet windowing) so the UI
     // can mark matched tokens — fuzzy-aware, straight from the engine. Browse
@@ -540,58 +541,43 @@ export async function searchSkills(
 }
 
 /**
- * Publishers (owners) for the Publisher picker, as a facet-only request
- * (`per_page=0`), ordered by skill count. With no `query` this returns the top
- * owners (browse-on-open); with a `query` it runs a `facet_query` so *any*
- * owner is reachable by typing, not just the top slice. `signal` lets the caller
- * cancel a stale in-flight lookup.
+ * The catalog search a picker's counts are computed over: the current search
+ * text and filters, minus the picker's own filter (so ticking "Frontend"
+ * doesn't shrink every other category to its overlap with Frontend).
  */
-export async function listOwners(
-  opts: {
-    query?: string;
-    limit?: number;
-    signal?: AbortSignal;
-  } = {},
-): Promise<OwnerCount[]> {
-  const query = opts.query?.trim();
-  const params: TsParams = {
-    q: "*",
-    query_by: "name", // required, but per_page=0 returns no hits
-    per_page: "0",
-    facet_by: "owner",
-    max_facet_values: String(opts.limit ?? 250),
-    filter_by: "isDuplicate:false", // parity with the catalog default
-  };
-  // Typeahead: narrow the returned facet values to those matching the input.
-  if (query) params.facet_query = `owner:${query}`;
-
-  const raw = await tsSearch(params, "facet", opts.signal);
-  const counts =
-    raw.facet_counts?.find((f) => f.field_name === "owner")?.counts ?? [];
-  return counts.map((c) => ({ value: c.value, count: c.count }));
+export interface FacetScope {
+  query: string;
+  searchDescriptions: boolean;
+  filters: SkillFilters;
 }
 
 /**
- * Catalog-wide counts per category, like `listOwners`. Scoped to the current
- * results, every other category would shrink to its overlap with the selected
- * one.
+ * Value counts for one field over the skills matching `scope`, as a facet-only
+ * request. `facetQuery` narrows the returned values by prefix (the Publisher
+ * picker's typeahead); only values with matching skills come back.
  */
-export async function listCategoryCounts(
-  opts: { signal?: AbortSignal } = {},
-): Promise<Record<string, number>> {
-  const raw = await tsSearch(
-    {
-      q: "*",
-      query_by: "name", // required, but per_page=0 returns no hits
-      per_page: "0",
-      facet_by: field("tags"),
-      max_facet_values: "100",
-      filter_by: "isDuplicate:false", // parity with the catalog default
-    },
-    "facet",
-    opts.signal,
-  );
-  const counts =
-    raw.facet_counts?.find((f) => f.field_name === "tags")?.counts ?? [];
-  return Object.fromEntries(counts.map((c) => [c.value, c.count]));
+export async function listFacetCounts(
+  facetField: "owner" | "tags",
+  opts: {
+    scope: FacetScope;
+    facetQuery?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  },
+): Promise<FacetCount[]> {
+  const params: TsParams = {
+    ...matchParams(opts.scope.query.trim(), opts.scope.searchDescriptions),
+    per_page: "0",
+    facet_by: field(facetField),
+    max_facet_values: String(opts.limit ?? 250),
+  };
+  const filterBy = buildFilterBy(opts.scope.filters);
+  if (filterBy) params.filter_by = filterBy;
+  const facetQuery = opts.facetQuery?.trim();
+  if (facetQuery) params.facet_query = `${facetField}:${facetQuery}`;
+
+  const raw = await tsSearch(params, "facet", opts.signal);
+  return (
+    raw.facet_counts?.find((f) => f.field_name === facetField)?.counts ?? []
+  ).map((c) => ({ value: c.value, count: c.count }));
 }

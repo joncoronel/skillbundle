@@ -9,7 +9,12 @@ import {
   type HomeParams,
   type CatalogSortValue,
 } from "@/lib/search-params";
-import type { FacetCount, SkillFilters } from "@/lib/search/typesense";
+import {
+  activeNarrowingKeys,
+  type FacetCount,
+  type FacetScope,
+  type SkillFilters,
+} from "@/lib/search/typesense";
 
 /**
  * The home explorer's shared state: the URL params plus the derivations every
@@ -239,4 +244,27 @@ export function CatalogFacetsProvider({
 /** Facet counts for the current result set ({} when idle/static). */
 export function useCatalogFacets(): Record<string, FacetCount[]> {
   return use(CatalogFacetsContext);
+}
+
+/**
+ * The current search as a picker's count scope, without the picker's own
+ * filter. `narrowed` is false when the scope is the whole catalog.
+ */
+export function useFacetScope(own: "owners" | "categories"): {
+  scope: FacetScope;
+  narrowed: boolean;
+} {
+  const { trimmedQuery, searchDescriptions, filters } = useExplorerState();
+  return useMemo(() => {
+    const scopeFilters = { ...filters, [own]: undefined };
+    return {
+      scope: {
+        query: trimmedQuery,
+        searchDescriptions,
+        filters: scopeFilters,
+      },
+      narrowed:
+        trimmedQuery.length > 0 || activeNarrowingKeys(scopeFilters).length > 0,
+    };
+  }, [own, trimmedQuery, searchDescriptions, filters]);
 }

@@ -21,6 +21,11 @@ import {
 } from "@/components/ui/cubby-ui/dropdown-menu";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Switch } from "@/components/ui/cubby-ui/switch/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/cubby-ui/tooltip";
 import { LabeledSection } from "@/components/labeled-section";
 import { ItemCount } from "@/components/item-count";
 import { PublisherSelect } from "@/components/publisher-select";
@@ -384,22 +389,31 @@ export function CatalogControlsBar() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {/* Icon-only, so a selection doesn't widen the chin by a word and push
+          the sort group onto its own row. The count lives in the name. */}
       {filterCount.chin > 0 && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground"
-          onClick={clearFilters}
-          leadingIcon={
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon_sm"
+                className="text-muted-foreground"
+                onClick={clearFilters}
+                aria-label={`Clear ${filterCount.chin} ${filterCount.chin === 1 ? "filter" : "filters"}`}
+              />
+            }
+          >
             <HugeiconsIcon
               icon={Cancel01Icon}
               strokeWidth={2}
               className="size-3.5"
             />
-          }
-        >
-          Clear ({filterCount.chin})
-        </Button>
+          </TooltipTrigger>
+          <TooltipContent sideOffset={8}>
+            Clear filters ({filterCount.chin})
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

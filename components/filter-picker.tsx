@@ -64,9 +64,17 @@ export function FilterPickerTrigger({
         // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
         // The chin's `-ms-2` belongs to its first control only (see
         // CatalogControlsBar); here it made later pickers overlap.
+        //
+        // In the chin the width is capped: a long selection ("Code Review &
+        // Refactoring") otherwise pushes the chin onto two rows. The cut-off
+        // label stays readable in the tooltip, the accessible name and the
+        // popup's checked row. The sheet's buttons are full-width already.
+        // Button wraps its label in a text-box span that won't shrink below
+        // its text, so that span needs min-w-0 for the truncate to engage.
+        "[&>span>span]:min-w-0",
         inSheet
           ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
-          : "text-muted-foreground",
+          : "max-w-44 text-muted-foreground",
         selectionLabel !== null && "text-foreground",
         className,
       )}
@@ -79,8 +87,12 @@ export function FilterPickerTrigger({
       }
     >
       <span
+        title={selectionLabel ?? undefined}
         className={cn(
-          "truncate",
+          // The button trims the text box to cap height, so truncate's
+          // overflow clip shaved ascenders and descenders. Padding gives the
+          // glyphs room inside the clip; the negative margin keeps the layout.
+          "-my-1 block truncate py-1",
           selectionLabel === null && "text-muted-foreground",
         )}
       >

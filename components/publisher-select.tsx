@@ -23,7 +23,12 @@ import {
   deriveInputLoading,
   useDebouncedQueryValue,
 } from "@/hooks/use-debounced-query-value";
-import { listOwners, type OwnerCount } from "@/lib/search/typesense";
+import { useFacetScope } from "@/components/explorer-state";
+import {
+  listFacetCounts,
+  type FacetCount,
+  type FacetScope,
+} from "@/lib/search/typesense";
 import { cn } from "@/lib/utils";
 
 /** A publisher row for the picker (`id` = the owner slug). */
@@ -31,9 +36,10 @@ type OwnerItem = { id: string; count: number };
 
 const OWNERS_STALE_MS = 5 * 60_000;
 
-const ownersQueryKey = (query: string) => ["typesense-owners", query] as const;
+const ownersQueryKey = (query: string, scope: FacetScope) =>
+  ["typesense-owners", query, scope] as const;
 
-const toItem = (o: OwnerCount): OwnerItem => ({ id: o.value, count: o.count });
+const toItem = (o: FacetCount): OwnerItem => ({ id: o.value, count: o.count });
 
 /**
  * Publisher (owner) filter — a type-to-search combobox driven by the SAME
@@ -60,13 +66,18 @@ export function PublisherSelect({
   const [inputValue, setInputValue] = useState("");
   const trimmed = inputValue.trim();
 
+  // Publishers and counts cover the current search, so a publisher with no
+  // matching skills isn't offered.
+  const { scope, narrowed } = useFacetScope("owners");
+
   const effectiveQuery = useDebouncedQueryValue(inputValue, (t) =>
-    ownersQueryKey(t),
+    ownersQueryKey(t, scope),
   );
 
   const ownersQuery = useQuery({
-    queryKey: ownersQueryKey(effectiveQuery),
-    queryFn: ({ signal }) => listOwners({ query: effectiveQuery, signal }),
+    queryKey: ownersQueryKey(effectiveQuery, scope),
+    queryFn: ({ signal }) =>
+      listFacetCounts("owner", { scope, facetQuery: effectiveQuery, signal }),
     enabled: effectiveQuery.length > 0,
     // Keep the previous rows (dimmed) only for a related search ("a" → "ab"
     // or back). This observer outlives a cleared input, so plain
@@ -125,7 +136,9 @@ export function PublisherSelect({
       return value.length === 0 ? "Type to find a publisher…" : null;
     }
     if (!showLoading && items.length === 0)
-      return `No publishers match “${trimmed}”.`;
+      return narrowed
+        ? `No publishers match “${trimmed}” in these results.`
+        : `No publishers match “${trimmed}”.`;
     return null;
   };
 
