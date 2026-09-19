@@ -56,14 +56,15 @@ export function CategorySelect({
   const [inputValue, setInputValue] = useState("");
   // Counts cover the current search, and are fetched only while open.
   const [open, setOpen] = useState(false);
-  const { scope } = useFacetScope("categories");
+  const { scope, facetField } = useFacetScope("categories");
   const counts = useQuery({
     queryKey: ["typesense-category-counts", scope],
     queryFn: async ({ signal }) =>
       Object.fromEntries(
-        (await listFacetCounts("tags", { scope, limit: 100, signal })).map(
-          (c) => [c.value, c.count],
-        ),
+        (await listFacetCounts(facetField, { scope, signal })).map((c) => [
+          c.value,
+          c.count,
+        ]),
       ),
     enabled: open,
     staleTime: COUNTS_STALE_MS,

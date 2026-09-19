@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { hashKey, useQuery } from "@tanstack/react-query";
 import {
   Combobox,
   ComboboxItem,
@@ -68,7 +68,7 @@ export function PublisherSelect({
 
   // Publishers and counts cover the current search, so a publisher with no
   // matching skills isn't offered.
-  const { scope, narrowed } = useFacetScope("owners");
+  const { scope, facetField, narrowed } = useFacetScope("owners");
 
   const effectiveQuery = useDebouncedQueryValue(inputValue, (t) =>
     ownersQueryKey(t, scope),
@@ -77,11 +77,15 @@ export function PublisherSelect({
   const ownersQuery = useQuery({
     queryKey: ownersQueryKey(effectiveQuery, scope),
     queryFn: ({ signal }) =>
-      listFacetCounts("owner", { scope, facetQuery: effectiveQuery, signal }),
+      listFacetCounts(facetField, {
+        scope,
+        facetQuery: effectiveQuery,
+        signal,
+      }),
     enabled: effectiveQuery.length > 0,
     // Keep the previous rows (dimmed) only for a related search ("a" → "ab"
-    // or back). This observer outlives a cleared input, so plain
-    // keepPreviousData showed "a"'s rows under an unrelated "b".
+    // or back) over the same scope. This observer outlives a cleared input,
+    // so plain keepPreviousData showed "a"'s rows under an unrelated "b".
     // `previousQuery` is the last query that had data.
     placeholderData: (previous, previousQuery) => {
       const before = previousQuery?.queryKey[1];
@@ -90,7 +94,8 @@ export function PublisherSelect({
         before.length > 0 &&
         effectiveQuery.length > 0 &&
         (effectiveQuery.startsWith(before) ||
-          before.startsWith(effectiveQuery));
+          before.startsWith(effectiveQuery)) &&
+        hashKey([previousQuery?.queryKey[2]]) === hashKey([scope]);
       return related ? previous : undefined;
     },
     staleTime: OWNERS_STALE_MS,

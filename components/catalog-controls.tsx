@@ -280,6 +280,7 @@ export function CatalogControlsBar() {
     clearFilters,
   } = useExplorerState();
   const moreCount = filterCount.more;
+  const clearLabel = `Clear ${filterCount.chin} ${filterCount.chin === 1 ? "filter" : "filters"}`;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <CategorySelect
@@ -400,7 +401,7 @@ export function CatalogControlsBar() {
                 size="icon_sm"
                 className="text-muted-foreground"
                 onClick={clearFilters}
-                aria-label={`Clear ${filterCount.chin} ${filterCount.chin === 1 ? "filter" : "filters"}`}
+                aria-label={clearLabel}
               />
             }
           >
@@ -410,9 +411,7 @@ export function CatalogControlsBar() {
               className="size-3.5"
             />
           </TooltipTrigger>
-          <TooltipContent sideOffset={8}>
-            Clear filters ({filterCount.chin})
-          </TooltipContent>
+          <TooltipContent sideOffset={8}>{clearLabel}</TooltipContent>
         </Tooltip>
       )}
     </div>

@@ -67,11 +67,12 @@ export function FilterPickerTrigger({
         //
         // In the chin the width is capped: a long selection ("Code Review &
         // Refactoring") otherwise pushes the chin onto two rows. The cut-off
-        // label stays readable in the tooltip, the accessible name and the
-        // popup's checked row. The sheet's buttons are full-width already.
-        // Button wraps its label in a text-box span that won't shrink below
-        // its text, so that span needs min-w-0 for the truncate to engage.
-        "[&>span>span]:min-w-0",
+        // label stays readable in the native `title` on hover, the accessible
+        // name, and the popup's checked row. The sheet's buttons are
+        // full-width already. Button (vendored) wraps its label in a text-box
+        // span inside `data-slot=button-content` that won't shrink below its
+        // text, so that span needs min-w-0 for the truncate to engage.
+        "[&_[data-slot=button-content]>span]:min-w-0",
         inSheet
           ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
           : "max-w-44 text-muted-foreground",

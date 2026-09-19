@@ -246,12 +246,16 @@ export function useCatalogFacets(): Record<string, FacetCount[]> {
   return use(CatalogFacetsContext);
 }
 
+// Each picker's filter and the index field it counts.
+const FACET_FIELD = { owners: "owner", categories: "tags" } as const;
+
 /**
  * The current search as a picker's count scope, without the picker's own
  * filter. `narrowed` is false when the scope is the whole catalog.
  */
-export function useFacetScope(own: "owners" | "categories"): {
+export function useFacetScope(own: keyof typeof FACET_FIELD): {
   scope: FacetScope;
+  facetField: (typeof FACET_FIELD)[typeof own];
   narrowed: boolean;
 } {
   const { trimmedQuery, searchDescriptions, filters } = useExplorerState();
@@ -260,9 +264,12 @@ export function useFacetScope(own: "owners" | "categories"): {
     return {
       scope: {
         query: trimmedQuery,
-        searchDescriptions,
+        // Can't change what an empty query matches; keeps the cache key stable
+        // (same as catalogSearchQueryKey).
+        searchDescriptions: trimmedQuery ? searchDescriptions : false,
         filters: scopeFilters,
       },
+      facetField: FACET_FIELD[own],
       narrowed:
         trimmedQuery.length > 0 || activeNarrowingKeys(scopeFilters).length > 0,
     };
