@@ -30,9 +30,11 @@ import {
 } from "./categories";
 import { CATEGORY_DEFINITIONS } from "./categoryDefinitions";
 
-/** Jev's accuracy drops as state fills with material irrelevant to the
- *  question, and the opening of a SKILL.md says what the skill is for. */
-const CONTENT_CHARS = 6000;
+/** How much of a SKILL.md body to send. Jev's accuracy drops as state fills
+ *  with material irrelevant to the question, and the opening of a SKILL.md
+ *  says what the skill is for. Applied by the caller's query, so the whole
+ *  body never leaves the database. */
+export const SKILL_CONTENT_CHARS = 6000;
 
 const OTHER = "Other";
 
@@ -107,7 +109,7 @@ export async function categorizeSkill(skill: {
         skill: {
           name: skill.name,
           description: skill.description ?? "",
-          skill_md: (skill.content ?? "").slice(0, CONTENT_CHARS),
+          skill_md: skill.content ?? "",
         },
       },
       questions: QUESTIONS,

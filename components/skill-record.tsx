@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import NumberFlow from "@number-flow/react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -29,6 +29,7 @@ import {
 } from "@/components/skill-chart-shared";
 import { cn, formatInstalls } from "@/lib/utils";
 import { CATEGORY_LABELS, type CategoryKey } from "@/convex/lib/categories";
+import { categoryHref } from "@/lib/search-params";
 
 /**
  * The card's own chrome, exported because the page's loading skeleton draws the
@@ -178,6 +179,7 @@ export function SkillRecord({
   // installs block — the value rolls and the label becomes the date — so no
   // neighbouring row is left quietly describing a different day.
   const [hover, setHover] = useState<SparklineHoverState>(null);
+  const categoriesLabelId = useId();
 
   return (
     <div className={cn(RECORD_SURFACE, className)}>
@@ -367,14 +369,20 @@ export function SkillRecord({
                 reads as controls. */}
             {categories.length > 0 && (
               <div className="px-4 py-3">
-                <p className="text-xs font-medium text-muted-foreground">
+                <p
+                  id={categoriesLabelId}
+                  className="text-xs font-medium text-muted-foreground"
+                >
                   {categories.length === 1 ? "Category" : "Categories"}
                 </p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
+                <ul
+                  aria-labelledby={categoriesLabelId}
+                  className="mt-2 flex flex-wrap gap-1.5"
+                >
                   {categories.map((key) => (
                     <li key={key}>
                       <Link
-                        href={`/?cat=${key}`}
+                        href={categoryHref(key)}
                         className="inline-flex rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
                       >
                         {CATEGORY_LABELS[key]}

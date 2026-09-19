@@ -31,6 +31,7 @@ import { CATEGORIES_VERSION, deriveTags } from "./lib/categories";
 import {
   categorizeSkill,
   hasTypeSafeKey,
+  SKILL_CONTENT_CHARS,
   TaggingInputRejectedError,
   type SkillCategorization,
 } from "./lib/jev";
@@ -56,7 +57,10 @@ export const listSkillsNeedingTagging = internalQuery({
         id: s._id,
         name: s.name,
         description: s.description,
-        content: s.content,
+        // Cut here, not in the action, so a batch doesn't ship 25 whole
+        // SKILL.md bodies to keep the first few KB of each.
+        content: s.content?.slice(0, SKILL_CONTENT_CHARS),
+        contentUpdatedAt: s.contentUpdatedAt,
       })),
       nextCursor: result.continueCursor,
       isDone: result.isDone,
@@ -79,12 +83,14 @@ export const writeTagsBatch = internalMutation({
       v.object({
         skillId: v.id("skills"),
         result: categorizationValidator,
+        /** The row's contentUpdatedAt when it was read for tagging. */
+        contentUpdatedAt: v.optional(v.number()),
       }),
     ),
   },
   handler: async (ctx, { entries }) => {
     const now = Date.now();
-    for (const { skillId, result } of entries) {
+    for (const { skillId, result, contentUpdatedAt } of entries) {
       const skill = await ctx.db.get(skillId);
       if (!skill) continue;
       const tags = deriveTags(
@@ -93,7 +99,10 @@ export const writeTagsBatch = internalMutation({
         result.primaryConfidence,
       );
       await ctx.db.patch(skillId, {
-        needsTagging: false,
+        // The file changed while Jev was answering (a content fetch landed
+        // between the read and this write). Store these tags, better than
+        // none, but keep the flag so the new content gets tagged too.
+        needsTagging: skill.contentUpdatedAt !== contentUpdatedAt,
         tags,
         tagScores: result.scores,
         primaryCategory: result.primary,
@@ -116,12 +125,12 @@ export const writeTagsBatch = internalMutation({
 
 /** Stop retrying a skill Jev refuses. Its previous tags, if any, stay. */
 export const markSkillUntaggable = internalMutation({
-  args: { skillId: v.id("skills"), reason: v.string() },
-  handler: async (ctx, { skillId, reason }) => {
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, { skillId }) => {
     if (!(await ctx.db.get(skillId))) return;
     await ctx.db.patch(skillId, {
       needsTagging: false,
-      tagSkipReason: reason,
+      tagSkipReason: "input_rejected",
     });
   },
 });
@@ -143,6 +152,7 @@ export const tagSkillsBatch = internalAction({
         name: string;
         description?: string;
         content?: string;
+        contentUpdatedAt?: number;
       }>;
       nextCursor: string;
       isDone: boolean;
@@ -158,23 +168,27 @@ export const tagSkillsBatch = internalAction({
     const entries: Array<{
       skillId: Id<"skills">;
       result: SkillCategorization;
+      contentUpdatedAt?: number;
     }> = [];
-    let failure: unknown;
+    const failures: unknown[] = [];
     for (let i = 0; i < settled.length; i++) {
       const outcome = settled[i];
-      const skillId = result.skills[i].id;
+      const skill = result.skills[i];
       if (outcome.status === "fulfilled") {
-        entries.push({ skillId, result: outcome.value });
+        entries.push({
+          skillId: skill.id,
+          result: outcome.value,
+          contentUpdatedAt: skill.contentUpdatedAt,
+        });
       } else if (outcome.reason instanceof TaggingInputRejectedError) {
         console.warn(
-          `Jev rejected skill ${skillId}, marking untaggable: ${outcome.reason.message}`,
+          `Jev rejected skill ${skill.id}, marking untaggable: ${outcome.reason.message}`,
         );
         await ctx.runMutation(internal.tags.markSkillUntaggable, {
-          skillId,
-          reason: "input_rejected",
+          skillId: skill.id,
         });
       } else {
-        failure ??= outcome.reason;
+        failures.push(outcome.reason);
       }
     }
 
@@ -183,12 +197,17 @@ export const tagSkillsBatch = internalAction({
       console.log(`Tagged ${entries.length}/${result.skills.length} skills`);
     }
 
-    // Anything else (the SDK has already retried 429/529 and timeouts) is
-    // treated like the embedding worker treats it: keep what succeeded, stop
-    // the chain, and let the next content chain retry the rest.
-    if (failure !== undefined) {
-      console.error("Tagging batch failed, stopping chain:", failure);
-      return;
+    // Other errors have already been retried by the SDK (429/529, timeouts).
+    // A whole batch failing means the service is down: stop, and let the next
+    // content chain resume. A partial failure keeps going, or one skill that
+    // always errors would sit at the head of the index and stop every chain
+    // after one batch. Its flag stays set, so later chains retry it.
+    if (failures.length > 0) {
+      console.error(
+        `Tagging failed for ${failures.length}/${result.skills.length} skills:`,
+        failures[0],
+      );
+      if (failures.length === result.skills.length) return;
     }
 
     if (!result.isDone) {

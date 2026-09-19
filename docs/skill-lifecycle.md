@@ -591,9 +591,12 @@ main category when its confidence is 0.5+, plus any category at 0.6+).
   rejects the input (`tagSkipReason`).
 - **Scheduling.** Started next to `embedSkillsBatch` at the end of both content
   chains. 25 skills per batch in parallel, 1.5s between batches, which stays
-  under Jev's 1,200 requests/minute. A non-rejection error stops the chain;
-  the next content chain resumes it. No key (`TYPESAFE_API_KEY`) means a logged
-  no-op, not a failure.
+  under Jev's 1,200 requests/minute. A skill that errors (after the SDK's own
+  retries) stays flagged and the chain moves on; only a batch where every
+  request failed stops the chain, and the next content chain resumes it. If
+  the content changes while a skill is being tagged, the new tags are stored
+  but the flag stays set. No key (`TYPESAFE_API_KEY`) means a logged no-op, not
+  a failure.
 - **Storage.** `tags` (derived, main category first) is mirrored to the
   summary and indexed in Typesense as a filterable field. The raw answers
   (`tagScores`, `primaryCategory`, `primaryCategoryConfidence`) stay on the

@@ -6,7 +6,6 @@ import {
   EXTRA_TAG_MIN,
   PRIMARY_CONFIDENCE_MIN,
 } from "../convex/lib/categories";
-import { CATEGORY_DEFINITIONS } from "../convex/lib/categoryDefinitions";
 
 const low = Object.fromEntries(CATEGORY_KEYS.map((k) => [k, 0.1]));
 
@@ -47,13 +46,8 @@ test("extras need the cutoff, not just a majority", () => {
   ).toEqual(["testing"]);
 });
 
-test("every category has a label and both definitions", () => {
-  for (const key of CATEGORY_KEYS) {
-    expect(CATEGORY_LABELS[key]).toBeTruthy();
-    expect(CATEGORY_DEFINITIONS[key].counts).toBeTruthy();
-    expect(CATEGORY_DEFINITIONS[key].doesNotCount).toBeTruthy();
-  }
-  // Labels double as Jev's choice options, so they must be unique.
+// Presence of every label and definition is enforced by their Record types.
+test("labels are unique, since they double as Jev's choice options", () => {
   expect(new Set(Object.values(CATEGORY_LABELS)).size).toBe(
     CATEGORY_KEYS.length,
   );

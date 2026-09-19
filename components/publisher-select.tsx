@@ -2,23 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Cancel01Icon,
-  Search01Icon,
-  UnfoldMoreIcon,
-} from "@hugeicons/core-free-icons";
 import {
   Combobox,
-  ComboboxInput,
   ComboboxItem,
   ComboboxList,
   ComboboxPopup,
   ComboboxStatus,
   ComboboxTrigger,
 } from "@/components/ui/cubby-ui/combobox/combobox";
-import { Button } from "@/components/ui/cubby-ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  FilterPickerClear,
+  FilterPickerSearch,
+  FilterPickerTrigger,
+} from "@/components/filter-picker";
 import { ItemCount } from "@/components/item-count";
 import type { ControlSurface } from "@/components/catalog-controls";
 import {
@@ -97,9 +94,9 @@ export function PublisherSelect({
     return [...matched, ...selected.filter((s) => !matchedIds.has(s.id))];
   }, [trimmed.length, results, selected]);
 
-  const label =
+  const selectionLabel =
     value.length === 0
-      ? "Publisher"
+      ? null
       : value.length === 1
         ? value[0]
         : `${value.length} publishers`;
@@ -140,50 +137,13 @@ export function PublisherSelect({
     >
       <ComboboxTrigger
         render={(triggerProps: React.ComponentProps<"button">) => (
-          <Button
-            {...triggerProps}
-            size="sm"
-            variant={inSheet ? "outline" : "ghost"}
-            aria-label="Filter by publisher"
-            className={cn(
-              // No active-state border — the label ("2 publishers") is the
-              // indicator, matching the other filter pills (which don't tint).
-              "justify-between gap-2",
-              // Match the Select triggers' surface: ghost in the composer chin,
-              // translucent-elevated in the mobile sheet.
-              //
-              // Recolour through the --btn-* tokens, never `bg-*`. The Button
-              // recipe paints its fill on a ::before pseudo, so a `bg-*` here
-              // lands on the root instead and the two layers composite — a
-              // second `hover:bg-surface-hover` read as double-strength hover.
-              // tailwind-merge can't catch it either: it has no way to know
-              // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
-              inSheet
-                ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
-                : // -ms pulls the ghost trigger's TEXT onto the chin's 12px
-                  // optical line (its invisible box overhangs the gutter).
-                  // Ghost already supplies the hover fill and text colour.
-                  "-ms-2 text-muted-foreground",
-              value.length > 0 && "text-foreground",
-              className,
-            )}
-            trailingIcon={
-              <HugeiconsIcon
-                icon={UnfoldMoreIcon}
-                strokeWidth={2}
-                className="size-4 text-muted-foreground"
-              />
-            }
-          >
-            <span
-              className={cn(
-                "truncate",
-                value.length === 0 && "text-muted-foreground",
-              )}
-            >
-              {label}
-            </span>
-          </Button>
+          <FilterPickerTrigger
+            triggerProps={triggerProps}
+            name="Publisher"
+            selectionLabel={selectionLabel}
+            inSheet={inSheet}
+            className={className}
+          />
         )}
       />
       <ComboboxPopup
@@ -191,23 +151,11 @@ export function PublisherSelect({
         align="start"
         className="flex min-w-60 flex-col p-0"
       >
-        <div className="border-b border-border p-2">
-          <ComboboxInput
-            variant="elevated"
-            placeholder="Search publishers…"
-            showTrigger={false}
-            showClear={false}
-            aria-busy={showLoading}
-            start={
-              <HugeiconsIcon
-                icon={Search01Icon}
-                strokeWidth={2}
-                className="text-muted-foreground"
-              />
-            }
-            end={showLoading ? <Spinner size="xs" /> : null}
-          />
-        </div>
+        <FilterPickerSearch
+          placeholder="Search publishers…"
+          busy={showLoading}
+          end={showLoading ? <Spinner size="xs" /> : null}
+        />
         {/* Base UI's Status ships `role="status"` + `aria-live`, and it stays
             mounted for the life of the popup while `status()` varies — so this
             IS the live region for the search. The spinner in the input stays
@@ -235,23 +183,9 @@ export function PublisherSelect({
           )}
         </ComboboxList>
         {value.length > 0 ? (
-          <div className="border-t border-border p-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground"
-              onClick={() => onChange([])}
-              leadingIcon={
-                <HugeiconsIcon
-                  icon={Cancel01Icon}
-                  strokeWidth={2}
-                  className="size-3.5"
-                />
-              }
-            >
-              Clear publishers
-            </Button>
-          </div>
+          <FilterPickerClear onClick={() => onChange([])}>
+            Clear publishers
+          </FilterPickerClear>
         ) : null}
       </ComboboxPopup>
     </Combobox>

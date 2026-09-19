@@ -167,6 +167,57 @@ test("a transient failure keeps the skill flagged for the next run", async () =>
   });
 });
 
+test("one failing skill doesn't stop the rest of the batch or the chain", async () => {
+  const t = makeTest();
+  const flaky = await seedSkill(t, "flaky", true);
+  const fine = await seedSkill(t, "fine", true);
+
+  vi.mocked(categorizeSkill).mockImplementation(async ({ name }) => {
+    if (name === "flaky") throw new Error("timeout");
+    return {
+      scores: scores({ security: 0.9 }),
+      primary: "security",
+      primaryConfidence: 0.9,
+      model: "jev-1.13.0",
+    };
+  });
+
+  await t.action(internal.tags.tagSkillsBatch, {});
+  await t.finishInProgressScheduledFunctions();
+
+  expect(await summaryTags(t, fine)).toEqual(["security"]);
+  await t.run(async (ctx) => {
+    // Still flagged for a later chain, not parked.
+    expect((await ctx.db.get(flaky))!.needsTagging).toBe(true);
+  });
+});
+
+test("content that changes while Jev answers stays flagged", async () => {
+  const t = makeTest();
+  const id = await seedSkill(t, "moving", true);
+
+  vi.mocked(categorizeSkill).mockImplementation(async () => {
+    // A content fetch lands between the read and the write.
+    await t.run((ctx) => ctx.db.patch(id, { contentUpdatedAt: 123 }));
+    return {
+      scores: scores({ docs: 0.9 }),
+      primary: "docs",
+      primaryConfidence: 0.9,
+      model: "jev-1.13.0",
+    };
+  });
+
+  // Run one batch directly; the flag left set would otherwise be picked up
+  // again by the chain's own continuation.
+  await t.action(internal.tags.tagSkillsBatch, {});
+
+  await t.run(async (ctx) => {
+    const row = await ctx.db.get(id);
+    expect(row!.tags).toEqual(["docs"]);
+    expect(row!.needsTagging).toBe(true);
+  });
+});
+
 test("tagSkillsBatch does nothing without an API key", async () => {
   const t = makeTest();
   const id = await seedSkill(t, "unkeyed", true);
