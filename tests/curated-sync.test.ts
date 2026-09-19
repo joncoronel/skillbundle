@@ -120,6 +120,7 @@ test("Pass 0: inserts curated skill that isn't on the leaderboard", async () => 
     expect(skill!.needsDiscovery).toBe(true);
     expect(skill!.needsContentFetch).toBe(false);
     expect(skill!.needsEmbedding).toBe(true);
+    expect(skill!.needsTagging).toBe(true);
     expect(skill!.needsAudit).toBe(true);
     expect(skill!.isDelisted).toBe(false);
     // Origin tag — these rows were not on the all-time leaderboard.

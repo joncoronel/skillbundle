@@ -180,6 +180,9 @@ export function skillsCollectionSchema(name: string) {
       optional: true,
     },
     { name: "copyCount", type: "int32", index: false, optional: true },
+    // Category keys, omitted on untagged docs. Needs the DEPLOY NOTE's
+    // resetCollection + syncCatalog on each environment it first reaches.
+    { name: "tags", type: "string[]", facet: true, optional: true },
     // Forward-declared sorts, populated in a later sync pass.
     { name: "momentum7d", type: "int32", optional: true },
     { name: "momentum30d", type: "int32", optional: true },
@@ -236,6 +239,7 @@ export const typesenseSkillDocValidator = v.object({
   worstAuditStatus: v.optional(v.string()),
   worstAuditRiskLevel: v.optional(v.string()),
   copyCount: v.optional(v.number()),
+  tags: v.optional(v.array(v.string())),
   // Forward-declared sorts, populated in a later sync pass.
   momentum7d: v.optional(v.number()),
   momentum30d: v.optional(v.number()),

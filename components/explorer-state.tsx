@@ -75,6 +75,7 @@ function buildExplorerState(
   const hasQuery = trimmedQuery.length > 0;
   const hasNarrowing =
     params.official ||
+    params.category.length > 0 ||
     params.publisher.length > 0 ||
     params.audit !== null ||
     params.minInstalls !== null ||
@@ -85,13 +86,16 @@ function buildExplorerState(
 
   // `more` = the filters behind the chin's "More" dropdown (min installs, hide
   // broken, hide GitHub-only); `narrowing` = every chin filter (More's +
-  // publisher + audit).
+  // category + publisher + audit).
   const moreCount =
     (params.minInstalls !== null ? 1 : 0) +
     (params.broken ? 1 : 0) +
     (params.hideGitHubOnly ? 1 : 0);
   const narrowing =
-    (params.publisher.length > 0 ? 1 : 0) + (params.audit ? 1 : 0) + moreCount;
+    (params.category.length > 0 ? 1 : 0) +
+    (params.publisher.length > 0 ? 1 : 0) +
+    (params.audit ? 1 : 0) +
+    moreCount;
 
   return {
     ...params,
@@ -105,6 +109,7 @@ function buildExplorerState(
     effectiveSort: params.sortParam ?? (hasQuery ? "relevance" : "installs"),
     filters: {
       officialOnly: params.official || undefined,
+      categories: params.category.length > 0 ? params.category : undefined,
       owners: params.publisher.length > 0 ? params.publisher : undefined,
       audit: params.audit ?? undefined,
       minInstalls: params.minInstalls ?? undefined,
@@ -123,6 +128,7 @@ function buildExplorerState(
     },
     clearFilters: () =>
       setParams({
+        category: [],
         publisher: [],
         audit: null,
         minInstalls: null,
@@ -137,6 +143,7 @@ function buildExplorerState(
     // resettable — or settable — here).
     clearSheetFilters: () =>
       setParams({
+        category: [],
         publisher: [],
         audit: null,
         minInstalls: null,

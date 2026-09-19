@@ -14,6 +14,7 @@ import {
   serializeSkillsParam,
   type SkillRef,
 } from "@/lib/compare";
+import { CATEGORY_KEYS, type CategoryKey } from "@/convex/lib/categories";
 
 // Shared debounce duration for all search inputs. Picked
 // short enough to feel responsive on a typing pause, long enough that mid-
@@ -64,6 +65,13 @@ export const minInstallsParser = parseAsInteger;
 export const publisherParser = parseAsArrayOf(parseAsString)
   .withDefault([])
   .withOptions({ clearOnDefault: true });
+// Any-of category keys (?cat=testing,security). Unknown keys are dropped at
+// parse, so a stale URL can't send a filter that matches nothing.
+export const categoryParser = parseAsArrayOf(
+  parseAsStringLiteral(CATEGORY_KEYS),
+)
+  .withDefault([])
+  .withOptions({ clearOnDefault: true });
 // Search scope. Default (false) searches skill names only; opt in to also
 // search descriptions. A preference, not a filter — not part of "active
 // filters" / Clear.
@@ -85,10 +93,8 @@ export const homeParamParsers = {
   repoUrl: repoUrlParser,
   sortParam: catalogSortParser.withOptions({ startTransition }),
   official: officialFilterParser.withOptions({ startTransition }),
-  publisher: publisherParser.withOptions({
-    startTransition,
-    clearOnDefault: true,
-  }),
+  category: categoryParser.withOptions({ startTransition }),
+  publisher: publisherParser.withOptions({ startTransition }),
   audit: auditFilterParser.withOptions({ startTransition }),
   minInstalls: minInstallsParser.withOptions({ startTransition }),
   searchDescriptions: searchDescriptionsParser.withOptions({ startTransition }),
@@ -104,6 +110,7 @@ export const homeParamUrlKeys = {
   repoUrl: "repo",
   sortParam: "sort",
   official: "official",
+  category: "cat",
   publisher: "pub",
   audit: "audit",
   minInstalls: "min",
@@ -114,6 +121,9 @@ export const homeParamUrlKeys = {
 } as const satisfies UrlKeys<typeof homeParamParsers>;
 
 export type HomeParams = inferParserType<typeof homeParamParsers>;
+
+export const categoryHref = (key: CategoryKey) =>
+  `/?${homeParamUrlKeys.category}=${key}`;
 
 // The no-params entry state, derived MECHANICALLY from the parsers: a parser
 // built with .withDefault() carries a public `defaultValue`; one without it

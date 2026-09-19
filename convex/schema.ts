@@ -170,6 +170,19 @@ export default defineSchema({
     // a future migration can re-flag these by reason and try a smarter
     // truncation/chunking strategy.
     embeddingSkipReason: v.optional(v.string()),
+    // Category tagging (convex/tags.ts), flagged wherever needsEmbedding is.
+    needsTagging: v.optional(v.boolean()),
+    // `tags` is derived (main category first) and mirrored to the summary.
+    // Raw answers are kept so a threshold change needs no model call.
+    tags: v.optional(v.array(v.string())),
+    tagScores: v.optional(v.record(v.string(), v.number())),
+    primaryCategory: v.optional(v.string()),
+    primaryCategoryConfidence: v.optional(v.number()),
+    tagsModel: v.optional(v.string()),
+    tagsVersion: v.optional(v.number()),
+    taggedAt: v.optional(v.number()),
+    // Jev rejected the input (400/422); cleared by the next successful tag.
+    tagSkipReason: v.optional(v.string()),
   })
     .index("by_source_skillId", ["source", "skillId"])
     // Counts a user's GitHub-only adds for the free-tier quota. Compound with
@@ -179,7 +192,8 @@ export default defineSchema({
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_isDelisted", ["isDelisted"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
-    .index("by_needsEmbedding", ["needsEmbedding"]),
+    .index("by_needsEmbedding", ["needsEmbedding"])
+    .index("by_needsTagging", ["needsTagging"]),
 
   // Embedding vectors live in their own table to keep `skills` row reads
   // cheap. Measured Aug 2026: a skill row averages ~10 KB (see the ROW SIZE
@@ -306,6 +320,8 @@ export default defineSchema({
     // rows themselves. Optional because legacy summaries (from before the
     // table split) won't have it set until the backfill runs.
     skillEmbeddingId: v.optional(v.id("skillEmbeddings")),
+    // Mirrored from the skills row for the Typesense sync.
+    tags: v.optional(v.array(v.string())),
     // Mirrored from skills row. Used for default-filtering forks/copies out
     // of listing and search queries.
     isDuplicate: v.optional(v.boolean()),

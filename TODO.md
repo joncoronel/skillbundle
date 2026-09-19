@@ -1000,6 +1000,100 @@ Sequencing note: #1 is a weekend and improves the catalog whether or not anythin
 else lands. #2 is the next-cheapest. #3 any time. #4 is independent of all of them.
 None of these block or are blocked by the monitoring work.
 
+### TypeSafe Jev: possible features to revisit (Sep 2026)
+
+Jev (TypeSafe's first "System One" model, docs at https://docs.typesafe.ai/llms.txt)
+does not generate text. It reads a `state` and answers typed questions: a
+Choice (pick one option), a Noul (probability a yes/no holds) or a Score (a
+position on levels you describe). It is billed on input only, at $0.042 per
+million tokens, so tagging the whole ~16k catalog is a few dollars and the
+~4,400 SKILL.md changes a month are about $1. The limits that matter: it can't
+invent options, it is weak on counting, dates and long irrelevant context, and
+text written to steer it can move its answers. The JS SDK is `fetch`-based, so
+it runs in a Convex action with the key server-side.
+
+**Category tags are built** (`convex/tags.ts`, branch `category-tags`, Sep
+2026): 28 categories, a Category filter on the home page, and a Categories
+block in the skill page sidebar. Tuned on a 150-skill sample over three runs;
+the tuning lessons are in `convex/lib/categoryDefinitions.ts`. Prod rollout,
+once, in this order. Steps 1 to 3 happen **before merging**: merging ships the
+Category picker, and until the prod search index has the `tags` field, the
+picker's count request and any `?cat=` search fail outright.
+
+1. From the `category-tags` branch: `npx convex env set TYPESAFE_API_KEY
+<key> --prod`, then `npx convex deploy`. The live site keeps working
+   against it; the new fields are all optional.
+2. `npx convex run typesense:resetCollection --prod`, then immediately
+   `npx convex run typesense:syncCatalog --prod`. This adds the `tags`
+   field; the index is briefly empty in between.
+3. `npx convex run tags:markAllForTagging --prod` (~16k skills, ~30 minutes,
+   ~$3.60). If the logs show "Tagging failed for N/N skills" (every skill in
+   a batch failed), the chain has stopped: re-run
+   `npx convex run tags:tagSkillsBatch --prod`. A partial count like 1/25 is
+   normal; those skills are retried on later runs.
+4. Merge the PR.
+5. Once tagging finishes: `npx convex run typesense:syncCatalog --prod` so
+   search has every skill's tags (otherwise the 07:00 daily sync catches up),
+   then `npx convex run skills:publishSkillUpdate --prod` so cached skill
+   pages show their categories.
+
+Follow-up worth doing: **technology tags** (Next.js, Supabase, Playwright…).
+Code finds technology names mentioned in the SKILL.md from a hand-kept list
+of names and spellings, and Jev decides per mention "is this skill about X or
+does it only mention it?". That fills the unused `technologies` prop on
+`components/skill-card.tsx`. The only real work is the name list.
+
+Everything below is a candidate for later, in rough order of value. The shared
+pattern is "code or vector search finds candidates, Jev judges them".
+
+**1. Rate how much a SKILL.md change matters.** Code computes the diff and
+Jev scores it on levels (cosmetic, clarification, behavior change, trigger or
+scope change), with Nouls riding along in the same request ("adds new shell
+commands?", "starts handling credentials or network calls?", "removes a
+capability?"). The dashboard feed can then demote typo fixes and surface quiet
+behavior changes, which is PRODUCT.md's "Earn every alert" applied to body
+edits. Today `change-feed.tsx` explains description changes but says nothing
+about what a body edit did. Jev can also pick the single most significant hunk
+from code-split candidates, so the feed shows "what changed" without generating
+text.
+
+**2. "Describe what you need" search.** A submitted-sentence mode, separate
+from the search-as-you-type box: embed the query, take the top ~50 from the
+`by_embedding` vector index, then one Jev request reranks them and answers
+whether any of them fits at all. Saying "nothing in the catalog does this" is
+the part vector search can't do. Needs a server path (Typesense is
+browser-direct today) and a `rateLimits.ts` entry. Closest reference is
+TypeSafe's skill-suggestion cookbook, which ranks a 182-skill roster this way.
+Related but separate: Typesense hybrid (keyword + vector) search in the main
+box, which needs no Jev but does need query embeddings, and our stored vectors
+are Voyage, so either a server hop per query or a switch of embedding model.
+
+**3. Rerank repo matches.** `recommendations.ts` scores the top 250 by
+`vectorScore x packageMultiplier x popMultiplier`, where the package bonus is a
+plain substring hit. Replace or supplement that with a Jev Noul per candidate
+("would this skill be useful in this repo?", state = the fingerprint), and a
+Choice over the repo's own package list plus "none" to give each result a
+verified "matched because of X". That would make `matchedPackages` worth
+showing (see "Match repo: deferred features"). Cached per repo, so cheap.
+
+**4. Bundle trigger check.** Agents pick skills from descriptions alone, so
+two skills in a bundle with colliding descriptions make the agent load the
+wrong one. For each skill, give Jev the opening of its body and a Choice over
+the bundle's descriptions; if it picks a different skill, flag the pair. Add a
+Noul for "does this description match what the body tells the agent to do?".
+Bundle-sized, so it does not reopen the catalog-scale dedup that was cut above.
+Least certain of the four; test whether Jev reads collisions reliably before
+building UI. Overlaps with "Author tools" (#4 in the embedding list).
+
+Considered and not recommended:
+
+- **Security second opinion next to the external audits.** Adversarial content
+  is Jev's documented weak spot, and a malicious SKILL.md is adversarial by
+  definition. At most a "worth reading" hint, never a verdict.
+- **Quality scores behind sort sliders.** Cheap to produce, but an AI-judged
+  ranking of other people's work reads as arbitrary and is hard to defend to a
+  publisher who disagrees.
+
 ### Focus rings fail the 3:1 contrast threshold app-wide (design decision)
 
 Measured Jul 2026 while fixing a disabled-button focus ring, then re-measured

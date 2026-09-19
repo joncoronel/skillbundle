@@ -639,6 +639,7 @@ export const upsertSkillsBatch = internalMutation({
           ? {
               isDelisted: false as const,
               needsEmbedding: true as const,
+              needsTagging: true as const,
               needsAudit: true as const,
               ...(isGitHub
                 ? {
@@ -749,6 +750,7 @@ export const upsertSkillsBatch = internalMutation({
           ...(wasRelisted && {
             isDelisted: false,
             needsEmbedding: true,
+            needsTagging: true,
             needsAudit: true,
             ...(isGitHub
               ? { needsDiscovery: true, needsContentFetch: false }
@@ -789,6 +791,7 @@ export const upsertSkillsBatch = internalMutation({
           isDelisted: false,
           isDuplicate: skill.isDuplicate,
           needsEmbedding: true,
+          needsTagging: true,
           // By the time we sync a leaderboard skill, skills.sh's audit
           // pipeline has almost certainly run for it.
           needsAudit: true,
@@ -1662,6 +1665,11 @@ export const backfillFetchContent = internalAction({
         internal.skills.embedSkillsBatch,
         {},
       );
+      await ctx.scheduler.runAfter(
+        finalDelay + 5_000,
+        internal.tags.tagSkillsBatch,
+        {},
+      );
       // Drain the audit queue alongside embeddings — independent chains, both
       // fire after content has stabilized for the day.
       await ctx.scheduler.runAfter(
@@ -1863,8 +1871,8 @@ export const updateDescription = internalMutation({
       contentUpdatedAt: now,
       // Still gated, and correctly so: the embedding is built from name +
       // description + body, so a version bump has no business forcing a re-embed
-      // and paying for a Voyage call.
-      ...(hasActualChange && { needsEmbedding: true }),
+      // and paying for a Voyage call. Tagging reads the same fields.
+      ...(hasActualChange && { needsEmbedding: true, needsTagging: true }),
       needsContentFetch: false,
       contentFetchFailCount: 0,
       hasContentFetchError: false,
@@ -2294,9 +2302,10 @@ export const updateSkillFromDetail = internalMutation({
       syncHash,
       contentFetchedAt: now,
       // See the matching comment in updateDescription: unconditional because the
-      // hash moved, while needsEmbedding stays gated on the parsed fields.
+      // hash moved, while needsEmbedding and needsTagging stay gated on the
+      // parsed fields.
       contentUpdatedAt: now,
-      ...(hasActualChange && { needsEmbedding: true }),
+      ...(hasActualChange && { needsEmbedding: true, needsTagging: true }),
       needsContentFetch: false,
       hasContentFetchError: false,
     });
@@ -2493,6 +2502,7 @@ export const fetchSkillDetailBatch = internalAction({
         internal.skills.embedSkillsBatch,
         {},
       );
+      await ctx.scheduler.runAfter(10_000, internal.tags.tagSkillsBatch, {});
       // Same publish step as the raw-content chain: well-known sources get
       // their content here, so this branch needs its own ping.
       await ctx.scheduler.runAfter(
@@ -2606,6 +2616,7 @@ export const delistSkillsBatch = internalMutation({
           needsContentFetch: false,
           needsDiscovery: false,
           needsEmbedding: false,
+          needsTagging: false,
           // Mirrors the summary patch above — see the needsAudit note there.
           needsAudit: false,
           // No leaderboard cleanup here, unlike the summary patch above: the

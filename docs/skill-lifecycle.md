@@ -99,7 +99,8 @@ pipeline itself (see [GitHub-only skills](#github-only-skills)).
 - `isDelisted = true`; hidden from all listing/search/recommendation queries (they
   filter `isDelisted = false`).
 - Embedding row deleted (drops it from vector search); leaderboard denorm fields
-  cleared; pipeline flags cleared.
+  cleared; pipeline flags (`needsTagging` included) cleared. Tags stay on the
+  rows, so a relisted skill keeps them until its re-tag lands.
 - **Row is kept** (~1.3 KB summary + skills row) for the delisted count and a
   fast relist. If the skill reappears in a feed, `upsertSkillsBatch` relists it
   (`isDelisted = false`, re-fetch content).
@@ -574,6 +575,42 @@ discoveryFailCount < 3`), **not a dead alias** (`repoLiveName === source`),
 every 24h. If the freshness window were ≥ 24h, a skill it stamped yesterday would
 read as "fresh" the next day and get skipped — refreshing only every _other_ day
 and leaving chart gaps. 23h leaves buffer for cron jitter while staying under 24h.
+
+## Category tagging (`tags.tagSkillsBatch`)
+
+Every skill carries category tags from a fixed list of 28
+(`convex/lib/categories.ts`), assigned by TypeSafe's Jev model. Jev returns
+probabilities, not text: one request per skill asks a yes/no per category plus
+a "pick one" main category, and `deriveTags` turns the answers into tags (the
+main category when its confidence is 0.5+, plus any category at 0.6+).
+
+- **Work-set.** `needsTagging` on the `skills` row only, with the
+  `by_needsTagging` index. Set everywhere `needsEmbedding` is: insert, relist,
+  and a real description/body change (`hasActualChange`, so a frontmatter-only
+  `version:` bump doesn't re-tag). Cleared on success, on delist, and when Jev
+  rejects the input (`tagSkipReason`).
+- **Scheduling.** Started next to `embedSkillsBatch` at the end of both content
+  chains. 25 skills per batch in parallel, 1.5s between batches, which stays
+  under Jev's 1,200 requests/minute. A skill that errors (after the SDK's own
+  retries) stays flagged and the chain moves on; only a batch where every
+  request failed stops the chain, and the next content chain resumes it. If
+  the content changes while a skill is being tagged, the new tags are stored
+  but the flag stays set. No key (`TYPESAFE_API_KEY`) means a logged no-op, not
+  a failure.
+- **Storage.** `tags` (derived, main category first) is mirrored to the
+  summary and indexed in Typesense as a filterable field. The raw answers
+  (`tagScores`, `primaryCategory`, `primaryCategoryConfidence`) stay on the
+  skills row so a cutoff change can be re-applied without calling Jev again.
+  `tagsModel` pins the model version and `tagsVersion` the definitions version.
+- **Why only on change.** Jev's scores move by about ±0.02 between identical
+  requests, so re-tagging unchanged skills would make borderline tags flicker.
+- **Lag.** Tags usually land before the chain's `publishSkillUpdate` and the
+  07:00 Typesense sync. A large batch can miss both, and those tags then show
+  up a day later. The chain sends no cache ping of its own.
+- **Re-tagging** after a definitions change: bump `CATEGORIES_VERSION`, then
+  `npx convex run tags:markAllForTagging [--prod]` (flags every live skill and
+  starts the chain). `'{"limit": 200}'` flags a sample first. The first run on
+  a deployment is also its backfill.
 
 ## Typesense search mirror (`syncCatalog`)
 

@@ -1,24 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Cancel01Icon,
-  Search01Icon,
-  UnfoldMoreIcon,
-} from "@hugeicons/core-free-icons";
+import { useQuery } from "@tanstack/react-query";
 import {
   Combobox,
-  ComboboxInput,
   ComboboxItem,
   ComboboxList,
-  ComboboxPopup,
   ComboboxStatus,
   ComboboxTrigger,
 } from "@/components/ui/cubby-ui/combobox/combobox";
-import { Button } from "@/components/ui/cubby-ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  FilterPickerClear,
+  FilterPickerPopup,
+  FilterPickerSearch,
+  FilterPickerTrigger,
+  PICKER_ITEM_COLUMNS,
+} from "@/components/filter-picker";
 import { ItemCount } from "@/components/item-count";
 import type { ControlSurface } from "@/components/catalog-controls";
 import {
@@ -42,7 +40,7 @@ const toItem = (o: OwnerCount): OwnerItem => ({ id: o.value, count: o.count });
  * debounce + cache-bypass primitive as every other search input
  * (useDebouncedQueryValue → React Query → deriveInputLoading): cached retypes
  * render on the first frame with zero loading UI, uncached queries debounce
- * then fetch with the previous rows dimmed (keepPreviousData), and superseded
+ * then fetch with a related search's rows dimmed, and superseded
  * keystrokes abort. Multi-select (any-of); the trigger shows a summary, the
  * popup a checkable list. Type-to-search only — the catalog has too many
  * publishers to browse.
@@ -70,9 +68,20 @@ export function PublisherSelect({
     queryKey: ownersQueryKey(effectiveQuery),
     queryFn: ({ signal }) => listOwners({ query: effectiveQuery, signal }),
     enabled: effectiveQuery.length > 0,
-    // Keep the previous query's rows (dimmed) while a refinement fetches, so
-    // the list never flashes empty between keystrokes.
-    placeholderData: keepPreviousData,
+    // Keep the previous rows (dimmed) only for a related search ("a" → "ab"
+    // or back). This observer outlives a cleared input, so plain
+    // keepPreviousData showed "a"'s rows under an unrelated "b".
+    // `previousQuery` is the last query that had data.
+    placeholderData: (previous, previousQuery) => {
+      const before = previousQuery?.queryKey[1];
+      const related =
+        typeof before === "string" &&
+        before.length > 0 &&
+        effectiveQuery.length > 0 &&
+        (effectiveQuery.startsWith(before) ||
+          before.startsWith(effectiveQuery));
+      return related ? previous : undefined;
+    },
     staleTime: OWNERS_STALE_MS,
     gcTime: OWNERS_STALE_MS,
   });
@@ -97,9 +106,9 @@ export function PublisherSelect({
     return [...matched, ...selected.filter((s) => !matchedIds.has(s.id))];
   }, [trimmed.length, results, selected]);
 
-  const label =
+  const selectionLabel =
     value.length === 0
-      ? "Publisher"
+      ? null
       : value.length === 1
         ? value[0]
         : `${value.length} publishers`;
@@ -140,74 +149,21 @@ export function PublisherSelect({
     >
       <ComboboxTrigger
         render={(triggerProps: React.ComponentProps<"button">) => (
-          <Button
-            {...triggerProps}
-            size="sm"
-            variant={inSheet ? "outline" : "ghost"}
-            aria-label="Filter by publisher"
-            className={cn(
-              // No active-state border — the label ("2 publishers") is the
-              // indicator, matching the other filter pills (which don't tint).
-              "justify-between gap-2",
-              // Match the Select triggers' surface: ghost in the composer chin,
-              // translucent-elevated in the mobile sheet.
-              //
-              // Recolour through the --btn-* tokens, never `bg-*`. The Button
-              // recipe paints its fill on a ::before pseudo, so a `bg-*` here
-              // lands on the root instead and the two layers composite — a
-              // second `hover:bg-surface-hover` read as double-strength hover.
-              // tailwind-merge can't catch it either: it has no way to know
-              // `bg-surface-hover` conflicts with `[--btn-bg-hover:…]`.
-              inSheet
-                ? "[--btn-bg-active:var(--surface-active)] [--btn-bg-hover:var(--surface-hover)] [--btn-bg:var(--input-elevated)] hover:text-foreground"
-                : // -ms pulls the ghost trigger's TEXT onto the chin's 12px
-                  // optical line (its invisible box overhangs the gutter).
-                  // Ghost already supplies the hover fill and text colour.
-                  "-ms-2 text-muted-foreground",
-              value.length > 0 && "text-foreground",
-              className,
-            )}
-            trailingIcon={
-              <HugeiconsIcon
-                icon={UnfoldMoreIcon}
-                strokeWidth={2}
-                className="size-4 text-muted-foreground"
-              />
-            }
-          >
-            <span
-              className={cn(
-                "truncate",
-                value.length === 0 && "text-muted-foreground",
-              )}
-            >
-              {label}
-            </span>
-          </Button>
+          <FilterPickerTrigger
+            triggerProps={triggerProps}
+            name="Publisher"
+            selectionLabel={selectionLabel}
+            inSheet={inSheet}
+            className={className}
+          />
         )}
       />
-      <ComboboxPopup
-        level={inSheet ? 7 : 5}
-        align="start"
-        className="flex min-w-60 flex-col p-0"
-      >
-        <div className="border-b border-border p-2">
-          <ComboboxInput
-            variant="elevated"
-            placeholder="Search publishers…"
-            showTrigger={false}
-            showClear={false}
-            aria-busy={showLoading}
-            start={
-              <HugeiconsIcon
-                icon={Search01Icon}
-                strokeWidth={2}
-                className="text-muted-foreground"
-              />
-            }
-            end={showLoading ? <Spinner size="xs" /> : null}
-          />
-        </div>
+      <FilterPickerPopup inSheet={inSheet}>
+        <FilterPickerSearch
+          placeholder="Search publishers…"
+          busy={showLoading}
+          end={showLoading ? <Spinner size="xs" /> : null}
+        />
         {/* Base UI's Status ships `role="status"` + `aria-live`, and it stays
             mounted for the life of the popup while `status()` varies — so this
             IS the live region for the search. The spinner in the input stays
@@ -223,32 +179,21 @@ export function PublisherSelect({
           )}
         >
           {(o: OwnerItem) => (
-            <ComboboxItem key={o.id} value={o}>
-              <span className="truncate">{o.id}</span>
-              {o.count > 0 ? <ItemCount count={o.count} /> : null}
+            <ComboboxItem key={o.id} value={o} className={PICKER_ITEM_COLUMNS}>
+              {/* Long domains wrap: a cut-off publisher has nowhere else to be read. */}
+              <span className="flex min-w-0 items-center">
+                <span className="min-w-0 break-all">{o.id}</span>
+                {o.count > 0 ? <ItemCount count={o.count} /> : null}
+              </span>
             </ComboboxItem>
           )}
         </ComboboxList>
         {value.length > 0 ? (
-          <div className="border-t border-border p-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground"
-              onClick={() => onChange([])}
-              leadingIcon={
-                <HugeiconsIcon
-                  icon={Cancel01Icon}
-                  strokeWidth={2}
-                  className="size-3.5"
-                />
-              }
-            >
-              Clear publishers
-            </Button>
-          </div>
+          <FilterPickerClear onClick={() => onChange([])}>
+            Clear publishers
+          </FilterPickerClear>
         ) : null}
-      </ComboboxPopup>
+      </FilterPickerPopup>
     </Combobox>
   );
 }
