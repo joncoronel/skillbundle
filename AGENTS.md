@@ -135,7 +135,7 @@ Tables (`schema.ts`), grouped by concern:
 Modules, grouped by concern:
 
 - **Skill sync & lifecycle:** `skills.ts` (sync pipeline + catalog queries), `reconcile.ts`, `curated.ts` / `curatedRefresh.ts`, `duplicates.ts`, `audits.ts`, `crons.ts`, plus `lib/*` helpers (`detailRefresh`, `skillHealth`, `source`, `appDay`, `pagination`, `github`, `skillsApi`, `embeddings`). Documented in docs/skill-lifecycle.md.
-- **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching).
+- **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching), `tags.ts` (category tagging with TypeSafe's Jev model; the category list is `lib/categories.ts`, what each category means to the model is `lib/categoryDefinitions.ts`).
 - **Well-known sources:** `wellKnown.ts` (weekly probe of each well-known domain's skills index, at the root and under a fixed set of base paths). Read its header before touching any `npx skills add` string — the command for a well-known source is not derivable from the source, and the obvious form is one the CLI resolves to a GitHub repo.
 - **Version archive & monitoring:** `skillVersions.ts` (read + write API over the change archive; `freshness.ts` decides which SKILL.mds to re-check).
 - **Bundles & social:** `bundles.ts`.
@@ -174,12 +174,24 @@ skills inside the package, at `node_modules/@tanstack/charts/docs/` and
 or a docs mirror. They match the installed version, and this is a young library
 that moves.
 
-### Technology tagging
+### Category and technology tagging
 
-Not implemented. An earlier design (auto-tagging during sync + a frontend
-technology registry) was never built; `components/skill-card.tsx` exposes an
-optional `technologies` prop that nothing currently populates. If you're
-asked to add technology tagging, treat it as new work, not a refactor.
+**Categories are implemented.** Every skill gets tags from a fixed list of 22
+categories (Frontend & UI, Testing & QA, …), assigned by TypeSafe's Jev model
+in `convex/tags.ts` and documented in docs/skill-lifecycle.md "Category
+tagging". They drive the home page's Category filter and the Categories block
+in the skill page sidebar. They are deliberately **not** shown on catalog rows.
+
+To change what a category means, edit `convex/lib/categoryDefinitions.ts`. Most
+fixes are a sharper "doesNotCount" line, because the model reads literally.
+Try the change on a sample (`tags:markAllForTagging '{"limit": 200}'`) before
+bumping `CATEGORIES_VERSION` and re-tagging everything. Category keys are
+stored on rows and in the search index; labels are display-only.
+
+**Technology tags (Next.js, Supabase, …) are not implemented.**
+`components/skill-card.tsx` still has an optional `technologies` prop that
+nothing populates. The planned approach is in TODO.md: code finds technology
+names in the SKILL.md, and Jev judges which ones the skill is actually about.
 
 ## Conventions
 

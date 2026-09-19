@@ -180,6 +180,11 @@ export function skillsCollectionSchema(name: string) {
       optional: true,
     },
     { name: "copyCount", type: "int32", index: false, optional: true },
+    // Category keys from convex/tags.ts, filtered with "match any" by the
+    // Category picker. Omitted on untagged docs, which then simply don't match
+    // a category filter. Needs the same resetCollection + syncCatalog as the
+    // DEPLOY NOTE above on each environment it first reaches.
+    { name: "tags", type: "string[]", facet: true, optional: true },
     // Forward-declared sorts, populated in a later sync pass.
     { name: "momentum7d", type: "int32", optional: true },
     { name: "momentum30d", type: "int32", optional: true },
@@ -236,6 +241,8 @@ export const typesenseSkillDocValidator = v.object({
   worstAuditStatus: v.optional(v.string()),
   worstAuditRiskLevel: v.optional(v.string()),
   copyCount: v.optional(v.number()),
+  /** Category keys (convex/lib/categories.ts), main category first. */
+  tags: v.optional(v.array(v.string())),
   // Forward-declared sorts, populated in a later sync pass.
   momentum7d: v.optional(v.number()),
   momentum30d: v.optional(v.number()),

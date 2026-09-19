@@ -23,6 +23,7 @@ import type { SectionNavItem } from "@/components/skill-section-nav";
 import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { skillHref } from "@/lib/skill-urls";
+import { isCategoryKey } from "@/convex/lib/categories";
 import {
   buildSkillInstallCommand,
   uncoveredReason,
@@ -412,6 +413,7 @@ async function SkillDetailBody({
         updatedDate={updatedDate}
         audits={audits}
         stars={stars}
+        categories={(skill.tags ?? []).filter(isCategoryKey)}
         // Passed in rather than imported by the card, so the card stays free of
         // bundle state and this server component keeps composing the sidebar.
         //
@@ -557,6 +559,15 @@ export function SkillDetailPageSkeleton({
             <div className="mt-2 flex items-center gap-1.5">
               <Skeleton className="size-3.5 shrink-0 rounded-full" />
               <Skeleton className="h-3 w-10" />
+            </div>
+          </div>
+          {/* Categories: label and two chips, the common case once the
+                catalog is tagged. */}
+          <div className="px-4 py-3">
+            <Skeleton className="h-3 w-16" />
+            <div className="mt-2 flex gap-1.5">
+              <Skeleton className="h-6 w-24 rounded-md" />
+              <Skeleton className="h-6 w-16 rounded-md" />
             </div>
           </div>
           {/* Updated. Security only renders when a skill has audits, so it

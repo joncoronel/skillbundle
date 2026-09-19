@@ -170,6 +170,23 @@ export default defineSchema({
     // a future migration can re-flag these by reason and try a smarter
     // truncation/chunking strategy.
     embeddingSkipReason: v.optional(v.string()),
+    // Category tagging (convex/tags.ts). Flagged wherever needsEmbedding is,
+    // since both are built from name + description + body. The flag lives on
+    // this row only: the worker reads these rows anyway for the content.
+    needsTagging: v.optional(v.boolean()),
+    // `tags` is derived: category keys, main category first. Mirrored to the
+    // summary. The raw answers are kept so a threshold change can be
+    // re-applied with `deriveTags` instead of another model call.
+    tags: v.optional(v.array(v.string())),
+    tagScores: v.optional(v.record(v.string(), v.number())),
+    primaryCategory: v.optional(v.string()),
+    primaryCategoryConfidence: v.optional(v.number()),
+    tagsModel: v.optional(v.string()),
+    tagsVersion: v.optional(v.number()),
+    taggedAt: v.optional(v.number()),
+    // Set when Jev rejects the input itself (400/422), so the worker stops
+    // retrying it. Cleared by the next successful tag.
+    tagSkipReason: v.optional(v.string()),
   })
     .index("by_source_skillId", ["source", "skillId"])
     // Counts a user's GitHub-only adds for the free-tier quota. Compound with
@@ -179,7 +196,8 @@ export default defineSchema({
     .index("by_needsContentFetch", ["needsContentFetch"])
     .index("by_isDelisted", ["isDelisted"])
     .index("by_hasContentFetchError", ["hasContentFetchError"])
-    .index("by_needsEmbedding", ["needsEmbedding"]),
+    .index("by_needsEmbedding", ["needsEmbedding"])
+    .index("by_needsTagging", ["needsTagging"]),
 
   // Embedding vectors live in their own table to keep `skills` row reads
   // cheap. Measured Aug 2026: a skill row averages ~10 KB (see the ROW SIZE
@@ -306,6 +324,9 @@ export default defineSchema({
     // rows themselves. Optional because legacy summaries (from before the
     // table split) won't have it set until the backfill runs.
     skillEmbeddingId: v.optional(v.id("skillEmbeddings")),
+    // Category keys mirrored from the skills row, main category first. Read by
+    // the Typesense sync (the `tags` facet) and anything listing summaries.
+    tags: v.optional(v.array(v.string())),
     // Mirrored from skills row. Used for default-filtering forks/copies out
     // of listing and search queries.
     isDuplicate: v.optional(v.boolean()),

@@ -24,6 +24,9 @@ environment running, start with [CONTRIBUTING.md](../CONTRIBUTING.md).
 - `POLAR_ORGANIZATION_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SERVER`
 - `POLAR_PRO_MONTHLY_PRODUCT_ID`, `POLAR_PRO_YEARLY_PRODUCT_ID`
 - `SKILLS_SH_API_KEY`, `VOYAGE_API_KEY`
+- `TYPESAFE_API_KEY`: category tagging with TypeSafe's Jev model
+  (`convex/tags.ts`). Optional: without it the tagging step logs and skips, and
+  flagged skills wait until a key is set.
 - `GITHUB_TOKEN` (optional), `ADMIN_EMAILS`
 - `TYPESENSE_HOST`, `TYPESENSE_ADMIN_API_KEY`, `TYPESENSE_COLLECTION` (required outside production, see `docs/search-overhaul.md`)
 - `REVALIDATE_SECRET`, `SITE_REVALIDATE_URL`. **Both this and

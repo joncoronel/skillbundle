@@ -28,6 +28,7 @@ import {
   type SparklineHoverState,
 } from "@/components/skill-chart-shared";
 import { cn, formatInstalls } from "@/lib/utils";
+import { CATEGORY_LABELS, type CategoryKey } from "@/convex/lib/categories";
 
 /**
  * The card's own chrome, exported because the page's loading skeleton draws the
@@ -123,6 +124,7 @@ export function SkillRecord({
   updatedDate,
   audits,
   stars,
+  categories,
   action,
   collapsed = false,
   className,
@@ -147,6 +149,9 @@ export function SkillRecord({
   updatedDate: string;
   audits: SkillAuditEntry[] | null;
   stars: number | null;
+  /** Category keys, main category first (`skills.tags`). Empty hides the
+   *  block: an untagged skill says nothing rather than "Uncategorized". */
+  categories: CategoryKey[];
   /** The primary action, rendered as the card's first block. */
   action?: React.ReactNode;
   /**
@@ -354,6 +359,31 @@ export function SkillRecord({
                 </p>
               )}
             </div>
+
+            {/* What the skill is, beside where it comes from, and ahead of the
+                status rows. Each chip opens the catalog filtered to that
+                category, which is also how people find the Category filter.
+                A filled shape rather than plain text, so a row of short words
+                reads as controls. */}
+            {categories.length > 0 && (
+              <div className="px-4 py-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {categories.length === 1 ? "Category" : "Categories"}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {categories.map((key) => (
+                    <li key={key}>
+                      <Link
+                        href={`/?cat=${key}`}
+                        className="inline-flex rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/50"
+                      >
+                        {CATEGORY_LABELS[key]}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {audits && audits.length > 0 && (
               <div className="px-4 py-3">

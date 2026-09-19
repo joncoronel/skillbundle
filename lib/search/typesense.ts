@@ -143,6 +143,8 @@ export interface SkillFilters {
   source?: string;
   /** Restrict to any of these publisher owners (slug before "/" in source). */
   owners?: string[];
+  /** Restrict to skills tagged with any of these category keys. */
+  categories?: string[];
   /**
    * Hide GitHub-only skills (show only skills.sh-backed ones). Backed by the
    * faceted isGitHubOnly doc field. Boolean on purpose — it mirrors the URL
@@ -222,6 +224,12 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
     // Any-of: owner:=[`a`,`b`].
     clauses.push(`${field("owner")}:=[${filters.owners.map(quote).join(",")}]`);
   }
+  if (filters.categories && filters.categories.length > 0) {
+    // Any-of on the string[] field: a skill matches if any tag is listed.
+    clauses.push(
+      `${field("tags")}:=[${filters.categories.map(quote).join(",")}]`,
+    );
+  }
   return clauses.length > 0 ? clauses.join(" && ") : undefined;
 }
 
@@ -246,6 +254,8 @@ function activeNarrowingKeys(
   if (filters.source) keys.push("source");
   if (filters.owners !== undefined && filters.owners.length > 0)
     keys.push("owners");
+  if (filters.categories !== undefined && filters.categories.length > 0)
+    keys.push("categories");
   if (filters.hideGitHubOnly) keys.push("hideGitHubOnly");
   return keys;
 }
@@ -560,4 +570,30 @@ export async function listOwners(
   const counts =
     raw.facet_counts?.find((f) => f.field_name === "owner")?.counts ?? [];
   return counts.map((c) => ({ value: c.value, count: c.count }));
+}
+
+/**
+ * Skills per category across the whole catalog, for the Category picker.
+ * Catalog-wide like `listOwners`, not scoped to the current results: counts
+ * scoped to a category filter would shrink every other category to its
+ * overlap with the selected one, which reads as the catalog, not the filter.
+ */
+export async function listCategoryCounts(
+  opts: { signal?: AbortSignal } = {},
+): Promise<Record<string, number>> {
+  const raw = await tsSearch(
+    {
+      q: "*",
+      query_by: "name", // required, but per_page=0 returns no hits
+      per_page: "0",
+      facet_by: field("tags"),
+      max_facet_values: "100",
+      filter_by: "isDuplicate:false", // parity with the catalog default
+    },
+    "facet",
+    opts.signal,
+  );
+  const counts =
+    raw.facet_counts?.find((f) => f.field_name === "tags")?.counts ?? [];
+  return Object.fromEntries(counts.map((c) => [c.value, c.count]));
 }

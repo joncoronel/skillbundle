@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/cubby-ui/switch/switch";
 import { LabeledSection } from "@/components/labeled-section";
 import { ItemCount } from "@/components/item-count";
 import { PublisherSelect } from "@/components/publisher-select";
+import { CategorySelect } from "@/components/category-select";
 import {
   useCatalogFacets,
   useExplorerState,
@@ -257,12 +258,14 @@ function MinInstallsSelect({
  * The composer chin's filter cluster (desktop): result-narrowing filters only
  * — the sort and the Official/descriptions toggles live up in the input row
  * (they're the high-frequency one-click controls; the chin keeps the heavier
- * pickers). Publisher + Audit stay visible; minimum-installs / hide-broken sit
+ * pickers). Category (first: the broadest narrowing), Publisher and Audit stay
+ * visible; minimum-installs / hide-broken sit
  * behind "More" (badge shows how many of those are active). Clear resets
  * exactly the chin's own filters (`filterCount.chin`).
  */
 export function CatalogControlsBar() {
   const {
+    category,
     publisher,
     setParams,
     minInstalls,
@@ -274,6 +277,11 @@ export function CatalogControlsBar() {
   const moreCount = filterCount.more;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <CategorySelect
+        value={category}
+        onChange={(v) => setParams({ category: v })}
+        surface="chin"
+      />
       <PublisherSelect
         value={publisher}
         onChange={(v) => setParams({ publisher: v })}
@@ -409,6 +417,7 @@ export function CatalogControlsBar() {
  */
 export function CatalogControlsSheet() {
   const {
+    category,
     publisher,
     official,
     searchDescriptions,
@@ -432,6 +441,14 @@ export function CatalogControlsSheet() {
 
       <LabeledSection label="Filters">
         <div className="flex flex-col gap-4">
+          <Field label="Category">
+            <CategorySelect
+              value={category}
+              onChange={(v) => setParams({ category: v })}
+              surface="sheet"
+              className="w-full"
+            />
+          </Field>
           <Field label="Publisher">
             <PublisherSelect
               value={publisher}

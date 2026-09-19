@@ -177,6 +177,7 @@ export function buildSkillDoc(
   if (s.curatedOwner) doc.curatedOwner = s.curatedOwner;
   if (s.worstAuditRiskLevel) doc.worstAuditRiskLevel = s.worstAuditRiskLevel;
   if (s.copyCount !== undefined) doc.copyCount = s.copyCount;
+  if (s.tags?.length) doc.tags = s.tags;
   return doc;
 }
 

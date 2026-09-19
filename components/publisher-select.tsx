@@ -224,8 +224,13 @@ export function PublisherSelect({
         >
           {(o: OwnerItem) => (
             <ComboboxItem key={o.id} value={o}>
-              <span className="truncate">{o.id}</span>
-              {o.count > 0 ? <ItemCount count={o.count} /> : null}
+              {/* The item wraps children in a plain block, so the row needs
+                  its own flex for ItemCount's ml-auto to right-align (and
+                  min-w-0 for the slug's truncate to engage). */}
+              <span className="flex min-w-0 items-center">
+                <span className="truncate">{o.id}</span>
+                {o.count > 0 ? <ItemCount count={o.count} /> : null}
+              </span>
             </ComboboxItem>
           )}
         </ComboboxList>
