@@ -164,7 +164,11 @@ export function PublisherSelect({
       <ComboboxPopup
         level={inSheet ? 7 : 5}
         align="start"
-        className="flex min-w-60 flex-col p-0"
+        // Same floor as the Category picker beside it, so the pair reads as
+        // one set. Medium-length domain publishers fit on one line; only the
+        // longest wrap (see the item below). Growing to fit was rejected: the
+        // results change per keystroke, so the popup would jump in width.
+        className="flex min-w-80 flex-col p-0"
       >
         <FilterPickerSearch
           placeholder="Search publishers…"
