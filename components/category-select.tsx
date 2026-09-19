@@ -23,7 +23,8 @@ import {
   CATEGORY_LABELS,
   type CategoryKey,
 } from "@/convex/lib/categories";
-import { listCategoryCounts } from "@/lib/search/typesense";
+import { useFacetScope } from "@/components/explorer-state";
+import { listFacetCounts } from "@/lib/search/typesense";
 
 type CategoryItem = { id: CategoryKey; label: string };
 
@@ -32,7 +33,7 @@ const ITEMS: CategoryItem[] = CATEGORY_KEYS.map((id) => ({
   label: CATEGORY_LABELS[id],
 }));
 
-// Counts change once a day with the catalog sync.
+// A scope's counts change once a day with the catalog sync.
 const COUNTS_STALE_MS = 60 * 60_000;
 
 /**
@@ -53,12 +54,19 @@ export function CategorySelect({
 }) {
   const inSheet = surface === "sheet";
   const [inputValue, setInputValue] = useState("");
-  // Fetch counts on first open, not on every home page visit.
-  const [opened, setOpened] = useState(false);
+  // Counts cover the current search, and are fetched only while open.
+  const [open, setOpen] = useState(false);
+  const { scope, facetField } = useFacetScope("categories");
   const counts = useQuery({
-    queryKey: ["typesense-category-counts"],
-    queryFn: ({ signal }) => listCategoryCounts({ signal }),
-    enabled: opened,
+    queryKey: ["typesense-category-counts", scope],
+    queryFn: async ({ signal }) =>
+      Object.fromEntries(
+        (await listFacetCounts(facetField, { scope, signal })).map((c) => [
+          c.value,
+          c.count,
+        ]),
+      ),
+    enabled: open,
     staleTime: COUNTS_STALE_MS,
     gcTime: COUNTS_STALE_MS,
   });
@@ -90,9 +98,7 @@ export function CategorySelect({
       itemToStringLabel={(item: CategoryItem) => item.label}
       inputValue={inputValue}
       onInputValueChange={(next: string) => setInputValue(next)}
-      onOpenChange={(open: boolean) => {
-        if (open) setOpened(true);
-      }}
+      onOpenChange={setOpen}
       onOpenChangeComplete={(open: boolean) => {
         if (!open) setInputValue("");
       }}
@@ -123,7 +129,10 @@ export function CategorySelect({
             >
               <span className="flex items-center">
                 <span className="whitespace-nowrap">{item.label}</span>
-                <ItemCount count={counts.data?.[item.id]} />
+                {/* Absent from the facet = no matching skills. */}
+                <ItemCount
+                  count={counts.data ? (counts.data[item.id] ?? 0) : undefined}
+                />
               </span>
             </ComboboxItem>
           )}

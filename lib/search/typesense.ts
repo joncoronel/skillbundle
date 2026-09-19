@@ -154,12 +154,6 @@ export interface SkillFilters {
   hideGitHubOnly?: boolean;
 }
 
-/** A publisher (owner) and how many skills it has, for the Publisher picker. */
-export interface OwnerCount {
-  value: string;
-  count: number;
-}
-
 export interface SkillSearchArgs {
   /** Text query; "" (or omitted) = browse the whole catalog. */
   query?: string;
@@ -242,7 +236,7 @@ function buildFilterBy(filters: SkillFilters = {}): string | undefined {
  * explorer-state.tsx), so it belongs on BOTH sides of the hidden-by-filters
  * comparison rather than triggering probes by itself.
  */
-function activeNarrowingKeys(
+export function activeNarrowingKeys(
   filters: SkillFilters = {},
 ): (keyof SkillFilters)[] {
   const keys: (keyof SkillFilters)[] = [];
@@ -403,6 +397,90 @@ async function tsMultiSearch(
 }
 
 /**
+ * The text-matching half of a catalog search, shared with the facet counts so
+ * a picker's counts match the results list exactly.
+ */
+function matchParams(query: string, searchDescriptions?: boolean): TsParams {
+  const params: TsParams = {
+    q: query || "*", // "*" = match-all for browse
+    // How many words a partial last word may complete to. The default (4)
+    // is chosen per request, so filtered results and picker counts
+    // disagreed; 1000 covers the catalog for ~1-2ms.
+    max_candidates: "1000",
+  };
+  if (searchDescriptions) {
+    params.query_by = "name,description";
+    // Name matches outrank description matches (see docs/search-overhaul.md).
+    params.query_by_weights = "3,1";
+  } else {
+    // Default: names only — tighter, more precise matches.
+    params.query_by = "name";
+  }
+  return params;
+}
+
+/**
+ * Runs `params` with the honest-fallback probes when a query meets narrowing
+ * filters. `hiddenCount` is set when the filters hid every exact match: the
+ * response is then typo fallback and must not be shown or counted.
+ */
+async function searchWithFallbackCheck(
+  params: TsParams,
+  query: string,
+  filters: SkillFilters | undefined,
+  label: string,
+  signal: AbortSignal | undefined,
+  probe: boolean,
+): Promise<{ raw: RawSearchResponse; hiddenCount?: number }> {
+  if (!probe || !query || activeNarrowingKeys(filters).length === 0) {
+    return { raw: await tsSearch(params, label, signal) };
+  }
+  const probeBase: TsParams = {
+    q: query,
+    // Mirror the main query's matching scope exactly — the probes answer
+    // "would THIS search have exact matches", not some other search's.
+    query_by: params.query_by,
+    max_candidates: params.max_candidates,
+    num_typos: "0",
+    per_page: "0", // count-only: `found` is all we read
+  };
+  if (params.query_by_weights)
+    probeBase.query_by_weights = params.query_by_weights;
+
+  const narrowedProbe: TsParams = { ...probeBase };
+  if (params.filter_by) narrowedProbe.filter_by = params.filter_by;
+
+  // Baseline = the catalog's always-on defaults only (hideForks), so the
+  // count matches what clearing the narrowing filters would reveal.
+  const baselineFilterBy = buildFilterBy({ hideForks: filters?.hideForks });
+  const baselineProbe: TsParams = { ...probeBase };
+  if (baselineFilterBy) baselineProbe.filter_by = baselineFilterBy;
+
+  const [main, narrowed, baseline] = await tsMultiSearch(
+    [params, narrowedProbe, baselineProbe],
+    label,
+    signal,
+  );
+  // Shape guard first: a short/malformed batch must surface as the labeled
+  // error below, not as an `in`-operator TypeError inside isSearchError.
+  if (main === undefined) {
+    throw new Error(`Typesense ${label}: malformed multi_search response`);
+  }
+  if (isSearchError(main)) {
+    throw new Error(`Typesense ${label} ${main.code}: ${main.error}`);
+  }
+  // Probe failures degrade gracefully: no verdict, trust the main results.
+  const hidden =
+    narrowed !== undefined &&
+    baseline !== undefined &&
+    !isSearchError(narrowed) &&
+    !isSearchError(baseline) &&
+    narrowed.found === 0 &&
+    baseline.found > 0;
+  return { raw: main, hiddenCount: hidden ? baseline.found : undefined };
+}
+
+/**
  * Run a catalog search / browse against Typesense. Throws if the engine isn't
  * configured or the request fails — callers (a React Query queryFn) surface it.
  */
@@ -413,17 +491,7 @@ export async function searchSkills(
   const hasQuery = query.length > 0;
   const page = args.page ?? 1;
 
-  const params: TsParams = {
-    q: hasQuery ? query : "*", // "*" = match-all for browse
-  };
-  if (args.searchDescriptions) {
-    params.query_by = "name,description";
-    // Name matches outrank description matches (see docs/search-overhaul.md).
-    params.query_by_weights = "3,1";
-  } else {
-    // Default: names only — tighter, more precise matches.
-    params.query_by = "name";
-  }
+  const params = matchParams(query, args.searchDescriptions);
   if (hasQuery) {
     // Highlight the full `name` (it's short, so no snippet windowing) so the UI
     // can mark matched tokens — fuzzy-aware, straight from the engine. Browse
@@ -451,67 +519,26 @@ export async function searchSkills(
   // Page 1 only: the verdict can't change with the page (same rationale as
   // the facets fetch in use-catalog-search).
   const narrowingKeys = activeNarrowingKeys(args.filters);
-  let raw: RawSearchResponse;
-  let hiddenByFilters: HiddenByFilters | undefined;
-  if (hasQuery && page === 1 && narrowingKeys.length > 0) {
-    const probeBase: TsParams = {
-      q: query,
-      // Mirror the main query's matching scope exactly — the probes answer
-      // "would THIS search have exact matches", not some other search's.
-      query_by: params.query_by,
-      num_typos: "0",
-      per_page: "0", // count-only: `found` is all we read
-    };
-    if (params.query_by_weights)
-      probeBase.query_by_weights = params.query_by_weights;
-
-    const narrowedProbe: TsParams = { ...probeBase };
-    if (filterBy) narrowedProbe.filter_by = filterBy;
-
-    // Baseline = the catalog's always-on defaults only (hideForks), so the
-    // count matches what clearing the narrowing filters would reveal.
-    const baselineFilterBy = buildFilterBy({
-      hideForks: args.filters?.hideForks,
-    });
-    const baselineProbe: TsParams = { ...probeBase };
-    if (baselineFilterBy) baselineProbe.filter_by = baselineFilterBy;
-
-    const [main, narrowed, baseline] = await tsMultiSearch(
-      [params, narrowedProbe, baselineProbe],
-      "search",
-      args.signal,
-    );
-    // Shape guard first: a short/malformed batch must surface as the labeled
-    // error below, not as an `in`-operator TypeError inside isSearchError.
-    if (main === undefined) {
-      throw new Error("Typesense search: malformed multi_search response");
-    }
-    if (isSearchError(main)) {
-      throw new Error(`Typesense search ${main.code}: ${main.error}`);
-    }
-    raw = main;
-    // Probe failures degrade gracefully: no verdict, trust the main results.
-    if (
-      narrowed !== undefined &&
-      baseline !== undefined &&
-      !isSearchError(narrowed) &&
-      !isSearchError(baseline) &&
-      narrowed.found === 0 &&
-      baseline.found > 0
-    ) {
-      hiddenByFilters = {
-        count: baseline.found,
-        // Snapshot the state the verdict was computed FOR — the empty state
-        // renders these even when it's a previous key's data showing dimmed
-        // under keepPreviousData (see HiddenByFilters).
-        query,
-        officialOnly:
-          narrowingKeys.length === 1 && narrowingKeys[0] === "officialOnly",
-      };
-    }
-  } else {
-    raw = await tsSearch(params, "search", args.signal);
-  }
+  const { raw, hiddenCount } = await searchWithFallbackCheck(
+    params,
+    query,
+    args.filters,
+    "search",
+    args.signal,
+    page === 1,
+  );
+  const hiddenByFilters: HiddenByFilters | undefined =
+    hiddenCount === undefined
+      ? undefined
+      : {
+          count: hiddenCount,
+          // Snapshot the state the verdict was computed FOR — the empty state
+          // renders these even when it's a previous key's data showing dimmed
+          // under keepPreviousData (see HiddenByFilters).
+          query,
+          officialOnly:
+            narrowingKeys.length === 1 && narrowingKeys[0] === "officialOnly",
+        };
 
   // A set verdict DISOWNS the engine's response: the hits are typo fallback
   // for a word the filters hid (never render them), the facet counts were
@@ -539,59 +566,45 @@ export async function searchSkills(
   };
 }
 
-/**
- * Publishers (owners) for the Publisher picker, as a facet-only request
- * (`per_page=0`), ordered by skill count. With no `query` this returns the top
- * owners (browse-on-open); with a `query` it runs a `facet_query` so *any*
- * owner is reachable by typing, not just the top slice. `signal` lets the caller
- * cancel a stale in-flight lookup.
- */
-export async function listOwners(
-  opts: {
-    query?: string;
-    limit?: number;
-    signal?: AbortSignal;
-  } = {},
-): Promise<OwnerCount[]> {
-  const query = opts.query?.trim();
-  const params: TsParams = {
-    q: "*",
-    query_by: "name", // required, but per_page=0 returns no hits
-    per_page: "0",
-    facet_by: "owner",
-    max_facet_values: String(opts.limit ?? 250),
-    filter_by: "isDuplicate:false", // parity with the catalog default
-  };
-  // Typeahead: narrow the returned facet values to those matching the input.
-  if (query) params.facet_query = `owner:${query}`;
-
-  const raw = await tsSearch(params, "facet", opts.signal);
-  const counts =
-    raw.facet_counts?.find((f) => f.field_name === "owner")?.counts ?? [];
-  return counts.map((c) => ({ value: c.value, count: c.count }));
+/** The search a picker's counts cover: the current one minus its own filter. */
+export interface FacetScope {
+  query: string;
+  searchDescriptions: boolean;
+  filters: SkillFilters;
 }
 
-/**
- * Catalog-wide counts per category, like `listOwners`. Scoped to the current
- * results, every other category would shrink to its overlap with the selected
- * one.
- */
-export async function listCategoryCounts(
-  opts: { signal?: AbortSignal } = {},
-): Promise<Record<string, number>> {
-  const raw = await tsSearch(
-    {
-      q: "*",
-      query_by: "name", // required, but per_page=0 returns no hits
-      per_page: "0",
-      facet_by: field("tags"),
-      max_facet_values: "100",
-      filter_by: "isDuplicate:false", // parity with the catalog default
-    },
+/** Value counts for one field over `scope`. `facetQuery` is the Publisher
+ *  typeahead's prefix; only values with matching skills come back. */
+export async function listFacetCounts(
+  facetField: "owner" | "tags",
+  opts: {
+    scope: FacetScope;
+    facetQuery?: string;
+    signal?: AbortSignal;
+  },
+): Promise<FacetCount[]> {
+  const { query, searchDescriptions, filters } = opts.scope;
+  const params: TsParams = {
+    ...matchParams(query, searchDescriptions),
+    per_page: "0",
+    facet_by: field(facetField),
+    max_facet_values: "250",
+  };
+  const filterBy = buildFilterBy(filters);
+  if (filterBy) params.filter_by = filterBy;
+  if (opts.facetQuery) params.facet_query = `${facetField}:${opts.facetQuery}`;
+
+  // When the results list shows nothing (typo fallback), count nothing.
+  const { raw, hiddenCount } = await searchWithFallbackCheck(
+    params,
+    query,
+    filters,
     "facet",
     opts.signal,
+    true,
   );
-  const counts =
-    raw.facet_counts?.find((f) => f.field_name === "tags")?.counts ?? [];
-  return Object.fromEntries(counts.map((c) => [c.value, c.count]));
+  if (hiddenCount !== undefined) return [];
+  return (
+    raw.facet_counts?.find((f) => f.field_name === facetField)?.counts ?? []
+  );
 }
