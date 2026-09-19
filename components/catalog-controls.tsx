@@ -390,8 +390,7 @@ export function CatalogControlsBar() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Icon-only, so a selection doesn't widen the chin by a word and push
-          the sort group onto its own row. The count lives in the name. */}
+      {/* Icon-only so a selection doesn't push the sort group to a new row. */}
       {filterCount.chin > 0 && (
         <Tooltip>
           <TooltipTrigger

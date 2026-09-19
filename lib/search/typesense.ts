@@ -401,7 +401,13 @@ async function tsMultiSearch(
  * a picker's counts match the results list exactly.
  */
 function matchParams(query: string, searchDescriptions?: boolean): TsParams {
-  const params: TsParams = { q: query || "*" }; // "*" = match-all for browse
+  const params: TsParams = {
+    q: query || "*", // "*" = match-all for browse
+    // How many words a partial last word may complete to. The default (4)
+    // is chosen per request, so filtered results and picker counts
+    // disagreed; 1000 covers the catalog for ~1-2ms.
+    max_candidates: "1000",
+  };
   if (searchDescriptions) {
     params.query_by = "name,description";
     // Name matches outrank description matches (see docs/search-overhaul.md).
@@ -414,10 +420,9 @@ function matchParams(query: string, searchDescriptions?: boolean): TsParams {
 }
 
 /**
- * Runs `params`, batched with the honest-fallback probes when a query meets
- * narrowing filters (`probe` false skips them). `hiddenCount` is set when
- * the filters hid every exact match: the response is then Typesense's typo
- * fallback and must not be shown or counted.
+ * Runs `params` with the honest-fallback probes when a query meets narrowing
+ * filters. `hiddenCount` is set when the filters hid every exact match: the
+ * response is then typo fallback and must not be shown or counted.
  */
 async function searchWithFallbackCheck(
   params: TsParams,
@@ -435,6 +440,7 @@ async function searchWithFallbackCheck(
     // Mirror the main query's matching scope exactly — the probes answer
     // "would THIS search have exact matches", not some other search's.
     query_by: params.query_by,
+    max_candidates: params.max_candidates,
     num_typos: "0",
     per_page: "0", // count-only: `found` is all we read
   };
@@ -560,22 +566,15 @@ export async function searchSkills(
   };
 }
 
-/**
- * The catalog search a picker's counts are computed over: the current search
- * text and filters, minus the picker's own filter (so ticking "Frontend"
- * doesn't shrink every other category to its overlap with Frontend).
- */
+/** The search a picker's counts cover: the current one minus its own filter. */
 export interface FacetScope {
   query: string;
   searchDescriptions: boolean;
   filters: SkillFilters;
 }
 
-/**
- * Value counts for one field over the skills matching `scope`, as a facet-only
- * request. `facetQuery` narrows the returned values by prefix (the Publisher
- * picker's typeahead); only values with matching skills come back.
- */
+/** Value counts for one field over `scope`. `facetQuery` is the Publisher
+ *  typeahead's prefix; only values with matching skills come back. */
 export async function listFacetCounts(
   facetField: "owner" | "tags",
   opts: {
@@ -595,8 +594,7 @@ export async function listFacetCounts(
   if (filterBy) params.filter_by = filterBy;
   if (opts.facetQuery) params.facet_query = `${facetField}:${opts.facetQuery}`;
 
-  // The same honest-fallback check as the results list: when the filters hid
-  // every exact match, the list shows nothing, so nothing is counted either.
+  // When the results list shows nothing (typo fallback), count nothing.
   const { raw, hiddenCount } = await searchWithFallbackCheck(
     params,
     query,
