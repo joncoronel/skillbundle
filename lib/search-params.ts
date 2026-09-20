@@ -111,7 +111,7 @@ export const homeParamUrlKeys = {
   repoUrl: "repo",
   sortParam: "sort",
   official: "official",
-  category: "cat",
+  category: CATEGORY_FILTER_KEY,
   publisher: "pub",
   audit: "audit",
   minInstalls: "min",
@@ -122,24 +122,6 @@ export const homeParamUrlKeys = {
 } as const satisfies UrlKeys<typeof homeParamParsers>;
 
 export type HomeParams = inferParserType<typeof homeParamParsers>;
-
-/**
- * `categoryFilterHref` lives in `lib/skill-urls.ts`, not here, because Server
- * Components need it and this module is client-only (nuqs parsers run at module
- * scope). That means the `cat` key is written in two places; this is the check
- * that keeps them equal, as a compile error rather than a link that silently
- * filters nothing.
- */
-// Named rather than inlined so the compiler error points somewhere legible;
-// the declaration IS the use, hence the disable. Same shape as the projection
-// guard in app/sitemap.ts.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _CategoryFilterKeyMatches = Assert<
-  (typeof homeParamUrlKeys)["category"] extends typeof CATEGORY_FILTER_KEY
-    ? true
-    : false
->;
-type Assert<T extends true> = T;
 
 // The no-params entry state, derived MECHANICALLY from the parsers: a parser
 // built with .withDefault() carries a public `defaultValue`; one without it

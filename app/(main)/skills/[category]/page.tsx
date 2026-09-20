@@ -25,6 +25,8 @@ import {
   categoryKeyFromSlug,
   type CategoryKey,
 } from "@/convex/lib/categories";
+// Server Component only — the ~11 KB of definitions must never be passed into
+// a client island. That file's header says "server-only" but does not enforce it.
 import { CATEGORY_DEFINITIONS } from "@/convex/lib/categoryDefinitions";
 import {
   categoryFilterHref,
@@ -50,34 +52,23 @@ type Params = Promise<{ category: string }>;
  * and nothing on the site targeted "<topic> skills for Claude Code", which is
  * the shape of query this product should win.
  *
- * ── A closed param set, and no `dynamicParams` ────────────────────────────
+ * ── A closed param set ────────────────────────────────────────────────────
  *
  * Unlike every other catalog route, the param set here is CLOSED: 28 keys in
  * `convex/lib/categories.ts`, and a key is only added by a code change that
  * also re-tags the catalog. So `generateStaticParams` returns all 28 and every
- * one of them prerenders.
+ * one prerenders.
  *
- * That does NOT exempt the route from the params-into-Suspense rule — see the
- * note on the page component. A closed param set means every direct load is a
- * full prerender; it does not give the route a per-param App Shell.
+ * Two things that does NOT buy, both of which were assumed once and are wrong:
  *
- * `dynamicParams = false` would be the natural way to say "and nothing else",
- * and it is NOT available: Cache Components removes the route segment config
- * and fails the build if you export it. The documented replacement is the one
- * used below — call `notFound()` when the param does not resolve to real data
- * (node_modules/next/dist/docs/01-app/02-guides/migrating-to-cache-components.md,
- * "`dynamicParams` is not supported"). `categoryKeyFromSlug` returning
- * undefined IS that check.
- *
- * That replacement is NOT equivalent, and the difference is worth knowing
- * before anyone reads a Search Console soft-404 report. `dynamicParams = false`
- * answered an unknown param with a real 404 status; this answers 200 with
- * not-found content and a `noindex`, measured on a production build against
- * `/skills/nonsense`. Putting the check in `generateMetadata` does not recover
- * the status code here, so this route joins the catalog routes in
- * lib/soft-404.ts rather than escaping them. It matters less here than there:
- * the slug space is 28 known values, the sitemap lists exactly those, and
- * nothing on the site links to anything else.
+ *   - It does not exempt the route from passing `params` into `<Suspense>`.
+ *     See the note on the page component.
+ *   - It does not let the route reject unknown slugs with a real 404.
+ *     `dynamicParams = false` is unavailable under Cache Components (the
+ *     documented replacement is `notFound()` when the param does not resolve —
+ *     migrating-to-cache-components.md, "`dynamicParams` is not supported"),
+ *     and that replacement answers 200 with a `noindex`. See the check in
+ *     `generateMetadata`.
  */
 
 export function generateStaticParams() {
@@ -85,18 +76,12 @@ export function generateStaticParams() {
 }
 
 /**
- * The page's descriptive paragraph, and the source of its meta description.
+ * The page's descriptive paragraph, and the lead of its meta description.
  *
- * Reused from the definitions the TAGGER reads rather than written separately,
- * which is the whole point: this text and the rule deciding what lands on the
- * page come from one string, so the page cannot end up describing a category
- * differently from how the category is actually assigned. 28 hand-written
- * blurbs would drift from `categoryDefinitions.ts` the first time a
- * `doesNotCount` line was sharpened, and nothing would catch it.
- *
- * Safe to import here despite that file's "server-only" note: this is a Server
- * Component, so the ~11 KB of definitions never reaches a client bundle. Do
- * not pass `CATEGORY_DEFINITIONS` into a client island.
+ * Reused from what the TAGGER reads rather than written separately, so the page
+ * cannot describe a category differently from how skills are assigned to it.
+ * 28 hand-written blurbs would drift the first time a `doesNotCount` line was
+ * sharpened, and nothing would catch it.
  */
 function categoryBlurb(key: CategoryKey): string {
   return CATEGORY_DEFINITIONS[key].counts;

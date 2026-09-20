@@ -65,16 +65,15 @@ export const categoryHref = (key: string): string =>
 /**
  * The home page's Category filter param key, and the URL that applies it.
  *
- * Spelled here rather than read from `homeParamUrlKeys` in
- * `lib/search-params.ts` because that module instantiates nuqs parsers at
- * module scope and is therefore CLIENT-ONLY — importing it from a Server
- * Component fails `next build` with "Attempted to call parseAsStringLiteral()
- * from the server", which is not a type error and so passes `pnpm check`.
+ * Defined here and imported BY `lib/search-params.ts`, not the other way
+ * round: that module instantiates nuqs parsers at module scope and is
+ * therefore client-only, so a Server Component importing it fails `next build`
+ * with "Attempted to call parseAsStringLiteral() from the server" — not a type
+ * error, so `pnpm check` passes and only the build catches it.
  * `lib/listing-styles.ts` carries the same warning for the same reason.
  *
- * `search-params.ts` asserts at compile time that its key still matches this
- * one, so the duplication cannot drift into a filter link that silently
- * filters nothing.
+ * One direction of import means one spelling of `cat`, so there is nothing to
+ * keep in sync.
  */
 export const CATEGORY_FILTER_KEY = "cat";
 
