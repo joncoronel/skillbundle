@@ -45,6 +45,31 @@ export function isCategoryKey(value: string): value is CategoryKey {
   return Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, value);
 }
 
+/**
+ * The category key behind a URL slug, or undefined.
+ *
+ * The inverse of `categorySlug` in `lib/skill-urls.ts`, built by running that
+ * derivation over `CATEGORY_KEYS` rather than by reversing it — a kebab slug
+ * cannot be turned back into camelCase unambiguously, and guessing would
+ * quietly 404 a page the sitemap advertises. Lives here, beside the keys it
+ * enumerates, so a new key joins the lookup by existing.
+ *
+ * The slug rule is duplicated rather than imported: this module is shared with
+ * the Convex backend, which must not import from `lib/`. The test in
+ * tests/category-urls.test.ts asserts the two agree on every key, so the copy
+ * cannot drift silently.
+ */
+const SLUG_TO_KEY: ReadonlyMap<string, CategoryKey> = new Map(
+  CATEGORY_KEYS.map((key) => [
+    key.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase(),
+    key,
+  ]),
+);
+
+export function categoryKeyFromSlug(slug: string): CategoryKey | undefined {
+  return SLUG_TO_KEY.get(slug);
+}
+
 /** Bump with a definitions change, then run `tags:markAllForTagging`. */
 export const CATEGORIES_VERSION = 3;
 

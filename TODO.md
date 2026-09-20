@@ -272,6 +272,131 @@ Remaining:
   still deploy, by design, since telling them apart safely is not worth it. The
   OG `MISS` question itself is still open.
 
+### Search: the indexing gap, measured — Sep 2026
+
+First read of Search Console with real data in it (19 Sep 2026, covering the
+period since the sitemap was submitted on 10 Sep). The headline is not the one
+the crawl-cost section above would lead you to expect, so record the numbers
+before anyone re-derives them:
+
+| Metric                                        | Value                       |
+| --------------------------------------------- | --------------------------- |
+| Indexed                                       | 5,980                       |
+| Not indexed                                   | 14,400                      |
+| └ Discovered - currently not indexed          | 13,556                      |
+| └ Crawled - currently not indexed             | 793                         |
+| └ Duplicate, Google chose different canonical | 2                           |
+| Sitemap discovered pages                      | 18,938                      |
+| Crawl requests (9-18 Sep)                     | 1.16M, 98% OK, 121ms avg    |
+| └ by file type                                | 89% "Other", 5% HTML, 4% JS |
+| └ by purpose                                  | 94% Refresh, 6% Discovery   |
+| Clicks / impressions (3mo)                    | 11 / 2,870                  |
+| Average position                              | 33.3                        |
+| Average CTR                                   | 0.4%                        |
+| Pages with any impression                     | 812 (of 5,980 indexed)      |
+
+**The crawl budget was never the constraint; what it was spent on was.** 89%
+"Other file type" is `text/x-component` — Next's RSC prefetch payloads, fetched
+as `?_rsc=<hash>` by `<Link>` when Googlebot renders a page with JS. A single
+Lighthouse run of the HOME page fires five. So roughly a million requests went
+to payloads that can never be a search result, while 13,556 real URLs sat at
+"Discovered - currently not indexed" — a state that means Google knows the URL
+and has never fetched it. `app/robots.ts` now disallows `/*_rsc=`; that comment
+carries the full argument for why it is safe.
+
+This is the same mechanism the "Skill tab prefetch" item above is about, seen
+from the crawler's side rather than the bill's, and it is evidence FOR that
+change: a JS-rendering crawler was the hypothetical that item hedged on, and it
+turns out to be 89% of Googlebot's traffic here.
+
+**Do not judge any of this before mid-October.** Google re-reads robots.txt on
+its own schedule and "Discovered - not indexed" drains slowly. The number to
+watch is Indexed, and the leading indicator is the crawl-stats file-type split:
+HTML should climb well above 5%.
+
+Two things that are NOT the problem, so nobody spends a week on them:
+
+- **Duplicate content.** "Duplicate, Google chose different canonical" is 2
+  pages. The ~16k catalog pages are not being dropped as duplicates, despite 56
+  of them being named `skill-creator`. Titles were still fixed (`lib/seo.ts`)
+  but as relevance and click-through work, which that file is explicit about.
+- **Core Web Vitals.** Lighthouse on the live home page scores SEO 100,
+  accessibility 100, best-practices 100, performance 73 (LCP 6.4s lab, CLS 0,
+  TTFB 10ms). Lab LCP is dominated by 141 KB of preloaded fonts and ~697 KB of
+  JS across 46 scripts. But CrUX has no field data for this origin at 11 clicks
+  a quarter, so Core Web Vitals contributes NOTHING to ranking today. Perf work
+  here is a user-experience argument, not a search one. See also the PageSpeed
+  section above and the Google Sans Code entry.
+
+**What the impressions say about relevance, which is the real ceiling.** 557
+queries, and not one is about agent skills. The top ones are "snippet feature"
+(38), "web design guidelines" (32), "aws sso login" (18), "mobile interstitial
+ads" (16), "alloydb" (15), "indexnow api" (15). Those are matching the BODY of
+individual SKILL.md files — a skill about AWS SSO ranks for "aws sso login" at
+position ~33 and earns nothing. The site is being indexed as a mirror of other
+people's documentation, which is the one thing it has no chance of winning,
+because the original is always a better result.
+
+Nothing in the catalog targets the query someone with the problem this product
+solves would actually type. Ranked by expected value:
+
+1. ~~**Category landing pages.**~~ **Shipped Sep 2026.** `/skills` (hub) plus
+   `/skills/<category>` for all 28 keys, fully prerendered, each listing its
+   top 60 by installs with `BreadcrumbList` + `ItemList` structured data. The
+   sidebar chips now point there instead of at `/?cat=`, which turned ~16k
+   internal links from "the home page with a filter, canonicalising to `/`"
+   into links to 28 keyword-targeted pages. The hub is in the footer, so every
+   page on the site links into the tier.
+   Three things worth knowing before extending it: the data comes from
+   **Typesense, not Convex** (`skillSummaries.tags` is an array and Convex has
+   no array-containment index — see `lib/category-skills.ts`, which also notes
+   that this makes Typesense a second build-time dependency); the page copy is
+   reused from `convex/lib/categoryDefinitions.ts` so it cannot drift from the
+   rule the tagger applies; and URL slugs are kebab-cased derivations of the
+   camelCase keys (`gameDev` -> `game-dev`), round-trip tested in
+   `tests/category-urls.test.ts`.
+   **Not done: pagination.** Each page shows 60 of up to 1,172 and links to the
+   filtered home page for the rest. Deliberate — see `CATEGORY_PAGE_SIZE`.
+2. **Internal linking between skill pages.** Measured on a live skill page: 23
+   unique internal links, of which exactly TWO go to other catalog pages (the
+   org and the repo). Three more are tab links that robots.txt now disallows,
+   one is `/compare?…` which is also disallowed, and one is the `/?cat=` link
+   above. So the catalog is effectively a crawl dead end — consistent with
+   13,556 URLs discovered only via the sitemap and never crawled. The "Similar
+   skills / alternatives" item in the embeddings section below is the fix, and
+   this is the strongest argument for it yet: it is not just a nice block, it
+   is the link graph.
+3. **A reason to rank that is ours.** The pages already carry install history,
+   change timelines, audit verdicts and fork/alias detection — none of which
+   skills.sh or GitHub has. Today most of it is below the fold or behind a tab
+   that crawlers are told to skip. Worth deciding what belongs in the Overview
+   body, since that is the only page in the cluster search can see.
+
+**One measurement that cuts against a decision already shipped.** The
+`/security` tabs are among the best-performing pages in the whole property:
+`/site/arkdocs.tos-cn-beijing.volces.com/sd25-pe/security` took 66 impressions
+and 1 click, second only to its own directory page, and
+`/expo/skills/expo-overview/security` also earned a click. Those URLs are now
+disallowed in robots.txt for ISR-write cost. That was the right call on the
+evidence at the time, and robots.txt does not remove already-indexed pages, so
+they will sit in the index without snippets rather than vanish. But "the tabs
+add little to search that the Overview doesn't already carry" (`app/robots.ts`)
+is now contradicted by data. If audit verdicts are what earns impressions, the
+move is to put the verdict on the Overview, not to re-open the tab.
+
+**Housekeeping, cheap:**
+
+- Bing is still not set up. One-click import from Search Console at
+  bing.com/webmasters, and it also feeds DuckDuckGo. Also carries IndexNow,
+  which is a push-on-change protocol — a real fit for a catalog with a daily
+  sync, and cheaper than waiting to be crawled.
+- The home `<title>` deliberately omits an install count where every competitor
+  leads with one ("8,021+", "23,600+"). Doing it properly means threading a
+  true, cache-consistent number into a prerendered title; see the comment in
+  `app/(main)/page.tsx`.
+- `skillbundle.app` is a different product with a similar name. Worth knowing
+  before reading a branded-query report.
+
 ### Parked, with reasons
 
 - **Sentry (or equivalent) error monitoring.** Deferred deliberately, Sep 2026.

@@ -8,6 +8,8 @@ import { SkillExplorer } from "@/components/skill-explorer";
 import { HomeFallback } from "./home-content";
 import { HOME_POPULAR_TAG } from "@/lib/cache-tags";
 import { SITE_OG_IMAGE } from "@/lib/og/theme";
+import { JsonLd } from "@/components/json-ld";
+import { siteLd } from "@/lib/structured-data";
 
 // The page is static. <SkillExplorer> reads search params via nuqs' Next
 // adapter, which suspends during prerendering — the Suspense fallback below
@@ -29,9 +31,40 @@ import { SITE_OG_IMAGE } from "@/lib/og/theme";
 // fetches the tab it is showing; see `useLeaderboard` in
 // components/leaderboard-sheet.tsx.
 
-const HOME_TITLE = "SkillBundle: Find and track AI coding skills";
+// The `<title>` leads with what people type, not with the brand. Nobody
+// searches "SkillBundle" yet, and the competing directories that DO rank for
+// this category all put the category term first — "8,021+ AI Agent Skills for
+// Claude Code, Codex & Cursor | Get Claude Skills", "Claude Skills Directory —
+// Browse 23,600+ Claude Code Skills" (sampled Sep 2026). Naming the three
+// agents matters more than it looks: "Claude Code", "Cursor" and "Codex" are
+// the terms with volume, while "AI coding skills" — what this said before — is
+// a phrase the ecosystem does not actually use.
+//
+// "Directory" is in for the same reason: it is the noun every competitor that
+// ranks for this category uses, and it is accurate. Do not expect it to win
+// the head term on its own — at ~11 clicks a quarter this site has no
+// authority to beat eight established directories with a title tag. It is here
+// because it is free and true, not because it is a lever.
+//
+// NO brand suffix, unlike every other page. "Agent Skills Directory for Claude
+// Code, Cursor and Codex | SkillBundle" is 70 characters and Google truncates
+// around 60, so the brand was going to be cut anyway. Dropping it deliberately
+// is the same rule `skillPageTitle` applies (lib/seo.ts): lose the brand, keep
+// the words a query contains. Google also synthesises a site name for home
+// pages from the `WebSite` node, which lib/structured-data.ts now emits.
+//
+// Deliberately NO install count in the title, unlike those competitors. It
+// would be the strongest single addition (a number is what makes a directory
+// look worth opening) but it has to be TRUE on a page that is statically
+// prerendered and revalidated on a tag, so a stale figure would sit in the SERP
+// for as long as the entry lives. Worth doing properly off the same
+// `'use cache'` loader the popular list already uses; not worth hardcoding.
+//
+// This is the site's one shot at the head term. Every other page targets the
+// long tail by construction, so if this title is wrong nothing else compensates.
+const HOME_TITLE = "Agent Skills Directory for Claude Code, Cursor and Codex";
 const HOME_DESCRIPTION =
-  "Search, filter, and compare AI coding skills for Cursor, Claude Code, and other agents. Save the ones you use to a bundle to watch them for updates.";
+  "Search, filter, and compare agent skills for Claude Code, Cursor, and Codex. Save the ones you use to a bundle and get told when they change.";
 
 export const metadata: Metadata = {
   title: HOME_TITLE,
@@ -69,6 +102,12 @@ export default async function Home() {
     // boundary from outside. Now that `(main)/layout.tsx` owns the landmark and
     // this is a plain box, one copy in the static shell does for both.
     <div className="mx-auto max-w-6xl px-4">
+      {/* The WebSite + Organization graph, on the home page only — both nodes
+          are site-level, so repeating them per page would restate the same
+          facts ~16k times. Skill pages reference the site node by `@id`
+          instead (see lib/structured-data.ts). The SearchAction here is what
+          can earn a sitelinks search box under a branded result. */}
+      <JsonLd data={siteLd()} />
       <Suspense
         fallback={<HomeFallback initialPopularSkills={initialPopularSkills} />}
       >

@@ -8,6 +8,9 @@ import { representativeGitHubSkill } from "@/lib/representative-params";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
+import { JsonLd } from "@/components/json-ld";
+import { breadcrumbLd } from "@/lib/structured-data";
+import { ownerHref } from "@/lib/skill-urls";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -32,6 +35,7 @@ import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
+import { truncateWords } from "@/lib/seo";
 
 type Params = Promise<{ org: string }>;
 
@@ -81,14 +85,18 @@ export async function generateMetadata({
     };
   }
 
-  const title = `${org} — ${repos.length} repo${
-    repos.length === 1 ? "" : "s"
-  } | SkillBundle`;
-  const description = `${totalSkillCount} AI coding skill${
-    totalSkillCount === 1 ? "" : "s"
-  } across ${repos.length} repositor${
-    repos.length === 1 ? "y" : "ies"
-  } published by ${org}.`;
+  // The repo count was the whole title before, which spent the most valuable
+  // characters on the least searched fact. The publisher name and the category
+  // term are what a query contains; the count moves to the description, where
+  // it does its real job of making the result look worth opening.
+  const title = `${org} agent skills | SkillBundle`;
+  // Through the same 160-char budget the skill pages use. An org slug can run
+  // long, so this is not always slack: see the well-known route, which measured
+  // 164 before this.
+  const description = truncateWords(
+    `${totalSkillCount} agent skill${totalSkillCount === 1 ? "" : "s"} from ${org}, across ${repos.length} repositor${repos.length === 1 ? "y" : "ies"}. Install counts, change history and security audits for each.`,
+    160,
+  );
 
   // No `images`: this segment's own opengraph-image.tsx attaches only when the
   // openGraph set here leaves the key out.
@@ -135,6 +143,15 @@ async function OrgHeader({ params }: { params: Params }) {
 
   return (
     <>
+      {/* Mirrors the visible trail below it, which is what Google asks for —
+          a BreadcrumbList that disagrees with the page is ignored. Both are
+          built from the same params, so they cannot drift. */}
+      <JsonLd
+        data={breadcrumbLd([
+          { name: "Home", path: "/" },
+          { name: org, path: ownerHref(org) },
+        ])}
+      />
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>

@@ -30,6 +30,19 @@ const COLLECTION =
   process.env.NEXT_PUBLIC_TYPESENSE_COLLECTION ??
   (process.env.NODE_ENV === "production" ? "skills" : undefined);
 
+/**
+ * Is the engine configured at all?
+ *
+ * Exists for the two `'use cache'` loaders behind `/skills`, which run during
+ * PRERENDER. Every other caller runs in a browser where the vars are always
+ * inlined, so `requireConfig`'s throw is the right answer for them; at build
+ * time it is not, because a build is also what CI runs without these secrets.
+ * See `lib/category-skills.ts`.
+ */
+export function isTypesenseConfigured(): boolean {
+  return Boolean(HOST && SEARCH_KEY && COLLECTION);
+}
+
 function requireConfig(): {
   host: string;
   searchKey: string;

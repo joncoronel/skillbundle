@@ -13,6 +13,8 @@ import {
   type SitemapSkillRow,
 } from "../lib/sitemap-entries";
 import robots from "../app/robots";
+import { CATEGORY_KEYS } from "../convex/lib/categories";
+import { categoryHref } from "../lib/skill-urls";
 import { SKILL_TAB_IDS } from "../lib/skill-urls";
 
 const BASE = "https://skillbundle.dev";
@@ -358,9 +360,15 @@ describe("agreement with robots.txt", () => {
 describe("empty catalog", () => {
   test("still lists the static pages, with no catalog lastmod", () => {
     const result = buildSitemapEntries([], BASE);
+    // The 28 category pages are derived from CATEGORY_KEYS in the builder, so
+    // they are derived here too. Listing them literally would make adding a
+    // category a two-file edit whose second half is only discovered by a red
+    // test, which is the thing the builder deriving them already avoids.
     expect(result.map((e) => e.url)).toEqual([
       BASE,
       `${BASE}/official`,
+      `${BASE}/skills`,
+      ...CATEGORY_KEYS.map((key) => `${BASE}${categoryHref(key)}`),
       `${BASE}/add`,
       `${BASE}/pricing`,
       `${BASE}/compare`,

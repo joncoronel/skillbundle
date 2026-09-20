@@ -49,6 +49,19 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3100";
  */
 const SHELL_TIMEOUT = 15_000;
 
+/**
+ * The `/skills` pages are the only routes backed by Typesense rather than
+ * Convex, so they are the only ones whose content depends on a secret the e2e
+ * job may not have. Unset => the client-navigation spec skips, the way the
+ * bundle spec skips on a missing `E2E_BUNDLE_ID`, instead of failing for a
+ * reason unrelated to the commit. The pages still BUILD without it (the
+ * loaders return empty, see lib/category-skills.ts); what is missing is rows.
+ *
+ * Only the CLIENT-NAVIGATION spec needs this. The hub's shell test asserts
+ * tiles that render at zero, so it runs either way.
+ */
+const TYPESENSE_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_TYPESENSE_HOST);
+
 test.describe("initial load", () => {
   test("/ serves its hero in the shell", async ({ page }) => {
     await instant(
@@ -139,6 +152,29 @@ test.describe("initial load", () => {
         );
         await expect(
           page.getByText("security warnings included"),
+        ).toBeVisible();
+      },
+      { baseURL },
+    );
+  });
+
+  test("/skills serves its header and tiles in the shell", async ({ page }) => {
+    // NOT skipped without Typesense: the hub renders all 28 tiles at zero, so
+    // the h1 and the Frontend tile are there either way. This is the only new
+    // route whose grid sits behind a Suspense boundary, so it is the one most
+    // worth guarding against a regression into blocking.
+    await instant(
+      page,
+      async () => {
+        await page.goto("/skills");
+        await expect(page.locator("h1")).toContainText("Skills by category");
+        // The tiles too, not just the header. `loadCategoryCounts` is
+        // `'use cache'` with `cacheLife("days")`, and cached content whose
+        // `stale` is >= 5 minutes lands in the App Shell — the same reason
+        // /official's publisher rows are asserted above. If someone makes the
+        // counts request-time, this goes red.
+        await expect(
+          page.getByRole("link", { name: /^Frontend/ }),
         ).toBeVisible();
       },
       { baseURL },
@@ -385,6 +421,53 @@ test.describe("client navigation", () => {
         page.getByText("Not written by the skill's author", { exact: false }),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
+  });
+
+  test("/skills -> a category commits its shell instantly", async ({
+    page,
+  }) => {
+    test.skip(!TYPESENSE_CONFIGURED, "NEXT_PUBLIC_TYPESENSE_HOST not set");
+    await page.goto("/skills");
+
+    // Discovered, not pinned: click a real tile so the test follows the user
+    // path. Frontend is the second-largest category and its key is
+    // single-word, so its slug is stable across a CATEGORIES_VERSION bump.
+    const tile = page.getByRole("link", { name: /^Frontend/ });
+    await expect(tile).toBeVisible();
+    const href = await tile.getAttribute("href");
+    expect(href).toBe("/skills/frontend");
+
+    await instant(page, async () => {
+      await tile.click();
+      await page.waitForURL((url) => url.pathname === href);
+
+      // What the shared App Shell holds: the two fixed breadcrumb crumbs and
+      // the list's column headers. `:visible` because Cache Components keeps
+      // the outgoing route mounted under <Activity>, so an unscoped locator
+      // can match /skills itself.
+      await expect(
+        page.locator("a:visible", { hasText: /^Categories$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+      await expect(
+        page.locator("span:visible", { hasText: /^Installs$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+
+      // The tripwire, and the assertion this route's FIRST guard was missing.
+      // That one asserted the h1 on a direct load, where the URL is known and
+      // the page renders correctly whether or not a shared shell exists — so
+      // it stayed green while every client navigation into a category blocked.
+      //
+      // The h1 is `{label} skills` derived from `await params`, so it lives in
+      // no shared shell and must be absent while the navigation is held. The
+      // wait before asserting is load-bearing for the same reason the /[org]
+      // test documents: a bare toHaveCount(0) is also satisfied by "has not
+      // rendered yet".
+      await page.waitForTimeout(1500);
+      await expect(page.locator("h1:visible")).toHaveCount(0);
+    });
+
+    // ...and the URL data still arrives once the resume completes.
+    await expect(page.locator("h1:visible")).toContainText("Frontend skills");
   });
 
   test("/[org] -> /[org]/[repo] commits its shell instantly", async ({

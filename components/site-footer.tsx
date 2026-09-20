@@ -27,7 +27,13 @@ import { SUPPORT_EMAIL } from "@/lib/legal";
  * `mt-24` is also counted in `<main>`'s min-height in app/(main)/layout.tsx.
  */
 
+// "Categories" is first because it is the only entry here that leads anywhere
+// deep: it is the hub above the 28 category pages, which are the catalog's one
+// tier between the home page and ~16k skill pages. Being in the footer puts a
+// link to it on every page on the site, which is the point (TODO.md, "Search:
+// the indexing gap").
 const PRODUCT_LINKS = [
+  { href: "/skills", label: "Categories" },
   { href: "/official", label: "Official" },
   { href: "/add", label: "Add skill" },
   { href: "/compare", label: "Compare" },

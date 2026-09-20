@@ -6,6 +6,8 @@ import { representativeGitHubSkill } from "@/lib/representative-params";
 import { loadSourceSkills } from "@/lib/source-skills";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
+import { JsonLd } from "@/components/json-ld";
+import { breadcrumbLd } from "@/lib/structured-data";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -26,7 +28,7 @@ import {
   LISTING_TITLE_SCALE,
   rowPositionClassName,
 } from "@/lib/listing-styles";
-import { SourceSkillList } from "@/components/source-skill-list";
+import { CatalogSkillList } from "@/components/catalog-skill-list";
 import {
   InstallCommandBlock,
   InstallCommandBlockSkeleton,
@@ -34,7 +36,8 @@ import {
 import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
-import { sourceHref } from "@/lib/skill-urls";
+import { truncateWords } from "@/lib/seo";
+import { ownerHref, sourceHref } from "@/lib/skill-urls";
 
 type Params = Promise<{ org: string; repo: string }>;
 
@@ -71,10 +74,15 @@ export async function generateMetadata({
     };
   }
 
-  const title = `${source} — skills | SkillBundle`;
-  const description = `${skills.length} AI coding skill${
-    skills.length === 1 ? "" : "s"
-  } published by ${source}.`;
+  // "Agent skills in <source>", not "<source> — skills": the old form read as
+  // "anthropics/skills — skills" on the repos actually named `skills`, which is
+  // most of the big ones. Leading with the category term also puts the words
+  // people search at the front, where a truncated title keeps them.
+  const title = `Agent skills in ${source} | SkillBundle`;
+  const description = truncateWords(
+    `${skills.length} agent skill${skills.length === 1 ? "" : "s"} published by ${source}, for Claude Code, Cursor and Codex. Install counts and change history for each.`,
+    160,
+  );
 
   // No `images`: see the org route.
   return {
@@ -111,6 +119,14 @@ async function RepoHeader({ params }: { params: Params }) {
 
   return (
     <>
+      {/* Mirrors the visible trail below it — see the note on the org page. */}
+      <JsonLd
+        data={breadcrumbLd([
+          { name: "Home", path: "/" },
+          { name: org, path: ownerHref(org) },
+          { name: repo, path: sourceHref(`${org}/${repo}`) },
+        ])}
+      />
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -227,7 +243,7 @@ async function RepoListContent({ params }: { params: Params }) {
         </div>
       </div>
 
-      <SourceSkillList skills={skills} />
+      <CatalogSkillList skills={skills} />
     </>
   );
 }
@@ -248,7 +264,7 @@ function RepoListSkeleton() {
         </div>
       </div>
 
-      {/* The selection row SourceSkillList renders above the column headers
+      {/* The selection row CatalogSkillList renders above the column headers
           ("N skills from this source" + Add all / Remove all). Omitting it left
           ~44px unreserved, so the headers and every placeholder row below them
           jumped down the moment the list resolved. That shift used to hide on

@@ -29,7 +29,7 @@ import {
 } from "@/components/skill-chart-shared";
 import { cn, formatInstalls } from "@/lib/utils";
 import { CATEGORY_LABELS, type CategoryKey } from "@/convex/lib/categories";
-import { categoryHref } from "@/lib/search-params";
+import { categoryHref } from "@/lib/skill-urls";
 
 /**
  * The card's own chrome, exported because the page's loading skeleton draws the

@@ -14,7 +14,8 @@ import {
   serializeSkillsParam,
   type SkillRef,
 } from "@/lib/compare";
-import { CATEGORY_KEYS, type CategoryKey } from "@/convex/lib/categories";
+import { CATEGORY_KEYS } from "@/convex/lib/categories";
+import { CATEGORY_FILTER_KEY } from "@/lib/skill-urls";
 
 // Shared debounce duration for all search inputs. Picked
 // short enough to feel responsive on a typing pause, long enough that mid-
@@ -110,7 +111,7 @@ export const homeParamUrlKeys = {
   repoUrl: "repo",
   sortParam: "sort",
   official: "official",
-  category: "cat",
+  category: CATEGORY_FILTER_KEY,
   publisher: "pub",
   audit: "audit",
   minInstalls: "min",
@@ -121,9 +122,6 @@ export const homeParamUrlKeys = {
 } as const satisfies UrlKeys<typeof homeParamParsers>;
 
 export type HomeParams = inferParserType<typeof homeParamParsers>;
-
-export const categoryHref = (key: CategoryKey) =>
-  `/?${homeParamUrlKeys.category}=${key}`;
 
 // The no-params entry state, derived MECHANICALLY from the parsers: a parser
 // built with .withDefault() carries a public `defaultValue`; one without it

@@ -1,3 +1,5 @@
+import type { CategoryKey } from "@/convex/lib/categories";
+
 /**
  * URL helpers for skill detail / source pages.
  *
@@ -20,6 +22,65 @@ export function isGitHubSource(source: string): boolean {
   const parts = source.split("/");
   return parts.length === 2 && !parts[0].includes(".");
 }
+
+/**
+ * The category directory, and one category's page.
+ *
+ * These moved here from `lib/search-params.ts`, where `categoryHref` used to
+ * return `/?cat=<key>` — the home page with a client-side filter applied. That
+ * URL canonicalises to `/`, so the ~16k category chips in the skill sidebars
+ * were all pointing at a page that, to a crawler, was the home page. See
+ * TODO.md, "Search: the indexing gap".
+ *
+ * `/skills` shadows a GitHub org literally named `skills`, the same root
+ * catch-all hazard `app/robots.ts`, `proxy.ts` and `RESERVED_ROOT_SEGMENTS` in
+ * `lib/sitemap-entries.ts` each document a face of. It is added to that set in
+ * the same change, so the sitemap never advertises a URL this route shadows.
+ */
+export const CATEGORIES_PATH = "/skills";
+
+/**
+ * The URL slug for a category key.
+ *
+ * Category KEYS are camelCase (`gameDev`, `codeReview`, `dataEngineering`)
+ * because they are stored on rows, in the search index and in `?cat=` links.
+ * They are not usable as path segments as they stand: a URL path is
+ * case-SENSITIVE, so `/skills/gameDev` and `/skills/gamedev` are different
+ * URLs and only one of them exists. Anyone linking to us by hand, and most
+ * software that normalises a URL, would produce the 404 one.
+ *
+ * Derived, never mapped. A hand-written `{ gameDev: "game-dev" }` table is one
+ * more thing to forget when a category is added, and the failure would be a
+ * 404 on a page the sitemap advertises. The split is on a lower-to-upper
+ * boundary, which is the only shape `CATEGORY_KEYS` contains — all 28 are
+ * plain camelCase identifiers.
+ *
+ * The kebab form is also the better keyword: `/skills/code-review` contains
+ * "code review" as two words, which is how it is searched.
+ */
+export const categorySlug = (key: CategoryKey): string =>
+  key.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+
+export const categoryHref = (key: CategoryKey): string =>
+  `${CATEGORIES_PATH}/${categorySlug(key)}`;
+
+/**
+ * The home page's Category filter param key, and the URL that applies it.
+ *
+ * Defined here and imported BY `lib/search-params.ts`, not the other way
+ * round: that module instantiates nuqs parsers at module scope and is
+ * therefore client-only, so a Server Component importing it fails `next build`
+ * with "Attempted to call parseAsStringLiteral() from the server" — not a type
+ * error, so `pnpm check` passes and only the build catches it.
+ * `lib/listing-styles.ts` carries the same warning for the same reason.
+ *
+ * One direction of import means one spelling of `cat`, so there is nothing to
+ * keep in sync.
+ */
+export const CATEGORY_FILTER_KEY = "cat";
+
+export const categoryFilterHref = (key: CategoryKey): string =>
+  `/?${CATEGORY_FILTER_KEY}=${key}`;
 
 /** href for a skill's detail page. */
 export function skillHref(source: string, skillId: string): string {

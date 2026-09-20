@@ -22,6 +22,7 @@ import {
 } from "@/components/skill-copies-tab";
 import { loadSkill } from "@/lib/skill-cache";
 import { skillHref, skillTabHref, type SkillTab } from "@/lib/skill-urls";
+import { skillPageDescription, skillPageTitle, skillTabTitle } from "@/lib/seo";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
 
 /**
@@ -35,6 +36,11 @@ const TAB_COPY: Record<
   Exclude<SkillTab, "overview">,
   { suffix: string; description: (name: string) => string; errorLabel: string }
 > = {
+  // `suffix` is the tab's word in the <title>. See skillTabTitle: the owner
+  // rides along in parentheses, because a tab title collides exactly as hard
+  // as an Overview does (56 pages would otherwise all be "skill-creator
+  // history | SkillBundle"). The tabs are robots-disallowed today, so this is
+  // insurance for if that ever changes rather than a live win.
   history: {
     suffix: "history",
     description: (name) =>
@@ -91,13 +97,23 @@ export async function skillTabMetadata(
     return { title: "Skill Not Found | SkillBundle", robots: NOT_FOUND_ROBOTS };
   }
 
+  // Both the title and the Overview description name the PUBLISHER, and that
+  // is the whole point of routing them through lib/seo.ts rather than
+  // interpolating here: a `skillId` is a slug inside one repo, not a unique
+  // name, so `${name} | SkillBundle` was the identical title on 56 pages for
+  // `skill-creator` alone. That file carries the measurements.
   const title =
     tab === "overview"
-      ? `${skill.name} | SkillBundle`
-      : `${skill.name} ${TAB_COPY[tab].suffix} | SkillBundle`;
+      ? skillPageTitle(skill.name, source)
+      : skillTabTitle(skill.name, source, TAB_COPY[tab].suffix);
   const description =
     tab === "overview"
-      ? (skill.description ?? `${skill.name} — a skill from ${source}`)
+      ? skillPageDescription(
+          skill.name,
+          source,
+          skill.installs,
+          skill.description,
+        )
       : TAB_COPY[tab].description(skill.name);
   // Each tab is its own canonical page, not a duplicate of the Overview: the
   // content differs. The sitemap lists only Overviews, and app/robots.ts keeps

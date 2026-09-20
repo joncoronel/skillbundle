@@ -65,6 +65,16 @@ jobs:
       # environment. pnpm blocks lifecycle scripts by default, so this is
       # defence in depth, but the key only needs to exist for the run step.
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+      # Typesense backs the /skills category pages, which PRERENDER — so
+      # without these `next build` fails and takes the whole job with it. Unset
+      # is a supported state: the loaders return empty outside a production
+      # deployment (lib/category-skills.ts) and the two category specs
+      # test.skip(). Set them to have those specs actually run.
+      # The search key is search-only and is a NEXT_PUBLIC_ var by design; it
+      # ships to every browser already, so it is not a secret in the usual sense.
+      NEXT_PUBLIC_TYPESENSE_HOST: ${{ secrets.E2E_TYPESENSE_HOST }}
+      NEXT_PUBLIC_TYPESENSE_SEARCH_KEY: ${{ secrets.E2E_TYPESENSE_SEARCH_KEY }}
+      NEXT_PUBLIC_TYPESENSE_COLLECTION: ${{ secrets.E2E_TYPESENSE_COLLECTION }}
       # urlId of a public bundle in that deployment. Unset => the bundle spec
       # test.skip()s instead of failing.
       E2E_BUNDLE_ID: ${{ secrets.E2E_BUNDLE_ID }}
@@ -83,12 +93,22 @@ jobs:
         env:
           CONVEX_URL: ${{ secrets.E2E_CONVEX_URL }}
           CLERK_SECRET: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+          TYPESENSE_HOST: ${{ secrets.E2E_TYPESENSE_HOST }}
         run: |
           if [ -n "$CONVEX_URL" ] && [ -n "$CLERK_SECRET" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Instant-navigation e2e skipped::Set the E2E_* repository secrets to enable these tests. See docs/architecture.md section 15."
+          fi
+          # Typesense is NOT part of the gate above: without it the build still
+          # succeeds and only the two /skills specs skip. That is the problem
+          # with it being silent, so say so loudly in the run summary. Without
+          # this line a green run means either "the category tests passed" or
+          # "the category tests never ran", and the two look identical from the
+          # Actions list.
+          if [ -z "$TYPESENSE_HOST" ]; then
+            echo "::warning title=Category e2e skipped::E2E_TYPESENSE_HOST is not set, so the two /skills specs skipped. Expect 39 passed / 9 skipped rather than 41 / 7."
           fi
 
       - uses: actions/checkout@v4
