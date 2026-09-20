@@ -35,6 +35,7 @@ import { LinkPending } from "@/components/link-pending";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { SKILL_SYNC_TAG } from "@/lib/cache-tags";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
+import { truncateWords } from "@/lib/seo";
 
 type Params = Promise<{ org: string }>;
 
@@ -89,11 +90,13 @@ export async function generateMetadata({
   // term are what a query contains; the count moves to the description, where
   // it does its real job of making the result look worth opening.
   const title = `${org} agent skills | SkillBundle`;
-  const description = `${totalSkillCount} agent skill${
-    totalSkillCount === 1 ? "" : "s"
-  } from ${org}, across ${repos.length} repositor${
-    repos.length === 1 ? "y" : "ies"
-  }. Install counts, change history, and security audits for each one.`;
+  // Through the same 160-char budget the skill pages use. An org slug can run
+  // long, so this is not always slack: see the well-known route, which measured
+  // 164 before this.
+  const description = truncateWords(
+    `${totalSkillCount} agent skill${totalSkillCount === 1 ? "" : "s"} from ${org}, across ${repos.length} repositor${repos.length === 1 ? "y" : "ies"}. Install counts, change history and security audits for each.`,
+    160,
+  );
 
   // No `images`: this segment's own opengraph-image.tsx attaches only when the
   // openGraph set here leaves the key out.
@@ -145,7 +148,7 @@ async function OrgHeader({ params }: { params: Params }) {
           built from the same params, so they cannot drift. */}
       <JsonLd
         data={breadcrumbLd([
-          { name: "Skills", path: "/" },
+          { name: "Home", path: "/" },
           { name: org, path: ownerHref(org) },
         ])}
       />

@@ -39,6 +39,7 @@ import {
 import { loadWellKnownIndexes } from "@/lib/well-known-index";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
+import { truncateWords } from "@/lib/seo";
 import { sourceHref } from "@/lib/skill-urls";
 
 type Params = Promise<{ source: string }>;
@@ -80,9 +81,10 @@ export async function generateMetadata({
   // 9-17 Sep 2026 — so it is worth keeping the two consistent rather than
   // letting the well-known namespace drift into its own wording.
   const title = `Agent skills from ${source} | SkillBundle`;
-  const description = `${skills.length} agent skill${
-    skills.length === 1 ? "" : "s"
-  } published at ${source}, for Claude Code, Cursor and Codex. Install counts, change history, and security audits for each one.`;
+  const description = truncateWords(
+    `${skills.length} agent skill${skills.length === 1 ? "" : "s"} published at ${source}, for Claude Code, Cursor and Codex. Install counts and change history for each.`,
+    160,
+  );
 
   // No `images`: see the org route.
   return {

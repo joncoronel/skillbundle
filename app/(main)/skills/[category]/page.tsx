@@ -11,7 +11,10 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/cubby-ui/breadcrumbs";
 import { cn } from "@/lib/utils";
-import { LISTING_TITLE_SCALE } from "@/lib/listing-styles";
+import {
+  LISTING_TITLE_SCALE,
+  rowPositionClassName,
+} from "@/lib/listing-styles";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { CatalogSkillList } from "@/components/catalog-skill-list";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
@@ -137,6 +140,21 @@ export async function generateMetadata({
   };
 }
 
+/**
+ * The category behind a URL slug, or a 404.
+ *
+ * Both render paths need it and both must agree: two copies of the not-found
+ * branch can drift into a resolved header sitting above a 404 body.
+ * `generateMetadata` keeps its own nullable lookup, because it must return
+ * metadata rather than throw.
+ */
+async function resolveCategory(params: Params): Promise<CategoryKey> {
+  const { category: slug } = await params;
+  const category = categoryKeyFromSlug(slug);
+  if (!category) notFound();
+  return category;
+}
+
 // Synchronous, with the `params` promise passed DOWN into the boundaries —
 // the same rule docs/architecture.md imposes on `/[org]`, `/[org]/[repo]` and
 // `/site/[source]`, and for the same reason.
@@ -171,17 +189,14 @@ export default function CategoryPage({ params }: { params: Params }) {
 }
 
 async function CategoryHeader({ params }: { params: Params }) {
-  const { category: slug } = await params;
-  const category = categoryKeyFromSlug(slug);
-  if (!category) notFound();
-
+  const category = await resolveCategory(params);
   const label = CATEGORY_LABELS[category];
 
   return (
     <>
       <JsonLd
         data={breadcrumbLd([
-          { name: "Skills", path: "/" },
+          { name: "Home", path: "/" },
           { name: "Categories", path: CATEGORIES_PATH },
           { name: label, path: categoryHref(category) },
         ])}
@@ -228,10 +243,12 @@ async function CategoryHeader({ params }: { params: Params }) {
  * so the separator is the same chevron — the org route records a bug where a
  * hand-drawn "/" in the shell swapped to a chevron on every navigation.
  *
- * The blurb placeholder is TWO lines because the shortest definition in
- * `categoryDefinitions.ts` still wraps to two at this measure, and the deepest
- * runs to three. Two is the mode; a one-line box would shift the list down on
- * nearly every category.
+ * The blurb placeholder is THREE lines, measured over all 28
+ * `CATEGORY_DEFINITIONS[*].counts`: min 138 chars, median 181, max 255. At
+ * `max-w-[74ch]` that is ~74 chars a line, so only 2 of 28 fit in two lines,
+ * 20 need three and 6 need four. Three is the median and shifts 6 categories
+ * by one line; two would have shifted 26. An earlier comment here claimed
+ * "two is the mode" without measuring, and had it backwards.
  */
 function CategoryHeaderSkeleton() {
   return (
@@ -262,7 +279,8 @@ function CategoryHeaderSkeleton() {
 
       <div className="mb-10 max-w-[74ch] space-y-2 text-base leading-relaxed">
         <Skeleton className="h-[1em] w-full" />
-        <Skeleton className="h-[1em] w-4/5" />
+        <Skeleton className="h-[1em] w-full" />
+        <Skeleton className="h-[1em] w-3/5" />
       </div>
     </>
   );
@@ -296,15 +314,35 @@ function CategoryListSkeleton() {
         <span>Skill</span>
         <span>Installs</span>
       </div>
+
+      {/* Six placeholder rows, matching RepoListSkeleton. Without them the
+          shell ended at the column headers and 60 resolved rows pushed the
+          footer down by thousands of pixels. The sibling routes already
+          reserved this height; the rename did not carry it across. */}
+      <div className="grid">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className={cn(
+              "rounded-2xl border bg-card py-3 dark:border-border/50",
+              rowPositionClassName(i, 6),
+            )}
+          >
+            <div className="flex items-center gap-3 px-4">
+              <Skeleton className="h-4 w-40" />
+              <div className="ml-auto shrink-0">
+                <Skeleton className="h-3 w-12" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </>
   );
 }
 
 async function CategoryList({ params }: { params: Params }) {
-  const { category: slug } = await params;
-  const category = categoryKeyFromSlug(slug);
-  if (!category) notFound();
-
+  const category = await resolveCategory(params);
   const label = CATEGORY_LABELS[category];
   const { skills, found } = await loadCategorySkills(category);
 
@@ -315,7 +353,13 @@ async function CategoryList({ params }: { params: Params }) {
   if (skills.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No skills are tagged {label} yet.
+        No skills are tagged {label} yet.{" "}
+        <Link
+          href={CATEGORIES_PATH}
+          className="text-foreground underline underline-offset-4 transition-colors hover:text-primary"
+        >
+          Browse the other categories
+        </Link>
       </p>
     );
   }

@@ -1,6 +1,7 @@
 import "server-only";
 import { cacheLife } from "next/cache";
-import { isTypesenseConfigured, listFacetCounts } from "@/lib/search/typesense";
+import { listFacetCounts } from "@/lib/search/typesense";
+import { TYPESENSE_AVAILABLE } from "@/lib/typesense-required";
 import { CATEGORY_KEYS, type CategoryKey } from "@/convex/lib/categories";
 
 /**
@@ -25,8 +26,9 @@ export async function loadCategoryCounts(): Promise<
   "use cache";
   cacheLife("days");
 
-  // Zeroes rather than a throw outside production; see lib/category-skills.ts.
-  if (!isTypesenseConfigured()) {
+  // Zeroes when the engine is absent. The production case throws at module
+  // scope in lib/typesense-required.ts, which nothing here can catch.
+  if (!TYPESENSE_AVAILABLE) {
     return Object.fromEntries(CATEGORY_KEYS.map((key) => [key, 0])) as Record<
       CategoryKey,
       number
@@ -37,7 +39,8 @@ export async function loadCategoryCounts(): Promise<
     scope: {
       query: "",
       searchDescriptions: false,
-      filters: { hideForks: true, hideGitHubOnly: true },
+      // Matches loadCategorySkills, so a hub count and its page agree.
+      filters: { hideForks: true },
     },
   });
 

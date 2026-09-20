@@ -1,3 +1,5 @@
+import type { CategoryKey } from "@/convex/lib/categories";
+
 /**
  * URL helpers for skill detail / source pages.
  *
@@ -56,10 +58,10 @@ export const CATEGORIES_PATH = "/skills";
  * The kebab form is also the better keyword: `/skills/code-review` contains
  * "code review" as two words, which is how it is searched.
  */
-export const categorySlug = (key: string): string =>
+export const categorySlug = (key: CategoryKey): string =>
   key.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 
-export const categoryHref = (key: string): string =>
+export const categoryHref = (key: CategoryKey): string =>
   `${CATEGORIES_PATH}/${categorySlug(key)}`;
 
 /**
@@ -77,7 +79,7 @@ export const categoryHref = (key: string): string =>
  */
 export const CATEGORY_FILTER_KEY = "cat";
 
-export const categoryFilterHref = (key: string): string =>
+export const categoryFilterHref = (key: CategoryKey): string =>
   `/?${CATEGORY_FILTER_KEY}=${key}`;
 
 /** href for a skill's detail page. */

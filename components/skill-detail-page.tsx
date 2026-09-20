@@ -308,7 +308,7 @@ async function SkillDetailBody({
           The tab routes get none, deliberately. app/robots.ts disallows them,
           and describing a page you have asked crawlers not to read is work with
           no reader. */}
-      <JsonLd data={skillBreadcrumbLd(source, skillId, skill.name)} />
+      <JsonLd data={skillBreadcrumbLd(source, skillId)} />
       <JsonLd
         data={skillLd({
           source,

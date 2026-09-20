@@ -36,6 +36,7 @@ import {
 import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
+import { truncateWords } from "@/lib/seo";
 import { ownerHref, sourceHref } from "@/lib/skill-urls";
 
 type Params = Promise<{ org: string; repo: string }>;
@@ -78,9 +79,10 @@ export async function generateMetadata({
   // most of the big ones. Leading with the category term also puts the words
   // people search at the front, where a truncated title keeps them.
   const title = `Agent skills in ${source} | SkillBundle`;
-  const description = `${skills.length} agent skill${
-    skills.length === 1 ? "" : "s"
-  } published by ${source}, for Claude Code, Cursor and Codex. Install counts, change history, and security audits for each one.`;
+  const description = truncateWords(
+    `${skills.length} agent skill${skills.length === 1 ? "" : "s"} published by ${source}, for Claude Code, Cursor and Codex. Install counts and change history for each.`,
+    160,
+  );
 
   // No `images`: see the org route.
   return {
@@ -120,9 +122,9 @@ async function RepoHeader({ params }: { params: Params }) {
       {/* Mirrors the visible trail below it — see the note on the org page. */}
       <JsonLd
         data={breadcrumbLd([
-          { name: "Skills", path: "/" },
+          { name: "Home", path: "/" },
           { name: org, path: ownerHref(org) },
-          { name: `${org}/${repo}`, path: sourceHref(`${org}/${repo}`) },
+          { name: repo, path: sourceHref(`${org}/${repo}`) },
         ])}
       />
       <Breadcrumb size="sm" className="mb-8">

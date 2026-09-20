@@ -68,18 +68,35 @@ export function breadcrumbLd(tiers: Tier[]) {
   };
 }
 
-/** The trail down to one skill: home, owner, repo, skill. */
-export function skillBreadcrumbLd(
-  source: string,
-  skillId: string,
-  name: string,
-) {
+/**
+ * The trail down to one skill: home, owner, repo, skill.
+ *
+ * Every label here must match the VISIBLE crumb on the page, because Google
+ * drops a BreadcrumbList that disagrees with the trail it can see. The skill
+ * layouts render `Home / org / repo / skillId` (GitHub) and `Home / source /
+ * skillId` (well-known), so: the root is "Home" and not "Skills", the repo
+ * tier is the BARE repo name and not `owner/repo`, and the leaf is the
+ * `skillId` slug rather than the skill's display name. Those three were all
+ * wrong at first and the mismatch is invisible on the page.
+ */
+export function skillBreadcrumbLd(source: string, skillId: string) {
+  const owner = sourceOwner(source);
   return breadcrumbLd([
-    { name: "Skills", path: "/" },
-    { name: sourceOwner(source), path: ownerHref(sourceOwner(source)) },
-    { name: source, path: sourceHref(source) },
-    { name, path: skillHref(source, skillId) },
+    { name: "Home", path: "/" },
+    { name: owner, path: ownerHref(owner) },
+    { name: bareRepo(source), path: sourceHref(source) },
+    { name: skillId, path: skillHref(source, skillId) },
   ]);
+}
+
+/**
+ * The repo segment on its own, for the crumb that renders it that way.
+ * A well-known source has no repo segment, so it is its own label, and
+ * `breadcrumbLd` then dedupes it against the owner tier.
+ */
+function bareRepo(source: string): string {
+  const slash = source.indexOf("/");
+  return slash === -1 ? source : source.slice(slash + 1);
 }
 
 /** One skill, as a `SoftwareSourceCode` node. */

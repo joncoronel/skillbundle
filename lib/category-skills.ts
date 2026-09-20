@@ -1,10 +1,10 @@
 import "server-only";
 import { cacheLife } from "next/cache";
-import { isTypesenseConfigured, searchSkills } from "@/lib/search/typesense";
+import { searchSkills } from "@/lib/search/typesense";
 import type { SkillHit } from "@/lib/search/typesense";
 import type { SkillData } from "@/components/skill-card";
 import type { CategoryKey } from "@/convex/lib/categories";
-import { IS_PRODUCTION_DEPLOYMENT } from "@/lib/deployment-env";
+import { TYPESENSE_AVAILABLE } from "@/lib/typesense-required";
 
 /**
  * The skills on one category page.
@@ -58,15 +58,12 @@ import { IS_PRODUCTION_DEPLOYMENT } from "@/lib/deployment-env";
  * CI down on this branch's first run, because the e2e job has Convex and Clerk
  * secrets but no Typesense ones, and `pnpm e2e` builds the app.
  *
- * So the loaders return empty outside a production deployment, and THROW on
- * one. Same shape as the gate in `app/sitemap.ts`: reduced behavior where
- * nobody reads the output, a hard failure where the artifact is real. An empty
+ * So the loaders return empty when the engine is absent. The production case
+ * is handled ONE level up, at module scope in `lib/typesense-required.ts`,
+ * because a throw from inside a loader is caught: `generateMetadata` has a
+ * `.catch()` and the page body sits in `<DataErrorBoundary>`. An empty
  * category page in CI is correct — the render path still gets exercised, and
- * `e2e/instant-navigation.spec.ts` skips the two tests that need real rows.
- *
- * A production build with Typesense missing is a broken deploy either way
- * (search itself throws), so failing loudly there costs nothing and beats
- * silently baking 28 empty landing pages behind a day-long cache.
+ * `e2e/instant-navigation.spec.ts` skips the one test that needs real rows.
  */
 
 /**
@@ -102,23 +99,12 @@ function toSkillData(hit: SkillHit): SkillData {
   };
 }
 
-/** Thrown on a production deployment only; see the note above. */
-function unconfigured(loader: string): never | void {
-  if (IS_PRODUCTION_DEPLOYMENT) {
-    throw new Error(
-      `[${loader}] Typesense is not configured on a production deployment; ` +
-        `refusing to prerender empty category pages.`,
-    );
-  }
-  console.warn(`[${loader}] Typesense not configured; returning no skills.`);
-}
-
 export async function loadCategorySkills(category: CategoryKey) {
   "use cache";
   cacheLife("days");
 
-  if (!isTypesenseConfigured()) {
-    unconfigured("category-skills");
+  if (!TYPESENSE_AVAILABLE) {
+    console.warn("[category-skills] Typesense not configured; no skills.");
     return { found: 0, skills: [] as SkillData[] };
   }
 
@@ -129,14 +115,17 @@ export async function loadCategorySkills(category: CategoryKey) {
     perPage: CATEGORY_PAGE_SIZE,
     filters: {
       categories: [category],
-      // The same two exclusions `listSitemapEntries` applies, for the same
-      // reasons: a fork republishing someone else's file adds nothing to a
-      // ranked list, and a GitHub-only skill is unreviewed (see
-      // convex/skills.ts). A landing page is an editorial claim about what is
-      // worth installing, so it should not be the one surface that forgets
-      // them.
+      // Forks only. A fork republishing someone else's file adds nothing to a
+      // ranked list, matching `listSitemapEntries`.
+      //
+      // `hideGitHubOnly` was here too and is deliberately NOT: the home page's
+      // Category filter defaults it off, so the "browse all N" link at the
+      // bottom of this page opened a list with a different total than the one
+      // it advertised. It also filtered nothing, measured on the live index
+      // (frontend: 1,057 rows with and without it). A GitHub-only skill's own
+      // page is already `noindex` (`skillTabMetadata`), so listing one here
+      // links to a noindexed page, which is ordinary.
       hideForks: true,
-      hideGitHubOnly: true,
     },
   });
 

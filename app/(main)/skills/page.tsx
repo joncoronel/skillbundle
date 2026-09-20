@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -11,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { LISTING_TITLE_SCALE } from "@/lib/listing-styles";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import { JsonLd } from "@/components/json-ld";
 import { breadcrumbLd, itemListLd } from "@/lib/structured-data";
 import { SITE_URL } from "@/lib/site-url";
@@ -53,7 +55,7 @@ export default function CategoriesPage() {
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-24">
       <JsonLd
         data={breadcrumbLd([
-          { name: "Skills", path: "/" },
+          { name: "Home", path: "/" },
           { name: "Categories", path: CATEGORIES_PATH },
         ])}
       />
@@ -78,8 +80,14 @@ export default function CategoriesPage() {
         categories, and each page lists the most installed skills in it.
       </p>
 
+      {/* Suspense INSIDE the boundary, per components/data-error-boundary.tsx
+          ("place it around an existing Suspense, not inside it"). Without one,
+          a cold cache suspends past this point to the route level and the
+          breadcrumb, h1 and blurb wait with the grid instead of streaming. */}
       <DataErrorBoundary label="the category list">
-        <CategoryGrid />
+        <Suspense fallback={<CategoryGridSkeleton />}>
+          <CategoryGrid />
+        </Suspense>
       </DataErrorBoundary>
     </div>
   );
@@ -135,14 +143,36 @@ async function CategoryGrid() {
                 {CATEGORY_LABELS[key]}
               </span>
               {/* Tabular so 28 counts of differing width set on one right
-                  edge instead of ragging across the grid. */}
+                  edge instead of ragging across the grid.
+
+                  "skills" is visually hidden rather than dropped: without it
+                  the link's accessible name was "Frontend 1,057", an unlabelled
+                  number repeated across 28 tiles, and no column header or
+                  intro sentence says what it counts. */}
               <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
                 {counts[key].toLocaleString("en-US")}
+                <span className="sr-only"> skills</span>
               </span>
             </Link>
           </li>
         ))}
       </ul>
     </>
+  );
+}
+
+/** The grid's shape: 28 tiles at the same height the resolved ones take. */
+function CategoryGridSkeleton() {
+  return (
+    <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: CATEGORY_KEYS.length }).map((_, i) => (
+        <li key={i}>
+          <div className="flex min-h-16 items-center justify-between gap-3 rounded-xl bg-surface-3 px-4 py-3 shadow-[var(--surface-shadow-1),var(--surface-rim-1)]">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 w-10 shrink-0" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
