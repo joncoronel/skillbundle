@@ -30,11 +30,11 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0(@tanstack/react-query@5.90.21(react@19.3.0))(convex@1.45.0(@clerk/react@6.15.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0))
       '@hugeicons/core-free-icons':
-        specifier: ^4.2.3
-        version: 4.2.3
+        specifier: ^4.3.4
+        version: 4.3.4
       '@hugeicons/react':
-        specifier: ^1.1.9
-        version: 1.1.9(react@19.3.0)
+        specifier: ^1.1.10
+        version: 1.1.10(react@19.3.0)
       '@icons-pack/react-simple-icons':
         specifier: ^13.8.0
         version: 13.8.0(react@19.3.0)
@@ -653,11 +653,11 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@hugeicons/core-free-icons@4.2.3':
-    resolution: {integrity: sha512-fpiU0qFZkv4ABi23xJ2m4qNr0BBfuIaYjPboN8WDA6aj9D+OzXa7eykxKOpACZRuGbDz1U9S5DsNx1d5KNnsgA==}
+  '@hugeicons/core-free-icons@4.3.4':
+    resolution: {integrity: sha512-TMbzqGFD4XnEyVYut4sTzT7Wpq+Mghe7ChGd+R3bkyhJc31tcsfxtX8gmgrV3zIqn5dumsNJhvsX+h3OPjLMGQ==}
 
-  '@hugeicons/react@1.1.9':
-    resolution: {integrity: sha512-O+lWSWjbijoAvMCxn4K2bQWCGN5+mP1y5j+X99j23mXMj+s0X25fs71T6t9YJLaBodwmZdaewD27dzS/PiboQw==}
+  '@hugeicons/react@1.1.10':
+    resolution: {integrity: sha512-9tAsd92yMVVGP+E+d8cM+wc0VnXuYZHNbWQi7TOe8k2neawmhiaFmVFbzyruejhOMa197/LbgvSED32ayUo3ZA==}
     peerDependencies:
       react: '>=16.0.0'
 
@@ -6011,9 +6011,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@hugeicons/core-free-icons@4.2.3': {}
+  '@hugeicons/core-free-icons@4.3.4': {}
 
-  '@hugeicons/react@1.1.9(react@19.3.0)':
+  '@hugeicons/react@1.1.10(react@19.3.0)':
     dependencies:
       react: 19.3.0
 
