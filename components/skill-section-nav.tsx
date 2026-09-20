@@ -364,13 +364,27 @@ export function SkillSectionNav({
   const markedIdRef = useRef(markedId);
   const placeMark = useCallback((animate: boolean) => {
     const content = contentRef.current;
-    const id = markedIdRef.current;
-    if (!content || !id) return;
+    if (!content) return;
 
-    const row = content.querySelector<HTMLElement>(
-      `[data-nav-row="${CSS.escape(id)}"]`,
-    );
-    if (!row) return;
+    const id = markedIdRef.current;
+    const row = id
+      ? content.querySelector<HTMLElement>(`[data-nav-row="${CSS.escape(id)}"]`)
+      : null;
+
+    // No owning row means nothing to point at, so hide rather than leave the
+    // mark lit on whichever row it was last on. A stale mark is a wrong
+    // answer; an absent one is no answer, and no answer is the honest one.
+    //
+    // Unreachable while `toBranches` puts every item in a branch, which is the
+    // reason to spell it out rather than bail early and inherit the old
+    // position by accident: the day that changes, this is the line that
+    // decides whether the rail lies about where the reader is. Clearing also
+    // resets the glide, so the mark snaps when it comes back instead of
+    // sliding in from a row nobody is on.
+    if (!row) {
+      setMark(null);
+      return;
+    }
 
     // The row's WHOLE box, padding included, not a tick centred on its text.
     // A short mark on a tall row leaves the spine mostly unlit and reads as a
@@ -391,8 +405,15 @@ export function SkillSectionNav({
     });
   }, []);
 
+  // Measure, then render the measurement. React documents exactly this for
+  // `useLayoutEffect`: read layout after commit, set state, repaint before the
+  // browser draws. The lint rule cannot tell it apart from a state cascade, so
+  // it is silenced here and only here. The escape hatch is the point of the
+  // layout effect, not a workaround for it: the mark's position is a fact
+  // about the DOM, and nothing can know it before the DOM exists.
   useLayoutEffect(() => {
     markedIdRef.current = markedId;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     placeMark(true);
   }, [markedId, placeMark]);
 
