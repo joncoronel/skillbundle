@@ -49,6 +49,17 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3100";
  */
 const SHELL_TIMEOUT = 15_000;
 
+/**
+ * The `/skills` pages are the only routes backed by Typesense rather than
+ * Convex, so they are the only ones whose content depends on a secret the e2e
+ * job may not have. Unset => these two skip, the way the bundle spec skips on
+ * a missing `E2E_BUNDLE_ID`, instead of failing for a reason unrelated to the
+ * commit. The pages still BUILD without it (the loaders return empty outside a
+ * production deployment, see lib/category-skills.ts); they just have no rows
+ * to assert on.
+ */
+const TYPESENSE_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_TYPESENSE_HOST);
+
 test.describe("initial load", () => {
   test("/ serves its hero in the shell", async ({ page }) => {
     await instant(
@@ -146,6 +157,7 @@ test.describe("initial load", () => {
   });
 
   test("/skills serves its header and tiles in the shell", async ({ page }) => {
+    test.skip(!TYPESENSE_CONFIGURED, "NEXT_PUBLIC_TYPESENSE_HOST not set");
     await instant(
       page,
       async () => {
@@ -409,6 +421,7 @@ test.describe("client navigation", () => {
   test("/skills -> a category commits its shell instantly", async ({
     page,
   }) => {
+    test.skip(!TYPESENSE_CONFIGURED, "NEXT_PUBLIC_TYPESENSE_HOST not set");
     await page.goto("/skills");
 
     // Discovered, not pinned: click a real tile so the test follows the user

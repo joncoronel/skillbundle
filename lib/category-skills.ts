@@ -1,9 +1,10 @@
 import "server-only";
 import { cacheLife } from "next/cache";
-import { searchSkills } from "@/lib/search/typesense";
+import { isTypesenseConfigured, searchSkills } from "@/lib/search/typesense";
 import type { SkillHit } from "@/lib/search/typesense";
 import type { SkillData } from "@/components/skill-card";
 import type { CategoryKey } from "@/convex/lib/categories";
+import { IS_PRODUCTION_DEPLOYMENT } from "@/lib/deployment-env";
 
 /**
  * The skills on one category page.
@@ -29,13 +30,15 @@ import type { CategoryKey } from "@/convex/lib/categories";
  *
  * docs/architecture.md notes that `pnpm build` already needs a reachable
  * Convex deployment. This route makes Typesense a second such dependency: the
- * 28 category pages prerender, so a Typesense outage during a build fails the
- * build rather than degrading one page. That is the accepted cost of not
- * adding a third denormalization tier, and it is worth knowing before anyone
- * debugs a red build that has nothing to do with their change.
+ * 28 category pages prerender, so a PRODUCTION build with Typesense down or
+ * unconfigured fails rather than degrading one page. That is the accepted cost
+ * of not adding a third denormalization tier.
  *
- * At request time the failure is softer: `cacheLife("days")` keeps serving the
- * last entry, and `DataErrorBoundary` on the page catches a cold miss.
+ * Outside a production deployment it does not fail; see the next section.
+ *
+ * At request time the failure is softer again: `cacheLife("days")` keeps
+ * serving the last entry, and `DataErrorBoundary` on the page catches a cold
+ * miss.
  *
  * ── Untagged, like app/sitemap.ts ─────────────────────────────────────────
  *
@@ -48,6 +51,25 @@ import type { CategoryKey } from "@/convex/lib/categories";
  */
 
 /**
+ * ── Building without Typesense ────────────────────────────────────────────
+ *
+ * Both loaders below run during PRERENDER, so an unconfigured engine is a
+ * failed `next build`, not a degraded page. That is not hypothetical: it took
+ * CI down on this branch's first run, because the e2e job has Convex and Clerk
+ * secrets but no Typesense ones, and `pnpm e2e` builds the app.
+ *
+ * So the loaders return empty outside a production deployment, and THROW on
+ * one. Same shape as the gate in `app/sitemap.ts`: reduced behavior where
+ * nobody reads the output, a hard failure where the artifact is real. An empty
+ * category page in CI is correct — the render path still gets exercised, and
+ * `e2e/instant-navigation.spec.ts` skips the two tests that need real rows.
+ *
+ * A production build with Typesense missing is a broken deploy either way
+ * (search itself throws), so failing loudly there costs nothing and beats
+ * silently baking 28 empty landing pages behind a day-long cache.
+ */
+
+/**
  * How many skills a category page lists.
  *
  * Not paginated, deliberately. The page's job is to be a good landing page and
@@ -57,7 +79,7 @@ import type { CategoryKey } from "@/convex/lib/categories";
  * where 13,556 already sit uncrawled (TODO.md, "Search: the indexing gap").
  * The full list stays one click away through the Category filter on `/`.
  */
-export const CATEGORY_PAGE_SIZE = 60;
+const CATEGORY_PAGE_SIZE = 60;
 
 /**
  * A search hit, as the shared row component wants it.
@@ -80,9 +102,25 @@ function toSkillData(hit: SkillHit): SkillData {
   };
 }
 
+/** Thrown on a production deployment only; see the note above. */
+function unconfigured(loader: string): never | void {
+  if (IS_PRODUCTION_DEPLOYMENT) {
+    throw new Error(
+      `[${loader}] Typesense is not configured on a production deployment; ` +
+        `refusing to prerender empty category pages.`,
+    );
+  }
+  console.warn(`[${loader}] Typesense not configured; returning no skills.`);
+}
+
 export async function loadCategorySkills(category: CategoryKey) {
   "use cache";
   cacheLife("days");
+
+  if (!isTypesenseConfigured()) {
+    unconfigured("category-skills");
+    return { found: 0, skills: [] as SkillData[] };
+  }
 
   const result = await searchSkills({
     // Browse, not search: `""` means "the whole catalog, filtered".

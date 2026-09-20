@@ -82,15 +82,6 @@ export function skillBreadcrumbLd(
   ]);
 }
 
-/** The trail down to a source's directory page, or an owner's. */
-export function sourceBreadcrumbLd(source: string) {
-  return breadcrumbLd([
-    { name: "Skills", path: "/" },
-    { name: sourceOwner(source), path: ownerHref(sourceOwner(source)) },
-    { name: source, path: sourceHref(source) },
-  ]);
-}
-
 /** One skill, as a `SoftwareSourceCode` node. */
 export function skillLd({
   source,

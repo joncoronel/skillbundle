@@ -7,7 +7,7 @@ import { loadSourceSkills } from "@/lib/source-skills";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { JsonLd } from "@/components/json-ld";
-import { sourceBreadcrumbLd } from "@/lib/structured-data";
+import { breadcrumbLd } from "@/lib/structured-data";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -36,7 +36,7 @@ import {
 import { buildSourceInstallCommand } from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
 import { NOT_FOUND_ROBOTS } from "@/lib/soft-404";
-import { sourceHref } from "@/lib/skill-urls";
+import { ownerHref, sourceHref } from "@/lib/skill-urls";
 
 type Params = Promise<{ org: string; repo: string }>;
 
@@ -118,7 +118,13 @@ async function RepoHeader({ params }: { params: Params }) {
   return (
     <>
       {/* Mirrors the visible trail below it — see the note on the org page. */}
-      <JsonLd data={sourceBreadcrumbLd(`${org}/${repo}`)} />
+      <JsonLd
+        data={breadcrumbLd([
+          { name: "Skills", path: "/" },
+          { name: org, path: ownerHref(org) },
+          { name: `${org}/${repo}`, path: sourceHref(`${org}/${repo}`) },
+        ])}
+      />
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>

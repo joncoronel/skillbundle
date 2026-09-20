@@ -1,11 +1,7 @@
 import "server-only";
 import { cacheLife } from "next/cache";
-import { listFacetCounts } from "@/lib/search/typesense";
-import {
-  CATEGORY_KEYS,
-  isCategoryKey,
-  type CategoryKey,
-} from "@/convex/lib/categories";
+import { isTypesenseConfigured, listFacetCounts } from "@/lib/search/typesense";
+import { CATEGORY_KEYS, type CategoryKey } from "@/convex/lib/categories";
 
 /**
  * How many skills each category holds, for the `/skills` hub.
@@ -29,6 +25,14 @@ export async function loadCategoryCounts(): Promise<
   "use cache";
   cacheLife("days");
 
+  // Zeroes rather than a throw outside production; see lib/category-skills.ts.
+  if (!isTypesenseConfigured()) {
+    return Object.fromEntries(CATEGORY_KEYS.map((key) => [key, 0])) as Record<
+      CategoryKey,
+      number
+    >;
+  }
+
   const counts = await listFacetCounts("tags", {
     scope: {
       query: "",
@@ -37,17 +41,13 @@ export async function loadCategoryCounts(): Promise<
     },
   });
 
-  const byKey = Object.fromEntries(
-    CATEGORY_KEYS.map((key) => [key, 0]),
+  // Built by looking UP each known key rather than by iterating the facet
+  // values, which is what makes a retired key a non-event: `tags` is a
+  // free-form string[] in the index, so a stale row can still carry a key that
+  // has since left CATEGORY_LABELS (the re-tag after a CATEGORIES_VERSION bump
+  // is not instant). Nothing looks it up, so nothing has to exclude it.
+  const found = new Map(counts.map((c) => [c.value, c.count]));
+  return Object.fromEntries(
+    CATEGORY_KEYS.map((key) => [key, found.get(key) ?? 0]),
   ) as Record<CategoryKey, number>;
-
-  for (const { value, count } of counts) {
-    // `tags` is a free-form string[] in the index, so a stale row can still
-    // carry a key that has since been removed from CATEGORY_LABELS (the
-    // re-tag after a CATEGORIES_VERSION bump is not instant). Guarding here
-    // keeps a retired key out of the record rather than widening its type.
-    if (isCategoryKey(value)) byKey[value] = count;
-  }
-
-  return byKey;
 }
