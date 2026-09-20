@@ -10,6 +10,16 @@ import {
 } from "react";
 import { useReducedMotion } from "motion/react";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
+import {
+  ELBOW,
+  ELBOW_END,
+  ELBOW_R,
+  STROKE,
+  SVG_ORIGIN,
+  TRUNK_X,
+  labelX,
+  treePath,
+} from "@/components/skill-section-nav-geometry";
 import { SECTION_OFFSET } from "@/hooks/use-entered-section";
 import { cn } from "@/lib/utils";
 
@@ -30,143 +40,36 @@ export type SectionNavItem = {
 const ACTIVE_OFFSET = SECTION_OFFSET;
 
 /**
- * The rail's geometry, in px, all measured from the nav's own left edge.
- *
- * One spine at x=0 that every row hangs off, and — for the one branch that is
- * open — a second trunk dropping under the parent, elbowing out to each child.
- * The SVG paths and the rows' padding both come from these numbers, so the
- * drawn lines and the DOM they point at cannot drift apart.
- *
- * Flush LEFT, not right, and that is still the whole reason this rail sits on
- * the trailing side of the page (see skill-detail-page.tsx). The spine is the
- * edge that faces the document; every ragged thing — the indents, the branch
- * ends, the line endings — runs away from the text into the outer margin.
- * Mirror the tree only if the rail ever moves back to the leading side.
- *
- * ── The three numbers that decide whether this looks like a tree ───────────
- *
- * An elbow is an arc plus a STRAIGHT ARM, and the arm is what makes it read as
- * a branch. The first pass gave the arc 9 of an 11.5px horizontal run and left
- * 2.5px of arm, so the arc was effectively the whole shape and each branch
- * came out a little hook that stopped as soon as it had turned. An arm roughly
- * as long as the gap to the label reads as a corner and a reach.
- *
- * The child indent is the other half of it. 20px was enough to be legible and
- * not enough to be a level: the children sat almost under their parent with a
- * drawn tree crammed into the gap. At 34 the tree has room to be a shape, and
- * the nesting is visible before you have read a word.
- *
- * Both came from measuring the reference these were modelled on, which works
- * out to trunk +14 / arm 8 / indent +40 from its head's text. Ours are a shade
- * tighter because this rail is a 272px sidebar carrying real heading text, not
- * a demo with one-word labels, and the label still needs ~208px to wrap twice
- * rather than three times.
- */
-const ROW_X = 18; // A page section's label (level 0)
-const SUB_X = 30; // A file heading's label (level 1)
-const ELBOW_R = 10;
-const ELBOW_END = 56; // Arc ends at 48, so 8px of straight arm
-const CHILD_X = 64; // A nested heading's label (level 2), 8px past the arm
-
-/**
- * The branch trunk, dropping under the parent's label.
- *
- * A whole number, and that follows from the stroke being 2px: a stroke is
- * centred on its coordinate, so an even width wants an integer (29–31 → two
- * clean pixels) and an odd or fractional one wants a .5. This was 38.5 while
- * the stroke was 1.5. Change one and you have to change the other, or the line
- * goes soft — see STROKE below for why it is 2.
- */
-const TRUNK_X = SUB_X + 8;
-
-/**
- * 2px rather than the reference's 1.5, and this is a taste call, not a fix.
- *
- * What actually made the tips look chopped was the SVG viewport clipping the
- * caps (see the `width` on the svg below); that bug was independent of the
- * width and is fixed there. The width is the follow-on judgement: a round cap
- * is half the stroke, so 1.5 leaves a 0.75px dome — real, but under a pixel,
- * which at 1x antialiases to something barely distinguishable from a flat end.
- * At 2px the cap is a whole pixel and the roundness survives on any display,
- * not just the 2x screens the reference is usually admired on.
- *
- * Drop it back to 1.5 if the tree ever reads too heavy; the caps will still be
- * round, just quieter. Keep the coordinates in step if you do — TRUNK_X needs
- * the .5 back.
- */
-const STROKE = 2;
-
-/**
- * A row's vertical metrics, and they live up here with the horizontal ones
- * because the SVG has to agree with them.
- *
- * Everything the rail draws lands on a row's FIRST LINE, not on its middle. An
- * entry that wraps to two lines is ordinary at this width, and a mark or an
- * elbow on the row's centre lands in the gap between its lines — a line
- * pointing at nothing, beside an entry that has stopped reading as one entry.
- * Half a line below the padding is where the eye starts the title, whether the
- * title takes one line or three.
- *
- * Applied as inline style rather than `py-1.5 leading-snug`, so the number the
- * elbows are positioned from is the same number the rows are laid out with. As
- * classes they were two independent declarations that happened to agree.
- */
-const ROW_PAD_Y = 6;
-const LINE_H = 19.25; // text-sm at leading-snug
-const FIRST_LINE_Y = ROW_PAD_Y + LINE_H / 2;
-
-/**
- * The corner and the arm that reach one row, starting on the trunk.
- *
- * The sweep is counter-clockwise so the corner bulges down and left, the way a
- * file tree draws it. Both layers are built from this one function, so the line
- * that lights up traces exactly the line that was already there, which is the
- * whole trick.
- */
-function elbowAt(y: number) {
-  return `M ${TRUNK_X} ${y - ELBOW_R} A ${ELBOW_R} ${ELBOW_R} 0 0 0 ${TRUNK_X + ELBOW_R} ${y} H ${ELBOW_END}`;
-}
-
-/** The accent layer's copy, authored at y=0 because it is moved by transform. */
-const ELBOW = elbowAt(0);
-
-/**
- * The whole grey tree as ONE path, and it has to be one path.
- *
- * Every elbow starts tangent to the trunk, so the top of its arc runs along the
- * same pixels the trunk already covers. As separate elements at 25% alpha those
- * two strokes composite, and each junction shows up as a dark blot on an
- * otherwise even line — the overlap reading as structure that isn't there. A
- * single path is stroked once, so its own subpaths cannot stack on each other
- * however much they overlap.
- *
- * The accent layer is exempt: it is fully opaque, so where its trunk and elbow
- * cross there is nothing to see, and it stays two elements because they move
- * independently.
- */
-function treePath(centers: number[], last: number) {
-  return [`M ${TRUNK_X} 0 V ${last - ELBOW_R}`, ...centers.map(elbowAt)].join(
-    " ",
-  );
-}
-
-/**
- * SVG transforms resolve against the user-space origin rather than the
- * element's own box, which is what makes a `scaleY` off y=0 mean "this many
- * user units long" and a `translateY` mean "move to this row".
- */
-const SVG_ORIGIN = {
-  transformBox: "view-box",
-  transformOrigin: "0 0",
-} as const;
-
-/**
  * The one curve in the rail that carries travel. Matches the collapse used by
  * the record card and the header menu, so the branch opening and the line
  * moving inside it are the same gesture.
  */
 const GLIDE =
   "transition-transform duration-200 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none";
+
+/**
+ * The page's own trunk. Every row hangs off it and the mark that says "you are
+ * here" rides on it, so it is the one line in the rail that is always drawn.
+ *
+ * Exactly the height of the rows, with no inset. It used to hold 4px back at
+ * each end, from when the mark was a short tick floating in the middle of its
+ * row and the track's ends were pure decoration. A mark that fills its row
+ * makes those 4px load-bearing: the first row starts at y=0, so the mark
+ * overhung the top of the track it was supposed to be riding. The track has to
+ * be at least as long as the thing that travels on it.
+ *
+ * A component, not a copied span, because the rail and its loading skeleton
+ * both draw it and a restyle that moved one and not the other would be
+ * invisible until the body landed.
+ */
+function RailSpine() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-foreground/12"
+    />
+  );
+}
 
 /**
  * Which section the reader is currently in.
@@ -352,6 +255,23 @@ export function SkillSectionNav({
   const branches = useMemo(() => toBranches(items), [items]);
 
   /**
+   * Which branch the current heading belongs to, or -1.
+   *
+   * The rail asks this once and two things read the answer: the fold below,
+   * and the spine mark. They have to agree, so they share the lookup rather
+   * than each running the predicate.
+   */
+  const owningIndex = useMemo(
+    () =>
+      branches.findIndex(
+        (branch) =>
+          branch.item.id === activeId ||
+          branch.children.some((child) => child.id === activeId),
+      ),
+    [branches, activeId],
+  );
+
+  /**
    * Which branch is showing its deeper headings.
    *
    * The obvious rule — open the branch that owns the current heading — leaves a
@@ -374,18 +294,13 @@ export function SkillSectionNav({
    * children would open the NEXT branch while the reader was inside its own.
    */
   const openBranchId = useMemo(() => {
-    const index = branches.findIndex(
-      (branch) =>
-        branch.item.id === activeId ||
-        branch.children.some((child) => child.id === activeId),
-    );
-    if (index === -1) return null;
-    const owner = branches[index];
-    if (owner.item.level === 0 && branches[index + 1]) {
-      return branches[index + 1].item.id;
+    if (owningIndex === -1) return null;
+    const owner = branches[owningIndex];
+    if (owner.item.level === 0 && branches[owningIndex + 1]) {
+      return branches[owningIndex + 1].item.id;
     }
     return owner.item.id;
-  }, [branches, activeId]);
+  }, [branches, owningIndex]);
 
   /**
    * Which row the spine mark sits on.
@@ -395,95 +310,99 @@ export function SkillSectionNav({
    * the level above that: which section of the page you are in. The head's
    * LABEL stays muted and keeps no `aria-current`, so the current link is
    * still unambiguous.
+   *
+   * Derived from the SAME `owningIndex` the fold above reads, not from a
+   * second copy of the predicate. Two copies of one rule is how the mark ends
+   * up pointing at a branch the rail did not open.
    */
-  const markedId = useMemo(
-    () =>
-      branches.find(
-        (branch) =>
-          branch.item.id === activeId ||
-          branch.children.some((child) => child.id === activeId),
-      )?.item.id ?? null,
-    [branches, activeId],
-  );
+  const markedId = owningIndex === -1 ? null : branches[owningIndex].item.id;
 
   const railRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const markerRef = useRef<HTMLSpanElement | null>(null);
-  const markerBox = useRef<string | null>(null);
   const activeItemRef = useRef<HTMLAnchorElement | null>(null);
 
   /**
-   * Move the mark to the row it belongs on.
+   * Where the spine mark sits, and whether it should travel to get there.
    *
-   * ONE element that travels, rather than a tick per row fading in and out.
-   * The spine is a continuous line and the mark is a position ON it, so a mark
+   * ONE element that moves, rather than a tick per row fading in and out. The
+   * spine is a continuous line and the mark is a position ON it, so a mark
    * that jumps between rows is claiming the reader teleported; one that slides
    * says they moved down the page, which is what happened. It rides the same
    * curve as the branch elbow, so the two things the rail animates are visibly
    * one gesture.
    *
+   * State rather than direct style writes, which also means the transition is
+   * a CLASS that lands in the same commit as the position. The imperative
+   * version had to set `transition: none`, write the style, force a reflow to
+   * flush it, then restore the transition. React applies both in one paint, so
+   * the reflow and the restore both go away.
+   */
+  const [mark, setMark] = useState<{
+    top: number;
+    height: number;
+    glide: boolean;
+  } | null>(null);
+
+  /**
+   * Read the marked row's box.
+   *
+   * `markedId` arrives through a ref so this callback never changes identity.
+   * It used to close over the value, which re-created the ResizeObserver every
+   * time the reader crossed into a new section: a disconnect, a reconstruct
+   * and an extra callback, over and over, all the way down a 20,000px file,
+   * for an observer that does not care which row is marked.
+   *
    * `glide: false` is for reflow, and the distinction matters more than it
    * looks. Opening a branch moves every row below it for 400ms, and a mark
    * that eased toward a moving target would trail its own row the whole way.
-   * Snapping means it tracks the row exactly through the fold. The early
-   * return is what keeps the glide alive in the ordinary case: when the marked
-   * row has not actually moved, a reflow elsewhere in the rail leaves the
-   * in-flight transition alone instead of cutting it short.
+   * Snapping means it tracks the row exactly through the fold. The unchanged
+   * bail is what keeps the glide alive in the ordinary case: when the marked
+   * row has not moved, a reflow elsewhere in the rail returns the previous
+   * state object, React skips the render, and the in-flight transition is left
+   * alone instead of being cut short.
    */
-  const placeMarker = useCallback(
-    (animate: boolean) => {
-      const content = contentRef.current;
-      const marker = markerRef.current;
-      if (!content || !marker) return;
+  const markedIdRef = useRef(markedId);
+  const placeMark = useCallback((animate: boolean) => {
+    const content = contentRef.current;
+    const id = markedIdRef.current;
+    if (!content || !id) return;
 
-      const row = markedId
-        ? content.querySelector<HTMLElement>(
-            `[data-nav-row="${CSS.escape(markedId)}"]`,
-          )
-        : null;
-      // The row's WHOLE box, padding included, not a tick centred on its text.
-      // A short mark on a tall row leaves the spine mostly unlit and reads as a
-      // dot that happens to be near an entry; one that fills the row reads as
-      // the row being the selected one, which is what it means. It also closes
-      // the gaps — consecutive positions now meet at the 1px row seam instead
-      // of leaving 17px of dead track between them.
-      //
-      // `offsetHeight`, so a heading that wraps gets a mark as tall as the two
-      // lines it occupies. The mark tracks the row, and the row is what varies.
-      const box = row ? `${row.offsetTop}:${row.offsetHeight}` : null;
-      if (box !== null && box === markerBox.current) return;
+    const row = content.querySelector<HTMLElement>(
+      `[data-nav-row="${CSS.escape(id)}"]`,
+    );
+    if (!row) return;
 
+    // The row's WHOLE box, padding included, not a tick centred on its text.
+    // A short mark on a tall row leaves the spine mostly unlit and reads as a
+    // dot that happens to be near an entry; one that fills the row reads as
+    // the row being the selected one, which is what it means. It also closes
+    // the gaps: consecutive positions meet at the 1px row seam.
+    //
+    // `offsetHeight`, so a heading that wraps gets a mark as tall as the two
+    // lines it occupies. The mark tracks the row, and the row is what varies.
+    const top = row.offsetTop;
+    const height = row.offsetHeight;
+    setMark((prev) => {
+      if (prev && prev.top === top && prev.height === height) return prev;
       // The first placement is never animated, whatever the caller asked for:
       // the mark has no previous row to have come from, and sliding in from
       // the top of the rail on load would read as content arriving late.
-      const glide = animate && markerBox.current !== null;
-      markerBox.current = box;
-
-      if (!glide) marker.style.transition = "none";
-      if (row) {
-        marker.style.transform = `translateY(${row.offsetTop}px)`;
-        marker.style.height = `${row.offsetHeight}px`;
-      }
-      marker.style.opacity = row ? "1" : "0";
-      if (!glide) {
-        void marker.offsetHeight;
-        marker.style.transition = "";
-      }
-    },
-    [markedId],
-  );
+      return { top, height, glide: animate && prev !== null };
+    });
+  }, []);
 
   useLayoutEffect(() => {
-    placeMarker(true);
-  }, [placeMarker]);
+    markedIdRef.current = markedId;
+    placeMark(true);
+  }, [markedId, placeMark]);
 
   useEffect(() => {
     const content = contentRef.current;
     if (!content) return;
-    const observer = new ResizeObserver(() => placeMarker(false));
+    const observer = new ResizeObserver(() => placeMark(false));
     observer.observe(content);
     return () => observer.disconnect();
-  }, [placeMarker]);
+  }, [placeMark]);
 
   // Keep the active entry visible when the rail is long enough to scroll. Scoped
   // to the rail's own scroll container so the page never moves with it.
@@ -565,33 +484,29 @@ export function SkillSectionNav({
             and slide back to the top as the rail scrolled. Anchored here it
             spans the content. */}
         <div ref={contentRef} className="relative">
-          {/* The page's own trunk. Every row hangs off it and the mark that
-              says "you are here" rides on it, so it is the one line in the rail
-              that is always drawn.
-
-              Exactly the height of the rows, with no inset. It used to hold 4px
-              back at each end, from when the mark was a short tick floating in
-              the middle of its row and the track's ends were pure decoration.
-              A mark that fills its row makes those 4px load-bearing: the first
-              row starts at y=0, so the mark overhung the top of the track it
-              was supposed to be riding. The track has to be at least as long
-              as the thing that travels on it. */}
-          <span
-            aria-hidden="true"
-            className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-foreground/12"
-          />
-          {/* Sized and positioned entirely from the effect above — `top: 0`
-              here and the row's y arrives as a transform, so the travel is
+          <RailSpine />
+          {/* Sized and positioned entirely from `placeMark` — `top: 0` here
+              and the row's y arrives as a transform, so the travel is
               composited rather than a layout write per frame. Height is a real
               layout property and cannot be, but it only changes on the rare
               move between a one-line row and a wrapped one, and an absolutely
               positioned 2px bar reflows nothing but itself. */}
           <span
-            ref={markerRef}
             aria-hidden="true"
+            style={
+              mark
+                ? {
+                    transform: `translateY(${mark.top}px)`,
+                    height: mark.height,
+                  }
+                : undefined
+            }
             className={cn(
-              "absolute top-0 left-0 h-0 w-0.5 rounded-full bg-foreground opacity-0",
-              "transition-[transform,height,opacity] duration-200 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+              "absolute top-0 left-0 h-0 w-0.5 rounded-full bg-foreground",
+              mark ? "opacity-100" : "opacity-0",
+              mark?.glide
+                ? "transition-[transform,height,opacity] duration-200 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none"
+                : "transition-none",
             )}
           />
           <nav aria-label="Sections of this page">
@@ -676,15 +591,36 @@ function NavBranchBody({
     if (!list) return;
 
     const measure = () => {
+      const rows = Array.from(list.children) as HTMLElement[];
+      const labels = rows.map((row) =>
+        row.querySelector<HTMLElement>("[data-nav-label]"),
+      );
+      // One read for the whole branch: every label shares a font size and a
+      // leading, so the line box is the same for all of them.
+      const first = labels.find(Boolean);
+      const leading = first
+        ? parseFloat(getComputedStyle(first).lineHeight)
+        : Number.NaN;
+      const base = list.getBoundingClientRect().top;
+
+      // The FIRST LINE's centre, read off the DOM rather than computed from a
+      // px constant. `text-sm` is rem, so the line box grows with the reader's
+      // browser font size; a hardcoded one stopped matching its own glyphs the
+      // moment anyone enlarged the text, and the elbows drifted off the lines
+      // they point at. Measuring costs one `getComputedStyle` per reflow and
+      // is correct at every type size.
+      //
       // Rounded, because each of these becomes the y of a HORIZONTAL 2px arm,
       // and a horizontal stroke snaps on the same rule a vertical one does.
-      // The row pitch is fractional (19.25px of leading inside 6px padding),
-      // so left alone every other arm would straddle two pixel rows and render
-      // as two grey ones. Half a pixel off the text's optical centre is not
-      // visible; half the arms being soft is.
-      const next = Array.from(list.children).map((row) =>
-        Math.round((row as HTMLElement).offsetTop + FIRST_LINE_Y),
-      );
+      // The row pitch is fractional, so left alone every other arm would
+      // straddle two pixel rows and render as two grey ones. Half a pixel off
+      // the text's optical centre is not visible; half the arms being soft is.
+      const next = rows.map((row, index) => {
+        const target = labels[index] ?? row;
+        const box = target.getBoundingClientRect();
+        const line = Number.isFinite(leading) ? leading : box.height;
+        return Math.round(box.top - base + line / 2);
+      });
       // Bail on an unchanged read. The observer below fires on every reflow of
       // a list this component does not size, and a fresh array each time would
       // be a new render each time.
@@ -704,6 +640,27 @@ function NavBranchBody({
   const activeIndex = items.findIndex((item) => item.id === activeId);
   const reach = activeIndex >= 0 ? centers[activeIndex] : undefined;
   const last = centers[centers.length - 1];
+
+  /**
+   * Where the accent stays while it fades out.
+   *
+   * `reach` goes undefined the moment the branch stops owning the current
+   * heading, which includes the ordinary case of scrolling up onto the
+   * branch's own head with the branch still open and fully visible. Falling
+   * back to 0 there sent the line racing back up the trunk over 200ms while
+   * the group faded over 150, so leaving a section played a retraction nobody
+   * asked for. Holding the last position means only the opacity changes, and
+   * the line is already where it belongs if the reader scrolls straight back
+   * in.
+   *
+   * Set during render on purpose: this is React's own "adjusting state when
+   * props change" pattern, which re-renders before paint and costs nothing
+   * here because the branch is already re-rendering for the same `activeId`.
+   * An effect is the wrong tool and the lint rule says so.
+   */
+  const [heldReach, setHeldReach] = useState(0);
+  if (reach !== undefined && reach !== heldReach) setHeldReach(reach);
+  const y = reach ?? heldReach;
 
   return (
     // `relative` on this wrapper rather than on the <ul>, so the overlay is not
@@ -756,16 +713,13 @@ function NavBranchBody({
               className={GLIDE}
               style={{
                 ...SVG_ORIGIN,
-                transform: `scaleY(${Math.max((reach ?? 0) - ELBOW_R, 0) / last})`,
+                transform: `scaleY(${Math.max(y - ELBOW_R, 0) / last})`,
               }}
             />
             <path
               d={ELBOW}
               className={GLIDE}
-              style={{
-                ...SVG_ORIGIN,
-                transform: `translateY(${reach ?? 0}px)`,
-              }}
+              style={{ ...SVG_ORIGIN, transform: `translateY(${y}px)` }}
             />
           </g>
         </svg>
@@ -789,47 +743,70 @@ function NavBranchBody({
 /**
  * The rail before the skill's own headings are known.
  *
- * It lives beside the real thing rather than in the page's skeleton so that it
- * reads the SAME geometry constants: an indent that drifted here would show up
- * as the whole tree stepping sideways the moment the body landed, and nothing
- * tests that (AGENTS.md — restructure the page, restructure the fallback).
+ * It lives beside the real thing so it can share the pieces that must not
+ * drift: `labelX` for the indents, `RailSpine` for the track, and the same
+ * row classes. An indent or a row pitch that drifted here would show up as the
+ * whole rail stepping the moment the body landed, and nothing tests that
+ * (AGENTS.md — restructure the page, restructure the fallback).
+ *
+ * Its OUTER classes matter as much as its inner ones, and that is the
+ * non-obvious part. The sidebar is one `lg:flex lg:max-h-[calc(100dvh-7rem)]`
+ * column (skill-sidebar.tsx), so anything in it has to be able to shrink. The
+ * real rail can: it is a flex column with `min-h-0` over a scrolling child. A
+ * plain block here is a flex item at `min-height: auto`, which cannot shrink
+ * below its content, so on a short viewport the loading sidebar overran the
+ * sticky box and snapped when the body arrived. Same container shape, same
+ * behaviour.
  *
  * The label and the spine are REAL, not placeholders. Neither depends on the
  * data: the rail has a spine whatever the file turns out to contain, so
  * withholding it would hold back the page's structure and then shift it in.
+ * The `<nav>` is real for the same reason, carrying `aria-busy` rather than
+ * appearing from nowhere and changing the page's landmark inventory mid-load.
  * Only the entries — the part that genuinely is not known yet — are pending.
  * Six rows, which is roughly what progressive depth shows before a branch
  * opens.
  */
 const SKELETON_ROWS = [
-  { x: ROW_X, w: 68 },
-  { x: ROW_X, w: 104 },
-  { x: SUB_X, w: 86 },
-  { x: SUB_X, w: 120 },
-  { x: SUB_X, w: 74 },
-  { x: SUB_X, w: 98 },
+  { level: 0, w: 68 },
+  { level: 0, w: 104 },
+  { level: 1, w: 86 },
+  { level: 1, w: 120 },
+  { level: 1, w: 74 },
+  { level: 1, w: 98 },
 ];
 
 export function SkillSectionNavSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn("hidden lg:block", className)}>
-      <p className="mb-4 text-xs font-medium text-muted-foreground">
+    <div className={cn("hidden lg:flex lg:min-h-0 lg:flex-col", className)}>
+      <p className="mb-4 shrink-0 text-xs font-medium text-muted-foreground">
         On this page
       </p>
-      <div className="relative">
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-foreground/12"
-        />
-        {SKELETON_ROWS.map((row, index) => (
-          <div
-            key={index}
-            className="flex items-center"
-            style={{ paddingLeft: row.x, height: ROW_PAD_Y * 2 + LINE_H }}
-          >
-            <Skeleton className="h-3" style={{ width: row.w }} />
-          </div>
-        ))}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="relative">
+          <RailSpine />
+          <nav aria-label="Sections of this page" aria-busy="true">
+            <ul className="space-y-px">
+              {SKELETON_ROWS.map((row, index) => (
+                <li key={index}>
+                  {/* Same `py-1.5` + `text-sm leading-snug` a real row uses, so
+                      the pitch matches at any browser font size. The bar is
+                      inline-block, so the line box is still the text's own
+                      strut rather than the bar's height. */}
+                  <div
+                    className="py-1.5 text-sm leading-snug"
+                    style={{ paddingLeft: labelX(row.level) }}
+                  >
+                    <Skeleton
+                      className="inline-block h-3 align-middle"
+                      style={{ width: row.w }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </div>
       </div>
     </div>
   );
@@ -858,11 +835,13 @@ function NavEntry({
       data-nav-row={item.id}
       aria-current={active ? "true" : undefined}
       onClick={(event) => onNavigate(event, item.id)}
-      style={{
-        paddingLeft: nested ? CHILD_X : item.level === 0 ? ROW_X : SUB_X,
-        paddingBlock: ROW_PAD_Y,
-      }}
-      className="group relative block rounded-md focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
+      // Only the INDENT is a px constant. The vertical metrics are `py-1.5`
+      // and `leading-snug` below, which are rem and scale with the reader's
+      // browser font size; the branch body reads the result rather than
+      // assuming it. Nothing about the horizontal tree scales with type size,
+      // so px is right there and wrong here.
+      style={{ paddingLeft: labelX(item.level) }}
+      className="group relative block rounded-md py-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50"
     >
       {/* A ghost of the mark, under the cursor only, so the spine reads as
           something you can aim at rather than a decoration. The real mark is
@@ -884,9 +863,11 @@ function NavEntry({
           the reader has to click to find out where a link goes, which is the
           one thing the rail exists to prevent. */}
       <span
-        style={{ lineHeight: `${LINE_H}px` }}
+        // What the branch body measures to place its elbows. See the `measure`
+        // in NavBranchBody.
+        data-nav-label=""
         className={cn(
-          "line-clamp-2 text-sm transition-colors duration-100 ease-out",
+          "line-clamp-2 text-sm leading-snug transition-colors duration-100 ease-out",
           item.level === 0 ? "font-medium" : "font-normal",
           active
             ? "text-foreground"
