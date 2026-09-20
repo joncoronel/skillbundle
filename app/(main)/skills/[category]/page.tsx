@@ -360,6 +360,7 @@ async function CategoryList({ params }: { params: Params }) {
         >
           Browse the other categories
         </Link>
+        .
       </p>
     );
   }
