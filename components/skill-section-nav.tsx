@@ -115,9 +115,6 @@ const ROW_PAD_Y = 6;
 const LINE_H = 19.25; // text-sm at leading-snug
 const FIRST_LINE_Y = ROW_PAD_Y + LINE_H / 2;
 
-/** The mark that rides the spine. */
-const MARK_H = 14;
-
 /**
  * The corner and the arm that reach one row, starting on the trunk.
  *
@@ -412,7 +409,7 @@ export function SkillSectionNav({
   const railRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const markerRef = useRef<HTMLSpanElement | null>(null);
-  const markerTop = useRef<number | null>(null);
+  const markerBox = useRef<string | null>(null);
   const activeItemRef = useRef<HTMLAnchorElement | null>(null);
 
   /**
@@ -444,18 +441,30 @@ export function SkillSectionNav({
             `[data-nav-row="${CSS.escape(markedId)}"]`,
           )
         : null;
-      const top = row ? row.offsetTop + FIRST_LINE_Y - MARK_H / 2 : null;
-      if (top !== null && top === markerTop.current) return;
+      // The row's WHOLE box, padding included, not a tick centred on its text.
+      // A short mark on a tall row leaves the spine mostly unlit and reads as a
+      // dot that happens to be near an entry; one that fills the row reads as
+      // the row being the selected one, which is what it means. It also closes
+      // the gaps — consecutive positions now meet at the 1px row seam instead
+      // of leaving 17px of dead track between them.
+      //
+      // `offsetHeight`, so a heading that wraps gets a mark as tall as the two
+      // lines it occupies. The mark tracks the row, and the row is what varies.
+      const box = row ? `${row.offsetTop}:${row.offsetHeight}` : null;
+      if (box !== null && box === markerBox.current) return;
 
       // The first placement is never animated, whatever the caller asked for:
       // the mark has no previous row to have come from, and sliding in from
       // the top of the rail on load would read as content arriving late.
-      const glide = animate && markerTop.current !== null;
-      markerTop.current = top;
+      const glide = animate && markerBox.current !== null;
+      markerBox.current = box;
 
       if (!glide) marker.style.transition = "none";
-      if (top !== null) marker.style.transform = `translateY(${top}px)`;
-      marker.style.opacity = top === null ? "0" : "1";
+      if (row) {
+        marker.style.transform = `translateY(${row.offsetTop}px)`;
+        marker.style.height = `${row.offsetHeight}px`;
+      }
+      marker.style.opacity = row ? "1" : "0";
       if (!glide) {
         void marker.offsetHeight;
         marker.style.transition = "";
@@ -558,21 +567,31 @@ export function SkillSectionNav({
         <div ref={contentRef} className="relative">
           {/* The page's own trunk. Every row hangs off it and the mark that
               says "you are here" rides on it, so it is the one line in the rail
-              that is always drawn. */}
+              that is always drawn.
+
+              Exactly the height of the rows, with no inset. It used to hold 4px
+              back at each end, from when the mark was a short tick floating in
+              the middle of its row and the track's ends were pure decoration.
+              A mark that fills its row makes those 4px load-bearing: the first
+              row starts at y=0, so the mark overhung the top of the track it
+              was supposed to be riding. The track has to be at least as long
+              as the thing that travels on it. */}
           <span
             aria-hidden="true"
-            className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-foreground/12"
+            className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-foreground/12"
           />
-          {/* Positioned entirely from the effect above — `top: 0` here and the
-              row's y arrives as a transform, so the travel is composited
-              rather than a layout write per frame. */}
+          {/* Sized and positioned entirely from the effect above — `top: 0`
+              here and the row's y arrives as a transform, so the travel is
+              composited rather than a layout write per frame. Height is a real
+              layout property and cannot be, but it only changes on the rare
+              move between a one-line row and a wrapped one, and an absolutely
+              positioned 2px bar reflows nothing but itself. */}
           <span
             ref={markerRef}
             aria-hidden="true"
-            style={{ height: MARK_H }}
             className={cn(
-              "absolute top-0 left-0 w-0.5 rounded-full bg-foreground opacity-0",
-              "transition-[transform,opacity] duration-200 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
+              "absolute top-0 left-0 h-0 w-0.5 rounded-full bg-foreground opacity-0",
+              "transition-[transform,height,opacity] duration-200 ease-[cubic-bezier(.32,.72,0,1)] motion-reduce:transition-none",
             )}
           />
           <nav aria-label="Sections of this page">
@@ -800,7 +819,7 @@ export function SkillSectionNavSkeleton({ className }: { className?: string }) {
       <div className="relative">
         <span
           aria-hidden="true"
-          className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-foreground/12"
+          className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-foreground/12"
         />
         {SKELETON_ROWS.map((row, index) => (
           <div
@@ -857,8 +876,7 @@ function NavEntry({
       {!nested && (
         <span
           aria-hidden="true"
-          style={{ top: FIRST_LINE_Y, height: MARK_H }}
-          className="absolute left-0 w-0.5 -translate-y-1/2 rounded-full bg-foreground opacity-0 transition-opacity duration-100 ease-out group-hover:opacity-30 motion-reduce:transition-none"
+          className="absolute inset-y-0 left-0 w-0.5 rounded-full bg-foreground opacity-0 transition-opacity duration-100 ease-out group-hover:opacity-30 motion-reduce:transition-none"
         />
       )}
       {/* Wraps to two lines rather than truncating. A table of contents whose
