@@ -40,6 +40,19 @@ import { siteLd } from "@/lib/structured-data";
 // the terms with volume, while "AI coding skills" — what this said before — is
 // a phrase the ecosystem does not actually use.
 //
+// "Directory" is in for the same reason: it is the noun every competitor that
+// ranks for this category uses, and it is accurate. Do not expect it to win
+// the head term on its own — at ~11 clicks a quarter this site has no
+// authority to beat eight established directories with a title tag. It is here
+// because it is free and true, not because it is a lever.
+//
+// NO brand suffix, unlike every other page. "Agent Skills Directory for Claude
+// Code, Cursor and Codex | SkillBundle" is 70 characters and Google truncates
+// around 60, so the brand was going to be cut anyway. Dropping it deliberately
+// is the same rule `skillPageTitle` applies (lib/seo.ts): lose the brand, keep
+// the words a query contains. Google also synthesises a site name for home
+// pages from the `WebSite` node, which lib/structured-data.ts now emits.
+//
 // Deliberately NO install count in the title, unlike those competitors. It
 // would be the strongest single addition (a number is what makes a directory
 // look worth opening) but it has to be TRUE on a page that is statically
@@ -49,8 +62,7 @@ import { siteLd } from "@/lib/structured-data";
 //
 // This is the site's one shot at the head term. Every other page targets the
 // long tail by construction, so if this title is wrong nothing else compensates.
-const HOME_TITLE =
-  "Agent Skills for Claude Code, Cursor and Codex | SkillBundle";
+const HOME_TITLE = "Agent Skills Directory for Claude Code, Cursor and Codex";
 const HOME_DESCRIPTION =
   "Search, filter, and compare agent skills for Claude Code, Cursor, and Codex. Save the ones you use to a bundle and get told when they change.";
 
