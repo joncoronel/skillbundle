@@ -19,7 +19,10 @@ import { extractOutline, normalizeOutline } from "@/lib/markdown-outline";
 import { RECORD_SURFACE } from "@/components/skill-record";
 import { SkillSidebar, SkillSidebarShell } from "@/components/skill-sidebar";
 import { SkillSection } from "@/components/skill-section";
-import type { SectionNavItem } from "@/components/skill-section-nav";
+import {
+  SkillSectionNavSkeleton,
+  type SectionNavItem,
+} from "@/components/skill-section-nav";
 import { SkillDocument, SkillDocumentMeta } from "@/components/skill-document";
 import { BundleToggleButton } from "@/components/bundle-toggle-button";
 import { skillHref } from "@/lib/skill-urls";
@@ -602,23 +605,12 @@ export function SkillDetailPageSkeleton({
           </div>
         </div>
 
-        {/* The rail, under the card in the same column. Its label is REAL
-              text, like the section headings below: it does not depend on the
-              data being loaded, so skeletoning it would withhold the page's
-              structure for no reason and then shift it in when the body lands.
-              What is genuinely unknown — the document's own headings — stays a
-              placeholder. Six rows, which is roughly what progressive depth
-              shows before a branch opens. */}
-        <div className="mt-6 hidden lg:block">
-          <p className="mb-4 text-xs font-medium text-muted-foreground">
-            On this page
-          </p>
-          <div className="space-y-3.5">
-            {[0, 1, 2, 3, 4, 5].map((item) => (
-              <Skeleton key={item} className="h-3 w-full max-w-32" />
-            ))}
-          </div>
-        </div>
+        {/* The rail, under the card in the same column. Drawn from the rail's
+              own module rather than re-typed here, so its spine, its indents
+              and its row pitch cannot drift from the real one — see
+              SkillSectionNavSkeleton for what it keeps real and what it leaves
+              pending. */}
+        <SkillSectionNavSkeleton className="mt-6" />
       </SkillSidebarShell>
 
       <div className="mt-14 space-y-14 lg:col-start-1 lg:row-start-2">
