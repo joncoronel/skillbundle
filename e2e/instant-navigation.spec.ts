@@ -145,6 +145,25 @@ test.describe("initial load", () => {
     );
   });
 
+  test("/skills serves its header and tiles in the shell", async ({ page }) => {
+    await instant(
+      page,
+      async () => {
+        await page.goto("/skills");
+        await expect(page.locator("h1")).toContainText("Skills by category");
+        // The tiles too, not just the header. `loadCategoryCounts` is
+        // `'use cache'` with `cacheLife("days")`, and cached content whose
+        // `stale` is >= 5 minutes lands in the App Shell — the same reason
+        // /official's publisher rows are asserted above. If someone makes the
+        // counts request-time, this goes red.
+        await expect(
+          page.getByRole("link", { name: /^Frontend/ }),
+        ).toBeVisible();
+      },
+      { baseURL },
+    );
+  });
+
   test("skill detail serves title and actions in the shell", async ({
     page,
   }) => {
@@ -385,6 +404,52 @@ test.describe("client navigation", () => {
         page.getByText("Not written by the skill's author", { exact: false }),
       ).toBeVisible({ timeout: SHELL_TIMEOUT });
     });
+  });
+
+  test("/skills -> a category commits its shell instantly", async ({
+    page,
+  }) => {
+    await page.goto("/skills");
+
+    // Discovered, not pinned: click a real tile so the test follows the user
+    // path. Frontend is the second-largest category and its key is
+    // single-word, so its slug is stable across a CATEGORIES_VERSION bump.
+    const tile = page.getByRole("link", { name: /^Frontend/ });
+    await expect(tile).toBeVisible();
+    const href = await tile.getAttribute("href");
+    expect(href).toBe("/skills/frontend");
+
+    await instant(page, async () => {
+      await tile.click();
+      await page.waitForURL((url) => url.pathname === href);
+
+      // What the shared App Shell holds: the two fixed breadcrumb crumbs and
+      // the list's column headers. `:visible` because Cache Components keeps
+      // the outgoing route mounted under <Activity>, so an unscoped locator
+      // can match /skills itself.
+      await expect(
+        page.locator("a:visible", { hasText: /^Categories$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+      await expect(
+        page.locator("span:visible", { hasText: /^Installs$/ }).first(),
+      ).toBeVisible({ timeout: SHELL_TIMEOUT });
+
+      // The tripwire, and the assertion this route's FIRST guard was missing.
+      // That one asserted the h1 on a direct load, where the URL is known and
+      // the page renders correctly whether or not a shared shell exists — so
+      // it stayed green while every client navigation into a category blocked.
+      //
+      // The h1 is `{label} skills` derived from `await params`, so it lives in
+      // no shared shell and must be absent while the navigation is held. The
+      // wait before asserting is load-bearing for the same reason the /[org]
+      // test documents: a bare toHaveCount(0) is also satisfied by "has not
+      // rendered yet".
+      await page.waitForTimeout(1500);
+      await expect(page.locator("h1:visible")).toHaveCount(0);
+    });
+
+    // ...and the URL data still arrives once the resume completes.
+    await expect(page.locator("h1:visible")).toContainText("Frontend skills");
   });
 
   test("/[org] -> /[org]/[repo] commits its shell instantly", async ({

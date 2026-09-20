@@ -93,6 +93,38 @@ export default function robots(): MetadataRoute.Robots {
           "/sign-in/",
           "/sign-up$",
           "/sign-up/",
+          // Next's own RSC payloads. `<Link>` prefetches fetch the target
+          // route as `?_rsc=<hash>`, and Googlebot renders with JS, so it
+          // fires them exactly like a browser does — one per link that enters
+          // the viewport, on every page it renders.
+          //
+          // Measured in Search Console, 9 Sep - 18 Sep 2026, the period after
+          // the sitemap was submitted: **1.16M crawl requests, of which 89%
+          // were "Other file type" and only 5% HTML**, with "by purpose" at
+          // 94% Refresh against 6% Discovery. "Other file type" is this:
+          // `text/x-component` is not a type Search Console has a bucket for.
+          // A single Lighthouse run of the HOME page fires five of them
+          // (`/?_rsc=`, `/sign-in?_rsc=`, `/sign-up?_rsc=` …); a catalog page
+          // with a longer link list fires more.
+          //
+          // So roughly a million requests went to payloads that can never be a
+          // search result, while 13,556 real URLs sat at "Discovered -
+          // currently not indexed" — Google knowing the URL exists and never
+          // having fetched it. Those two numbers are the same story: the crawl
+          // budget was not short, it was spent on the wrong thing.
+          //
+          // Blocking these is safe, and the distinction that makes it safe is
+          // worth stating: an `?_rsc=` URL is a SPECULATIVE FETCH OF THE NEXT
+          // PAGE, not a resource the current page needs to render. Google's
+          // renderer paints the page identically without it, the same way a
+          // browser with a cold cache does. Nothing a user does is affected at
+          // all — robots.txt is advisory to crawlers and invisible to browsers.
+          //
+          // `*_rsc=` rather than `*?_rsc=` because the param is not always
+          // first in the query string, and `&_rsc=` has to match too. The
+          // unanchored form is safe here: `=` cannot appear in a GitHub org,
+          // repo or skill slug, so no real catalog path can contain "_rsc=".
+          "/*_rsc=",
           // The one unbounded URL space on the site. `/compare` carries a
           // `?skills=a,b,c` param (the only multi-value query param in the app,
           // alongside the home page's bounded `?tab`), so the parameterised form

@@ -26,7 +26,7 @@ import {
   LISTING_TITLE_SCALE,
   rowPositionClassName,
 } from "@/lib/listing-styles";
-import { SourceSkillList } from "@/components/source-skill-list";
+import { CatalogSkillList } from "@/components/catalog-skill-list";
 import {
   InstallCommandBlock,
   InstallCommandBlockSkeleton,
@@ -74,12 +74,15 @@ export async function generateMetadata({
     };
   }
 
-  const title = `${source} — ${skills.length} skill${
+  // Same shape as the GitHub repo route's title; see the note there. This one
+  // is the site's best-performing page type today — `/site/arkdocs.tos-cn-
+  // beijing.volces.com` was the top page by clicks in Search Console over
+  // 9-17 Sep 2026 — so it is worth keeping the two consistent rather than
+  // letting the well-known namespace drift into its own wording.
+  const title = `Agent skills from ${source} | SkillBundle`;
+  const description = `${skills.length} agent skill${
     skills.length === 1 ? "" : "s"
-  } | SkillBundle`;
-  const description = `${skills.length} AI coding skill${
-    skills.length === 1 ? "" : "s"
-  } published by ${source}.`;
+  } published at ${source}, for Claude Code, Cursor and Codex. Install counts, change history, and security audits for each one.`;
 
   // No `images`: see the org route.
   return {
@@ -232,7 +235,7 @@ async function SourceListContent({ params }: { params: Params }) {
         </div>
       </div>
 
-      <SourceSkillList skills={skills} />
+      <CatalogSkillList skills={skills} />
     </>
   );
 }
@@ -253,7 +256,7 @@ function SourceListSkeleton() {
         </div>
       </div>
 
-      {/* The selection row SourceSkillList renders above the column headers
+      {/* The selection row CatalogSkillList renders above the column headers
           ("N skills from this source" + Add all / Remove all). Omitting it left
           ~44px unreserved, so the headers and every placeholder row below them
           jumped down the moment the list resolved. That shift used to hide on

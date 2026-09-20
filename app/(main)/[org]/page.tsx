@@ -8,6 +8,9 @@ import { representativeGitHubSkill } from "@/lib/representative-params";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { GithubIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
+import { JsonLd } from "@/components/json-ld";
+import { breadcrumbLd } from "@/lib/structured-data";
+import { ownerHref } from "@/lib/skill-urls";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
 import {
@@ -81,14 +84,16 @@ export async function generateMetadata({
     };
   }
 
-  const title = `${org} — ${repos.length} repo${
-    repos.length === 1 ? "" : "s"
-  } | SkillBundle`;
-  const description = `${totalSkillCount} AI coding skill${
+  // The repo count was the whole title before, which spent the most valuable
+  // characters on the least searched fact. The publisher name and the category
+  // term are what a query contains; the count moves to the description, where
+  // it does its real job of making the result look worth opening.
+  const title = `${org} agent skills | SkillBundle`;
+  const description = `${totalSkillCount} agent skill${
     totalSkillCount === 1 ? "" : "s"
-  } across ${repos.length} repositor${
+  } from ${org}, across ${repos.length} repositor${
     repos.length === 1 ? "y" : "ies"
-  } published by ${org}.`;
+  }. Install counts, change history, and security audits for each one.`;
 
   // No `images`: this segment's own opengraph-image.tsx attaches only when the
   // openGraph set here leaves the key out.
@@ -135,6 +140,15 @@ async function OrgHeader({ params }: { params: Params }) {
 
   return (
     <>
+      {/* Mirrors the visible trail below it, which is what Google asks for —
+          a BreadcrumbList that disagrees with the page is ignored. Both are
+          built from the same params, so they cannot drift. */}
+      <JsonLd
+        data={breadcrumbLd([
+          { name: "Skills", path: "/" },
+          { name: org, path: ownerHref(org) },
+        ])}
+      />
       <Breadcrumb size="sm" className="mb-8">
         <BreadcrumbList>
           <BreadcrumbItem>

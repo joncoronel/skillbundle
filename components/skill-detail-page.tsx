@@ -31,6 +31,8 @@ import {
   type WellKnownIndexes,
 } from "@/lib/install-commands";
 import { DataErrorBoundary } from "@/components/data-error-boundary";
+import { JsonLd } from "@/components/json-ld";
+import { skillBreadcrumbLd, skillLd } from "@/lib/structured-data";
 import {
   copyCount,
   loadAudits,
@@ -295,6 +297,29 @@ async function SkillDetailBody({
     // reader sees against the text, and the depth indent runs away into the
     // margin where raggedness costs nothing.
     <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_var(--skill-side)] lg:gap-x-[var(--skill-gap)]">
+      {/* Structured data. Rendered here rather than in the route's
+          `generateMetadata` because Next's Metadata type has no slot for a
+          JSON-LD script, and here it sits beside the data it describes — this
+          component already awaited the skill row, so the graph costs no extra
+          load. It lands inside the Overview's Suspense boundary, which is fine:
+          a boundary is a streaming position, not a separate response, so the
+          script is in the same HTML document either way.
+
+          The tab routes get none, deliberately. app/robots.ts disallows them,
+          and describing a page you have asked crawlers not to read is work with
+          no reader. */}
+      <JsonLd data={skillBreadcrumbLd(source, skillId, skill.name)} />
+      <JsonLd
+        data={skillLd({
+          source,
+          skillId,
+          name: skill.name,
+          description: skill.description,
+          installs: insights?.installs ?? undefined,
+          updatedAt: skill.contentUpdatedAt,
+          externalUrl,
+        })}
+      />
       {/* The lead, the warnings that qualify it, and the command. */}
       <div className="lg:col-start-1 lg:row-start-1">
         {skill.description && (

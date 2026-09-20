@@ -4,11 +4,14 @@ import {
   isSafeCommandSource,
 } from "@/lib/install-commands";
 import {
+  CATEGORIES_PATH,
+  categoryHref,
   isGitHubSource,
   ownerHref,
   skillHref,
   sourceHref,
 } from "@/lib/skill-urls";
+import { CATEGORY_KEYS } from "@/convex/lib/categories";
 
 /**
  * Turns the flat skill list into the full URL set for `app/sitemap.ts`.
@@ -125,6 +128,10 @@ export const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
   "site",
   "privacy",
   "terms",
+  // The category hub and its 28 pages (`/skills`, `/skills/<category>`).
+  // Listed for the same reason as `site`: it is a namespace, not a single
+  // page, so an org named `skills` would collide at every depth under it.
+  "skills",
 ]);
 
 /**
@@ -146,7 +153,16 @@ const STATIC_PATHS = [
  * Listing pages whose content IS the catalog, so they inherit its newest
  * change: the home page's rails and the curated directory.
  */
-const CATALOG_ROOT_PATHS = ["/", "/official"] as const;
+const CATALOG_ROOT_PATHS = [
+  "/",
+  "/official",
+  CATEGORIES_PATH,
+  // One per category. Derived from CATEGORY_KEYS rather than listed, so the
+  // sitemap and `generateStaticParams` on `app/(main)/skills/[category]` can
+  // never disagree about which categories exist — adding a key to
+  // convex/lib/categories.ts submits its page without a second edit here.
+  ...CATEGORY_KEYS.map(categoryHref),
+] as const;
 
 function absoluteUrl(baseUrl: string, path: string): string {
   const encoded = path

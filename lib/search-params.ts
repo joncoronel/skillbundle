@@ -14,7 +14,8 @@ import {
   serializeSkillsParam,
   type SkillRef,
 } from "@/lib/compare";
-import { CATEGORY_KEYS, type CategoryKey } from "@/convex/lib/categories";
+import { CATEGORY_KEYS } from "@/convex/lib/categories";
+import { CATEGORY_FILTER_KEY } from "@/lib/skill-urls";
 
 // Shared debounce duration for all search inputs. Picked
 // short enough to feel responsive on a typing pause, long enough that mid-
@@ -122,8 +123,23 @@ export const homeParamUrlKeys = {
 
 export type HomeParams = inferParserType<typeof homeParamParsers>;
 
-export const categoryHref = (key: CategoryKey) =>
-  `/?${homeParamUrlKeys.category}=${key}`;
+/**
+ * `categoryFilterHref` lives in `lib/skill-urls.ts`, not here, because Server
+ * Components need it and this module is client-only (nuqs parsers run at module
+ * scope). That means the `cat` key is written in two places; this is the check
+ * that keeps them equal, as a compile error rather than a link that silently
+ * filters nothing.
+ */
+// Named rather than inlined so the compiler error points somewhere legible;
+// the declaration IS the use, hence the disable. Same shape as the projection
+// guard in app/sitemap.ts.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _CategoryFilterKeyMatches = Assert<
+  (typeof homeParamUrlKeys)["category"] extends typeof CATEGORY_FILTER_KEY
+    ? true
+    : false
+>;
+type Assert<T extends true> = T;
 
 // The no-params entry state, derived MECHANICALLY from the parsers: a parser
 // built with .withDefault() carries a public `defaultValue`; one without it
