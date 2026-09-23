@@ -172,7 +172,7 @@ export interface SkillSearchArgs {
   query?: string;
   sort?: SkillSort;
   filters?: SkillFilters;
-  /** Also match on `description` (default: names only). */
+  /** Also match on `description` (default: names and publishers only). */
   searchDescriptions?: boolean;
   page?: number;
   perPage?: number;
@@ -415,13 +415,22 @@ function matchParams(query: string, searchDescriptions?: boolean): TsParams {
     // disagreed; 1000 covers the catalog for ~1-2ms.
     max_candidates: "1000",
   };
+  // `owner` is searched so typing a publisher ("theorcdev") finds its skills.
+  // Whole words only, no typos: a prefix match there turned "next" into every
+  // nextlevelbuilder skill. Its tokens split on "-", so "vercel" still finds
+  // vercel-labs. The Publisher picker covers partial publisher names.
   if (searchDescriptions) {
-    params.query_by = "name,description";
-    // Name matches outrank description matches (see docs/search-overhaul.md).
-    params.query_by_weights = "3,1";
+    params.query_by = "name,owner,description";
+    // Name, then publisher, then description (see docs/search-overhaul.md).
+    params.query_by_weights = "3,2,1";
+    params.prefix = "true,false,true";
+    params.num_typos = "2,0,2";
   } else {
-    // Default: names only — tighter, more precise matches.
-    params.query_by = "name";
+    // Default: names and publishers, no descriptions.
+    params.query_by = "name,owner";
+    params.query_by_weights = "3,2";
+    params.prefix = "true,false";
+    params.num_typos = "2,0";
   }
   return params;
 }
@@ -453,6 +462,7 @@ async function searchWithFallbackCheck(
   };
   if (params.query_by_weights)
     probeBase.query_by_weights = params.query_by_weights;
+  if (params.prefix) probeBase.prefix = params.prefix;
 
   const narrowedProbe: TsParams = { ...probeBase };
   if (params.filter_by) narrowedProbe.filter_by = params.filter_by;

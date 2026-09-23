@@ -49,7 +49,7 @@ interface UseCatalogSearchOptions {
   query: string;
   sort: SkillSort;
   filters: SkillFilters;
-  /** Also match on description (default: names only). */
+  /** Also match on description (default: names and publishers). */
   searchDescriptions: boolean;
 }
 

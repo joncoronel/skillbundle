@@ -17,7 +17,7 @@ const PICKER_RESULTS = 50;
  * hook (spinner state) and `PickerSearchResults` (data) so both subscribe to
  * the same cache entry and the search runs once.
  *
- * Names-only relevance search with forks/copies hidden — parity with the old
+ * Name and publisher relevance search with forks/copies hidden — parity with the old
  * Convex `searchSkills` (delisted skills never enter the Typesense index).
  */
 export function skillPickerSearchOptions(query: string) {

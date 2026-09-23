@@ -161,9 +161,15 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 - [x] **Search `description`, not just `name`** — now an **opt-in** ("Search
       descriptions" in More; default is names-only for tighter matches). Names
       only ≈ 15× fewer hits than +descriptions (e.g. "database": 21 vs 313), so
-      it's a precision-vs-recall toggle. · `query_by: name` / `name,description`
+      it's a precision-vs-recall toggle. · `query_by: name,owner` / `name,owner,description`
+- [x] **Search the publisher** ("theorcdev" finds theorcdev's skills; a
+      reviewer expected it). `owner` matches whole words with no typos
+      (`prefix` / `num_typos` per field): with prefix on, "next" pulled in
+      every nextlevelbuilder skill. Owner tokens split on "-", so "vercel"
+      finds vercel-labs, and "ai" finds publishers like designed-by-ai. ·
+      `prefix: true,false`, `num_typos: 2,0`
 - [x] **Weighted multi-field ranking** (name > description, when descriptions
-      are on). · `query_by_weights: 3,1`
+      are on), publisher between them. · `query_by_weights: 3,2,1`
 - [x] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS default (`num_typos`);
       verified: "postgress" → 117 results
 - [x] **Honest fallback under filters** — Typesense escalates to typo matching
@@ -238,9 +244,9 @@ closed) and over a full row of selects (too many, mostly reading "Any X").
 - [x] **Relevance** (default only for a description search). · TS:
       `_text_match:desc,installs:desc`
 - [x] **Most installed** (all-time — today's "Popular"; the default everywhere
-      else, including a names-only query). A names-only query requires every
-      word in the name, so every hit is on topic and popularity is the useful
-      order. Description search matches passing mentions ("pdf" pulls in the
+      else, including a query without descriptions). That query requires
+      every word in the name or the publisher, so every hit is on topic and
+      popularity is the useful order. Description search matches passing mentions ("pdf" pulls in the
       docx skill), so match quality leads there. · field: `installs` · TS:
       `sort_by: installs:desc`
 - [ ] **Recently updated** · field: `contentUpdatedAt` (on `skills`; mirror to summary if needed) · TS: `sort_by`

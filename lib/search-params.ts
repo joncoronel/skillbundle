@@ -74,7 +74,7 @@ export const categoryParser = parseAsArrayOf(
 )
   .withDefault([])
   .withOptions({ clearOnDefault: true });
-// Search scope. Default (false) searches skill names only; opt in to also
+// Search scope. Default (false) searches skill names and publishers; opt in to also
 // search descriptions. A preference, not a filter — not part of "active
 // filters" / Clear.
 export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
