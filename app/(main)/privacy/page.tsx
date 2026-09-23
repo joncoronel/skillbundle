@@ -45,8 +45,10 @@ export default function PrivacyPage() {
 
       <LegalSection id="what-we-collect" heading="1. What we collect">
         <p>
-          You can browse the entire skill catalog without an account. Nothing in
-          this section applies until you sign up.
+          You can browse the entire skill catalog without an account. Most of
+          this section applies only once you sign up. What applies before that
+          is usage analytics, bundles you save in your browser, and repository
+          matching without an account.
         </p>
         <p>
           <strong>Account information.</strong> When you create an account, our
@@ -61,6 +63,14 @@ export default function PrivacyPage() {
           them, whether each bundle is shared by link, and when you last opened
           each one. That last timestamp is how the app can tell you what changed
           since your previous visit.
+        </p>
+        <p>
+          <strong>Bundles saved in your browser.</strong> Without an account,
+          the bundles you save stay in your browser&apos;s local storage, not on
+          our servers. To show what changed in them, your browser sends us their
+          names, the skills they contain, and when you added each one; we answer
+          and keep nothing. When you sign in, they move to your account and are
+          handled like anything else you create.
         </p>
         <p>
           <strong>Contributions.</strong> If you add a skill to the public
@@ -83,10 +93,17 @@ export default function PrivacyPage() {
         </p>
         <p>
           <strong>Repositories you point us at.</strong> If you use repository
-          matching, we read the public file listing of the repository you
-          specify in order to work out which technologies it uses. We read
-          public repository contents only, we do not store the file contents,
-          and we never request write access.
+          matching, we read the file listing and a few files (package manifests
+          and the README) of the repository you specify, to work out which
+          technologies it uses. That is a public repository, or a private one if
+          you have connected your GitHub account and have access to it. We keep
+          a short summary for up to 24 hours so repeat matches are fast: package
+          and config file names, the description and topics, and the start of
+          the README. We never request write access. On a free account we record
+          which repositories you matched this month, to count the monthly
+          allowance. Without an account, we count your runs against a one-way
+          hash of your IP address, never the address itself, and Vercel&apos;s
+          bot protection checks that the request came from a real browser.
         </p>
       </LegalSection>
 
@@ -139,9 +156,13 @@ export default function PrivacyPage() {
         <p>
           Account data and bundles are kept until you delete them or delete your
           account. Analytics are aggregate and not linked to your account.
-          Records that we are required to keep for tax or accounting reasons,
-          such as payment records held by Polar, are kept for as long as that
-          obligation lasts, regardless of whether you close your account.
+          Repository summaries are kept for up to 24 hours. The record of which
+          repositories a free account matched is replaced each month and deleted
+          with the account. The hashed IP counters used for matching without an
+          account hold no address and are deleted within a week. Records that we
+          are required to keep for tax or accounting reasons, such as payment
+          records held by Polar, are kept for as long as that obligation lasts,
+          regardless of whether you close your account.
         </p>
       </LegalSection>
 

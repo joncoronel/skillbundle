@@ -41,7 +41,7 @@ export interface ExplorerState extends HomeParams {
   hasNarrowing: boolean;
   /** Text mode with a query, filter, or explicit sort — Typesense drives. */
   searchActive: boolean;
-  /** sortParam with null auto-resolved (relevance with a query, else installs). */
+  /** sortParam with null auto-resolved (see autoSort). */
   effectiveSort: CatalogSortValue;
   /** The engine-agnostic filter set for searchSkills/query keys. */
   filters: SkillFilters;
@@ -72,12 +72,21 @@ export interface ExplorerState extends HomeParams {
 
 const ExplorerStateContext = createContext<ExplorerState | null>(null);
 
+/**
+ * The default sort: installs, since a names-only hit always has the query in
+ * its name. Relevance for description search, which matches passing mentions.
+ */
+function autoSort(hasQuery: boolean, searchDescriptions: boolean) {
+  return hasQuery && searchDescriptions ? "relevance" : "installs";
+}
+
 function buildExplorerState(
   params: HomeParams,
   setParams: (partial: Partial<HomeParams>) => void,
 ): ExplorerState {
   const trimmedQuery = params.textQuery.trim();
   const hasQuery = trimmedQuery.length > 0;
+  const autoDefault = autoSort(hasQuery, params.searchDescriptions);
   const hasNarrowing =
     params.official ||
     params.category.length > 0 ||
@@ -111,7 +120,7 @@ function buildExplorerState(
     anyFilter,
     hasNarrowing,
     searchActive: !isRepo && (hasQuery || anyFilter),
-    effectiveSort: params.sortParam ?? (hasQuery ? "relevance" : "installs"),
+    effectiveSort: params.sortParam ?? autoDefault,
     filters: {
       officialOnly: params.official || undefined,
       categories: params.category.length > 0 ? params.category : undefined,
@@ -157,7 +166,6 @@ function buildExplorerState(
         hideGitHubOnly: false,
       }),
     changeSort: (next) => {
-      const autoDefault: CatalogSortValue = hasQuery ? "relevance" : "installs";
       setParams({ sortParam: next === autoDefault ? null : next });
     },
   };

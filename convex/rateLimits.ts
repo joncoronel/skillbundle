@@ -26,6 +26,16 @@
  * bot protection, and isolating the sync's budget belongs to a separate token
  * (TODO.md), not to a shared counter here.
  *
+ * **The one allowance: signed-out repo matching.** `repoAnalysisAnonymous`
+ * deliberately does reach a person: a few free runs, then a sign-in prompt.
+ * It is per visitor, keyed by an HMAC of the IP from the site's server action
+ * (raw IPs never reach Convex), and charged only for runs that produced
+ * results. Free accounts' monthly allowance lives in repoMatchQuota.ts.
+ *
+ * The component never prunes, so `pruneStale` (daily cron) deletes rows over
+ * a week old, which the privacy page promises. That clears every limit, which
+ * is safe because they all refill within a day.
+ *
  * Token buckets rather than fixed windows: a fixed window without a `start`
  * gets a random boundary per key, and a burst straddling it gets double the
  * allowance. A bucket has no boundary to straddle.
@@ -34,10 +44,15 @@
  * request that passes one check and fails the next rolls back both.
  */
 
-import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
+import { DAY, HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import { ConvexError, v, type Infer } from "convex/values";
 import { components } from "./_generated/api";
-import { internalMutation, type MutationCtx } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
+import { ANON_DAILY_ANALYSES, ANON_LIMIT } from "../lib/repo-match";
 
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Every add-flow call (preview or confirm, either branch), every plan.
@@ -50,12 +65,29 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     capacity: 60,
   },
   // Uncached repo analyses, per user (or one shared key for signed-out demo
-  // runs, which only miss the cache after the demo repo changes).
+  // runs, which only miss the cache after the demo repo changes; signed-out
+  // runs through the site are keyed per visitor instead).
   repoAnalysis: {
     kind: "token bucket",
     rate: 10,
     period: MINUTE,
     capacity: 10,
+  },
+  // Signed-out repo matching, per visitor key: an allowance, see the header.
+  repoAnalysisAnonymous: {
+    kind: "token bucket",
+    rate: ANON_DAILY_ANALYSES,
+    period: DAY,
+    capacity: ANON_DAILY_ANALYSES,
+  },
+  // Every fresh attempt by a free account or signed-out visitor, success or
+  // not. The allowances skip errors, so this is what bounds misses on the
+  // shared GitHub token. Never charged to Pro.
+  repoAnalysisDaily: {
+    kind: "token bucket",
+    rate: 20,
+    period: DAY,
+    capacity: 20,
   },
   // The repo picker: a Clerk Backend API call plus the user's own GitHub token.
   githubRepoList: {
@@ -73,6 +105,8 @@ const rateLimitName = v.union(
   v.literal("addSkill"),
   v.literal("addSkillCapped"),
   v.literal("repoAnalysis"),
+  v.literal("repoAnalysisAnonymous"),
+  v.literal("repoAnalysisDaily"),
   v.literal("githubRepoList"),
   v.literal("billing"),
 );
@@ -87,8 +121,16 @@ const MESSAGES: Record<RateLimitName, string> = {
   addSkillCapped:
     "You've made a lot of add requests in the last hour. Try again in a little while.",
   repoAnalysis: SLOW_DOWN,
+  repoAnalysisAnonymous: `You've used your ${ANON_DAILY_ANALYSES} free repo matches for now.`,
+  repoAnalysisDaily:
+    "You've tried a lot of repos today. Try again tomorrow, or upgrade to Pro.",
   githubRepoList: SLOW_DOWN,
   billing: SLOW_DOWN,
+};
+
+// Refusal codes other than "rate_limited": ones the UI answers with a prompt.
+const CODES: Partial<Record<RateLimitName, string>> = {
+  repoAnalysisAnonymous: ANON_LIMIT,
 };
 
 const checkValidator = v.object({
@@ -104,7 +146,7 @@ async function consume(
     const { ok, retryAfter } = await rateLimiter.limit(ctx, name, { key });
     if (!ok) {
       throw new ConvexError({
-        code: "rate_limited",
+        code: CODES[name] ?? "rate_limited",
         message: MESSAGES[name],
         retryAfter,
       });
@@ -114,14 +156,37 @@ async function consume(
 
 /**
  * Consume one unit from each listed limit for its key, in order. Throws
- * `ConvexError({ code: "rate_limited", message, retryAfter })` on the first
- * one that's out, and the rollback returns anything consumed before it.
+ * `ConvexError({ code, message, retryAfter })` on the first one that's out
+ * (`code` is "rate_limited" unless CODES says otherwise), and the rollback
+ * returns anything consumed before it.
  */
 export const enforce = internalMutation({
   args: { checks: v.array(checkValidator) },
   returns: v.null(),
   handler: async (ctx, { checks }) => {
     await consume(ctx, checks);
+    return null;
+  },
+});
+
+/** Would one unit be allowed now? Consumes nothing (charge-after-success). */
+export const peek = internalQuery({
+  args: checkValidator,
+  returns: v.object({ ok: v.boolean(), retryAfter: v.optional(v.number()) }),
+  handler: async (ctx, { name, key }) => {
+    const { ok, retryAfter } = await rateLimiter.check(ctx, name, { key });
+    return { ok, retryAfter };
+  },
+});
+
+/** Delete rate-limit rows over a week old, hashed visitor IPs included. */
+export const pruneStale = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.runMutation(components.rateLimiter.lib.clearAll, {
+      before: Date.now() - 7 * DAY,
+    });
     return null;
   },
 });

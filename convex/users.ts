@@ -1,4 +1,9 @@
-import { internalMutation, query, QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import type { UserJSON } from "@clerk/backend";
 import { v, Validator } from "convex/values";
 
@@ -53,6 +58,13 @@ export function verifiedPrimaryEmail(data: UserJSON): string | undefined {
 export const deleteFromClerk = internalMutation({
   args: { clerkUserId: v.string() },
   async handler(ctx, { clerkUserId }) {
+    // Keyed on the Clerk id, so it goes even without a users row.
+    const quota = await ctx.db
+      .query("repoMatchQuota")
+      .withIndex("by_subject", (q) => q.eq("subject", clerkUserId))
+      .unique();
+    if (quota) await ctx.db.delete(quota._id);
+
     const user = await userByExternalId(ctx, clerkUserId);
     if (user !== null) {
       // A deleted account's bundles go with it. Left behind, a public one
@@ -71,6 +83,27 @@ export const deleteFromClerk = internalMutation({
     }
   },
 });
+
+/**
+ * The caller's user row, created from their token if the Clerk webhook hasn't
+ * landed yet (a new account's first write can beat it). The webhook then
+ * patches this row; both check `byExternalId` in a transaction, so there's
+ * never a duplicate.
+ */
+export async function getOrCreateCurrentUser(ctx: MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) throw new Error("Can't get current user");
+  const existing = await userByExternalId(ctx, identity.subject);
+  if (existing) return existing;
+  const id = await ctx.db.insert("users", {
+    name: identity.name || "Anonymous",
+    // Same rule as the webhook path: only a verified address is stored.
+    email: identity.emailVerified === true ? identity.email : undefined,
+    image: identity.pictureUrl,
+    externalId: identity.subject,
+  });
+  return (await ctx.db.get(id))!;
+}
 
 export async function getCurrentUserOrThrow(ctx: QueryCtx) {
   const userRecord = await getCurrentUser(ctx);

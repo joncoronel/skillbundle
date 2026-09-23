@@ -789,6 +789,8 @@ export default defineSchema({
     // the old public-by-default rule.
     isPublic: v.boolean(),
     forkedFrom: v.optional(v.id("bundles")),
+    // Browser id this row was imported from, so a repeated import is a no-op.
+    localId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
     // When the OWNER last opened this bundle. Stamped by `markBundleViewed`,
@@ -883,4 +885,14 @@ export default defineSchema({
     deadButInstallable: v.optional(v.number()),
     recalculatedAt: v.number(),
   }),
+
+  // Free-plan repo-match allowance (convex/repoMatchQuota.ts): one row per
+  // account, keyed by Clerk id, reset in place each month.
+  repoMatchQuota: defineTable({
+    subject: v.string(),
+    /** UTC calendar month, "YYYY-MM". */
+    month: v.string(),
+    /** Lowercased `owner/repo` keys; at most FREE_MONTHLY_REPOS entries. */
+    repos: v.array(v.string()),
+  }).index("by_subject", ["subject"]),
 });

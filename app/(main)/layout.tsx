@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { AppHeader } from "@/components/app-header";
 import { GlobalBundleBar } from "@/components/global-bundle-bar";
+import { LocalBundleImporter } from "@/components/local-bundle-importer";
 import { SiteFooter } from "@/components/site-footer";
 
 export default function MainLayout({
@@ -82,6 +83,10 @@ export default function MainLayout({
       <Suspense fallback={null}>
         <GlobalBundleBar />
       </Suspense>
+
+      {/* Moves bundles saved in the browser into the account on sign-in.
+          Renders nothing and reads no URL state, so it needs no boundary. */}
+      <LocalBundleImporter />
     </div>
   );
 }

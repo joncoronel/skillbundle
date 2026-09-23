@@ -43,6 +43,9 @@ const MAIN_ROUTES = [
   ["compare", "/compare"],
   ["pricing", "/pricing"],
   ["add", "/add"],
+  // Public since signed-out bundles live in the browser.
+  ["dashboard", "/dashboard"],
+  ["local bundle", "/bundle/local?id=e2e-missing"],
   // notFound() from the org route, so this exercises `(main)/not-found.tsx`
   // rendering inside the layout rather than replacing it.
   ["not-found", "/this-org-does-not-exist-e2e"],

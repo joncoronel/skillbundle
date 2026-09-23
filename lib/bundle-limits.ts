@@ -62,6 +62,9 @@ export const FREE_WATCHED_SKILLS = 25;
  */
 export const MAX_BUNDLES_PER_USER = 200;
 
+/** Bundles one browser can hold signed out, and so the most one import takes. */
+export const MAX_LOCAL_BUNDLES = 50;
+
 /**
  * The identity of a watched skill, everywhere.
  *

@@ -1,13 +1,8 @@
-// Repo-match demo allowlist.
-//
-// Repo match (GitHub auto-detection) is a Pro feature, but a small allowlist of
-// demo repos runs free for everyone — signed out included — so people can see
-// the feature work before paying. The gate is enforced server-side in
-// convex/recommendations.ts; the client mirrors this list to show the demo (and
-// the paywall) without a wasted, server-rejected round-trip.
-//
-// Shared by both the Convex backend (../lib/repo-match) and the client
-// (@/lib/repo-match) so the two can never drift.
+// Repo-match policy: the demo allowlist, the free allowances, and the error
+// codes a refusal carries. Unlimited on Pro; free accounts get
+// FREE_MONTHLY_REPOS a month (convex/repoMatchQuota.ts), signed-out visitors
+// ANON_DAILY_ANALYSES a day per IP (convex/rateLimits.ts). Shared by the
+// Convex backend and the client so the two can't drift.
 
 /**
  * Server-side cap on how many of the user's GitHub repos `listMyRepos`
@@ -20,13 +15,46 @@ export const MAX_GITHUB_REPOS = 200;
 export const EXAMPLE_REPO_SLUG = "shadcn-ui/ui";
 export const EXAMPLE_REPO_URL = `https://github.com/${EXAMPLE_REPO_SLUG}`;
 
+/** The current UTC calendar month as "YYYY-MM": the free allowance's period. */
+export function currentMonth(now: number = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 7);
+}
+
+/** Distinct repos a signed-in free account can match per calendar month (UTC). */
+export const FREE_MONTHLY_REPOS = 5;
+
 /**
- * Code carried by the ConvexError that analyzeRepo throws when the plan gate
- * rejects a repo. Lives here (not in the Convex module) so the client can match
- * on it without importing server code. Thrown rather than returned so the
- * rejection is stored as a query error, never as cacheable data.
+ * Successful fresh analyses a signed-out visitor gets per IP, refilling over
+ * a rolling day. Errors don't count.
  */
+export const ANON_DAILY_ANALYSES = 3;
+
+// Codes on the ConvexErrors the repo-match gates throw. Here so the client can
+// match on them without importing server code.
+
+/** A Pro-only feature was asked for on a free plan (the GitHub repo picker). */
 export const PRO_REQUIRED = "pro_required" as const;
+/** A free account has used its FREE_MONTHLY_REPOS for this month. */
+export const FREE_LIMIT = "repo_match_free_limit" as const;
+/** A signed-out visitor has used their ANON_DAILY_ANALYSES. */
+export const ANON_LIMIT = "repo_match_anon_limit" as const;
+/** A signed-out non-demo call reached `analyzeRepo` instead of the site. */
+export const SIGN_IN_REQUIRED = "repo_match_sign_in_required" as const;
+/** The signed-out server action's BotID check refused the request. */
+export const BOT_REFUSED = "repo_match_bot" as const;
+/** Signed-out matching is misconfigured on this deployment (no secret). */
+export const SIGNED_OUT_UNAVAILABLE = "repo_match_unavailable" as const;
+
+/** Every code the signed-out server action returns. */
+export const SIGNED_OUT_CODES = [
+  ANON_LIMIT,
+  BOT_REFUSED,
+  SIGNED_OUT_UNAVAILABLE,
+  "rate_limited",
+  "invalid_url",
+  "failed",
+] as const;
+export type SignedOutCode = (typeof SIGNED_OUT_CODES)[number];
 
 // Lowercased `owner/repo` slugs anyone can analyze for free.
 const DEMO_REPO_SLUGS: ReadonlySet<string> = new Set([EXAMPLE_REPO_SLUG]);
@@ -69,8 +97,8 @@ export function extractRepoSlug(
 ): { owner: string; repo: string } | null {
   // Drop the query/fragment BEFORE stripping `.git` — otherwise a URL like
   // `…/ui.git#readme` keeps its suffix (it's no longer at the end) and parses
-  // as repo `ui.git`, which would miss the allowlist and send a demo repo to
-  // the paywall.
+  // as repo `ui.git`, which would miss the allowlist and charge a demo run
+  // against the caller's allowance.
   let cleaned = input.trim().split("?")[0].split("#")[0];
   cleaned = cleaned.replace(/\/+$/, "").replace(/\.git$/, "");
 
@@ -87,15 +115,24 @@ export function extractRepoSlug(
 }
 
 /**
- * The one gate both sides call: repo match is allowed when the repo is on the
- * free demo allowlist OR the plan grants auto-detection. Server (with the
- * resolved plan) and client (with the subscribed plan) share this so the
- * policy — and the eventual phase-2 quota — lives in exactly one place.
+ * Which allowance a repo match draws on: none (demo repo, or Pro), a free
+ * account's monthly repos, or a signed-out visitor's daily per-IP runs. The
+ * server enforces it; the client uses it to route the request and word the
+ * refusal.
  */
-export function isRepoMatchAllowed(
-  limits: { canAutoDetect: boolean },
+export type RepoMatchMeter = "none" | "monthly" | "anonymous";
+
+export function repoMatchMeter(
+  caller: { signedIn: boolean; canAutoDetect: boolean },
   owner: string,
   repo: string,
-): boolean {
-  return matchesDemoRepo(owner, repo) || limits.canAutoDetect;
+): RepoMatchMeter {
+  if (matchesDemoRepo(owner, repo)) return "none";
+  if (!caller.signedIn) return "anonymous";
+  return caller.canAutoDetect ? "none" : "monthly";
+}
+
+/** The key a repo is counted under: lowercased, like analyzeRepo's cache key. */
+export function repoMatchKey(owner: string, repo: string): string {
+  return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }

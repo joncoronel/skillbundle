@@ -19,6 +19,8 @@ import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { useBundleActions, useSelectedSkills } from "@/lib/bundle-selection";
+import { useLocalBundleActions, useLocalBundles } from "@/lib/local-bundles";
+import { localBundleHref, localWatchedKeys } from "@/lib/local-bundles-core";
 import { track } from "@/lib/analytics";
 import { useUserPlan } from "@/hooks/use-user-plan";
 import { UpgradeBanner } from "@/components/upgrade-banner";
@@ -53,11 +55,21 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   // users, so subscribing while signed out is wasted work — and gating on auth
   // also drops the redundant unauthenticated re-run during the Clerk → Convex
   // token handoff. Mirrors useUserPlan and fork-bundle-button.
-  const { isAuthenticated } = useConvexAuth();
-  const watchedKeys = useQuery(
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const accountKeys = useQuery(
     api.bundles.listWatchedSkillKeys,
     isAuthenticated ? {} : "skip",
   );
+  // Signed out, it saves to this browser under the free plan's limit.
+  const local = !authLoading && !isAuthenticated;
+  const localBundles = useLocalBundles();
+  const localActions = useLocalBundleActions();
+  const watchedKeys = local
+    ? localBundles && Array.from(localWatchedKeys(localBundles))
+    : accountKeys;
+  const maxWatchedSkills = local
+    ? FREE_WATCHED_SKILLS
+    : limits?.maxWatchedSkills;
   const count = selectedSkills.length;
   // Union, not `watched >= max`. The server counts distinct skills across all
   // bundles and unions the incoming set in, so re-filing skills you already
@@ -65,19 +77,48 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
   // upgrade banner in place of the form for an operation that would have
   // succeeded. Contradicted the plate's own row saying lists are unlimited.
   const atLimit = useMemo(() => {
-    if (limits === null || watchedKeys === undefined) return false;
-    if (!Number.isFinite(limits.maxWatchedSkills)) return false;
+    if (maxWatchedSkills === undefined || watchedKeys === undefined)
+      return false;
+    if (!Number.isFinite(maxWatchedSkills)) return false;
     const union = new Set(watchedKeys);
     for (const s of selectedSkills) union.add(watchKey(s));
-    return union.size > limits.maxWatchedSkills;
-  }, [limits, watchedKeys, selectedSkills]);
+    return union.size > maxWatchedSkills;
+  }, [maxWatchedSkills, watchedKeys, selectedSkills]);
 
   const trimmedDescription = description.trim();
   const descriptionOverLimit =
     trimmedDescription.length > MAX_BUNDLE_DESCRIPTION_LENGTH;
 
+  function finish(href: string) {
+    // The activation event. `skillCount` only — never the bundle name or its
+    // contents, which are the user's (see lib/analytics.ts).
+    track("bundle_created", { skillCount: selectedSkills.length });
+
+    clearAll();
+    setName("");
+    setDescription("");
+    handle.close();
+    router.push(href);
+  }
+
   async function handleSave() {
-    if (!name.trim() || count === 0 || descriptionOverLimit) return;
+    if (!name.trim() || count === 0 || descriptionOverLimit || authLoading)
+      return;
+
+    if (local) {
+      const result = localActions.create({
+        name: name.trim(),
+        description:
+          trimmedDescription.length > 0 ? trimmedDescription : undefined,
+        skills: selectedSkills,
+      });
+      if (!result.ok) {
+        toast.error({ title: "Cannot save bundle", description: result.error });
+        return;
+      }
+      finish(localBundleHref(result.id));
+      return;
+    }
 
     setSaving(true);
     try {
@@ -91,15 +132,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
         })),
       });
 
-      // The activation event. `skillCount` only — never the bundle name or its
-      // contents, which are the user's (see lib/analytics.ts).
-      track("bundle_created", { skillCount: selectedSkills.length });
-
-      clearAll();
-      setName("");
-      setDescription("");
-      handle.close();
-      router.push(`/bundle/${result.urlId}`);
+      finish(`/bundle/${result.urlId}`);
     } catch (error) {
       let message = "Failed to save bundle";
       if (error instanceof ConvexError && typeof error.data === "string") {
@@ -122,7 +155,11 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
         <DialogBody>
           {atLimit ? (
             <UpgradeBanner
-              message={`You're watching ${limits?.maxWatchedSkills ?? FREE_WATCHED_SKILLS} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`}
+              message={
+                local
+                  ? `Saving these would take this browser past the free plan's ${FREE_WATCHED_SKILLS} watched skills. Sign in and upgrade to Pro to watch as many as you like.`
+                  : `Saving these would take you past the free plan's ${maxWatchedSkills ?? FREE_WATCHED_SKILLS} watched skills. Upgrade to Pro to watch as many as you like.`
+              }
             />
           ) : (
             <div className="space-y-4">
@@ -181,10 +218,18 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
                   sharing is a switch on the bundle page — asking at creation
                   time made people decide before they had anything to decide
                   about. */}
-              <p className="text-sm text-muted-foreground">
-                {count} skill{count !== 1 ? "s" : ""} will be saved. Only you
-                can see this bundle until you share it.
-              </p>
+              {local ? (
+                <p className="text-sm text-muted-foreground">
+                  {count} skill{count !== 1 ? "s" : ""} will be saved in this
+                  browser. Sign in to share it or open it on another device; it
+                  moves to your account when you do.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {count} skill{count !== 1 ? "s" : ""} will be saved. Only you
+                  can see this bundle until you share it.
+                </p>
+              )}
             </div>
           )}
         </DialogBody>
@@ -199,7 +244,13 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={atLimit || !name.trim() || saving || descriptionOverLimit}
+            disabled={
+              atLimit ||
+              !name.trim() ||
+              saving ||
+              descriptionOverLimit ||
+              authLoading
+            }
             loading={saving}
           >
             {saving ? "Saving…" : "Save bundle"}

@@ -11,7 +11,8 @@ import { test, expect, describe } from "vitest";
 import {
   extractRepoSlug,
   matchesDemoRepo,
-  isRepoMatchAllowed,
+  repoMatchKey,
+  repoMatchMeter,
 } from "../lib/repo-match";
 
 describe("extractRepoSlug — accepts", () => {
@@ -111,22 +112,31 @@ describe("matchesDemoRepo", () => {
   });
 });
 
-describe("isRepoMatchAllowed", () => {
-  test("demo repo + canAutoDetect false → allowed", () => {
-    expect(
-      isRepoMatchAllowed({ canAutoDetect: false }, "shadcn-ui", "ui"),
-    ).toBe(true);
+describe("repoMatchMeter", () => {
+  const free = { signedIn: true, canAutoDetect: false };
+  const pro = { signedIn: true, canAutoDetect: true };
+  const signedOut = { signedIn: false, canAutoDetect: false };
+
+  test("demo repo is never metered, whoever asks", () => {
+    expect(repoMatchMeter(signedOut, "shadcn-ui", "ui")).toBe("none");
+    expect(repoMatchMeter(free, "ShAdCn-Ui", "Ui")).toBe("none");
   });
 
-  test("non-demo repo + canAutoDetect false → denied", () => {
-    expect(
-      isRepoMatchAllowed({ canAutoDetect: false }, "vercel", "next.js"),
-    ).toBe(false);
+  test("Pro is never metered", () => {
+    expect(repoMatchMeter(pro, "vercel", "next.js")).toBe("none");
   });
 
-  test("non-demo repo + canAutoDetect true → allowed", () => {
-    expect(
-      isRepoMatchAllowed({ canAutoDetect: true }, "vercel", "next.js"),
-    ).toBe(true);
+  test("signed-in free draws on the monthly allowance", () => {
+    expect(repoMatchMeter(free, "vercel", "next.js")).toBe("monthly");
+  });
+
+  test("signed out draws on the per-visitor allowance", () => {
+    expect(repoMatchMeter(signedOut, "vercel", "next.js")).toBe("anonymous");
+  });
+});
+
+describe("repoMatchKey", () => {
+  test("every casing of a repo is one key", () => {
+    expect(repoMatchKey("Vercel", "Next.js")).toBe("vercel/next.js");
   });
 });

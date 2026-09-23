@@ -61,26 +61,18 @@ export interface BundleEditSession {
   discard: () => void;
 }
 
+/**
+ * Persist a staged skill list: an error message if refused up front (the
+ * staged edits stay on screen), or null once the save is under way.
+ */
+export type SaveBundleSkills = (skills: EditableSkill[]) => string | null;
+
 export function useBundleEditSession({
-  bundleId,
-  queryArgs,
   initialSkills,
   changes,
   onExit,
+  save: persist,
 }: {
-  /**
-   * Undefined while the bundle is still resolving, or when it does not exist.
-   * The hook has to run above the page's not-found early return (hook order
-   * cannot change between renders), so this is genuinely optional rather than
-   * a cast — `save` no-ops without it, which is unreachable in practice because
-   * the edit controls do not render until the bundle does.
-   */
-  bundleId: Id<"bundles"> | undefined;
-  /**
-   * Query args (`urlId`) for `getByUrlId`, matching the cache key the bundle
-   * page is reading, so the optimistic patch lands on the right entry.
-   */
-  queryArgs: { urlId: string };
   /**
    * The bundle's current skills. Must be in ROSTER order, not consequence
    * order: the dirty check and the saved order both derive from this array, and
@@ -90,6 +82,8 @@ export function useBundleEditSession({
   initialSkills: EditableSkill[];
   changes: RegisterChange[] | undefined;
   onExit: () => void;
+  /** `useAccountBundleSave`, or the browser store for a local bundle. */
+  save: SaveBundleSkills;
 }): BundleEditSession {
   const edit = useBundleEdit<EditableSkill>(initialSkills);
 
@@ -115,97 +109,15 @@ export function useBundleEditSession({
     );
   }, [edit.displayItems, changes]);
 
-  // `.withOptimisticUpdate` is recreated every render, so the callback closes
-  // over the current render's `edit.skills` — no ref or effect needed to keep
-  // the enriched data fresh. By the time the user clicks Save, the latest
-  // render's wrapped mutation is what fires, with the up-to-date staged list
-  // bound by closure.
-  const enriched = edit.skills;
-  const updateSkills = useMutation(
-    api.bundles.updateBundleSkills,
-  ).withOptimisticUpdate((localStore, { bundleId: id }) => {
-    // getByUrlId is the query the bundle detail page is reading — patch it
-    // directly using the prop-supplied queryArgs. We don't fish urlId out of
-    // listByUser because that query may not be subscribed. For skills already
-    // in the bundle, merge the staged data over the existing detail record to
-    // preserve server-only fields like `addedAt`; brand-new skills come
-    // straight from the staged list and Convex overwrites with the canonical
-    // enriched shape on emit.
-    const detail = localStore.getQuery(api.bundles.getByUrlId, queryArgs);
-    if (detail) {
-      // Index prior skills by `${source}::${skillId}` once so the merge is O(n)
-      // over `enriched` instead of O(n*m).
-      const priorByKey = new Map(
-        detail.skills.map((p) => [`${p.source}::${p.skillId}`, p]),
-      );
-      localStore.setQuery(api.bundles.getByUrlId, queryArgs, {
-        ...detail,
-        skills: enriched.map((s) => {
-          const prior = priorByKey.get(`${s.source}::${s.skillId}`);
-          return prior ? { ...prior, ...s } : s;
-        }) as typeof detail.skills,
-      });
-    }
-
-    // listByUser carries minimal { source, skillId, addedAt } refs. Patch it
-    // when it happens to be cached (dashboard, popover) so those surfaces stay
-    // consistent, but don't depend on it.
-    const list = localStore.getQuery(api.bundles.listByUser, {});
-    if (list) {
-      localStore.setQuery(
-        api.bundles.listByUser,
-        {},
-        list.map((b) => {
-          if (b._id !== id) return b;
-          const priorByKey = new Map(
-            b.skills.map((p) => [`${p.source}::${p.skillId}`, p]),
-          );
-          return {
-            ...b,
-            skills: enriched.map((s) => {
-              const prior = priorByKey.get(`${s.source}::${s.skillId}`);
-              return {
-                source: s.source,
-                skillId: s.skillId,
-                addedAt: prior?.addedAt,
-              };
-            }),
-          };
-        }),
-      );
-    }
-  });
-
   const save = useCallback(() => {
-    if (!bundleId) return;
-    // Non-blocking save. The optimistic update paints the new bundle into the
-    // cache immediately, so the read view renders the saved state the moment we
-    // exit edit mode — no server-round-trip "snap". If the server later rejects,
-    // Convex auto-rolls back and we surface the failure via toast. The staged
-    // in-memory edits are gone by then, so the toast is the only recovery path;
-    // for a deliberate Save action that tradeoff is acceptable.
-    const pending = updateSkills({
-      bundleId,
-      skills: edit.skills.map((s) => ({
-        source: s.source,
-        skillId: s.skillId,
-      })),
-    });
+    const error = persist(edit.skills);
+    if (error) {
+      toast.error({ title: "Couldn't save changes", description: error });
+      return;
+    }
     edit.reset();
     onExit();
-    pending.catch((error: unknown) => {
-      // ConvexError carries the original server message on `.data`. Plain
-      // Errors fall through to `.message`, which in dev is wrapped with the
-      // `[CONVEX M(...)]` boilerplate.
-      let message = "Couldn't reach the server. Try again.";
-      if (error instanceof ConvexError && typeof error.data === "string") {
-        message = error.data;
-      } else if (error instanceof Error) {
-        message = error.message;
-      }
-      toast.error({ title: "Couldn't save changes", description: message });
-    });
-  }, [bundleId, edit, onExit, updateSkills]);
+  }, [edit, onExit, persist]);
 
   const discard = useCallback(() => {
     edit.reset();
@@ -242,4 +154,85 @@ export function useEditChromeState() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   return { pickerOpen, setPickerOpen, cancelOpen, setCancelOpen };
+}
+
+/**
+ * The account bundle's save: `updateBundleSkills` with an optimistic update,
+ * so edit mode exits straight into the saved state. A later rejection rolls
+ * back and shows a toast.
+ */
+export function useAccountBundleSave({
+  bundleId,
+  queryArgs,
+}: {
+  /** Undefined until the bundle resolves; the save no-ops without it. */
+  bundleId: Id<"bundles"> | undefined;
+  /** The `getByUrlId` args the page reads, so the patch hits that entry. */
+  queryArgs: { urlId: string };
+}): SaveBundleSkills {
+  const updateSkills = useMutation(api.bundles.updateBundleSkills);
+
+  return useCallback(
+    (skills) => {
+      if (!bundleId) return null;
+      // Built per save: the patch needs the enriched rows, the args only refs.
+      const pending = updateSkills.withOptimisticUpdate(
+        (localStore, { bundleId: id }) => {
+          // Merge over existing rows to keep server-only fields like
+          // `addedAt`; new skills come from the staged list until Convex emits.
+          const detail = localStore.getQuery(api.bundles.getByUrlId, queryArgs);
+          if (detail) {
+            const priorByKey = new Map(
+              detail.skills.map((p) => [`${p.source}::${p.skillId}`, p]),
+            );
+            localStore.setQuery(api.bundles.getByUrlId, queryArgs, {
+              ...detail,
+              skills: skills.map((s) => {
+                const prior = priorByKey.get(`${s.source}::${s.skillId}`);
+                return prior ? { ...prior, ...s } : s;
+              }) as typeof detail.skills,
+            });
+          }
+
+          // Patched only if cached (the dashboard reads it).
+          const list = localStore.getQuery(api.bundles.listByUser, {});
+          if (list) {
+            localStore.setQuery(
+              api.bundles.listByUser,
+              {},
+              list.map((b) => {
+                if (b._id !== id) return b;
+                const priorByKey = new Map(
+                  b.skills.map((p) => [`${p.source}::${p.skillId}`, p]),
+                );
+                return {
+                  ...b,
+                  skills: skills.map((s) => ({
+                    source: s.source,
+                    skillId: s.skillId,
+                    addedAt: priorByKey.get(`${s.source}::${s.skillId}`)
+                      ?.addedAt,
+                  })),
+                };
+              }),
+            );
+          }
+        },
+      )({
+        bundleId,
+        skills: skills.map((s) => ({ source: s.source, skillId: s.skillId })),
+      });
+      pending.catch((error: unknown) => {
+        let message = "Couldn't reach the server. Try again.";
+        if (error instanceof ConvexError && typeof error.data === "string") {
+          message = error.data;
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
+        toast.error({ title: "Couldn't save changes", description: message });
+      });
+      return null;
+    },
+    [bundleId, queryArgs, updateSkills],
+  );
 }

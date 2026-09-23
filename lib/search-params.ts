@@ -43,8 +43,9 @@ export const leaderboardViewParser = parseAsStringLiteral(
 );
 
 // Catalog sort. Deliberately NO .withDefault(): null means "auto" — the UI
-// resolves it to "relevance" when a query is present, "installs" otherwise,
-// and only an explicit user choice is reflected in the URL. Trending/Hot are
+// resolves it (autoSort in components/explorer-state.tsx: "relevance" for a
+// description search, "installs" otherwise), and only an explicit user choice
+// is reflected in the URL. Trending/Hot are
 // NOT sorts (they're subset ranks on ~60/~30 rows) — they live in the
 // leaderboard sheet, not here. "recent"/"rising" join once the Typesense sync
 // populates contentUpdatedAt/momentum7d (see docs/search-overhaul.md).

@@ -1,13 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { BundleCard } from "@/components/bundle-card";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { EyeIcon, LockIcon, Delete01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/cubby-ui/button";
@@ -27,7 +25,11 @@ import { ChangeFeed } from "./change-feed";
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
-import { BundleSectionHeader, type SortBy } from "./bundle-section-header";
+import { BundleGrid } from "./bundle-grid";
+import { LocalBundleGrid, LocalDashboard } from "./local-dashboard";
+import { useAtomValue } from "jotai";
+import { importSettledAtom, useLocalBundles } from "@/lib/local-bundles";
+import { isFault } from "@/lib/monitoring/conditions";
 
 const deleteBundleHandle = createAlertDialogHandle<{
   id: Id<"bundles">;
@@ -45,7 +47,7 @@ export function DashboardContent() {
   // returns [] (not undefined) for an anonymous caller — ungated, a signed-in
   // cold load briefly flashes the empty state. Skipped queries return
   // undefined, so the skeleton covers the handshake window.
-  const { isAuthenticated } = useConvexAuth();
+  const { isAuthenticated, isLoading } = useConvexAuth();
   const bundles = useQuery(
     api.bundles.listByUser,
     isAuthenticated ? {} : "skip",
@@ -65,6 +67,9 @@ export function DashboardContent() {
   // against docs/architecture.md's Suspense-default-state principle, which says
   // a surface paints its meaningful default and lets slower islands fill in.
   // ChangeFeed owns its own pending state.
+  if (isLoading) return <DashboardSkeleton />;
+  // Signed out: the bundles saved in this browser.
+  if (!isAuthenticated) return <LocalDashboard />;
   if (bundles === undefined || planData === undefined) {
     return <DashboardSkeleton />;
   }
@@ -94,6 +99,22 @@ function DashboardLoaded({
       );
     }
   });
+  const markAllViewed = useMutation(
+    api.bundles.markAllBundlesViewed,
+  ).withOptimisticUpdate((localStore) => {
+    // Clear the feed at once so the panel settles on press.
+    for (const q of localStore.getAllQueries(
+      api.skillVersions.listRecentChangesForUser,
+    )) {
+      if (q.value === undefined) continue;
+      localStore.setQuery(api.skillVersions.listRecentChangesForUser, q.args, {
+        ...q.value,
+        // Faults stay: reading about a delisted skill doesn't fix it.
+        items: q.value.items.filter((i) => isFault(i.condition)),
+        suppressed: false,
+      });
+    }
+  });
   const updateVisibility = useMutation(
     api.bundles.updateBundleVisibility,
   ).withOptimisticUpdate((localStore, { bundleId, isPublic }) => {
@@ -106,18 +127,10 @@ function DashboardLoaded({
       );
     }
   });
-  const [sortBy, setSortBy] = useState<SortBy>("newest");
-
-  const sortedBundles = useMemo(() => {
-    const list = [...bundles];
-    switch (sortBy) {
-      case "alphabetical":
-        return list.sort((a, b) => a.name.localeCompare(b.name));
-      case "newest":
-      default:
-        return list.sort((a, b) => b.createdAt - a.createdAt);
-    }
-  }, [bundles, sortBy]);
+  // Browser bundles the sign-in import couldn't move, shown once it's done.
+  const localBundles = useLocalBundles();
+  const importSettled = useAtomValue(importSettledAtom);
+  const leftoverLocal = importSettled ? localBundles : undefined;
 
   // Non-blocking delete: AlertDialogClose closes the dialog immediately,
   // the optimistic update filters the bundle out of the list synchronously,
@@ -135,8 +148,35 @@ function DashboardLoaded({
     });
   }
 
+  const leftover =
+    leftoverLocal && leftoverLocal.length > 0 ? (
+      <div className="space-y-3">
+        <LocalBundleGrid
+          bundles={leftoverLocal}
+          title="Still in this browser"
+        />
+        <p className="max-w-prose text-sm text-muted-foreground">
+          These couldn&rsquo;t move to your account when you signed in, usually
+          because they would take you past your plan&rsquo;s watched-skill
+          limit.{" "}
+          <Link
+            href="/pricing"
+            className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
+          >
+            Upgrade
+          </Link>{" "}
+          or remove skills from your bundles and they&rsquo;ll move on your next
+          visit.
+        </p>
+      </div>
+    ) : null;
+
   if (bundles.length === 0) {
-    return <DashboardEmpty />;
+    // Import still running: don't flash the empty state before they land.
+    if (!importSettled && localBundles && localBundles.length > 0) {
+      return <DashboardSkeleton />;
+    }
+    return leftover ?? <DashboardEmpty />;
   }
 
   return (
@@ -145,7 +185,7 @@ function DashboardLoaded({
         {/* State before inventory (PRODUCT.md principle 3): the panel answers
             "is anything wrong?" above the fold, and the bundle grid answers
             "what do I have?" underneath it. */}
-        <ChangeFeed feed={feed} />
+        <ChangeFeed feed={feed} onMarkAllRead={() => void markAllViewed({})} />
 
         <DashboardStats
           bundles={bundles}
@@ -153,95 +193,78 @@ function DashboardLoaded({
           limits={planData.limits}
         />
 
-        <section className="space-y-5">
-          <BundleSectionHeader
-            count={bundles.length}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-          />
-          <div className="grid gap-3 motion-reduce:animate-none sm:grid-cols-2 lg:grid-cols-3">
-            {sortedBundles.map((bundle, i) => (
-              <div
-                key={bundle._id}
-                className="animate-in fill-mode-[both] fade-in slide-in-from-bottom-2 motion-reduce:animate-none"
-                style={{
-                  animationDelay: `${i * 30}ms`,
-                  animationDuration: "150ms",
-                }}
-              >
-                <BundleCard
-                  name={bundle.name}
-                  urlId={bundle.urlId}
-                  description={bundle.description}
-                  skillCount={bundle.skills.length}
-                  createdAt={bundle.createdAt}
-                  creatorName="You"
-                  isPublic={bundle.isPublic}
-                  actions={
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        className="h-9 sm:h-7"
-                        nativeButton={false}
-                        render={<Link href={`/bundle/${bundle.urlId}`} />}
-                        leadingIcon={
-                          <HugeiconsIcon
-                            icon={EyeIcon}
-                            strokeWidth={2}
-                            className="size-3.5"
-                          />
-                        }
-                      >
-                        View
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="h-9 sm:h-7"
-                        onClick={() => {
-                          updateVisibility({
-                            bundleId: bundle._id,
-                            isPublic: !bundle.isPublic,
-                          });
-                        }}
-                        leadingIcon={
-                          <HugeiconsIcon
-                            icon={LockIcon}
-                            strokeWidth={2}
-                            className="size-3.5"
-                          />
-                        }
-                      >
-                        {bundle.isPublic ? "Make private" : "Make public"}
-                      </Button>
-                      <AlertDialogTrigger
-                        handle={deleteBundleHandle}
-                        payload={{ id: bundle._id, name: bundle.name }}
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="h-9 sm:h-7"
-                            leadingIcon={
-                              <HugeiconsIcon
-                                icon={Delete01Icon}
-                                strokeWidth={2}
-                                className="size-3.5"
-                              />
-                            }
-                          >
-                            Delete
-                          </Button>
-                        }
-                      />
-                    </div>
+        <BundleGrid
+          items={bundles.map((bundle) => ({
+            key: bundle._id,
+            name: bundle.name,
+            description: bundle.description,
+            skillCount: bundle.skills.length,
+            createdAt: bundle.createdAt,
+            isPublic: bundle.isPublic,
+            actions: (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="h-9 sm:h-7"
+                  nativeButton={false}
+                  render={<Link href={`/bundle/${bundle.urlId}`} />}
+                  leadingIcon={
+                    <HugeiconsIcon
+                      icon={EyeIcon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  View
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="h-9 sm:h-7"
+                  onClick={() => {
+                    updateVisibility({
+                      bundleId: bundle._id,
+                      isPublic: !bundle.isPublic,
+                    });
+                  }}
+                  leadingIcon={
+                    <HugeiconsIcon
+                      icon={LockIcon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  {bundle.isPublic ? "Make private" : "Make public"}
+                </Button>
+                <AlertDialogTrigger
+                  handle={deleteBundleHandle}
+                  payload={{ id: bundle._id, name: bundle.name }}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="h-9 sm:h-7"
+                      leadingIcon={
+                        <HugeiconsIcon
+                          icon={Delete01Icon}
+                          strokeWidth={2}
+                          className="size-3.5"
+                        />
+                      }
+                    >
+                      Delete
+                    </Button>
                   }
                 />
               </div>
-            ))}
-          </div>
-        </section>
+            ),
+          }))}
+        />
+
+        {leftover}
       </div>
 
       <AlertDialog handle={deleteBundleHandle}>

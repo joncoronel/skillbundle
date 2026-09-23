@@ -22,7 +22,8 @@ export type Plan = "free" | "pro";
  *    actually tracks how much someone relies on this.
  * 3. **Charge for what costs money to run.** Repo auto-detection (GitHub tree
  *    walks, embeddings, fingerprint matching) and GitHub-only adds (discovery,
- *    content fetch, audit) both have real marginal cost per use. Watching does
+ *    content fetch, audit) both have real marginal cost per use, so free gets
+ *    a small allowance of each and Pro gets them unlimited. Watching does
  *    not, which is why the free tier can be generous with it.
  */
 export interface PlanLimits {
@@ -48,9 +49,8 @@ export { FREE_WATCHED_SKILLS };
 const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   free: {
     maxWatchedSkills: FREE_WATCHED_SKILLS,
-    // Pro-only, but the demo allowlist (lib/repo-match.ts) still runs free for
-    // everyone so people can taste repo match before upgrading. Enforced in
-    // convex/recommendations.ts.
+    // False = repo match is metered (lib/repo-match.ts), not refused. The
+    // GitHub repo picker stays Pro-only on this flag.
     canAutoDetect: false,
     maxGitHubOnlyAdds: 3,
   },

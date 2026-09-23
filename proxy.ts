@@ -12,11 +12,9 @@ import { NextResponse } from "next/server";
 // file. If one doesn't, the proxy never runs on that route, `auth.protect()`
 // never fires, and the route is silently public: no error and no failed build.
 // tests/proxy-matcher.test.ts fails when the two lists drift.
-const isPrivateRoute = createRouteMatcher([
-  "/dashboard(.*)",
-  "/settings(.*)",
-  "/dev(.*)",
-]);
+//
+// `/dashboard` is public: signed out, it shows bundles saved in the browser.
+const isPrivateRoute = createRouteMatcher(["/settings(.*)", "/dev(.*)"]);
 
 // Exact paths, NOT `/sign-in(.*)`, and that is the whole design of this list.
 //
@@ -92,11 +90,11 @@ export default clerkMiddleware(async (auth, request) => {
 // landing point of every OAuth round trip. Not a trade worth making.
 export const config = {
   matcher: [
-    "/dashboard(.*)",
     "/settings(.*)",
     "/dev(.*)",
     // `getAuthToken()` runs in the page itself, before any `preloadQuery`.
-    "/bundle/(.*)",
+    // Not `/bundle/local`, which is static.
+    "/bundle/((?!local$).*)",
     "/sign-in(.*)",
     "/sign-up(.*)",
     // No API route reads Clerk today — they gate on shared secrets — but these

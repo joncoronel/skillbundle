@@ -4,15 +4,20 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { getCurrentUser, getCurrentUserOrThrow } from "./users";
+import {
+  getCurrentUser,
+  getCurrentUserOrThrow,
+  getOrCreateCurrentUser,
+} from "./users";
 import { getUserPlanWithLimits } from "./lib/plans";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_NAME_LENGTH,
   MAX_BUNDLE_SKILLS,
   MAX_BUNDLES_PER_USER,
+  MAX_LOCAL_BUNDLES,
   watchKey,
 } from "../lib/bundle-limits";
 
@@ -170,6 +175,59 @@ function normalizeBundleName(name: string): string {
   return trimmed;
 }
 
+/** What `loadBundleSkill` returns; `resolveSkills` validates against it. */
+const bundleSkill = v.object({
+  source: v.string(),
+  skillId: v.string(),
+  addedAt: v.optional(v.number()),
+  name: v.string(),
+  description: v.optional(v.string()),
+  installs: v.number(),
+  contentUpdatedAt: v.optional(v.number()),
+  createdAt: v.optional(v.number()),
+  isDelisted: v.boolean(),
+  hasContentFetchError: v.boolean(),
+  curatedOwner: v.optional(v.string()),
+  worstAuditStatus: v.optional(v.string()),
+  worstAuditRiskLevel: v.optional(v.string()),
+});
+
+/**
+ * One bundle entry joined to its catalog row, as the register renders it.
+ * Shared by `getByUrlId` and `resolveSkills` so the two pages can't disagree.
+ */
+async function loadBundleSkill(
+  ctx: QueryCtx,
+  s: { source: string; skillId: string; addedAt?: number },
+): Promise<Infer<typeof bundleSkill>> {
+  const skill = await ctx.db
+    .query("skills")
+    .withIndex("by_source_skillId", (q) =>
+      q.eq("source", s.source).eq("skillId", s.skillId),
+    )
+    .unique();
+
+  // "Changed" is `resolveSkillChange`'s job (skillVersions.ts), not this row's.
+  return {
+    source: s.source,
+    skillId: s.skillId,
+    // The register's "Added" column.
+    addedAt: s.addedAt,
+    name: skill?.name ?? s.skillId,
+    description: skill?.description,
+    installs: skill?.installs ?? 0,
+    contentUpdatedAt: skill?.contentUpdatedAt,
+    createdAt: skill?._creationTime,
+    isDelisted: skill?.isDelisted ?? false,
+    hasContentFetchError: skill?.hasContentFetchError ?? false,
+    // Drives the inline verified-publisher mark on bundle cards.
+    curatedOwner: skill?.curatedOwner,
+    // Drives the "Review · MEDIUM" / "Risk · CRITICAL" audit text.
+    worstAuditStatus: skill?.worstAuditStatus,
+    worstAuditRiskLevel: skill?.worstAuditRiskLevel,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -189,7 +247,8 @@ export const createBundle = mutation({
   // starts closed and opening it is a deliberate, reversible act on the bundle
   // page. Creation is not the moment to ask.
   handler: async (ctx, { name, description, skills }) => {
-    const user = await getCurrentUserOrThrow(ctx);
+    // Can be a brand-new account's first write, ahead of the Clerk webhook.
+    const user = await getOrCreateCurrentUser(ctx);
 
     const trimmedName = normalizeBundleName(name);
 
@@ -527,6 +586,159 @@ export const deleteBundle = mutation({
   },
 });
 
+/**
+ * Move bundles saved in the browser (lib/local-bundles.ts) into the caller's
+ * account, on the first signed-in load.
+ *
+ * Forgiving where `createBundle` is strict, because nothing here is a form the
+ * user can correct: unknown skills are dropped, and bundles over
+ * `createBundle`'s limits are skipped and reported rather than thrown (a throw
+ * would roll back the ones that fit). Idempotent via `localId`, since the
+ * browser only clears a bundle after this returns.
+ */
+export const importLocalBundles = mutation({
+  args: {
+    bundles: v.array(
+      v.object({
+        localId: v.string(),
+        name: v.string(),
+        description: v.optional(v.string()),
+        skills: v.array(
+          v.object({
+            source: v.string(),
+            skillId: v.string(),
+            addedAt: v.number(),
+          }),
+        ),
+        createdAt: v.number(),
+        lastViewedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  returns: v.object({
+    imported: v.array(v.object({ index: v.number(), urlId: v.string() })),
+    /** Indexes of the bundles that didn't fit and stay in the browser. */
+    skipped: v.array(v.number()),
+  }),
+  handler: async (ctx, { bundles }) => {
+    // Bound the work before any read; our client never sends more.
+    if (bundles.length > MAX_LOCAL_BUNDLES) {
+      throw new ConvexError(
+        `Can't import more than ${MAX_LOCAL_BUNDLES} bundles at once.`,
+      );
+    }
+    const distinct = new Map<string, { source: string; skillId: string }>();
+    for (const b of bundles) {
+      for (const s of b.skills) distinct.set(watchKey(s), s);
+    }
+    if (distinct.size > MAX_BUNDLE_SKILLS) {
+      throw new ConvexError(
+        `Can't import more than ${MAX_BUNDLE_SKILLS} distinct skills at once.`,
+      );
+    }
+
+    const user = await getOrCreateCurrentUser(ctx);
+    const { limits } = await getUserPlanWithLimits(ctx);
+
+    const existingBundles = await ctx.db
+      .query("bundles")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+    let bundleCount = existingBundles.length;
+    const alreadyImported = new Map(
+      existingBundles.flatMap((b) =>
+        b.localId === undefined ? [] : [[b.localId, b.urlId] as const],
+      ),
+    );
+    const watched = new Set<string>();
+    for (const b of existingBundles) {
+      for (const sk of b.skills) watched.add(watchKey(sk));
+    }
+
+    // One lookup per distinct skill, not per entry.
+    const known = new Set<string>();
+    await Promise.all(
+      Array.from(distinct, async ([key, s]) => {
+        const row = await ctx.db
+          .query("skills")
+          .withIndex("by_source_skillId", (q) =>
+            q.eq("source", s.source).eq("skillId", s.skillId),
+          )
+          .unique();
+        if (row) known.add(key);
+      }),
+    );
+
+    const now = Date.now();
+    // Browser timestamps, clamped so a skewed clock can't hide changes.
+    const clamp = (t: number) => Math.min(Math.max(t, 0), now);
+
+    const imported: { index: number; urlId: string }[] = [];
+    const skipped: number[] = [];
+
+    for (const [index, b] of bundles.entries()) {
+      const existingUrlId = alreadyImported.get(b.localId);
+      if (existingUrlId !== undefined) {
+        imported.push({ index, urlId: existingUrlId });
+        continue;
+      }
+      if (bundleCount >= MAX_BUNDLES_PER_USER) {
+        skipped.push(index);
+        continue;
+      }
+
+      const seen = new Set<string>();
+      const skills: { source: string; skillId: string; addedAt: number }[] = [];
+      for (const s of b.skills) {
+        const key = watchKey(s);
+        if (!known.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        skills.push({
+          source: s.source,
+          skillId: s.skillId,
+          addedAt: clamp(s.addedAt),
+        });
+      }
+
+      const union = new Set(watched);
+      for (const key of seen) union.add(key);
+      if (
+        Number.isFinite(limits.maxWatchedSkills) &&
+        union.size > limits.maxWatchedSkills
+      ) {
+        skipped.push(index);
+        continue;
+      }
+
+      const trimmedDescription = b.description
+        ?.trim()
+        .slice(0, MAX_BUNDLE_DESCRIPTION_LENGTH);
+      const urlId = await ensureUniqueUrlId(ctx);
+      await ctx.db.insert("bundles", {
+        userId: user._id,
+        name:
+          b.name.trim().slice(0, MAX_BUNDLE_NAME_LENGTH) || "Untitled bundle",
+        description: trimmedDescription || undefined,
+        urlId,
+        localId: b.localId,
+        skills,
+        isPublic: false,
+        createdAt: clamp(b.createdAt),
+        updatedAt: now,
+        // Keeps the dashboard's unread state across sign-in.
+        lastViewedAt:
+          b.lastViewedAt === undefined ? undefined : clamp(b.lastViewedAt),
+      });
+
+      imported.push({ index, urlId });
+      bundleCount++;
+      for (const key of seen) watched.add(key);
+    }
+
+    return { imported, skipped };
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
@@ -591,48 +803,7 @@ export const getByUrlId = query({
     // Layer 2: every remaining read is independent given (bundle, currentUser).
     // Parallelize: skills, creator, forked-from chain.
     const [skillsWithData, creator, forkedFromInfo] = await Promise.all([
-      Promise.all(
-        bundle.skills.map(async (s) => {
-          const skill = await ctx.db
-            .query("skills")
-            .withIndex("by_source_skillId", (q) =>
-              q.eq("source", s.source).eq("skillId", s.skillId),
-            )
-            .unique();
-
-          const addedAt = s.addedAt;
-
-          // No `updatedSinceAdded` / `changedSinceViewed` here any more. Both
-          // were computed per skill and read by nothing: the register renders
-          // neither, and their only former consumer (skill-card) no longer
-          // renders on this page. Worse, they derived from the FAT skills row
-          // while `resolveSkillChange` reads the `skillSummaries` mirror, so
-          // the two sources could hold different histories — a third,
-          // divergent definition of "changed" sitting in a shipped validator.
-          return {
-            source: s.source,
-            skillId: s.skillId,
-            // Returned, not just used locally above: the register shows when
-            // each skill joined, and omitting it left that column reading
-            // "—" for every row of every bundle, forever.
-            addedAt,
-            name: skill?.name ?? s.skillId,
-            description: skill?.description,
-            installs: skill?.installs ?? 0,
-            contentUpdatedAt: skill?.contentUpdatedAt,
-            createdAt: skill?._creationTime,
-            isDelisted: skill?.isDelisted ?? false,
-            hasContentFetchError: skill?.hasContentFetchError ?? false,
-            // Drives the inline verified-publisher mark on bundle cards.
-            curatedOwner: skill?.curatedOwner,
-            // Drives the audit-status text in the bundle card's footer
-            // ("Review · MEDIUM" / "Risk · CRITICAL") for skills whose
-            // audit verdict came back warn or fail.
-            worstAuditStatus: skill?.worstAuditStatus,
-            worstAuditRiskLevel: skill?.worstAuditRiskLevel,
-          };
-        }),
-      ),
+      Promise.all(bundle.skills.map((s) => loadBundleSkill(ctx, s))),
       ctx.db.get(bundle.userId),
       // Fork lineage chain stays internally serial (parent → parent's
       // creator) but runs in parallel with everything else. Forking itself is
@@ -692,6 +863,32 @@ export const listByUser = query({
       .collect();
 
     return bundles;
+  },
+});
+
+/**
+ * Catalog rows for a bundle saved in the browser, in `getByUrlId`'s per-skill
+ * shape. Public: it reads what any skill page shows and writes nothing, and is
+ * capped at one bundle's size.
+ */
+export const resolveSkills = query({
+  args: {
+    skills: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        addedAt: v.optional(v.number()),
+      }),
+    ),
+  },
+  returns: v.array(bundleSkill),
+  handler: async (ctx, { skills }) => {
+    if (skills.length > MAX_BUNDLE_SKILLS) {
+      throw new ConvexError(
+        `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
+      );
+    }
+    return await Promise.all(skills.map((s) => loadBundleSkill(ctx, s)));
   },
 });
 

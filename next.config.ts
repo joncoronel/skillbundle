@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withBotId } from "botid/next/config";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
@@ -141,4 +142,6 @@ const nextConfig: NextConfig = {
   // a rewrite.
 };
 
-export default nextConfig;
+// Vercel BotID (see instrumentation-client.ts). Its rewrites only proxy to
+// Vercel itself, so unlike the OpenPanel ones removed above nothing new leaves.
+export default withBotId(nextConfig);

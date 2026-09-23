@@ -5,7 +5,7 @@ import { PricingFaq } from "./pricing-faq";
 
 export const metadata: Metadata = {
   title: "Pricing - SkillBundle",
-  description: `Watch up to ${FREE_WATCHED_SKILLS} skills free, forever, security warnings included. Pro is $${PLANS.pro.priceMonthly}/month for unlimited watching and repo matching.`,
+  description: `Watch up to ${FREE_WATCHED_SKILLS} skills free, forever, security warnings included. Pro is $${PLANS.pro.priceMonthly}/month for unlimited watching and unlimited repo matching.`,
   alternates: { canonical: "/pricing" },
   openGraph: { type: "website", url: "/pricing" },
 };

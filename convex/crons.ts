@@ -123,6 +123,13 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.recommendations.cleanupExpiredFingerprintCache,
   );
 
+  // Deletes hashed visitor IPs within a week, as the privacy page promises.
+  crons.daily(
+    "prune stale rate limits",
+    { hourUTC: 5, minuteUTC: 10 },
+    internal.rateLimits.pruneStale,
+  );
+
   // Daily at 07:00 UTC (one hour after syncSkills at 06:00, after syncCurated at
   // 06:30): reconcile skills the leaderboard sync doesn't maintain. Refreshes
   // the install count of every HEALTHY skill no sync touched in ~23h (coverage-
