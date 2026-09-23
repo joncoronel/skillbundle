@@ -55,10 +55,14 @@ describe("proxy.ts route lists", () => {
 
   // The matcher used to cover every path, which cost ~574k invocations a day
   // (Sep 2026). These routes read auth on the client only.
-  it.each(["/", "/official", "/privacy", "/vercel-labs/skills/find-skills"])(
-    "does not run the proxy on public route %s",
-    (path) => {
-      expect(runsProxy(path)).toBe(false);
-    },
-  );
+  it.each([
+    "/",
+    "/official",
+    "/privacy",
+    "/vercel-labs/skills/find-skills",
+    // Public since signed-out visitors keep bundles in the browser.
+    "/dashboard",
+  ])("does not run the proxy on public route %s", (path) => {
+    expect(runsProxy(path)).toBe(false);
+  });
 });

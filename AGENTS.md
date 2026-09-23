@@ -121,7 +121,7 @@ This is a high-level map. The detailed, authoritative guides are:
 
 ### Frontend → backend
 
-ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`). Static-first: route shells prerender (CDN), and per-user/interactive data arrives over the authenticated Convex websocket via `useQuery`/`useMutation` (or `useQuery(convexQuery(...))` through TanStack Query). Auth is Clerk, bridged to Convex by JWT; the `proxy.ts` middleware uses an **inverted private-route list** (`/dashboard`, `/settings`, `/dev`) because the catch-all org routes shadow everything — see docs/architecture.md §3.
+ClerkProvider wraps ConvexProviderWithClerk in the root layout (`app/layout.tsx`). Static-first: route shells prerender (CDN), and per-user/interactive data arrives over the authenticated Convex websocket via `useQuery`/`useMutation` (or `useQuery(convexQuery(...))` through TanStack Query). Auth is Clerk, bridged to Convex by JWT; the `proxy.ts` middleware uses an **inverted private-route list** (`/settings`, `/dev`; `/dashboard` is public because signed-out visitors keep bundles in the browser, see docs/architecture.md §9) because the catch-all org routes shadow everything — see docs/architecture.md §3.
 
 ### Convex backend (`convex/`) at a glance
 
@@ -130,12 +130,12 @@ Tables (`schema.ts`), grouped by concern:
 - **Skills catalog:** `skills` (full ~10 KB rows), `skillSummaries` (slim ~1.3 KB denormalized rows that lists/search/cards read), `skillEmbeddings` (vector search), `skillAudits` + `skillSnapshots` (security verdicts + install-count history), `syncStats`.
 - **Sync / dedup support:** `curatedOwnerSummaries`, `githubTreeCache`, `githubRepoResolution`, `repoFingerprintCache`, `wellKnownIndexes` (per-domain skills-index probe results; what decides whether a site page can show an install command).
 - **Version archive:** `skillVersions` (one row per detected SKILL.md change, raw file in `_storage`; `isBaseline` marks a starting point rather than an edit).
-- **Users & bundles:** `users`, `bundles`. (`bundleStats` and `bundleStars` were removed — see the note at the end of `schema.ts`.)
+- **Users & bundles:** `users`, `bundles`, `repoMatchQuota` (free-plan repo-match usage, one row per account). (`bundleStats` and `bundleStars` were removed — see the note at the end of `schema.ts`.)
 
 Modules, grouped by concern:
 
 - **Skill sync & lifecycle:** `skills.ts` (sync pipeline + catalog queries), `reconcile.ts`, `curated.ts` / `curatedRefresh.ts`, `duplicates.ts`, `audits.ts`, `crons.ts`, plus `lib/*` helpers (`detailRefresh`, `skillHealth`, `source`, `appDay`, `pagination`, `github`, `skillsApi`, `embeddings`). Documented in docs/skill-lifecycle.md.
-- **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching), `tags.ts` (category tagging with TypeSafe's Jev model; the category list is `lib/categories.ts`, what each category means to the model is `lib/categoryDefinitions.ts`).
+- **Leaderboards & discovery:** `leaderboards.ts` (trending/hot), `recommendations.ts` (repo-fingerprint matching, plus the signed-out `analyzeRepoAnonymous` the site's server action calls), `repoMatchQuota.ts` (the free plan's monthly repo-match allowance; who is metered how is `repoMatchMeter` in `lib/repo-match.ts`), `tags.ts` (category tagging with TypeSafe's Jev model; the category list is `lib/categories.ts`, what each category means to the model is `lib/categoryDefinitions.ts`).
 - **Well-known sources:** `wellKnown.ts` (weekly probe of each well-known domain's skills index, at the root and under a fixed set of base paths). Read its header before touching any `npx skills add` string — the command for a well-known source is not derivable from the source, and the obvious form is one the CLI resolves to a GitHub repo.
 - **Version archive & monitoring:** `skillVersions.ts` (read + write API over the change archive; `freshness.ts` decides which SKILL.mds to re-check).
 - **Bundles & social:** `bundles.ts`.

@@ -1615,27 +1615,37 @@ settings, and the picker all ride on. Revisit only if users measurably balk
 at the consent screen (drop-off between clicking Connect and completing
 authorization).
 
-### Match repo: free-run quota (phase 2 of the paywall)
+### Match repo: free allowances (phase 2 of the paywall)
 
-Shipped (Jul 2026, phase 1): repo match is Pro-gated, but the demo repo
-(`shadcn-ui/ui`) runs free for everyone — signed out included — so people can
-taste it before paying. Gate is server-enforced in `convex/recommendations.ts`
-via the `matchesDemoRepo` allowlist in `lib/repo-match.ts`; free/logged-out
-users who analyze their own repo get an inline, sign-in-aware paywall.
+Shipped (Sep 2026): repo match is no longer Pro-only. The policy is
+`repoMatchMeter` in `lib/repo-match.ts`, the one predicate the server gate and
+the client both call:
 
-Deferred (phase 2): give **signed-in free users a small quota of real runs**
-on their own repos (lean: ~3 lifetime, sign-in required) so the taste is
-personal, not just the canned demo. Then upgrade-gate beyond that.
+- **Pro:** unlimited. The GitHub repo picker (`listMyRepos`) stays Pro-only.
+- **Signed-in free:** 5 distinct repos per UTC calendar month
+  (`FREE_MONTHLY_REPOS`), in `convex/repoMatchQuota.ts`. Counted at request
+  time whether or not the result was cached, so "3 of 5 used" is predictable.
+  Re-running a counted repo is free, and a run that comes back with an error
+  is refunded. One row per account, reset in place on the first request of a
+  new month, so there is no cleanup cron.
+- **Signed out:** 3 fresh analyses per visitor (`ANON_DAILY_ANALYSES`), a
+  token bucket refilling over a day (`repoAnalysisAnonymous` in
+  `convex/rateLimits.ts`). Cache hits are free. Metered per IP (IPv6 by /64),
+  which only the site can see, so these runs go through the
+  `analyzeRepoSignedOut` server action (`app/(main)/actions.ts`): BotID check,
+  HMAC the IP into a visitor key, then `recommendations.analyzeRepoAnonymous`
+  with the shared `REPO_MATCH_SECRET`. `analyzeRepo` refuses signed-out
+  non-demo calls so the limit can't be skipped by calling Convex directly.
+- **Demo repo:** always free for everyone.
 
-Why deferred, not built now: it's the expensive part (needs a per-user
-usage-tracking table + reset logic, and every fresh repo costs a GitHub tree
-fetch + Voyage embedding), and it only pays off if the free demo _isn't_
-converting. Ship phase 1, watch whether demo → sign-up / upgrade happens, and
-only build the quota if the canned demo under-converts. Enforce the quota
-inside `isRepoMatchAllowed()` in `lib/repo-match.ts` — the one predicate both
-the server gate and the client mirror already call, so the policy changes in
-exactly one place; the client can show remaining count but never gates. Don't extend quota to logged-out users (no
-reliable identity to meter → abuse surface); sign-in is the natural wall.
+Loose ends worth knowing about:
+
+- The rate limiter keeps a row per visitor key and never prunes, so the
+  signed-out bucket grows by one small row per IP that ever ran a fresh
+  signed-out analysis. See the header in `convex/rateLimits.ts`.
+- Watch whether the signed-out allowance converts to sign-ups. If it is
+  mostly scripted traffic that BotID lets through, lower it or drop it back
+  to demo-only before touching the signed-in allowance.
 
 ### Match repo: deferred features (recents, match counts)
 

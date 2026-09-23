@@ -67,6 +67,7 @@ export function useBundleEditSession({
   initialSkills,
   changes,
   onExit,
+  saveSkills,
 }: {
   /**
    * Undefined while the bundle is still resolving, or when it does not exist.
@@ -90,6 +91,13 @@ export function useBundleEditSession({
   initialSkills: EditableSkill[];
   changes: RegisterChange[] | undefined;
   onExit: () => void;
+  /**
+   * Persist the staged list somewhere other than the account. Bundles saved in
+   * the browser (lib/local-bundles.ts) pass this; it replaces the Convex
+   * mutation and its optimistic update, and returns an error message when the
+   * list is refused.
+   */
+  saveSkills?: (skills: EditableSkill[]) => string | null;
 }): BundleEditSession {
   const edit = useBundleEdit<EditableSkill>(initialSkills);
 
@@ -177,6 +185,18 @@ export function useBundleEditSession({
   });
 
   const save = useCallback(() => {
+    if (saveSkills) {
+      const error = saveSkills(edit.skills);
+      if (error) {
+        // Refused before anything was written, so the staged edits are still
+        // on screen to fix. Unlike the account path, nothing to roll back.
+        toast.error({ title: "Couldn't save changes", description: error });
+        return;
+      }
+      edit.reset();
+      onExit();
+      return;
+    }
     if (!bundleId) return;
     // Non-blocking save. The optimistic update paints the new bundle into the
     // cache immediately, so the read view renders the saved state the moment we
@@ -205,7 +225,7 @@ export function useBundleEditSession({
       }
       toast.error({ title: "Couldn't save changes", description: message });
     });
-  }, [bundleId, edit, onExit, updateSkills]);
+  }, [bundleId, edit, onExit, saveSkills, updateSkills]);
 
   const discard = useCallback(() => {
     edit.reset();

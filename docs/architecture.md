@@ -46,7 +46,7 @@ svix
 | `/` (home)                                                                                                                  | `○` Static (1h cacheLife) | Leaderboards server-cached via `'use cache'` + `cacheTag`, revalidated on-demand by Convex crons; search is client-side. Popular list renders its first page statically for SSR, then activates infinite scroll on the client                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `/compare`                                                                                                                  | `○` Static                | Skills in `?skills=` param (nuqs), one client Convex query per column                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `/settings`                                                                                                                 | `○` Static                | Clerk hooks client-side; sessions via server action, fetched on demand                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `/dashboard`                                                                                                                | `○` Static                | `listByUser` + `currentPlan` client-fetched over the authed websocket                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `/dashboard`, `/bundle/local`                                                                                               | `○` Static                | Signed in: `listByUser` + `currentPlan` client-fetched over the authed websocket. Signed out: the bundles saved in this browser (`lib/local-bundles.ts`), with catalog data and changes from read-only queries that take the stored entries as arguments (`bundles.resolveSkills`, `skillVersions.listChangesForSkills` / `listRecentChangesForSkills`). `/bundle/local?id=` renders one of them, reading `id` behind Suspense like `/compare`. See "Bundles saved in the browser" in §9                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `/add`                                                                                                                      | `○` Static                | Public add-skill flow; auth resolves client-side (`useConvexAuth`), quota via `myGitHubAddQuota` over the websocket, adds via Convex actions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `/official`, `/pricing`                                                                                                     | `○` Static                | official: `'use cache'` curated owners loader, `cacheTag('skill-sync')`. Its `cacheLife("days")` means the publisher list is cached content with `stale ≥ 5min`, so the **whole list is in the App Shell**, not just the header                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `/[org]`, `/[org]/[repo]`, `/[org]/[repo]/[skillId]` (+ its `/history`, `/stats`, `/security`, `/copies` tabs), `/site/...` | `◐` Partial Prerender     | `generateStaticParams` returns one representative param (App Shell prerenders; on the skill segments it lives on the `[skillId]` **layout**, covering the Overview and all four tab pages); unknown params get the shell instantly — from the page's own Suspense fallbacks on the listing routes, from each segment's `loading.tsx` on the skill routes (see "pick one, not both" below) — then upgrade. Data via `'use cache'` loaders split across two tags — `cacheTag('skill-sync')` for install/version data, `cacheTag('skill-content')` for the skill row (`lib/skill-cache.ts`). **These pages must not `await params` above their Suspense boundaries** — see "Params and the shared App Shell" below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -71,6 +71,21 @@ itself; the legacy `SKILLS_SH_API_KEY` stays wired as the fallback. Requires
 on the production Convex deployment. `/dev` shows which credential is live. The
 full rationale, including why proxying every upstream call through Vercel was
 rejected, is in TODO.md.
+
+**The one call the other way: signed-out repo matching.** Signed-out visitors
+get a small per-IP repo-match allowance, and Convex can't see the IP (the
+browser talks to it over a websocket). So those runs go through the
+`analyzeRepoSignedOut` server action (`app/(main)/actions.ts`): it runs
+Vercel BotID's `checkBotId()`, HMACs the IP into an opaque visitor key
+(`lib/visitor-key.ts`), and calls the public `recommendations.analyzeRepoAnonymous`
+with `REPO_MATCH_SECRET`, which Convex compares in constant time
+(`convex/lib/sharedSecret.ts`). Needs `REPO_MATCH_SECRET` on Vercel and on
+every Convex deployment a site points at. BotID's client side is
+`instrumentation-client.ts`, which protects `POST /` because a server action
+POSTs to the page that calls it and the repo input is only mounted on `/`;
+mount it anywhere else and that path needs adding. The action returns its
+refusals instead of throwing (thrown errors are masked in production) and does
+no render work, so `/` stays static.
 
 ### Params and the shared App Shell
 
@@ -453,16 +468,16 @@ export async function getCurrentUserOrThrow(ctx: QueryCtx) {
 // match any single/double-segment path — including `/dashboard`, `/settings`,
 // `/dev` — making them silently public. createRouteMatcher does pattern
 // matching, not routing precedence.
-const isPrivateRoute = createRouteMatcher([
-  "/dashboard(.*)",
-  "/settings(.*)",
-  "/dev(.*)",
-]);
+const isPrivateRoute = createRouteMatcher(["/settings(.*)", "/dev(.*)"]);
 ```
+
+`/dashboard` was on this list until Sep 2026. Signed out it now shows the
+bundles saved in the browser (§9), so saving a bundle never starts with a
+sign-in wall, and it left the matcher with it.
 
 This inversion matters anywhere route lists exist in this app: because the catch-all org routes shadow everything, enumerate the finite, knowable side rather than trusting exclusion. For auth that means **allow-list the private routes, never exclude-list** — a missed exclusion would silently make a route public. `GlobalBundleBar` (§5) is the deliberate inverse: it _block_-lists a few reserved non-browse segments, which is safe only because an over-broad match there is cosmetic (the bar self-hides on an empty selection), not a security hole.
 
-**The matcher is an allowlist too, and it has to cover both lists.** `config.matcher` in `proxy.ts` names only the paths where the proxy has work to do: the three private routes, `/sign-in` and `/sign-up` (the signed-in redirect), `/bundle/` (the page calls `getAuthToken()`), `/api`, and `/__clerk`. Every other route reads auth on the client and never runs the proxy. It used to match every path, which cost ~574k invocations a day (Sep 2026). Two consequences follow. A route that calls `auth()` server-side must be added to the matcher, or it throws at request time. And a route added to `isPrivateRoute` but not to the matcher is **silently public**, because `auth.protect()` never runs; `tests/proxy-matcher.test.ts` fails when those two lists drift.
+**The matcher is an allowlist too, and it has to cover both lists.** `config.matcher` in `proxy.ts` names only the paths where the proxy has work to do: the two private routes, `/sign-in` and `/sign-up` (the signed-in redirect), `/bundle/` (the page calls `getAuthToken()`), `/api`, and `/__clerk`. Every other route reads auth on the client and never runs the proxy. It used to match every path, which cost ~574k invocations a day (Sep 2026). Two consequences follow. A route that calls `auth()` server-side must be added to the matcher, or it throws at request time. And a route added to `isPrivateRoute` but not to the matcher is **silently public**, because `auth.protect()` never runs; `tests/proxy-matcher.test.ts` fails when those two lists drift.
 
 ---
 
@@ -474,7 +489,7 @@ This inversion matters anywhere route lists exist in this app: because the catch
 | Data protection   | Convex functions        | `getCurrentUserOrThrow(ctx)` + ownership checks | The actual data        |
 | Action protection | Server actions          | `verifySession()` at the top                    | Server-side operations |
 
-Static auth-gated pages (`/dashboard`, `/settings`) intentionally have **no page-level auth check** — there's nothing to protect in the shell (no user data), the middleware gates access, and every Convex query/mutation/action checks auth itself. The shells being publicly cacheable is by design. Pages that fetch user data server-side (`/bundle/[id]`, server actions like `getSessions`) keep their explicit server-side auth.
+Static auth-gated pages (`/settings`; `/dashboard` is public now, see §9) intentionally have **no page-level auth check** — there's nothing to protect in the shell (no user data), the middleware gates access, and every Convex query/mutation/action checks auth itself. The shells being publicly cacheable is by design. Pages that fetch user data server-side (`/bundle/[id]`, server actions like `getSessions`) keep their explicit server-side auth.
 
 ```ts
 // convex — the final gate, always present
@@ -684,6 +699,29 @@ The static shell can never contain client-only state (localStorage, theme, etc.)
 2. **State arriving post-hydration should animate, not pop.** Because the flip happens between two painted frames on persistent DOM, CSS transitions fire naturally (row selection highlights). For elements that _mount_ with the state (BundleBar's sheet), entrance animation needs either `@starting-style` (Tailwind `starting:` — animates insertion itself) or a deferred open. BundleBar uses both: `starting:` classes plus a two-rAF `enterReady` delay, the latter because next-themes' transition kill-switch (§5) eats any transition in the first frames after hydration.
 3. **Expected pop-in is accepted, not hidden.** Selections appearing a beat after the static shell paints is the honest cost of static + localStorage; the old architecture only looked "instant" because the page was blank until JS ran.
 
+### Bundles saved in the browser
+
+Signed out, "Save bundle" writes to localStorage instead of the account
+(`lib/local-bundles.ts`, rules in `lib/local-bundles-core.ts`). Nothing is
+written to Convex, so there is nothing to abuse: the only server calls are
+three read-only queries that take the stored entries as arguments, each capped
+at what one bundle or one dashboard load already costs. The browser gets the
+free plan's limits (25 distinct skills), so moving into an account never
+refuses what the browser allowed.
+
+On the first signed-in load, `LocalBundleImporter` (mounted in the `(main)`
+layout) sends them to `bundles.importLocalBundles` inside a Web Lock, then
+removes what moved. Anything that would take the account past a limit stays in
+the browser, and the dashboard lists it under "Still in this browser". Sharing
+is the one thing a browser bundle can't do, because a share link needs the
+bundle on a server; that is what signing in adds.
+
+The bundles atom uses `getOnInit: true`, unlike the selection atom, and every
+reader goes through `useLocalBundles()`, which returns undefined until
+hydrated. That keeps the hydration render matching the server while letting a
+client-side navigation read the stored list on its first render instead of
+flashing the empty state.
+
 ---
 
 ## 10. URL State Management (nuqs)
@@ -775,6 +813,8 @@ Clerk (user signs up / updates profile / deletes account)
        ├─ user.created / user.updated → upsertFromClerk
        └─ user.deleted → deleteFromClerk
 ```
+
+The webhook is a separate request, so it can land after a brand-new account's first write. The two write paths that can be that first write (`createBundle` and `importLocalBundles`) call `getOrCreateCurrentUser`, which inserts the row from the token's claims when it is missing; the webhook then patches it rather than inserting a second one.
 
 `ctx.auth.getUserIdentity().subject` === Clerk `userId` === `users.externalId`. The `users` table holds a denormalized `name`/`email`/`image` copy so Convex queries resolve display info without Clerk API calls. For profile _mutations_, use Clerk's `useUser()` (live `UserResource`).
 
@@ -976,7 +1016,8 @@ app/
     error.tsx               # segment boundary for every user-facing page; keeps header, retry()
     page.tsx                # static; Suspense + HomeFallback (mirrored default state)
     compare/                # static; nuqs skills param, client columns, picker sheet
-    dashboard/              # static; client useQuery + DashboardSkeleton gate
+    dashboard/              # static; client useQuery + DashboardSkeleton gate; signed out = browser bundles
+    bundle/local/           # static; one browser-saved bundle, ?id= read behind Suspense
     settings/               # static; getSessions server action in actions.ts
     bundle/[id]/            # ◐; loading.tsx shell + await io() + preloadQuery + generateMetadata
     [org]/...  site/...     # ◐; gSP returns 1 representative param, 'use cache' loaders.

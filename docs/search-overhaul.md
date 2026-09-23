@@ -50,6 +50,12 @@ _eval([(isOfficial:true):2,(worstAuditStatus:pass):1]):desc, installs:desc`.
    Non-destructive (only breaks ties that were already arbitrary), encodes the
    product's trust story, no UI. Query path only (browse `installs:desc` rarely
    ties). · TS: `_eval` weighted sort
+   > **Reverted (Sep 2026).** The premise was wrong: `_text_match` ties are
+   > not arbitrary, they are most of the visible order, and installs was what
+   > ordered them. Searching "shadcn" ranked official 58- and 667-install
+   > namesakes above shadcn/ui's own 271k-install skill. Relevance is now
+   > `_text_match:desc,installs:desc`, and a names-only query defaults to
+   > Most installed (see the Sorts section).
 2. **Match highlighting** (perceived quality, zero backfill). Render the spans
    Typesense already returns. · TS: `highlight_full_fields`
 3. **Publisher / repo filter** (the missing high-value filter). Add a derived
@@ -229,9 +235,14 @@ closed) and over a full row of selects (too many, mostly reading "Any X").
 
 ### 3. Sorts — must be per-skill values (exist on every row)
 
-- [x] **Relevance** (default when a query is present). · TS: `_text_match`
-- [x] **Most installed** (all-time — today's "Popular"; default with no query). ·
-      field: `installs` · TS: `sort_by: installs:desc`
+- [x] **Relevance** (default only for a description search). · TS:
+      `_text_match:desc,installs:desc`
+- [x] **Most installed** (all-time — today's "Popular"; the default everywhere
+      else, including a names-only query). A names-only query requires every
+      word in the name, so every hit is on topic and popularity is the useful
+      order. Description search matches passing mentions ("pdf" pulls in the
+      docx skill), so match quality leads there. · field: `installs` · TS:
+      `sort_by: installs:desc`
 - [ ] **Recently updated** · field: `contentUpdatedAt` (on `skills`; mirror to summary if needed) · TS: `sort_by`
 - [ ] **Rising / momentum** — install _gain_ over 7/30 days, computed from
       `skillSnapshots`. A real whole-catalog sort (every skill has it), so it

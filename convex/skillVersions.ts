@@ -22,10 +22,11 @@
  * `skillVersions`.
  */
 import { internalMutation, internalQuery, query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { getCurrentUser } from "./users";
+import { MAX_BUNDLE_SKILLS } from "../lib/bundle-limits";
 import {
   CONDITION_RANK,
   isFault,
@@ -357,6 +358,12 @@ const feedItem = v.object({
   version: v.union(v.null(), versionEntry),
 });
 
+/**
+ * A browser-dashboard row: `feedItem` without the account bundle's id and URL,
+ * which a bundle saved in the browser does not have.
+ */
+const localFeedItem = feedItem.omit("bundleId", "bundleUrlId");
+
 export const listRecentChangesForUser = query({
   args: { limit: v.optional(v.number()) },
   returns: v.object({
@@ -428,73 +435,141 @@ export const listRecentChangesForUser = query({
     }
 
     const watchedSkillCount = candidates.size;
-
-    // BOUNDED FAN-OUT. `resolveSkillChange` costs 2-3 indexed reads per
-    // candidate, and the `limit` arg trims the RESPONSE, not the work — so this
-    // query's cost scaled with everything the user watches, on every dashboard
-    // load and on every re-emit of any bundle mutation. Unbounded, a large
-    // enough account hits Convex's per-query read ceiling and the dashboard
-    // fails outright rather than degrading.
-    //
-    // Oldest baseline first, so the unchecked tail is the part the reader has
-    // seen most recently. The count of what was actually scanned is returned
-    // rather than swallowed, and the all-clear reads it: a monitoring product
-    // silently checking only part of your list is the same class of lie as a
-    // false all-clear.
-    const ordered = Array.from(candidates.values()).sort(
-      (a, b) => a.baseline - b.baseline,
-    );
-    const scanned = ordered.slice(0, MAX_FEED_CANDIDATES);
-
-    const results = await Promise.all(
-      scanned.map(async (c) => {
-        const change = await resolveSkillChange(ctx, c);
-        if (!change) return null;
-        const { summary, condition, kind, changedAt, audit, version } = change;
-
-        return {
-          source: c.source,
-          skillId: c.skillId,
-          name: summary.name,
-          bundleId: c.bundle._id,
-          bundleName: c.bundle.name,
-          bundleUrlId: c.bundle.urlId,
-          condition,
-          kind,
-          changedAt,
-          audit,
-          version: version ? await toEntry(ctx, version) : null,
-        };
-      }),
-    );
-
-    const items = results
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      // Consequence, then recency, then name. Faults sort by name inside their
-      // rank because they have no date — falling back to 0 would order them
-      // arbitrarily and re-order them on unrelated writes.
-      .sort(
-        (a, b) =>
-          CONDITION_RANK[b.condition] - CONDITION_RANK[a.condition] ||
-          (b.changedAt ?? 0) - (a.changedAt ?? 0) ||
-          a.name.localeCompare(b.name),
-      )
-      .slice(0, Math.min(limit ?? DEFAULT_VERSION_LIMIT, MAX_VERSION_LIMIT));
+    const feed = await resolveFeed(ctx, Array.from(candidates.values()), limit);
 
     return {
-      items,
-      // Counted over CHANGES only. A fault is not something the breaker can
-      // disbelieve — a delisted skill is delisted whatever the pipeline did —
-      // so faults neither trip suppression nor get held back by it.
-      suppressed: await resolveSuppression(
-        ctx,
-        items.filter((i) => !isFault(i.condition)).length,
-      ),
+      items: feed.items.map(({ target, ...item }) => ({
+        ...item,
+        bundleId: target.bundle._id,
+        bundleName: target.bundle.name,
+        bundleUrlId: target.bundle.urlId,
+      })),
+      suppressed: feed.suppressed,
       watchedSkillCount,
-      checkedSkillCount: scanned.length,
+      checkedSkillCount: feed.checkedSkillCount,
     };
   },
 });
+
+/**
+ * The dashboard feed for bundles saved in the browser (lib/local-bundles.ts),
+ * which have no rows for `listRecentChangesForUser` to read.
+ *
+ * The browser sends one entry per distinct skill, already carrying the baseline
+ * and bundle name the account query would have derived from the bundle rows
+ * (earliest of `max(lastViewedAt, addedAt)` across the bundles holding it). The
+ * answer is the same `resolveFeed` the account query uses, so the two can't
+ * disagree about what changed.
+ *
+ * Public and unauthenticated: it reads the same public archive the skill pages
+ * do and writes nothing. Capped at the account feed's own candidate ceiling, so
+ * one call costs no more than a signed-in dashboard load.
+ */
+export const listRecentChangesForSkills = query({
+  args: {
+    skills: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        baseline: v.number(),
+        bundleName: v.string(),
+      }),
+    ),
+    limit: v.optional(v.number()),
+  },
+  returns: v.object({
+    items: v.array(localFeedItem),
+    suppressed: v.boolean(),
+    watchedSkillCount: v.number(),
+    checkedSkillCount: v.number(),
+  }),
+  handler: async (ctx, { skills, limit }) => {
+    if (skills.length > MAX_FEED_CANDIDATES) {
+      throw new ConvexError(
+        `Can't check more than ${MAX_FEED_CANDIDATES} skills at once.`,
+      );
+    }
+    const feed = await resolveFeed(ctx, skills, limit);
+    return {
+      items: feed.items.map(({ target, ...item }) => ({
+        ...item,
+        bundleName: target.bundleName,
+      })),
+      suppressed: feed.suppressed,
+      watchedSkillCount: skills.length,
+      checkedSkillCount: feed.checkedSkillCount,
+    };
+  },
+});
+
+/**
+ * The feed itself, over any set of `(skill, baseline)` targets: the account
+ * dashboard's and the browser dashboard's. Each item carries back the target it
+ * came from, so the caller can attach whatever bundle context it has.
+ */
+async function resolveFeed<
+  T extends { source: string; skillId: string; baseline: number },
+>(ctx: QueryCtx, targets: T[], limit: number | undefined) {
+  // BOUNDED FAN-OUT. `resolveSkillChange` costs 2-3 indexed reads per
+  // candidate, and the `limit` arg trims the RESPONSE, not the work — so this
+  // query's cost scaled with everything the user watches, on every dashboard
+  // load and on every re-emit of any bundle mutation. Unbounded, a large
+  // enough account hits Convex's per-query read ceiling and the dashboard
+  // fails outright rather than degrading.
+  //
+  // Oldest baseline first, so the unchecked tail is the part the reader has
+  // seen most recently. The count of what was actually scanned is returned
+  // rather than swallowed, and the all-clear reads it: a monitoring product
+  // silently checking only part of your list is the same class of lie as a
+  // false all-clear.
+  const ordered = [...targets].sort((a, b) => a.baseline - b.baseline);
+  const scanned = ordered.slice(0, MAX_FEED_CANDIDATES);
+
+  const results = await Promise.all(
+    scanned.map(async (target) => {
+      const change = await resolveSkillChange(ctx, target);
+      if (!change) return null;
+      const { summary, condition, kind, changedAt, audit, version } = change;
+
+      return {
+        target,
+        source: target.source,
+        skillId: target.skillId,
+        name: summary.name,
+        condition,
+        kind,
+        changedAt,
+        audit,
+        version: version ? await toEntry(ctx, version) : null,
+      };
+    }),
+  );
+
+  const items = results
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    // Consequence, then recency, then name. Faults sort by name inside their
+    // rank because they have no date — falling back to 0 would order them
+    // arbitrarily and re-order them on unrelated writes.
+    .sort(
+      (a, b) =>
+        CONDITION_RANK[b.condition] - CONDITION_RANK[a.condition] ||
+        (b.changedAt ?? 0) - (a.changedAt ?? 0) ||
+        a.name.localeCompare(b.name),
+    )
+    .slice(0, Math.min(limit ?? DEFAULT_VERSION_LIMIT, MAX_VERSION_LIMIT));
+
+  return {
+    items,
+    // Counted over CHANGES only. A fault is not something the breaker can
+    // disbelieve — a delisted skill is delisted whatever the pipeline did —
+    // so faults neither trip suppression nor get held back by it.
+    suppressed: await resolveSuppression(
+      ctx,
+      items.filter((i) => !isFault(i.condition)).length,
+    ),
+    checkedSkillCount: scanned.length,
+  };
+}
 
 /**
  * Did the whole catalog move at once? See `MASS_CHANGE_THRESHOLD`.
@@ -637,6 +712,29 @@ async function resolveSkillChange(
   };
 }
 
+/** The register's change payloads, shared by the account and browser pages. */
+const registerChanges = v.object({
+  items: v.array(
+    v.object({
+      key: v.string(),
+      condition: CONDITION_VALIDATOR,
+      kind: v.optional(CHANGE_KIND_VALIDATOR),
+      changedAt: v.union(v.number(), v.null()),
+      audit: v.optional(
+        v.object({
+          from: v.string(),
+          to: v.string(),
+          riskLevel: v.optional(v.string()),
+          changedAt: v.number(),
+        }),
+      ),
+      version: v.union(v.null(), versionEntry),
+    }),
+  ),
+  /** Same meaning as on the dashboard feed — see `resolveSuppression`. */
+  suppressed: v.boolean(),
+});
+
 /**
  * Changes to the skills in ONE bundle, keyed by `source::skillId`.
  *
@@ -657,27 +755,7 @@ async function resolveSkillChange(
  */
 export const listChangesForBundle = query({
   args: { urlId: v.string() },
-  returns: v.object({
-    items: v.array(
-      v.object({
-        key: v.string(),
-        condition: CONDITION_VALIDATOR,
-        kind: v.optional(CHANGE_KIND_VALIDATOR),
-        changedAt: v.union(v.number(), v.null()),
-        audit: v.optional(
-          v.object({
-            from: v.string(),
-            to: v.string(),
-            riskLevel: v.optional(v.string()),
-            changedAt: v.number(),
-          }),
-        ),
-        version: v.union(v.null(), versionEntry),
-      }),
-    ),
-    /** Same meaning as on the dashboard feed — see `resolveSuppression`. */
-    suppressed: v.boolean(),
-  }),
+  returns: registerChanges,
   handler: async (ctx, { urlId }) => {
     const [bundle, currentUser] = await Promise.all([
       ctx.db
@@ -691,42 +769,89 @@ export const listChangesForBundle = query({
     const isOwner = currentUser !== null && currentUser._id === bundle.userId;
     if (!bundle.isPublic && !isOwner) return { items: [], suppressed: false };
 
-    const rows = await Promise.all(
-      bundle.skills.map(async (s) => {
-        const change = await resolveSkillChange(ctx, {
-          source: s.source,
-          skillId: s.skillId,
-          // `bundle.createdAt`, not 0, for entries predating `addedAt`. Epoch 0
-          // would replay every version and every audit regression ever recorded
-          // for that skill, and because this surface never clears on view the
-          // row would sit in Needs attention forever, dated from before the
-          // user owned the bundle. The bundle's own creation is the earliest
-          // moment they could plausibly be accountable for it.
-          baseline: s.addedAt ?? bundle.createdAt,
-        });
-        if (!change) return null;
-        return {
-          key: `${s.source}::${s.skillId}`,
-          condition: change.condition,
-          kind: change.kind,
-          changedAt: change.changedAt,
-          audit: change.audit,
-          version: change.version ? await toEntry(ctx, change.version) : null,
-        };
-      }),
+    return await resolveRegisterChanges(
+      ctx,
+      bundle.skills.map((s) => ({
+        source: s.source,
+        skillId: s.skillId,
+        // `bundle.createdAt`, not 0, for entries predating `addedAt`. Epoch 0
+        // would replay every version and every audit regression ever recorded
+        // for that skill, and because this surface never clears on view the
+        // row would sit in Needs attention forever, dated from before the
+        // user owned the bundle. The bundle's own creation is the earliest
+        // moment they could plausibly be accountable for it.
+        baseline: s.addedAt ?? bundle.createdAt,
+      })),
     );
-
-    const items = rows.filter((r): r is NonNullable<typeof r> => r !== null);
-
-    return {
-      items,
-      suppressed: await resolveSuppression(
-        ctx,
-        items.filter((i) => !isFault(i.condition)).length,
-      ),
-    };
   },
 });
+
+/**
+ * `listChangesForBundle` for a bundle saved in the browser, which has no row to
+ * look up: the browser sends its entries and their `addedAt` baselines.
+ *
+ * Public and unauthenticated, like the rest of the archive's read API. It reads
+ * public catalog history and writes nothing, and it is capped at a bundle's own
+ * size so one call costs what viewing one bundle costs.
+ */
+export const listChangesForSkills = query({
+  args: {
+    skills: v.array(
+      v.object({
+        source: v.string(),
+        skillId: v.string(),
+        addedAt: v.number(),
+      }),
+    ),
+  },
+  returns: registerChanges,
+  handler: async (ctx, { skills }) => {
+    if (skills.length > MAX_BUNDLE_SKILLS) {
+      throw new ConvexError(
+        `Bundles are limited to ${MAX_BUNDLE_SKILLS} skills (got ${skills.length}).`,
+      );
+    }
+    return await resolveRegisterChanges(
+      ctx,
+      skills.map((s) => ({
+        source: s.source,
+        skillId: s.skillId,
+        baseline: s.addedAt,
+      })),
+    );
+  },
+});
+
+/** Per-skill change payloads for a register, keyed by `source::skillId`. */
+async function resolveRegisterChanges(
+  ctx: QueryCtx,
+  targets: { source: string; skillId: string; baseline: number }[],
+) {
+  const rows = await Promise.all(
+    targets.map(async (target) => {
+      const change = await resolveSkillChange(ctx, target);
+      if (!change) return null;
+      return {
+        key: `${target.source}::${target.skillId}`,
+        condition: change.condition,
+        kind: change.kind,
+        changedAt: change.changedAt,
+        audit: change.audit,
+        version: change.version ? await toEntry(ctx, change.version) : null,
+      };
+    }),
+  );
+
+  const items = rows.filter((r): r is NonNullable<typeof r> => r !== null);
+
+  return {
+    items,
+    suppressed: await resolveSuppression(
+      ctx,
+      items.filter((i) => !isFault(i.condition)).length,
+    ),
+  };
+}
 
 /**
  * Diagnostic: what does a normal day of change actually look like?

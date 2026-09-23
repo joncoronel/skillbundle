@@ -33,7 +33,7 @@ export const GOVERNING_LAW = "the State of California, United States";
  * Update by hand when the text changes in a way that affects users. Changing a
  * typo is not that.
  */
-export const LEGAL_LAST_UPDATED = "8 September 2026";
+export const LEGAL_LAST_UPDATED = "23 September 2026";
 
 /**
  * The third parties that process user data, listed in the privacy policy.
@@ -45,7 +45,7 @@ export const LEGAL_LAST_UPDATED = "8 September 2026";
 export const SUBPROCESSORS = [
   {
     name: "Vercel",
-    purpose: "Website hosting and delivery",
+    purpose: "Website hosting and delivery, and bot protection",
     href: "https://vercel.com/legal/privacy-policy",
   },
   {

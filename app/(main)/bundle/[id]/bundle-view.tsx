@@ -475,7 +475,7 @@ export function BundleView({
 // Metadata row + section header + toolbar slot
 // ---------------------------------------------------------------------------
 
-function MetadataItems({ createdAt }: { createdAt: number }) {
+export function MetadataItems({ createdAt }: { createdAt: number }) {
   // Skill count deliberately absent: the section heading and the tally both
   // state it, and three copies in one viewport is two too many. That leaves one
   // item, so this is a string and not a list with an unreachable separator.
@@ -503,7 +503,7 @@ function MetadataItems({ createdAt }: { createdAt: number }) {
   );
 }
 
-function SectionHeader({
+export function SectionHeader({
   count,
   title,
   action,
@@ -937,7 +937,7 @@ function DescriptionDialog({
  * owner their empty bundle was healthy — an answer to a question they had not
  * asked, in the colour reserved for the one they had.
  */
-function BundleEmpty({ isOwner }: { isOwner: boolean }) {
+export function BundleEmpty({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center">
       <p className="text-sm font-medium">Nothing to watch yet.</p>

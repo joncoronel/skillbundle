@@ -86,7 +86,10 @@ export default function PrivacyPage() {
           matching, we read the public file listing of the repository you
           specify in order to work out which technologies it uses. We read
           public repository contents only, we do not store the file contents,
-          and we never request write access.
+          and we never request write access. If you use it without signing in,
+          we count your runs against a one-way hash of your IP address, never
+          the address itself, to apply the free allowance, and Vercel&apos;s bot
+          protection checks that the request came from a real browser.
         </p>
       </LegalSection>
 

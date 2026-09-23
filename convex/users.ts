@@ -1,4 +1,9 @@
-import { internalMutation, query, QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import type { UserJSON } from "@clerk/backend";
 import { v, Validator } from "convex/values";
 
@@ -53,6 +58,14 @@ export function verifiedPrimaryEmail(data: UserJSON): string | undefined {
 export const deleteFromClerk = internalMutation({
   args: { clerkUserId: v.string() },
   async handler(ctx, { clerkUserId }) {
+    // Keyed on the Clerk id rather than the users row, so it goes whether or
+    // not the row exists. One row per account (convex/repoMatchQuota.ts).
+    const quota = await ctx.db
+      .query("repoMatchQuota")
+      .withIndex("by_subject", (q) => q.eq("subject", clerkUserId))
+      .unique();
+    if (quota) await ctx.db.delete(quota._id);
+
     const user = await userByExternalId(ctx, clerkUserId);
     if (user !== null) {
       // A deleted account's bundles go with it. Left behind, a public one
@@ -71,6 +84,35 @@ export const deleteFromClerk = internalMutation({
     }
   },
 });
+
+/**
+ * The caller's user row, created from their token if the Clerk webhook has not
+ * delivered it yet.
+ *
+ * The row normally arrives by `user.created`, but that is a separate request
+ * that can land after the browser's first mutation. Someone who signs up and
+ * saves straight away (or whose browser bundles are imported on first sign-in)
+ * would otherwise get "Can't get current user". The webhook still runs later
+ * and `upsertFromClerk` patches this row rather than inserting a second one:
+ * both read `byExternalId` inside a transaction, so they cannot both insert.
+ *
+ * Only the write paths that can be a new user's first action use this. Reads
+ * stay on `getCurrentUser` and treat a missing row as signed out.
+ */
+export async function getOrCreateCurrentUser(ctx: MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (identity === null) throw new Error("Can't get current user");
+  const existing = await userByExternalId(ctx, identity.subject);
+  if (existing) return existing;
+  const id = await ctx.db.insert("users", {
+    name: identity.name || "Anonymous",
+    // Same rule as the webhook path: only a verified address is stored.
+    email: identity.emailVerified === true ? identity.email : undefined,
+    image: identity.pictureUrl,
+    externalId: identity.subject,
+  });
+  return (await ctx.db.get(id))!;
+}
 
 export async function getCurrentUserOrThrow(ctx: QueryCtx) {
   const userRecord = await getCurrentUser(ctx);

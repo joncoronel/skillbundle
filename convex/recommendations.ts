@@ -23,11 +23,13 @@ import {
   RATE_LIMITED,
 } from "./lib/github";
 import { getGithubOauthToken } from "./lib/clerkGithub";
+import { secretMatches } from "./lib/sharedSecret";
 import {
   extractRepoSlug,
   matchesDemoRepo,
-  isRepoMatchAllowed,
-  PRO_REQUIRED,
+  repoMatchKey,
+  repoMatchMeter,
+  SIGN_IN_REQUIRED,
 } from "../lib/repo-match";
 
 // ---------------------------------------------------------------------------
@@ -275,49 +277,90 @@ const RESULT_LIMIT = 60;
 // shows "showing N of M versions" when this cap kicks in.
 const MAX_VARIANTS_PER_GROUP = 10;
 
+const INVALID_URL_RESULT: AnalyzeRepoResult = {
+  error: "Invalid GitHub URL",
+  repoName: "",
+  fingerprint: null,
+  recommendations: [],
+};
+
+/**
+ * Parse and normalize a submitted repo URL, or null when it isn't repo-shaped.
+ *
+ * GitHub owner/repo are case-insensitive, so normalize to lowercase once at
+ * the entrance. This is the security-relevant spot: matchesDemoRepo already
+ * lowercases, so without this a case variant (`ShAdCn-Ui/Ui`) skips the plan
+ * check AND misses the raw-cased tree cache, forcing a full unauthenticated
+ * GitHub + embedding recompute per variant. One normalized key feeds both
+ * caches (tree + fingerprint) and the free allowance, so every case collapses
+ * to a single entry. Display keeps the user's casing so "Microsoft/TypeScript"
+ * doesn't render all-lowercase.
+ */
+function parseRepoUrl(repoUrl: string) {
+  const parsed = extractRepoSlug(repoUrl);
+  if (!parsed) return null;
+  const owner = parsed.owner.toLowerCase();
+  const repo = parsed.repo.toLowerCase();
+  return {
+    owner,
+    repo,
+    repoName: `${parsed.owner}/${parsed.repo}`,
+    repoKey: repoMatchKey(owner, repo),
+  };
+}
+
 export const analyzeRepo = action({
   args: { repoUrl: v.string() },
   handler: async (ctx, { repoUrl }): Promise<AnalyzeRepoResult> => {
-    const parsed = extractRepoSlug(repoUrl);
-    if (!parsed) {
-      return {
-        error: "Invalid GitHub URL",
-        repoName: "",
-        fingerprint: null,
-        recommendations: [],
-      };
-    }
-
-    // GitHub owner/repo are case-insensitive, so normalize to lowercase once at
-    // the entrance. This is the security-relevant spot: matchesDemoRepo already
-    // lowercases, so without this a case variant (`ShAdCn-Ui/Ui`) skips the plan
-    // check AND misses the raw-cased tree cache, forcing a full unauthenticated
-    // GitHub + embedding recompute per variant. One normalized key feeds both
-    // caches (tree + fingerprint), so every case collapses to a single entry.
-    const owner = parsed.owner.toLowerCase();
-    const repo = parsed.repo.toLowerCase();
-    // Lowercase feeds the caches + GitHub calls (both case-insensitive), so
-    // every case variant collapses to one entry. Display keeps the user's
-    // casing so "Microsoft/TypeScript" doesn't render all-lowercase.
-    const repoName = `${parsed.owner}/${parsed.repo}`;
-    const repoKey = `${owner}/${repo}`;
+    const parsed = parseRepoUrl(repoUrl);
+    if (!parsed) return INVALID_URL_RESULT;
+    const { owner, repo, repoName, repoKey } = parsed;
     const cacheKey = repoKey;
 
-    // Repo match is Pro-gated; the demo allowlist is the one exception (runs
-    // free for everyone, signed out included). Skip the plan query for demo
-    // repos, and gate everything else through the shared predicate. Thrown as a
-    // ConvexError so it lands as a query error, not cacheable data — see
-    // PRO_REQUIRED. This is the authoritative gate; the client mirrors it only
-    // to avoid the round-trip.
+    const identity = await ctx.auth.getUserIdentity();
+
+    // Who pays for this run, per the shared `repoMatchMeter`: demo repos and
+    // Pro are free, a free account draws on its monthly repo allowance, and a
+    // signed-out caller is refused here outright. Signed-out matching is
+    // metered per IP, which only the site's server action can see, so it has
+    // to arrive through `analyzeRepoAnonymous`; accepting it here would let
+    // anyone skip that limit by calling Convex directly. Every refusal is a
+    // thrown ConvexError so it lands as a query error, not cacheable data.
+    // This is the authoritative gate; the client mirrors it only to route the
+    // request and to skip round-trips it knows will be refused.
+    let claimed = false;
     if (!matchesDemoRepo(owner, repo)) {
-      const { limits } = await ctx.runQuery(
-        internal.plans.internalCurrentPlan,
-        {},
+      const canAutoDetect = identity
+        ? (await ctx.runQuery(internal.plans.internalCurrentPlan, {})).limits
+            .canAutoDetect
+        : false;
+      const meter = repoMatchMeter(
+        { signedIn: !!identity, canAutoDetect },
+        owner,
+        repo,
       );
-      if (!isRepoMatchAllowed(limits, owner, repo)) {
-        throw new ConvexError({ code: PRO_REQUIRED });
+      if (meter === "anonymous" || !identity) {
+        throw new ConvexError({ code: SIGN_IN_REQUIRED });
+      }
+      if (meter === "monthly") {
+        // Throws FREE_LIMIT when the month is full.
+        claimed = await ctx.runMutation(internal.repoMatchQuota.claim, {
+          subject: identity.subject,
+          repoKey,
+        });
       }
     }
+    // A run that errors (thrown, or an error result) produced nothing, so it
+    // gives back the slot it just took. Only a slot THIS call took: a re-run of
+    // a repo already counted this month keeps its slot whatever happens.
+    const refund = async () => {
+      if (claimed && identity) {
+        await ctx.runMutation(internal.repoMatchQuota.release, {
+          subject: identity.subject,
+          repoKey,
+        });
+      }
+    };
 
     // ------------------------------------------------------------------
     // Public vs private analysis
@@ -328,8 +371,12 @@ export const analyzeRepo = action({
     // can never collide with the global `owner/repo` keys or each other.
     // The global cache is never written from a token-authenticated pass, so
     // one user's private fingerprint can't be served to anyone else.
-    const identity = await ctx.auth.getUserIdentity();
     const privateKey = identity ? `${identity.subject}:${repoKey}` : null;
+    // Charged on fresh work only (see runAnalysis): per user, or one shared
+    // key for signed-out demo runs.
+    const rateLimitChecks = [
+      { name: "repoAnalysis" as const, key: identity?.subject ?? "anonymous" },
+    ];
 
     // The user's GitHub token, fetched from Clerk at most once per request
     // (the shortcut and the retry below can otherwise both pay the call).
@@ -347,43 +394,103 @@ export const analyzeRepo = action({
         cacheKey: key,
         treeCacheKey: key,
         token,
+        rateLimitChecks,
       });
 
-    // Private-first shortcut: a user-scoped tree-cache row means this user
-    // has analyzed this repo privately before — skip the public pass (and
-    // its guaranteed 404 probe) and go straight to the private one.
-    if (identity && privateKey) {
-      const privateTree = await ctx.runQuery(
-        internal.githubCache.getTreeCache,
-        { repo: privateKey },
-      );
-      if (privateTree) {
-        const token = await getToken();
-        if (token?.status === "connected") {
-          return await runPrivate(privateKey, token.token);
+    const analyze = async (): Promise<AnalyzeRepoResult> => {
+      // Private-first shortcut: a user-scoped tree-cache row means this user
+      // has analyzed this repo privately before — skip the public pass (and
+      // its guaranteed 404 probe) and go straight to the private one.
+      if (identity && privateKey) {
+        const privateTree = await ctx.runQuery(
+          internal.githubCache.getTreeCache,
+          { repo: privateKey },
+        );
+        if (privateTree) {
+          const token = await getToken();
+          if (token?.status === "connected") {
+            return await runPrivate(privateKey, token.token);
+          }
+          // Token revoked/disconnected — fall through to the public pass.
         }
-        // Token revoked/disconnected — fall through to the public pass.
       }
-    }
 
-    const publicResult = await runAnalysis(ctx, {
+      const publicResult = await runAnalysis(ctx, {
+        owner,
+        repo,
+        repoName,
+        cacheKey,
+        treeCacheKey: repoKey,
+        rateLimitChecks,
+      });
+      if (publicResult.error !== FETCH_ERROR || !privateKey) {
+        return publicResult;
+      }
+
+      // Public fetch failed and the caller is signed in — retry with their
+      // GitHub token in case the repo is private and they have access. Any
+      // non-connected token status keeps the public error: the picker UI, not
+      // this error path, is what teaches users to connect GitHub.
+      const token = await getToken();
+      if (token?.status !== "connected") return publicResult;
+      return await runPrivate(privateKey, token.token);
+    };
+
+    let result: AnalyzeRepoResult;
+    try {
+      result = await analyze();
+    } catch (e) {
+      await refund();
+      throw e;
+    }
+    if (result.error) await refund();
+    return result;
+  },
+});
+
+/**
+ * Signed-out repo matching, called ONLY by the site's server action
+ * (`app/(main)/actions.ts`), which checks BotID and derives `visitorKey` from
+ * the visitor's IP. The key is an HMAC, so the raw IP never reaches Convex.
+ * `secret` must equal REPO_MATCH_SECRET (set on this deployment and on
+ * Vercel), which is what stops anyone calling this directly with a fresh
+ * made-up key per request.
+ *
+ * Public pass only: a signed-out caller has no GitHub token, so a private repo
+ * comes back as the usual fetch error. Charged per visitor on fresh work only,
+ * like every analysis: a repo already in the cache costs nothing and doesn't
+ * touch the allowance.
+ */
+export const analyzeRepoAnonymous = action({
+  args: { repoUrl: v.string(), visitorKey: v.string(), secret: v.string() },
+  handler: async (
+    ctx,
+    { repoUrl, visitorKey, secret },
+  ): Promise<AnalyzeRepoResult> => {
+    if (!secretMatches(secret, process.env.REPO_MATCH_SECRET)) {
+      throw new ConvexError({ code: "unauthorized" });
+    }
+    // The site sends a hex SHA-256 HMAC. Anything else is a caller bug, and
+    // refusing it keeps junk keys out of the rate limiter's table.
+    if (!/^[0-9a-f]{64}$/.test(visitorKey)) {
+      throw new ConvexError({ code: "invalid_visitor_key" });
+    }
+    const parsed = parseRepoUrl(repoUrl);
+    if (!parsed) return INVALID_URL_RESULT;
+    const { owner, repo, repoName, repoKey } = parsed;
+    return await runAnalysis(ctx, {
       owner,
       repo,
       repoName,
-      cacheKey,
+      cacheKey: repoKey,
       treeCacheKey: repoKey,
+      // The per-minute scripted-abuse ceiling first, then the allowance, so a
+      // loop is told to slow down before it burns the visitor's runs.
+      rateLimitChecks: [
+        { name: "repoAnalysis", key: `visitor:${visitorKey}` },
+        { name: "repoAnalysisAnonymous", key: visitorKey },
+      ],
     });
-    if (publicResult.error !== FETCH_ERROR || !privateKey) {
-      return publicResult;
-    }
-
-    // Public fetch failed and the caller is signed in — retry with their
-    // GitHub token in case the repo is private and they have access. Any
-    // non-connected token status keeps the public error: the picker UI, not
-    // this error path, is what teaches users to connect GitHub.
-    const token = await getToken();
-    if (token?.status !== "connected") return publicResult;
-    return await runPrivate(privateKey, token.token);
   },
 });
 
@@ -408,9 +515,14 @@ async function runAnalysis(
     treeCacheKey: string;
     /** User OAuth token — presence marks this as a private pass. */
     token?: string;
+    /** Rate limits charged, once, when the run has to do fresh work. */
+    rateLimitChecks: Array<{
+      name: "repoAnalysis" | "repoAnalysisAnonymous";
+      key: string;
+    }>;
   },
 ): Promise<AnalyzeRepoResult> {
-  const { owner, repo, repoName, token } = opts;
+  const { owner, repo, repoName, token, rateLimitChecks } = opts;
   // `let`: a token pass that discovers the repo is actually PUBLIC (GitHub
   // metadata says private: false) downgrades to the global keys below, so a
   // transient public-fetch failure can't permanently pin a public repo to a
@@ -456,9 +568,8 @@ async function runAnalysis(
   const chargeRebuild = async (): Promise<void> => {
     if (charged) return;
     charged = true;
-    const identity = await ctx.auth.getUserIdentity();
     await ctx.runMutation(internal.rateLimits.enforce, {
-      checks: [{ name: "repoAnalysis", key: identity?.subject ?? "anonymous" }],
+      checks: rateLimitChecks,
     });
   };
 

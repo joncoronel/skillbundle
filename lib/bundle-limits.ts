@@ -63,6 +63,14 @@ export const FREE_WATCHED_SKILLS = 25;
 export const MAX_BUNDLES_PER_USER = 200;
 
 /**
+ * Bundles one browser can hold while signed out (lib/local-bundles.ts), and so
+ * the most `importLocalBundles` accepts in one call. Skills are already capped
+ * at FREE_WATCHED_SKILLS distinct across them; this bounds the empty bundles
+ * that cap does not, for the same reason MAX_BUNDLES_PER_USER exists.
+ */
+export const MAX_LOCAL_BUNDLES = 50;
+
+/**
  * The identity of a watched skill, everywhere.
  *
  * `source::skillId` was written out inline at every site that counts, compares

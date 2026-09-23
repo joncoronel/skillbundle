@@ -12,11 +12,11 @@ import { NextResponse } from "next/server";
 // file. If one doesn't, the proxy never runs on that route, `auth.protect()`
 // never fires, and the route is silently public: no error and no failed build.
 // tests/proxy-matcher.test.ts fails when the two lists drift.
-const isPrivateRoute = createRouteMatcher([
-  "/dashboard(.*)",
-  "/settings(.*)",
-  "/dev(.*)",
-]);
+//
+// `/dashboard` is NOT here any more. Signed out, it shows the bundles saved in
+// the browser (lib/local-bundles.ts), so saving a bundle never starts with an
+// account. It reads auth on the client only, so it left the matcher too.
+const isPrivateRoute = createRouteMatcher(["/settings(.*)", "/dev(.*)"]);
 
 // Exact paths, NOT `/sign-in(.*)`, and that is the whole design of this list.
 //
@@ -92,7 +92,6 @@ export default clerkMiddleware(async (auth, request) => {
 // landing point of every OAuth round trip. Not a trade worth making.
 export const config = {
   matcher: [
-    "/dashboard(.*)",
     "/settings(.*)",
     "/dev(.*)",
     // `getAuthToken()` runs in the page itself, before any `preloadQuery`.

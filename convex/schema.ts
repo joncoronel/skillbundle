@@ -883,4 +883,18 @@ export default defineSchema({
     deadButInstallable: v.optional(v.number()),
     recalculatedAt: v.number(),
   }),
+
+  // Free-plan repo-match allowance (convex/repoMatchQuota.ts): the distinct
+  // repos a signed-in free account has matched in `month`. ONE row per
+  // account, reset in place when a request arrives in a new month, so the
+  // table is bounded by the number of accounts that ever used the feature and
+  // needs no cleanup cron. `subject` is the Clerk user id (the same key the
+  // rate limits use), so a user whose webhook hasn't landed yet still counts.
+  repoMatchQuota: defineTable({
+    subject: v.string(),
+    /** UTC calendar month, "YYYY-MM". */
+    month: v.string(),
+    /** Lowercased `owner/repo` keys; at most FREE_MONTHLY_REPOS entries. */
+    repos: v.array(v.string()),
+  }).index("by_subject", ["subject"]),
 });

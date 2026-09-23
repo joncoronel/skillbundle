@@ -7,6 +7,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/cubby-ui/accordion";
 import { FREE_WATCHED_SKILLS, PLANS, yearlySavingsPercent } from "@/lib/plans";
+import { FREE_MONTHLY_REPOS } from "@/lib/repo-match";
 
 const savings = yearlySavingsPercent(PLANS.pro);
 
@@ -30,7 +31,7 @@ const FAQ = [
   },
   {
     q: "What does repo matching actually do?",
-    a: "You point it at a GitHub repo and it reads what the project actually uses, then matches that against the catalog instead of making you guess at search terms. It costs real API and compute per run, which is why it's the one discovery feature behind the paywall. You can try it free on a demo repo.",
+    a: `You point it at a GitHub repo and it reads what the project actually uses, then matches that against the catalog instead of making you guess at search terms. Each run costs real API and compute, so it's metered: free accounts can match ${FREE_MONTHLY_REPOS} repos a month (re-running one you've already matched doesn't count), you can try a few without an account, and Pro is unlimited. The demo repo is always free.`,
   },
   {
     q: "What's a GitHub-only skill?",

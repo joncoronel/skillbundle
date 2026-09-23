@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
 import { useConvex, useConvexAuth } from "convex/react";
 import { ConvexError } from "convex/values";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { convexErrorMessage } from "@/lib/convex-error";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -14,14 +16,20 @@ import {
   SquareLock02Icon,
 } from "@hugeicons/core-free-icons";
 import {
+  ANON_DAILY_ANALYSES,
+  ANON_LIMIT,
   EXAMPLE_REPO_SLUG,
   EXAMPLE_REPO_URL,
   extractRepoSlug,
+  FREE_LIMIT,
+  FREE_MONTHLY_REPOS,
   matchesDemoRepo,
-  isRepoMatchAllowed,
-  PRO_REQUIRED,
+  repoMatchKey,
+  repoMatchMeter,
+  SIGN_IN_REQUIRED,
 } from "@/lib/repo-match";
 import { signInUrl } from "@/components/auth/shared";
+import { analyzeRepoSignedOut } from "@/app/(main)/actions";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Toggle } from "@/components/ui/cubby-ui/toggle";
 import {
@@ -51,6 +59,15 @@ import {
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
+
+// Refusals that sign-in fixes, besides the signed-out allowance running out:
+// a signed-out call that reached analyzeRepo directly, and the signed-out
+// server action refusing (BotID verdict, or signed-out matching unavailable).
+const SIGN_IN_CODES: ReadonlySet<string> = new Set([
+  SIGN_IN_REQUIRED,
+  "bot",
+  "unavailable",
+]);
 
 // Fingerprint languages arrive lowercased from the GitHub API mapping;
 // display-case the common ones (fallback: capitalize the first letter).
@@ -92,12 +109,19 @@ function groupIsOfficial(group: GroupedRecommendation) {
 export function RepoAnalysisResults() {
   const convex = useConvex();
   const { repoUrl, setParams } = useExplorerState();
+  const { isAuthenticated } = useConvexAuth();
   const {
     limits,
     isLoading: planLoading,
     isAuthLoading,
     isPlanError,
   } = useUserPlan();
+  // The free account's monthly allowance. Null for signed-out and Pro, and a
+  // live subscription, so the count moves the moment a run is counted.
+  const { data: usage } = useQuery({
+    ...convexQuery(api.repoMatchQuota.myUsage, isAuthenticated ? {} : "skip"),
+    enabled: isAuthenticated,
+  });
 
   // Result narrowing — local state, not URL state: it scopes one analysis
   // view, resets naturally with the component, and repo links shared without
@@ -108,57 +132,82 @@ export function RepoAnalysisResults() {
   const trimmedUrl = repoUrl.trim();
   const parsed = extractRepoSlug(trimmedUrl);
 
-  // Parseability is orthogonal to the plan gate: a submitted value the parser
+  // Parseability is orthogonal to the allowance: a submitted value the parser
   // can't read at all (only reachable via a hand-edited or stale pre-parser
   // shared link — the composer validates on submit) is an invalid-URL error for
-  // everyone, handled below before any gating. Checking it here keeps the plan
-  // logic operating only on real repos, so there's no "unparseable → treat as
-  // canAutoDetect" fallback to reason about.
+  // everyone, handled below before any gating.
   const invalidUrl = !!trimmedUrl && !parsed;
 
-  // Repo match is Pro-only, but the demo repo (shadcn-ui/ui) runs free for
-  // everyone. `allowed` runs the SAME predicate the server throws through, so
-  // the client's gate can't drift from the authoritative one (and phase-2's
-  // quota lands in one place).
   const isExample = parsed ? matchesDemoRepo(parsed.owner, parsed.repo) : false;
   const canAutoDetect = limits?.canAutoDetect ?? false;
-  const allowed = parsed
-    ? isRepoMatchAllowed({ canAutoDetect }, parsed.owner, parsed.repo)
-    : false;
 
   // "This user is free" — the plan has resolved (not loading, and not errored:
   // an error is "unknown", not "free", so a Pro user whose plan query blipped
-  // isn't wrongly gated) and doesn't grant auto-detect. Feeds the empty-state
-  // hint and the demo footer, so they can't disagree with the paywall.
+  // isn't shown a free user's copy) and doesn't grant auto-detect. Signed-out
+  // visitors count: their plan resolves to free without a query.
   const planResolvedFree = !planLoading && !isPlanError && !canAutoDetect;
 
-  // The Pro mirror: resolved AND allowed. Gates the repo picker in the empty
-  // state, so it can never flash at a free user mid plan-load.
+  // The Pro mirror. Gates the repo picker in the empty state, so it can never
+  // flash at a free user mid plan-load.
   const planResolvedPro = !planLoading && !isPlanError && canAutoDetect;
 
-  // Definitively locked: a real (parseable) repo this user can't run, plan
-  // resolved. The paywall shows with no server round-trip.
-  const knownLocked = !!parsed && !allowed && !planLoading && !isPlanError;
+  // Which allowance this repo draws on, via the SAME predicate the server
+  // enforces, so the client's routing and copy can't drift from its gate.
+  // Null until the caller is known.
+  const meter =
+    parsed && !planLoading && !isPlanError
+      ? repoMatchMeter(
+          { signedIn: isAuthenticated, canAutoDetect },
+          parsed.owner,
+          parsed.repo,
+        )
+      : null;
+  const freeLeft =
+    usage && planResolvedFree
+      ? { left: Math.max(0, usage.limit - usage.used), limit: usage.limit }
+      : null;
+
+  // A free account out of repos for the month, asking for one it hasn't
+  // already matched: the server would refuse, so skip the round-trip and show
+  // the upgrade prompt straight away. Re-running a counted repo stays allowed.
+  const knownOverQuota =
+    meter === "monthly" &&
+    !!usage &&
+    !!parsed &&
+    usage.used >= usage.limit &&
+    !usage.repos.includes(repoMatchKey(parsed.owner, parsed.repo));
 
   // Fire as soon as we CAN, not once the plan is known. The demo fires
   // immediately; anything else fires the moment auth is ready (so the JWT is
-  // attached) unless we already know the user is locked — so a Pro user's cold
-  // deep-link analysis runs in parallel with plan resolution, not serially
-  // behind it. The server is the authoritative gate (it throws PRO_REQUIRED),
-  // so firing before the client plan resolves is safe. Never fires for an
-  // unparseable input.
-  const canFetch = !!parsed && (isExample || (!isAuthLoading && !knownLocked));
+  // attached, or we know to go through the signed-out server action), so a
+  // Pro user's cold deep-link analysis runs in parallel with plan resolution,
+  // not serially behind it. The server is the authoritative gate, so firing
+  // before the client plan resolves is safe. Never fires for an unparseable
+  // input.
+  const canFetch =
+    !!parsed && (isExample || (!isAuthLoading && !knownOverQuota));
 
   const { data, isPending, error } = useQuery<AnalyzeRepoResult>({
     queryKey: ["repo", "analyze", trimmedUrl],
-    queryFn: () => {
+    queryFn: async () => {
       // In `queryFn` rather than on the submit handler, so it counts runs that
       // actually reach the server. A cache hit inside `staleTime` does not call
       // this, which is correct: no GitHub walk happened, so no run happened.
       // `isExample` separates the free demo from real usage — conflating them
-      // would make the paid feature look far more used than it is. The URL
-      // itself is never sent; it can name a private org.
-      track("repo_match_run", { demo: isExample });
+      // would make the feature look far more used than it is. The URL itself
+      // is never sent; it can name a private org.
+      track("repo_match_run", { demo: isExample, signedIn: isAuthenticated });
+      if (!isExample && !isAuthenticated) {
+        // Signed-out runs go through the site, which meters them per IP. It
+        // returns refusals rather than throwing (a server action's errors are
+        // masked in production), so rethrow them here as the same ConvexError
+        // shape the direct path throws: an error, never cacheable data.
+        const res = await analyzeRepoSignedOut(trimmedUrl);
+        if (!res.ok) {
+          throw new ConvexError({ code: res.code, message: res.message });
+        }
+        return res.result;
+      }
       return convex.action(api.recommendations.analyzeRepo, {
         repoUrl: trimmedUrl,
       });
@@ -171,43 +220,37 @@ export function RepoAnalysisResults() {
 
   const tryExample = () => setParams({ repoUrl: EXAMPLE_REPO_URL });
 
-  // The plan rejection is a thrown ConvexError, so it lands here as the query
-  // error — never cached as data, so it can't pin a paying user to the paywall.
-  // Map its code to the paywall; every other error is the generic failure card.
-  const proRequired =
-    error instanceof ConvexError &&
-    (error.data as { code?: string } | undefined)?.code === PRO_REQUIRED;
+  // Allowance refusals are thrown ConvexErrors, so they land here as the
+  // query error — never cached as data, so they can't pin someone to the
+  // prompt after they sign in or upgrade. Each maps to the prompt that fixes
+  // it; every other error is the generic failure card.
+  const errorCode =
+    error instanceof ConvexError
+      ? (error.data as { code?: string } | undefined)?.code
+      : undefined;
+  const wall: RepoMatchWallKind | null =
+    knownOverQuota || errorCode === FREE_LIMIT
+      ? "upgrade"
+      : errorCode === ANON_LIMIT
+        ? "anon-limit"
+        : errorCode && SIGN_IN_CODES.has(errorCode)
+          ? "sign-in"
+          : null;
 
-  // Paywall when the client already knows the user is locked, OR when the
-  // server rejected (the authoritative backstop — e.g. a plan blip the client
-  // read optimistically as Pro).
-  const isPaywall = knownLocked || proRequired;
-
-  // "Analyzing…" is claimed ONLY for a real, allowed analysis in flight. A
-  // locked user's query can fire optimistically before the plan resolves, but
-  // we never tell them we're analyzing a repo we're about to gate — they get a
-  // neutral skeleton, then the paywall.
-  const analyzing = isPending && canFetch && (isExample || canAutoDetect);
+  const analyzing = isPending && canFetch;
 
   // Skeleton for a real (parseable) non-demo repo whenever a fetch is in flight
-  // OR its gate is still unknown — the plan resolving, or (when the plan query
-  // errored) an optimistic fetch running with no resolved plan. Without the
-  // in-flight arm, the plan-error case would flash the empty state, then pop
-  // results with no skeleton. An unparseable input is known synchronously, so
-  // it skips the skeleton and goes straight to the error card below.
+  // OR auth is still resolving (we don't yet know which path to send it down).
+  // An unparseable input is known synchronously, so it skips the skeleton and
+  // goes straight to the error card below.
   const loading =
-    analyzing ||
-    (!!parsed &&
-      !isExample &&
-      !isPaywall &&
-      (planLoading || (isPending && canFetch)));
+    analyzing || (!!parsed && !isExample && !wall && isAuthLoading);
 
-  // A pro_required rejection routes to the paywall, so it must NOT surface as
-  // the generic error card. An unparseable input is the same invalid-URL error
-  // the server would return — shown client-side (no round-trip) so a free user
-  // and a Pro user get the same truthful message. Returned data errors (server
-  // "Invalid GitHub URL", fetch failure) still surface here too.
-  const actionError = proRequired
+  // A refusal routes to its prompt, so it must NOT surface as the generic
+  // error card. An unparseable input is the same invalid-URL error the server
+  // would return — shown client-side (no round-trip). Returned data errors
+  // (server "Invalid GitHub URL", fetch failure) still surface here too.
+  const actionError = wall
     ? null
     : invalidUrl
       ? "Invalid GitHub URL"
@@ -225,18 +268,16 @@ export function RepoAnalysisResults() {
     // seconds, and repo mode has no input spinner, so the header carries a
     // visible "Analyzing…" status for the wait rather than leaving it silent.
     //
-    // Only CLAIM "Analyzing…" when we're actually analyzing. During the plan-
-    // resolution wait, telling a soon-to-be-paywalled user we're analyzing
-    // their repo would be a promise we're about to retract. The line's space is
-    // still reserved (it mirrors the results' "Detected in" line), so the rows
-    // don't shift when the text fills in or when results land — it just stays
-    // empty until there's something true to say. aria-busy conveys "working."
+    // Only CLAIM "Analyzing…" when a request is actually in flight. While auth
+    // resolves we don't yet know which path the request takes, so the line's
+    // space is reserved (it mirrors the results' "Detected in" line) but stays
+    // empty, and the rows don't shift when the text fills in or when results
+    // land. aria-busy conveys "working."
     //
-    // When the claim does become true (plan resolves → Pro/demo fetch begins),
-    // the text fades in via @starting-style so its arrival reads as a state
-    // change, not a flicker. Kept conditionally rendered (not opacity-toggled)
-    // so the role=status live region only announces it once it's real, and a
-    // free user's assistive tech never hears a claim they won't get.
+    // When the claim does become true, the text fades in via @starting-style
+    // so its arrival reads as a state change, not a flicker. Kept
+    // conditionally rendered (not opacity-toggled) so the role=status live
+    // region only announces it once it's real.
     return (
       <div className="mt-4" aria-busy="true">
         <p role="status" className="mb-4 min-h-4 text-xs text-muted-foreground">
@@ -298,19 +339,20 @@ export function RepoAnalysisResults() {
   }
 
   // Pre-analysis: no successful result to show. Two states share this slot —
-  // the teaching empty state and (for a locked user's own repo) the paywall.
-  // Crossfade between them so clicking Analyze resolves the gate as a
-  // considered response, not a hard swap. `isPaywall` takes precedence over any
-  // in-flight or errored query so a rejection never falls into an empty result.
-  if (!data || isPaywall) {
+  // the teaching empty state and (when an allowance refused the run) the
+  // prompt that fixes it. Crossfade between them so clicking Analyze resolves
+  // the gate as a considered response, not a hard swap. `wall` takes
+  // precedence over any in-flight or errored query so a refusal never falls
+  // into an empty result.
+  if (!data || wall) {
     return (
-      <Crossfade active={isPaywall}>
+      <Crossfade active={!!wall}>
         <RepoMatchEmptyState
           onTryExample={tryExample}
-          showUpgradeHint={planResolvedFree}
+          freeLeft={freeLeft}
           showPicker={planResolvedPro}
         />
-        <RepoMatchPaywall onTryExample={tryExample} />
+        <RepoMatchWall kind={wall ?? "upgrade"} onTryExample={tryExample} />
       </Crossfade>
     );
   }
@@ -457,16 +499,18 @@ export function RepoAnalysisResults() {
       )}
 
       {/* The demo is the taste; this is the ask. Only when a resolved-free user
-          is looking at the example — gated on the SAME planResolvedFree as the
-          empty-state hint (not a lone !canAutoDetect) so it can't flash at a Pro
-          user mid plan-load, and never shows for a non-demo repo. */}
+          is looking at the example — gated on planResolvedFree (not a lone
+          !canAutoDetect) so it can't flash at a Pro user mid plan-load. */}
       {planResolvedFree && isExample && (
         <p className="mt-4 text-xs text-muted-foreground">
-          This is the {EXAMPLE_REPO_SLUG} example.{" "}
-          <Link href="/pricing" className="underline hover:text-foreground">
-            Upgrade to Pro
-          </Link>{" "}
-          to match your own repos.
+          This is the {EXAMPLE_REPO_SLUG} example. Paste a link to your own repo
+          above to match it.
+        </p>
+      )}
+      {/* A counted run: say what's left, quietly, where the result ends. */}
+      {!isExample && meter === "monthly" && freeLeft && (
+        <p className="mt-4 text-xs text-muted-foreground tabular-nums">
+          <FreeLeftLine {...freeLeft} />
         </p>
       )}
     </div>
@@ -479,16 +523,17 @@ export function RepoAnalysisResults() {
 
 /**
  * The teaching empty state: what Analyze does, plus a zero-typing way to see it
- * on the free demo. For locked users it also names the Pro boundary up front,
- * so hitting the paywall later reads as expected, not a bait-and-switch.
+ * on the free demo. For a free account it also says how many repo matches are
+ * left this month, so running out later reads as expected, not a surprise.
  */
 function RepoMatchEmptyState({
   onTryExample,
-  showUpgradeHint,
+  freeLeft,
   showPicker,
 }: {
   onTryExample: () => void;
-  showUpgradeHint: boolean;
+  /** A free account's remaining monthly repos; null when nothing is counted. */
+  freeLeft: { left: number; limit: number } | null;
   /** Resolved-Pro users get the connect-GitHub / pick-a-repo affordance. */
   showPicker: boolean;
 }) {
@@ -522,31 +567,69 @@ function RepoMatchEmptyState({
       >
         Try it on {EXAMPLE_REPO_SLUG}
       </Button>
-      {showUpgradeHint && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Matching your own repo is a{" "}
+      {freeLeft && (
+        <p className="mt-4 text-xs text-muted-foreground tabular-nums">
+          <FreeLeftLine {...freeLeft} />{" "}
           <Link href="/pricing" className="underline hover:text-foreground">
             Pro
           </Link>{" "}
-          feature.
+          is unlimited.
         </p>
       )}
     </div>
   );
 }
 
+/** "2 of 5 free repo matches left this month." */
+function FreeLeftLine({ left, limit }: { left: number; limit: number }) {
+  return left > 0 ? (
+    <>
+      {left} of {limit} free repo matches left this month.
+    </>
+  ) : (
+    <>You&apos;ve used your {limit} free repo matches this month.</>
+  );
+}
+
+type RepoMatchWallKind = "upgrade" | "anon-limit" | "sign-in";
+
 /**
- * The gate a free / signed-out user hits when they analyze their own repo.
- * Renders inline in the results region (no modal — the register prefers
- * progressive over interruptive), and stays sign-in aware: a signed-out user is
- * routed to sign in first (Pro needs an account), a signed-in free user goes
- * straight to pricing. The demo stays one click away so the wall never dead-ends.
+ * What an allowance refusal shows, in the results region (no modal — the
+ * register prefers progressive over interruptive). Each kind offers the one
+ * thing that fixes it: a free account out of repos for the month is pointed
+ * at Pro, a signed-out visitor at a free account. The demo stays one click
+ * away so the prompt never dead-ends.
  */
-function RepoMatchPaywall({ onTryExample }: { onTryExample: () => void }) {
-  const { isAuthenticated, isLoading } = useConvexAuth();
-  // While auth resolves, assume signed-in so a returning user never flashes the
-  // "sign in" CTA. Pro users never reach this branch, so the fallback is safe.
-  const showSignIn = !isLoading && !isAuthenticated;
+function RepoMatchWall({
+  kind,
+  onTryExample,
+}: {
+  kind: RepoMatchWallKind;
+  onTryExample: () => void;
+}) {
+  const router = useRouter();
+  const signIn = () => {
+    // Back to this repo afterwards. Read in the handler rather than via
+    // useSearchParams, which would make the home page dynamic.
+    const { pathname, search } = window.location;
+    router.push(signInUrl(pathname + search));
+  };
+
+  const copy: Record<RepoMatchWallKind, { title: string; body: string }> = {
+    upgrade: {
+      title: `You've matched ${FREE_MONTHLY_REPOS} repos this month`,
+      body: `Free accounts can match ${FREE_MONTHLY_REPOS} repos a month, and re-running one you've already matched doesn't count. Your count resets at the start of next month. Pro matches as many as you like.`,
+    },
+    "anon-limit": {
+      title: "You've used your free matches for now",
+      body: `Signed out, you get ${ANON_DAILY_ANALYSES} new repo matches a day. Sign in to match ${FREE_MONTHLY_REPOS} repos a month on a free account.`,
+    },
+    "sign-in": {
+      title: "Sign in to match your repo",
+      body: `A free account can match ${FREE_MONTHLY_REPOS} repos a month.`,
+    },
+  };
+  const { title, body } = copy[kind];
 
   return (
     <div className="mt-4 rounded-2xl border bg-card px-6 py-10 text-center">
@@ -555,24 +638,12 @@ function RepoMatchPaywall({ onTryExample }: { onTryExample: () => void }) {
         strokeWidth={1.5}
         className="mx-auto size-6 text-muted-foreground/60"
       />
-      <p className="mt-3 text-sm font-medium">
-        Matching your own repo is a Pro feature
-      </p>
+      <p className="mt-3 text-sm font-medium">{title}</p>
       <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        Analyze any public GitHub repo and get skills matched to its stack. Try
-        it free on {EXAMPLE_REPO_SLUG}, or upgrade to match your own repos.
+        {body}
       </p>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-        {showSignIn ? (
-          <Button
-            nativeButton={false}
-            variant="primary"
-            size="sm"
-            render={<Link href={signInUrl("/pricing")} />}
-          >
-            Sign in to upgrade
-          </Button>
-        ) : (
+        {kind === "upgrade" ? (
           <Button
             nativeButton={false}
             variant="primary"
@@ -580,6 +651,10 @@ function RepoMatchPaywall({ onTryExample }: { onTryExample: () => void }) {
             render={<Link href="/pricing" />}
           >
             Upgrade to Pro
+          </Button>
+        ) : (
+          <Button variant="primary" size="sm" onClick={signIn}>
+            Sign in
           </Button>
         )}
         <Button variant="outline" size="sm" onClick={onTryExample}>

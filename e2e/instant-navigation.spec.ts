@@ -93,6 +93,19 @@ test.describe("initial load", () => {
     );
   });
 
+  test("/dashboard serves its masthead in the shell", async ({ page }) => {
+    // Public since signed-out bundles live in the browser. The shell holds no
+    // user data either way; the masthead is what must not wait on auth.
+    await instant(
+      page,
+      async () => {
+        await page.goto("/dashboard");
+        await expect(page.locator("h1")).toContainText("Your setup.");
+      },
+      { baseURL },
+    );
+  });
+
   test("/official serves its header in the shell", async ({ page }) => {
     await instant(
       page,

@@ -19,6 +19,7 @@ export type Plan = "free" | "pro";
 // literal kept in step with the first by a comment.
 export { FREE_WATCHED_SKILLS } from "./bundle-limits";
 import { FREE_WATCHED_SKILLS } from "./bundle-limits";
+import { FREE_MONTHLY_REPOS } from "./repo-match";
 
 export interface PlanDisplayInfo {
   name: string;
@@ -48,6 +49,7 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
       "Full version history and diffs",
       "Unlimited lists to organise them",
       "Browse, search and compare the catalog",
+      `Match skills to ${FREE_MONTHLY_REPOS} GitHub repos a month`,
     ],
     cta: {
       free: "Start watching",
@@ -60,7 +62,7 @@ export const PLANS: Record<Plan, PlanDisplayInfo> = {
     priceYearly: 48,
     features: [
       "Watch unlimited skills",
-      "Match skills to any GitHub repo",
+      "Match skills to unlimited GitHub repos",
       "Unlimited GitHub-only skill adds",
     ],
     cta: {

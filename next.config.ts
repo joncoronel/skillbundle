@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withBotId } from "botid/next/config";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
@@ -141,4 +142,9 @@ const nextConfig: NextConfig = {
   // a rewrite.
 };
 
-export default nextConfig;
+// Vercel BotID (signed-out repo matching, see instrumentation-client.ts). Adds
+// two rewrites under an opaque path that proxy the challenge script and its
+// calls to api.vercel.com. Unlike the OpenPanel rewrites removed above, the
+// destination is our own host platform, which already terminates TLS for every
+// request and so sees these cookies anyway; nothing new leaves.
+export default withBotId(nextConfig);

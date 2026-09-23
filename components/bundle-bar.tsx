@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useConvexAuth } from "convex/react";
 import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -39,7 +38,6 @@ const saveBundleDialogHandle = createSaveBundleDialogHandle();
 export function BundleBar() {
   const selectedSkills = useSelectedSkills();
   const { clearAll, removeSkill, replaceSelection } = useBundleActions();
-  const { isAuthenticated: isSignedIn } = useConvexAuth();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -128,11 +126,9 @@ export function BundleBar() {
     });
   }
 
+  // Signed out too: the dialog saves to this browser instead of the account
+  // (lib/local-bundles.ts), so saving never starts with a sign-in wall.
   function handleSave() {
-    if (!isSignedIn) {
-      router.push("/sign-in");
-      return;
-    }
     saveBundleDialogHandle.open(null);
   }
 
@@ -357,7 +353,7 @@ export function BundleBar() {
                   />
                 }
               >
-                {isSignedIn ? "Save bundle" : "Sign in to save"}
+                Save bundle
               </Button>
             </div>
           </div>

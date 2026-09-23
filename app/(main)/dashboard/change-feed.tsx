@@ -25,9 +25,17 @@ import { solidSurface } from "@/lib/cubby-ui/elevated";
 import { skillHref } from "@/lib/skill-urls";
 import { cn, timeAgo } from "@/lib/utils";
 
-type Feed = FunctionReturnType<
+type AccountFeed = FunctionReturnType<
   typeof api.skillVersions.listRecentChangesForUser
 >;
+/**
+ * What the panel reads, which both feeds satisfy: the account one
+ * (`listRecentChangesForUser`) and the one for bundles saved in the browser
+ * (`listRecentChangesForSkills`), whose rows have no account bundle id or URL.
+ */
+type Feed = Omit<AccountFeed, "items"> & {
+  items: Omit<AccountFeed["items"][number], "bundleId" | "bundleUrlId">[];
+};
 type FeedItem = Feed["items"][number];
 
 /**
@@ -61,7 +69,18 @@ type FeedItem = Feed["items"][number];
  * The panel used to be blind to both, which meant it could show a green
  * all-clear over a dependency the bundle page was calling Needs attention.
  */
-export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
+export function ChangeFeed({
+  feed,
+  onMarkAllRead,
+}: {
+  feed: Feed | undefined;
+  /**
+   * Replaces the account mutation, for bundles saved in the browser. The
+   * caller owns clearing the rows it shows, as the optimistic update below
+   * does for the account feed.
+   */
+  onMarkAllRead?: () => void;
+}) {
   const markAllViewed = useMutation(
     api.bundles.markAllBundlesViewed,
   ).withOptimisticUpdate((localStore) => {
@@ -105,7 +124,8 @@ export function ChangeFeed({ feed }: { feed: Feed | undefined }) {
     // the fault-survival rule made the all-clear branch unreachable in exactly
     // the case the button still renders.
     const target = faults.length > 0 ? panelHeadingRef : allClearRef;
-    void markAllViewed({});
+    if (onMarkAllRead) onMarkAllRead();
+    else void markAllViewed({});
     // The button's own subtree gets `display: none` (or the button unmounts
     // outright, since it is hidden when no changes remain), so without this the
     // focused element vanishes and focus falls to <body> — dumping a keyboard

@@ -28,6 +28,8 @@ import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
 import { BundleSectionHeader, type SortBy } from "./bundle-section-header";
+import { LocalBundleGrid, LocalDashboard } from "./local-dashboard";
+import { useLocalBundles, useLocalImportSettled } from "@/lib/local-bundles";
 
 const deleteBundleHandle = createAlertDialogHandle<{
   id: Id<"bundles">;
@@ -45,7 +47,7 @@ export function DashboardContent() {
   // returns [] (not undefined) for an anonymous caller — ungated, a signed-in
   // cold load briefly flashes the empty state. Skipped queries return
   // undefined, so the skeleton covers the handshake window.
-  const { isAuthenticated } = useConvexAuth();
+  const { isAuthenticated, isLoading } = useConvexAuth();
   const bundles = useQuery(
     api.bundles.listByUser,
     isAuthenticated ? {} : "skip",
@@ -65,6 +67,10 @@ export function DashboardContent() {
   // against docs/architecture.md's Suspense-default-state principle, which says
   // a surface paints its meaningful default and lets slower islands fill in.
   // ChangeFeed owns its own pending state.
+  if (isLoading) return <DashboardSkeleton />;
+  // Signed out: the bundles saved in this browser. The route stopped being
+  // sign-in-only so saving a bundle never starts with an account.
+  if (!isAuthenticated) return <LocalDashboard />;
   if (bundles === undefined || planData === undefined) {
     return <DashboardSkeleton />;
   }
@@ -107,6 +113,14 @@ function DashboardLoaded({
     }
   });
   const [sortBy, setSortBy] = useState<SortBy>("newest");
+  // Bundles still in this browser after sign-in: the ones LocalBundleImporter
+  // could not move because they would take the account past its limits.
+  // Shown rather than hidden, since they still exist and still hold skills.
+  // Only once the import has run, or every browser bundle would show here for
+  // the moment between sign-in and the import landing.
+  const localBundles = useLocalBundles();
+  const importSettled = useLocalImportSettled();
+  const leftoverLocal = importSettled ? localBundles : undefined;
 
   const sortedBundles = useMemo(() => {
     const list = [...bundles];
@@ -135,8 +149,31 @@ function DashboardLoaded({
     });
   }
 
+  const leftover =
+    leftoverLocal && leftoverLocal.length > 0 ? (
+      <div className="space-y-3">
+        <LocalBundleGrid
+          bundles={leftoverLocal}
+          title="Still in this browser"
+        />
+        <p className="max-w-prose text-sm text-muted-foreground">
+          These couldn&rsquo;t move to your account when you signed in, usually
+          because they would take you past your plan&rsquo;s watched-skill
+          limit.{" "}
+          <Link
+            href="/pricing"
+            className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
+          >
+            Upgrade
+          </Link>{" "}
+          or remove skills from your bundles and they&rsquo;ll move on your next
+          visit.
+        </p>
+      </div>
+    ) : null;
+
   if (bundles.length === 0) {
-    return <DashboardEmpty />;
+    return leftover ?? <DashboardEmpty />;
   }
 
   return (
@@ -242,6 +279,8 @@ function DashboardLoaded({
             ))}
           </div>
         </section>
+
+        {leftover}
       </div>
 
       <AlertDialog handle={deleteBundleHandle}>

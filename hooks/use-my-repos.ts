@@ -24,8 +24,8 @@ export function useMyRepos() {
   const { isAuthenticated } = useConvexAuth();
   const { limits, isLoading: planLoading, isPlanError } = useUserPlan();
   const isPro = limits?.canAutoDetect ?? false;
-  // Resolved-free, mirroring repo-url-input's knownLocked: loading or errored
-  // plans are "unknown", never "free".
+  // Resolved-free, mirroring repo-url-input's planResolvedFree: loading or
+  // errored plans are "unknown", never "free".
   const knownFree = !planLoading && !isPlanError && !isPro;
 
   const account = user?.externalAccounts?.find(

@@ -1,0 +1,240 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { convexQuery } from "@convex-dev/react-query";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Delete01Icon, EyeIcon } from "@hugeicons/core-free-icons";
+import { api } from "@/convex/_generated/api";
+import { BundleCard } from "@/components/bundle-card";
+import { Button } from "@/components/ui/cubby-ui/button";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogClose,
+  AlertDialogTrigger,
+  createAlertDialogHandle,
+} from "@/components/ui/cubby-ui/alert-dialog";
+import { signInUrl } from "@/components/auth/shared";
+import { FREE_WATCHED_SKILLS } from "@/lib/bundle-limits";
+import { isFault } from "@/lib/monitoring/conditions";
+import {
+  useLocalBundleActions,
+  useLocalBundles,
+  type LocalBundle,
+} from "@/lib/local-bundles";
+import { localBundleHref, localFeedTargets } from "@/lib/local-bundles-core";
+import { ChangeFeed } from "./change-feed";
+import { DashboardStats } from "./dashboard-stats";
+import { DashboardEmpty } from "./dashboard-empty";
+import { DashboardSkeleton } from "./dashboard-skeleton";
+import { BundleSectionHeader, type SortBy } from "./bundle-section-header";
+
+const deleteLocalBundleHandle = createAlertDialogHandle<{
+  id: string;
+  name: string;
+}>();
+
+/**
+ * The dashboard for a signed-out visitor: the bundles saved in this browser
+ * (lib/local-bundles.ts), with the same status panel on top. Its feed comes
+ * from `listRecentChangesForSkills`, which answers the question the account
+ * feed does over entries the browser sends, so both dashboards agree about
+ * what changed.
+ */
+export function LocalDashboard() {
+  const bundles = useLocalBundles();
+  const { markAllViewed } = useLocalBundleActions();
+  const targets = useMemo(
+    () => (bundles ? localFeedTargets(bundles) : []),
+    [bundles],
+  );
+  const feedQuery = useQuery({
+    ...convexQuery(api.skillVersions.listRecentChangesForSkills, {
+      skills: targets,
+    }),
+    enabled: bundles !== undefined && bundles.length > 0,
+    placeholderData: keepPreviousData,
+  });
+  // "Mark all read" moves every baseline, which changes the query's arguments;
+  // until the new answer lands the previous one is still showing. Clear its
+  // changes straight away, as the account feed's optimistic update does, and
+  // let faults stay: reading about a delisted skill doesn't fix it.
+  const [clearedPending, setClearedPending] = useState(false);
+  // Settled once the new answer is in; reset during render (React's pattern
+  // for state derived from a changing input) so a later, unrelated argument
+  // change isn't also shown cleared.
+  if (clearedPending && !feedQuery.isPlaceholderData) {
+    setClearedPending(false);
+  }
+  const feed =
+    clearedPending && feedQuery.isPlaceholderData && feedQuery.data
+      ? {
+          ...feedQuery.data,
+          items: feedQuery.data.items.filter((i) => isFault(i.condition)),
+          suppressed: false,
+        }
+      : feedQuery.data;
+
+  if (bundles === undefined) return <DashboardSkeleton />;
+  if (bundles.length === 0) return <DashboardEmpty signedOut />;
+
+  return (
+    <div className="space-y-10">
+      <ChangeFeed
+        feed={feed}
+        onMarkAllRead={() => {
+          setClearedPending(true);
+          markAllViewed();
+        }}
+      />
+
+      <div className="space-y-3">
+        <DashboardStats
+          bundles={bundles}
+          plan="free"
+          limits={{ maxWatchedSkills: FREE_WATCHED_SKILLS }}
+        />
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Saved in this browser.{" "}
+          <Link
+            href={signInUrl("/dashboard")}
+            className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
+          >
+            Sign in
+          </Link>{" "}
+          to share your bundles and keep them on every device. They move to your
+          account when you do.
+        </p>
+      </div>
+
+      <LocalBundleGrid bundles={bundles} />
+    </div>
+  );
+}
+
+/**
+ * Bundles saved in the browser, as cards. Also rendered on the signed-in
+ * dashboard for any that could not move into the account on sign-in (see
+ * LocalBundleImporter), so they never become invisible.
+ */
+export function LocalBundleGrid({
+  bundles,
+  title,
+}: {
+  bundles: LocalBundle[];
+  title?: string;
+}) {
+  const { remove } = useLocalBundleActions();
+  const [sortBy, setSortBy] = useState<SortBy>("newest");
+  const sorted = useMemo(() => {
+    const list = [...bundles];
+    return sortBy === "alphabetical"
+      ? list.sort((a, b) => a.name.localeCompare(b.name))
+      : list.sort((a, b) => b.createdAt - a.createdAt);
+  }, [bundles, sortBy]);
+
+  return (
+    <section className="space-y-5">
+      {title ? (
+        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      ) : (
+        <BundleSectionHeader
+          count={bundles.length}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+        />
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {sorted.map((bundle) => (
+          <BundleCard
+            key={bundle.id}
+            name={bundle.name}
+            urlId={bundle.id}
+            description={bundle.description}
+            skillCount={bundle.skills.length}
+            createdAt={bundle.createdAt}
+            creatorName="You"
+            isPublic={false}
+            actions={
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="h-9 sm:h-7"
+                  nativeButton={false}
+                  render={<Link href={localBundleHref(bundle.id)} />}
+                  leadingIcon={
+                    <HugeiconsIcon
+                      icon={EyeIcon}
+                      strokeWidth={2}
+                      className="size-3.5"
+                    />
+                  }
+                >
+                  View
+                </Button>
+                <AlertDialogTrigger
+                  handle={deleteLocalBundleHandle}
+                  payload={{ id: bundle.id, name: bundle.name }}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="h-9 sm:h-7"
+                      leadingIcon={
+                        <HugeiconsIcon
+                          icon={Delete01Icon}
+                          strokeWidth={2}
+                          className="size-3.5"
+                        />
+                      }
+                    >
+                      Delete
+                    </Button>
+                  }
+                />
+              </div>
+            }
+          />
+        ))}
+      </div>
+
+      <AlertDialog handle={deleteLocalBundleHandle}>
+        {({ payload }) => (
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete bundle</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-medium text-foreground">
+                  {payload?.name}
+                </span>{" "}
+                will be removed from this browser. This can&rsquo;t be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogClose
+                render={<Button variant="outline">Cancel</Button>}
+              />
+              <AlertDialogClose
+                render={
+                  <Button
+                    variant="destructive"
+                    onClick={() => payload && remove(payload.id)}
+                  >
+                    Delete
+                  </Button>
+                }
+              />
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        )}
+      </AlertDialog>
+    </section>
+  );
+}

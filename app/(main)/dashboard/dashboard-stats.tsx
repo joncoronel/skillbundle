@@ -10,7 +10,9 @@ interface DashboardStatsProps {
   /** Every bundle's skills, so the distinct count can be derived here. */
   bundles: Array<{ skills: Array<{ source: string; skillId: string }> }>;
   plan: PlanData["plan"];
-  limits: PlanData["limits"];
+  /** Only the watch limit is read, so the browser dashboard can pass the free
+   *  plan's without a plan query. */
+  limits: Pick<PlanData["limits"], "maxWatchedSkills">;
 }
 
 export function DashboardStats({ bundles, plan, limits }: DashboardStatsProps) {
