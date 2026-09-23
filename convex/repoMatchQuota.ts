@@ -1,16 +1,8 @@
 /**
  * The free plan's repo-match allowance: FREE_MONTHLY_REPOS distinct repos per
- * UTC calendar month, per account. Pro is unlimited and demo repos are never
- * counted; which caller is metered how is `repoMatchMeter` in
- * lib/repo-match.ts. Signed-out visitors are metered separately, per IP, by
- * the `repoAnalysisAnonymous` rate limit (convex/rateLimits.ts).
- *
- * Counted at request time, cache hit or not, so what a user is told ("3 of 5
- * used") is predictable from what they did rather than from whether someone
- * else analyzed the repo first. Re-running a repo already counted this month
- * is free. A run that comes back with an error (repo not found, private
- * without access) is refunded, so a typo doesn't cost a slot; the miss is
- * charged to the daily attempt budget instead (`repoAnalysisDaily`).
+ * UTC month, per account. Counted at request time, cache hit or not, so "3 of
+ * 5 used" is predictable. Re-running a counted repo is free, and an errored
+ * run is refunded (its miss lands on `repoAnalysisDaily` instead).
  */
 
 import { ConvexError, v } from "convex/values";
@@ -23,9 +15,8 @@ import {
 } from "../lib/repo-match";
 
 /**
- * Count `repoKey` against the caller's month. Returns true when this call
- * added it (so the caller can refund it if the run fails), false when it was
- * already counted. Throws FREE_LIMIT when the month is full.
+ * Count `repoKey` against the caller's month: true if this call added it,
+ * false if already counted. Throws FREE_LIMIT when the month is full.
  */
 export const claim = internalMutation({
   args: { subject: v.string(), repoKey: v.string() },
@@ -69,11 +60,7 @@ export const release = internalMutation({
   },
 });
 
-/**
- * The caller's allowance for this month, for the "N of 5 left" line. Null when
- * nothing is metered for them: signed out (metered per IP, not per account)
- * or on Pro.
- */
+/** This month's usage for the "N of 5 left" line; null if signed out or Pro. */
 export const myUsage = query({
   args: {},
   returns: v.union(
@@ -82,12 +69,7 @@ export const myUsage = query({
       used: v.number(),
       limit: v.number(),
       repos: v.array(v.string()),
-      /**
-       * The month the count is for. A query only re-runs when what it read
-       * changes, not when the clock moves, so a subscription opened on the
-       * 31st keeps answering for that month. The client compares this with
-       * its own month and treats a stale answer as a fresh month.
-       */
+      /** Lets the client spot a stale answer after the month rolls over. */
       month: v.string(),
     }),
   ),

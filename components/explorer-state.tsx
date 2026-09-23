@@ -73,12 +73,8 @@ export interface ExplorerState extends HomeParams {
 const ExplorerStateContext = createContext<ExplorerState | null>(null);
 
 /**
- * The sort a query gets when the user hasn't picked one. Installs, except for
- * a description search. A names-only search already requires every query word
- * in the name, so every hit is on topic and popularity is the useful order
- * ("shadcn" → shadcn/ui first, not a 58-install namesake). Description search
- * also matches passing mentions ("pdf" → the docx skill), so match quality has
- * to lead there.
+ * The default sort: installs, since a names-only hit always has the query in
+ * its name. Relevance for description search, which matches passing mentions.
  */
 function autoSort(hasQuery: boolean, searchDescriptions: boolean) {
   return hasQuery && searchDescriptions ? "relevance" : "installs";

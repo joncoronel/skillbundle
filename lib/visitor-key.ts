@@ -2,25 +2,17 @@ import "server-only";
 import { createHmac } from "node:crypto";
 
 /**
- * The per-visitor key the signed-out repo-match allowance is counted under
- * (convex/rateLimits.ts `repoAnalysisAnonymous`).
- *
- * An HMAC of the visitor's IP, so Convex only ever sees an opaque hex string
- * and the raw address is never sent to it or stored. Keyed with
- * REPO_MATCH_SECRET, which Convex also holds, so this is pseudonymous rather
- * than anonymous: someone with the secret could brute-force the IPv4 space.
- * What it does guarantee is that no IP sits in the database in the clear.
+ * The key the signed-out repo-match allowance is counted under: an HMAC of the
+ * IP, so no address reaches Convex. Pseudonymous rather than anonymous, since
+ * Convex also holds the secret.
  */
 export function visitorKey(ip: string, secret: string): string {
   return createHmac("sha256", secret).update(normalizeIp(ip)).digest("hex");
 }
 
 /**
- * The client IP as Vercel reports it: `x-real-ip`, else the first
- * `x-forwarded-for` hop. Vercel's edge sets both and overwrites any value the
- * client sent, so neither can be spoofed from outside on Vercel. Off Vercel
- * (local dev, `next start` for e2e) they are usually absent, and every request
- * shares one "unknown" key.
+ * The client IP as Vercel reports it (Vercel overwrites both headers, so they
+ * can't be spoofed there). Off Vercel every request shares "unknown".
  */
 export function clientIp(headers: Headers): string {
   const real = headers.get("x-real-ip")?.trim();
@@ -30,13 +22,9 @@ export function clientIp(headers: Headers): string {
 }
 
 /**
- * Collapse an IP to the unit one visitor controls. IPv4 stays whole. IPv6 is
- * cut to its /64: a single home or phone connection is handed a whole /64 and
- * can pick any address in it, so counting full addresses would let one
- * visitor mint 2^64 fresh allowances. IPv4-mapped IPv6 (`::ffff:1.2.3.4`) is
- * treated as the IPv4 it carries. Anything unparseable (including the rare
- * longhand mapped forms) is returned lowercased as-is, which still gives each
- * distinct string its own key.
+ * Collapse an IP to the unit one visitor controls: IPv4 whole, IPv6 to its
+ * /64 (one connection gets a whole /64), mapped IPv4 unwrapped. Anything
+ * unparseable is returned lowercased as-is.
  */
 export function normalizeIp(ip: string): string {
   const raw = ip.trim().toLowerCase();

@@ -60,9 +60,7 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
     api.bundles.listWatchedSkillKeys,
     isAuthenticated ? {} : "skip",
   );
-  // Signed out, the bundle is saved in this browser instead (lib/local-bundles)
-  // and metered against the free plan's limit, so signing in later never takes
-  // anything away.
+  // Signed out, it saves to this browser under the free plan's limit.
   const local = !authLoading && !isAuthenticated;
   const localBundles = useLocalBundles();
   const localActions = useLocalBundleActions();

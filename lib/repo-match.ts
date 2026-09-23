@@ -1,17 +1,8 @@
 // Repo-match policy: the demo allowlist, the free allowances, and the error
-// codes a refusal carries.
-//
-// Repo match (GitHub auto-detection) is unlimited on Pro and metered for
-// everyone else: signed-in free accounts get FREE_MONTHLY_REPOS distinct repos
-// a month, signed-out visitors get ANON_DAILY_ANALYSES fresh analyses per IP
-// (the day's allowance refills over 24h), and the demo allowlist runs free for
-// everyone. Enforced server-side in convex/recommendations.ts (the monthly
-// count lives in convex/repoMatchQuota.ts, the signed-out one in
-// convex/rateLimits.ts); the client mirrors it to pick the right entry point
-// and to skip round-trips it already knows will be refused.
-//
-// Shared by both the Convex backend (../lib/repo-match) and the client
-// (@/lib/repo-match) so the two can never drift.
+// codes a refusal carries. Unlimited on Pro; free accounts get
+// FREE_MONTHLY_REPOS a month (convex/repoMatchQuota.ts), signed-out visitors
+// ANON_DAILY_ANALYSES a day per IP (convex/rateLimits.ts). Shared by the
+// Convex backend and the client so the two can't drift.
 
 /**
  * Server-side cap on how many of the user's GitHub repos `listMyRepos`
@@ -33,18 +24,13 @@ export function currentMonth(now: number = Date.now()): string {
 export const FREE_MONTHLY_REPOS = 5;
 
 /**
- * Successful fresh (uncached) analyses a signed-out visitor gets per IP.
- * Errors don't count; they spend the daily attempt budget instead. A token
- * bucket of this size refilling over a day, so "per day" is rolling, not
- * midnight.
+ * Successful fresh analyses a signed-out visitor gets per IP, refilling over
+ * a rolling day. Errors don't count.
  */
 export const ANON_DAILY_ANALYSES = 3;
 
-// Codes carried by the ConvexErrors the repo-match gates throw. They live here
-// (not in the Convex modules) so the client can match on them without
-// importing server code. Thrown rather than returned so a refusal is stored as
-// a query error, never as cacheable data that would pin a user to the wall
-// after they upgrade or sign in.
+// Codes on the ConvexErrors the repo-match gates throw. Here so the client can
+// match on them without importing server code.
 
 /** A Pro-only feature was asked for on a free plan (the GitHub repo picker). */
 export const PRO_REQUIRED = "pro_required" as const;
@@ -52,21 +38,14 @@ export const PRO_REQUIRED = "pro_required" as const;
 export const FREE_LIMIT = "repo_match_free_limit" as const;
 /** A signed-out visitor has used their ANON_DAILY_ANALYSES. */
 export const ANON_LIMIT = "repo_match_anon_limit" as const;
-/**
- * A signed-out call reached `analyzeRepo` directly for a non-demo repo.
- * Signed-out matching has to come through the site's server action, which is
- * the only place that can see the visitor's IP to meter it.
- */
+/** A signed-out non-demo call reached `analyzeRepo` instead of the site. */
 export const SIGN_IN_REQUIRED = "repo_match_sign_in_required" as const;
 /** The signed-out server action's BotID check refused the request. */
 export const BOT_REFUSED = "repo_match_bot" as const;
 /** Signed-out matching is misconfigured on this deployment (no secret). */
 export const SIGNED_OUT_UNAVAILABLE = "repo_match_unavailable" as const;
 
-/**
- * Every code the signed-out server action returns. Typed so the client's
- * mapping from code to prompt can't drift from what the action sends.
- */
+/** Every code the signed-out server action returns. */
 export const SIGNED_OUT_CODES = [
   ANON_LIMIT,
   BOT_REFUSED,
@@ -136,17 +115,10 @@ export function extractRepoSlug(
 }
 
 /**
- * Which allowance a repo match draws on:
- *
- * - `"none"`: nothing is counted (a demo repo, or a Pro plan).
- * - `"monthly"`: a signed-in free account's FREE_MONTHLY_REPOS.
- * - `"anonymous"`: a signed-out visitor's ANON_DAILY_ANALYSES, which only the
- *   site's server action can meter (it is keyed on the visitor's IP).
- *
- * The one policy predicate both sides call. The server (with the resolved
- * plan) enforces the meter it names; the client (with the subscribed plan)
- * uses it to route the request and to word the refusal, so the two can't
- * disagree about who is metered how.
+ * Which allowance a repo match draws on: none (demo repo, or Pro), a free
+ * account's monthly repos, or a signed-out visitor's daily per-IP runs. The
+ * server enforces it; the client uses it to route the request and word the
+ * refusal.
  */
 export type RepoMatchMeter = "none" | "monthly" | "anonymous";
 
@@ -160,11 +132,7 @@ export function repoMatchMeter(
   return caller.canAutoDetect ? "none" : "monthly";
 }
 
-/**
- * The key a repo is counted under: lowercased `owner/repo`. GitHub names are
- * case-insensitive, so every casing of one repo is one slot, and this matches
- * the cache key analyzeRepo builds.
- */
+/** The key a repo is counted under: lowercased, like analyzeRepo's cache key. */
 export function repoMatchKey(owner: string, repo: string): string {
   return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }

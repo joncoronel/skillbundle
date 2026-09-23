@@ -13,9 +13,7 @@ import { NextResponse } from "next/server";
 // never fires, and the route is silently public: no error and no failed build.
 // tests/proxy-matcher.test.ts fails when the two lists drift.
 //
-// `/dashboard` is NOT here any more. Signed out, it shows the bundles saved in
-// the browser (lib/local-bundles.ts), so saving a bundle never starts with an
-// account. It reads auth on the client only, so it left the matcher too.
+// `/dashboard` is public: signed out, it shows bundles saved in the browser.
 const isPrivateRoute = createRouteMatcher(["/settings(.*)", "/dev(.*)"]);
 
 // Exact paths, NOT `/sign-in(.*)`, and that is the whole design of this list.
@@ -95,8 +93,7 @@ export const config = {
     "/settings(.*)",
     "/dev(.*)",
     // `getAuthToken()` runs in the page itself, before any `preloadQuery`.
-    // Not `/bundle/local`: a static page for bundles saved in the browser,
-    // which reads auth on the client only.
+    // Not `/bundle/local`, which is static.
     "/bundle/((?!local$).*)",
     "/sign-in(.*)",
     "/sign-up(.*)",

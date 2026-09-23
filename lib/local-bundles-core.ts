@@ -1,13 +1,8 @@
 /**
- * Pure core of bundles saved in the browser while signed out. Kept apart from
- * the jotai store (local-bundles.ts) so the limit and merge rules can be
- * unit-tested without a store or a DOM, the same split as
- * bundle-selection-core.ts.
- *
- * These bundles never touch the database. They live in localStorage until the
- * browser signs in, when `importLocalBundles` moves them into the account. The
- * limits below mirror what an account on the free plan gets, so signing up
- * never takes anything away.
+ * Pure rules for bundles saved in the browser while signed out, apart from the
+ * jotai store (local-bundles.ts) so they test without a DOM. They live in
+ * localStorage until sign-in moves them to the account, under the free plan's
+ * limits so signing up never takes anything away.
  */
 import {
   FREE_WATCHED_SKILLS,
@@ -20,7 +15,7 @@ import { feedTargets } from "./monitoring/feed-targets";
 export interface LocalBundleSkill {
   source: string;
   skillId: string;
-  /** Stored so the dashboard can list a bundle without a catalog read. */
+  /** Stored so the dashboard can list it without a catalog read. */
   name: string;
   /** When the skill joined this bundle: its change-tracking baseline. */
   addedAt: number;
@@ -51,10 +46,8 @@ export function localWatchedKeys(
 }
 
 /**
- * Why saving `incoming` (as bundle `ignoreId`'s new contents, or as a new
- * bundle) would be refused, or null when it fits. Counts the UNION, like the
- * server's `assertWatchLimit`: filing a skill you already watch in a second
- * bundle is free.
+ * Why saving `incoming` (as `ignoreId`'s new contents, or a new bundle) would
+ * be refused, or null. Counts the union, like the server's `assertWatchLimit`.
  */
 export function localSaveRefusal(
   bundles: LocalBundle[],
@@ -76,10 +69,8 @@ export function localSaveRefusal(
 }
 
 /**
- * The bundle's new skill list: deduped, in the given order, keeping `addedAt`
- * for skills it already held and stamping `now` on new ones. Same rule as the
- * server's `updateBundleSkills`, so a skill's change history does not restart
- * because the bundle was edited.
+ * The new skill list, deduped, keeping `addedAt` for skills already held and
+ * stamping `now` on new ones, like the server's `updateBundleSkills`.
  */
 export function mergeSkills(
   prior: LocalBundleSkill[],
@@ -103,10 +94,7 @@ export function mergeSkills(
   return out;
 }
 
-/**
- * The arguments for `listRecentChangesForSkills`: the shared `feedTargets`,
- * with the bundle reduced to the name the feed rows show.
- */
+/** Arguments for `listRecentChangesForSkills`. */
 export function localFeedTargets(bundles: LocalBundle[]) {
   return feedTargets(bundles).map(({ bundle, ...target }) => ({
     ...target,
@@ -114,11 +102,7 @@ export function localFeedTargets(bundles: LocalBundle[]) {
   }));
 }
 
-/**
- * Where a browser bundle opens. A search param on a static route rather than a
- * `[id]` segment, because the page renders entirely in the browser and there
- * is nothing for a server to prerender per id (same shape as `/compare`).
- */
+/** A search param on a static route: there's nothing to prerender per id. */
 export function localBundleHref(id: string): string {
   return `/bundle/local?id=${encodeURIComponent(id)}`;
 }

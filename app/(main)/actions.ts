@@ -15,12 +15,7 @@ import {
 } from "@/lib/repo-match";
 import { clientIp, visitorKey } from "@/lib/visitor-key";
 
-/**
- * A server action's thrown errors reach the client masked in production, so
- * this returns its refusals instead. `code` is the ConvexError code where
- * there is one (ANON_LIMIT, "rate_limited"), which the client turns back into
- * a thrown error so TanStack Query stores it as an error, never as data.
- */
+/** Server action errors are masked in production, so refusals are returned. */
 export type SignedOutRepoMatch =
   | { ok: true; result: AnalyzeRepoResult }
   | { ok: false; code: SignedOutCode; message: string };
@@ -33,16 +28,11 @@ const UNAVAILABLE: SignedOutRepoMatch = {
 };
 
 /**
- * Repo matching for signed-out visitors, from the home page's repo mode (the
- * only mount of the repo input, which is why `instrumentation-client.ts`
- * protects `POST /`). Signed-in and demo runs call Convex directly; this path
- * exists because the signed-out allowance is per IP, and only the site can
- * see the IP (the browser talks to Convex over a websocket).
- *
- * Checks BotID, turns the IP into an opaque visitor key, and calls
- * `recommendations.analyzeRepoAnonymous` with the shared REPO_MATCH_SECRET.
- * Adds no render work: nothing here revalidates or sets cookies, so the
- * response carries only the return value and the page stays static.
+ * Signed-out repo matching. It goes through the site because the allowance is
+ * per IP, and Convex can't see the IP. Checks BotID, hashes the IP into a
+ * visitor key, and calls `analyzeRepoAnonymous` with REPO_MATCH_SECRET.
+ * Invoked from the home page, which is why instrumentation-client.ts protects
+ * `POST /`.
  */
 export async function analyzeRepoSignedOut(
   repoUrl: string,
@@ -66,11 +56,8 @@ export async function analyzeRepoSignedOut(
   try {
     ({ isBot } = await checkBotId());
   } catch (e) {
-    // checkBotId needs Vercel's OIDC token to ask Vercel for a verdict. Off
-    // Vercel (a local `next start`, which is what the e2e suite runs) there is
-    // none and it throws; `next dev` never gets here, it answers "human". So a
-    // throw on Vercel is a real failure and refuses; anywhere else it's the
-    // expected absence of the platform.
+    // It throws off Vercel (no OIDC token, e.g. the e2e `next start`), so only
+    // a throw on Vercel refuses.
     if (process.env.VERCEL) {
       console.error("analyzeRepoSignedOut: checkBotId failed", e);
       return UNAVAILABLE;
@@ -101,8 +88,7 @@ export async function analyzeRepoSignedOut(
           ? data.message
           : "Something went wrong analyzing this repository. Please try again.";
       if (raw === "unauthorized") {
-        // The two deployments disagree about the secret: a config error, not
-        // something the visitor can fix.
+        // Secret mismatch between Vercel and Convex: config, not the visitor.
         console.error("analyzeRepoSignedOut: REPO_MATCH_SECRET mismatch");
         return UNAVAILABLE;
       }

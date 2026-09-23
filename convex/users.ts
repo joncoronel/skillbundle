@@ -58,8 +58,7 @@ export function verifiedPrimaryEmail(data: UserJSON): string | undefined {
 export const deleteFromClerk = internalMutation({
   args: { clerkUserId: v.string() },
   async handler(ctx, { clerkUserId }) {
-    // Keyed on the Clerk id rather than the users row, so it goes whether or
-    // not the row exists. One row per account (convex/repoMatchQuota.ts).
+    // Keyed on the Clerk id, so it goes even without a users row.
     const quota = await ctx.db
       .query("repoMatchQuota")
       .withIndex("by_subject", (q) => q.eq("subject", clerkUserId))
@@ -86,18 +85,10 @@ export const deleteFromClerk = internalMutation({
 });
 
 /**
- * The caller's user row, created from their token if the Clerk webhook has not
- * delivered it yet.
- *
- * The row normally arrives by `user.created`, but that is a separate request
- * that can land after the browser's first mutation. Someone who signs up and
- * saves straight away (or whose browser bundles are imported on first sign-in)
- * would otherwise get "Can't get current user". The webhook still runs later
- * and `upsertFromClerk` patches this row rather than inserting a second one:
- * both read `byExternalId` inside a transaction, so they cannot both insert.
- *
- * Only the write paths that can be a new user's first action use this. Reads
- * stay on `getCurrentUser` and treat a missing row as signed out.
+ * The caller's user row, created from their token if the Clerk webhook hasn't
+ * landed yet (a new account's first write can beat it). The webhook then
+ * patches this row; both check `byExternalId` in a transaction, so there's
+ * never a duplicate.
  */
 export async function getOrCreateCurrentUser(ctx: MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();

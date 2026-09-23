@@ -789,10 +789,7 @@ export default defineSchema({
     // the old public-by-default rule.
     isPublic: v.boolean(),
     forkedFrom: v.optional(v.id("bundles")),
-    // The browser id of the bundle this row was imported from
-    // (`importLocalBundles`). Lets a repeated import recognise bundles it
-    // already moved: the browser only clears them after the mutation returns,
-    // and a tab closed in between sends them again on the next load.
+    // Browser id this row was imported from, so a repeated import is a no-op.
     localId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
@@ -889,12 +886,8 @@ export default defineSchema({
     recalculatedAt: v.number(),
   }),
 
-  // Free-plan repo-match allowance (convex/repoMatchQuota.ts): the distinct
-  // repos a signed-in free account has matched in `month`. ONE row per
-  // account, reset in place when a request arrives in a new month, so the
-  // table is bounded by the number of accounts that ever used the feature and
-  // needs no cleanup cron. `subject` is the Clerk user id (the same key the
-  // rate limits use), so a user whose webhook hasn't landed yet still counts.
+  // Free-plan repo-match allowance (convex/repoMatchQuota.ts): one row per
+  // account, keyed by Clerk id, reset in place each month.
   repoMatchQuota: defineTable({
     subject: v.string(),
     /** UTC calendar month, "YYYY-MM". */

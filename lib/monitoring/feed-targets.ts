@@ -1,15 +1,9 @@
 import { watchKey } from "../bundle-limits";
 
 /**
- * One change-feed target per distinct skill across `bundles`, which is what a
- * dashboard feed checks. A skill's baseline is `max(lastViewedAt, addedAt)`,
- * and a skill in two bundles is reported against the one it has been unread
- * in longest.
- *
- * The one copy of that rule, shared by the account feed
- * (`listRecentChangesForUser`, over bundle rows) and the browser feed
- * (`localFeedTargets`, over bundles in localStorage), so the two dashboards
- * can't disagree about what counts as new.
+ * One change-feed target per distinct skill, with baseline
+ * `max(lastViewedAt, addedAt)` from the bundle it's been unread in longest.
+ * Shared by the account and browser feeds so they agree on what's new.
  */
 export function feedTargets<
   B extends {

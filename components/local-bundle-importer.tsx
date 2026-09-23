@@ -20,18 +20,10 @@ const SKIPPED_KEY = "skillbundle:import-skipped";
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
- * Moves bundles saved in this browser into the account, once, the first time
- * this page load sees a signed-in user. Mounted in the (main) layout so it runs
- * wherever sign-in lands. Renders nothing.
- *
- * Inside a Web Lock, reading storage directly rather than the atom: two tabs
- * that finish signing in together would otherwise both send the same bundles.
- * The second tab gets the lock after the first has removed what it moved, and
- * finds nothing left to send.
- *
- * Whatever the server skipped (it would have taken the account past a limit)
- * stays in the browser, and the dashboard lists it under "Still in this
- * browser" once this has settled.
+ * Moves bundles saved in this browser into the account on the first signed-in
+ * render of a page load. Inside a Web Lock, reading storage directly, so two
+ * tabs signing in together can't both send them. Skipped bundles stay behind
+ * and the dashboard lists them.
  */
 export function LocalBundleImporter() {
   const { isAuthenticated } = useConvexAuth();
@@ -67,10 +59,7 @@ export function LocalBundleImporter() {
       });
       removeMany(imported.map((i) => bundles[i.index].id));
 
-      // Bundles over the limit stay behind and are sent again on every load,
-      // since an upgrade is what lets them in. Say so once per set rather than
-      // every visit: the dashboard already lists them under "Still in this
-      // browser".
+      // Left-behind bundles are retried every load; toast once per set.
       const skippedSet = skipped
         .map((i) => bundles[i].id)
         .sort()
@@ -95,8 +84,7 @@ export function LocalBundleImporter() {
         });
       }
 
-      // Standing on the local page of a bundle that just moved: follow it to
-      // its account page rather than leaving a "not in this browser" state.
+      // Follow a bundle that just moved from its local page to its new one.
       const here = new URL(window.location.href);
       if (here.pathname === "/bundle/local") {
         const id = here.searchParams.get("id");
@@ -108,8 +96,7 @@ export function LocalBundleImporter() {
     navigator.locks
       .request("skillbundle:import-local-bundles", run)
       .catch((error: unknown) => {
-        // Nothing was removed, so the bundles are all still in the browser and
-        // the next page load tries again.
+        // Nothing was removed, so the next page load tries again.
         console.error("Couldn't move browser bundles to the account", error);
         toast.error({
           title: "Couldn't move your saved bundles",

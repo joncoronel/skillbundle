@@ -49,11 +49,8 @@ export { FREE_WATCHED_SKILLS };
 const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   free: {
     maxWatchedSkills: FREE_WATCHED_SKILLS,
-    // False = repo match is metered, not refused: a free account gets
-    // FREE_MONTHLY_REPOS distinct repos a month (convex/repoMatchQuota.ts), and
-    // the demo allowlist runs free for everyone. True = unlimited. The GitHub
-    // repo picker stays Pro-only on this flag (convex/githubAccount.ts). Policy
-    // in lib/repo-match.ts `repoMatchMeter`, enforced in recommendations.ts.
+    // False = repo match is metered (lib/repo-match.ts), not refused. The
+    // GitHub repo picker stays Pro-only on this flag.
     canAutoDetect: false,
     maxGitHubOnlyAdds: 3,
   },

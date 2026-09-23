@@ -1,19 +1,6 @@
 /**
- * Coverage for bundles saved in the browser while signed out: the pure rules
- * in lib/local-bundles-core.ts, and the Convex surface they lean on.
- *
- * What is pinned, and why each matters:
- *
- *   - **The browser gets the free plan's limits.** Signing in moves these
- *     bundles into an account, so a browser allowed more than a free account
- *     would have them refused on the way in.
- *   - **`importLocalBundles` moves what fits and reports the rest.** Throwing
- *     on the first bundle over the limit would roll back the ones that fit and
- *     leave the user with nothing moved.
- *   - **The first write can precede the Clerk webhook.** The import is a new
- *     account's first action, so it must not need the users row to exist.
- *   - **The read queries answer like the account ones.** A skill that changed
- *     after it was added shows up the same way whichever dashboard asks.
+ * Bundles saved in the browser while signed out: the pure rules in
+ * lib/local-bundles-core.ts, the import into an account, and the read queries.
  */
 import { test, expect, describe } from "vitest";
 import { api } from "../convex/_generated/api";

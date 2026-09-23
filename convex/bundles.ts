@@ -193,10 +193,8 @@ const bundleSkill = v.object({
 });
 
 /**
- * One bundle entry joined to its catalog row, in the shape the bundle register
- * renders. Shared by `getByUrlId` (account bundles) and `resolveSkills`
- * (bundles saved in the browser), so the two pages cannot disagree about what a
- * row shows.
+ * One bundle entry joined to its catalog row, as the register renders it.
+ * Shared by `getByUrlId` and `resolveSkills` so the two pages can't disagree.
  */
 async function loadBundleSkill(
   ctx: QueryCtx,
@@ -209,19 +207,11 @@ async function loadBundleSkill(
     )
     .unique();
 
-  // No `updatedSinceAdded` / `changedSinceViewed` here any more. Both were
-  // computed per skill and read by nothing: the register renders neither, and
-  // their only former consumer (skill-card) no longer renders on this page.
-  // Worse, they derived from the FAT skills row while `resolveSkillChange`
-  // reads the `skillSummaries` mirror, so the two sources could hold different
-  // histories — a third, divergent definition of "changed" sitting in a
-  // shipped validator.
+  // "Changed" is `resolveSkillChange`'s job (skillVersions.ts), not this row's.
   return {
     source: s.source,
     skillId: s.skillId,
-    // Returned, not just used locally: the register shows when each skill
-    // joined, and omitting it left that column reading "—" for every row of
-    // every bundle, forever.
+    // The register's "Added" column.
     addedAt: s.addedAt,
     name: skill?.name ?? s.skillId,
     description: skill?.description,
@@ -232,9 +222,7 @@ async function loadBundleSkill(
     hasContentFetchError: skill?.hasContentFetchError ?? false,
     // Drives the inline verified-publisher mark on bundle cards.
     curatedOwner: skill?.curatedOwner,
-    // Drives the audit-status text in the bundle card's footer
-    // ("Review · MEDIUM" / "Risk · CRITICAL") for skills whose audit verdict
-    // came back warn or fail.
+    // Drives the "Review · MEDIUM" / "Risk · CRITICAL" audit text.
     worstAuditStatus: skill?.worstAuditStatus,
     worstAuditRiskLevel: skill?.worstAuditRiskLevel,
   };
@@ -600,28 +588,13 @@ export const deleteBundle = mutation({
 
 /**
  * Move bundles saved in the browser (lib/local-bundles.ts) into the caller's
- * account. Runs once, automatically, the first time a browser holding local
- * bundles is signed in.
+ * account, on the first signed-in load.
  *
- * Deliberately forgiving where `createBundle` is strict. Nothing here is a form
- * the user can correct: the data was written by our own client, possibly weeks
- * ago, and a skill in it may since have left the catalog. So an unknown skill is
- * dropped rather than failing the import, and a bundle that does not fit is
- * reported back rather than thrown, because throwing would roll back the
- * bundles that DID fit and leave the user with nothing moved.
- *
- * What does not fit is decided in the order the client sent, against the same
- * limits `createBundle` enforces: the bundle cap, and the plan's distinct
- * watched-skill limit counted as a union with what the account already watches.
- * A browser can only hold the free plan's worth of skills, so the second only
- * bites when someone signs into an account that already watches skills.
- * Skipped bundles stay in the browser, and the client says so.
- *
- * Each bundle carries its browser id, stored as `localId`, so an import is
- * idempotent: a bundle already moved for this user is reported as imported
- * (with its existing URL) instead of being created twice. The browser only
- * clears a bundle after this returns, so a tab closed in between sends it
- * again on the next load.
+ * Forgiving where `createBundle` is strict, because nothing here is a form the
+ * user can correct: unknown skills are dropped, and bundles over
+ * `createBundle`'s limits are skipped and reported rather than thrown (a throw
+ * would roll back the ones that fit). Idempotent via `localId`, since the
+ * browser only clears a bundle after this returns.
  */
 export const importLocalBundles = mutation({
   args: {
@@ -648,9 +621,7 @@ export const importLocalBundles = mutation({
     skipped: v.array(v.number()),
   }),
   handler: async (ctx, { bundles }) => {
-    // Bounds the work before any read. The client caps a browser at
-    // MAX_LOCAL_BUNDLES and the free plan's distinct skills, so a payload past
-    // these did not come from our client.
+    // Bound the work before any read; our client never sends more.
     if (bundles.length > MAX_LOCAL_BUNDLES) {
       throw new ConvexError(
         `Can't import more than ${MAX_LOCAL_BUNDLES} bundles at once.`,
@@ -666,7 +637,6 @@ export const importLocalBundles = mutation({
       );
     }
 
-    // The first thing a new account does, so the webhook may not have run.
     const user = await getOrCreateCurrentUser(ctx);
     const { limits } = await getUserPlanWithLimits(ctx);
 
@@ -700,8 +670,7 @@ export const importLocalBundles = mutation({
     );
 
     const now = Date.now();
-    // Timestamps come from the browser. Clamped so a clock skewed into the
-    // future cannot hide changes behind a baseline that has not happened yet.
+    // Browser timestamps, clamped so a skewed clock can't hide changes.
     const clamp = (t: number) => Math.min(Math.max(t, 0), now);
 
     const imported: { index: number; urlId: string }[] = [];
@@ -756,8 +725,7 @@ export const importLocalBundles = mutation({
         isPublic: false,
         createdAt: clamp(b.createdAt),
         updatedAt: now,
-        // Carried over so the dashboard's unread state does not reset on
-        // sign-in and replay changes the user already looked at.
+        // Keeps the dashboard's unread state across sign-in.
         lastViewedAt:
           b.lastViewedAt === undefined ? undefined : clamp(b.lastViewedAt),
       });
@@ -899,13 +867,9 @@ export const listByUser = query({
 });
 
 /**
- * Catalog data for a bundle saved in the browser, which has no row to look up.
- * The browser sends the entries it holds and gets back the same per-skill shape
- * `getByUrlId` returns, so the local bundle page renders the same register.
- *
- * Public and unauthenticated on purpose: it reads catalog rows anyone can read
- * on a skill page and writes nothing. Capped at a bundle's own size so one call
- * costs what viewing one bundle costs.
+ * Catalog rows for a bundle saved in the browser, in `getByUrlId`'s per-skill
+ * shape. Public: it reads what any skill page shows and writes nothing, and is
+ * capped at one bundle's size.
  */
 export const resolveSkills = query({
   args: {

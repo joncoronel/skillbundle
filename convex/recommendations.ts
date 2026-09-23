@@ -287,16 +287,11 @@ const INVALID_URL_RESULT: AnalyzeRepoResult = {
 };
 
 /**
- * Parse and normalize a submitted repo URL, or null when it isn't repo-shaped.
+ * Parse a submitted repo URL, or null when it isn't repo-shaped.
  *
- * GitHub owner/repo are case-insensitive, so normalize to lowercase once at
- * the entrance. This is the security-relevant spot: matchesDemoRepo already
- * lowercases, so without this a case variant (`ShAdCn-Ui/Ui`) skips the plan
- * check AND misses the raw-cased tree cache, forcing a full unauthenticated
- * GitHub + embedding recompute per variant. One normalized key feeds both
- * caches (tree + fingerprint) and the free allowance, so every case collapses
- * to a single entry. Display keeps the user's casing so "Microsoft/TypeScript"
- * doesn't render all-lowercase.
+ * Lowercased once here because GitHub names are case-insensitive: a case
+ * variant (`ShAdCn-Ui/Ui`) would otherwise skip the plan check and miss both
+ * caches. `repoName` keeps the user's casing for display.
  */
 function parseRepoUrl(repoUrl: string) {
   const parsed = extractRepoSlug(repoUrl);
@@ -321,15 +316,9 @@ export const analyzeRepo = action({
 
     const identity = await ctx.auth.getUserIdentity();
 
-    // Who pays for this run, per the shared `repoMatchMeter`: demo repos and
-    // Pro are free, a free account draws on its monthly repo allowance, and a
-    // signed-out caller is refused here outright. Signed-out matching is
-    // metered per IP, which only the site's server action can see, so it has
-    // to arrive through `analyzeRepoAnonymous`; accepting it here would let
-    // anyone skip that limit by calling Convex directly. Every refusal is a
-    // thrown ConvexError so it lands as a query error, not cacheable data.
-    // This is the authoritative gate; the client mirrors it only to route the
-    // request and to skip round-trips it knows will be refused.
+    // The authoritative gate (`repoMatchMeter`). Signed-out callers are
+    // refused here: their per-IP allowance only works through
+    // `analyzeRepoAnonymous`. Refusals throw so they are never cached as data.
     let claimed = false;
     let metered = false;
     if (!matchesDemoRepo(owner, repo)) {
@@ -354,11 +343,8 @@ export const analyzeRepo = action({
         });
       }
     }
-    // A run that errors (thrown, or an error result) produced nothing, so it
-    // gives back the slot it just took. Only a slot THIS call took: a re-run of
-    // a repo already counted this month keeps its slot whatever happens. The
-    // miss is still charged to `repoAnalysisDaily` below, which is what keeps
-    // refunds from making nonexistent repos free to probe.
+    // A run that errors gives back the slot this call took. The miss still
+    // counts against `repoAnalysisDaily`, so refunds can't make probing free.
     const refund = async () => {
       if (claimed && identity) {
         await ctx.runMutation(internal.repoMatchQuota.release, {
@@ -378,12 +364,10 @@ export const analyzeRepo = action({
     // The global cache is never written from a token-authenticated pass, so
     // one user's private fingerprint can't be served to anyone else.
     const privateKey = identity ? `${identity.subject}:${repoKey}` : null;
-    // Charged on fresh work only (see runAnalysis): per user, or one shared
-    // key for signed-out demo runs. A free account also pays into its daily
-    // attempt budget, successes and misses alike.
+    // Charged on fresh work only (see runAnalysis). A free account also pays
+    // into its daily attempt budget.
     const userKey = identity?.subject ?? "anonymous";
-    // Shared by every pass below, so the private retry after a failed public
-    // pass doesn't charge the same request twice.
+    // Shared across passes so the private retry doesn't charge twice.
     const usage = { fresh: false };
     const rateLimitChecks: RateLimitCheck[] = [
       { name: "repoAnalysis", key: userKey },
@@ -465,22 +449,14 @@ export const analyzeRepo = action({
 });
 
 /**
- * Signed-out repo matching, called ONLY by the site's server action
- * (`app/(main)/actions.ts`), which checks BotID and derives `visitorKey` from
- * the visitor's IP. The key is an HMAC, so the raw IP never reaches Convex.
- * `secret` must equal REPO_MATCH_SECRET (set on this deployment and on
- * Vercel), which is what stops anyone calling this directly with a fresh
- * made-up key per request.
+ * Signed-out repo matching, called only by the site's server action
+ * (`app/(main)/actions.ts`), which checks BotID and turns the IP into
+ * `visitorKey`. `secret` (REPO_MATCH_SECRET) stops direct calls with made-up
+ * keys. Public repos only.
  *
- * Public pass only: a signed-out caller has no GitHub token, so a private repo
- * comes back as the usual fetch error.
- *
- * Same rule as a free account: the allowance counts runs that produced
- * results. A cache hit costs nothing, and a miss (typo, private repo) costs
- * only the visitor's daily attempt budget. The rate limiter has no refund, so
- * the allowance is checked up front and charged after the run. Parallel
- * requests can all pass the check; they are still bounded by the per-minute
- * and daily attempt limits charged before any GitHub call.
+ * The allowance counts runs that produced results. The rate limiter has no
+ * refund, so it is checked first and charged after; misses cost only the
+ * daily attempt budget.
  */
 export const analyzeRepoAnonymous = action({
   args: { repoUrl: v.string(), visitorKey: v.string(), secret: v.string() },
@@ -491,8 +467,7 @@ export const analyzeRepoAnonymous = action({
     if (!secretMatches(secret, process.env.REPO_MATCH_SECRET)) {
       throw new ConvexError({ code: "unauthorized" });
     }
-    // The site sends a hex SHA-256 HMAC. Anything else is a caller bug, and
-    // refusing it keeps junk keys out of the rate limiter's table.
+    // A hex SHA-256 HMAC; anything else would litter the rate limiter.
     if (!/^[0-9a-f]{64}$/.test(visitorKey)) {
       throw new ConvexError({ code: "invalid_visitor_key" });
     }
@@ -523,8 +498,7 @@ export const analyzeRepoAnonymous = action({
       repoName,
       cacheKey: repoKey,
       treeCacheKey: repoKey,
-      // The per-minute scripted-abuse ceiling first, then the daily attempt
-      // budget, so a loop is told to slow down before it spends the day.
+      // Per-minute first, so a loop is slowed before it spends the day.
       rateLimitChecks: [
         { name: "repoAnalysis", key: `visitor:${visitorKey}` },
         { name: "repoAnalysisDaily", key: `visitor:${visitorKey}` },
@@ -532,8 +506,7 @@ export const analyzeRepoAnonymous = action({
       usage,
     });
     if (usage.fresh && !result.error) {
-      // Losing a race here (a parallel request spent the last slot) means this
-      // run is already paid for in GitHub calls; returning it beats wasting it.
+      // Losing a race to a parallel request is fine: the work is already done.
       await ctx
         .runMutation(internal.rateLimits.enforce, { checks: [allowance] })
         .catch(() => {});
@@ -570,11 +543,7 @@ async function runAnalysis(
     token?: string;
     /** Rate limits charged, once, when the run has to do fresh work. */
     rateLimitChecks: RateLimitCheck[];
-    /**
-     * Set to `fresh: true` once those limits are charged. Pass the same object
-     * to every pass of one request: a pass that finds it set doesn't charge
-     * again.
-     */
+    /** Set once charged; share it across a request's passes. */
     usage?: { fresh: boolean };
   },
 ): Promise<AnalyzeRepoResult> {

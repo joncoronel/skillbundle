@@ -150,7 +150,7 @@ test("pruneStale deletes counters first created over a week ago", async () => {
     }
   };
 
-  // First seen now; still in use, and just spent, a little over a week later.
+  // Created now, still in use and spent eight days later.
   await spendAll();
   vi.setSystemTime(Date.now() + 8 * DAY);
   await spendAll();

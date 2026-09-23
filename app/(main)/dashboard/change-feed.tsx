@@ -27,11 +27,7 @@ import { cn, timeAgo } from "@/lib/utils";
 type AccountFeed = FunctionReturnType<
   typeof api.skillVersions.listRecentChangesForUser
 >;
-/**
- * What the panel reads, which both feeds satisfy: the account one
- * (`listRecentChangesForUser`) and the one for bundles saved in the browser
- * (`listRecentChangesForSkills`), whose rows have no account bundle id or URL.
- */
+/** Satisfied by both the account feed and the browser one. */
 type Feed = Omit<AccountFeed, "items"> & {
   items: Omit<AccountFeed["items"][number], "bundleId" | "bundleUrlId">[];
 };
@@ -73,12 +69,7 @@ export function ChangeFeed({
   onMarkAllRead,
 }: {
   feed: Feed | undefined;
-  /**
-   * Stamp every bundle read. The caller clears the changes it shows at once
-   * (faults stay), so the panel settles the moment the button is pressed:
-   * the account dashboard with an optimistic update, the browser one by
-   * filtering its last answer.
-   */
+  /** Stamp every bundle read; the caller clears its changes at once. */
   onMarkAllRead: () => void;
 }) {
   const [revealSuppressed, setRevealSuppressed] = useState(false);

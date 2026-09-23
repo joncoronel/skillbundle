@@ -359,10 +359,7 @@ const feedItem = v.object({
   version: v.union(v.null(), versionEntry),
 });
 
-/**
- * A browser-dashboard row: `feedItem` without the account bundle's id and URL,
- * which a bundle saved in the browser does not have.
- */
+/** `feedItem` without the account-only bundle id and URL. */
 const localFeedItem = feedItem.omit("bundleId", "bundleUrlId");
 
 export const listRecentChangesForUser = query({
@@ -407,8 +404,6 @@ export const listRecentChangesForUser = query({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
 
-    // One target per distinct skill, against the bundle it has been unread in
-    // longest. Shared with the browser feed (lib/monitoring/feed-targets.ts).
     const candidates = feedTargets(bundles);
 
     const watchedSkillCount = candidates.length;
@@ -429,18 +424,9 @@ export const listRecentChangesForUser = query({
 });
 
 /**
- * The dashboard feed for bundles saved in the browser (lib/local-bundles.ts),
- * which have no rows for `listRecentChangesForUser` to read.
- *
- * The browser sends one entry per distinct skill, already carrying the baseline
- * and bundle name, derived with the same `feedTargets` the account query runs
- * over its bundle rows. The
- * answer is the same `resolveFeed` the account query uses, so the two can't
- * disagree about what changed.
- *
- * Public and unauthenticated: it reads the same public archive the skill pages
- * do and writes nothing. Capped at the account feed's own candidate ceiling, so
- * one call costs no more than a signed-in dashboard load.
+ * The dashboard feed for bundles saved in the browser. The browser sends the
+ * `feedTargets` the account query derives from its rows, and both run
+ * `resolveFeed`. Public: it reads the public archive and writes nothing.
  */
 export const listRecentChangesForSkills = query({
   args: {
@@ -480,9 +466,8 @@ export const listRecentChangesForSkills = query({
 });
 
 /**
- * The feed itself, over any set of `(skill, baseline)` targets: the account
- * dashboard's and the browser dashboard's. Each item carries back the target it
- * came from, so the caller can attach whatever bundle context it has.
+ * The feed over any `(skill, baseline)` targets. Each item carries its target
+ * back so the caller can attach its own bundle context.
  */
 async function resolveFeed<
   T extends { source: string; skillId: string; baseline: number },
@@ -689,7 +674,7 @@ async function resolveSkillChange(
   };
 }
 
-/** The register's change payloads, shared by the account and browser pages. */
+/** The register's change payloads, for account and browser bundle pages. */
 const registerChanges = v.object({
   items: v.array(
     v.object({
@@ -764,12 +749,8 @@ export const listChangesForBundle = query({
 });
 
 /**
- * `listChangesForBundle` for a bundle saved in the browser, which has no row to
- * look up: the browser sends its entries and their `addedAt` baselines.
- *
- * Public and unauthenticated, like the rest of the archive's read API. It reads
- * public catalog history and writes nothing, and it is capped at a bundle's own
- * size so one call costs what viewing one bundle costs.
+ * `listChangesForBundle` for a bundle saved in the browser: the browser sends
+ * its entries and `addedAt` baselines. Public, like the rest of this API.
  */
 export const listChangesForSkills = query({
   args: {

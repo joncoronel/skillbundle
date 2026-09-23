@@ -266,12 +266,9 @@ export function activeNarrowingKeys(
   return keys;
 }
 
-// Relevance: match quality, then installs within a match band. `_text_match`
-// ties constantly (every skill named exactly "shadcn" scores the same), so the
-// tie-breaker decides most of the visible order. This used to put a weighted
-// `_eval` (official +2, audit pass +1) ahead of installs, which ranked a
-// 58-install official namesake above shadcn/ui's own 271k-install skill:
-// "official" means a curated publisher, not the canonical skill for the query.
+// Match quality, then installs. Ties are common, so installs decide most of
+// the order. An official-first tie-breaker used to sit between the two and put
+// 58-install namesakes above shadcn/ui's own skill.
 const RELEVANCE_SORT_BY = "_text_match:desc,installs:desc";
 
 /**

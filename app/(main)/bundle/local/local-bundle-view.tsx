@@ -57,34 +57,24 @@ const inlineLink =
   "font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground";
 
 /**
- * A bundle saved in this browser (lib/local-bundles.ts), rendered with the same
- * skills section as an account bundle. What differs is where the data comes
- * from: the entries live in localStorage, and the catalog rows and change
- * payloads come from two read-only queries that take those entries as
- * arguments (`bundles.resolveSkills`, `skillVersions.listChangesForSkills`).
- *
- * No share control. A share link needs the bundle on a server, so it is the
- * thing signing in adds, and the header says so.
+ * A bundle saved in this browser. Same skills section as an account bundle;
+ * the catalog rows and changes come from read-only queries that take the
+ * stored entries as arguments. No share control: that needs an account.
  */
 export function LocalBundleView() {
   const id = useSearchParams().get("id");
   const bundles = useLocalBundles();
   const current = id ? bundles?.find((b) => b.id === id) : undefined;
 
-  // The last bundle this page showed. Both ways this tab removes a bundle
-  // while its page is open (Delete here, or the sign-in import) navigate away,
-  // but the storage write renders before the navigation commits; without this
-  // the page flashes "not in this browser" on its way out. Only for removals
-  // made here: one deleted from another tab has no navigation coming, so the
-  // page shows it's gone. React's pattern for state derived from a changing
-  // input: set during render, no effect.
+  // When this tab removes the bundle (Delete, or the sign-in import) it also
+  // navigates away, but the removal renders first. Keep showing the last
+  // bundle so the page doesn't flash "not in this browser" on the way out.
   const [shown, setShown] = useState(current);
   if (current && current !== shown) setShown(current);
   const leaving = useRemovedHere(id);
   const bundle = current ?? (leaving && shown?.id === id ? shown : undefined);
 
-  // Before hydration the stored list is unknown, and the server rendered the
-  // loading shell; keep showing it rather than a false "not found".
+  // Unknown until hydrated; not a "not found".
   if (bundles === undefined) return <BundleShell owner />;
   if (!bundle) return <LocalBundleNotFound />;
   // Keyed so switching bundles resets the edit session and dialogs.
@@ -107,9 +97,7 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     [bundle.skills],
   );
 
-  // keepPreviousData: an edit changes the arguments, and without it both
-  // queries would drop to undefined and put the loading shell back over a page
-  // that was already showing.
+  // keepPreviousData, or an edit would put the loading shell back.
   const resolved = useQuery({
     ...convexQuery(api.bundles.resolveSkills, { skills: entries }),
     placeholderData: keepPreviousData,
@@ -120,9 +108,7 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
   });
   const changes = changesQuery.data;
 
-  // Every stored entry, joined to its catalog row when one has come back. A
-  // skill added a moment ago renders from its stored name until the query
-  // catches up, instead of vanishing from the list.
+  // A just-added skill renders from its stored name until its row arrives.
   const skills = useMemo(() => {
     const byKey = new Map((resolved.data ?? []).map((s) => [watchKey(s), s]));
     return bundle.skills.map(
@@ -139,9 +125,7 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     );
   }, [bundle.skills, resolved.data]);
 
-  // Same rule as the account page: opening the bundle marks it read, but only
-  // once its changes are on screen. Marking something read that was never
-  // shown is the one thing a monitoring product cannot do.
+  // Mark read only once the changes are on screen, as the account page does.
   const changesReady = changes !== undefined;
   const { markViewed } = actions;
   useEffect(() => {
@@ -165,13 +149,9 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     },
   });
 
-  // To app/(main)/error.tsx, which keeps the header and offers retry. A failed
-  // read would otherwise sit on the loading shell forever.
+  // To app/(main)/error.tsx rather than a loading shell that never ends.
   if (resolved.isError) throw resolved.error;
   if (changesQuery.isError) throw changesQuery.error;
-  // Both reads resolve together on first load, like the account page's
-  // preload, so the register never paints every row as Steady and then
-  // re-sorts when the changes land.
   if (resolved.data === undefined || changes === undefined) {
     return <BundleShell owner />;
   }
@@ -180,9 +160,7 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
-          {/* Signed in, a bundle is only still here because the import on
-              sign-in refused it (LocalBundleImporter), so "sign in" would be
-              the wrong advice. */}
+          {/* Signed in, it's only here because the import refused it. */}
           <p className="text-sm text-muted-foreground">
             {isAuthenticated ? (
               <>
@@ -332,8 +310,6 @@ function DetailsDialog({ bundle }: { bundle: LocalBundle }) {
     <Dialog
       handle={detailsDialogHandle}
       onOpenChange={(open) => {
-        // Reset to the stored values on every open, like the account page's
-        // rename and description dialogs.
         if (open) {
           setName(bundle.name);
           setDescriptionDraft(bundle.description ?? "");

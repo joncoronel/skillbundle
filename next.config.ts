@@ -142,9 +142,6 @@ const nextConfig: NextConfig = {
   // a rewrite.
 };
 
-// Vercel BotID (signed-out repo matching, see instrumentation-client.ts). Adds
-// two rewrites under an opaque path that proxy the challenge script and its
-// calls to api.vercel.com. Unlike the OpenPanel rewrites removed above, the
-// destination is our own host platform, which already terminates TLS for every
-// request and so sees these cookies anyway; nothing new leaves.
+// Vercel BotID (see instrumentation-client.ts). Its rewrites only proxy to
+// Vercel itself, so unlike the OpenPanel ones removed above nothing new leaves.
 export default withBotId(nextConfig);

@@ -11,15 +11,11 @@ export interface BundleGridItem {
   skillCount: number;
   createdAt: number;
   isPublic: boolean;
-  /** The card's buttons; each dashboard brings its own (visibility, delete). */
+  /** Each dashboard brings its own buttons. */
   actions: ReactNode;
 }
 
-/**
- * The dashboard's bundle cards with their sort control. Shared by account
- * bundles and bundles saved in the browser, which differ only in the actions
- * each card carries.
- */
+/** Bundle cards with their sort control, for account and browser bundles. */
 export function BundleGrid({
   items,
   title,

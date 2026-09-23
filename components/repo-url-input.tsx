@@ -63,9 +63,7 @@ import { cn } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
 
-// Refusals that sign-in fixes, besides the signed-out allowance running out:
-// a signed-out call that reached analyzeRepo directly, and the signed-out
-// server action refusing (BotID verdict, or signed-out matching unavailable).
+// Refusals that signing in fixes (besides ANON_LIMIT, which has its own copy).
 const SIGN_IN_CODES: ReadonlySet<string> = new Set([
   SIGN_IN_REQUIRED,
   BOT_REFUSED,
@@ -119,15 +117,13 @@ export function RepoAnalysisResults() {
     isAuthLoading,
     isPlanError,
   } = useUserPlan();
-  // The free account's monthly allowance. Null for signed-out and Pro, and a
-  // live subscription, so the count moves the moment a run is counted.
+  // The free account's monthly allowance; null for signed-out and Pro.
   const { data: usageAnswer } = useQuery({
     ...convexQuery(api.repoMatchQuota.myUsage, isAuthenticated ? {} : "skip"),
     enabled: isAuthenticated,
   });
-  // An answer for an earlier month is a fresh month: the subscription doesn't
-  // re-run when the clock rolls over, and trusting it would keep someone at
-  // 5/5 behind the upgrade prompt into the next month.
+  // The subscription doesn't re-run when the month rolls over, so an answer
+  // for an earlier month means a fresh month.
   const usage =
     usageAnswer && usageAnswer.month !== currentMonth()
       ? { ...usageAnswer, used: 0, repos: [] }
@@ -177,9 +173,8 @@ export function RepoAnalysisResults() {
       ? { left: Math.max(0, usage.limit - usage.used), limit: usage.limit }
       : null;
 
-  // A free account out of repos for the month, asking for one it hasn't
-  // already matched: the server would refuse, so skip the round-trip and show
-  // the upgrade prompt straight away. Re-running a counted repo stays allowed.
+  // Out of repos and asking for a new one: the server would refuse, so skip
+  // the round-trip. Re-running a counted repo stays allowed.
   const knownOverQuota =
     meter === "monthly" &&
     !!usage &&
@@ -187,13 +182,8 @@ export function RepoAnalysisResults() {
     usage.used >= usage.limit &&
     !usage.repos.includes(repoMatchKey(parsed.owner, parsed.repo));
 
-  // Fire as soon as we CAN, not once the plan is known. The demo fires
-  // immediately; anything else fires the moment auth is ready (so the JWT is
-  // attached, or we know to go through the signed-out server action), so a
-  // Pro user's cold deep-link analysis runs in parallel with plan resolution,
-  // not serially behind it. The server is the authoritative gate, so firing
-  // before the client plan resolves is safe. Never fires for an unparseable
-  // input.
+  // Fire as soon as auth is known, not once the plan is: the server is the
+  // gate, and a Pro user's deep link shouldn't wait on the plan query.
   const canFetch =
     !!parsed && (isExample || (!isAuthLoading && !knownOverQuota));
 
@@ -208,10 +198,8 @@ export function RepoAnalysisResults() {
       // is never sent; it can name a private org.
       track("repo_match_run", { demo: isExample, signedIn: isAuthenticated });
       if (!isExample && !isAuthenticated) {
-        // Signed-out runs go through the site, which meters them per IP. It
-        // returns refusals rather than throwing (a server action's errors are
-        // masked in production), so rethrow them here as the same ConvexError
-        // shape the direct path throws: an error, never cacheable data.
+        // Metered per IP by the site. Server action errors are masked in
+        // production, so it returns refusals and they are rethrown here.
         const res = await analyzeRepoSignedOut(trimmedUrl);
         if (!res.ok) {
           throw new ConvexError({ code: res.code, message: res.message });
@@ -230,10 +218,8 @@ export function RepoAnalysisResults() {
 
   const tryExample = () => setParams({ repoUrl: EXAMPLE_REPO_URL });
 
-  // Allowance refusals are thrown ConvexErrors, so they land here as the
-  // query error — never cached as data, so they can't pin someone to the
-  // prompt after they sign in or upgrade. Each maps to the prompt that fixes
-  // it; every other error is the generic failure card.
+  // Refusals arrive as the query error (never cached data), each mapped to
+  // the prompt that fixes it; anything else is the generic error card.
   const errorCode =
     error instanceof ConvexError
       ? (error.data as { code?: string } | undefined)?.code
@@ -249,17 +235,13 @@ export function RepoAnalysisResults() {
 
   const analyzing = isPending && canFetch;
 
-  // Skeleton for a real (parseable) non-demo repo whenever a fetch is in flight
-  // OR auth is still resolving (we don't yet know which path to send it down).
-  // An unparseable input is known synchronously, so it skips the skeleton and
-  // goes straight to the error card below.
+  // Skeleton while a fetch is in flight, or while auth decides which path it
+  // takes. An unparseable input skips straight to the error card.
   const loading =
     analyzing || (!!parsed && !isExample && !wall && isAuthLoading);
 
-  // A refusal routes to its prompt, so it must NOT surface as the generic
-  // error card. An unparseable input is the same invalid-URL error the server
-  // would return — shown client-side (no round-trip). Returned data errors
-  // (server "Invalid GitHub URL", fetch failure) still surface here too.
+  // Refusals have their own prompt, not this card. An unparseable input gets
+  // the server's invalid-URL error without the round-trip.
   const actionError = wall
     ? null
     : invalidUrl
@@ -278,16 +260,9 @@ export function RepoAnalysisResults() {
     // seconds, and repo mode has no input spinner, so the header carries a
     // visible "Analyzing…" status for the wait rather than leaving it silent.
     //
-    // Only CLAIM "Analyzing…" when a request is actually in flight. While auth
-    // resolves we don't yet know which path the request takes, so the line's
-    // space is reserved (it mirrors the results' "Detected in" line) but stays
-    // empty, and the rows don't shift when the text fills in or when results
-    // land. aria-busy conveys "working."
-    //
-    // When the claim does become true, the text fades in via @starting-style
-    // so its arrival reads as a state change, not a flicker. Kept
-    // conditionally rendered (not opacity-toggled) so the role=status live
-    // region only announces it once it's real.
+    // Only claim "Analyzing…" while a request is in flight; the line's space
+    // is reserved so nothing shifts. Conditionally rendered so the live region
+    // announces it only once it's true.
     return (
       <div className="mt-4" aria-busy="true">
         <p role="status" className="mb-4 min-h-4 text-xs text-muted-foreground">
@@ -348,12 +323,8 @@ export function RepoAnalysisResults() {
     );
   }
 
-  // Pre-analysis: no successful result to show. Two states share this slot —
-  // the teaching empty state and (when an allowance refused the run) the
-  // prompt that fixes it. Crossfade between them so clicking Analyze resolves
-  // the gate as a considered response, not a hard swap. `wall` takes
-  // precedence over any in-flight or errored query so a refusal never falls
-  // into an empty result.
+  // No result yet: the empty state, or the refusal prompt, which takes
+  // precedence over any in-flight or errored query.
   if (!data || wall) {
     return (
       <Crossfade active={!!wall}>
@@ -517,7 +488,6 @@ export function RepoAnalysisResults() {
           above to match it.
         </p>
       )}
-      {/* A counted run: say what's left, quietly, where the result ends. */}
       {!isExample && meter === "monthly" && freeLeft && (
         <p className="mt-4 text-xs text-muted-foreground tabular-nums">
           <FreeLeftLine {...freeLeft} />
@@ -532,9 +502,8 @@ export function RepoAnalysisResults() {
 // ---------------------------------------------------------------------------
 
 /**
- * The teaching empty state: what Analyze does, plus a zero-typing way to see it
- * on the free demo. For a free account it also says how many repo matches are
- * left this month, so running out later reads as expected, not a surprise.
+ * The teaching empty state: what Analyze does, a one-click demo, and for a
+ * free account how many repo matches are left this month.
  */
 function RepoMatchEmptyState({
   onTryExample,
@@ -604,11 +573,9 @@ function FreeLeftLine({ left, limit }: { left: number; limit: number }) {
 type RepoMatchWallKind = "upgrade" | "anon-limit" | "sign-in";
 
 /**
- * What an allowance refusal shows, in the results region (no modal — the
- * register prefers progressive over interruptive). Each kind offers the one
- * thing that fixes it: a free account out of repos for the month is pointed
- * at Pro, a signed-out visitor at a free account. The demo stays one click
- * away so the prompt never dead-ends.
+ * An allowance refusal, inline in the results region. Each kind offers the
+ * one thing that fixes it (Pro, or signing in), and the demo stays one click
+ * away.
  */
 function RepoMatchWall({
   kind,
@@ -619,8 +586,7 @@ function RepoMatchWall({
 }) {
   const router = useRouter();
   const signIn = () => {
-    // Back to this repo afterwards. Read in the handler rather than via
-    // useSearchParams, which would make the home page dynamic.
+    // Read here, not via useSearchParams, which would make the page dynamic.
     const { pathname, search } = window.location;
     router.push(signInUrl(pathname + search));
   };
@@ -648,10 +614,7 @@ function RepoMatchWall({
         strokeWidth={1.5}
         className="mx-auto size-6 text-muted-foreground/60"
       />
-      {/* role="alert": announced when it becomes visible. The Crossfade keeps
-          this panel mounted and flips it from display: none, and the
-          "Analyzing" status that preceded it lives in another branch, so
-          without this a screen reader hears nothing after "Analyzing". */}
+      {/* Announced when the Crossfade reveals it. */}
       <div role="alert">
         <p className="mt-3 text-sm font-medium">{title}</p>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">

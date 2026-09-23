@@ -12,22 +12,12 @@ import {
 
 export type { LocalBundle, LocalBundleSkill } from "@/lib/local-bundles-core";
 
-/**
- * Bundles saved in this browser while signed out. See local-bundles-core.ts.
- *
- * The storage key is also read directly by LocalBundleImporter, inside a Web
- * Lock, so two tabs signing in at once can't both import the same bundles.
- */
+/** Also read directly by LocalBundleImporter, inside a Web Lock. */
 export const LOCAL_BUNDLES_KEY = "skillbundle:bundles";
 
-// getOnInit: true, unlike the selection atom. Reads are gated on useHydrated()
-// instead (see useLocalBundles), so the hydration render still matches the
-// server. What getOnInit buys is that a client-side navigation into the
-// dashboard reads the stored list on its first render, rather than rendering
-// an empty list for a frame and flashing the empty state.
-//
-// The default storage also subscribes to the `storage` event, so a bundle
-// saved in one tab shows up in another.
+// getOnInit: true so a client navigation reads the list on its first render
+// instead of flashing the empty state; hydration safety comes from
+// useLocalBundles. The default storage syncs across tabs.
 const localBundlesAtom = atomWithStorage<LocalBundle[]>(
   LOCAL_BUNDLES_KEY,
   [],
@@ -35,27 +25,16 @@ const localBundlesAtom = atomWithStorage<LocalBundle[]>(
   { getOnInit: true },
 );
 
-/**
- * The bundles saved in this browser, or undefined during SSR and the hydration
- * render, where the server can't know them. Treat undefined as loading.
- */
+/** The saved bundles, or undefined (loading) until hydrated. */
 export function useLocalBundles(): LocalBundle[] | undefined {
   const bundles = useAtomValue(localBundlesAtom);
   return useHydrated() ? bundles : undefined;
 }
 
-/**
- * Set by LocalBundleImporter once this session's import attempt has finished
- * (moved, partly moved, or failed). In memory only: every page load signs in
- * afresh as far as the importer is concerned.
- */
+/** Set once this page load's sign-in import has finished, however it ended. */
 export const importSettledAtom = atom(false);
 
-/**
- * Bundles this tab removed (Delete, or the sign-in import). A bundle page
- * keeps showing one of these while it navigates away; one that disappears
- * without being in here was deleted from another tab, and the page says so.
- */
+/** Bundles this tab removed, which a bundle page keeps showing as it leaves. */
 const removedHereAtom = atom<ReadonlySet<string>>(new Set<string>());
 
 export function useRemovedHere(id: string | null): boolean {

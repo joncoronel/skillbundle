@@ -39,13 +39,7 @@ const deleteLocalBundleHandle = createAlertDialogHandle<{
   name: string;
 }>();
 
-/**
- * The dashboard for a signed-out visitor: the bundles saved in this browser
- * (lib/local-bundles.ts), with the same status panel on top. Its feed comes
- * from `listRecentChangesForSkills`, which answers the question the account
- * feed does over entries the browser sends, so both dashboards agree about
- * what changed.
- */
+/** The signed-out dashboard: bundles saved in this browser, same status panel. */
 export function LocalDashboard() {
   const bundles = useLocalBundles();
   const { markAllViewed } = useLocalBundleActions();
@@ -60,14 +54,9 @@ export function LocalDashboard() {
     enabled: bundles !== undefined && bundles.length > 0,
     placeholderData: keepPreviousData,
   });
-  // "Mark all read" moves every baseline, which changes the query's arguments;
-  // until the new answer lands the previous one is still showing. Clear its
-  // changes straight away, as the account feed's optimistic update does, and
-  // let faults stay: reading about a delisted skill doesn't fix it.
+  // "Mark all read" changes the query's arguments, so hide the old answer's
+  // changes (not its faults) until the new one lands.
   const [clearedPending, setClearedPending] = useState(false);
-  // Settled once the new answer is in; reset during render (React's pattern
-  // for state derived from a changing input) so a later, unrelated argument
-  // change isn't also shown cleared.
   if (clearedPending && !feedQuery.isPlaceholderData) {
     setClearedPending(false);
   }
@@ -117,11 +106,7 @@ export function LocalDashboard() {
   );
 }
 
-/**
- * Bundles saved in the browser, as cards. Also rendered on the signed-in
- * dashboard for any that could not move into the account on sign-in (see
- * LocalBundleImporter), so they never become invisible.
- */
+/** Browser bundles as cards; also shows signed in for any the import left. */
 export function LocalBundleGrid({
   bundles,
   title,

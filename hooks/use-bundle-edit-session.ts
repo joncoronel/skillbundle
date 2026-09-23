@@ -62,9 +62,8 @@ export interface BundleEditSession {
 }
 
 /**
- * Persist a staged skill list. Returns an error message when the list is
- * refused before anything was written (the staged edits stay on screen to
- * fix), or null once the save is under way.
+ * Persist a staged skill list: an error message if refused up front (the
+ * staged edits stay on screen), or null once the save is under way.
  */
 export type SaveBundleSkills = (skills: EditableSkill[]) => string | null;
 
@@ -83,10 +82,7 @@ export function useBundleEditSession({
   initialSkills: EditableSkill[];
   changes: RegisterChange[] | undefined;
   onExit: () => void;
-  /**
-   * Where the staged list goes: `useAccountBundleSave` for an account bundle,
-   * the browser store for one saved signed out (lib/local-bundles.ts).
-   */
+  /** `useAccountBundleSave`, or the browser store for a local bundle. */
   save: SaveBundleSkills;
 }): BundleEditSession {
   const edit = useBundleEdit<EditableSkill>(initialSkills);
@@ -161,30 +157,17 @@ export function useEditChromeState() {
 }
 
 /**
- * The account bundle's save: `updateBundleSkills` with an optimistic update.
- *
- * Non-blocking. The optimistic update paints the new bundle into the cache
- * immediately, so the read view renders the saved state the moment edit mode
- * exits, with no server-round-trip "snap". If the server later rejects, Convex
- * rolls back and the failure surfaces as a toast. The staged edits are gone by
- * then, so the toast is the only recovery path; for a deliberate Save that
- * tradeoff is acceptable.
+ * The account bundle's save: `updateBundleSkills` with an optimistic update,
+ * so edit mode exits straight into the saved state. A later rejection rolls
+ * back and shows a toast.
  */
 export function useAccountBundleSave({
   bundleId,
   queryArgs,
 }: {
-  /**
-   * Undefined while the bundle is still resolving, or when it does not exist.
-   * The page calls this above its not-found return (hook order cannot change
-   * between renders); the save no-ops without it, which is unreachable because
-   * the edit controls do not render until the bundle does.
-   */
+  /** Undefined until the bundle resolves; the save no-ops without it. */
   bundleId: Id<"bundles"> | undefined;
-  /**
-   * Query args (`urlId`) for `getByUrlId`, matching the cache key the bundle
-   * page is reading, so the optimistic patch lands on the right entry.
-   */
+  /** The `getByUrlId` args the page reads, so the patch hits that entry. */
   queryArgs: { urlId: string };
 }): SaveBundleSkills {
   const updateSkills = useMutation(api.bundles.updateBundleSkills);
@@ -192,16 +175,11 @@ export function useAccountBundleSave({
   return useCallback(
     (skills) => {
       if (!bundleId) return null;
-      // Built per save, so the optimistic update closes over the staged list
-      // it is saving: the mutation args carry only refs, and the patch needs
-      // the enriched rows.
+      // Built per save: the patch needs the enriched rows, the args only refs.
       const pending = updateSkills.withOptimisticUpdate(
         (localStore, { bundleId: id }) => {
-          // getByUrlId is the query the bundle detail page is reading, patched
-          // directly with the prop-supplied queryArgs. For skills already in
-          // the bundle, the staged data merges over the existing record to keep
-          // server-only fields like `addedAt`; brand-new skills come straight
-          // from the staged list and Convex overwrites them on emit.
+          // Merge over existing rows to keep server-only fields like
+          // `addedAt`; new skills come from the staged list until Convex emits.
           const detail = localStore.getQuery(api.bundles.getByUrlId, queryArgs);
           if (detail) {
             const priorByKey = new Map(
@@ -216,9 +194,7 @@ export function useAccountBundleSave({
             });
           }
 
-          // listByUser carries minimal { source, skillId, addedAt } refs.
-          // Patched when it happens to be cached (dashboard) so that surface
-          // stays consistent, but not depended on.
+          // Patched only if cached (the dashboard reads it).
           const list = localStore.getQuery(api.bundles.listByUser, {});
           if (list) {
             localStore.setQuery(
@@ -247,9 +223,6 @@ export function useAccountBundleSave({
         skills: skills.map((s) => ({ source: s.source, skillId: s.skillId })),
       });
       pending.catch((error: unknown) => {
-        // ConvexError carries the original server message on `.data`. Plain
-        // Errors fall through to `.message`, which in dev is wrapped with the
-        // `[CONVEX M(...)]` boilerplate.
         let message = "Couldn't reach the server. Try again.";
         if (error instanceof ConvexError && typeof error.data === "string") {
           message = error.data;

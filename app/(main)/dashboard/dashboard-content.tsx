@@ -68,8 +68,7 @@ export function DashboardContent() {
   // a surface paints its meaningful default and lets slower islands fill in.
   // ChangeFeed owns its own pending state.
   if (isLoading) return <DashboardSkeleton />;
-  // Signed out: the bundles saved in this browser. The route stopped being
-  // sign-in-only so saving a bundle never starts with an account.
+  // Signed out: the bundles saved in this browser.
   if (!isAuthenticated) return <LocalDashboard />;
   if (bundles === undefined || planData === undefined) {
     return <DashboardSkeleton />;
@@ -103,20 +102,14 @@ function DashboardLoaded({
   const markAllViewed = useMutation(
     api.bundles.markAllBundlesViewed,
   ).withOptimisticUpdate((localStore) => {
-    // Empty the feed synchronously so the panel settles the moment the button
-    // is pressed. This is the payoff gesture of the whole surface; waiting a
-    // round trip to see "all clear" would flatten it.
+    // Clear the feed at once so the panel settles on press.
     for (const q of localStore.getAllQueries(
       api.skillVersions.listRecentChangesForUser,
     )) {
       if (q.value === undefined) continue;
       localStore.setQuery(api.skillVersions.listRecentChangesForUser, q.args, {
         ...q.value,
-        // Faults survive. Marking read acknowledges CHANGES; a skill that is
-        // still delisted is still delisted, and dropping it here would make the
-        // button look like it fixed something. The server agrees (faults do
-        // not consult the baseline), so clearing them optimistically would
-        // also flicker them straight back on the next round trip.
+        // Faults stay: reading about a delisted skill doesn't fix it.
         items: q.value.items.filter((i) => isFault(i.condition)),
         suppressed: false,
       });
@@ -134,11 +127,7 @@ function DashboardLoaded({
       );
     }
   });
-  // Bundles still in this browser after sign-in: the ones LocalBundleImporter
-  // could not move because they would take the account past its limits.
-  // Shown rather than hidden, since they still exist and still hold skills.
-  // Only once the import has run, or every browser bundle would show here for
-  // the moment between sign-in and the import landing.
+  // Browser bundles the sign-in import couldn't move, shown once it's done.
   const localBundles = useLocalBundles();
   const importSettled = useAtomValue(importSettledAtom);
   const leftoverLocal = importSettled ? localBundles : undefined;
@@ -183,8 +172,7 @@ function DashboardLoaded({
     ) : null;
 
   if (bundles.length === 0) {
-    // Browser bundles still on their way in (sign-in usually lands here):
-    // "Start with a stack" would flash before they arrive.
+    // Import still running: don't flash the empty state before they land.
     if (!importSettled && localBundles && localBundles.length > 0) {
       return <DashboardSkeleton />;
     }

@@ -1,13 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Saving a bundle with no account: it goes to the browser (lib/local-bundles.ts)
- * and shows up on the signed-out dashboard. This is the flow that used to end
- * at "Sign in to save", which a reviewer read as "you can't use bundles
- * without an account".
- *
- * Signed out only. The import into an account on sign-in is covered by
- * tests/local-bundles.test.ts against the mutation.
+ * Saving a bundle with no account goes to the browser and shows on the
+ * signed-out dashboard. The import on sign-in is covered in
+ * tests/local-bundles.test.ts.
  */
 test("a signed-out visitor can save a bundle and find it on the dashboard", async ({
   page,
@@ -29,9 +25,7 @@ test("a signed-out visitor can save a bundle and find it on the dashboard", asyn
   await dialog.getByRole("button", { name: "Save bundle" }).click();
 
   await expect(page).toHaveURL(/\/bundle\/local\?id=/);
-  // By role, not `locator("h1")`: the client navigation keeps the home page
-  // mounted but hidden (React Activity), so there are two h1s in the DOM and
-  // only role queries skip the hidden one.
+  // By role: the hidden home page stays mounted, so there are two h1s.
   await expect(
     page.getByRole("heading", { level: 1, name: "E2E browser bundle" }),
   ).toBeVisible();

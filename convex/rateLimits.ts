@@ -26,27 +26,15 @@
  * bot protection, and isolating the sync's budget belongs to a separate token
  * (TODO.md), not to a shared counter here.
  *
- * **The one allowance: signed-out repo matching.** `repoAnalysisAnonymous` is
- * the exception to "catches scripts, never a person", on purpose. It is a
- * FREE allowance for visitors with no account, sized so a person trying the
- * feature gets a few real runs and is then asked to sign in, so a person is
- * exactly who it is meant to reach. It is still per-visitor, not app-wide: the
- * key is an HMAC of the visitor's IP (a /64 for IPv6) computed by the site's
- * server action, which is the only place the IP is visible (the browser talks
- * to Convex over a websocket). Raw IPs never reach Convex. It charges only for
- * fresh runs that produced results (checked with `peek` first, charged after),
- * in `recommendations.analyzeRepoAnonymous`; misses land on
- * `repoAnalysisDaily` instead. Signed-in free accounts have a
- * monthly allowance instead, which lives in repoMatchQuota.ts rather than
- * here because it counts distinct repos, not requests. Neither touches Pro.
+ * **The one allowance: signed-out repo matching.** `repoAnalysisAnonymous`
+ * deliberately does reach a person: a few free runs, then a sign-in prompt.
+ * It is per visitor, keyed by an HMAC of the IP from the site's server action
+ * (raw IPs never reach Convex), and charged only for runs that produced
+ * results. Free accounts' monthly allowance lives in repoMatchQuota.ts.
  *
- * A cost of per-visitor keys: the component keeps a row per key and never
- * prunes on its own, so every IP that ran a fresh analysis signed out leaves a
- * row holding its hash. `pruneStale` below deletes rows first created over a
- * week ago, daily (crons.ts), and the privacy page promises exactly that. It
- * clears every limit, not just this one, which is safe because every bucket
- * here refills within a day: the most a deletion does is refill someone's
- * bucket early, once.
+ * The component never prunes, so `pruneStale` (daily cron) deletes rows over
+ * a week old, which the privacy page promises. That clears every limit, which
+ * is safe because they all refill within a day.
  *
  * Token buckets rather than fixed windows: a fixed window without a `start`
  * gets a random boundary per key, and a burst straddling it gets double the
@@ -85,20 +73,16 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: MINUTE,
     capacity: 10,
   },
-  // Signed-out repo matching, per visitor key. An allowance, not an abuse
-  // ceiling; see the header. A bucket, so the allowance refills a slot every
-  // 8 hours instead of all at once at midnight.
+  // Signed-out repo matching, per visitor key: an allowance, see the header.
   repoAnalysisAnonymous: {
     kind: "token bucket",
     rate: ANON_DAILY_ANALYSES,
     period: DAY,
     capacity: ANON_DAILY_ANALYSES,
   },
-  // Every fresh analysis by a metered caller (a free account, or a signed-out
-  // visitor), successful or not. The allowances count only runs that produced
-  // results, so a typo never costs one; this is what stops "never counts" from
-  // meaning "free to probe": 20 fresh attempts a day per caller, on the shared
-  // GitHub token. Far above a person's error rate. Never charged to Pro.
+  // Every fresh attempt by a free account or signed-out visitor, success or
+  // not. The allowances skip errors, so this is what bounds misses on the
+  // shared GitHub token. Never charged to Pro.
   repoAnalysisDaily: {
     kind: "token bucket",
     rate: 20,
@@ -144,8 +128,7 @@ const MESSAGES: Record<RateLimitName, string> = {
   billing: SLOW_DOWN,
 };
 
-// The error code each limit refuses with. Everything is "rate_limited" except
-// an allowance the UI answers with a prompt (sign in) rather than "wait".
+// Refusal codes other than "rate_limited": ones the UI answers with a prompt.
 const CODES: Partial<Record<RateLimitName, string>> = {
   repoAnalysisAnonymous: ANON_LIMIT,
 };
@@ -186,12 +169,7 @@ export const enforce = internalMutation({
   },
 });
 
-/**
- * Would one unit of `name` for `key` be allowed right now? Consumes nothing.
- * For an allowance charged only after the work succeeds (the signed-out repo
- * match): refuse up front when it's already spent, charge once there is
- * something to charge for.
- */
+/** Would one unit be allowed now? Consumes nothing (charge-after-success). */
 export const peek = internalQuery({
   args: checkValidator,
   returns: v.object({ ok: v.boolean(), retryAfter: v.optional(v.number()) }),
@@ -201,11 +179,7 @@ export const peek = internalQuery({
   },
 });
 
-/**
- * Delete every rate-limit row first created more than a week ago. See the
- * header: this is what keeps hashed visitor IPs from being stored forever.
- * `clearAll` batches itself, so one call drains any backlog.
- */
+/** Delete rate-limit rows over a week old, hashed visitor IPs included. */
 export const pruneStale = internalMutation({
   args: {},
   returns: v.null(),

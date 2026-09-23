@@ -1,13 +1,6 @@
 /**
- * Constant-time string compare for a shared secret a PUBLIC Convex function
- * receives as an argument (the site's server actions calling in with a secret
- * only Vercel and Convex know). The Convex runtime has no `node:crypto`, so
- * this is the site's `lib/shared-secret.ts` rewritten without it: the loop
- * always walks the expected length, whatever the input, and a length mismatch
- * fails closed.
- *
- * Fails closed when `expected` is unset or empty, so a deployment missing the
- * env var refuses everything rather than accepting "".
+ * Constant-time compare for a shared secret a public Convex function receives
+ * (the runtime has no `node:crypto`). Fails closed when `expected` is unset.
  */
 export function secretMatches(
   provided: string,

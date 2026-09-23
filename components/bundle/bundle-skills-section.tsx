@@ -32,10 +32,9 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * A bundle's skills: the heading with Install and Edit, the install panel, the
- * tally and the register. Shared by the account bundle page and the page for a
- * bundle saved in the browser, which differ only in where the skills, the
- * changes and the save come from.
+ * A bundle's skills: heading, install panel, tally and register. Shared by the
+ * account and browser bundle pages, which differ only in where the data and
+ * the save come from.
  */
 export function BundleSkillsSection({
   skills,
@@ -49,7 +48,7 @@ export function BundleSkillsSection({
   /** In roster order; the register sorts them by consequence itself. */
   skills: EditableSkill[];
   changes: { items: RegisterChange[]; suppressed: boolean };
-  /** The owner's view: Edit skills, the edit chrome, the owner's empty state. */
+  /** The owner's view: Edit skills, edit chrome, the owner's empty state. */
   canEdit: boolean;
   editing: boolean;
   onEdit: () => void;
@@ -72,13 +71,9 @@ export function BundleSkillsSection({
     () => generateInstallCommands(skills, wellKnown).length,
     [skills, wellKnown],
   );
-  // The panel also explains the skills it CANNOT write a command for, and that
-  // explanation lives inside the disclosure. Gating the trigger on commands
-  // alone hid it in the one case it exists for: a bundle where nothing has a
-  // command.
-  // Gated on `pending` exactly as the panel is: while the query is in flight
-  // every site skill looks uncovered, and counting them here would open the
-  // disclosure over a panel that is deliberately rendering nothing yet.
+  // The panel also explains skills it can't write a command for, so those
+  // count too. Gated on `pending` like the panel, or every site skill would
+  // look uncovered while the query is in flight.
   const uncoveredCount = useMemo(
     () => (wellKnownPending ? 0 : uncoveredSkills(skills, wellKnown).length),
     [skills, wellKnown, wellKnownPending],
@@ -86,15 +81,7 @@ export function BundleSkillsSection({
   const installPanelHasContent = commandCount > 0 || uncoveredCount > 0;
 
   return (
-    // The register, and its caption. Consequence before inventory: the tally
-    // answers "is anything wrong?" and the rows underneath are ordered so the
-    // worst one is already first. Install is a disclosure beside Edit skills,
-    // still reachable, no longer leading.
     <section className="space-y-4">
-      {/* Install sits with Edit skills, not on its own line. It used to ride
-          the tally row, and once the sections took over the tally's job that
-          row went empty except for this button — an orphan control above the
-          table. */}
       <SectionHeader
         title="Skills"
         count={skillCount}
@@ -142,20 +129,8 @@ export function BundleSkillsSection({
         }
       />
 
-      {/* `mb-0!` cancels the section's `space-y-4`, and the panel carries that
-          spacing internally as `pb-4` instead.
-
-          The section gives every child `margin-bottom: 16px`. While the panel
-          is mounted that 16px sits below it, but Base UI unmounts the panel at
-          the end of the close — the root becomes an empty box, stops
-          contributing the margin, and the gap vanished in one frame *after*
-          the height animation had finished. That was the jump.
-
-          Moving it inside makes it part of the animated height, so it
-          collapses with everything else. The closed layout is unchanged: the
-          root contributed nothing once empty anyway.
-
-          `!` because the `space-y-4` selector outranks a plain utility. */}
+      {/* `mb-0!` + inner `pb-4`: the spacing has to collapse with the height
+          animation, or it vanishes a frame after the panel unmounts. */}
       <Collapsible
         open={installOpen}
         onOpenChange={setInstallOpen}
@@ -174,9 +149,7 @@ export function BundleSkillsSection({
         </CollapsibleContent>
       </Collapsible>
 
-      {/* The tally steps aside in edit mode: it reports saved state, and while
-          you have unsaved adds and removes staged it would be counting
-          something that is no longer on screen. */}
+      {/* The tally reports saved state, so it steps aside while editing. */}
       {editing ? null : (
         <RegisterTally
           total={skillCount}
@@ -186,17 +159,8 @@ export function BundleSkillsSection({
         />
       )}
 
-      {/*
-        ONE register, in one position in the tree, for both modes. Edit is
-        genuinely a mode OF it: the same component instance takes the staged
-        groups and the row handlers, so nothing unmounts when you toggle.
-
-        Two instances is what this replaced, and the cost was invisible in the
-        markup but obvious in use — React tore one down and built the other, so
-        the section folds you had opened closed again and the scroll offset
-        inside the register's own container jumped back to the top after every
-        save.
-      */}
+      {/* One register for both modes, so toggling edit keeps its folds and
+          scroll position. */}
       {skillCount > 0 || editing ? (
         <BundleRegister
           groups={editing ? editSession.rows.groups : register.groups}
@@ -206,9 +170,7 @@ export function BundleSkillsSection({
         <BundleEmpty isOwner={canEdit} />
       )}
 
-      {/* The controls only — picker, bottom bar, discard dialog. Mounts
-          unconditionally for owners so the bar can animate in and out via its
-          `open` prop instead of being yanked out of the tree. */}
+      {/* Always mounted for owners so the edit bar can animate out. */}
       {canEdit ? (
         <BundleEditChrome
           editing={editing}
@@ -245,12 +207,8 @@ function SectionHeader({
 }
 
 /**
- * A bundle with no skills.
- *
- * Gets a real state rather than an absent register. The previous build left
- * roughly 800px of nothing under a success-green status light, which told the
- * owner their empty bundle was healthy — an answer to a question they had not
- * asked, in the colour reserved for the one they had.
+ * A bundle with no skills: a real state, not an empty register under a green
+ * "all clear".
  */
 function BundleEmpty({ isOwner }: { isOwner: boolean }) {
   return (

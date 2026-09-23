@@ -340,9 +340,7 @@ describe("analyzeRepoAnonymous", () => {
 
   test("a successful fresh run spends the allowance", async () => {
     const t = setup();
-    // A repo GitHub can describe, and an embedding for it: enough for the
-    // pipeline to finish without an error (the vector index is empty, so it
-    // matches nothing, which is still a result).
+    // A describable repo plus an embedding is enough for an error-free run.
     vi.stubEnv("VOYAGE_API_KEY", "test-key");
     vi.stubGlobal(
       "fetch",
@@ -373,8 +371,7 @@ describe("analyzeRepoAnonymous", () => {
 
   test("a miss doesn't spend the allowance", async () => {
     const t = setup();
-    // Every run here is a fetch error (fetch is stubbed), so more misses than
-    // the allowance holds all still get through to the pipeline.
+    // Every run is a fetch error (fetch is stubbed).
     for (let i = 0; i <= ANON_DAILY_ANALYSES; i++) {
       const result = await runAnon(t, VISITOR, i);
       expect(result.error).toBe(FETCH_ERROR);

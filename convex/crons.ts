@@ -123,8 +123,7 @@ if (process.env.CRONS_ENABLED === "true") {
     internal.recommendations.cleanupExpiredFingerprintCache,
   );
 
-  // Rate-limit rows older than a week, which include the hashed visitor IPs
-  // from signed-out repo matching. The privacy page promises this deletion.
+  // Deletes hashed visitor IPs within a week, as the privacy page promises.
   crons.daily(
     "prune stale rate limits",
     { hourUTC: 5, minuteUTC: 10 },

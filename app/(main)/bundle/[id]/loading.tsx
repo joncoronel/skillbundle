@@ -28,12 +28,7 @@ export default function BundleLoading() {
   return <BundleShell />;
 }
 
-/**
- * The shell itself. `owner` adds what only an owner's view renders (the action
- * row, and Edit skills beside Install): never true here, since a shared link's
- * visitor is who this route's shell is for, but always true for a bundle saved
- * in the browser (`/bundle/local`), whose viewer is by definition its owner.
- */
+/** `owner` adds the owner-only action row and Edit skills (`/bundle/local`). */
 export function BundleShell({ owner = false }: { owner?: boolean }) {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
