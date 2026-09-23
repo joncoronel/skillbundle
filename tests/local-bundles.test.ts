@@ -149,6 +149,7 @@ const importArgs = (
   bundles: { name: string; skillIds: string[]; addedAt?: number }[],
 ) => ({
   bundles: bundles.map((b) => ({
+    localId: b.name,
     name: b.name,
     skills: b.skillIds.map((skillId) => ({
       source: SOURCE,
@@ -192,6 +193,22 @@ describe("importLocalBundles", () => {
 
     const bundle = await t.run((ctx) => ctx.db.query("bundles").first());
     expect(bundle!.skills[0].addedAt).toBe(addedAt);
+  });
+
+  test("a repeated import returns the bundles it already moved", async () => {
+    const t = makeTest();
+    await seedSkill(t, "skill-a");
+    const asUser = t.withIdentity({ subject: "user-1" });
+    const args = importArgs([{ name: "Mine", skillIds: ["skill-a"] }]);
+
+    // The tab closed before the browser could clear the bundle, so the next
+    // load sends it again.
+    const first = await asUser.mutation(api.bundles.importLocalBundles, args);
+    const second = await asUser.mutation(api.bundles.importLocalBundles, args);
+
+    expect(second.imported).toEqual(first.imported);
+    const bundles = await t.run((ctx) => ctx.db.query("bundles").collect());
+    expect(bundles).toHaveLength(1);
   });
 
   test("drops skills that left the catalog instead of failing", async () => {

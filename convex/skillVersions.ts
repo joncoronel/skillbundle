@@ -27,6 +27,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { getCurrentUser } from "./users";
 import { MAX_BUNDLE_SKILLS } from "../lib/bundle-limits";
+import { feedTargets } from "../lib/monitoring/feed-targets";
 import {
   CONDITION_RANK,
   isFault,
@@ -406,36 +407,12 @@ export const listRecentChangesForUser = query({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
 
-    // key -> the bundle context with the EARLIEST baseline, so a skill in two
-    // bundles is reported against the one it has been unread in longest.
-    const candidates = new Map<
-      string,
-      {
-        bundle: Doc<"bundles">;
-        source: string;
-        skillId: string;
-        baseline: number;
-      }
-    >();
+    // One target per distinct skill, against the bundle it has been unread in
+    // longest. Shared with the browser feed (lib/monitoring/feed-targets.ts).
+    const candidates = feedTargets(bundles);
 
-    for (const bundle of bundles) {
-      for (const s of bundle.skills) {
-        const baseline = Math.max(bundle.lastViewedAt ?? 0, s.addedAt ?? 0);
-        const key = `${s.source}::${s.skillId}`;
-        const existing = candidates.get(key);
-        if (!existing || baseline < existing.baseline) {
-          candidates.set(key, {
-            bundle,
-            source: s.source,
-            skillId: s.skillId,
-            baseline,
-          });
-        }
-      }
-    }
-
-    const watchedSkillCount = candidates.size;
-    const feed = await resolveFeed(ctx, Array.from(candidates.values()), limit);
+    const watchedSkillCount = candidates.length;
+    const feed = await resolveFeed(ctx, candidates, limit);
 
     return {
       items: feed.items.map(({ target, ...item }) => ({
@@ -456,8 +433,8 @@ export const listRecentChangesForUser = query({
  * which have no rows for `listRecentChangesForUser` to read.
  *
  * The browser sends one entry per distinct skill, already carrying the baseline
- * and bundle name the account query would have derived from the bundle rows
- * (earliest of `max(lastViewedAt, addedAt)` across the bundles holding it). The
+ * and bundle name, derived with the same `feedTargets` the account query runs
+ * over its bundle rows. The
  * answer is the same `resolveFeed` the account query uses, so the two can't
  * disagree about what changed.
  *

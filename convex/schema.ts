@@ -789,6 +789,11 @@ export default defineSchema({
     // the old public-by-default rule.
     isPublic: v.boolean(),
     forkedFrom: v.optional(v.id("bundles")),
+    // The browser id of the bundle this row was imported from
+    // (`importLocalBundles`). Lets a repeated import recognise bundles it
+    // already moved: the browser only clears them after the mutation returns,
+    // and a tab closed in between sends them again on the next load.
+    localId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
     // When the OWNER last opened this bundle. Stamped by `markBundleViewed`,

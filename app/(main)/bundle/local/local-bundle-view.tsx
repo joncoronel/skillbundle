@@ -3,26 +3,13 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useConvexAuth } from "convex/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowDown01Icon,
-  Delete01Icon,
-  Edit01Icon,
-  PencilEdit02Icon,
-} from "@hugeicons/core-free-icons";
+import { Delete01Icon, Edit01Icon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
-import {
-  BundleRegister,
-  RegisterTally,
-  buildRegister,
-} from "@/components/bundle/bundle-register";
-import {
-  InstallCommands,
-  CopyAllCommandsButton,
-} from "@/components/install-commands";
-import { BundleEditChrome } from "@/components/bundle-edit/editable-skill-section";
+import { BundleSkillsSection } from "@/components/bundle/bundle-skills-section";
 import { Button } from "@/components/ui/cubby-ui/button";
 import { Input } from "@/components/ui/cubby-ui/input";
 import { Textarea } from "@/components/ui/cubby-ui/textarea";
@@ -47,17 +34,8 @@ import {
   AlertDialogClose,
   AlertDialogTrigger,
 } from "@/components/ui/cubby-ui/alert-dialog";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/cubby-ui/collapsible";
 import { signInUrl } from "@/components/auth/shared";
 import { useBundleEditSession } from "@/hooks/use-bundle-edit-session";
-import { useWellKnownIndexes } from "@/hooks/use-well-known-indexes";
-import {
-  generateInstallCommands,
-  uncoveredSkills,
-} from "@/lib/install-commands";
 import {
   MAX_BUNDLE_DESCRIPTION_LENGTH,
   MAX_BUNDLE_NAME_LENGTH,
@@ -69,18 +47,20 @@ import {
   type LocalBundle,
 } from "@/lib/local-bundles";
 import { localBundleHref } from "@/lib/local-bundles-core";
-import { cn } from "@/lib/utils";
-import BundleLoading from "../[id]/loading";
-import { BundleEmpty, MetadataItems, SectionHeader } from "../[id]/bundle-view";
+import { BundleShell } from "../[id]/loading";
+import { MetadataItems } from "../[id]/bundle-view";
 
 const detailsDialogHandle = createDialogHandle();
 
+const inlineLink =
+  "font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground";
+
 /**
  * A bundle saved in this browser (lib/local-bundles.ts), rendered with the same
- * register as an account bundle. What differs is where the data comes from:
- * the entries live in localStorage, and the catalog rows and change payloads
- * come from two read-only queries that take those entries as arguments
- * (`bundles.resolveSkills`, `skillVersions.listChangesForSkills`).
+ * skills section as an account bundle. What differs is where the data comes
+ * from: the entries live in localStorage, and the catalog rows and change
+ * payloads come from two read-only queries that take those entries as
+ * arguments (`bundles.resolveSkills`, `skillVersions.listChangesForSkills`).
  *
  * No share control. A share link needs the bundle on a server, so it is the
  * thing signing in adds, and the header says so.
@@ -88,12 +68,20 @@ const detailsDialogHandle = createDialogHandle();
 export function LocalBundleView() {
   const id = useSearchParams().get("id");
   const bundles = useLocalBundles();
+  const current = id ? bundles?.find((b) => b.id === id) : undefined;
+
+  // The last bundle this page showed. Both ways a bundle leaves the browser
+  // while its page is open (Delete here, or the sign-in import) navigate away,
+  // but the storage write renders before the navigation commits; without this
+  // the page flashes "not in this browser" on its way out. React's pattern for
+  // state derived from a changing input: set during render, no effect.
+  const [shown, setShown] = useState(current);
+  if (current && current !== shown) setShown(current);
+  const bundle = current ?? (shown?.id === id ? shown : undefined);
 
   // Before hydration the stored list is unknown, and the server rendered the
   // loading shell; keep showing it rather than a false "not found".
-  if (bundles === undefined) return <BundleLoading />;
-
-  const bundle = id ? bundles.find((b) => b.id === id) : undefined;
+  if (bundles === undefined) return <BundleShell owner />;
   if (!bundle) return <LocalBundleNotFound />;
   // Keyed so switching bundles resets the edit session and dialogs.
   return <LocalBundleLoaded key={bundle.id} bundle={bundle} />;
@@ -102,9 +90,8 @@ export function LocalBundleView() {
 function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
   const actions = useLocalBundleActions();
   const router = useRouter();
+  const { isAuthenticated } = useConvexAuth();
   const [editingSkills, setEditingSkills] = useState(false);
-  const [installOpen, setInstallOpen] = useState(false);
-  const installPanelId = useId();
 
   const entries = useMemo(
     () =>
@@ -148,11 +135,6 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     );
   }, [bundle.skills, resolved.data]);
 
-  const register = useMemo(
-    () => buildRegister(skills, changes?.items),
-    [skills, changes],
-  );
-
   // Same rule as the account page: opening the bundle marks it read, but only
   // once its changes are on screen. Marking something read that was never
   // shown is the one thing a monitoring product cannot do.
@@ -162,25 +144,11 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     if (changesReady) markViewed(bundle.id);
   }, [changesReady, markViewed, bundle.id]);
 
-  const { indexes: wellKnown, pending: wellKnownPending } =
-    useWellKnownIndexes(skills);
-  const commandCount = useMemo(
-    () => generateInstallCommands(skills, wellKnown).length,
-    [skills, wellKnown],
-  );
-  const uncoveredCount = useMemo(
-    () => (wellKnownPending ? 0 : uncoveredSkills(skills, wellKnown).length),
-    [skills, wellKnown, wellKnownPending],
-  );
-  const installPanelHasContent = commandCount > 0 || uncoveredCount > 0;
-
   const editSession = useBundleEditSession({
-    bundleId: undefined,
-    queryArgs: { urlId: "" },
     initialSkills: skills,
     changes: changes?.items,
     onExit: () => setEditingSkills(false),
-    saveSkills: (next) => {
+    save: (next) => {
       const result = actions.setSkills({
         id: bundle.id,
         skills: next.map(({ source, skillId, name }) => ({
@@ -193,32 +161,47 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
     },
   });
 
-  // Both reads resolve together on first load, like the account page's
-  // preload, so the register never paints every row as Steady and then
-  // re-sorts when the changes land.
   // To app/(main)/error.tsx, which keeps the header and offers retry. A failed
   // read would otherwise sit on the loading shell forever.
   if (resolved.isError) throw resolved.error;
   if (changesQuery.isError) throw changesQuery.error;
+  // Both reads resolve together on first load, like the account page's
+  // preload, so the register never paints every row as Steady and then
+  // re-sorts when the changes land.
   if (resolved.data === undefined || changes === undefined) {
-    return <BundleLoading />;
+    return <BundleShell owner />;
   }
-
-  const skillCount = bundle.skills.length;
 
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
         <header>
+          {/* Signed in, a bundle is only still here because the import on
+              sign-in refused it (LocalBundleImporter), so "sign in" would be
+              the wrong advice. */}
           <p className="text-sm text-muted-foreground">
-            Saved in this browser.{" "}
-            <Link
-              href={signInUrl(localBundleHref(bundle.id))}
-              className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-2 transition-colors hover:decoration-foreground"
-            >
-              Sign in
-            </Link>{" "}
-            to share it or open it on another device.
+            {isAuthenticated ? (
+              <>
+                Saved in this browser. It didn&rsquo;t move to your account
+                because it would take you past your plan&rsquo;s watched-skill
+                limit.{" "}
+                <Link href="/pricing" className={inlineLink}>
+                  Upgrade
+                </Link>{" "}
+                and it moves on your next visit.
+              </>
+            ) : (
+              <>
+                Saved in this browser.{" "}
+                <Link
+                  href={signInUrl(localBundleHref(bundle.id))}
+                  className={inlineLink}
+                >
+                  Sign in
+                </Link>{" "}
+                to share it or open it on another device.
+              </>
+            )}
           </p>
           <h1 className="mt-2 text-display-sm wrap-break-word">
             {bundle.name}
@@ -304,96 +287,15 @@ function LocalBundleLoaded({ bundle }: { bundle: LocalBundle }) {
           </div>
         </header>
 
-        <section className="space-y-4">
-          <SectionHeader
-            title="Skills"
-            count={skillCount}
-            action={
-              <div className="flex items-center gap-2">
-                {installPanelHasContent && !editingSkills ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-expanded={installOpen}
-                    aria-controls={installPanelId}
-                    onClick={() => setInstallOpen((o) => !o)}
-                    trailingIcon={
-                      <HugeiconsIcon
-                        icon={ArrowDown01Icon}
-                        strokeWidth={2}
-                        className={cn(
-                          "size-3.5 transition-transform duration-100 motion-reduce:transition-none",
-                          installOpen && "rotate-180",
-                        )}
-                      />
-                    }
-                  >
-                    Install
-                  </Button>
-                ) : null}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingSkills(true)}
-                  disabled={editingSkills}
-                  leadingIcon={
-                    <HugeiconsIcon
-                      icon={PencilEdit02Icon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  Edit skills
-                </Button>
-              </div>
-            }
-          />
-
-          {/* See the account page for why the spacing lives inside the panel
-              (`mb-0!` + `pb-4`): it collapses with the height animation. */}
-          <Collapsible
-            open={installOpen}
-            onOpenChange={setInstallOpen}
-            className="mb-0!"
-          >
-            <CollapsibleContent id={installPanelId}>
-              <div className="space-y-3 pb-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Install commands
-                  </p>
-                  <CopyAllCommandsButton skills={skills} />
-                </div>
-                <InstallCommands skills={skills} />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          {editingSkills ? null : (
-            <RegisterTally
-              total={skillCount}
-              faults={register.faults}
-              changed={register.changed}
-              suppressed={changes.suppressed}
-            />
-          )}
-
-          {skillCount > 0 || editingSkills ? (
-            <BundleRegister
-              groups={editingSkills ? editSession.rows.groups : register.groups}
-              actions={editingSkills ? editSession.actions : undefined}
-            />
-          ) : (
-            <BundleEmpty isOwner />
-          )}
-
-          <BundleEditChrome
-            editing={editingSkills}
-            session={editSession}
-            onExit={() => setEditingSkills(false)}
-          />
-        </section>
+        <BundleSkillsSection
+          skills={skills}
+          changes={changes}
+          canEdit
+          editing={editingSkills}
+          onEdit={() => setEditingSkills(true)}
+          onExitEdit={() => setEditingSkills(false)}
+          editSession={editSession}
+        />
       </div>
 
       <DetailsDialog bundle={bundle} />

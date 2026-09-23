@@ -13,6 +13,9 @@ import {
   type LocalBundle,
 } from "@/lib/local-bundles";
 
+/** The set of left-behind bundles the last toast was about. */
+const SKIPPED_KEY = "skillbundle:import-skipped";
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
@@ -49,6 +52,7 @@ export function LocalBundleImporter() {
 
       const { imported, skipped } = await importBundles({
         bundles: bundles.map((b) => ({
+          localId: b.id,
           name: b.name,
           description: b.description,
           skills: b.skills.map(({ source, skillId, addedAt }) => ({
@@ -62,6 +66,18 @@ export function LocalBundleImporter() {
       });
       removeMany(imported.map((i) => bundles[i.index].id));
 
+      // Bundles over the limit stay behind and are sent again on every load,
+      // since an upgrade is what lets them in. Say so once per set rather than
+      // every visit: the dashboard already lists them under "Still in this
+      // browser".
+      const skippedSet = skipped
+        .map((i) => bundles[i.index].id)
+        .sort()
+        .join(",");
+      const toldAbout = localStorage.getItem(SKIPPED_KEY);
+      if (skippedSet) localStorage.setItem(SKIPPED_KEY, skippedSet);
+      else localStorage.removeItem(SKIPPED_KEY);
+
       if (imported.length > 0) {
         toast({
           title: `Moved ${plural(imported.length, "bundle")} to your account`,
@@ -70,7 +86,7 @@ export function LocalBundleImporter() {
               ? `${plural(skipped.length, "bundle")} stayed in this browser because ${skipped.length === 1 ? "it" : "they"} would take you past your plan's limit.`
               : undefined,
         });
-      } else if (skipped.length > 0) {
+      } else if (skippedSet && skippedSet !== toldAbout) {
         toast({
           title: `${plural(skipped.length, "bundle")} stayed in this browser`,
           description:

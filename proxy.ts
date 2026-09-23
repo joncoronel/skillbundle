@@ -95,7 +95,9 @@ export const config = {
     "/settings(.*)",
     "/dev(.*)",
     // `getAuthToken()` runs in the page itself, before any `preloadQuery`.
-    "/bundle/(.*)",
+    // Not `/bundle/local`: a static page for bundles saved in the browser,
+    // which reads auth on the client only.
+    "/bundle/((?!local$).*)",
     "/sign-in(.*)",
     "/sign-up(.*)",
     // No API route reads Clerk today — they gate on shared secrets — but these

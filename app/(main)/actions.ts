@@ -6,7 +6,13 @@ import { fetchAction } from "convex/nextjs";
 import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
 import type { AnalyzeRepoResult } from "@/convex/recommendations";
-import { extractRepoSlug } from "@/lib/repo-match";
+import {
+  BOT_REFUSED,
+  extractRepoSlug,
+  SIGNED_OUT_CODES,
+  SIGNED_OUT_UNAVAILABLE,
+  type SignedOutCode,
+} from "@/lib/repo-match";
 import { clientIp, visitorKey } from "@/lib/visitor-key";
 
 /**
@@ -17,11 +23,11 @@ import { clientIp, visitorKey } from "@/lib/visitor-key";
  */
 export type SignedOutRepoMatch =
   | { ok: true; result: AnalyzeRepoResult }
-  | { ok: false; code: string; message: string };
+  | { ok: false; code: SignedOutCode; message: string };
 
 const UNAVAILABLE: SignedOutRepoMatch = {
   ok: false,
-  code: "unavailable",
+  code: SIGNED_OUT_UNAVAILABLE,
   message:
     "Repo matching isn't available signed out right now. Sign in to use it.",
 };
@@ -74,7 +80,7 @@ export async function analyzeRepoSignedOut(
   if (isBot) {
     return {
       ok: false,
-      code: "bot",
+      code: BOT_REFUSED,
       message: "This request looked automated. Sign in to match repos.",
     };
   }
@@ -89,20 +95,18 @@ export async function analyzeRepoSignedOut(
   } catch (e) {
     if (e instanceof ConvexError) {
       const data = e.data as { code?: unknown; message?: unknown } | string;
-      const code =
-        typeof data === "object" && typeof data?.code === "string"
-          ? data.code
-          : "failed";
+      const raw = typeof data === "object" ? data?.code : undefined;
       const message =
         typeof data === "object" && typeof data?.message === "string"
           ? data.message
           : "Something went wrong analyzing this repository. Please try again.";
-      if (code === "unauthorized") {
+      if (raw === "unauthorized") {
         // The two deployments disagree about the secret: a config error, not
         // something the visitor can fix.
         console.error("analyzeRepoSignedOut: REPO_MATCH_SECRET mismatch");
         return UNAVAILABLE;
       }
+      const code = SIGNED_OUT_CODES.find((c) => c === raw) ?? "failed";
       return { ok: false, code, message };
     }
     console.error("analyzeRepoSignedOut failed", e);

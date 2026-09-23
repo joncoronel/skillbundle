@@ -1628,9 +1628,14 @@ the client both call:
   Re-running a counted repo is free, and a run that comes back with an error
   is refunded. One row per account, reset in place on the first request of a
   new month, so there is no cleanup cron.
-- **Signed out:** 3 fresh analyses per visitor (`ANON_DAILY_ANALYSES`), a
-  token bucket refilling over a day (`repoAnalysisAnonymous` in
-  `convex/rateLimits.ts`). Cache hits are free. Metered per IP (IPv6 by /64),
+- **Signed out:** 3 successful fresh analyses per visitor
+  (`ANON_DAILY_ANALYSES`), a token bucket refilling over a day
+  (`repoAnalysisAnonymous` in `convex/rateLimits.ts`), checked before the run
+  and charged after it. Cache hits and errors are free.
+- **Misses, both meters:** an errored run costs no allowance, so every fresh
+  attempt by a free account or signed-out visitor also pays into
+  `repoAnalysisDaily` (20 a day), which is what keeps typo refunds from
+  making nonexistent repos free to probe on the shared GitHub token. Metered per IP (IPv6 by /64),
   which only the site can see, so these runs go through the
   `analyzeRepoSignedOut` server action (`app/(main)/actions.ts`): BotID check,
   HMAC the IP into a visitor key, then `recommendations.analyzeRepoAnonymous`

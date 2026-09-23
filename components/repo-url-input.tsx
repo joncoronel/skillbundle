@@ -18,6 +18,7 @@ import {
 import {
   ANON_DAILY_ANALYSES,
   ANON_LIMIT,
+  currentMonth,
   EXAMPLE_REPO_SLUG,
   EXAMPLE_REPO_URL,
   extractRepoSlug,
@@ -27,6 +28,8 @@ import {
   repoMatchKey,
   repoMatchMeter,
   SIGN_IN_REQUIRED,
+  BOT_REFUSED,
+  SIGNED_OUT_UNAVAILABLE,
 } from "@/lib/repo-match";
 import { signInUrl } from "@/components/auth/shared";
 import { analyzeRepoSignedOut } from "@/app/(main)/actions";
@@ -65,8 +68,8 @@ type GroupedRecommendation = AnalyzeRepoResult["recommendations"][number];
 // server action refusing (BotID verdict, or signed-out matching unavailable).
 const SIGN_IN_CODES: ReadonlySet<string> = new Set([
   SIGN_IN_REQUIRED,
-  "bot",
-  "unavailable",
+  BOT_REFUSED,
+  SIGNED_OUT_UNAVAILABLE,
 ]);
 
 // Fingerprint languages arrive lowercased from the GitHub API mapping;
@@ -118,10 +121,17 @@ export function RepoAnalysisResults() {
   } = useUserPlan();
   // The free account's monthly allowance. Null for signed-out and Pro, and a
   // live subscription, so the count moves the moment a run is counted.
-  const { data: usage } = useQuery({
+  const { data: usageAnswer } = useQuery({
     ...convexQuery(api.repoMatchQuota.myUsage, isAuthenticated ? {} : "skip"),
     enabled: isAuthenticated,
   });
+  // An answer for an earlier month is a fresh month: the subscription doesn't
+  // re-run when the clock rolls over, and trusting it would keep someone at
+  // 5/5 behind the upgrade prompt into the next month.
+  const usage =
+    usageAnswer && usageAnswer.month !== currentMonth()
+      ? { ...usageAnswer, used: 0, repos: [] }
+      : usageAnswer;
 
   // Result narrowing — local state, not URL state: it scopes one analysis
   // view, resets naturally with the component, and repo links shared without
@@ -638,10 +648,16 @@ function RepoMatchWall({
         strokeWidth={1.5}
         className="mx-auto size-6 text-muted-foreground/60"
       />
-      <p className="mt-3 text-sm font-medium">{title}</p>
-      <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        {body}
-      </p>
+      {/* role="alert": announced when it becomes visible. The Crossfade keeps
+          this panel mounted and flips it from display: none, and the
+          "Analyzing" status that preceded it lives in another branch, so
+          without this a screen reader hears nothing after "Analyzing". */}
+      <div role="alert">
+        <p className="mt-3 text-sm font-medium">{title}</p>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+          {body}
+        </p>
+      </div>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
         {kind === "upgrade" ? (
           <Button

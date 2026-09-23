@@ -4,7 +4,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import {
   getCurrentUser,
@@ -175,6 +175,23 @@ function normalizeBundleName(name: string): string {
   return trimmed;
 }
 
+/** What `loadBundleSkill` returns; `resolveSkills` validates against it. */
+const bundleSkill = v.object({
+  source: v.string(),
+  skillId: v.string(),
+  addedAt: v.optional(v.number()),
+  name: v.string(),
+  description: v.optional(v.string()),
+  installs: v.number(),
+  contentUpdatedAt: v.optional(v.number()),
+  createdAt: v.optional(v.number()),
+  isDelisted: v.boolean(),
+  hasContentFetchError: v.boolean(),
+  curatedOwner: v.optional(v.string()),
+  worstAuditStatus: v.optional(v.string()),
+  worstAuditRiskLevel: v.optional(v.string()),
+});
+
 /**
  * One bundle entry joined to its catalog row, in the shape the bundle register
  * renders. Shared by `getByUrlId` (account bundles) and `resolveSkills`
@@ -184,7 +201,7 @@ function normalizeBundleName(name: string): string {
 async function loadBundleSkill(
   ctx: QueryCtx,
   s: { source: string; skillId: string; addedAt?: number },
-) {
+): Promise<Infer<typeof bundleSkill>> {
   const skill = await ctx.db
     .query("skills")
     .withIndex("by_source_skillId", (q) =>
@@ -600,14 +617,17 @@ export const deleteBundle = mutation({
  * bites when someone signs into an account that already watches skills.
  * Skipped bundles stay in the browser, and the client says so.
  *
- * Retries are safe without an idempotency key. The Convex client runs a
- * retried mutation exactly once, and the client serialises imports across tabs
- * and clears each bundle from storage once this returns.
+ * Each bundle carries its browser id, stored as `localId`, so an import is
+ * idempotent: a bundle already moved for this user is reported as imported
+ * (with its existing URL) instead of being created twice. The browser only
+ * clears a bundle after this returns, so a tab closed in between sends it
+ * again on the next load.
  */
 export const importLocalBundles = mutation({
   args: {
     bundles: v.array(
       v.object({
+        localId: v.string(),
         name: v.string(),
         description: v.optional(v.string()),
         skills: v.array(
@@ -659,6 +679,11 @@ export const importLocalBundles = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
     let bundleCount = existingBundles.length;
+    const alreadyImported = new Map(
+      existingBundles.flatMap((b) =>
+        b.localId === undefined ? [] : [[b.localId, b.urlId] as const],
+      ),
+    );
     const watched = new Set<string>();
     for (const b of existingBundles) {
       for (const sk of b.skills) watched.add(watchKey(sk));
@@ -690,6 +715,11 @@ export const importLocalBundles = mutation({
     }[] = [];
 
     for (const [index, b] of bundles.entries()) {
+      const existingUrlId = alreadyImported.get(b.localId);
+      if (existingUrlId !== undefined) {
+        imported.push({ index, urlId: existingUrlId });
+        continue;
+      }
       if (bundleCount >= MAX_BUNDLES_PER_USER) {
         skipped.push({ index, reason: "bundle_limit" });
         continue;
@@ -728,6 +758,7 @@ export const importLocalBundles = mutation({
           b.name.trim().slice(0, MAX_BUNDLE_NAME_LENGTH) || "Untitled bundle",
         description: trimmedDescription || undefined,
         urlId,
+        localId: b.localId,
         skills,
         isPublic: false,
         createdAt: clamp(b.createdAt),
@@ -893,6 +924,7 @@ export const resolveSkills = query({
       }),
     ),
   },
+  returns: v.array(bundleSkill),
   handler: async (ctx, { skills }) => {
     if (skills.length > MAX_BUNDLE_SKILLS) {
       throw new ConvexError(

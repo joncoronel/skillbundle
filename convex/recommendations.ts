@@ -30,6 +30,8 @@ import {
   repoMatchKey,
   repoMatchMeter,
   SIGN_IN_REQUIRED,
+  ANON_DAILY_ANALYSES,
+  ANON_LIMIT,
 } from "../lib/repo-match";
 
 // ---------------------------------------------------------------------------
@@ -329,6 +331,7 @@ export const analyzeRepo = action({
     // This is the authoritative gate; the client mirrors it only to route the
     // request and to skip round-trips it knows will be refused.
     let claimed = false;
+    let metered = false;
     if (!matchesDemoRepo(owner, repo)) {
       const canAutoDetect = identity
         ? (await ctx.runQuery(internal.plans.internalCurrentPlan, {})).limits
@@ -343,6 +346,7 @@ export const analyzeRepo = action({
         throw new ConvexError({ code: SIGN_IN_REQUIRED });
       }
       if (meter === "monthly") {
+        metered = true;
         // Throws FREE_LIMIT when the month is full.
         claimed = await ctx.runMutation(internal.repoMatchQuota.claim, {
           subject: identity.subject,
@@ -352,7 +356,9 @@ export const analyzeRepo = action({
     }
     // A run that errors (thrown, or an error result) produced nothing, so it
     // gives back the slot it just took. Only a slot THIS call took: a re-run of
-    // a repo already counted this month keeps its slot whatever happens.
+    // a repo already counted this month keeps its slot whatever happens. The
+    // miss is still charged to `repoAnalysisDaily` below, which is what keeps
+    // refunds from making nonexistent repos free to probe.
     const refund = async () => {
       if (claimed && identity) {
         await ctx.runMutation(internal.repoMatchQuota.release, {
@@ -373,9 +379,14 @@ export const analyzeRepo = action({
     // one user's private fingerprint can't be served to anyone else.
     const privateKey = identity ? `${identity.subject}:${repoKey}` : null;
     // Charged on fresh work only (see runAnalysis): per user, or one shared
-    // key for signed-out demo runs.
-    const rateLimitChecks = [
-      { name: "repoAnalysis" as const, key: identity?.subject ?? "anonymous" },
+    // key for signed-out demo runs. A free account also pays into its daily
+    // attempt budget, successes and misses alike.
+    const userKey = identity?.subject ?? "anonymous";
+    const rateLimitChecks: RateLimitCheck[] = [
+      { name: "repoAnalysis", key: userKey },
+      ...(metered
+        ? [{ name: "repoAnalysisDaily" as const, key: userKey }]
+        : []),
     ];
 
     // The user's GitHub token, fetched from Clerk at most once per request
@@ -457,9 +468,14 @@ export const analyzeRepo = action({
  * made-up key per request.
  *
  * Public pass only: a signed-out caller has no GitHub token, so a private repo
- * comes back as the usual fetch error. Charged per visitor on fresh work only,
- * like every analysis: a repo already in the cache costs nothing and doesn't
- * touch the allowance.
+ * comes back as the usual fetch error.
+ *
+ * Same rule as a free account: the allowance counts runs that produced
+ * results. A cache hit costs nothing, and a miss (typo, private repo) costs
+ * only the visitor's daily attempt budget. The rate limiter has no refund, so
+ * the allowance is checked up front and charged after the run. Parallel
+ * requests can all pass the check; they are still bounded by the per-minute
+ * and daily attempt limits charged before any GitHub call.
  */
 export const analyzeRepoAnonymous = action({
   args: { repoUrl: v.string(), visitorKey: v.string(), secret: v.string() },
@@ -478,23 +494,55 @@ export const analyzeRepoAnonymous = action({
     const parsed = parseRepoUrl(repoUrl);
     if (!parsed) return INVALID_URL_RESULT;
     const { owner, repo, repoName, repoKey } = parsed;
-    return await runAnalysis(ctx, {
+
+    const allowance = {
+      name: "repoAnalysisAnonymous" as const,
+      key: visitorKey,
+    };
+    const { ok, retryAfter } = await ctx.runQuery(
+      internal.rateLimits.peek,
+      allowance,
+    );
+    if (!ok) {
+      throw new ConvexError({
+        code: ANON_LIMIT,
+        message: `You've used your ${ANON_DAILY_ANALYSES} free repo matches for now.`,
+        retryAfter,
+      });
+    }
+
+    const usage = { fresh: false };
+    const result = await runAnalysis(ctx, {
       owner,
       repo,
       repoName,
       cacheKey: repoKey,
       treeCacheKey: repoKey,
-      // The per-minute scripted-abuse ceiling first, then the allowance, so a
-      // loop is told to slow down before it burns the visitor's runs.
+      // The per-minute scripted-abuse ceiling first, then the daily attempt
+      // budget, so a loop is told to slow down before it spends the day.
       rateLimitChecks: [
         { name: "repoAnalysis", key: `visitor:${visitorKey}` },
-        { name: "repoAnalysisAnonymous", key: visitorKey },
+        { name: "repoAnalysisDaily", key: `visitor:${visitorKey}` },
       ],
+      usage,
     });
+    if (usage.fresh && !result.error) {
+      // Losing a race here (a parallel request spent the last slot) means this
+      // run is already paid for in GitHub calls; returning it beats wasting it.
+      await ctx
+        .runMutation(internal.rateLimits.enforce, { checks: [allowance] })
+        .catch(() => {});
+    }
+    return result;
   },
 });
 
 const FETCH_ERROR = "Could not fetch repository details";
+
+type RateLimitCheck = {
+  name: "repoAnalysis" | "repoAnalysisDaily";
+  key: string;
+};
 
 /**
  * The full analysis pipeline (tree freshness check → fingerprint → embedding
@@ -516,13 +564,12 @@ async function runAnalysis(
     /** User OAuth token — presence marks this as a private pass. */
     token?: string;
     /** Rate limits charged, once, when the run has to do fresh work. */
-    rateLimitChecks: Array<{
-      name: "repoAnalysis" | "repoAnalysisAnonymous";
-      key: string;
-    }>;
+    rateLimitChecks: RateLimitCheck[];
+    /** Set to `fresh: true` once those limits are charged. */
+    usage?: { fresh: boolean };
   },
 ): Promise<AnalyzeRepoResult> {
-  const { owner, repo, repoName, token, rateLimitChecks } = opts;
+  const { owner, repo, repoName, token, rateLimitChecks, usage } = opts;
   // `let`: a token pass that discovers the repo is actually PUBLIC (GitHub
   // metadata says private: false) downgrades to the global keys below, so a
   // transient public-fetch failure can't permanently pin a public repo to a
@@ -571,6 +618,7 @@ async function runAnalysis(
     await ctx.runMutation(internal.rateLimits.enforce, {
       checks: rateLimitChecks,
     });
+    if (usage) usage.fresh = true;
   };
 
   if (treeCache) {

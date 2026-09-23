@@ -15,6 +15,7 @@ import {
   MAX_LOCAL_BUNDLES,
   watchKey,
 } from "./bundle-limits";
+import { feedTargets } from "./monitoring/feed-targets";
 
 export interface LocalBundleSkill {
   source: string;
@@ -103,37 +104,14 @@ export function mergeSkills(
 }
 
 /**
- * One feed target per distinct skill, for `listRecentChangesForSkills`. The
- * baseline is `max(lastViewedAt, addedAt)`, and a skill in two bundles is
- * reported against the one it has been unread in longest: the same derivation
- * `listRecentChangesForUser` does over account rows.
+ * The arguments for `listRecentChangesForSkills`: the shared `feedTargets`,
+ * with the bundle reduced to the name the feed rows show.
  */
-export function localFeedTargets(bundles: LocalBundle[]): {
-  source: string;
-  skillId: string;
-  baseline: number;
-  bundleName: string;
-}[] {
-  const byKey = new Map<
-    string,
-    { source: string; skillId: string; baseline: number; bundleName: string }
-  >();
-  for (const b of bundles) {
-    for (const s of b.skills) {
-      const baseline = Math.max(b.lastViewedAt ?? 0, s.addedAt);
-      const key = watchKey(s);
-      const existing = byKey.get(key);
-      if (!existing || baseline < existing.baseline) {
-        byKey.set(key, {
-          source: s.source,
-          skillId: s.skillId,
-          baseline,
-          bundleName: b.name,
-        });
-      }
-    }
-  }
-  return Array.from(byKey.values());
+export function localFeedTargets(bundles: LocalBundle[]) {
+  return feedTargets(bundles).map(({ bundle, ...target }) => ({
+    ...target,
+    bundleName: bundle.name,
+  }));
 }
 
 /**

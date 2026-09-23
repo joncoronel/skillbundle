@@ -46,7 +46,7 @@ Repo-aware matching (paste a repo, get skills fingerprint- and vector-matched to
 
 - Browse leaderboards (Popular / Trending / Hot), owner and repo catalog pages, and a curated `/official` directory.
 - Search over skill names and descriptions, with filters for publisher, official skills, install count, audit status, and skills whose install may fail.
-- GitHub repo analysis: paste a repo, get matched skills. Unlimited on Pro; free accounts get 5 distinct repos a month, signed-out visitors 3 fresh analyses a day per IP, and the `shadcn-ui/ui` demo is always free. Picking from your own GitHub repo list stays Pro-only.
+- GitHub repo analysis: paste a repo, get matched skills. Unlimited on Pro; free accounts get 5 distinct repos a month, signed-out visitors 3 new repo matches a day per IP (a repo that can't be read doesn't count), and the `shadcn-ui/ui` demo is always free. Picking from your own GitHub repo list stays Pro-only.
 - Side-by-side skill comparison (`/compare`).
 - Skill detail: rendered SKILL.md, install count + rank, installs-over-time chart with momentum, security audit panel, copyable install command, variants across forks/aliases.
 - Version history per skill: a timeline of changes, adjacent diffs, arbitrary version comparison, and full historical content.

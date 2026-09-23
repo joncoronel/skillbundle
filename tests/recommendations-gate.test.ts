@@ -18,7 +18,7 @@ import { ConvexError } from "convex/values";
 import rateLimiterTest from "@convex-dev/rate-limiter/test";
 import { api, internal } from "../convex/_generated/api";
 import { makeTest } from "./_setup";
-import { currentMonth } from "../convex/repoMatchQuota";
+import { currentMonth } from "../lib/repo-match";
 import {
   ANON_DAILY_ANALYSES,
   ANON_LIMIT,
@@ -165,6 +165,27 @@ describe("analyzeRepo — free monthly allowance", () => {
     ).toBe(FREE_LIMIT);
   });
 
+  test("a free account's misses are bounded by its daily attempt budget", async () => {
+    const t = setup();
+    await seedUser(t, "user-1");
+    for (let i = 0; i < 20; i++) {
+      await t.mutation(internal.rateLimits.enforce, {
+        checks: [{ name: "repoAnalysisDaily", key: "user-1" }],
+      });
+    }
+    expect(
+      await refusalCode(
+        t
+          .withIdentity({ subject: "user-1" })
+          .action(api.recommendations.analyzeRepo, {
+            repoUrl: "https://github.com/vercel/next.js",
+          }),
+      ),
+    ).toBe("rate_limited");
+    // Refused before any work, so the monthly slot it claimed goes back.
+    expect((await quotaRow(t, "user-1"))?.repos).toEqual([]);
+  });
+
   test("re-running a repo already counted this month is allowed, and keeps its slot", async () => {
     const t = setup();
     await seedUser(t, "user-1");
@@ -253,6 +274,7 @@ describe("analyzeRepo — free monthly allowance", () => {
       used: 2,
       limit: FREE_MONTHLY_REPOS,
       repos: ["o/r0", "o/r1"],
+      month: currentMonth(),
     });
     expect(await t.query(api.repoMatchQuota.myUsage, {})).toBeNull();
   });
@@ -286,21 +308,50 @@ describe("analyzeRepoAnonymous", () => {
     ).toBe("unauthorized");
   });
 
-  test("the per-visitor allowance runs out on fresh work", async () => {
-    const t = setup();
-    const run = (visitorKey: string, i: number) =>
-      t.action(api.recommendations.analyzeRepoAnonymous, {
-        // A different uncached repo each time, so every run is fresh work.
-        repoUrl: `https://github.com/o/r${i}`,
-        visitorKey,
-        secret: SECRET,
+  const runAnon = (t: TestHandle, visitorKey: string, i: number) =>
+    t.action(api.recommendations.analyzeRepoAnonymous, {
+      // A different uncached repo each time, so every run is fresh work.
+      repoUrl: `https://github.com/o/r${i}`,
+      visitorKey,
+      secret: SECRET,
+    });
+
+  /** Spend `count` units of one limit for one key, as real runs would. */
+  async function spend(
+    t: TestHandle,
+    name: "repoAnalysisAnonymous" | "repoAnalysisDaily",
+    key: string,
+    count: number,
+  ) {
+    for (let i = 0; i < count; i++) {
+      await t.mutation(internal.rateLimits.enforce, {
+        checks: [{ name, key }],
       });
-    for (let i = 0; i < ANON_DAILY_ANALYSES; i++) {
-      expect(await refusalCode(run(VISITOR, i))).toBeNull();
     }
-    expect(await refusalCode(run(VISITOR, 99))).toBe(ANON_LIMIT);
+  }
+
+  test("a spent allowance refuses before any GitHub call", async () => {
+    const t = setup();
+    await spend(t, "repoAnalysisAnonymous", VISITOR, ANON_DAILY_ANALYSES);
+    expect(await refusalCode(runAnon(t, VISITOR, 0))).toBe(ANON_LIMIT);
     // Another visitor has their own allowance.
-    expect(await refusalCode(run("b".repeat(64), 99))).toBeNull();
+    expect(await refusalCode(runAnon(t, "b".repeat(64), 0))).toBeNull();
+  });
+
+  test("a miss doesn't spend the allowance", async () => {
+    const t = setup();
+    // Every run here is a fetch error (fetch is stubbed), so more misses than
+    // the allowance holds all still get through to the pipeline.
+    for (let i = 0; i <= ANON_DAILY_ANALYSES; i++) {
+      const result = await runAnon(t, VISITOR, i);
+      expect(result.error).toBe(FETCH_ERROR);
+    }
+  });
+
+  test("the daily attempt budget bounds misses", async () => {
+    const t = setup();
+    await spend(t, "repoAnalysisDaily", `visitor:${VISITOR}`, 20);
+    expect(await refusalCode(runAnon(t, VISITOR, 0))).toBe("rate_limited");
   });
 
   test("cache hits don't touch the allowance", async () => {

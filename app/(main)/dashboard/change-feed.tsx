@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
@@ -75,35 +74,13 @@ export function ChangeFeed({
 }: {
   feed: Feed | undefined;
   /**
-   * Replaces the account mutation, for bundles saved in the browser. The
-   * caller owns clearing the rows it shows, as the optimistic update below
-   * does for the account feed.
+   * Stamp every bundle read. The caller clears the changes it shows at once
+   * (faults stay), so the panel settles the moment the button is pressed:
+   * the account dashboard with an optimistic update, the browser one by
+   * filtering its last answer.
    */
-  onMarkAllRead?: () => void;
+  onMarkAllRead: () => void;
 }) {
-  const markAllViewed = useMutation(
-    api.bundles.markAllBundlesViewed,
-  ).withOptimisticUpdate((localStore) => {
-    // Empty the feed synchronously so the panel settles the moment the button
-    // is pressed. This is the payoff gesture of the whole surface — waiting a
-    // round trip to see "all clear" would flatten it.
-    for (const q of localStore.getAllQueries(
-      api.skillVersions.listRecentChangesForUser,
-    )) {
-      if (q.value === undefined) continue;
-      localStore.setQuery(api.skillVersions.listRecentChangesForUser, q.args, {
-        ...q.value,
-        // Faults survive. Marking read acknowledges CHANGES; a skill that is
-        // still delisted is still delisted, and dropping it here would make the
-        // button look like it fixed something. The server agrees — faults do not
-        // consult the baseline — so clearing them optimistically would also
-        // flicker them straight back on the next round trip.
-        items: q.value.items.filter((i) => isFault(i.condition)),
-        suppressed: false,
-      });
-    }
-  });
-
   const [revealSuppressed, setRevealSuppressed] = useState(false);
   const allClearRef = useRef<HTMLHeadingElement>(null);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -124,8 +101,7 @@ export function ChangeFeed({
     // the fault-survival rule made the all-clear branch unreachable in exactly
     // the case the button still renders.
     const target = faults.length > 0 ? panelHeadingRef : allClearRef;
-    if (onMarkAllRead) onMarkAllRead();
-    else void markAllViewed({});
+    onMarkAllRead();
     // The button's own subtree gets `display: none` (or the button unmounts
     // outright, since it is hidden when no changes remain), so without this the
     // focused element vanishes and focus falls to <body> — dumping a keyboard

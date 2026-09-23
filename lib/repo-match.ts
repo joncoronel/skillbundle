@@ -24,12 +24,19 @@ export const MAX_GITHUB_REPOS = 200;
 export const EXAMPLE_REPO_SLUG = "shadcn-ui/ui";
 export const EXAMPLE_REPO_URL = `https://github.com/${EXAMPLE_REPO_SLUG}`;
 
+/** The current UTC calendar month as "YYYY-MM": the free allowance's period. */
+export function currentMonth(now: number = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 7);
+}
+
 /** Distinct repos a signed-in free account can match per calendar month (UTC). */
 export const FREE_MONTHLY_REPOS = 5;
 
 /**
- * Fresh (uncached) analyses a signed-out visitor gets per IP. A token bucket
- * of this size refilling over a day, so "per day" is rolling, not midnight.
+ * Successful fresh (uncached) analyses a signed-out visitor gets per IP.
+ * Errors don't count; they spend the daily attempt budget instead. A token
+ * bucket of this size refilling over a day, so "per day" is rolling, not
+ * midnight.
  */
 export const ANON_DAILY_ANALYSES = 3;
 
@@ -51,6 +58,24 @@ export const ANON_LIMIT = "repo_match_anon_limit" as const;
  * the only place that can see the visitor's IP to meter it.
  */
 export const SIGN_IN_REQUIRED = "repo_match_sign_in_required" as const;
+/** The signed-out server action's BotID check refused the request. */
+export const BOT_REFUSED = "repo_match_bot" as const;
+/** Signed-out matching is misconfigured on this deployment (no secret). */
+export const SIGNED_OUT_UNAVAILABLE = "repo_match_unavailable" as const;
+
+/**
+ * Every code the signed-out server action returns. Typed so the client's
+ * mapping from code to prompt can't drift from what the action sends.
+ */
+export const SIGNED_OUT_CODES = [
+  ANON_LIMIT,
+  BOT_REFUSED,
+  SIGNED_OUT_UNAVAILABLE,
+  "rate_limited",
+  "invalid_url",
+  "failed",
+] as const;
+export type SignedOutCode = (typeof SIGNED_OUT_CODES)[number];
 
 // Lowercased `owner/repo` slugs anyone can analyze for free.
 const DEMO_REPO_SLUGS: ReadonlySet<string> = new Set([EXAMPLE_REPO_SLUG]);

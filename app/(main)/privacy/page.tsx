@@ -45,8 +45,10 @@ export default function PrivacyPage() {
 
       <LegalSection id="what-we-collect" heading="1. What we collect">
         <p>
-          You can browse the entire skill catalog without an account. Nothing in
-          this section applies until you sign up.
+          You can browse the entire skill catalog without an account. Most of
+          this section applies only once you sign up. What applies before that
+          is usage analytics, bundles you save in your browser, and repository
+          matching without an account.
         </p>
         <p>
           <strong>Account information.</strong> When you create an account, our
@@ -61,6 +63,14 @@ export default function PrivacyPage() {
           them, whether each bundle is shared by link, and when you last opened
           each one. That last timestamp is how the app can tell you what changed
           since your previous visit.
+        </p>
+        <p>
+          <strong>Bundles saved in your browser.</strong> Without an account,
+          the bundles you save stay in your browser&apos;s local storage, not on
+          our servers. To show what changed in them, your browser sends us the
+          list of skills they contain and when you added each one; we answer and
+          keep nothing. When you sign in, they move to your account and are
+          handled like anything else you create.
         </p>
         <p>
           <strong>Contributions.</strong> If you add a skill to the public

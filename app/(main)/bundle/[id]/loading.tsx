@@ -25,6 +25,16 @@ import { Skeleton } from "@/components/ui/cubby-ui/skeleton/skeleton";
  *    shifts every bundle that doesn't have one.
  */
 export default function BundleLoading() {
+  return <BundleShell />;
+}
+
+/**
+ * The shell itself. `owner` adds what only an owner's view renders (the action
+ * row, and Edit skills beside Install): never true here, since a shared link's
+ * visitor is who this route's shell is for, but always true for a bundle saved
+ * in the browser (`/bundle/local`), whose viewer is by definition its owner.
+ */
+export function BundleShell({ owner = false }: { owner?: boolean }) {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-12 pb-20">
       <div className="space-y-12">
@@ -43,6 +53,13 @@ export default function BundleLoading() {
           <div className="mt-4 text-sm">
             <Skeleton className="h-[1em] w-40 rounded" />
           </div>
+
+          {owner ? (
+            <div className="mt-6 flex items-center gap-2">
+              <Skeleton className="h-8 w-28 rounded-lg" />
+              <Skeleton className="h-8 w-20 rounded-lg" />
+            </div>
+          ) : null}
         </header>
 
         <section className="space-y-4">
@@ -51,7 +68,10 @@ export default function BundleLoading() {
             <div className="text-xl">
               <Skeleton className="h-[1em] w-32 rounded" />
             </div>
-            <Skeleton className="h-8 w-24 rounded-lg" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-8 w-24 rounded-lg" />
+              {owner ? <Skeleton className="h-8 w-28 rounded-lg" /> : null}
+            </div>
           </div>
 
           {/* The register. A table, so the placeholder is a header strip plus

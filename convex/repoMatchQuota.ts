@@ -9,18 +9,18 @@
  * used") is predictable from what they did rather than from whether someone
  * else analyzed the repo first. Re-running a repo already counted this month
  * is free. A run that comes back with an error (repo not found, private
- * without access) is refunded, so a typo doesn't cost a slot.
+ * without access) is refunded, so a typo doesn't cost a slot; the miss is
+ * charged to the daily attempt budget instead (`repoAnalysisDaily`).
  */
 
 import { ConvexError, v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
 import { getUserPlanWithLimits } from "./lib/plans";
-import { FREE_LIMIT, FREE_MONTHLY_REPOS } from "../lib/repo-match";
-
-/** The current UTC calendar month as "YYYY-MM". */
-export function currentMonth(now: number = Date.now()): string {
-  return new Date(now).toISOString().slice(0, 7);
-}
+import {
+  currentMonth,
+  FREE_LIMIT,
+  FREE_MONTHLY_REPOS,
+} from "../lib/repo-match";
 
 /**
  * Count `repoKey` against the caller's month. Returns true when this call
@@ -82,6 +82,13 @@ export const myUsage = query({
       used: v.number(),
       limit: v.number(),
       repos: v.array(v.string()),
+      /**
+       * The month the count is for. A query only re-runs when what it read
+       * changes, not when the clock moves, so a subscription opened on the
+       * 31st keeps answering for that month. The client compares this with
+       * its own month and treats a stale answer as a fresh month.
+       */
+      month: v.string(),
     }),
   ),
   handler: async (ctx) => {
@@ -93,7 +100,8 @@ export const myUsage = query({
       .query("repoMatchQuota")
       .withIndex("by_subject", (q) => q.eq("subject", identity.subject))
       .unique();
-    const repos = row && row.month === currentMonth() ? row.repos : [];
-    return { used: repos.length, limit: FREE_MONTHLY_REPOS, repos };
+    const month = currentMonth();
+    const repos = row && row.month === month ? row.repos : [];
+    return { used: repos.length, limit: FREE_MONTHLY_REPOS, repos, month };
   },
 });

@@ -7,7 +7,6 @@ import { convexQuery } from "@convex-dev/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Delete01Icon, EyeIcon } from "@hugeicons/core-free-icons";
 import { api } from "@/convex/_generated/api";
-import { BundleCard } from "@/components/bundle-card";
 import { Button } from "@/components/ui/cubby-ui/button";
 import {
   AlertDialog,
@@ -33,7 +32,7 @@ import { ChangeFeed } from "./change-feed";
 import { DashboardStats } from "./dashboard-stats";
 import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
-import { BundleSectionHeader, type SortBy } from "./bundle-section-header";
+import { BundleGrid } from "./bundle-grid";
 
 const deleteLocalBundleHandle = createAlertDialogHandle<{
   id: string;
@@ -131,79 +130,60 @@ export function LocalBundleGrid({
   title?: string;
 }) {
   const { remove } = useLocalBundleActions();
-  const [sortBy, setSortBy] = useState<SortBy>("newest");
-  const sorted = useMemo(() => {
-    const list = [...bundles];
-    return sortBy === "alphabetical"
-      ? list.sort((a, b) => a.name.localeCompare(b.name))
-      : list.sort((a, b) => b.createdAt - a.createdAt);
-  }, [bundles, sortBy]);
 
   return (
-    <section className="space-y-5">
-      {title ? (
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
-      ) : (
-        <BundleSectionHeader
-          count={bundles.length}
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-        />
-      )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {sorted.map((bundle) => (
-          <BundleCard
-            key={bundle.id}
-            name={bundle.name}
-            urlId={bundle.id}
-            description={bundle.description}
-            skillCount={bundle.skills.length}
-            createdAt={bundle.createdAt}
-            creatorName="You"
-            isPublic={false}
-            actions={
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="h-9 sm:h-7"
-                  nativeButton={false}
-                  render={<Link href={localBundleHref(bundle.id)} />}
-                  leadingIcon={
-                    <HugeiconsIcon
-                      icon={EyeIcon}
-                      strokeWidth={2}
-                      className="size-3.5"
-                    />
-                  }
-                >
-                  View
-                </Button>
-                <AlertDialogTrigger
-                  handle={deleteLocalBundleHandle}
-                  payload={{ id: bundle.id, name: bundle.name }}
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      className="h-9 sm:h-7"
-                      leadingIcon={
-                        <HugeiconsIcon
-                          icon={Delete01Icon}
-                          strokeWidth={2}
-                          className="size-3.5"
-                        />
-                      }
-                    >
-                      Delete
-                    </Button>
-                  }
-                />
-              </div>
-            }
-          />
-        ))}
-      </div>
+    <>
+      <BundleGrid
+        title={title}
+        items={bundles.map((bundle) => ({
+          key: bundle.id,
+          name: bundle.name,
+          description: bundle.description,
+          skillCount: bundle.skills.length,
+          createdAt: bundle.createdAt,
+          isPublic: false,
+          actions: (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-9 sm:h-7"
+                nativeButton={false}
+                render={<Link href={localBundleHref(bundle.id)} />}
+                leadingIcon={
+                  <HugeiconsIcon
+                    icon={EyeIcon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                }
+              >
+                View
+              </Button>
+              <AlertDialogTrigger
+                handle={deleteLocalBundleHandle}
+                payload={{ id: bundle.id, name: bundle.name }}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="h-9 sm:h-7"
+                    leadingIcon={
+                      <HugeiconsIcon
+                        icon={Delete01Icon}
+                        strokeWidth={2}
+                        className="size-3.5"
+                      />
+                    }
+                  >
+                    Delete
+                  </Button>
+                }
+              />
+            </div>
+          ),
+        }))}
+      />
 
       <AlertDialog handle={deleteLocalBundleHandle}>
         {({ payload }) => (
@@ -235,6 +215,6 @@ export function LocalBundleGrid({
           </AlertDialogContent>
         )}
       </AlertDialog>
-    </section>
+    </>
   );
 }

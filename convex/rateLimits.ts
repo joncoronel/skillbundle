@@ -33,9 +33,10 @@
  * exactly who it is meant to reach. It is still per-visitor, not app-wide: the
  * key is an HMAC of the visitor's IP (a /64 for IPv6) computed by the site's
  * server action, which is the only place the IP is visible (the browser talks
- * to Convex over a websocket). Raw IPs never reach Convex. It charges only on
- * fresh work, like `repoAnalysis`, and is enforced in
- * `recommendations.analyzeRepoAnonymous`. Signed-in free accounts have a
+ * to Convex over a websocket). Raw IPs never reach Convex. It charges only for
+ * fresh runs that produced results (checked with `peek` first, charged after),
+ * in `recommendations.analyzeRepoAnonymous`; misses land on
+ * `repoAnalysisDaily` instead. Signed-in free accounts have a
  * monthly allowance instead, which lives in repoMatchQuota.ts rather than
  * here because it counts distinct repos, not requests. Neither touches Pro.
  *
@@ -56,7 +57,11 @@
 import { DAY, HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import { ConvexError, v, type Infer } from "convex/values";
 import { components } from "./_generated/api";
-import { internalMutation, type MutationCtx } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
 import { ANON_DAILY_ANALYSES, ANON_LIMIT } from "../lib/repo-match";
 
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
@@ -87,6 +92,17 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
     period: DAY,
     capacity: ANON_DAILY_ANALYSES,
   },
+  // Every fresh analysis by a metered caller (a free account, or a signed-out
+  // visitor), successful or not. The allowances count only runs that produced
+  // results, so a typo never costs one; this is what stops "never counts" from
+  // meaning "free to probe": 20 fresh attempts a day per caller, on the shared
+  // GitHub token. Far above a person's error rate. Never charged to Pro.
+  repoAnalysisDaily: {
+    kind: "token bucket",
+    rate: 20,
+    period: DAY,
+    capacity: 20,
+  },
   // The repo picker: a Clerk Backend API call plus the user's own GitHub token.
   githubRepoList: {
     kind: "token bucket",
@@ -104,6 +120,7 @@ const rateLimitName = v.union(
   v.literal("addSkillCapped"),
   v.literal("repoAnalysis"),
   v.literal("repoAnalysisAnonymous"),
+  v.literal("repoAnalysisDaily"),
   v.literal("githubRepoList"),
   v.literal("billing"),
 );
@@ -119,6 +136,8 @@ const MESSAGES: Record<RateLimitName, string> = {
     "You've made a lot of add requests in the last hour. Try again in a little while.",
   repoAnalysis: SLOW_DOWN,
   repoAnalysisAnonymous: `You've used your ${ANON_DAILY_ANALYSES} free repo matches for now.`,
+  repoAnalysisDaily:
+    "You've tried a lot of repos today. Try again tomorrow, or upgrade to Pro.",
   githubRepoList: SLOW_DOWN,
   billing: SLOW_DOWN,
 };
@@ -162,6 +181,21 @@ export const enforce = internalMutation({
   handler: async (ctx, { checks }) => {
     await consume(ctx, checks);
     return null;
+  },
+});
+
+/**
+ * Would one unit of `name` for `key` be allowed right now? Consumes nothing.
+ * For an allowance charged only after the work succeeds (the signed-out repo
+ * match): refuse up front when it's already spent, charge once there is
+ * something to charge for.
+ */
+export const peek = internalQuery({
+  args: checkValidator,
+  returns: v.object({ ok: v.boolean(), retryAfter: v.optional(v.number()) }),
+  handler: async (ctx, { name, key }) => {
+    const { ok, retryAfter } = await rateLimiter.check(ctx, name, { key });
+    return { ok, retryAfter };
   },
 });
 

@@ -62,7 +62,14 @@ describe("proxy.ts route lists", () => {
     "/vercel-labs/skills/find-skills",
     // Public since signed-out visitors keep bundles in the browser.
     "/dashboard",
+    "/bundle/local",
   ])("does not run the proxy on public route %s", (path) => {
     expect(runsProxy(path)).toBe(false);
+  });
+
+  // The account bundle page reads the Clerk token server-side, so it must keep
+  // the proxy even though the static /bundle/local beside it drops it.
+  it("still runs the proxy on an account bundle page", () => {
+    expect(runsProxy("/bundle/AbC123xyz0")).toBe(true);
   });
 });

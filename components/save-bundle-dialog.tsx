@@ -159,8 +159,8 @@ export function SaveBundleDialog({ handle }: SaveBundleDialogProps) {
             <UpgradeBanner
               message={
                 local
-                  ? `This browser is watching ${FREE_WATCHED_SKILLS} skills, the free plan's limit. Sign in and upgrade to Pro to watch as many as you like.`
-                  : `You're watching ${maxWatchedSkills ?? FREE_WATCHED_SKILLS} skills, the free plan's limit. Upgrade to Pro to watch as many as you like.`
+                  ? `Saving these would take this browser past the free plan's ${FREE_WATCHED_SKILLS} watched skills. Sign in and upgrade to Pro to watch as many as you like.`
+                  : `Saving these would take you past the free plan's ${maxWatchedSkills ?? FREE_WATCHED_SKILLS} watched skills. Upgrade to Pro to watch as many as you like.`
               }
             />
           ) : (
