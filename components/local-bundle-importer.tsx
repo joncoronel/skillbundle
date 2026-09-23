@@ -2,14 +2,15 @@
 
 import { useEffect, useRef } from "react";
 import { useConvexAuth, useMutation } from "convex/react";
+import { useSetAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { toast } from "@/components/ui/cubby-ui/toast/toast";
 import { useHydrated } from "@/hooks/use-hydrated";
 import {
+  importSettledAtom,
   LOCAL_BUNDLES_KEY,
   useLocalBundleActions,
-  useSetLocalImportSettled,
   type LocalBundle,
 } from "@/lib/local-bundles";
 
@@ -37,7 +38,7 @@ export function LocalBundleImporter() {
   const hydrated = useHydrated();
   const importBundles = useMutation(api.bundles.importLocalBundles);
   const { removeMany } = useLocalBundleActions();
-  const setSettled = useSetLocalImportSettled();
+  const setSettled = useSetAtom(importSettledAtom);
   const router = useRouter();
   const started = useRef(false);
 
@@ -71,7 +72,7 @@ export function LocalBundleImporter() {
       // every visit: the dashboard already lists them under "Still in this
       // browser".
       const skippedSet = skipped
-        .map((i) => bundles[i.index].id)
+        .map((i) => bundles[i].id)
         .sort()
         .join(",");
       const toldAbout = localStorage.getItem(SKIPPED_KEY);
@@ -104,11 +105,8 @@ export function LocalBundleImporter() {
       }
     }
 
-    const locked =
-      typeof navigator !== "undefined" && navigator.locks
-        ? navigator.locks.request("skillbundle:import-local-bundles", run)
-        : run();
-    locked
+    navigator.locks
+      .request("skillbundle:import-local-bundles", run)
       .catch((error: unknown) => {
         // Nothing was removed, so the bundles are all still in the browser and
         // the next page load tries again.

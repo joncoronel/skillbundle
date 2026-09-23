@@ -7,7 +7,6 @@ import { useHydrated } from "@/hooks/use-hydrated";
 import {
   localSaveRefusal,
   mergeSkills,
-  newLocalBundleId,
   type LocalBundle,
 } from "@/lib/local-bundles-core";
 
@@ -50,14 +49,18 @@ export function useLocalBundles(): LocalBundle[] | undefined {
  * (moved, partly moved, or failed). In memory only: every page load signs in
  * afresh as far as the importer is concerned.
  */
-const importSettledAtom = atom(false);
+export const importSettledAtom = atom(false);
 
-export function useLocalImportSettled(): boolean {
-  return useAtomValue(importSettledAtom);
-}
+/**
+ * Bundles this tab removed (Delete, or the sign-in import). A bundle page
+ * keeps showing one of these while it navigates away; one that disappears
+ * without being in here was deleted from another tab, and the page says so.
+ */
+const removedHereAtom = atom<ReadonlySet<string>>(new Set<string>());
 
-export function useSetLocalImportSettled() {
-  return useSetAtom(importSettledAtom);
+export function useRemovedHere(id: string | null): boolean {
+  const removed = useAtomValue(removedHereAtom);
+  return id !== null && removed.has(id);
 }
 
 type SaveResult = { ok: true; id: string } | { ok: false; error: string };
@@ -76,7 +79,7 @@ const createAtom = atom(
     if (error) return { ok: false, error };
     const now = Date.now();
     const bundle: LocalBundle = {
-      id: newLocalBundleId(),
+      id: crypto.randomUUID(),
       name: args.name,
       description: args.description,
       skills: mergeSkills([], args.skills, now),
@@ -127,6 +130,7 @@ const setSkillsAtom = atom(
 
 const removeManyAtom = atom(null, (get, set, ids: string[]) => {
   const drop = new Set(ids);
+  set(removedHereAtom, new Set([...get(removedHereAtom), ...ids]));
   set(
     localBundlesAtom,
     get(localBundlesAtom).filter((b) => !drop.has(b.id)),

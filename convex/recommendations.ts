@@ -382,6 +382,9 @@ export const analyzeRepo = action({
     // key for signed-out demo runs. A free account also pays into its daily
     // attempt budget, successes and misses alike.
     const userKey = identity?.subject ?? "anonymous";
+    // Shared by every pass below, so the private retry after a failed public
+    // pass doesn't charge the same request twice.
+    const usage = { fresh: false };
     const rateLimitChecks: RateLimitCheck[] = [
       { name: "repoAnalysis", key: userKey },
       ...(metered
@@ -406,6 +409,7 @@ export const analyzeRepo = action({
         treeCacheKey: key,
         token,
         rateLimitChecks,
+        usage,
       });
 
     const analyze = async (): Promise<AnalyzeRepoResult> => {
@@ -433,6 +437,7 @@ export const analyzeRepo = action({
         cacheKey,
         treeCacheKey: repoKey,
         rateLimitChecks,
+        usage,
       });
       if (publicResult.error !== FETCH_ERROR || !privateKey) {
         return publicResult;
@@ -565,7 +570,11 @@ async function runAnalysis(
     token?: string;
     /** Rate limits charged, once, when the run has to do fresh work. */
     rateLimitChecks: RateLimitCheck[];
-    /** Set to `fresh: true` once those limits are charged. */
+    /**
+     * Set to `fresh: true` once those limits are charged. Pass the same object
+     * to every pass of one request: a pass that finds it set doesn't charge
+     * again.
+     */
     usage?: { fresh: boolean };
   },
 ): Promise<AnalyzeRepoResult> {
@@ -611,7 +620,7 @@ async function runAnalysis(
   // Called BEFORE any cache write on those paths: if it threw after the new
   // tree ETag was stored, the next request would see a 304, trust the old
   // fingerprint, and serve stale results for a repo that changed.
-  let charged = false;
+  let charged = usage?.fresh ?? false;
   const chargeRebuild = async (): Promise<void> => {
     if (charged) return;
     charged = true;

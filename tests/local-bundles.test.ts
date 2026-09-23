@@ -249,7 +249,7 @@ describe("importLocalBundles", () => {
       ]),
     );
 
-    expect(result.skipped).toEqual([{ index: 0, reason: "watch_limit" }]);
+    expect(result.skipped).toEqual([0]);
     expect(result.imported.map((i) => i.index)).toEqual([1]);
   });
 });

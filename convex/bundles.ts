@@ -644,12 +644,8 @@ export const importLocalBundles = mutation({
   },
   returns: v.object({
     imported: v.array(v.object({ index: v.number(), urlId: v.string() })),
-    skipped: v.array(
-      v.object({
-        index: v.number(),
-        reason: v.union(v.literal("bundle_limit"), v.literal("watch_limit")),
-      }),
-    ),
+    /** Indexes of the bundles that didn't fit and stay in the browser. */
+    skipped: v.array(v.number()),
   }),
   handler: async (ctx, { bundles }) => {
     // Bounds the work before any read. The client caps a browser at
@@ -709,10 +705,7 @@ export const importLocalBundles = mutation({
     const clamp = (t: number) => Math.min(Math.max(t, 0), now);
 
     const imported: { index: number; urlId: string }[] = [];
-    const skipped: {
-      index: number;
-      reason: "bundle_limit" | "watch_limit";
-    }[] = [];
+    const skipped: number[] = [];
 
     for (const [index, b] of bundles.entries()) {
       const existingUrlId = alreadyImported.get(b.localId);
@@ -721,7 +714,7 @@ export const importLocalBundles = mutation({
         continue;
       }
       if (bundleCount >= MAX_BUNDLES_PER_USER) {
-        skipped.push({ index, reason: "bundle_limit" });
+        skipped.push(index);
         continue;
       }
 
@@ -744,7 +737,7 @@ export const importLocalBundles = mutation({
         Number.isFinite(limits.maxWatchedSkills) &&
         union.size > limits.maxWatchedSkills
       ) {
-        skipped.push({ index, reason: "watch_limit" });
+        skipped.push(index);
         continue;
       }
 

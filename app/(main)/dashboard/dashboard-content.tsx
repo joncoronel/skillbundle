@@ -27,7 +27,8 @@ import { DashboardEmpty } from "./dashboard-empty";
 import { DashboardSkeleton } from "./dashboard-skeleton";
 import { BundleGrid } from "./bundle-grid";
 import { LocalBundleGrid, LocalDashboard } from "./local-dashboard";
-import { useLocalBundles, useLocalImportSettled } from "@/lib/local-bundles";
+import { useAtomValue } from "jotai";
+import { importSettledAtom, useLocalBundles } from "@/lib/local-bundles";
 import { isFault } from "@/lib/monitoring/conditions";
 
 const deleteBundleHandle = createAlertDialogHandle<{
@@ -139,7 +140,7 @@ function DashboardLoaded({
   // Only once the import has run, or every browser bundle would show here for
   // the moment between sign-in and the import landing.
   const localBundles = useLocalBundles();
-  const importSettled = useLocalImportSettled();
+  const importSettled = useAtomValue(importSettledAtom);
   const leftoverLocal = importSettled ? localBundles : undefined;
 
   // Non-blocking delete: AlertDialogClose closes the dialog immediately,

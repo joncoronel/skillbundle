@@ -44,6 +44,7 @@ import {
 import {
   useLocalBundleActions,
   useLocalBundles,
+  useRemovedHere,
   type LocalBundle,
 } from "@/lib/local-bundles";
 import { localBundleHref } from "@/lib/local-bundles-core";
@@ -70,14 +71,17 @@ export function LocalBundleView() {
   const bundles = useLocalBundles();
   const current = id ? bundles?.find((b) => b.id === id) : undefined;
 
-  // The last bundle this page showed. Both ways a bundle leaves the browser
+  // The last bundle this page showed. Both ways this tab removes a bundle
   // while its page is open (Delete here, or the sign-in import) navigate away,
   // but the storage write renders before the navigation commits; without this
-  // the page flashes "not in this browser" on its way out. React's pattern for
-  // state derived from a changing input: set during render, no effect.
+  // the page flashes "not in this browser" on its way out. Only for removals
+  // made here: one deleted from another tab has no navigation coming, so the
+  // page shows it's gone. React's pattern for state derived from a changing
+  // input: set during render, no effect.
   const [shown, setShown] = useState(current);
   if (current && current !== shown) setShown(current);
-  const bundle = current ?? (shown?.id === id ? shown : undefined);
+  const leaving = useRemovedHere(id);
+  const bundle = current ?? (leaving && shown?.id === id ? shown : undefined);
 
   // Before hydration the stored list is unknown, and the server rendered the
   // loading shell; keep showing it rather than a false "not found".

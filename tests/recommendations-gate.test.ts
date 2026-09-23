@@ -338,6 +338,39 @@ describe("analyzeRepoAnonymous", () => {
     expect(await refusalCode(runAnon(t, "b".repeat(64), 0))).toBeNull();
   });
 
+  test("a successful fresh run spends the allowance", async () => {
+    const t = setup();
+    // A repo GitHub can describe, and an embedding for it: enough for the
+    // pipeline to finish without an error (the vector index is empty, so it
+    // matches nothing, which is still a result).
+    vi.stubEnv("VOYAGE_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (/^https:\/\/api\.github\.com\/repos\/o\/r\d+$/.test(url)) {
+          return Response.json({
+            default_branch: "main",
+            description: "A test repo",
+            topics: [],
+          });
+        }
+        if (url.startsWith("https://api.voyageai.com/")) {
+          return Response.json({
+            data: [{ index: 0, embedding: Array(512).fill(0.1) }],
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    for (let i = 0; i < ANON_DAILY_ANALYSES; i++) {
+      const result = await runAnon(t, VISITOR, i);
+      expect(result.error).toBeNull();
+    }
+    expect(await refusalCode(runAnon(t, VISITOR, 99))).toBe(ANON_LIMIT);
+  });
+
   test("a miss doesn't spend the allowance", async () => {
     const t = setup();
     // Every run here is a fetch error (fetch is stubbed), so more misses than

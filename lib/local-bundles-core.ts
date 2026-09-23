@@ -122,8 +122,3 @@ export function localFeedTargets(bundles: LocalBundle[]) {
 export function localBundleHref(id: string): string {
   return `/bundle/local?id=${encodeURIComponent(id)}`;
 }
-
-/** A short random id. Only has to be unique within one browser. */
-export function newLocalBundleId(): string {
-  return crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-}
