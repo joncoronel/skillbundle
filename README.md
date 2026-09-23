@@ -6,6 +6,8 @@ Find the right AI coding skills, and stay on top of the ones you use.
 
 SkillBundle is built on the [skills.sh](https://skills.sh) API. The skill catalog and install counts come from skills.sh, and SkillBundle adds search, comparison, bundles, and update tracking on top.
 
+<img width="1920" height="1440" alt="796_1x_shots_so" src="https://github.com/user-attachments/assets/5c9c8044-35e8-4751-b706-3a8ffed69e66" />
+
 ## Features
 
 **Finding skills**
