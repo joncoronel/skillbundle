@@ -138,3 +138,25 @@ test("a refusal rolls back the checks that passed before it", async () => {
     21,
   );
 });
+
+// The privacy page promises the hashed visitor IPs are deleted within a week.
+test("pruneStale deletes counters first created over a week ago", async () => {
+  const t = setup();
+  const DAY = 24 * 60 * 60 * 1000;
+  const allowance = { name: "repoAnalysisAnonymous" as const, key: "v" };
+  const spendAll = async () => {
+    for (let i = 0; i < 3; i++) {
+      await t.mutation(internal.rateLimits.enforce, { checks: [allowance] });
+    }
+  };
+
+  // First seen now; still in use, and just spent, a little over a week later.
+  await spendAll();
+  vi.setSystemTime(Date.now() + 8 * DAY);
+  await spendAll();
+  expect((await t.query(internal.rateLimits.peek, allowance)).ok).toBe(false);
+
+  // The row is over a week old, so it goes, and the visitor starts fresh.
+  await t.mutation(internal.rateLimits.pruneStale, {});
+  expect((await t.query(internal.rateLimits.peek, allowance)).ok).toBe(true);
+});

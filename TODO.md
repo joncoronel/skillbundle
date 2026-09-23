@@ -1645,9 +1645,9 @@ the client both call:
 
 Loose ends worth knowing about:
 
-- The rate limiter keeps a row per visitor key and never prunes, so the
-  signed-out bucket grows by one small row per IP that ever ran a fresh
-  signed-out analysis. See the header in `convex/rateLimits.ts`.
+- Hashed visitor IPs live in the rate limiter's rows, which a daily cron
+  (`rateLimits.pruneStale`) deletes once they are a week old. The privacy
+  page promises that; keep the two in step if either changes.
 - Watch whether the signed-out allowance converts to sign-ups. If it is
   mostly scripted traffic that BotID lets through, lower it or drop it back
   to demo-only before touching the signed-in allowance.

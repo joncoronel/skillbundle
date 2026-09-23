@@ -29,7 +29,12 @@ test("a signed-out visitor can save a bundle and find it on the dashboard", asyn
   await dialog.getByRole("button", { name: "Save bundle" }).click();
 
   await expect(page).toHaveURL(/\/bundle\/local\?id=/);
-  await expect(page.locator("h1")).toHaveText("E2E browser bundle");
+  // By role, not `locator("h1")`: the client navigation keeps the home page
+  // mounted but hidden (React Activity), so there are two h1s in the DOM and
+  // only role queries skip the hidden one.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "E2E browser bundle" }),
+  ).toBeVisible();
   await expect(page.getByText("Saved in this browser.")).toBeVisible();
 
   await page.goto("/dashboard");

@@ -41,10 +41,12 @@
  * here because it counts distinct repos, not requests. Neither touches Pro.
  *
  * A cost of per-visitor keys: the component keeps a row per key and never
- * prunes, so this bucket adds a small row per IP that ever ran a fresh
- * analysis signed out. Bounded by real usage, and each row is a few numbers.
- * If it ever matters, `components.rateLimiter.lib.resetRateLimit` per key is
- * the only selective delete the component offers.
+ * prunes on its own, so every IP that ran a fresh analysis signed out leaves a
+ * row holding its hash. `pruneStale` below deletes rows first created over a
+ * week ago, daily (crons.ts), and the privacy page promises exactly that. It
+ * clears every limit, not just this one, which is safe because every bucket
+ * here refills within a day: the most a deletion does is refill someone's
+ * bucket early, once.
  *
  * Token buckets rather than fixed windows: a fixed window without a `start`
  * gets a random boundary per key, and a burst straddling it gets double the
@@ -196,6 +198,22 @@ export const peek = internalQuery({
   handler: async (ctx, { name, key }) => {
     const { ok, retryAfter } = await rateLimiter.check(ctx, name, { key });
     return { ok, retryAfter };
+  },
+});
+
+/**
+ * Delete every rate-limit row first created more than a week ago. See the
+ * header: this is what keeps hashed visitor IPs from being stored forever.
+ * `clearAll` batches itself, so one call drains any backlog.
+ */
+export const pruneStale = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.runMutation(components.rateLimiter.lib.clearAll, {
+      before: Date.now() - 7 * DAY,
+    });
+    return null;
   },
 });
 
