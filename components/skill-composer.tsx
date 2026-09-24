@@ -328,7 +328,7 @@ export function SkillComposer({ showInputSpinner }: SkillComposerProps) {
   const inputValue = isRepo ? repoDraft : textQuery;
   const placeholder = isRepo
     ? "https://github.com/owner/repo"
-    : "Search skills…";
+    : "Search skills or publishers…";
 
   // Autocomplete-root value handler — fires for keystrokes AND for Base UI
   // filling the input on a suggestion commit, so both paths stay in sync.

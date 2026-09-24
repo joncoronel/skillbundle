@@ -65,7 +65,7 @@ export function SkillSearchField({
   value,
   onChange,
   loading,
-  placeholder = "Search skills by name…",
+  placeholder = "Search skills or publishers…",
 }: {
   value: string;
   onChange: (value: string) => void;

@@ -54,7 +54,7 @@ _eval([(isOfficial:true):2,(worstAuditStatus:pass):1]):desc, installs:desc`.
    > not arbitrary, they are most of the visible order, and installs was what
    > ordered them. Searching "shadcn" ranked official 58- and 667-install
    > namesakes above shadcn/ui's own 271k-install skill. Relevance is now
-   > `_text_match:desc,installs:desc`, and a names-only query defaults to
+   > `_text_match:desc,installs:desc`, and a query without descriptions defaults to
    > Most installed (see the Sorts section).
 2. **Match highlighting** (perceived quality, zero backfill). Render the spans
    Typesense already returns. · TS: `highlight_full_fields`
@@ -159,18 +159,21 @@ Legend: **field** = backing data on `skillSummaries` (or noted table) ·
 ### 1. Search quality (the core upgrade)
 
 - [x] **Search `description`, not just `name`** — now an **opt-in** ("Search
-      descriptions" in More; default is names-only for tighter matches). Names
-      only ≈ 15× fewer hits than +descriptions (e.g. "database": 21 vs 313), so
+      descriptions" in More; default is names and publishers, for tighter
+      matches). Names only ≈ 15× fewer hits than +descriptions (e.g.
+      "database": 21 vs 313, measured before publishers were searched), so
       it's a precision-vs-recall toggle. · `query_by: name,owner` / `name,owner,description`
 - [x] **Search the publisher** ("theorcdev" finds theorcdev's skills; a
       reviewer expected it). `owner` matches whole words with no typos
       (`prefix` / `num_typos` per field): with prefix on, "next" pulled in
       every nextlevelbuilder skill. Owner tokens split on "-", so "vercel"
       finds vercel-labs, and "ai" finds publishers like designed-by-ai. ·
-      `prefix: true,false`, `num_typos: 2,0`
-- [x] **Weighted multi-field ranking** (name > description, when descriptions
-      are on), publisher between them. · `query_by_weights: 3,2,1`
-- [x] **Typo tolerance** ("tailwnid" → "Tailwind"). · TS default (`num_typos`);
+      `prefix: true,false(,true)`, `num_typos: 2,0(,2)`
+- [x] **Weighted multi-field ranking** (name > publisher > description). ·
+      `query_by_weights: 3,2` / `3,2,1` (`MATCH_FIELDS` in
+      `lib/search/typesense.ts`)
+- [x] **Typo tolerance** ("tailwnid" → "Tailwind"), off for publishers. ·
+      `num_typos: 2,0` / `2,0,2`;
       verified: "postgress" → 117 results
 - [x] **Honest fallback under filters** — Typesense escalates to typo matching
       when the _filtered_ exact set is empty, so a real word whose matches are

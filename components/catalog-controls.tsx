@@ -448,7 +448,7 @@ export function CatalogControlsSheet() {
         </Field>
         <SwitchRow
           label="Search descriptions"
-          hint="Match on description text, not just names"
+          hint="Also match description text"
           checked={searchDescriptions}
           onCheckedChange={(v) => setParams({ searchDescriptions: v })}
         />

@@ -172,7 +172,7 @@ export interface SkillSearchArgs {
   query?: string;
   sort?: SkillSort;
   filters?: SkillFilters;
-  /** Also match on `description` (default: names and publishers only). */
+  /** Also match on `description` (default: names and publishers). */
   searchDescriptions?: boolean;
   page?: number;
   perPage?: number;
@@ -403,45 +403,46 @@ async function tsMultiSearch(
   return body.results;
 }
 
+// Searched fields in rank order. `owner` matches whole words with no typos:
+// with prefix on, "next" matched every nextlevelbuilder skill.
+const MATCH_FIELDS = [
+  { name: field("name"), weight: 3, prefix: true, typos: 2 },
+  { name: field("owner"), weight: 2, prefix: false, typos: 0 },
+  { name: field("description"), weight: 1, prefix: true, typos: 2 },
+];
+
 /**
  * The text-matching half of a catalog search, shared with the facet counts so
  * a picker's counts match the results list exactly.
  */
 function matchParams(query: string, searchDescriptions?: boolean): TsParams {
-  const params: TsParams = {
+  const fields = MATCH_FIELDS.filter(
+    (f) => searchDescriptions || f.name !== "description",
+  );
+  const column = (pick: (f: (typeof fields)[number]) => string | number) =>
+    fields.map(pick).join(",");
+  return {
     q: query || "*", // "*" = match-all for browse
     // How many words a partial last word may complete to. The default (4)
     // is chosen per request, so filtered results and picker counts
     // disagreed; 1000 covers the catalog for ~1-2ms.
     max_candidates: "1000",
+    query_by: column((f) => f.name),
+    query_by_weights: column((f) => f.weight),
+    prefix: column((f) => String(f.prefix)),
+    num_typos: column((f) => f.typos),
   };
-  // `owner` is searched so typing a publisher ("theorcdev") finds its skills.
-  // Whole words only, no typos: a prefix match there turned "next" into every
-  // nextlevelbuilder skill. Its tokens split on "-", so "vercel" still finds
-  // vercel-labs. The Publisher picker covers partial publisher names.
-  if (searchDescriptions) {
-    params.query_by = "name,owner,description";
-    // Name, then publisher, then description (see docs/search-overhaul.md).
-    params.query_by_weights = "3,2,1";
-    params.prefix = "true,false,true";
-    params.num_typos = "2,0,2";
-  } else {
-    // Default: names and publishers, no descriptions.
-    params.query_by = "name,owner";
-    params.query_by_weights = "3,2";
-    params.prefix = "true,false";
-    params.num_typos = "2,0";
-  }
-  return params;
 }
 
 /**
  * Runs `params` with the honest-fallback probes when a query meets narrowing
  * filters. `hiddenCount` is set when the filters hid every exact match: the
- * response is then typo fallback and must not be shown or counted.
+ * response is then typo fallback and must not be shown or counted. `match`
+ * is the `matchParams` that `params` was built from.
  */
 async function searchWithFallbackCheck(
   params: TsParams,
+  match: TsParams,
   query: string,
   filters: SkillFilters | undefined,
   label: string,
@@ -452,17 +453,12 @@ async function searchWithFallbackCheck(
     return { raw: await tsSearch(params, label, signal) };
   }
   const probeBase: TsParams = {
-    q: query,
     // Mirror the main query's matching scope exactly — the probes answer
     // "would THIS search have exact matches", not some other search's.
-    query_by: params.query_by,
-    max_candidates: params.max_candidates,
+    ...match,
     num_typos: "0",
     per_page: "0", // count-only: `found` is all we read
   };
-  if (params.query_by_weights)
-    probeBase.query_by_weights = params.query_by_weights;
-  if (params.prefix) probeBase.prefix = params.prefix;
 
   const narrowedProbe: TsParams = { ...probeBase };
   if (params.filter_by) narrowedProbe.filter_by = params.filter_by;
@@ -508,7 +504,8 @@ export async function searchSkills(
   const hasQuery = query.length > 0;
   const page = args.page ?? 1;
 
-  const params = matchParams(query, args.searchDescriptions);
+  const match = matchParams(query, args.searchDescriptions);
+  const params: TsParams = { ...match };
   if (hasQuery) {
     // Highlight the full `name` (it's short, so no snippet windowing) so the UI
     // can mark matched tokens — fuzzy-aware, straight from the engine. Browse
@@ -538,6 +535,7 @@ export async function searchSkills(
   const narrowingKeys = activeNarrowingKeys(args.filters);
   const { raw, hiddenCount } = await searchWithFallbackCheck(
     params,
+    match,
     query,
     args.filters,
     "search",
@@ -601,8 +599,9 @@ export async function listFacetCounts(
   },
 ): Promise<FacetCount[]> {
   const { query, searchDescriptions, filters } = opts.scope;
+  const match = matchParams(query, searchDescriptions);
   const params: TsParams = {
-    ...matchParams(query, searchDescriptions),
+    ...match,
     per_page: "0",
     facet_by: field(facetField),
     max_facet_values: "250",
@@ -614,6 +613,7 @@ export async function listFacetCounts(
   // When the results list shows nothing (typo fallback), count nothing.
   const { raw, hiddenCount } = await searchWithFallbackCheck(
     params,
+    match,
     query,
     filters,
     "facet",
