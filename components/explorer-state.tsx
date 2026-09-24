@@ -73,8 +73,9 @@ export interface ExplorerState extends HomeParams {
 const ExplorerStateContext = createContext<ExplorerState | null>(null);
 
 /**
- * The default sort: installs, since a names-only hit always has the query in
- * its name. Relevance for description search, which matches passing mentions.
+ * The default sort: installs, since without descriptions a hit always has the
+ * query in its name or publisher. Relevance for description search, which
+ * matches passing mentions.
  */
 function autoSort(hasQuery: boolean, searchDescriptions: boolean) {
   return hasQuery && searchDescriptions ? "relevance" : "installs";

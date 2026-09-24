@@ -29,7 +29,7 @@ interface ActiveCatalogResultsProps {
   stale: boolean;
   sort: SkillSort;
   filters: SkillFilters;
-  /** Also match on description (default: names only). */
+  /** Also match on description (default: names and publishers). */
   searchDescriptions: boolean;
   /** An actual narrowing filter is set (not just an explicit sort) — gates
    *  the "loosen a filter" hint so it never shows with zero filters. */

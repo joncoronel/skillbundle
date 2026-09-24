@@ -74,8 +74,8 @@ export const categoryParser = parseAsArrayOf(
 )
   .withDefault([])
   .withOptions({ clearOnDefault: true });
-// Search scope. Default (false) searches skill names only; opt in to also
-// search descriptions. A preference, not a filter — not part of "active
+// Search scope. Default (false) searches skill names and publishers; opt in
+// to also search descriptions. A preference, not a filter — not part of "active
 // filters" / Clear.
 export const searchDescriptionsParser = parseAsBoolean.withDefault(false);
 // true = hide skills whose SKILL.md fetch failed (install command may break).
