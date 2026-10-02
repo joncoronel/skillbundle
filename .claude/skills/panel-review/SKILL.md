@@ -222,6 +222,10 @@ and stack-specific rows apply only when the project actually uses that stack
 | **UI components** — `*.tsx`/`*.jsx`, components, hooks (here React → `vercel-react-best-practices`) | stack-appropriate skill |
 | **Component API design** — new/changed props, prop threading, composition | `vercel-composition-patterns` |
 | **Visible UI** — styling, layout, copy, empty/error states, a11y | `web-design-guidelines` (deep: also `impeccable`) |
+| **Interaction feel** — hover/press/focus states, micro-interactions, perceived responsiveness, layout shift | `make-interfaces-feel-better`, `better-interface` |
+| **Motion** — transitions, keyframes, animation libraries, enter/exit states | `animate` + `animation-performance` (compositor-only properties, jank) + `animation-accessibility` (reduced motion) |
+| **Reusable components** — a component library, design system, or registry: public props, controlled/uncontrolled state, keyboard and ARIA, data attributes | `building-components` |
+| **Over-engineering** — any diff that adds abstractions, hooks, helpers, options, or config | `ponytail-review` |
 | **Framework rendering/caching** — caching directives, route types, prerender, revalidation (here Next.js → `next-best-practices`) | stack-appropriate skill |
 | **User-named extras** | always included |
 
@@ -233,7 +237,8 @@ context, and on a small diff it should:
 
 - **Under ~8 changed files: pair the dimensions and spawn 3 to 4 agents.**
   Natural pairs are correctness + the stack lens for that same layer,
-  maintainability + component-API, and visible-UI/a11y + docs/registry
+  maintainability + over-engineering, component-API + reusable components,
+  motion + interaction feel, and visible-UI/a11y + docs/registry
   consistency.
 - **Over ~8 changed files**, or when a pair would need two large lens skills
   loaded at once, give each dimension its own agent.
