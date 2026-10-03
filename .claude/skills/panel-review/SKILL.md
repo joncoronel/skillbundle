@@ -222,7 +222,7 @@ and stack-specific rows apply only when the project actually uses that stack
 | **UI components** — `*.tsx`/`*.jsx`, components, hooks (here React → `vercel-react-best-practices`) | stack-appropriate skill |
 | **Component API design** — new/changed props, prop threading, composition | `vercel-composition-patterns` |
 | **Visible UI** — styling, layout, copy, empty/error states, a11y | `web-design-guidelines` (deep: also `impeccable`) |
-| **Interaction feel** — hover/press/focus states, micro-interactions, perceived responsiveness, layout shift | `make-interfaces-feel-better`, `better-interface` |
+| **Interaction feel** — hover/press/focus states, micro-interactions, perceived responsiveness, layout shift | `make-interfaces-feel-better` + `better-interface` (run both) |
 | **Motion** — transitions, keyframes, animation libraries, enter/exit states | `animate` + `animation-performance` (compositor-only properties, jank) + `animation-accessibility` (reduced motion) |
 | **Reusable components** — a component library, design system, or registry: public props, controlled/uncontrolled state, keyboard and ARIA, data attributes | `building-components` |
 | **Over-engineering** — any diff that adds abstractions, hooks, helpers, options, or config | `ponytail-review` |
@@ -231,6 +231,9 @@ and stack-specific rows apply only when the project actually uses that stack
 
 Skip only dimensions with genuinely nothing to inspect. Dimension coverage
 is not negotiable. **Agent count is.**
+
+Where a row names several skills joined by `+`, every one of them is a lens:
+load and run all of them, and name each in the review's "Lenses run" line.
 
 One agent can carry two adjacent dimensions, running both checklists in one
 context, and on a small diff it should:
