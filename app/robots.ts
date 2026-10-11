@@ -58,7 +58,22 @@ export default function robots(): MetadataRoute.Robots {
         // this. If that ever stops being true, escalate to a Vercel firewall
         // rule — robots.txt stops the request being made, a firewall rule only
         // stops it reaching a function.
-        userAgent: ["Amazonbot", "SemrushBot"],
+        //
+        // Added 2026-10-11 after a bot-driven cost spike (25k ISR writes in
+        // 24h, under 100 search referrals). AhrefsBot was 27% of writes, an
+        // SEO index like Semrush. Amzn-SearchBot (7%) is a separate agent from
+        // Amazonbot and ignored the rule above. PetalBot and Bytespider
+        // together were ~3%, and neither sends traffic to an English developer
+        // tool. All four were crawling ~1 distinct page per request, so each
+        // was a fresh render after the daily `skill-sync` invalidation.
+        userAgent: [
+          "Amazonbot",
+          "Amzn-SearchBot",
+          "SemrushBot",
+          "AhrefsBot",
+          "PetalBot",
+          "Bytespider",
+        ],
         disallow: "/",
       },
       {
