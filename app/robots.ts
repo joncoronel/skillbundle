@@ -66,6 +66,11 @@ export default function robots(): MetadataRoute.Robots {
         // together were ~3%, and neither sends traffic to an English developer
         // tool. All four were crawling ~1 distinct page per request, so each
         // was a fresh render after the daily `skill-sync` invalidation.
+        //
+        // ClaudeBot added 2026-10-12: it appeared the day after the above and
+        // was 27% of writes (~320/hour). It is Anthropic's training crawler;
+        // Claude's search and user fetches use Claude-SearchBot and
+        // Claude-User, which this does not block.
         userAgent: [
           "Amazonbot",
           "Amzn-SearchBot",
@@ -73,6 +78,7 @@ export default function robots(): MetadataRoute.Robots {
           "AhrefsBot",
           "PetalBot",
           "Bytespider",
+          "ClaudeBot",
         ],
         disallow: "/",
       },
