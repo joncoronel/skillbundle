@@ -443,6 +443,11 @@ move is to put the verdict on the Overview, not to re-open the tab.
   (search for "GitHub rate limit hit", logged by `fetchRepoTree` in
   `convex/lib/github.ts`). Related: the GitHub App migration under "Match repo"
   below would also give user requests their own budget.
+- **Migrating to TanStack Start on Cloudflare (Oct 2026).** Researched the day
+  after Start 1.0 and parked: saves ~$200-300 a year for several weeks of work,
+  and caching SSR pages on Cloudflare was the unsettled part. Findings, the
+  porting inventory and how to start a spike are in
+  [docs/tanstack-start-migration.md](docs/tanstack-start-migration.md).
 
 ### Google Sans Code is preloaded on every route, used on few — Sep 2026
 
@@ -1515,6 +1520,20 @@ the daily `skill-sync` ping, because `syncSkills` walks the entire leaderboard a
 legitimately moves nearly every install count, so "only the skills that changed"
 is "all of them". (Batch-tag support in `/api/revalidate` is step 1's own scope,
 not a bound on it — see the sequence above.)
+
+**Measured Oct 2026, and why it stays parked.** About 665 skills a day get a
+real SKILL.md change (~4% of the catalog), so per-skill content tags would be
+cheap. But crawlers revisit a given skill page only every ~3-5 days (10-25%
+day-to-day overlap; ~22k distinct pages in 3 days), and skill entries use
+`cacheLife("days")`, so the entry has usually expired before the next visit
+anyway. Per-skill tags only save writes when paired with a much longer
+lifetime for count-only changes (~a week), estimated at 40-50% fewer writes
+on deploy-free days, about $8-10/mo. **Install counts going up to a week stale
+was rejected as a deal breaker.** The only way to get both is loading counts
+live on the client, which touches the header, Stats chart, sparkline and
+every catalog row, and makes the page change after load. Not worth it for
+$8-10/mo. Note that deploys reset the cache too: on deploy days, first
+renders after the deploy, not tag clears, were ~85% of writes.
 
 Fine meanwhile: invalidation only _marks_ entries stale, so a page rebuilds when
 someone visits it. Cost is bounded by traffic, not by the catalog.
