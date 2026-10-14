@@ -6,6 +6,100 @@ import { SKILL_TAB_IDS } from "@/lib/skill-urls";
 const SKILL_TAB_SEGMENTS = SKILL_TAB_IDS.filter((tab) => tab !== "overview");
 
 /**
+ * Shared by every throttled group below. A crawler obeys only the most specific
+ * `User-agent` group that matches it, so a named group must repeat these.
+ */
+const DISALLOW = [
+  // The three route handlers under /api/: `revalidate` (secret-gated,
+  // see app/api/revalidate/route.ts), `skills-token` (mints a skills.sh
+  // token), and `op` (the OpenPanel analytics proxy, see
+  // app/api/op/[...path]/route.ts). None is a crawl target.
+  //
+  // This rule is NOT purely a prefix, contrary to what this comment
+  // used to claim. `/[org]` is a root-level catch-all and the catalog
+  // contains a GitHub org literally named `api` — `api/git`, 8 skills —
+  // so this also blocks 9 real catalog pages. They stay blocked for
+  // now, and `lib/sitemap-entries.ts` drops them from the sitemap so we
+  // are at least not submitting URLs we forbid. If those pages ever
+  // matter, the fix is to name the two handlers here rather than to
+  // weaken the sitemap filter.
+  "/api/",
+  // Private routes — the inverted private-route list in proxy.ts. A
+  // crawler hitting them just eats a Clerk redirect. Anchored per the
+  // note on robots() below; the `/x/` half covers /dev/add-skill and
+  // /sign-in/sso-callback.
+  "/dashboard$",
+  "/dashboard/",
+  "/settings$",
+  "/settings/",
+  "/dev$",
+  "/dev/",
+  "/sign-in$",
+  "/sign-in/",
+  "/sign-up$",
+  "/sign-up/",
+  // Next's own RSC payloads. `<Link>` prefetches fetch the target
+  // route as `?_rsc=<hash>`, and Googlebot renders with JS, so it
+  // fires them exactly like a browser does — one per link that enters
+  // the viewport, on every page it renders.
+  //
+  // Measured in Search Console, 9 Sep - 18 Sep 2026, the period after
+  // the sitemap was submitted: **1.16M crawl requests, of which 89%
+  // were "Other file type" and only 5% HTML**, with "by purpose" at
+  // 94% Refresh against 6% Discovery. "Other file type" is this:
+  // `text/x-component` is not a type Search Console has a bucket for.
+  // A single Lighthouse run of the HOME page fires five of them
+  // (`/?_rsc=`, `/sign-in?_rsc=`, `/sign-up?_rsc=` …); a catalog page
+  // with a longer link list fires more.
+  //
+  // So roughly a million requests went to payloads that can never be a
+  // search result, while 13,556 real URLs sat at "Discovered -
+  // currently not indexed" — Google knowing the URL exists and never
+  // having fetched it. Those two numbers are the same story: the crawl
+  // budget was not short, it was spent on the wrong thing.
+  //
+  // Blocking these is safe, and the distinction that makes it safe is
+  // worth stating: an `?_rsc=` URL is a SPECULATIVE FETCH OF THE NEXT
+  // PAGE, not a resource the current page needs to render. Google's
+  // renderer paints the page identically without it, the same way a
+  // browser with a cold cache does. Nothing a user does is affected at
+  // all — robots.txt is advisory to crawlers and invisible to browsers.
+  //
+  // `*_rsc=` rather than `*?_rsc=` because the param is not always
+  // first in the query string, and `&_rsc=` has to match too. The
+  // unanchored form is safe here: `=` cannot appear in a GitHub org,
+  // repo or skill slug, so no real catalog path can contain "_rsc=".
+  "/*_rsc=",
+  // The one unbounded URL space on the site. `/compare` carries a
+  // `?skills=a,b,c` param (the only multi-value query param in the app,
+  // alongside the home page's bounded `?tab`), so the parameterised form
+  // is combinatorial over the whole catalog. Needs no anchoring: a
+  // literal `?` cannot appear in an org slug, and crawlers match the
+  // query string as part of the path. The bare `/compare` is left
+  // crawlable on purpose so shared comparison links still resolve for
+  // preview fetchers that consult robots.txt.
+  "/compare?",
+  // Every non-Overview skill tab (see SKILL_TAB_SEGMENTS). Measured
+  // 2026-09-18: tab routes were ~60% of the sampled requests that wrote
+  // a Vercel ISR entry. The sitemap lists only Overviews, so crawlers
+  // reach the tabs by following each skill's tab strip, which turns
+  // ~16k skills into ~64k crawled URLs. Every one of them rewrites
+  // daily, because the morning sync changes the install count they all
+  // render. The tabs add little to search that the Overview doesn't
+  // already carry.
+  //
+  // Depth-anchored, because a skill can be NAMED like a tab: the
+  // catalog has skills with the id `security`, whose Overview is
+  // `/org/repo/security` (three segments). A tab is always four:
+  // `/[org]/[repo]/[skillId]/<tab>` or `/site/[source]/[skillId]/<tab>`.
+  // `*` can also match `/`, but four literal slashes still require at
+  // least four segments, so the three-segment Overview never matches.
+  // `$` stops `/org/repo/history-skill/...` style prefixes from
+  // matching.
+  ...SKILL_TAB_SEGMENTS.map((tab) => `/*/*/*/${tab}$`),
+];
+
+/**
  * Crawler guidance. The site had none before this, which matters more here than
  * on a typical app: the catalog is ~16k skill pages, each one rendered on
  * demand and cached per `'use cache'` entry, so an unguided crawl is a direct
@@ -83,97 +177,21 @@ export default function robots(): MetadataRoute.Robots {
         disallow: "/",
       },
       {
+        // Throttled, not blocked: it feeds Claude's search, a plausible
+        // discovery channel. Measured 2026-10-14 it honoured the `*` group's
+        // Crawl-delay exactly (one request per 10.2s) and still reached ~8.4k
+        // distinct pages a day, 42% of ISR writes, because each page was a
+        // cold render. A crawler obeys only its most specific group, so it
+        // gets the full disallow list again here.
+        userAgent: "Claude-SearchBot",
+        allow: "/",
+        disallow: DISALLOW,
+        crawlDelay: 60,
+      },
+      {
         userAgent: "*",
         allow: "/",
-        disallow: [
-          // The three route handlers under /api/: `revalidate` (secret-gated,
-          // see app/api/revalidate/route.ts), `skills-token` (mints a skills.sh
-          // token), and `op` (the OpenPanel analytics proxy, see
-          // app/api/op/[...path]/route.ts). None is a crawl target.
-          //
-          // This rule is NOT purely a prefix, contrary to what this comment
-          // used to claim. `/[org]` is a root-level catch-all and the catalog
-          // contains a GitHub org literally named `api` — `api/git`, 8 skills —
-          // so this also blocks 9 real catalog pages. They stay blocked for
-          // now, and `lib/sitemap-entries.ts` drops them from the sitemap so we
-          // are at least not submitting URLs we forbid. If those pages ever
-          // matter, the fix is to name the two handlers here rather than to
-          // weaken the sitemap filter.
-          "/api/",
-          // Private routes — the inverted private-route list in proxy.ts. A
-          // crawler hitting them just eats a Clerk redirect. Anchored per the
-          // note above; the `/x/` half covers /dev/add-skill and
-          // /sign-in/sso-callback.
-          "/dashboard$",
-          "/dashboard/",
-          "/settings$",
-          "/settings/",
-          "/dev$",
-          "/dev/",
-          "/sign-in$",
-          "/sign-in/",
-          "/sign-up$",
-          "/sign-up/",
-          // Next's own RSC payloads. `<Link>` prefetches fetch the target
-          // route as `?_rsc=<hash>`, and Googlebot renders with JS, so it
-          // fires them exactly like a browser does — one per link that enters
-          // the viewport, on every page it renders.
-          //
-          // Measured in Search Console, 9 Sep - 18 Sep 2026, the period after
-          // the sitemap was submitted: **1.16M crawl requests, of which 89%
-          // were "Other file type" and only 5% HTML**, with "by purpose" at
-          // 94% Refresh against 6% Discovery. "Other file type" is this:
-          // `text/x-component` is not a type Search Console has a bucket for.
-          // A single Lighthouse run of the HOME page fires five of them
-          // (`/?_rsc=`, `/sign-in?_rsc=`, `/sign-up?_rsc=` …); a catalog page
-          // with a longer link list fires more.
-          //
-          // So roughly a million requests went to payloads that can never be a
-          // search result, while 13,556 real URLs sat at "Discovered -
-          // currently not indexed" — Google knowing the URL exists and never
-          // having fetched it. Those two numbers are the same story: the crawl
-          // budget was not short, it was spent on the wrong thing.
-          //
-          // Blocking these is safe, and the distinction that makes it safe is
-          // worth stating: an `?_rsc=` URL is a SPECULATIVE FETCH OF THE NEXT
-          // PAGE, not a resource the current page needs to render. Google's
-          // renderer paints the page identically without it, the same way a
-          // browser with a cold cache does. Nothing a user does is affected at
-          // all — robots.txt is advisory to crawlers and invisible to browsers.
-          //
-          // `*_rsc=` rather than `*?_rsc=` because the param is not always
-          // first in the query string, and `&_rsc=` has to match too. The
-          // unanchored form is safe here: `=` cannot appear in a GitHub org,
-          // repo or skill slug, so no real catalog path can contain "_rsc=".
-          "/*_rsc=",
-          // The one unbounded URL space on the site. `/compare` carries a
-          // `?skills=a,b,c` param (the only multi-value query param in the app,
-          // alongside the home page's bounded `?tab`), so the parameterised form
-          // is combinatorial over the whole catalog. Needs no anchoring: a
-          // literal `?` cannot appear in an org slug, and crawlers match the
-          // query string as part of the path. The bare `/compare` is left
-          // crawlable on purpose so shared comparison links still resolve for
-          // preview fetchers that consult robots.txt.
-          "/compare?",
-          // Every non-Overview skill tab (see SKILL_TAB_SEGMENTS). Measured
-          // 2026-09-18: tab routes were ~60% of the sampled requests that wrote
-          // a Vercel ISR entry. The sitemap lists only Overviews, so crawlers
-          // reach the tabs by following each skill's tab strip, which turns
-          // ~16k skills into ~64k crawled URLs. Every one of them rewrites
-          // daily, because the morning sync changes the install count they all
-          // render. The tabs add little to search that the Overview doesn't
-          // already carry.
-          //
-          // Depth-anchored, because a skill can be NAMED like a tab: the
-          // catalog has skills with the id `security`, whose Overview is
-          // `/org/repo/security` (three segments). A tab is always four:
-          // `/[org]/[repo]/[skillId]/<tab>` or `/site/[source]/[skillId]/<tab>`.
-          // `*` can also match `/`, but four literal slashes still require at
-          // least four segments, so the three-segment Overview never matches.
-          // `$` stops `/org/repo/history-skill/...` style prefixes from
-          // matching.
-          ...SKILL_TAB_SEGMENTS.map((tab) => `/*/*/*/${tab}$`),
-        ],
+        disallow: DISALLOW,
         crawlDelay: 10,
       },
     ],
